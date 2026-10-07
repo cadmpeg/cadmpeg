@@ -64,7 +64,7 @@ fn copy_act_channels(
 ) -> Result<BTreeMap<String, String>, CodecError> {
     let mut copied = BTreeMap::new();
     if let Some(channels) = channels {
-        for (name, guid) in channels {
+        for (name, guid) in ctx.admit_iter(channels, "scan F3D ACT channel copies")? {
             let name = ctx.copy_retained_text(name, "copy F3D ACT channel name")?;
             let guid = ctx.copy_retained_text(guid, "copy F3D ACT channel GUID")?;
             ctx.insert_btree_map(&mut copied, name, guid, "copy F3D ACT channel map")?;

@@ -459,7 +459,7 @@ fn brep_adjacency_reference_refuses_retained_limit() {
     let value = serde_value::Value::String("f3d:brep:entity#1".to_owned());
     let error = with_limits(u64::MAX, 0, |ctx| {
         let owned = vec!["f3d:brep:entity#1".to_owned()];
-        collect_brep_references(ctx, &value, &owned, &mut Vec::new()).unwrap_err()
+        collect_brep_references(ctx, &value, &owned, None, &mut Vec::new()).unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

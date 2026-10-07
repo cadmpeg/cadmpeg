@@ -167,18 +167,18 @@ fn source_rescoping_refuses_fidelity_owner_retained_limit() {
 
 #[test]
 fn source_rescoping_refuses_retained_record_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::decode::ResourceDimension;
     let (_, records) = source("member").into_parts();
     let mut input = SourceFidelity::default();
     for (id, record) in records {
         input.insert_retained_record(id, record).unwrap();
     }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // Admit the one staged key before refusing the retained-record output slot.
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = rescope_fidelity(&ctx, input, "part").unwrap_err();
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        "collect F3Z rescoped retained records",
+        0,
+        |ctx| rescope_fidelity(ctx, input.clone(), "part"),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3Z rescoped retained records")
@@ -188,27 +188,34 @@ fn source_rescoping_refuses_retained_record_collection_limit() {
 #[test]
 fn source_rescoping_refuses_provenance_stream_handle_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
-    for _ in 0..128 {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = rescope_fidelity(&ctx, source("member"), "part").unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
-            panic!("stream-handle storage must refuse");
-        };
-        assert_eq!(first.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(first.limit, policy.limits.max_collection_items);
-        assert!(matches!(ctx.finish_session(),
-            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
-        if first.operation == "allocate annotation stream handle" {
-            return;
-        }
-        let next = first.used.checked_add(first.additional).unwrap();
-        assert!(next > policy.limits.max_collection_items);
-        policy.limits.max_collection_items = next;
-    }
-    panic!("stream-handle admission must be reached");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "allocate annotation stream handle",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = rescope_fidelity(&ctx, source("member"), "part");
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(first)) = &result {
+                assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+                if cap != u64::MAX {
+                    assert_eq!(first.limit, policy.limits.max_collection_items);
+                }
+                if first.operation != "allocate annotation stream handle" {
+                    let next = first.used.checked_add(first.additional).unwrap();
+                    assert!(next > policy.limits.max_collection_items);
+                }
+                assert!(matches!(ctx.finish_session(),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *first));
+            }
+            result
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "allocate annotation stream handle")
+    );
 }
 
 #[test]
@@ -312,31 +319,32 @@ fn fidelity_append_refuses_new_destination_nodes_without_mutation() {
 }
 
 #[test]
-fn retained_record_key_scan_preserves_work_refusal() {
+fn retained_record_consumption_preserves_work_refusal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    for _ in 0..128 {
-        let (_, records) = source("member").into_parts();
-        let mut input = SourceFidelity::default();
-        for (id, record) in records {
-            input.insert_retained_record(id, record).unwrap();
-        }
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = rescope_fidelity(&ctx, input, "part").unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
-            panic!("retained record scan must refuse");
-        };
-        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
-        assert!(matches!(ctx.finish_session(),
-            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
-        if first.operation == "scan F3Z retained record keys" {
-            return;
-        }
-        let next = first.used.checked_add(first.additional).unwrap();
-        assert!(next > policy.limits.max_work_units);
-        policy.limits.max_work_units = next;
-    }
-    panic!("retained record key admission must be reached");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "rescope F3Z retained records",
+        |cap| {
+            let (_, records) = source("member").into_parts();
+            let mut input = SourceFidelity::default();
+            for (id, record) in records {
+                input.insert_retained_record(id, record).unwrap();
+            }
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = rescope_fidelity(&ctx, input, "part");
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(first)) = &result {
+                assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+                assert!(
+                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *first)
+                );
+            }
+            result
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "rescope F3Z retained records")
+    );
 }

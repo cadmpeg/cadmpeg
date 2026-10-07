@@ -30,6 +30,7 @@ fn brep_value_walks_preserve_work_refusals() {
                     ctx,
                     &value,
                     &[],
+                    None,
                     &mut Vec::new(),
                 ),
             }
@@ -99,5 +100,22 @@ fn persistent_subentity_group_range_propagates_work_refusal() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == operation)
+    );
+}
+
+#[test]
+fn sketch_link_field_scan_preserves_work_refusal() {
+    use cadmpeg_ir::attributes::AttributeValue;
+    let values = [
+        AttributeValue::Integer(1),
+        AttributeValue::Integer(1),
+        AttributeValue::Integer(3),
+        AttributeValue::String("7 18446744073709551615 -1 0 2 0".into()),
+    ];
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D sketch link fields",
+        0,
+        |ctx| super::super::sketch_link_payload(ctx, &values),
     );
 }

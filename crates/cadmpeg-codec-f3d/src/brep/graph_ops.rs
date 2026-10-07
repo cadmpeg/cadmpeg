@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Select and qualify typed BREP rows through an admitted structural projection.
 
+use std::collections::BTreeSet;
+
 use super::Brep;
 use crate::records::recipes::CreationTimestamp;
 use crate::records::sketch_links::{PersistentDesignLink, PersistentSubentityTag, SketchCurveLink};
@@ -16,7 +18,7 @@ use serde_value::Value;
 
 pub(super) mod ordered;
 
-use cadmpeg_ir::ids::comparison::{compare, equal};
+use cadmpeg_ir::ids::comparison::equal;
 use ordered::position;
 
 pub(in crate::brep) struct AdjacencyRow {
@@ -37,32 +39,16 @@ fn contains(
 fn insert_id(
     ctx: &DecodeContext<'_>,
     values: &mut Vec<String>,
-    value: String,
+    value: &str,
+    copy_operation: &'static str,
     operation: &'static str,
 ) -> Result<bool, CodecError> {
     ctx.charge_work(0, operation)?;
-    let Err(index) = position(ctx, values, &value, String::as_str)? else {
+    let Err(index) = position(ctx, values, value, String::as_str)? else {
         return Ok(false);
     };
-    ctx.reserve_vec(values, 1, operation)?;
-    let moved_slots = u64_from_index(values.len() - index);
-    let item_bytes = u64_from_index(std::mem::size_of::<String>());
-    let moved_bytes = moved_slots.checked_mul(item_bytes).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "move F3D BREP graph IDs",
-            u64::MAX / item_bytes,
-            moved_slots,
-        )
-    })?;
-    let move_work = moved_bytes.checked_add(moved_slots).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "move F3D BREP graph IDs",
-            u64::MAX - moved_slots,
-            moved_bytes,
-        )
-    })?;
-    ctx.charge_work(move_work, "move F3D BREP graph IDs")?;
-    values.insert(index, value);
+    let value = ctx.copy_retained_text(value, copy_operation)?;
+    ctx.insert_vec(values, index, value, operation)?;
     Ok(true)
 }
 
@@ -115,10 +101,13 @@ pub(super) fn collect_owned_ids(
     let _depth = ctx.enter_nested("walk F3D BREP owned IDs")?;
     ctx.charge_work(1, "walk F3D BREP owned IDs")?;
     if let Some(id) = entity_id(ctx, value, "walk F3D BREP owned IDs")? {
-        if !contains(ctx, owned, id, "find F3D BREP owned ID")? {
-            let id = ctx.copy_retained_text(id, "copy F3D BREP owned ID")?;
-            insert_id(ctx, owned, id, "index F3D BREP owned IDs")?;
-        }
+        insert_id(
+            ctx,
+            owned,
+            id,
+            "copy F3D BREP owned ID",
+            "index F3D BREP owned IDs",
+        )?;
     }
     match value {
         Value::Map(fields) => {
@@ -142,32 +131,41 @@ pub(super) fn collect_brep_references(
     ctx: &DecodeContext<'_>,
     value: &Value,
     owned: &[String],
+    owner: Option<&str>,
     references: &mut Vec<String>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("walk F3D BREP references")?;
     ctx.charge_work(1, "walk F3D BREP references")?;
     match value {
         Value::String(id) => {
-            if contains(ctx, owned, id, "walk F3D BREP references")?
-                && !contains(ctx, references, id, "walk F3D BREP references")?
+            if !owner
+                .map(|owner| equal(ctx, id, owner, "match F3D BREP reference owner"))
+                .transpose()?
+                .unwrap_or(false)
+                && contains(ctx, owned, id, "walk F3D BREP references")?
             {
-                let id = ctx.copy_retained_text(id, "copy F3D BREP adjacency reference")?;
-                insert_id(ctx, references, id, "collect F3D BREP adjacency references")?;
+                insert_id(
+                    ctx,
+                    references,
+                    id,
+                    "copy F3D BREP adjacency reference",
+                    "collect F3D BREP adjacency references",
+                )?;
             }
         }
         Value::Map(fields) => {
             for (key, item) in ctx.admit_iter(fields, "walk F3D BREP references")? {
-                collect_brep_references(ctx, key, owned, references)?;
-                collect_brep_references(ctx, item, owned, references)?;
+                collect_brep_references(ctx, key, owned, owner, references)?;
+                collect_brep_references(ctx, item, owned, owner, references)?;
             }
         }
         Value::Seq(items) => {
             for item in ctx.admit_iter(items, "walk F3D BREP references")? {
-                collect_brep_references(ctx, item, owned, references)?;
+                collect_brep_references(ctx, item, owned, owner, references)?;
             }
         }
         Value::Option(Some(item)) | Value::Newtype(item) => {
-            collect_brep_references(ctx, item, owned, references)?;
+            collect_brep_references(ctx, item, owned, owner, references)?;
         }
         _ => {}
     }
@@ -185,45 +183,27 @@ pub(super) fn insert_brep_adjacency(
         Ok(index) => index,
         Err(index) => {
             let source = ctx.copy_retained_text(source, "copy F3D BREP adjacency source")?;
-            ctx.reserve_vec(adjacency, 1, "index F3D BREP adjacency")?;
-            let moved_slots = u64_from_index(adjacency.len() - index);
-            let item_bytes = u64_from_index(std::mem::size_of::<AdjacencyRow>());
-            let moved_bytes = moved_slots.checked_mul(item_bytes).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "move F3D BREP adjacency rows",
-                    u64::MAX / item_bytes,
-                    moved_slots,
-                )
-            })?;
-            let move_work = moved_bytes.checked_add(moved_slots).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "move F3D BREP adjacency rows",
-                    u64::MAX - moved_slots,
-                    moved_bytes,
-                )
-            })?;
-            ctx.charge_work(move_work, "move F3D BREP adjacency rows")?;
-            adjacency.insert(
+            ctx.insert_vec(
+                adjacency,
                 index,
                 AdjacencyRow {
                     source,
                     targets: Vec::new(),
                 },
-            );
+                "index F3D BREP adjacency",
+            )?;
             index
         }
     };
-    let mut query_storage = ctx.reserve_scoped(0, "copy F3D BREP adjacency query")?;
-    let query = query_storage
-        .with_storage(|| ctx.copy_retained_text(source, "copy F3D BREP adjacency query"))?;
-    if position(ctx, adjacency, &query, |row| row.source.as_str())? != Ok(source_index) {
-        return Err(CodecError::malformed("BREP adjacency source is absent"));
-    }
     let targets = &mut adjacency[source_index].targets;
-    if !contains(ctx, targets, target, "find F3D BREP adjacent ID")? {
-        let target = ctx.copy_retained_text(target, "copy F3D BREP adjacency target")?;
-        insert_id(ctx, targets, target, "collect F3D BREP adjacent IDs")?;
-    }
+    insert_id(
+        ctx,
+        targets,
+        target,
+        "copy F3D BREP adjacency target",
+        "collect F3D BREP adjacent IDs",
+    )?;
+
     Ok(())
 }
 
@@ -236,8 +216,7 @@ fn adjacency(
     let Value::Map(fields) = value else {
         return Err(CodecError::malformed("BREP projection must be an object"));
     };
-    for value in fields.values() {
-        ctx.charge_work(1, "walk F3D BREP arenas")?;
+    for (_, value) in ctx.admit_iter(fields, "walk F3D BREP arenas")? {
         let Value::Seq(items) = value else {
             continue;
         };
@@ -246,31 +225,8 @@ fn adjacency(
                 continue;
             };
             let mut references = Vec::new();
-            collect_brep_references(ctx, item, owned, &mut references)?;
-            ctx.charge_work(0, "remove F3D BREP self reference")?;
-            if let Ok(index) = position(ctx, &references, id, String::as_str)? {
-                let moved_slots = u64_from_index(references.len() - index - 1);
-                let item_bytes = u64_from_index(std::mem::size_of::<String>());
-                let moved_bytes = moved_slots.checked_mul(item_bytes).ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "remove F3D BREP self reference",
-                        u64::MAX / item_bytes,
-                        moved_slots,
-                    )
-                })?;
-                let move_work = moved_bytes.checked_add(moved_slots).ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "remove F3D BREP self reference",
-                        u64::MAX - moved_slots,
-                        moved_bytes,
-                    )
-                })?;
-                ctx.charge_work(move_work, "remove F3D BREP self reference")?;
-                references.remove(index);
-            }
-            ctx.charge_work(0, "remove F3D BREP self reference")?;
-            for reference in references {
-                ctx.charge_work(1, "walk F3D BREP adjacency references")?;
+            collect_brep_references(ctx, item, owned, Some(id), &mut references)?;
+            for reference in ctx.admit_iter(references, "walk F3D BREP adjacency references")? {
                 insert_brep_adjacency(ctx, &mut adjacency, id, reference.as_ref())?;
                 insert_brep_adjacency(ctx, &mut adjacency, reference.as_ref(), id)?;
             }
@@ -364,7 +320,7 @@ fn select_rows<T>(
     ctx: &DecodeContext<'_>,
     rows: Vec<T>,
     items: &[Value],
-    reachable: &[String],
+    reachable: &BTreeSet<String>,
 ) -> Result<Vec<T>, CodecError> {
     if rows.len() != items.len() {
         return Err(CodecError::malformed(
@@ -372,17 +328,15 @@ fn select_rows<T>(
         ));
     }
     let mut retained = Vec::new();
-    for (row, item) in rows.into_iter().zip(items) {
-        ctx.charge_work(1, "select F3D retained BREP rows")?;
+    for (row, item) in ctx
+        .admit_iter(rows, "select F3D retained BREP rows")?
+        .zip(ctx.admit_iter(items, "select F3D retained BREP projection rows")?)
+    {
         let selected = match entity_id(ctx, item, "select F3D retained BREP rows")? {
-            Some(id) => contains(ctx, reachable, id, "select F3D retained BREP rows")?,
+            Some(id) => ctx.contains_btree_set(reachable, id, "select F3D retained BREP rows")?,
             None => true,
         };
         if selected {
-            ctx.charge_work(
-                u64_from_index(std::mem::size_of::<T>()),
-                "move F3D retained BREP row",
-            )?;
             ctx.push_vec(&mut retained, row, "collect F3D retained BREP rows")?;
         }
     }
@@ -392,7 +346,7 @@ fn select_rows<T>(
 fn target_selected(
     ctx: &DecodeContext<'_>,
     target: &AttributeTarget,
-    reachable: &[String],
+    reachable: &BTreeSet<String>,
 ) -> Result<bool, CodecError> {
     let id = match target {
         AttributeTarget::Document => return Ok(true),
@@ -404,21 +358,19 @@ fn target_selected(
         AttributeTarget::Edge(id) => id.as_str(),
         AttributeTarget::Vertex(id) => id.as_str(),
     };
-    contains(ctx, reachable, id, "select F3D retained attribute target")
+    ctx.contains_btree_set(reachable, id, "select F3D retained attribute target")
 }
 
 fn select_links<T>(
     ctx: &DecodeContext<'_>,
     rows: Vec<T>,
-    reachable: &[String],
+    reachable: &BTreeSet<String>,
     target: impl Fn(&T) -> &AttributeTarget,
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
     let mut retained = Vec::new();
-    for row in rows {
-        ctx.charge_work(1, operation)?;
+    for row in ctx.admit_iter(rows, operation)? {
         if target_selected(ctx, target(&row), reachable)? {
-            ctx.charge_work(u64_from_index(std::mem::size_of::<T>()), operation)?;
             ctx.push_vec(&mut retained, row, operation)?;
         }
     }
@@ -436,47 +388,41 @@ impl Brep {
         let reachable = ctx.with_scoped_storage("index F3D retained BREP graph", || {
             let mut owned = Vec::new();
             collect_owned_ids(ctx, &projected, &mut owned)?;
-            let mut native_bodies = Vec::new();
-            for native in &self.asm.body_native_keys {
-                ctx.charge_work(1, "walk F3D native BREP bodies")?;
-                let body =
-                    ctx.copy_retained_text(native.body.as_str(), "copy F3D native BREP body")?;
-                insert_id(
-                    ctx,
+            let mut native_bodies = BTreeSet::new();
+            for native in
+                ctx.admit_iter(&self.asm.body_native_keys, "walk F3D native BREP bodies")?
+            {
+                ctx.insert_btree_set(
                     &mut native_bodies,
-                    body,
+                    native.body.as_str(),
                     "index F3D native BREP bodies",
                 )?;
             }
-            let mut reachable = Vec::new();
+            let mut reachable = BTreeSet::new();
             for (body, _) in ctx.admit_iter(
                 self.body_selectors_for(ctx, selected_keys)?,
                 "walk F3D selected BREP roots",
             )? {
-                insert_id(
-                    ctx,
+                ctx.insert_btree_set(
                     &mut reachable,
                     body.into_string(),
                     "collect F3D selected BREP roots",
                 )?;
             }
-            for body in &self.asm.bodies {
-                ctx.charge_work(1, "walk F3D neutral BREP roots")?;
-                if !contains(
-                    ctx,
+            for body in ctx.admit_iter(&self.asm.bodies, "walk F3D neutral BREP roots")? {
+                if !ctx.contains_btree_set(
                     &native_bodies,
                     body.id.as_str(),
                     "find F3D native BREP root",
                 )? {
                     let id =
                         ctx.copy_retained_text(body.id.as_str(), "copy F3D neutral BREP root")?;
-                    insert_id(ctx, &mut reachable, id, "collect F3D neutral BREP roots")?;
+                    ctx.insert_btree_set(&mut reachable, id, "collect F3D neutral BREP roots")?;
                 }
             }
             let adjacency = adjacency(ctx, &projected, &owned)?;
             let mut pending = Vec::new();
-            for id in &reachable {
-                ctx.charge_work(1, "walk F3D BREP pending roots")?;
+            for id in ctx.admit_iter(&reachable, "walk F3D BREP pending roots")? {
                 ctx.push_vec(
                     &mut pending,
                     ctx.copy_retained_text(id.as_ref(), "copy F3D BREP pending root")?,
@@ -492,10 +438,13 @@ impl Brep {
                     adjacent_ids.map_or(&[][..], Vec::as_slice),
                     "walk F3D BREP adjacent IDs",
                 )? {
-                    let adjacent = adjacent.as_ref();
-                    if !contains(ctx, &reachable, adjacent, "find F3D reachable BREP ID")? {
-                        insert_id(
-                            ctx,
+                    let adjacent: &str = adjacent.as_ref();
+                    if !ctx.contains_btree_set(
+                        &reachable,
+                        adjacent,
+                        "find F3D reachable BREP ID",
+                    )? {
+                        ctx.insert_btree_set(
                             &mut reachable,
                             ctx.copy_retained_text(adjacent, "copy F3D reachable BREP ID")?,
                             "collect F3D reachable BREP IDs",
@@ -547,18 +496,11 @@ impl Brep {
             unknowns
         );
         let mut annotations = Vec::new();
-        for row in std::mem::take(&mut self.asm.annotation_records) {
-            ctx.charge_work(1, "walk F3D retained annotations")?;
-            if contains(
-                ctx,
-                &reachable.0,
-                &row.id,
-                "select F3D retained annotations",
-            )? {
-                ctx.charge_work(
-                    u64_from_index(std::mem::size_of_val(&row)),
-                    "move F3D retained annotation",
-                )?;
+        for row in ctx.admit_iter(
+            std::mem::take(&mut self.asm.annotation_records),
+            "walk F3D retained annotations",
+        )? {
+            if ctx.contains_btree_set(&reachable.0, &row.id, "select F3D retained annotations")? {
                 ctx.push_vec(&mut annotations, row, "collect F3D retained annotations")?;
             }
         }
@@ -608,23 +550,15 @@ impl Brep {
             let prefix =
                 ctx.format_retained(format_args!("{format}:"), "retain F3D BREP scheme prefix")?;
             let mut replacements = Vec::new();
-            for id in owned {
-                ctx.charge_work(1, "walk F3D BREP replacements")?;
+            for id in ctx.admit_iter(owned, "walk F3D BREP replacements")? {
                 let source = id.as_str();
-                let suffix = match source.get(..prefix.len()) {
-                    Some(start)
-                        if compare(ctx, start, &prefix, "match F3D BREP scheme prefix")?
-                            .is_eq() =>
-                    {
-                        source.get(prefix.len()..).unwrap_or(source)
-                    }
-                    _ => source,
-                };
+                let suffix = ctx
+                    .strip_prefix(source, &prefix, "match F3D BREP scheme prefix")?
+                    .unwrap_or(source);
                 let replacement = ctx.format_retained(
                     format_args!("{format}:brep/{namespace}/{suffix}"),
                     "retain F3D qualified BREP ID",
                 )?;
-                ctx.charge_work(1, "move F3D BREP replacement")?;
                 ctx.push_vec(
                     &mut replacements,
                     (id, replacement),
@@ -852,11 +786,11 @@ mod tests {
     fn brep_id_insertion_refuses_before_moving_slots() {
         let error = crate::test_support::resource_refusal_at(
             ResourceDimension::WorkUnits,
-            "move F3D BREP graph IDs",
-            0,
+            "index test IDs",
+            1,
             |ctx| {
                 let mut values = vec!["b".to_owned(), "c".to_owned()];
-                let result = insert_id(ctx, &mut values, "a".to_owned(), "index test IDs");
+                let result = insert_id(ctx, &mut values, "a", "copy test ID", "index test IDs");
                 assert_eq!(values, ["b", "c"]);
                 result
             },
@@ -875,8 +809,8 @@ mod tests {
     fn brep_adjacency_insertion_refuses_before_moving_rows() {
         let error = crate::test_support::resource_refusal_at(
             ResourceDimension::WorkUnits,
-            "move F3D BREP adjacency rows",
-            0,
+            "index F3D BREP adjacency",
+            1,
             |ctx| {
                 let mut rows = vec![
                     AdjacencyRow {
@@ -909,24 +843,18 @@ mod tests {
     }
 
     #[test]
-    fn brep_self_reference_removal_preserves_move_refusal() {
+    fn brep_adjacency_excludes_self_references() {
         let value =
             serde_value::to_value(serde_json::json!({"bodies":[{"id":"a","link":"b"}]})).unwrap();
         let owned = vec!["a".to_owned(), "b".to_owned()];
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::WorkUnits,
-            "remove F3D BREP self reference",
-            0,
-            |ctx| adjacency(ctx, &value, &owned),
-        );
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("self-reference removal must refuse");
-        };
-        // One shifted slot costs one visit and its inline String bytes.
-        assert_eq!(
-            limit.additional,
-            1 + u64::try_from(std::mem::size_of::<String>()).unwrap()
-        );
+        crate::test_support::with_decode_context(|ctx| {
+            let rows = adjacency(ctx, &value, &owned).unwrap();
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows[0].source, "a");
+            assert_eq!(rows[0].targets, ["b"]);
+            assert_eq!(rows[1].source, "b");
+            assert_eq!(rows[1].targets, ["a"]);
+        });
     }
 
     #[test]

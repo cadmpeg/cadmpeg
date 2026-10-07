@@ -287,7 +287,10 @@ impl MergeSession<'_, '_> {
             if component_report.transfer.geometry_transferred() {
                 parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
             }
-            for loss in &mut component_report.losses {
+            for loss in self
+                .ctx
+                .admit_iter(&mut component_report.losses, "scope F3Z component losses")?
+            {
                 loss.message = self.ctx.format_retained(
                     format_args!("xref {label}: {}", loss.message),
                     "prefix F3Z component loss",
@@ -320,7 +323,7 @@ fn reparent_component_roots(
     occurrences: &mut [cadmpeg_ir::products::Occurrence],
     parent: &cadmpeg_ir::ids::OccurrenceId,
 ) -> Result<(), CodecError> {
-    for occurrence in occurrences {
+    for occurrence in ctx.admit_iter(occurrences, "reparent F3Z root occurrences")? {
         if matches!(
             occurrence.parent,
             cadmpeg_ir::products::OccurrenceParent::Root {}
@@ -341,37 +344,29 @@ fn append_feature_history(
     parent: &Model,
     component: &mut Model,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(component.features.len()),
-        "scan F3Z component feature ordinals",
-    )?;
-    let Some(component_minimum) = component
-        .features
-        .iter()
+    let Some(component_minimum) = ctx
+        .min_by(
+            &component.features,
+            |left, right| Ok(left.ordinal.cmp(&right.ordinal)),
+            "scan F3Z component feature ordinals",
+        )?
         .map(|feature| feature.ordinal)
-        .min()
     else {
         return Ok(());
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(parent.features.len()),
-        "scan F3Z parent feature ordinals",
-    )?;
-    let next = parent
-        .features
-        .iter()
-        .map(|feature| feature.ordinal)
-        .max()
-        .map_or(Ok(0), |ordinal| {
-            ordinal.checked_add(1).ok_or_else(|| {
-                CodecError::Malformed("merged F3Z feature ordinal exceeds u64::MAX".into())
-            })
+    let next = ctx
+        .max_by(
+            &parent.features,
+            |left, right| Ok(left.ordinal.cmp(&right.ordinal)),
+            "scan F3Z parent feature ordinals",
+        )?
+        .map_or(Ok(0), |feature| {
+            feature
+                .ordinal
+                .checked_add(1)
+                .ok_or_else(|| CodecError::malformed("merged F3Z feature ordinal exceeds u64::MAX"))
         })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(component.features.len()),
-        "rewrite F3Z feature ordinals",
-    )?;
-    for feature in &mut component.features {
+    for feature in ctx.admit_iter(&mut component.features, "rewrite F3Z feature ordinals")? {
         feature.ordinal = feature
             .ordinal
             .checked_sub(component_minimum)
@@ -388,7 +383,7 @@ fn rescope_fidelity(
     source: SourceFidelity,
     occurrence: &str,
 ) -> Result<SourceFidelity, CodecError> {
-    let (mut annotations, mut records) = source.into_parts();
+    let (mut annotations, records) = source.into_parts();
     annotations
         .map_ids(
             ctx,
@@ -401,14 +396,15 @@ fn rescope_fidelity(
         .map_err(CodecError::from)?;
     // The occurrence is one owner component. Escape its separators so two
     // different occurrences cannot share an owner by shifting a path boundary.
+    let (escaped_owner, _owner_storage) = escaped_occurrence_component(ctx, occurrence)?;
     let owner = cadmpeg_ir::StreamName::try_from(ctx.format_retained(
-        format_args!("f3d:xref/{}/", EscapedOccurrenceComponent(occurrence)),
+        format_args!("f3d:xref/{escaped_owner}/"),
         "retain F3Z fidelity owner",
     )?)
     .map_err(CodecError::malformed)?;
     let provenance = std::mem::take(&mut annotations.provenance);
     let mut builder = AnnotationBuilder::resume(annotations);
-    for (id, provenance) in ctx.admit_iter(&provenance, "rescope F3Z annotation provenance")? {
+    for (id, provenance) in ctx.admit_iter(provenance, "rescope F3Z annotation provenance")? {
         let stream = cadmpeg_ir::StreamName::try_from(ctx.format_retained(
             format_args!("{}{}", owner.as_str(), provenance.stream()),
             "retain F3Z provenance stream",
@@ -417,31 +413,20 @@ fn rescope_fidelity(
         let stream = StreamHandle::new(ctx, stream, "allocate annotation stream handle")?;
         builder.note_owned(
             ctx,
-            ctx.copy_retained_text(id, "copy F3Z provenance identity")?,
+            id,
             &stream,
             provenance.offset,
             provenance.tag.as_deref(),
         )?;
     }
     let mut rescoped = SourceFidelity::with_annotations(builder.build());
-    let record_key_collection = ctx.collect_scoped_texts(
-        ctx.admit_iter(&records, "scan F3Z retained record keys")?
-            .map(|(id, _)| id.as_str()),
-        "stage F3Z retained record keys",
-    )?;
-    let _record_key_storage = record_key_collection.1;
-    let record_keys = record_key_collection.0;
-    for id_text in ctx.admit_iter(&record_keys, "rescope F3Z retained records")? {
-        let record = ctx
-            .remove_btree_map(&mut records, id_text.as_str(), "take F3Z retained record")?
-            .ok_or_else(|| CodecError::malformed("staged F3Z retained record key is missing"))?;
-        let rescoped_text = match rescope_charged(ctx, id_text, occurrence)? {
-            Some(id) => id,
-            None => ctx.copy_retained_text(id_text, "copy F3Z retained record identity")?,
+    for (id_text, record) in ctx.admit_iter(records, "rescope F3Z retained records")? {
+        let id = match rescope_charged(ctx, id_text.as_str(), occurrence)? {
+            Some(text) => UnknownId::mint(text).map_err(|error| {
+                CodecError::malformed(format_args!("F3Z retained record {id_text}: {error}"))
+            })?,
+            None => id_text,
         };
-        let id = UnknownId::mint(rescoped_text).map_err(|error| {
-            CodecError::malformed(format_args!("F3Z retained record {id_text}: {error}"))
-        })?;
         let stream = cadmpeg_ir::StreamName::try_from(ctx.format_retained(
             format_args!("{}{}", owner.as_str(), record.stream()),
             "retain F3Z record stream",
@@ -457,7 +442,7 @@ fn occurrence_key(
     ctx: &DecodeContext<'_>,
     reference: &XrefReference,
 ) -> Result<String, CodecError> {
-    let role = EscapedOccurrenceComponent(&reference.neutron_role);
+    let (role, _role_storage) = escaped_occurrence_component(ctx, &reference.neutron_role)?;
     // `occurrence_ordinal` restarts for each Redirections reference. Keep the
     // source reference ordinal in the scope so two admitted rows carrying the
     // same role cannot merge their model or fidelity identities.
@@ -470,22 +455,32 @@ fn occurrence_key(
     )
 }
 
-struct EscapedOccurrenceComponent<'a>(&'a str);
-
-impl std::fmt::Display for EscapedOccurrenceComponent<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for character in self.0.chars() {
+fn escaped_occurrence_component<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    text: &str,
+) -> Result<(String, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("escape F3Z occurrence component", || {
+        let mut escaped = String::new();
+        for character in ctx.admit_iter(text, "scan F3Z occurrence component")? {
             if matches!(character, ':' | '#' | '%' | '/') || character.is_whitespace() {
                 let mut bytes = [0; 4];
                 for byte in character.encode_utf8(&mut bytes).as_bytes() {
-                    write!(formatter, "%{byte:02X}")?;
+                    ctx.append_formatted_retained(
+                        &mut escaped,
+                        format_args!("%{byte:02X}"),
+                        "escape F3Z occurrence component",
+                    )?;
                 }
             } else {
-                write!(formatter, "{character}")?;
+                ctx.append_formatted_retained(
+                    &mut escaped,
+                    format_args!("{character}"),
+                    "escape F3Z occurrence component",
+                )?;
             }
         }
-        Ok(())
-    }
+        Ok(escaped)
+    })
 }
 
 fn apply_occurrence_transform(
@@ -503,13 +498,7 @@ fn apply_occurrence_transform(
             "F3Z occurrence translation is not a finite affine transform"
         ))
     })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(model.bodies.len())
-            .checked_mul(48)
-            .ok_or_else(|| ctx.refuse_codec_limit("compose F3Z body transforms", 0, u64::MAX))?,
-        "compose F3Z body transforms",
-    )?;
-    for body in &mut model.bodies {
+    for body in ctx.admit_iter(&mut model.bodies, "compose F3Z body transforms")? {
         body.transform = Some(match body.transform {
             Some(local) => compose_transforms(occurrence, local)?,
             None => occurrence,
@@ -584,7 +573,9 @@ fn extend_native(
     else {
         return Ok(());
     };
-    let target = root.namespace_mut("f3d");
+    let target = ctx
+        .entry_btree_map(&mut root.0, "f3d".to_owned(), "select F3Z native namespace")?
+        .or_default();
     for name in crate::native::F3D_ARENA_NAMES
         .iter()
         .copied()
@@ -778,7 +769,7 @@ fn scope_identity_value(
             }
         }
         Value::Array(items) => {
-            for item in items {
+            for item in ctx.admit_iter(items, "walk F3Z native identity values")? {
                 if let Value::String(text) = item {
                     if let Some(rescoped) = rescope_charged(ctx, text, occurrence)? {
                         *text = rescoped;
@@ -808,7 +799,8 @@ fn scope_named_fields(
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("walk F3Z native identity fields")?;
     let field_name_collection = ctx.collect_scoped_texts(
-        fields.keys().map(String::as_str),
+        ctx.admit_iter(&*fields, "scan F3Z native identity field names")?
+            .map(|(key, _)| key.as_str()),
         "stage F3Z native identity field names",
     )?;
     let _field_storage = field_name_collection.1;
@@ -842,7 +834,7 @@ fn scope_named_values(
     match value {
         Value::Object(fields) => scope_named_fields(ctx, fields, names, occurrence)?,
         Value::Array(items) => {
-            for item in items {
+            for item in ctx.admit_iter(items, "walk F3Z native identity values")? {
                 scope_named_values(ctx, item, names, occurrence)?;
             }
         }

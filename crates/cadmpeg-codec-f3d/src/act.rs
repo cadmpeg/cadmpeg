@@ -282,7 +282,7 @@ pub(crate) fn decode(
             .ok_or_else(|| {
                 CodecError::Malformed("F3D ACT component-link count overflows".into())
             })?;
-        for link in links {
+        for link in ctx.admit_iter(links, "select F3D ACT root links")? {
             if let ComponentLink::Root(root) = link {
                 ctx.push_vec(&mut root_components, root, "collect F3D ACT roots")?;
             }
@@ -548,7 +548,7 @@ fn merge_entities(
 ) -> Result<Vec<ActEntity>, CodecError> {
     let mut table_storage = ctx.reserve_scoped(0, "index F3D ACT table entries")?;
     let mut table_by_index = BTreeMap::new();
-    for item in table {
+    for item in ctx.admit_iter(table, "scan F3D ACT table entries for merge")? {
         let record_index = item.record_index;
         if !ctx.insert_scoped_btree_map_if_vacant(
             &mut table_storage,
@@ -565,7 +565,7 @@ fn merge_entities(
     }
     let mut by_index_storage = ctx.reserve_scoped(0, "index F3D ACT entities")?;
     let mut by_index = BTreeMap::new();
-    for group in groups {
+    for group in ctx.admit_iter(groups, "scan F3D ACT groups for merge")? {
         let record_index = group.record_index;
         if ctx.contains_key_btree_map(
             &by_index,
@@ -629,7 +629,11 @@ fn merge_entities(
             "F3D ACTTable reference has no change group: {stream}:{record_index}"
         )));
     }
-    ctx.collect_vec(by_index.into_values(), "collect F3D ACT entities by index")
+    ctx.collect_vec(
+        ctx.admit_iter(by_index, "scan F3D ACT entities by index")?
+            .map(|(_, entity)| entity),
+        "collect F3D ACT entities by index",
+    )
 }
 
 fn decode_channel_group(
