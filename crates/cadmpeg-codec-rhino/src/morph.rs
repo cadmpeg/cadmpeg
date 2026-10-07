@@ -99,7 +99,8 @@ pub(crate) struct Morph {
     pub(crate) preserve_structure: bool,
 }
 
-fn anonymous<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn anonymous<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     offset: usize,
     end: usize,
@@ -110,7 +111,10 @@ fn anonymous<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(GeometryError::malformed(
             offset,
-            ctx.format_retained(format_args!("{family} is not anonymous"), "Rhino anonymous text")?,
+            ctx.format_retained(
+                format_args!("{family} is not anonymous"),
+                "Rhino anonymous text",
+            )?,
         ));
     }
     let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
@@ -137,7 +141,8 @@ fn captive_ids(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Vec<Uuid>, GeometryError> {
-    let (mut ids, next, major, minor) = anonymous(ctx, 
+    let (mut ids, next, major, minor) = anonymous(
+        ctx,
         data,
         reader.position(),
         reader.end(),
@@ -199,25 +204,25 @@ fn scale_interval(
     Ok(FiniteVector::from([start, end]))
 }
 
-fn optional_localizer<T>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn optional_localizer<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     kind: &str,
     parse: impl FnOnce(&mut BoundedReader<'_>) -> Result<T, GeometryError>,
 ) -> Result<Option<T>, GeometryError> {
-    let (label, _label_storage) = ctx.format_scoped(format_args!("localizer {kind}"), "Rhino localizer label")?;
-    let (mut child, next, major, minor) = anonymous(ctx, 
-        data,
-        reader.position(),
-        reader.end(),
-        archive,
-        &label,
-    )?;
+    let (label, _label_storage) =
+        ctx.format_scoped(format_args!("localizer {kind}"), "Rhino localizer label")?;
+    let (mut child, next, major, minor) =
+        anonymous(ctx, data, reader.position(), reader.end(), archive, &label)?;
     if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: child.position() - 8,
-            message: ctx.format_retained(format_args!("unsupported localizer-{kind} version {major}.{minor}"), "Rhino optional_localizer text")?,
+            message: ctx.format_retained(
+                format_args!("unsupported localizer-{kind} version {major}.{minor}"),
+                "Rhino optional_localizer text",
+            )?,
         });
     }
     let value = child.bool()?.then(|| parse(&mut child)).transpose()?;
@@ -233,8 +238,14 @@ fn localizer(
     scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Localizer, GeometryError> {
-    let (mut value, next, major, minor) =
-        anonymous(ctx, data, reader.position(), reader.end(), archive, "localizer")?;
+    let (mut value, next, major, minor) = anonymous(
+        ctx,
+        data,
+        reader.position(),
+        reader.end(),
+        archive,
+        "localizer",
+    )?;
     if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: value.position() - 8,
@@ -265,7 +276,8 @@ fn localizer(
     })
 }
 
-fn control_child<T>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn control_child<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -277,7 +289,10 @@ fn control_child<T>(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: child.position() - 8,
-            message: ctx.format_retained(format_args!("unsupported {label} version {major}.{minor}"), "Rhino control_child text")?,
+            message: ctx.format_retained(
+                format_args!("unsupported {label} version {major}.{minor}"),
+                "Rhino control_child text",
+            )?,
         });
     }
     let value = read(&mut child)?;
@@ -286,7 +301,8 @@ fn control_child<T>(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     Ok(value)
 }
 
-fn scaled_transform(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn scaled_transform(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<FiniteVector<16>, GeometryError> {
@@ -321,8 +337,14 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
 ) -> Result<Morph, GeometryError> {
     let data = expand.data();
-    let (mut outer, _next, major, minor) =
-        anonymous(expand.ctx(), data, range.start, range.end, archive, "morph control")?;
+    let (mut outer, _next, major, minor) = anonymous(
+        expand.ctx(),
+        data,
+        range.start,
+        range.end,
+        archive,
+        "morph control",
+    )?;
     if !matches!(major, 1 | 2) || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: range.start,
@@ -350,32 +372,58 @@ pub(crate) fn decode(
 
     let control = match outer.i32()? {
         1 => Control::Curve {
-            start: control_child(expand.ctx(), data, &mut outer, archive, "morph start control", |reader| {
-                crate::surfaces::read_nurbs_curve(expand.ctx(), reader, scale)
-            })?,
-            end: control_child(expand.ctx(), data, &mut outer, archive, "morph end control", |reader| {
-                crate::surfaces::read_nurbs_curve(expand.ctx(), reader, scale)
-            })?,
+            start: control_child(
+                expand.ctx(),
+                data,
+                &mut outer,
+                archive,
+                "morph start control",
+                |reader| crate::surfaces::read_nurbs_curve(expand.ctx(), reader, scale),
+            )?,
+            end: control_child(
+                expand.ctx(),
+                data,
+                &mut outer,
+                archive,
+                "morph end control",
+                |reader| crate::surfaces::read_nurbs_curve(expand.ctx(), reader, scale),
+            )?,
         },
         2 => Control::Surface {
-            start: control_child(expand.ctx(), data, &mut outer, archive, "morph start control", |reader| {
-                crate::surfaces::read_nurbs_surface(expand.ctx(), reader, scale)
-            })?,
-            end: control_child(expand.ctx(), data, &mut outer, archive, "morph end control", |reader| {
-                crate::surfaces::read_nurbs_surface(expand.ctx(), reader, scale)
-            })?,
+            start: control_child(
+                expand.ctx(),
+                data,
+                &mut outer,
+                archive,
+                "morph start control",
+                |reader| crate::surfaces::read_nurbs_surface(expand.ctx(), reader, scale),
+            )?,
+            end: control_child(
+                expand.ctx(),
+                data,
+                &mut outer,
+                archive,
+                "morph end control",
+                |reader| crate::surfaces::read_nurbs_surface(expand.ctx(), reader, scale),
+            )?,
         },
         3 => Control::Cage {
-            start_transform: control_child(expand.ctx(), 
+            start_transform: control_child(
+                expand.ctx(),
                 data,
                 &mut outer,
                 archive,
                 "morph start control",
                 |reader| scaled_transform(expand.ctx(), reader, scale),
             )?,
-            end: control_child(expand.ctx(), data, &mut outer, archive, "morph end control", |reader| {
-                cage_at(expand, reader, scale, archive)
-            })?,
+            end: control_child(
+                expand.ctx(),
+                data,
+                &mut outer,
+                archive,
+                "morph end control",
+                |reader| cage_at(expand, reader, scale, archive),
+            )?,
         },
         _ => {
             return Err(GeometryError::malformed(
@@ -416,7 +464,8 @@ fn localizers(
     scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Vec<Localizer>, GeometryError> {
-    let (mut list, list_next, list_major, list_minor) = anonymous(ctx, 
+    let (mut list, list_next, list_major, list_minor) = anonymous(
+        ctx,
         data,
         outer.position(),
         outer.end(),
@@ -752,7 +801,11 @@ pub(crate) fn project(
             ("cage", properties)
         }
     };
-    for (index, localizer) in ctx.admit_iter(&(morph.localizers)[..], "Rhino project traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (index, localizer) in ctx
+        .admit_iter(&(morph.localizers)[..], "Rhino project traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         let prefix = ctx.format_retained(
             format_args!("localizer_{index}"),
             "Rhino morph localizer prefix",
@@ -797,8 +850,12 @@ pub(crate) fn project(
         }
     }
     let key = ctx.copy_retained_text(key, "Rhino morph feature key")?;
-    let key = cadmpeg_ir::ids::IdentityKey::try_new(key)
-        .or_else(|error| Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(format_args!("{}", error), "Rhino project text")?)))?;
+    let key = cadmpeg_ir::ids::IdentityKey::try_new(key).or_else(|error| {
+        Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+            format_args!("{}", error),
+            "Rhino project text",
+        )?))
+    })?;
     let feature_id = FeatureId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "morph", "feature"),
         key,
@@ -835,7 +892,11 @@ pub(crate) fn project(
         format_args!("preserve_structure"),
         format_args!("{}", morph.preserve_structure),
     )?;
-    for (index, id) in ctx.admit_iter(&(morph.captive_ids)[..], "Rhino project traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (index, id) in ctx
+        .admit_iter(&(morph.captive_ids)[..], "Rhino project traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         if let Some(record) = resolve_captive(*id)? {
             let key = ctx.format_retained(
                 format_args!("captive_{index}_object"),

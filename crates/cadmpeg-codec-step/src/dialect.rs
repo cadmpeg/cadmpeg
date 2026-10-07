@@ -205,16 +205,34 @@ impl StepDialect {
     ///   that matches nothing this codec declares is an unrecognized
     ///   declaration, unlike making no claim at all. Arcs that do not read as a
     ///   numeric object identifier reach the same place, through the same call.
-    fn from_schema_identifier(ctx: &DecodeContext<'_>, identifier: &str, object_identifier: Option<&[u64]>) -> Result<Self, CodecError> {
-        let Some((name, object_identifier_text)) = split_schema_identifier(ctx, identifier)? else { return Ok(Self::Unknown); };
+    fn from_schema_identifier(
+        ctx: &DecodeContext<'_>,
+        identifier: &str,
+        object_identifier: Option<&[u64]>,
+    ) -> Result<Self, CodecError> {
+        let Some((name, object_identifier_text)) = split_schema_identifier(ctx, identifier)? else {
+            return Ok(Self::Unknown);
+        };
         let ap242_name = Part21Dialect::Ap242.schema_identifier();
         if ctx.eq_ignore_ascii_case(name, ap242_name, "STEP schema identifier case equality")? {
-            if object_identifier_text.is_none() { return Ok(Self::Part21(Part21Dialect::Ap242)); }
+            if object_identifier_text.is_none() {
+                return Ok(Self::Part21(Part21Dialect::Ap242));
+            }
             return Ok(Self::ap242_edition(object_identifier).map_or(Self::Unknown, Self::Part21));
         }
-        for row in [Part21Dialect::Schema(StepSchema::Ap203Edition1), Part21Dialect::Schema(StepSchema::Ap203Edition2), Part21Dialect::Schema(StepSchema::Ap214)] {
+        for row in [
+            Part21Dialect::Schema(StepSchema::Ap203Edition1),
+            Part21Dialect::Schema(StepSchema::Ap203Edition2),
+            Part21Dialect::Schema(StepSchema::Ap214),
+        ] {
             if let Some((candidate, _)) = split_schema_identifier(ctx, row.schema_identifier())? {
-                if ctx.eq_ignore_ascii_case(name, candidate, "STEP schema identifier case equality")? { return Ok(Self::Part21(row)); }
+                if ctx.eq_ignore_ascii_case(
+                    name,
+                    candidate,
+                    "STEP schema identifier case equality",
+                )? {
+                    return Ok(Self::Part21(row));
+                }
             }
         }
         Ok(Self::Unknown)
@@ -256,7 +274,9 @@ impl StepDialect {
         let first = exchange.schema_identifiers().next();
         let object_identifier = exchange.primary_schema_object_identifier(ctx)?;
         let dialect = match first {
-            Some(identifier) => Self::from_schema_identifier(ctx, identifier, object_identifier.as_deref())?,
+            Some(identifier) => {
+                Self::from_schema_identifier(ctx, identifier, object_identifier.as_deref())?
+            }
             None => Self::Unknown,
         };
 
@@ -358,7 +378,10 @@ with the entity vocabulary verified for {FORMAT}:{}",
 /// caller owns the exact resource identities, row-to-occurrence map,
 /// schema/unit/context agreement, conflict policy, and retention of both source
 /// graphs.
-pub(crate) fn refuse_alternate_encoding(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
+pub(crate) fn refuse_alternate_encoding(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<(), CodecError> {
     let encoding = if crate::codec::is_part26_hdf5(bytes) {
         AlternateEncoding::Part26Hdf5
     } else if crate::codec::is_part28_xml(ctx, bytes)? {
@@ -370,7 +393,10 @@ pub(crate) fn refuse_alternate_encoding(ctx: &cadmpeg_core::decode::DecodeContex
     };
     Err(CodecError::UnsupportedDialect {
         dialects: Box::new(DialectLayers::of(encoding.refused_match())),
-        message: ctx.copy_retained_text(encoding.refusal_message(), "STEP alternate encoding refusal message")?,
+        message: ctx.copy_retained_text(
+            encoding.refusal_message(),
+            "STEP alternate encoding refusal message",
+        )?,
     })
 }
 

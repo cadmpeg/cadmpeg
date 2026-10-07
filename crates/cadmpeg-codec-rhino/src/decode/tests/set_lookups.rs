@@ -13,7 +13,9 @@ fn fallback_emitted_identity_lookup_preserves_work_refusal() {
         LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
     ));
     let curves = ["rhino:test:curve#one", "rhino:test:curve#two"].map(|id| Curve {
-        id: CurveId::try_from(id).unwrap(), geometry: geometry.clone(), source_object: None,
+        id: CurveId::try_from(id).unwrap(),
+        geometry: geometry.clone(),
+        source_object: None,
     });
     // Two carrier visits, the first ID copy, and four empty-tree node passes precede the lookup.
     let node_bytes = 11 * std::mem::size_of::<String>()
@@ -43,7 +45,8 @@ fn fallback_self_link_equality_preserves_refusal() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let mut links = Vec::new();
-    let error = super::super::append_link_to_record(&ctx, "test:link#1", &mut links, "test:link#1").unwrap_err();
+    let error = super::super::append_link_to_record(&ctx, "test:link#1", &mut links, "test:link#1")
+        .unwrap_err();
     let CodecError::ResourceLimit(refusal) = error else {
         panic!("self-link comparison must preserve its resource refusal");
     };

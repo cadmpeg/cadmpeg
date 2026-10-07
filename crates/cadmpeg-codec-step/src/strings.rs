@@ -24,11 +24,15 @@ pub(crate) enum StringDecodeFailure {
 }
 
 impl From<CodecError> for StringDecodeFailure {
-    fn from(error: CodecError) -> Self { Self::Resource(error) }
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
 }
 
 impl From<StringError> for StringDecodeFailure {
-    fn from(error: StringError) -> Self { Self::Invalid(error) }
+    fn from(error: StringError) -> Self {
+        Self::Invalid(error)
+    }
 }
 
 pub(crate) fn decode_with_context(
@@ -42,21 +46,31 @@ pub(crate) fn decode_with_context(
         .retained_string(len, operation)
         .map_err(StringDecodeFailure::Resource)?;
 
-    decode_chars(ctx, input, level, |character| ctx.push_retained_char(&mut output, character, "STEP decoded string character").map_err(StringDecodeFailure::Resource))?;
+    decode_chars(ctx, input, level, |character| {
+        ctx.push_retained_char(&mut output, character, "STEP decoded string character")
+            .map_err(StringDecodeFailure::Resource)
+    })?;
     Ok(output)
 }
 
-fn decoded_len(ctx: &DecodeContext<'_>, input: &[u8], level: ImplementationLevel) -> Result<usize, StringDecodeFailure> {
+fn decoded_len(
+    ctx: &DecodeContext<'_>,
+    input: &[u8],
+    level: ImplementationLevel,
+) -> Result<usize, StringDecodeFailure> {
     // One source byte expands to at most two UTF-8 bytes, so this sum fits usize.
     let mut len = 0usize;
     decode_chars(ctx, input, level, |character| {
-        len = len.checked_add(character.len_utf8()).ok_or_else(|| ctx.refuse_codec_limit("STEP decoded string byte count", 0, u64::MAX))?;
+        len = len
+            .checked_add(character.len_utf8())
+            .ok_or_else(|| ctx.refuse_codec_limit("STEP decoded string byte count", 0, u64::MAX))?;
         Ok(())
     })?;
     Ok(len)
 }
 
-fn decode_chars(ctx: &DecodeContext<'_>, 
+fn decode_chars(
+    ctx: &DecodeContext<'_>,
     input: &[u8],
     level: ImplementationLevel,
     mut emit: impl FnMut(char) -> Result<(), StringDecodeFailure>,
@@ -126,11 +140,17 @@ fn decode_chars(ctx: &DecodeContext<'_>,
                         offset: start + error.valid_up_to(),
                         message: "invalid UTF-8 direct string bytes".into(),
                     })?;
-                    for character in ctx.admit_iter(text, "STEP decode chars traversal").map_err(CodecError::from)? {
+                    for character in ctx
+                        .admit_iter(text, "STEP decode chars traversal")
+                        .map_err(CodecError::from)?
+                    {
                         emit(character)?;
                     }
                 } else {
-                    for byte in ctx.admit_iter(direct, "STEP decode chars view traversal").map_err(cadmpeg_core::CodecError::from)? {
+                    for byte in ctx
+                        .admit_iter(direct, "STEP decode chars view traversal")
+                        .map_err(cadmpeg_core::CodecError::from)?
+                    {
                         emit(char::from(*byte))?;
                     }
                 }
@@ -140,7 +160,12 @@ fn decode_chars(ctx: &DecodeContext<'_>,
     Ok(())
 }
 
-fn decode_page_byte(ctx: &DecodeContext<'_>, page: u8, byte: u8, offset: usize) -> Result<char, StringDecodeFailure> {
+fn decode_page_byte(
+    ctx: &DecodeContext<'_>,
+    page: u8,
+    byte: u8,
+    offset: usize,
+) -> Result<char, StringDecodeFailure> {
     let part = page - b'A' + 1;
     if byte < 0xa0 || part == 1 {
         return Ok(char::from(byte));
@@ -165,15 +190,20 @@ fn decode_page_byte(ctx: &DecodeContext<'_>, page: u8, byte: u8, offset: usize) 
     let bytes = [byte];
     let (decoded, had_errors) = encoding.decode_without_bom_handling(&bytes);
     if had_errors {
-        return error(ctx, 
+        return error(
+            ctx,
             offset,
             "S escape is undefined in the selected ISO 8859 part",
         );
     }
-    decoded.chars().next().ok_or_else(|| StringError {
-        offset,
-        message: "S escape decoded to no character".into(),
-    }).map_err(StringDecodeFailure::Invalid)
+    decoded
+        .chars()
+        .next()
+        .ok_or_else(|| StringError {
+            offset,
+            message: "S escape decoded to no character".into(),
+        })
+        .map_err(StringDecodeFailure::Invalid)
 }
 
 /// Encode text as bytes suitable between Part 21 apostrophe delimiters.
@@ -207,7 +237,8 @@ fn push_hex_digits(output: &mut String, bytes: &[u8]) {
     }
 }
 
-fn decode_wide(ctx: &DecodeContext<'_>, 
+fn decode_wide(
+    ctx: &DecodeContext<'_>,
     input: &[u8],
     start: usize,
     width: usize,
@@ -277,7 +308,11 @@ fn decode_wide(ctx: &DecodeContext<'_>,
     Ok(end + 4)
 }
 
-fn hex_byte(ctx: &DecodeContext<'_>, input: &[u8], offset: usize) -> Result<u8, StringDecodeFailure> {
+fn hex_byte(
+    ctx: &DecodeContext<'_>,
+    input: &[u8],
+    offset: usize,
+) -> Result<u8, StringDecodeFailure> {
     let Some(bytes) = input.get(offset..offset + 2) else {
         return error(ctx, offset, "truncated byte escape");
     };
@@ -287,10 +322,15 @@ fn hex_byte(ctx: &DecodeContext<'_>, input: &[u8], offset: usize) -> Result<u8, 
         .ok_or_else(|| StringError {
             offset,
             message: "byte escape contains non-hexadecimal digits".into(),
-        }).map_err(StringDecodeFailure::Invalid)
+        })
+        .map_err(StringDecodeFailure::Invalid)
 }
 
-fn error<T>(ctx: &DecodeContext<'_>, offset: usize, message: &str) -> Result<T, StringDecodeFailure> {
+fn error<T>(
+    ctx: &DecodeContext<'_>,
+    offset: usize,
+    message: &str,
+) -> Result<T, StringDecodeFailure> {
     Err(StringDecodeFailure::Invalid(StringError {
         offset,
         message: ctx.copy_retained_text(message, "STEP string error message")?,

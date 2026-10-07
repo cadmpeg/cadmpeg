@@ -598,8 +598,12 @@ pub(crate) fn v2_annotation_direct(
     let kind = reader.i32()?;
     let plane_offset = reader.position();
     let raw_plane = plane(ctx, reader)?;
-    if ctx.admit_iter(&(raw_plane
-        .origin)[..], "Rhino v2 annotation direct traversal").map_err(cadmpeg_core::CodecError::from)?
+    if ctx
+        .admit_iter(
+            &(raw_plane.origin)[..],
+            "Rhino v2 annotation direct traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .any(|value| value.abs() > V2_REALLY_BIG_NUMBER)
     {
         return Err(FramingError::structural(
@@ -623,7 +627,9 @@ pub(crate) fn v2_annotation_direct(
     for _ in 0..point_bytes / 16 {
         let point_offset = reader.position();
         let raw_point = point2(reader)?;
-        if ctx.admit_iter(&(raw_point)[..], "Rhino v2 annotation direct traversal").map_err(cadmpeg_core::CodecError::from)?
+        if ctx
+            .admit_iter(&(raw_point)[..], "Rhino v2 annotation direct traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .any(|value| value.abs() > V2_REALLY_BIG_NUMBER)
         {
             return Err(FramingError::structural(
@@ -1333,13 +1339,13 @@ pub(crate) fn apply_userdata(
         ..
     } = &mut dimension.definition
     {
-        if let Some(extra) =
-            ctx.admit_iter(userdata, "Rhino dimension extension traversal").map_err(cadmpeg_core::CodecError::from)?
-                .filter_map(UserdataDescriptor::known)
-                .find(|userdata| {
-                    userdata.class_uuid == V5_ANGULAR_EXTRA
-                        && userdata.item_uuid == V5_ANGULAR_EXTRA
-                })
+        if let Some(extra) = ctx
+            .admit_iter(userdata, "Rhino dimension extension traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .filter_map(UserdataDescriptor::known)
+            .find(|userdata| {
+                userdata.class_uuid == V5_ANGULAR_EXTRA && userdata.item_uuid == V5_ANGULAR_EXTRA
+            })
         {
             let (mut reader, _next, _minor) = anonymous(
                 data,
@@ -1363,7 +1369,9 @@ pub(crate) fn apply_userdata(
             reader.skip_remaining()?;
         }
     }
-    let Some(extra) = ctx.admit_iter(userdata, "Rhino dimension extension traversal").map_err(cadmpeg_core::CodecError::from)?
+    let Some(extra) = ctx
+        .admit_iter(userdata, "Rhino dimension extension traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
         .filter_map(UserdataDescriptor::known)
         .find(|userdata| userdata.class_uuid == V5_DIM_EXTRA && userdata.item_uuid == V5_DIM_EXTRA)
     else {
@@ -1770,12 +1778,22 @@ pub(crate) fn project(
     let key = cadmpeg_ir::ids::IdentityKey::try_new(
         ctx.copy_retained_text(key, "Rhino dimension identity key")?,
     )
-    .or_else(|error| Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(format_args!("{}", error), "Rhino project text")?)))?;
+    .or_else(|error| {
+        Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+            format_args!("{}", error),
+            "Rhino project text",
+        )?))
+    })?;
     let annotation_id = SemanticAnnotationId::try_from(ctx.format_retained(
         format_args!("rhino:dimension:annotation#{}", key.as_str()),
         "Rhino dimension annotation identity",
     )?)
-    .or_else(|error| Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(format_args!("{}", error), "Rhino project text")?)))?;
+    .or_else(|error| {
+        Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+            format_args!("{}", error),
+            "Rhino project text",
+        )?))
+    })?;
     let mut text = Vec::new();
     if !dimension.user_text.is_empty() {
         ctx.reserve_vec(&mut text, 1, "Rhino dimension annotation text")?;
@@ -1856,7 +1874,8 @@ pub(crate) mod tests {
     fn shifted_plane_keeps_computed_overflow_outside_source_admission() {
         let arena = cadmpeg_core::decode::DecodeArena::default();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
         let bytes = plane_bytes(
             [f64::MAX, 0.0, 0.0],
             [1.0, 0.0, 0.0],

@@ -1230,10 +1230,12 @@ fn plane_versions_consume_defaults_and_explicit_extents() {
     for (bad_frame, bad_range) in [(true, false), (false, true)] {
         let bytes = plane_payload(0x11, bad_frame, bad_range);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        assert!(
-            read_plane_surface_with_parameterization(&ctx, &mut reader, MillimeterScale::IDENTITY)
-                .is_err()
-        );
+        assert!(read_plane_surface_with_parameterization(
+            &ctx,
+            &mut reader,
+            MillimeterScale::IDENTITY
+        )
+        .is_err());
     }
 }
 

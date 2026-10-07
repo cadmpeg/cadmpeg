@@ -533,37 +533,56 @@ fn instance_unique_members_refuse_collection_limit() {
 #[test]
 fn warning_detail_trim_preserves_refusal_at_commit() {
     let scan = scan_with_objects(&[]);
-    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "Rhino warning detail trim", |cap| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
-        let result = (|| {
-            let expand = crate::mesh::MeshExpand::new(&ctx, root);
-            let mut transaction = super::super::DecodeContext::new(&scan, expand)?;
-            transaction.report.phase_warnings.push("geometry:  field detail  ");
-            transaction.commit().map(|_| ())
-        })();
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "Rhino warning detail trim",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+                    .unwrap();
+            let result = (|| {
+                let expand = crate::mesh::MeshExpand::new(&ctx, root);
+                let mut transaction = super::super::DecodeContext::new(&scan, expand)?;
+                transaction
+                    .report
+                    .phase_warnings
+                    .push("geometry:  field detail  ");
+                transaction.commit().map(|_| ())
+            })();
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }
 
 #[test]
 fn warning_family_split_preserves_refusal_at_commit() {
     let scan = scan_with_objects(&[]);
-    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "Rhino warning family split", |cap| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
-        let result = (|| {
-            let expand = crate::mesh::MeshExpand::new(&ctx, root);
-            let mut transaction = super::super::DecodeContext::new(&scan, expand)?;
-            transaction.report.phase_warnings.push("geometry: detail");
-            transaction.commit().map(|_| ())
-        })();
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "Rhino warning family split",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+                    .unwrap();
+            let result = (|| {
+                let expand = crate::mesh::MeshExpand::new(&ctx, root);
+                let mut transaction = super::super::DecodeContext::new(&scan, expand)?;
+                transaction.report.phase_warnings.push("geometry: detail");
+                transaction.commit().map(|_| ())
+            })();
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }

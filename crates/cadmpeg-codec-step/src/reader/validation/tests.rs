@@ -509,9 +509,12 @@ fn validation_point_number_parse_preserves_refusal() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let error = super::step_id(&ctx, "step:data:point#7").unwrap_err();
-    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else { panic!("numeric parse must preserve the refusal"); };
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("numeric parse must preserve the refusal");
+    };
     assert_eq!(refusal.operation, "STEP validation point number parse");
     assert_eq!(ctx.resource_refusal(), Some(refusal));
 }

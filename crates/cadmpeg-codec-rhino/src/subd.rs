@@ -105,7 +105,10 @@ pub(crate) enum SubdError {
     /// An owned core error rendered at the decode boundary.
     Core(cadmpeg_core::CodecError),
     /// A framing cause with the serialized SubD offset suffix.
-    Framing { error: FramingError, offset: Option<usize> },
+    Framing {
+        error: FramingError,
+        offset: Option<usize>,
+    },
     /// A decode allocation was refused.
     Resource(cadmpeg_core::decode::ResourceLimit),
 }
@@ -121,7 +124,9 @@ impl fmt::Display for SubdError {
             Self::Core(error) => error.fmt(formatter),
             Self::Framing { error, offset } => {
                 error.fmt(formatter)?;
-                if let Some(offset) = offset { write!(formatter, " at byte {offset}")?; }
+                if let Some(offset) = offset {
+                    write!(formatter, " at byte {offset}")?;
+                }
                 Ok(())
             }
             Self::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(*limit).fmt(formatter),
@@ -355,7 +360,8 @@ pub(crate) fn decode_mesh_proxy(
     Ok(decoded)
 }
 
-fn embedded_subd_end(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn embedded_subd_end(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<usize, SubdError> {
@@ -370,7 +376,8 @@ fn embedded_subd_end(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     }
 }
 
-fn read_proxy_sha1(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn read_proxy_sha1(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<[u8; 20], SubdError> {
@@ -604,7 +611,8 @@ fn read_vertex(
     }
     let saved_limit_marker = reader.u8()?;
     if saved_limit_marker != 0 {
-        let limit_count = capped_u32(ctx, 
+        let limit_count = capped_u32(
+            ctx,
             reader,
             face_count.min(MAX_SAVED_LIMIT_POINTS),
             "saved SubD limit-point count",
@@ -781,7 +789,8 @@ fn read_face(
             Addition::End => return Ok(RawFace { base, edges }),
             Addition::Absent => {}
             Addition::Present => {
-                let ten_count = capped_u32(ctx, reader, edge_count / 10, "SubD texture chunk count")?;
+                let ten_count =
+                    capped_u32(ctx, reader, edge_count / 10, "SubD texture chunk count")?;
                 if ten_count != edge_count / 10 {
                     return Err(malformed(
                         reader.position() - 4,
@@ -816,7 +825,8 @@ fn read_face(
     Ok(RawFace { base, edges })
 }
 
-fn read_base(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn read_base(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     expected_id: u32,
@@ -868,7 +878,9 @@ fn read_base(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
                 })
             }
             Addition::Absent => {}
-            Addition::Present => read_finite_values(ctx, reader, 3, "deprecated SubD displacement")?,
+            Addition::Present => {
+                read_finite_values(ctx, reader, 3, "deprecated SubD displacement")?
+            }
         }
         match consume_known_addition(ctx, reader, archive, 4, "SubD group ID")? {
             Addition::End => {
@@ -900,7 +912,8 @@ fn read_base(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     })
 }
 
-fn consume_known_addition(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn consume_known_addition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     expected: u8,
@@ -915,14 +928,18 @@ fn consume_known_addition(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
             value => {
                 return Err(malformed(
                     reader.position() - 1,
-                    ctx.format_retained(format_args!("invalid {label} addition size {value}"), "Rhino consume_known_addition text")?,
+                    ctx.format_retained(
+                        format_args!("invalid {label} addition size {value}"),
+                        "Rhino consume_known_addition text",
+                    )?,
                 ));
             }
         }
     }
 }
 
-fn finish_additions(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn finish_additions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<(), SubdError> {
@@ -936,7 +953,8 @@ fn finish_additions(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     }
 }
 
-fn read_record_end(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn read_record_end(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<(), SubdError> {
@@ -1021,23 +1039,38 @@ fn validate_level(
     let mut types = HashMap::new();
     ctx.reserve_map(&mut types, component_count, "Rhino SubD component types")
         .map_err(SubdError::from)?;
-    for vertex in ctx.admit_iter(&(level.vertices)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for vertex in ctx
+        .admit_iter(&(level.vertices)[..], "Rhino validate level traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         types.insert(vertex.base.archive_id, ComponentType::Vertex);
     }
-    for edge in ctx.admit_iter(&(level.edges)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for edge in ctx
+        .admit_iter(&(level.edges)[..], "Rhino validate level traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         types.insert(edge.base.archive_id, ComponentType::Edge);
     }
-    for face in ctx.admit_iter(&(level.faces)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for face in ctx
+        .admit_iter(&(level.faces)[..], "Rhino validate level traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         types.insert(face.base.archive_id, ComponentType::Face);
     }
     if types.len() != component_count {
         return Err(malformed(level.source_offset, "duplicate SubD archive ID"));
     }
-    for vertex in ctx.admit_iter(&(level.vertices)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for vertex in ctx
+        .admit_iter(&(level.vertices)[..], "Rhino validate level traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         resolve_all(&types, &vertex.edges, ComponentType::Edge)?;
         resolve_all(&types, &vertex.faces, ComponentType::Face)?;
     }
-    for edge in ctx.admit_iter(&(level.edges)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for edge in ctx
+        .admit_iter(&(level.edges)[..], "Rhino validate level traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         resolve_all(&types, &edge.vertices, ComponentType::Vertex)?;
         resolve_all(&types, &edge.faces, ComponentType::Face)?;
         if edge.vertices[0].archive_id == edge.vertices[1].archive_id {
@@ -1047,7 +1080,10 @@ fn validate_level(
             ));
         }
     }
-    for face in ctx.admit_iter(&(level.faces)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for face in ctx
+        .admit_iter(&(level.faces)[..], "Rhino validate level traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         resolve_all(&types, &face.edges, ComponentType::Edge)?;
         if face.edges.len() < 3 {
             return Err(malformed(
@@ -1060,7 +1096,10 @@ fn validate_level(
     let vertex_edges = incidence_from_edges(ctx, level)?;
     let vertex_faces = incidence_from_faces(ctx, level)?;
     let edge_faces = edge_face_incidence(ctx, level)?;
-    for vertex in ctx.admit_iter(&(level.vertices)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for vertex in ctx
+        .admit_iter(&(level.vertices)[..], "Rhino validate level traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         compare_incidence(
             ctx,
             &vertex.edges,
@@ -1074,7 +1113,10 @@ fn validate_level(
             "vertex-face",
         )?;
     }
-    for edge in ctx.admit_iter(&(level.edges)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for edge in ctx
+        .admit_iter(&(level.edges)[..], "Rhino validate level traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         compare_incidence(
             ctx,
             &edge.faces,
@@ -1083,13 +1125,21 @@ fn validate_level(
         )?;
     }
     if expected_level == 0 {
-        if let Some(vertex) = ctx.admit_iter(&(level.vertices)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)?.find(|vertex| vertex.tag.is_none()) {
+        if let Some(vertex) = ctx
+            .admit_iter(&(level.vertices)[..], "Rhino validate level traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .find(|vertex| vertex.tag.is_none())
+        {
             return Err(malformed(
                 vertex.base.source_offset,
                 "level-zero SubD vertex has unset tag",
             ));
         }
-        if let Some(edge) = ctx.admit_iter(&(level.edges)[..], "Rhino validate level traversal").map_err(cadmpeg_core::CodecError::from)?.find(|edge| edge.tag.is_none()) {
+        if let Some(edge) = ctx
+            .admit_iter(&(level.edges)[..], "Rhino validate level traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .find(|edge| edge.tag.is_none())
+        {
             return Err(malformed(
                 edge.base.source_offset,
                 "level-zero SubD edge has unset tag",
@@ -1110,7 +1160,10 @@ fn incidence_from_edges(
         "Rhino SubD vertex-edge map",
     )
     .map_err(SubdError::from)?;
-    for edge in ctx.admit_iter(&(level.edges)[..], "Rhino incidence from edges traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for edge in ctx
+        .admit_iter(&(level.edges)[..], "Rhino incidence from edges traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         for vertex in edge.vertices {
             insert_incidence(ctx, &mut result, vertex.archive_id, edge.base.archive_id)?;
         }
@@ -1125,7 +1178,10 @@ fn incidence_from_faces(
     let mut edges = HashMap::new();
     ctx.reserve_map(&mut edges, level.edges.len(), "Rhino SubD face edge lookup")
         .map_err(SubdError::from)?;
-    for edge in ctx.admit_iter(&(level.edges)[..], "Rhino incidence from faces traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for edge in ctx
+        .admit_iter(&(level.edges)[..], "Rhino incidence from faces traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         edges.insert(edge.base.archive_id, edge);
     }
     let mut result = HashMap::new();
@@ -1135,10 +1191,16 @@ fn incidence_from_faces(
         "Rhino SubD vertex-face map",
     )
     .map_err(SubdError::from)?;
-    for face in ctx.admit_iter(&(level.faces)[..], "Rhino incidence from faces traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for face in ctx
+        .admit_iter(&(level.faces)[..], "Rhino incidence from faces traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let mut first = None;
         let mut previous_end = None;
-        for edge_use in ctx.admit_iter(&(face.edges)[..], "Rhino incidence from faces traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for edge_use in ctx
+            .admit_iter(&(face.edges)[..], "Rhino incidence from faces traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             let edge = edges.get(&edge_use.archive_id).ok_or_else(|| {
                 malformed(face.base.source_offset, "face references missing SubD edge")
             })?;
@@ -1176,8 +1238,14 @@ fn edge_face_incidence(
     let mut result = HashMap::new();
     ctx.reserve_map(&mut result, level.edges.len(), "Rhino SubD edge-face map")
         .map_err(SubdError::from)?;
-    for face in ctx.admit_iter(&(level.faces)[..], "Rhino edge face incidence traversal").map_err(cadmpeg_core::CodecError::from)? {
-        for edge in ctx.admit_iter(&(face.edges)[..], "Rhino edge face incidence traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for face in ctx
+        .admit_iter(&(level.faces)[..], "Rhino edge face incidence traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
+        for edge in ctx
+            .admit_iter(&(face.edges)[..], "Rhino edge face incidence traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             if !insert_incidence(ctx, &mut result, edge.archive_id, face.base.archive_id)? {
                 return Err(malformed(
                     face.base.source_offset,
@@ -1202,14 +1270,18 @@ fn compare_incidence(
         "Rhino SubD serialized incidence",
     )
     .map_err(SubdError::from)?;
-    for pointer in ctx.admit_iter(serialized, "Rhino compare incidence traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for pointer in ctx
+        .admit_iter(serialized, "Rhino compare incidence traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         serialized_ids.insert(pointer.archive_id);
     }
     let empty = HashSet::new();
     if &serialized_ids != derived.unwrap_or(&empty) {
-        return Err(unpositioned(ctx.format_retained(format_args!(
-            "SubD {label} incidence is not reciprocal"
-        ), "Rhino compare_incidence text")?));
+        return Err(unpositioned(ctx.format_retained(
+            format_args!("SubD {label} incidence is not reciprocal"),
+            "Rhino compare_incidence text",
+        )?));
     }
     Ok(())
 }
@@ -1242,7 +1314,11 @@ fn materialize(
         "Rhino SubD vertex indices",
     )
     .map_err(SubdError::from)?;
-    for (index, vertex) in ctx.admit_iter(&(level.vertices)[..], "Rhino materialize traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (index, vertex) in ctx
+        .admit_iter(&(level.vertices)[..], "Rhino materialize traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         let index = u32::try_from(index)
             .map_err(|_| malformed(vertex.base.source_offset, "SubD vertex index overflow"))?;
         vertex_indices.insert(vertex.base.archive_id, index);
@@ -1254,7 +1330,11 @@ fn materialize(
         "Rhino SubD edge indices",
     )
     .map_err(SubdError::from)?;
-    for (index, edge) in ctx.admit_iter(&(level.edges)[..], "Rhino materialize traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (index, edge) in ctx
+        .admit_iter(&(level.edges)[..], "Rhino materialize traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         let index = u32::try_from(index)
             .map_err(|_| malformed(edge.base.source_offset, "SubD edge index overflow"))?;
         edge_indices.insert(edge.base.archive_id, index);
@@ -1317,7 +1397,12 @@ fn materialize(
                 ctx,
             )
             .map_err(SubdError::from)?
-            .or_else(|error| Err(malformed(edge.base.source_offset, ctx.format_retained(format_args!("{}", error), "Rhino materialize text")?)))?,
+            .or_else(|error| {
+                Err(malformed(
+                    edge.base.source_offset,
+                    ctx.format_retained(format_args!("{}", error), "Rhino materialize text")?,
+                ))
+            })?,
         );
     }
     let mut faces = ctx
@@ -1335,10 +1420,12 @@ fn materialize(
                 reversed: edge.direction,
             });
         }
-        faces.push(
-            SubdFace::new(face_edges)
-                .or_else(|error| Err(malformed(face.base.source_offset, ctx.format_retained(format_args!("{}", error), "Rhino materialize text")?)))?,
-        );
+        faces.push(SubdFace::new(face_edges).or_else(|error| {
+            Err(malformed(
+                face.base.source_offset,
+                ctx.format_retained(format_args!("{}", error), "Rhino materialize text")?,
+            ))
+        })?);
     }
     Ok(SubdSurface {
         id,
@@ -1346,7 +1433,12 @@ fn materialize(
         source_object: None,
         cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, Vec::new(), ctx)
             .map_err(SubdError::from)?
-            .or_else(|error| Err(malformed(level.source_offset, ctx.format_retained(format_args!("{}", error), "Rhino materialize text")?)))?,
+            .or_else(|error| {
+                Err(malformed(
+                    level.source_offset,
+                    ctx.format_retained(format_args!("{}", error), "Rhino materialize text")?,
+                ))
+            })?,
     })
 }
 
@@ -1377,23 +1469,50 @@ fn partition_count(start: u32, end: u32, offset: usize) -> Result<usize, SubdErr
     .map_err(|_| malformed(offset, "SubD partition conversion overflow"))
 }
 
-fn capped_u32(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>, cap: usize, label: &str) -> Result<usize, SubdError> {
+fn capped_u32(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    cap: usize,
+    label: &str,
+) -> Result<usize, SubdError> {
     let offset = reader.position();
-    let value = usize::try_from(reader.u32()?)
-        .or_else(|_| Err(malformed(offset, ctx.format_retained(format_args!("{label} conversion overflow"), "Rhino capped_u32 text")?)))?;
+    let value = usize::try_from(reader.u32()?).or_else(|_| {
+        Err(malformed(
+            offset,
+            ctx.format_retained(
+                format_args!("{label} conversion overflow"),
+                "Rhino capped_u32 text",
+            )?,
+        ))
+    })?;
     if value > cap {
-        return Err(malformed(offset, ctx.format_retained(format_args!("{label} exceeds cap"), "Rhino capped_u32 text")?));
+        return Err(malformed(
+            offset,
+            ctx.format_retained(format_args!("{label} exceeds cap"), "Rhino capped_u32 text")?,
+        ));
     }
     Ok(value)
 }
 
-fn point(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>, label: &str) -> Result<FinitePoint3, SubdError> {
+fn point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    label: &str,
+) -> Result<FinitePoint3, SubdError> {
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    FinitePoint3::new(Point3::new(values[0], values[1], values[2]))
-        .map_or_else(|| Err(malformed(reader.position() - 24, ctx.format_retained(format_args!("{label} is not finite"), "Rhino point text")?)), Ok)
+    FinitePoint3::new(Point3::new(values[0], values[1], values[2])).map_or_else(
+        || {
+            Err(malformed(
+                reader.position() - 24,
+                ctx.format_retained(format_args!("{label} is not finite"), "Rhino point text")?,
+            ))
+        },
+        Ok,
+    )
 }
 
-fn read_finite_values(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn read_finite_values(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     count: usize,
     label: &str,
@@ -1402,7 +1521,10 @@ fn read_finite_values(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         if !reader.f64()?.is_finite() {
             return Err(malformed(
                 reader.position() - 8,
-                ctx.format_retained(format_args!("{label} is not finite"), "Rhino read_finite_values text")?,
+                ctx.format_retained(
+                    format_args!("{label} is not finite"),
+                    "Rhino read_finite_values text",
+                )?,
             ));
         }
     }
@@ -1610,18 +1732,26 @@ fn read_sha1(
     finish_direct_chunk(ctx, parent, &chunk, reader, warnings)
 }
 
-fn expect_zero(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>, label: &str) -> Result<(), SubdError> {
+fn expect_zero(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    label: &str,
+) -> Result<(), SubdError> {
     if reader.u8()? == 0 {
         Ok(())
     } else {
         Err(malformed(
             reader.position() - 1,
-            ctx.format_retained(format_args!("{label} is not zero"), "Rhino expect_zero text")?,
+            ctx.format_retained(
+                format_args!("{label} is not zero"),
+                "Rhino expect_zero text",
+            )?,
         ))
     }
 }
 
-fn anonymous_chunk(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn anonymous_chunk(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &BoundedReader<'_>,
     archive: ArchiveVersion,
     label: &str,
@@ -1636,13 +1766,17 @@ fn anonymous_chunk(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(malformed(
             chunk.header_start,
-            ctx.format_retained(format_args!("expected bounded anonymous {label} chunk"), "Rhino anonymous_chunk text")?,
+            ctx.format_retained(
+                format_args!("expected bounded anonymous {label} chunk"),
+                "Rhino anonymous_chunk text",
+            )?,
         ));
     }
     Ok(chunk)
 }
 
-fn consume_anonymous(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn consume_anonymous(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     label: &str,

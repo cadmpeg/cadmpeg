@@ -278,8 +278,11 @@ fn acquire(root: View<'_>) -> &[u8] {
     root.window()
 }
 
-fn framing_error(ctx: &cadmpeg_core::decode::DecodeContext<'_>, error: FramingError) -> Result<CodecError, cadmpeg_core::CodecError> { Ok(
-    match error {
+fn framing_error(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    error: FramingError,
+) -> Result<CodecError, cadmpeg_core::CodecError> {
+    Ok(match error {
         FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
         FramingError::Truncated { offset, .. } => CodecError::truncated(
             cadmpeg_core::decode::SourceLocation {
@@ -288,15 +291,24 @@ fn framing_error(ctx: &cadmpeg_core::decode::DecodeContext<'_>, error: FramingEr
             },
             "rhino chunk framing",
         ),
-        other => CodecError::Malformed(ctx.format_retained(format_args!("{}", other), "Rhino framing_error text")?),
-    }
-) }
+        other => CodecError::Malformed(
+            ctx.format_retained(format_args!("{}", other), "Rhino framing_error text")?,
+        ),
+    })
+}
 
-fn checksum_children_warning(ctx: &cadmpeg_core::decode::DecodeContext<'_>, typecode: u32, offset: usize, error: &FramingError) -> Result<String, cadmpeg_core::CodecError> { Ok(
+fn checksum_children_warning(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    typecode: u32,
+    offset: usize,
+    error: &FramingError,
+) -> Result<String, cadmpeg_core::CodecError> {
+    Ok(
     ctx.format_retained(format_args!(
         "checksum child framing at offset {offset} for typecode {typecode:#x} could not be verified: {error}"
     ), "Rhino checksum_children_warning text")?
-) }
+)
+}
 
 fn checksum_warning(
     ctx: &DecodeContext<'_>,
@@ -306,7 +318,8 @@ fn checksum_warning(
     parent_end: usize,
     archive: ArchiveVersion,
 ) -> Result<Option<String>, CodecError> {
-    let chunk = chunk_at(data, offset, parent_end, archive, false).or_else(|error| Err(framing_error(ctx, error)?))?;
+    let chunk = chunk_at(data, offset, parent_end, archive, false)
+        .or_else(|error| Err(framing_error(ctx, error)?))?;
     let status = if typecode & TCODE_TABLE != 0
         || matches!(
             typecode,
@@ -340,11 +353,13 @@ fn checksum_warning(
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
-                return Ok(Some(checksum_children_warning(ctx, typecode, offset, &error)?));
+                return Ok(Some(checksum_children_warning(
+                    ctx, typecode, offset, &error,
+                )?));
             }
         };
-        let direct =
-            direct_checksum_ranges(ctx, &chunk.body(), &children).or_else(|error| Err(framing_error(ctx, error)?))?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children)
+            .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if matches!(
         typecode,
@@ -354,44 +369,52 @@ fn checksum_warning(
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
-                return Ok(Some(checksum_children_warning(ctx, typecode, offset, &error)?));
+                return Ok(Some(checksum_children_warning(
+                    ctx, typecode, offset, &error,
+                )?));
             }
         };
-        let direct =
-            direct_checksum_ranges(ctx, &chunk.body(), &children).or_else(|error| Err(framing_error(ctx, error)?))?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children)
+            .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_SETTINGS {
         let children = match render_settings_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
-                return Ok(Some(checksum_children_warning(ctx, typecode, offset, &error)?));
+                return Ok(Some(checksum_children_warning(
+                    ctx, typecode, offset, &error,
+                )?));
             }
         };
-        let direct =
-            direct_checksum_ranges(ctx, &chunk.body(), &children).or_else(|error| Err(framing_error(ctx, error)?))?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children)
+            .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
         let children = match settings_attributes_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
-                return Ok(Some(checksum_children_warning(ctx, typecode, offset, &error)?));
+                return Ok(Some(checksum_children_warning(
+                    ctx, typecode, offset, &error,
+                )?));
             }
         };
-        let direct =
-            direct_checksum_ranges(ctx, &chunk.body(), &children).or_else(|error| Err(framing_error(ctx, error)?))?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children)
+            .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_PLUGIN_LIST {
         let children = match plugin_list_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
-                return Ok(Some(checksum_children_warning(ctx, typecode, offset, &error)?));
+                return Ok(Some(checksum_children_warning(
+                    ctx, typecode, offset, &error,
+                )?));
             }
         };
-        let direct =
-            direct_checksum_ranges(ctx, &chunk.body(), &children).or_else(|error| Err(framing_error(ctx, error)?))?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children)
+            .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_USERDATA {
         let children = match checksum_children_through_class_end(
@@ -404,33 +427,39 @@ fn checksum_warning(
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
-                return Ok(Some(checksum_children_warning(ctx, typecode, offset, &error)?));
+                return Ok(Some(checksum_children_warning(
+                    ctx, typecode, offset, &error,
+                )?));
             }
         };
-        let direct =
-            direct_checksum_ranges(ctx, &chunk.body(), &children).or_else(|error| Err(framing_error(ctx, error)?))?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children)
+            .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_COMPRESSED_PREVIEW {
         let children = match compressed_preview_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
-                return Ok(Some(checksum_children_warning(ctx, typecode, offset, &error)?));
+                return Ok(Some(checksum_children_warning(
+                    ctx, typecode, offset, &error,
+                )?));
             }
         };
-        let direct =
-            direct_checksum_ranges(ctx, &chunk.body(), &children).or_else(|error| Err(framing_error(ctx, error)?))?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children)
+            .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_USER_TABLE_UUID {
         let children = match user_table_uuid_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
-                return Ok(Some(checksum_children_warning(ctx, typecode, offset, &error)?));
+                return Ok(Some(checksum_children_warning(
+                    ctx, typecode, offset, &error,
+                )?));
             }
         };
-        let direct =
-            direct_checksum_ranges(ctx, &chunk.body(), &children).or_else(|error| Err(framing_error(ctx, error)?))?;
+        let direct = direct_checksum_ranges(ctx, &chunk.body(), &children)
+            .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else {
         verify_checksum(ctx, data, &chunk)
@@ -467,7 +496,8 @@ fn mesh_checksum_children(
 }
 
 /// Skips the direct mesh-parameter prefix and returns its nested `SubD` child.
-fn mesh_subd_checksum_child(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn mesh_subd_checksum_child(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -496,7 +526,8 @@ fn mesh_subd_checksum_child(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader.u8()?;
     reader.bool()?;
 
-    Ok(Some(take_anonymous_checksum_child(ctx, 
+    Ok(Some(take_anonymous_checksum_child(
+        ctx,
         data,
         reader,
         archive,
@@ -549,7 +580,8 @@ fn settings_attributes_checksum_children(
     let minor = packed_version & 0x0f;
     let mut children = Vec::new();
     if minor >= 1 {
-        let child = take_anonymous_checksum_child(ctx, 
+        let child = take_anonymous_checksum_child(
+            ctx,
             data,
             &mut reader,
             archive,
@@ -564,7 +596,8 @@ fn settings_attributes_checksum_children(
     }
     if minor >= 3 {
         reader.skip(24)?;
-        let child = take_anonymous_checksum_child(ctx, 
+        let child = take_anonymous_checksum_child(
+            ctx,
             data,
             &mut reader,
             archive,
@@ -578,7 +611,8 @@ fn settings_attributes_checksum_children(
         reader.bool()?;
     }
     if minor >= 5 {
-        let child = take_anonymous_checksum_child(ctx, 
+        let child = take_anonymous_checksum_child(
+            ctx,
             data,
             &mut reader,
             archive,
@@ -660,7 +694,8 @@ fn compressed_preview_checksum_children(
             offset: reader.position(),
         })?;
     if first_size == contiguous_size {
-        if let Some(child) = compressed_preview_buffer_child(ctx, 
+        if let Some(child) = compressed_preview_buffer_child(
+            ctx,
             data,
             &mut reader,
             archive,
@@ -672,7 +707,8 @@ fn compressed_preview_checksum_children(
             children.push(child);
         }
     } else if image_size > 0 && first_size == palette_size {
-        if let Some(child) = compressed_preview_buffer_child(ctx, 
+        if let Some(child) = compressed_preview_buffer_child(
+            ctx,
             data,
             &mut reader,
             archive,
@@ -689,7 +725,8 @@ fn compressed_preview_checksum_children(
         if second_size != image_size {
             return Ok(Vec::new());
         }
-        if let Some(child) = compressed_preview_buffer_child(ctx, 
+        if let Some(child) = compressed_preview_buffer_child(
+            ctx,
             data,
             &mut reader,
             archive,
@@ -709,7 +746,8 @@ fn compressed_preview_checksum_children(
 
 /// Reads one `WriteCompressedBuffer` prefix and returns its nested deflate
 /// chunk, if method 1 is selected.
-fn compressed_preview_buffer_child(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn compressed_preview_buffer_child(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -726,18 +764,22 @@ fn compressed_preview_buffer_child(ctx: &cadmpeg_core::decode::DecodeContext<'_>
             reader.skip(size)?;
             Ok(None)
         }
-        1 => Ok(Some(take_anonymous_checksum_child(ctx, 
-            data, reader, archive, label,
+        1 => Ok(Some(take_anonymous_checksum_child(
+            ctx, data, reader, archive, label,
         )?)),
         method => Err(FramingError::structural(
             method_offset,
-            ctx.format_retained(format_args!("{label} has unsupported compression method {method}"), "Rhino compressed_preview_buffer_child text")?,
+            ctx.format_retained(
+                format_args!("{label} has unsupported compression method {method}"),
+                "Rhino compressed_preview_buffer_child text",
+            )?,
         )),
     }
 }
 
 /// Takes one long anonymous child and records its complete range.
-fn take_anonymous_checksum_child(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn take_anonymous_checksum_child(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -748,7 +790,10 @@ fn take_anonymous_checksum_child(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     if child.typecode != TCODE_ANONYMOUS || child.short() {
         return Err(FramingError::structural(
             start,
-            ctx.format_retained(format_args!("{label} must be an anonymous long chunk"), "Rhino take_anonymous_checksum_child text")?,
+            ctx.format_retained(
+                format_args!("{label} must be an anonymous long chunk"),
+                "Rhino take_anonymous_checksum_child text",
+            )?,
         ));
     }
     reader.skip(child.next_offset() - start)?;
@@ -822,10 +867,18 @@ fn list_checksum_children(
         cadmpeg_core::decode::u64_from_index(child_count),
         "Rhino view checksum child ranges",
     )
-    .or_else(|error| Err(match error {
-        CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
-        other => FramingError::structural(first_child_offset, ctx.format_retained(format_args!("{}", other), "Rhino list_checksum_children text")?),
-    }))?;
+    .or_else(|error| {
+        Err(match error {
+            CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
+            other => FramingError::structural(
+                first_child_offset,
+                ctx.format_retained(
+                    format_args!("{}", other),
+                    "Rhino list_checksum_children text",
+                )?,
+            ),
+        })
+    })?;
     for _ in 0..child_count {
         let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
         offset = child.next_offset();
@@ -1037,7 +1090,8 @@ fn scan_with_record_limit<'a>(
     let archive_start = header.start_offset;
     let comment_offset = archive_start + file_header::LEN;
     let comment = Record::from_chunk(
-        &chunk_at(data, comment_offset, data.len(), archive, false).or_else(|error| Err(framing_error(ctx, error)?))?,
+        &chunk_at(data, comment_offset, data.len(), archive, false)
+            .or_else(|error| Err(framing_error(ctx, error)?))?,
     );
     if comment.typecode != TCODE_COMMENT || comment.is_short() {
         return Err(CodecError::Malformed(
@@ -1073,7 +1127,8 @@ fn scan_with_record_limit<'a>(
     let mut history = Vec::new();
     let mut record_count = 0_usize;
     while offset < data.len() {
-        let chunk = chunk_at(data, offset, data.len(), archive, false).or_else(|error| Err(framing_error(ctx, error)?))?;
+        let chunk = chunk_at(data, offset, data.len(), archive, false)
+            .or_else(|error| Err(framing_error(ctx, error)?))?;
         if chunk.typecode == TCODE_ENDOFFILE {
             if !saw_properties || !saw_settings || !saw_objects {
                 return Err(CodecError::Malformed(
@@ -1141,9 +1196,22 @@ fn scan_with_record_limit<'a>(
         let writer_version = if table_base(chunk.typecode) == TCODE_OBJECTS {
             {
                 let mut version = None;
-                for table in ctx.admit_iter(&tables[..], "Rhino writer version table traversal")?.rev().filter(|table| table_base(table.typecode) == TCODE_PROPERTIES) {
-                    version = ctx.admit_iter(table.records.as_slice(), "Rhino writer version record traversal")?.rev().filter(|record| record.typecode == TCODE_WRITER_VERSION).find_map(Record::short_value);
-                    if version.is_some() { break; }
+                for table in ctx
+                    .admit_iter(&tables[..], "Rhino writer version table traversal")?
+                    .rev()
+                    .filter(|table| table_base(table.typecode) == TCODE_PROPERTIES)
+                {
+                    version = ctx
+                        .admit_iter(
+                            table.records.as_slice(),
+                            "Rhino writer version record traversal",
+                        )?
+                        .rev()
+                        .filter(|record| record.typecode == TCODE_WRITER_VERSION)
+                        .find_map(Record::short_value);
+                    if version.is_some() {
+                        break;
+                    }
                 }
                 version
             }
@@ -1156,7 +1224,12 @@ fn scan_with_record_limit<'a>(
             let child = chunk_at(data, child_offset, chunk.body().end, archive, false)
                 .or_else(|error| Err(framing_error(ctx, error)?))?;
             if child.typecode == TCODE_ENDOFTABLE {
-                if !child.short() || child.value().or_else(|error| Err(framing_error(ctx, error)?))? != 0 {
+                if !child.short()
+                    || child
+                        .value()
+                        .or_else(|error| Err(framing_error(ctx, error)?))?
+                        != 0
+                {
                     return Err(CodecError::Malformed(
                         "end-of-table marker must be short with value zero".to_string(),
                     ));
@@ -1320,12 +1393,18 @@ fn scan_with_record_limit<'a>(
             table_record_count,
             object_typecodes,
         )
-        .map_or_else(|| {
-            Err(framing_error(ctx, FramingError::structural(
-                offset,
-                "table chunk declares a body that does not fit its framing",
-            ))?)
-        }, Ok)?;
+        .map_or_else(
+            || {
+                Err(framing_error(
+                    ctx,
+                    FramingError::structural(
+                        offset,
+                        "table chunk declares a body that does not fit its framing",
+                    ),
+                )?)
+            },
+            Ok,
+        )?;
         ctx.push_vec(&mut tables, table, "Rhino scanned tables")?;
         offset = chunk.next_offset();
     }
@@ -1387,7 +1466,10 @@ fn push_container_note(
 /// Build the format-neutral container summary.
 fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummary, CodecError> {
     let mut entries = Vec::new();
-    for table in ctx.admit_iter(&(scan.tables)[..], "Rhino summarize traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for table in ctx
+        .admit_iter(&(scan.tables)[..], "Rhino summarize traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let mut attributes = BTreeMap::new();
         insert_summary_attribute(
             ctx,
@@ -1413,7 +1495,10 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
             format_args!("record_count"),
             format_args!("{}", table.record_count),
         )?;
-        for (typecode, count) in ctx.admit_iter(&table.object_typecodes, "Rhino summarize traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for (typecode, count) in ctx
+            .admit_iter(&table.object_typecodes, "Rhino summarize traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             insert_summary_attribute(
                 ctx,
                 &mut attributes,
@@ -1438,7 +1523,10 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
         });
     }
     let mut classes = BTreeMap::<Uuid, (usize, usize)>::new();
-    for object in ctx.admit_iter(&(scan.objects)[..], "Rhino summarize traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for object in ctx
+        .admit_iter(&(scan.objects)[..], "Rhino summarize traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         // The container report groups degraded records under the nil class UUID.
         let class_uuid = object.class_uuid().unwrap_or_else(Uuid::nil);
         ctx.admit_btree_entry(&classes, &class_uuid, "Rhino container class groups")?;
@@ -1495,7 +1583,13 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
     for warning in scan.warnings.messages(ctx)? {
         push_container_note(ctx, &mut notes, format_args!("{warning}"))?;
     }
-    for diagnostic in ctx.admit_iter(scan.definitions.diagnostics(), "Rhino summarize view traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for diagnostic in ctx
+        .admit_iter(
+            scan.definitions.diagnostics(),
+            "Rhino summarize view traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         push_container_note(
             ctx,
             &mut notes,
@@ -1648,7 +1742,13 @@ pub(crate) fn container_only_result(
     for warning in scan.warnings.messages(ctx)? {
         push_container_note(ctx, &mut notes, format_args!("{warning}"))?;
     }
-    for diagnostic in ctx.admit_iter(scan.definitions.diagnostics(), "Rhino container only result view traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for diagnostic in ctx
+        .admit_iter(
+            scan.definitions.diagnostics(),
+            "Rhino container only result view traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         push_container_note(
             ctx,
             &mut notes,
@@ -1656,16 +1756,31 @@ pub(crate) fn container_only_result(
         )?;
     }
     let mut losses = Vec::new();
-    for diagnostic in ctx.admit_iter(&(scan.warnings)[..], "Rhino container only result traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for diagnostic in ctx
+        .admit_iter(
+            &(scan.warnings)[..],
+            "Rhino container only result traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         ctx.reserve_vec(&mut losses, 1, "Rhino container-only losses")?;
         losses.push(
             diagnostic
                 .code
                 .unwrap_or(crate::loss::RhinoLossCode::ContainerScanDiagnostic)
-                .note(ctx.format_retained(format_args!("{}", diagnostic.message), "Rhino container-only loss message")?),
+                .note(ctx.format_retained(
+                    format_args!("{}", diagnostic.message),
+                    "Rhino container-only loss message",
+                )?),
         );
     }
-    for diagnostic in ctx.admit_iter(scan.definitions.diagnostics(), "Rhino container only result view traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for diagnostic in ctx
+        .admit_iter(
+            scan.definitions.diagnostics(),
+            "Rhino container only result view traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         ctx.reserve_vec(&mut losses, 1, "Rhino container-only losses")?;
         losses.push(diagnostic.to_loss(ctx)?);
     }

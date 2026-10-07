@@ -1067,7 +1067,8 @@ pub(crate) fn parse_attributes(
         } else {
             None
         };
-        let obsolete_thickness = finite(ctx, 
+        let obsolete_thickness = finite(
+            ctx,
             obsolete_thickness_offset,
             obsolete_thickness,
             "obsolete thickness",
@@ -1315,14 +1316,16 @@ pub(crate) fn parse_attributes(
             }
             AttributeItem::HatchPatternIndex => attributes.hatch_pattern_index = reader.i32()?,
             AttributeItem::SectionHatchScale => {
-                attributes.section_hatch_scale = read_finite(ctx, &mut reader, "section hatch scale")?;
+                attributes.section_hatch_scale =
+                    read_finite(ctx, &mut reader, "section hatch scale")?;
             }
             AttributeItem::SectionHatchRotation => {
                 attributes.section_hatch_rotation =
                     read_finite(ctx, &mut reader, "section hatch rotation")?;
             }
             AttributeItem::LinetypePatternScale => {
-                attributes.linetype_pattern_scale = read_finite(ctx, &mut reader, "linetype scale")?;
+                attributes.linetype_pattern_scale =
+                    read_finite(ctx, &mut reader, "linetype scale")?;
             }
             AttributeItem::HatchBackground => {
                 attributes.hatch_background = reader.array::<4>()?;
@@ -1528,7 +1531,12 @@ fn parse_obsolete_custom_mesh_userdata(
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<Option<settings::MeshParameters>, FramingError> {
-    let Some(descriptor) = ctx.admit_iter(&(descriptors)[..], "Rhino parse obsolete custom mesh userdata traversal").map_err(cadmpeg_core::CodecError::from)?
+    let Some(descriptor) = ctx
+        .admit_iter(
+            &(descriptors)[..],
+            "Rhino parse obsolete custom mesh userdata traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .filter_map(AttributeUserdataDescriptor::known)
         .find(|descriptor| {
             descriptor.class_uuid == OBSOLETE_CUSTOM_MESH_USERDATA
@@ -1575,7 +1583,12 @@ fn parse_per_object_mesh_userdata(
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<Option<settings::MeshParameters>, FramingError> {
-    let Some(descriptor) = ctx.admit_iter(&(descriptors)[..], "Rhino parse per object mesh userdata traversal").map_err(cadmpeg_core::CodecError::from)?
+    let Some(descriptor) = ctx
+        .admit_iter(
+            &(descriptors)[..],
+            "Rhino parse per object mesh userdata traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .filter_map(AttributeUserdataDescriptor::known)
         .find(|descriptor| {
             descriptor.class_uuid == PER_OBJECT_MESH_PARAMETERS_USERDATA
@@ -1618,7 +1631,8 @@ fn parse_per_object_mesh_userdata(
             ));
         }
         let mut mesh_reader = BoundedReader::new(bytes, inner.body().start, inner.body().end)?;
-        let mut mesh = settings::parse_mesh_parameters(ctx, bytes, &mut mesh_reader, archive, true)?;
+        let mut mesh =
+            settings::parse_mesh_parameters(ctx, bytes, &mut mesh_reader, archive, true)?;
         mesh_reader.skip_remaining()?;
         outer_reader.skip_remaining()?;
 
@@ -2019,7 +2033,10 @@ pub(crate) fn resolve_identities(
 ) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
     let mut seen_ids = HashSet::new();
     let mut layers = LayerLookup::new();
-    for layer in ctx.admit_iter(&(metadata.layers)[..], "Rhino resolve identities traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for layer in ctx
+        .admit_iter(&(metadata.layers)[..], "Rhino resolve identities traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         layers.insert(ctx, layer)?;
     }
     let mut resolved = Vec::new();
@@ -2037,7 +2054,10 @@ pub(crate) fn resolve_identities(
                     index,
                     &mut seen_ids,
                 )?;
-                for warning in ctx.admit_iter(&(local_warnings)[..], "Rhino resolve identities traversal").map_err(cadmpeg_core::CodecError::from)? {
+                for warning in ctx
+                    .admit_iter(&(local_warnings)[..], "Rhino resolve identities traversal")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                {
                     warnings.push_coded_admitted(
                         ctx,
                         warning.code,

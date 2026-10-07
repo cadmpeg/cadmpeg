@@ -74,12 +74,22 @@ pub(crate) struct HistoryPolyEdge {
     pub(crate) evaluation_mode: i32,
 }
 
-fn refused(ctx: &cadmpeg_core::decode::DecodeContext<'_>, offset: usize, error: &CodecError) -> Result<FramingError, cadmpeg_core::CodecError> { Ok(
-    match error {
+fn refused(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    offset: usize,
+    error: &CodecError,
+) -> Result<FramingError, cadmpeg_core::CodecError> {
+    Ok(match error {
         CodecError::ResourceLimit(limit) => FramingError::Resource(*limit),
-        _ => FramingError::structural(offset, ctx.format_retained(format_args!("polyedge allocation refused: {error}"), "Rhino refused text")?),
-    }
-) }
+        _ => FramingError::structural(
+            offset,
+            ctx.format_retained(
+                format_args!("polyedge allocation refused: {error}"),
+                "Rhino refused text",
+            )?,
+        ),
+    })
+}
 
 fn req_u8(view: &mut View<'_>) -> Result<u8, FramingError> {
     let offset = view.position();

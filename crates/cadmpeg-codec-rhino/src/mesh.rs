@@ -59,12 +59,22 @@ impl<'a> MeshExpand<'a> {
 }
 
 /// Maps an expansion refusal to the mesh decoder error type.
-fn expansion_refused(ctx: &cadmpeg_core::decode::DecodeContext<'_>, offset: usize, refusal: CodecError) -> Result<GeometryError, cadmpeg_core::CodecError> { Ok(
-    match refusal {
+fn expansion_refused(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    offset: usize,
+    refusal: CodecError,
+) -> Result<GeometryError, cadmpeg_core::CodecError> {
+    Ok(match refusal {
         resource @ CodecError::ResourceLimit(_) => GeometryError::Codec(resource),
-        other => error(offset, ctx.format_retained(format_args!("mesh buffer expansion refused: {other}"), "Rhino expansion_refused text")?),
-    }
-) }
+        other => error(
+            offset,
+            ctx.format_retained(
+                format_args!("mesh buffer expansion refused: {other}"),
+                "Rhino expansion_refused text",
+            )?,
+        ),
+    })
+}
 
 /// `ON_Mesh` class UUID.
 pub(crate) const ON_MESH: Uuid = Uuid::from_canonical([
@@ -227,14 +237,24 @@ impl MeshId {
                     format_args!("rhino:extrusion:mesh-cache#{index}"),
                     "Rhino extrusion mesh-cache ID",
                 )?)
-                .or_else(|error| Err(CodecError::Malformed(ctx.format_retained(format_args!("{}", error), "Rhino into_tessellation_id text")?)))
+                .or_else(|error| {
+                    Err(CodecError::Malformed(ctx.format_retained(
+                        format_args!("{}", error),
+                        "Rhino into_tessellation_id text",
+                    )?))
+                })
             }
             Self::V5ExtrusionCache(index) => {
                 cadmpeg_ir::tessellation::TessellationId::mint(ctx.format_retained(
                     format_args!("rhino:extrusion:v5-mesh-cache#{index}"),
                     "Rhino V5 extrusion mesh-cache ID",
                 )?)
-                .or_else(|error| Err(CodecError::Malformed(ctx.format_retained(format_args!("{}", error), "Rhino into_tessellation_id text")?)))
+                .or_else(|error| {
+                    Err(CodecError::Malformed(ctx.format_retained(
+                        format_args!("{}", error),
+                        "Rhino into_tessellation_id text",
+                    )?))
+                })
             }
         }
     }
@@ -370,9 +390,12 @@ pub(crate) fn decode(
             archive,
         )?;
         if let Some(bytes) = surface {
-            decoded
-                .channels
-                .push(channel(expand.ctx(), CHANNEL_SURFACE_PARAMETERS, 16, bytes.into_owned())?);
+            decoded.channels.push(channel(
+                expand.ctx(),
+                CHANNEL_SURFACE_PARAMETERS,
+                16,
+                bytes.into_owned(),
+            )?);
         }
     }
     let post_2006_fields =
@@ -419,7 +442,11 @@ pub(crate) fn decode(
                         .collection_vec(values.len(), "Rhino mesh admitted double vertices")
                         .map_err(crate::curves::GeometryError::from)?;
                     let mut valid = true;
-                    for point in expand.ctx().admit_iter(&(values)[..], "Rhino decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+                    for point in expand
+                        .ctx()
+                        .admit_iter(&(values)[..], "Rhino decode traversal")
+                        .map_err(cadmpeg_core::CodecError::from)?
+                    {
                         if let Some(point) =
                             FinitePoint3::new(Point3::new(point[0], point[1], point[2]))
                         {
@@ -455,7 +482,10 @@ pub(crate) fn decode(
         }
     }
     if ngon_count == 0 {
-        if let Some(extra) = expand.ctx().admit_iter(&(userdata)[..], "Rhino decode traversal").map_err(cadmpeg_core::CodecError::from)?
+        if let Some(extra) = expand
+            .ctx()
+            .admit_iter(&(userdata)[..], "Rhino decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .filter_map(UserdataDescriptor::known)
             .find(|value| {
                 value.class_uuid == V4V5_MESH_NGON_USERDATA
@@ -513,7 +543,10 @@ pub(crate) fn decode(
         )?;
     }
     if double_vertices.is_none() {
-        if let Some(extra) = expand.ctx().admit_iter(&(userdata)[..], "Rhino decode traversal").map_err(cadmpeg_core::CodecError::from)?
+        if let Some(extra) = expand
+            .ctx()
+            .admit_iter(&(userdata)[..], "Rhino decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .filter_map(UserdataDescriptor::known)
             .find(|value| {
                 value.class_uuid == V5_MESH_DOUBLE_VERTICES
@@ -546,7 +579,10 @@ pub(crate) fn decode(
             false,
         ),
     ] {
-        for extra in expand.ctx().admit_iter(&(userdata)[..], "Rhino decode traversal").map_err(cadmpeg_core::CodecError::from)?
+        for extra in expand
+            .ctx()
+            .admit_iter(&(userdata)[..], "Rhino decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .filter_map(UserdataDescriptor::known)
             .filter(|value| value.class_uuid == class && value.item_uuid == class)
         {
@@ -563,7 +599,10 @@ pub(crate) fn decode(
             }
         }
     }
-    let proxy_fingerprint = if expand.ctx().admit_iter(&(userdata)[..], "Rhino mesh proxy userdata scan").map_err(cadmpeg_core::CodecError::from)?
+    let proxy_fingerprint = if expand
+        .ctx()
+        .admit_iter(&(userdata)[..], "Rhino mesh proxy userdata scan")
+        .map_err(cadmpeg_core::CodecError::from)?
         .filter_map(UserdataDescriptor::known)
         .any(|extra| {
             extra.class_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
@@ -613,10 +652,24 @@ pub(crate) fn decode(
                 triangles,
                 decoded.normals,
             )
-            .or_else(|lanes| Err(error(reader.position(), expand.ctx().format_retained(format_args!("{}", lanes), "Rhino decode text")?)))?,
+            .or_else(|lanes| {
+                Err(error(
+                    reader.position(),
+                    expand
+                        .ctx()
+                        .format_retained(format_args!("{}", lanes), "Rhino decode text")?,
+                ))
+            })?,
             decoded.channels,
         )
-        .or_else(|err| Err(error(reader.position(), expand.ctx().format_retained(format_args!("{}", err), "Rhino decode text")?)))?
+        .or_else(|err| {
+            Err(error(
+                reader.position(),
+                expand
+                    .ctx()
+                    .format_retained(format_args!("{}", err), "Rhino decode text")?,
+            ))
+        })?
         .with_source_object(association),
         warnings: decoded.warnings,
         losses: decoded.losses,
@@ -690,13 +743,19 @@ fn native_proxy_fingerprint(
         .ok_or_else(|| ctx.refuse_codec_limit("Rhino mesh proxy SHA-1", u64::MAX, u64::MAX))?;
     ctx.charge_work(bytes, "Rhino mesh proxy SHA-1")?;
     let mut face_digest = Sha1::new();
-    for face in ctx.admit_iter(faces, "Rhino native proxy fingerprint traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for face in ctx
+        .admit_iter(faces, "Rhino native proxy fingerprint traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         for index in face {
             face_digest.update(index.to_ne_bytes());
         }
     }
     let mut vertex_digest = Sha1::new();
-    for vertex in ctx.admit_iter(vertices, "Rhino native proxy fingerprint traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for vertex in ctx
+        .admit_iter(vertices, "Rhino native proxy fingerprint traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         for coordinate in vertex {
             vertex_digest.update(coordinate.get().to_ne_bytes());
         }
@@ -780,19 +839,25 @@ pub(crate) fn triangulate_faces<P: Copy>(
     vertices: &[P],
     point: impl Fn(P) -> Point3,
 ) -> Result<Vec<[u32; 3]>, GeometryError> {
-    let triangle_count = ctx.admit_iter(&(faces)[..], "Rhino triangulate faces traversal").map_err(cadmpeg_core::CodecError::from)?.try_fold(0_usize, |count, face| {
-        count.checked_add(match unique_face_vertices(face) {
-            3 => 1,
-            4 => 2,
-            _ => 0,
-        })
-    });
+    let triangle_count = ctx
+        .admit_iter(&(faces)[..], "Rhino triangulate faces traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .try_fold(0_usize, |count, face| {
+            count.checked_add(match unique_face_vertices(face) {
+                3 => 1,
+                4 => 2,
+                _ => 0,
+            })
+        });
     let triangle_count = triangle_count
         .ok_or_else(|| GeometryError::unpositioned("mesh triangle count overflow"))?;
     let mut triangles = ctx
         .collection_vec(triangle_count, "Rhino mesh triangles")
         .map_err(crate::curves::GeometryError::from)?;
-    for face in ctx.admit_iter(faces, "Rhino triangulate faces traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for face in ctx
+        .admit_iter(faces, "Rhino triangulate faces traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if unique_face_vertices(face) == 3 {
             let mut unique = [0_u32; 3];
             let mut count = 0;
@@ -835,7 +900,8 @@ pub(crate) fn triangulate_faces<P: Copy>(
 }
 
 fn quad_face_count(ctx: &DecodeContext<'_>, faces: &[[u32; 4]]) -> Result<usize, CodecError> {
-    Ok(ctx.admit_iter(faces, "Rhino mesh quad count")?
+    Ok(ctx
+        .admit_iter(faces, "Rhino mesh quad count")?
         .filter(|face| unique_face_vertices(face) == 4)
         .count())
 }
@@ -886,7 +952,8 @@ fn read_raw_channels(
     }
     let uv = read_counted_raw(ctx, reader, vertices, 8, "UV", warnings)?;
     if let Some(bytes) = uv {
-        channels.push(channel(ctx, 
+        channels.push(channel(
+            ctx,
             CHANNEL_UV,
             8,
             ctx.copy_retained(bytes, "Rhino mesh raw UV channel")?,
@@ -894,7 +961,8 @@ fn read_raw_channels(
     }
     let curvature = read_counted_raw(ctx, reader, vertices, 16, "curvature", warnings)?;
     if let Some(bytes) = curvature {
-        channels.push(channel(ctx, 
+        channels.push(channel(
+            ctx,
             CHANNEL_CURVATURE,
             16,
             ctx.copy_retained(bytes, "Rhino mesh raw curvature channel")?,
@@ -902,7 +970,8 @@ fn read_raw_channels(
     }
     let colors = read_counted_raw(ctx, reader, vertices, 4, "colors", warnings)?;
     if let Some(bytes) = colors {
-        channels.push(channel(ctx, 
+        channels.push(channel(
+            ctx,
             CHANNEL_COLOR,
             4,
             ctx.copy_retained(bytes, "Rhino mesh raw color channel")?,
@@ -996,9 +1065,12 @@ fn read_compressed_channels(
                     .push("normals channel contains nonfinite values".to_string()),
             },
             MeshChannelAction::Raw(kind) => {
-                decoded
-                    .channels
-                    .push(channel(expand.ctx(), kind, spec.item_size, bytes.into_owned())?);
+                decoded.channels.push(channel(
+                    expand.ctx(),
+                    kind,
+                    spec.item_size,
+                    bytes.into_owned(),
+                )?);
             }
         }
     }
@@ -1122,7 +1194,11 @@ fn read_buffer<'a>(
                         "compressed buffer body escapes the archive bytes",
                     )
                 })?;
-            if !expand.ctx().equal_bytes(source.window(), body, "Rhino compressed mesh source equality")? {
+            if !expand.ctx().equal_bytes(
+                source.window(),
+                body,
+                "Rhino compressed mesh source equality",
+            )? {
                 return Err(error(
                     chunk.body().start,
                     format!(
@@ -1486,7 +1562,10 @@ fn read_v5_double_vertices(
     let mut finite = ctx
         .collection_vec(values.len(), "Rhino V5 mesh admitted double vertices")
         .map_err(crate::curves::GeometryError::from)?;
-    for point in ctx.admit_iter(&(values)[..], "Rhino read v5 double vertices traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for point in ctx
+        .admit_iter(&(values)[..], "Rhino read v5 double vertices traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let Some(point) = FinitePoint3::new(Point3::new(point[0], point[1], point[2])) else {
             return Ok(None);
         };
@@ -1686,28 +1765,47 @@ fn parse_f64_points(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<[f64; 3
     Ok(points)
 }
 
-fn synchronization_ok(ctx: &DecodeContext<'_>, double: &[[f64; 3]], float: &[[FiniteBinary32; 3]]) -> Result<bool, CodecError> {
-    Ok(ctx.admit_iter(double, "Rhino mesh synchronized double vertices")?.zip(ctx.admit_iter(float, "Rhino mesh synchronized double vertices float lane")?).all(|(a, b)| {
-        let scale = f64::from(
-            b.iter()
-                .map(|value| value.get().abs())
-                .fold(0.0_f32, f32::max),
-        );
-        a.iter().zip(b).all(|(left, right)| {
-            (*left - f64::from(right.get())).abs() <= scale * EPS_MESH_SYNCHRONIZATION_OK_E6
-        })
-    }))
+fn synchronization_ok(
+    ctx: &DecodeContext<'_>,
+    double: &[[f64; 3]],
+    float: &[[FiniteBinary32; 3]],
+) -> Result<bool, CodecError> {
+    Ok(ctx
+        .admit_iter(double, "Rhino mesh synchronized double vertices")?
+        .zip(ctx.admit_iter(float, "Rhino mesh synchronized double vertices float lane")?)
+        .all(|(a, b)| {
+            let scale = f64::from(
+                b.iter()
+                    .map(|value| value.get().abs())
+                    .fold(0.0_f32, f32::max),
+            );
+            a.iter().zip(b).all(|(left, right)| {
+                (*left - f64::from(right.get())).abs() <= scale * EPS_MESH_SYNCHRONIZATION_OK_E6
+            })
+        }))
 }
 
-fn v5_synchronization_ok(ctx: &DecodeContext<'_>, double: &[[f64; 3]], float: &[[FiniteBinary32; 3]]) -> Result<bool, CodecError> {
-    Ok(ctx.admit_iter(double, "Rhino V5 synchronized double vertices")?.zip(ctx.admit_iter(float, "Rhino V5 synchronized double vertices float lane")?).all(|(double, float)| {
-        double.iter().zip(float).all(|(double, float)| {
-            cadmpeg_core::convert::f32_from_f64(*double) == Some(float.get())
-        })
-    }))
+fn v5_synchronization_ok(
+    ctx: &DecodeContext<'_>,
+    double: &[[f64; 3]],
+    float: &[[FiniteBinary32; 3]],
+) -> Result<bool, CodecError> {
+    Ok(ctx
+        .admit_iter(double, "Rhino V5 synchronized double vertices")?
+        .zip(ctx.admit_iter(float, "Rhino V5 synchronized double vertices float lane")?)
+        .all(|(double, float)| {
+            double.iter().zip(float).all(|(double, float)| {
+                cadmpeg_core::convert::f32_from_f64(*double) == Some(float.get())
+            })
+        }))
 }
 
-fn channel(ctx: &cadmpeg_core::decode::DecodeContext<'_>, kind: u32, item_size: u32, data: Vec<u8>) -> Result<TessellationChannel, GeometryError> {
+fn channel(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    kind: u32,
+    item_size: u32,
+    data: Vec<u8>,
+) -> Result<TessellationChannel, GeometryError> {
     TessellationChannel::new(
         cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
         item_size,
@@ -1715,7 +1813,12 @@ fn channel(ctx: &cadmpeg_core::decode::DecodeContext<'_>, kind: u32, item_size: 
         0,
         data,
     )
-    .or_else(|error| Err(GeometryError::unpositioned(ctx.format_retained(format_args!("invalid mesh channel: {error}"), "Rhino channel text")?)))
+    .or_else(|error| {
+        Err(GeometryError::unpositioned(ctx.format_retained(
+            format_args!("invalid mesh channel: {error}"),
+            "Rhino channel text",
+        )?))
+    })
 }
 
 fn interval(reader: &mut BoundedReader<'_>) -> Result<(), FramingError> {
@@ -2980,17 +3083,20 @@ mod tests {
             &cadmpeg_test_support::service_decode_context(),
             &[[0.0, 0.0, 0.0]],
             &[([0.0, 0.0, 0.0].map(|value| FiniteBinary32::new(value).expect("finite")))]
-        ).expect("synchronization scan admitted"));
+        )
+        .expect("synchronization scan admitted"));
         assert!(synchronization_ok(
             &cadmpeg_test_support::service_decode_context(),
             &[[1_000_000.0, 0.0, 0.0]],
             &[([1_000_000.5, 0.0, 0.0].map(|value| FiniteBinary32::new(value).expect("finite")))]
-        ).expect("synchronization scan admitted"));
+        )
+        .expect("synchronization scan admitted"));
         assert!(!synchronization_ok(
             &cadmpeg_test_support::service_decode_context(),
             &[[1_000_000.0, 0.0, 0.0]],
             &[([1_002.0, 0.0, 0.0].map(|value| FiniteBinary32::new(value).expect("finite")))]
-        ).expect("synchronization scan admitted"));
+        )
+        .expect("synchronization scan admitted"));
     }
 
     #[test]
@@ -3316,7 +3422,14 @@ mod tests {
             .expect("quad and triangle fit the service limit"),
             vec![[0, 1, 3], [1, 2, 3], [0, 1, 2]]
         );
-        assert_eq!(quad_face_count(&cadmpeg_test_support::service_decode_context(), &[[0, 1, 2, 3], [0, 1, 2, 2]]).expect("quad count admitted"), 1);
+        assert_eq!(
+            quad_face_count(
+                &cadmpeg_test_support::service_decode_context(),
+                &[[0, 1, 2, 3], [0, 1, 2, 2]]
+            )
+            .expect("quad count admitted"),
+            1
+        );
     }
 
     #[test]

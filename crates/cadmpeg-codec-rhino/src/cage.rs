@@ -39,12 +39,22 @@ impl Cage {
     }
 }
 
-fn refused(ctx: &cadmpeg_core::decode::DecodeContext<'_>, offset: usize, error: &CodecError) -> Result<GeometryError, cadmpeg_core::CodecError> { Ok(
-    match error {
+fn refused(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    offset: usize,
+    error: &CodecError,
+) -> Result<GeometryError, cadmpeg_core::CodecError> {
+    Ok(match error {
         CodecError::ResourceLimit(limit) => GeometryError::Codec(CodecError::ResourceLimit(*limit)),
-        _ => GeometryError::malformed(offset, ctx.format_retained(format_args!("NURBS cage allocation refused: {error}"), "Rhino refused text")?),
-    }
-) }
+        _ => GeometryError::malformed(
+            offset,
+            ctx.format_retained(
+                format_args!("NURBS cage allocation refused: {error}"),
+                "Rhino refused text",
+            )?,
+        ),
+    })
+}
 
 fn req_i32(view: &mut View<'_>) -> Result<i32, GeometryError> {
     let offset = view.position();
@@ -58,17 +68,31 @@ fn req_f64(view: &mut View<'_>) -> Result<f64, GeometryError> {
         .map_err(|_| GeometryError::malformed(offset, "NURBS cage record truncated"))
 }
 
-fn positive(ctx: &cadmpeg_core::decode::DecodeContext<'_>, view: &mut View<'_>, label: &str) -> Result<usize, GeometryError> {
+fn positive(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    view: &mut View<'_>,
+    label: &str,
+) -> Result<usize, GeometryError> {
     let offset = view.position();
     let value = req_i32(view)?;
     if value <= 0 {
         return Err(GeometryError::malformed(
             offset,
-            ctx.format_retained(format_args!("NURBS cage {label} is not positive"), "Rhino positive text")?,
+            ctx.format_retained(
+                format_args!("NURBS cage {label} is not positive"),
+                "Rhino positive text",
+            )?,
         ));
     }
-    usize::try_from(value)
-        .or_else(|_| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("NURBS cage {label} overflows"), "Rhino positive text")?)))
+    usize::try_from(value).or_else(|_| {
+        Err(GeometryError::malformed(
+            offset,
+            ctx.format_retained(
+                format_args!("NURBS cage {label} overflows"),
+                "Rhino positive text",
+            )?,
+        ))
+    })
 }
 
 pub(crate) fn decode(
@@ -321,11 +345,18 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, mut view) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-        let error = super::positive(&ctx, &mut view, "dimension").expect_err("message work refuses");
-        let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error else { panic!("resource refusal"); };
+        let (ctx, mut view) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("context");
+        let error =
+            super::positive(&ctx, &mut view, "dimension").expect_err("message work refuses");
+        let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error else {
+            panic!("resource refusal");
+        };
         assert_eq!(limit.operation, "Rhino positive text");
-        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 
     use super::{decode, ANONYMOUS};

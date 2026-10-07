@@ -36,7 +36,10 @@ fn anonymous<'a>(
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(GeometryError::malformed(
             offset,
-            ctx.format_retained(format_args!("{family} is not anonymous"), "Rhino detail framing message")?,
+            ctx.format_retained(
+                format_args!("{family} is not anonymous"),
+                "Rhino detail framing message",
+            )?,
         ));
     }
     let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
@@ -45,7 +48,10 @@ fn anonymous<'a>(
     if major != 1 {
         return Err(GeometryError::UnsupportedVersion {
             offset: chunk.body().start,
-            message: ctx.format_retained(format_args!("unsupported {family} version {major}.{minor}"), "Rhino detail version message")?,
+            message: ctx.format_retained(
+                format_args!("unsupported {family} version {major}.{minor}"),
+                "Rhino detail version message",
+            )?,
         });
     }
     Ok((reader, chunk.next_offset(), minor))
@@ -65,8 +71,14 @@ pub(crate) fn decode(
         });
     }
     let view_start = outer.position();
-    let (view, view_next, _view_minor) =
-        anonymous(ctx, data, view_start, outer.end(), archive, "detail view state")?;
+    let (view, view_next, _view_minor) = anonymous(
+        ctx,
+        data,
+        view_start,
+        outer.end(),
+        archive,
+        "detail view state",
+    )?;
     let view_range = view.position()..view.end();
     outer.skip(view_next - outer.position())?;
 
@@ -178,14 +190,19 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("context");
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("context");
         let error = super::decode(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5)
             .expect_err("message work refuses");
-        let crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error else {
+        let crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error
+        else {
             panic!("resource refusal")
         };
-        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 
     #[test]
@@ -196,14 +213,19 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("context");
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("context");
         let error = super::decode(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5)
             .expect_err("message work refuses");
-        let crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error else {
+        let crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error
+        else {
             panic!("resource refusal")
         };
-        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 
     #[test]

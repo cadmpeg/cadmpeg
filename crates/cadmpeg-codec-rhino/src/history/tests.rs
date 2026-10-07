@@ -617,8 +617,10 @@ fn unknown_history_record_type_is_retained_opaque() {
     let scan = crate::container::scan_owned(bytes).expect("history table");
     assert!(scan.history.is_empty());
     assert!(crate::decode::with_expand_bytes(&[], |expand| scan
-        .warnings.messages(expand.ctx()).expect("diagnostic traversal fits"))
-        .any(|message| message.contains("record type")));
+        .warnings
+        .messages(expand.ctx())
+        .expect("diagnostic traversal fits"))
+    .any(|message| message.contains("record type")));
     let retained = scan
         .opaque_records
         .iter()
@@ -958,8 +960,10 @@ fn unknown_history_subd_orientation_is_malformed() {
     let scan = crate::container::scan_owned(bytes).expect("history table");
     assert!(scan.history.is_empty());
     assert!(crate::decode::with_expand_bytes(&[], |expand| scan
-        .warnings.messages(expand.ctx()).expect("diagnostic traversal fits"))
-        .any(|message| message.contains("orientation")));
+        .warnings
+        .messages(expand.ctx())
+        .expect("diagnostic traversal fits"))
+    .any(|message| message.contains("orientation")));
     let retained = scan
         .opaque_records
         .iter()
@@ -1496,10 +1500,15 @@ fn assert_hatch_plane_overflow_is_refused(offset: usize, field: &str) {
         "{field}"
     );
     assert!(
-        crate::decode::with_expand_bytes(&[], |expand| warnings.messages(expand.ctx()).expect("diagnostic traversal fits"))
-            .any(|message| message.contains(field) && message.contains("not implemented yet")),
+        crate::decode::with_expand_bytes(&[], |expand| warnings
+            .messages(expand.ctx())
+            .expect("diagnostic traversal fits"))
+        .any(|message| message.contains(field) && message.contains("not implemented yet")),
         "{field}: {:?}",
-        crate::decode::with_expand_bytes(&[], |expand| warnings.messages(expand.ctx()).expect("diagnostic traversal fits")).collect::<Vec<_>>()
+        crate::decode::with_expand_bytes(&[], |expand| warnings
+            .messages(expand.ctx())
+            .expect("diagnostic traversal fits"))
+        .collect::<Vec<_>>()
     );
 }
 
@@ -1572,8 +1581,10 @@ fn embedded_history_hatch_retains_base_geometry_after_malformed_gradient() {
     let semantic: serde_json::Value = serde_json::from_str(&semantic).expect("hatch JSON");
     assert_eq!(semantic["basepoint"], serde_json::json!([3.0, 4.0]));
     assert!(semantic.get("gradient").is_none());
-    assert!(crate::decode::with_expand_bytes(&[], |expand| warnings.messages(expand.ctx()).expect("diagnostic traversal fits"))
-        .any(|message| message.contains("invalid gradient type")));
+    assert!(crate::decode::with_expand_bytes(&[], |expand| warnings
+        .messages(expand.ctx())
+        .expect("diagnostic traversal fits"))
+    .any(|message| message.contains("invalid gradient type")));
 }
 
 #[test]

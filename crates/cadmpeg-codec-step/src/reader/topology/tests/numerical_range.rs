@@ -598,16 +598,20 @@ fn pcurve_selection_helpers_preserve_session_depth_refusal() {
                 Point3::new(1.0, 0.0, 0.0),
             )
         };
-        assert_eq!(result.map_err(|error| match error {
-            CodecError::ResourceLimit(limit) => limit,
-            _ => panic!("selection must preserve the original resource error"),
-        }), Err(limit));
+        assert_eq!(
+            result.map_err(|error| match error {
+                CodecError::ResourceLimit(limit) => limit,
+                _ => panic!("selection must preserve the original resource error"),
+            }),
+            Err(limit)
+        );
     }
     assert_eq!(
-        pcurve_surface_closest(&ctx, &index, &id, &pcurve, Point3::new(0.5, 0.0, 0.0), &[]).map_err(|error| match error {
-            CodecError::ResourceLimit(limit) => limit,
-            _ => panic!("selection must preserve the original resource error"),
-        }),
+        pcurve_surface_closest(&ctx, &index, &id, &pcurve, Point3::new(0.5, 0.0, 0.0), &[])
+            .map_err(|error| match error {
+                CodecError::ResourceLimit(limit) => limit,
+                _ => panic!("selection must preserve the original resource error"),
+            }),
         Err(limit)
     );
     assert_eq!(
@@ -618,7 +622,8 @@ fn pcurve_selection_helpers_preserve_session_depth_refusal() {
             &pcurve,
             Point3::new(0.5, 0.0, 0.0),
             f64::NAN
-        ).map_err(|error| match error {
+        )
+        .map_err(|error| match error {
             CodecError::ResourceLimit(limit) => limit,
             _ => panic!("selection must preserve the original resource error"),
         }),

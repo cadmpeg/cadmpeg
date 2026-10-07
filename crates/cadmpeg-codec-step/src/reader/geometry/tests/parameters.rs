@@ -1169,10 +1169,12 @@ fn pcurve_trim_select_ignores_cartesian_point_coordinates() {
         Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.25).expect("finite fixture")),
     ]);
     crate::test_support::with_service_context(&[], |_, ctx| {
-    assert_eq!(
-        pcurve_trim_parameter(ctx, &value).expect("pcurve trim scans fit").map(FiniteReal::get),
-        Some(0.25)
-    );
+        assert_eq!(
+            pcurve_trim_parameter(ctx, &value)
+                .expect("pcurve trim scans fit")
+                .map(FiniteReal::get),
+            Some(0.25)
+        );
     });
 }
 
@@ -1188,10 +1190,12 @@ fn pcurve_trim_select_prefers_parameter_value() {
         ),
     ]);
     crate::test_support::with_service_context(&[], |_, ctx| {
-    assert_eq!(
-        pcurve_trim_parameter(ctx, &value).expect("pcurve trim scans fit").map(FiniteReal::get),
-        Some(0.25)
-    );
+        assert_eq!(
+            pcurve_trim_parameter(ctx, &value)
+                .expect("pcurve trim scans fit")
+                .map(FiniteReal::get),
+            Some(0.25)
+        );
     });
 }
 

@@ -105,7 +105,11 @@ fn accepts_a_minimal_detached_signed_data_envelope() {
         0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00,
         0x04, 0x00,
     ];
-    assert_eq!(crate::test_support::with_service_context(&[], |_, ctx| validate_detached_cms(ctx, &cms)).map_err(|error| error.to_string()), Ok(()));
+    assert_eq!(
+        crate::test_support::with_service_context(&[], |_, ctx| validate_detached_cms(ctx, &cms))
+            .map_err(|error| error.to_string()),
+        Ok(())
+    );
 }
 
 const BER_CMS_INDEFINITE: &[u8] = &[
@@ -120,17 +124,34 @@ const BER_CMS_INDEFINITE: &[u8] = &[
 
 #[test]
 fn accepts_cms_ber_indefinite_lengths() {
-    assert_eq!(crate::test_support::with_service_context(&[], |_, ctx| validate_detached_cms(ctx, BER_CMS_INDEFINITE)).map_err(|error| error.to_string()), Ok(()));
+    assert_eq!(
+        crate::test_support::with_service_context(&[], |_, ctx| validate_detached_cms(
+            ctx,
+            BER_CMS_INDEFINITE
+        ))
+        .map_err(|error| error.to_string()),
+        Ok(())
+    );
 }
 
 #[test]
 fn accepts_ber_contextual_subject_key_identifier_and_octet_string() {
     assert_eq!(
-        crate::test_support::with_service_context(&[], |_, ctx| super::validate_signer_identifier(ctx, 0x80, &[0x01, 0x02, 0x03])).map_err(|error| error.to_string()),
+        crate::test_support::with_service_context(&[], |_, ctx| super::validate_signer_identifier(
+            ctx,
+            0x80,
+            &[0x01, 0x02, 0x03]
+        ))
+        .map_err(|error| error.to_string()),
         Ok(())
     );
     assert_eq!(
-        crate::test_support::with_service_context(&[], |_, ctx| super::validate_octet_string(ctx, 0x24, &[0x04, 0x01, 0xaa])).map_err(|error| error.to_string()),
+        crate::test_support::with_service_context(&[], |_, ctx| super::validate_octet_string(
+            ctx,
+            0x24,
+            &[0x04, 0x01, 0xaa]
+        ))
+        .map_err(|error| error.to_string()),
         Ok(())
     );
 }
@@ -160,7 +181,11 @@ fn rejects_embedded_content() {
         0x03, 0x04, 0x02, 0x01, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01,
         0x01, 0x01, 0x05, 0x00, 0x04, 0x00,
     ];
-    assert!(crate::test_support::with_service_context(&[], |_, ctx| validate_detached_cms(ctx, &cms)).map_err(|error| error.to_string()).is_err());
+    assert!(
+        crate::test_support::with_service_context(&[], |_, ctx| validate_detached_cms(ctx, &cms))
+            .map_err(|error| error.to_string())
+            .is_err()
+    );
 }
 
 #[test]
@@ -320,7 +345,11 @@ fn real_detached_cms_witness_remains_structural_after_source_tampering() {
     assert!(tampered_diagnostics.is_empty());
     assert_eq!(sections(&original, source)[0].cms.len(), 1324);
     assert_eq!(
-        crate::test_support::with_service_context(&[], |_, ctx| super::validate_detached_cms(ctx, &sections(&original, source)[0].cms)).map_err(|error| error.to_string()),
+        crate::test_support::with_service_context(&[], |_, ctx| super::validate_detached_cms(
+            ctx,
+            &sections(&original, source)[0].cms
+        ))
+        .map_err(|error| error.to_string()),
         Ok(())
     );
     assert_eq!(

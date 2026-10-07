@@ -50,12 +50,25 @@ pub(crate) fn admitted_json(
     }
 
     let mut count = ByteCount(0);
-    serde_json::to_writer(&mut count, value)
-        .or_else(|error| Err(CodecError::malformed(ctx.format_retained(format_args!("{}", error), "Rhino admitted_json text")?)))?;
+    serde_json::to_writer(&mut count, value).or_else(|error| {
+        Err(CodecError::malformed(ctx.format_retained(
+            format_args!("{}", error),
+            "Rhino admitted_json text",
+        )?))
+    })?;
     let mut bytes = ctx.collection_vec(count.0, operation)?;
-    serde_json::to_writer(&mut bytes, value)
-        .or_else(|error| Err(CodecError::malformed(ctx.format_retained(format_args!("{}", error), "Rhino admitted_json text")?)))?;
-    String::from_utf8(bytes).or_else(|error| Err(CodecError::malformed(ctx.format_retained(format_args!("{}", error), "Rhino admitted_json text")?)))
+    serde_json::to_writer(&mut bytes, value).or_else(|error| {
+        Err(CodecError::malformed(ctx.format_retained(
+            format_args!("{}", error),
+            "Rhino admitted_json text",
+        )?))
+    })?;
+    String::from_utf8(bytes).or_else(|error| {
+        Err(CodecError::malformed(ctx.format_retained(
+            format_args!("{}", error),
+            "Rhino admitted_json text",
+        )?))
+    })
 }
 
 /// Preserves the sorted object-key order of `serde_json::Value` without building
@@ -79,11 +92,19 @@ pub(crate) fn admitted_canonical_json(
         }
     }
     let mut count = ByteCount(0);
-    serde_json::to_writer(&mut count, value)
-        .or_else(|error| Err(CodecError::malformed(ctx.format_retained(format_args!("{}", error), "Rhino admitted_canonical_json text")?)))?;
+    serde_json::to_writer(&mut count, value).or_else(|error| {
+        Err(CodecError::malformed(ctx.format_retained(
+            format_args!("{}", error),
+            "Rhino admitted_canonical_json text",
+        )?))
+    })?;
     let (mut raw, _temporary) = ctx.temporary_vec(count.0, operation)?;
-    serde_json::to_writer(&mut raw, value)
-        .or_else(|error| Err(CodecError::malformed(ctx.format_retained(format_args!("{}", error), "Rhino admitted_canonical_json text")?)))?;
+    serde_json::to_writer(&mut raw, value).or_else(|error| {
+        Err(CodecError::malformed(ctx.format_retained(
+            format_args!("{}", error),
+            "Rhino admitted_canonical_json text",
+        )?))
+    })?;
     let scratch_bytes = count
         .0
         .checked_mul(2)
@@ -102,12 +123,18 @@ pub(crate) fn admitted_canonical_json(
             serde::de::DeserializeSeed::deserialize(seed, &mut decoder).or_else(|error| {
                 Err(match failure.into_inner() {
                     Some(refusal) => refusal,
-                    None => CodecError::malformed(ctx.format_retained(format_args!("{}", error), "Rhino admitted_canonical_json text")?),
-                }
-            )})?;
-        decoder
-            .end()
-            .or_else(|error| Err(CodecError::malformed(ctx.format_retained(format_args!("{}", error), "Rhino admitted_canonical_json text")?)))?;
+                    None => CodecError::malformed(ctx.format_retained(
+                        format_args!("{}", error),
+                        "Rhino admitted_canonical_json text",
+                    )?),
+                })
+            })?;
+        decoder.end().or_else(|error| {
+            Err(CodecError::malformed(ctx.format_retained(
+                format_args!("{}", error),
+                "Rhino admitted_canonical_json text",
+            )?))
+        })?;
         Ok::<_, CodecError>(canonical)
     })?;
     admitted_json(ctx, &canonical, operation)
@@ -349,14 +376,27 @@ pub(crate) fn flag_i32(reader: &mut BoundedReader<'_>) -> Result<bool, FramingEr
 
 /// Admits a finite `f64` and refuses a non-finite one at `offset`, the first
 /// byte of the value.
-pub(crate) fn finite(ctx: &cadmpeg_core::decode::DecodeContext<'_>, offset: usize, value: f64, label: &str) -> Result<FiniteReal, FramingError> {
-    FiniteReal::new(value)
-        .map_or_else(|| Err(FramingError::structural(offset, ctx.format_retained(format_args!("{label} is not finite"), "Rhino finite text")?)), Ok)
+pub(crate) fn finite(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    offset: usize,
+    value: f64,
+    label: &str,
+) -> Result<FiniteReal, FramingError> {
+    FiniteReal::new(value).map_or_else(
+        || {
+            Err(FramingError::structural(
+                offset,
+                ctx.format_retained(format_args!("{label} is not finite"), "Rhino finite text")?,
+            ))
+        },
+        Ok,
+    )
 }
 
 /// Reads one `f64` and admits it finite, refusing a non-finite value at the
 /// value's first byte.
-pub(crate) fn read_finite(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+pub(crate) fn read_finite(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     label: &str,
 ) -> Result<FiniteReal, FramingError> {
