@@ -123,29 +123,17 @@ fn uri_base_member_refuses_temporary_byte_limit() {
 
 #[test]
 fn root_reference_note_refuses_retained_byte_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        4 + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("test context");
-    let mut notes = Vec::new();
-    let error = super::push_reference_note(
-        &ctx,
-        &mut notes,
-        "internal resource ",
-        crate::parse::ReferenceName::Entity(1),
-        "part.p21",
-        None,
-        None,
-    )
-    .expect_err("the note requires more than four retained bytes");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "step_zip_reference_note"
-    ));
+    // The note owns its formatted bytes; the vector slot is admitted on insertion.
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, "step_zip_reference_note", |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).expect("test context");
+        let mut notes = Vec::new();
+        let result = super::push_reference_note(&ctx, &mut notes, "internal resource ", crate::parse::ReferenceName::Entity(1), "part.p21", None, None);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+        result
+    });
 }
 
 use std::io::{Cursor, Read as _};
@@ -1146,24 +1134,26 @@ fn forwarded_anchor_lookup_refuses_caller_work_limit() {
     let (exchange, _) =
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
             .expect("valid anchor exchange");
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 5;
-    crate::test_support::with_policy_context(SOURCE, &policy, |_, ctx| {
-        let error = super::forwarded_reference_uri(&exchange, "#ac", ctx)
-            .expect_err("late anchor comparison exceeds work allowance");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "step_zip_anchor_lookup"
-                && refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-        );
+    let bindings = exchange.anchors().iter().filter_map(|anchor| {
+        let crate::parse::Value::Resource(uri) = &anchor.value else { return None; };
+        Some((anchor.name.as_str(), uri.as_str()))
+    }).collect::<std::collections::BTreeMap<_, _>>();
+    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "step_zip_anchor_lookup", |cap| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        crate::test_support::with_policy_context(SOURCE, &policy, |_, ctx| {
+            let result = super::forwarded_reference_uri(&bindings, "#ac", ctx).map(|_| ());
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+            result
+        })
     });
     crate::test_support::with_service_context(SOURCE, |_, ctx| {
         assert_eq!(
-            super::forwarded_reference_uri(&exchange, "#ac", ctx).unwrap(),
+            super::forwarded_reference_uri(&bindings, "#ac", ctx).unwrap(),
             "https://example.invalid/c"
         );
         assert_eq!(
-            super::forwarded_reference_uri(&exchange, "#missing", ctx).unwrap(),
+            super::forwarded_reference_uri(&bindings, "#missing", ctx).unwrap(),
             "#missing"
         );
     });
@@ -1216,7 +1206,7 @@ fn zip_detection_reads_names_without_payload_admission() {
 }
 
 #[test]
-fn zip_entry_extension_case_equality_preserves_refusal() {
+fn zip_entry_extension_search_preserves_refusal() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -1226,7 +1216,7 @@ fn zip_entry_extension_case_equality_preserves_refusal() {
     let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
         panic!("entry classification must return the refusal");
     };
-    assert_eq!(refusal.operation, "STEP ZIP entry extension case equality");
+    assert_eq!(refusal.operation, "STEP ZIP extension component search");
     assert_eq!(ctx.resource_refusal(), Some(refusal));
     let service = cadmpeg_test_support::service_decode_context();
     assert_eq!(
@@ -1320,30 +1310,10 @@ fn zip_fragment_separator_containment_preserves_refusal() {
 }
 
 #[test]
-fn zip_entry_backslash_containment_preserves_refusal() {
+fn zip_entry_path_validation_preserves_refusal() {
     cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "STEP ZIP entry backslash containment",
-        |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::validate_entry_name(&ctx, ROOT_NAME);
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
-        },
-    );
-}
-
-#[test]
-fn zip_entry_null_containment_preserves_refusal() {
-    cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "STEP ZIP entry null containment",
+        "STEP ZIP entry path validation",
         |cap| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -1380,10 +1350,10 @@ fn zip_member_separator_character_preserves_refusal() {
 }
 
 #[test]
-fn zip_reference_marker_character_preserves_refusal() {
+fn zip_reference_note_format_preserves_refusal() {
     cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "STEP ZIP reference marker character",
+        "step_zip_reference_note",
         |cap| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();

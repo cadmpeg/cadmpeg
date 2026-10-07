@@ -4,7 +4,7 @@
 use std::ops::Range;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 
 use crate::parse::ParseError;
 
@@ -17,6 +17,7 @@ pub(crate) fn decode_payload(
     let mut compact_reservation = ctx.reserve_scoped(0, "step_signature_compact_temp")?;
     let mut at = payload.start;
     while at < payload.end {
+        ctx.charge_work(1, "STEP signature cursor traversal")?;
         if input[at].is_ascii_control() || input[at] == b' ' {
             at += 1;
             continue;
@@ -49,8 +50,6 @@ pub(crate) fn decode_payload(
         at += 1;
     }
     let estimate = base64::decoded_len_estimate(compact.len());
-    let _cms_reservation =
-        ctx.reserve_scoped(u64_from_index(estimate), "step_signature_cms_temp")?;
     let mut cms = ctx.alloc_filled(estimate, 0_u8, "step_signature_cms_bytes")?;
     let decoded = STANDARD.decode_slice(&compact, &mut cms).or_else(|error| {
         Err(ParseError::Syntax {
@@ -116,6 +115,7 @@ impl<'a> Ber<'a> {
     }
 
     fn take(&mut self, ctx: &DecodeContext<'_>) -> Result<(u8, &'a [u8]), CmsError> {
+        let _depth = ctx.enter_nested("STEP BER nesting")?;
         let tag = self.take_tag_octet()?;
         let first_length = *self.input.get(self.at).ok_or("missing BER length")?;
         self.at += 1;
@@ -142,9 +142,8 @@ impl<'a> Ber<'a> {
             let end = self.at.checked_add(octets).ok_or("BER length overflow")?;
             let bytes = self.input.get(self.at..end).ok_or("truncated BER length")?;
             self.at = end;
-            ctx.admit_iter(bytes, "STEP BER length octet traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .try_fold(0usize, |value, byte| {
+            // The length uses at most one machine word of octets.
+            bytes.iter().try_fold(0usize, |value, byte| {
                     value
                         .checked_shl(8)
                         .and_then(|value| value.checked_add(usize::from(*byte)))
@@ -183,6 +182,7 @@ impl<'a> Ber<'a> {
             at: start,
         };
         loop {
+            ctx.charge_work(1, "STEP signature cursor traversal")?;
             if contents
                 .input
                 .get(contents.at..)
@@ -223,6 +223,7 @@ fn validate_algorithm_identifier(ctx: &DecodeContext<'_>, value: &[u8]) -> Resul
         return Err(CmsError::Invalid("empty CMS algorithm OID"));
     }
     while algorithm.remaining()? > 0 {
+        ctx.charge_work(1, "STEP signature cursor traversal")?;
         algorithm.take(ctx)?;
         if algorithm.remaining()? > 0 {
             return Err(CmsError::Invalid(
@@ -234,11 +235,13 @@ fn validate_algorithm_identifier(ctx: &DecodeContext<'_>, value: &[u8]) -> Resul
 }
 
 fn validate_octet_string(ctx: &DecodeContext<'_>, tag: u8, value: &[u8]) -> Result<(), CmsError> {
+    let _depth = ctx.enter_nested("STEP CMS octet string nesting")?;
     match tag {
         0x04 => Ok(()),
         0x24 => {
             let mut chunks = Ber::new(value);
             while chunks.remaining()? > 0 {
+                ctx.charge_work(1, "STEP signature cursor traversal")?;
                 let (chunk_tag, chunk_value) = chunks.take(ctx)?;
                 validate_octet_string(ctx, chunk_tag, chunk_value)?;
             }
@@ -258,6 +261,7 @@ fn validate_subject_key_identifier(
         0xa0 => {
             let mut chunks = Ber::new(value);
             while chunks.remaining()? > 0 {
+                ctx.charge_work(1, "STEP signature cursor traversal")?;
                 let (chunk_tag, chunk_value) = chunks.take(ctx)?;
                 validate_octet_string(ctx, chunk_tag, chunk_value)?;
             }
@@ -273,6 +277,7 @@ fn validate_digest_algorithms(ctx: &DecodeContext<'_>, value: &[u8]) -> Result<(
         return Err(CmsError::Invalid("CMS SignedData has no digest algorithm"));
     }
     while algorithms.remaining()? > 0 {
+        ctx.charge_work(1, "STEP signature cursor traversal")?;
         let algorithm = algorithms.take_tag(ctx, 0x30)?;
         validate_algorithm_identifier(ctx, algorithm)?;
     }
@@ -290,6 +295,7 @@ fn validate_signer_identifier(
             let issuer = issuer_and_serial.take_tag(ctx, 0x30)?;
             let mut issuer = Ber::new(issuer);
             while issuer.remaining()? > 0 {
+                ctx.charge_work(1, "STEP signature cursor traversal")?;
                 issuer.take(ctx)?;
             }
             validate_integer(issuer_and_serial.take_tag(ctx, 0x02)?)?;
@@ -324,6 +330,7 @@ fn validate_signer_infos(ctx: &DecodeContext<'_>, value: &[u8]) -> Result<(), Cm
         return Err(CmsError::Invalid("CMS SignedData has no signer"));
     }
     while signers.remaining()? > 0 {
+        ctx.charge_work(1, "STEP signature cursor traversal")?;
         validate_signer_info(ctx, signers.take_tag(ctx, 0x30)?)?;
     }
     Ok(())
@@ -368,6 +375,7 @@ fn validate_detached_cms(ctx: &DecodeContext<'_>, input: &[u8]) -> Result<(), Cm
 
     let mut optional_stage = 0;
     while signed_data.remaining()? > 0 {
+        ctx.charge_work(1, "STEP signature cursor traversal")?;
         let (tag, value) = signed_data.take(ctx)?;
         match tag {
             0xa0 | 0xa1 => {
@@ -378,6 +386,7 @@ fn validate_detached_cms(ctx: &DecodeContext<'_>, input: &[u8]) -> Result<(), Cm
                 optional_stage = stage;
                 let mut optional = Ber::new(value);
                 while optional.remaining()? > 0 {
+                    ctx.charge_work(1, "STEP signature cursor traversal")?;
                     optional.take(ctx)?;
                 }
             }

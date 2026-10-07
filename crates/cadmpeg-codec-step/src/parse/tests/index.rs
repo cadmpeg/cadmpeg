@@ -135,48 +135,48 @@ fn anchor_budget_still_bounds_resource_materialization() {
     });
 }
 
+
 #[test]
-fn entity_union_partial_refusal_is_an_iterator_error() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(A()B());ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) =
-        crate::test_support::with_service_context(source, crate::parse::parse_inner)
-            .expect("valid union input");
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 1;
-    crate::test_support::with_policy_context(&[], &policy, |_, ctx| {
-        let error = exchange
-            .entities_any(ctx, &["A"])
-            .expect("one record admission fits")
-            .next()
-            .expect("partial refusal is yielded")
-            .expect_err("two partial visits exceed the remaining budget");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "STEP entity union partial traversal"
-                && Some(limit) == ctx.resource_refusal())
-        );
+fn indexed_union_lookup_and_result_visits_preserve_refusal() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#3=C();#2=(A()B());#1=B();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid index input");
+    for operation in ["STEP entity name lookup", "STEP indexed entity identifier traversal", "STEP indexed entity record lookup"] {
+        cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            crate::test_support::with_policy_context(&[], &policy, |_, ctx| {
+                let result = exchange.entities_any(ctx, &["A", "B"])?.collect::<Result<Vec<_>, _>>().map(|_| ());
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+                result
+            })
+        });
+    }
+    crate::test_support::with_service_context(&[], |_, ctx| {
+        let ids = exchange.entities_any(ctx, &["MISSING", "B", "A", "B"]).expect("indexed query fits service budget").map(|entity| entity.expect("indexed query fits service budget").0).collect::<Vec<_>>();
+        assert_eq!(ids, [1,2]);
+        assert_eq!(exchange.entities_any(ctx, &[]).expect("indexed query fits service budget").count(), 0);
+        assert_eq!(exchange.matching_entity_ids(ctx, |name| matches!(name,"A"|"B")).expect("indexed query fits service budget").collect::<Result<Vec<_>, _>>().expect("indexed query fits service budget"), ids);
     });
 }
 
 #[test]
-fn matching_entity_partial_refusal_is_an_iterator_error() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(A()B());ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) =
-        crate::test_support::with_service_context(source, crate::parse::parse_inner)
-            .expect("valid matching input");
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 1;
-    crate::test_support::with_policy_context(&[], &policy, |_, ctx| {
-        let error = exchange
-            .matching_entity_ids(ctx, |name| name == "A")
-            .expect("one record admission fits")
-            .next()
-            .expect("partial refusal is yielded")
-            .expect_err("two partial visits exceed the remaining budget");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "STEP matching entity partial traversal"
-                && Some(limit) == ctx.resource_refusal())
-        );
-    });
+fn single_name_queries_do_not_reorder_the_indexed_records() {
+    fn matching_work(record_count: u64) -> u64 {
+        let records = (1..=record_count).rev().map(|id| format!("#{id}=A();")).collect::<String>();
+        let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;");
+        let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid unordered source records");
+        crate::test_support::with_service_context(&[], |_, ctx| {
+            let ids = exchange.entities_any(ctx, &["A"]).expect("single-name query fits").map(|row| row.expect("indexed record lookup fits").0).collect::<Vec<_>>();
+            assert_eq!(ids, (1..=record_count).collect::<Vec<_>>());
+        });
+        crate::test_support::with_service_context(&[], |_, ctx| {
+            let ids = exchange.matching_entity_ids(ctx, |name| name == "A").expect("single-name match fits").collect::<Result<Vec<_>, _>>().expect("indexed IDs fit");
+            assert_eq!(ids, (1..=record_count).collect::<Vec<_>>());
+            let cadmpeg_core::CodecError::ResourceLimit(refusal) = ctx.charge_work(u64::MAX, "test completed indexed matching work").expect_err("work probe refuses") else { panic!("work refusal required"); };
+            refusal.used
+        })
+    }
+    // Doubling the records permits twice the linear copy/visit work plus the
+    // same name traversal. No reorder work is needed for one indexed list.
+    assert!(matching_work(128) <= 2 * matching_work(64));
 }

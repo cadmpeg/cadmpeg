@@ -75,114 +75,6 @@ fn header_section_membership_keeps_validation_results() {
 }
 
 #[test]
-fn parser_expected_name_comparison_preserves_work_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let mut parser = crate::parse::Parser {
-        lexer: crate::lex::Lexer::new(b"", &ctx),
-        current: Some(crate::lex::Token {
-            kind: crate::lex::TokenKind::Name(String::from("HEADER")),
-            span: 0..6,
-        }),
-        last_end: 0,
-        depth: 0,
-        diagnostics: Vec::new(),
-        omitted_entity_names: None,
-        budget: &ctx,
-    };
-    let error = parser.name("HEADER").unwrap_err();
-    let crate::parse::ParseError::Resource(CodecError::ResourceLimit(refusal)) = error else {
-        panic!("name comparison must preserve its resource refusal");
-    };
-    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(refusal.operation, "STEP expected parser name comparison");
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
-}
-
-#[test]
-fn parser_lookahead_name_preserves_equality_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let parser = crate::parse::Parser {
-        lexer: crate::lex::Lexer::new(b"", &ctx),
-        current: Some(crate::lex::Token {
-            kind: crate::lex::TokenKind::Name(String::from("HEADER")),
-            span: 0..6,
-        }),
-        last_end: 0,
-        depth: 0,
-        diagnostics: Vec::new(),
-        omitted_entity_names: None,
-        budget: &ctx,
-    };
-    let error = parser.peek_name("HEADER").unwrap_err();
-    let crate::parse::ParseError::Resource(CodecError::ResourceLimit(refusal)) = error else {
-        panic!("lookahead comparison must preserve its resource refusal");
-    };
-    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(refusal.operation, "STEP parser lookahead name equality");
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
-}
-
-#[test]
-fn parser_punctuation_tag_preserves_equality_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let mut parser = crate::parse::Parser {
-        lexer: crate::lex::Lexer::new(b"", &ctx),
-        current: Some(crate::lex::Token {
-            kind: crate::lex::TokenKind::Comma,
-            span: 0..1,
-        }),
-        last_end: 0,
-        depth: 0,
-        diagnostics: Vec::new(),
-        omitted_entity_names: None,
-        budget: &ctx,
-    };
-    let error = parser.punct(&crate::lex::TokenKind::Comma).unwrap_err();
-    let crate::parse::ParseError::Resource(CodecError::ResourceLimit(refusal)) = error else {
-        panic!("token comparison must preserve the refusal");
-    };
-    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(refusal.operation, "STEP parser punctuation tag equality");
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
-}
-
-#[test]
-fn parser_lookahead_tag_preserves_equality_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let parser = crate::parse::Parser {
-        lexer: crate::lex::Lexer::new(b"", &ctx),
-        current: Some(crate::lex::Token {
-            kind: crate::lex::TokenKind::Comma,
-            span: 0..1,
-        }),
-        last_end: 0,
-        depth: 0,
-        diagnostics: Vec::new(),
-        omitted_entity_names: None,
-        budget: &ctx,
-    };
-    let error = parser.peek(&crate::lex::TokenKind::Comma).unwrap_err();
-    let crate::parse::ParseError::Resource(CodecError::ResourceLimit(refusal)) = error else {
-        panic!("token comparison must preserve the refusal");
-    };
-    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(refusal.operation, "STEP parser lookahead tag equality");
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
-}
-
-#[test]
 fn parser_token_tags_preserve_payload_independent_matches_and_empty_lookahead() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut parser = crate::parse::Parser {
@@ -198,11 +90,10 @@ fn parser_token_tags_preserve_payload_independent_matches_and_empty_lookahead() 
         budget: &ctx,
     };
     assert!(parser
-        .peek(&crate::lex::TokenKind::Name(String::from("expected")))
-        .unwrap());
-    assert!(!parser.peek(&crate::lex::TokenKind::Comma).unwrap());
+        .peek(&crate::lex::TokenKind::Name(String::from("expected"))));
+    assert!(!parser.peek(&crate::lex::TokenKind::Comma));
     parser
         .punct(&crate::lex::TokenKind::Name(String::from("expected")))
         .unwrap();
-    assert!(!parser.peek(&crate::lex::TokenKind::Comma).unwrap());
+    assert!(!parser.peek(&crate::lex::TokenKind::Comma));
 }

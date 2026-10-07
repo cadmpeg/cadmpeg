@@ -624,3 +624,25 @@ fn transient_token_storage_stays_live_until_the_next_token() {
         assert!(matches!(token.kind, super::TokenKind::Binary(_)));
     });
 }
+
+#[test]
+fn control_run_lookahead_is_linear_and_preserves_resource_error_offset() {
+    fn work(source: &[u8]) -> u64 {
+        crate::test_support::with_service_context(source, |input, ctx| {
+            super::lex_with_context(input, ctx).expect("control run input lexes");
+            let CodecError::ResourceLimit(refusal) = ctx.charge_work(u64::MAX, "test completed lexer work").expect_err("work probe refuses") else { panic!("work refusal required"); };
+            refusal.used
+        })
+    }
+    for (prefix, suffix) in [(b"<a".as_slice(), b"b>".as_slice()), (b"SIGNATURE;AAAA".as_slice(), b"ENDSEC;".as_slice())] {
+        let short = [prefix, &[0; 16], suffix].concat();
+        let long = [prefix, &[0; 128], suffix].concat();
+        // One cursor visit and one normalized-byte/signature validation visit per control;
+        // the run skipper has one additional outer visit, independent of run length.
+        assert_eq!(work(&long) - work(&short), 2 * (128 - 16));
+    }
+    let invalid = [b"<a".as_slice(), &[0; 16], b"\\N\\>".as_slice()].concat();
+    let error = crate::test_support::with_service_context(&invalid, super::lex_with_context).expect_err("print directives are forbidden in resources");
+    assert_eq!(error.offset, 2);
+    assert_eq!(error.message, "print control directive is not allowed in a resource");
+}

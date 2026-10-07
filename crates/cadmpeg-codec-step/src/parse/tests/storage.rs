@@ -202,33 +202,56 @@ fn copied_value_list_and_box_admit_their_storage() {
 
 #[test]
 fn anchor_typed_name_copy_refuses_work_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 3;
-    with_policy_context(b"", &policy, |_, ctx| {
-        let anchors = BTreeMap::new();
-        let value = Value::Typed("MEASURE".into(), Box::new(Value::Integer(1)));
-        assert!(
-            matches!(AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits").resolve_root(&value),
-            Err(ResolveError::Resource(CodecError::ResourceLimit(refusal)))
-                if refusal.dimension == ResourceDimension::WorkUnits
-                    && refusal.operation == "step_anchor_typed_name_copy"
-                    && refusal.used == 3 && refusal.additional == 7)
-        );
+    // The copy pays the seven name bytes once; value visits precede it.
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "step_anchor_typed_name_copy", |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        with_policy_context(b"", &policy, |_, ctx| {
+            let anchors = BTreeMap::new();
+            let value = Value::Typed("MEASURE".into(), Box::new(Value::Integer(1)));
+            let result = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits").resolve_root(&value);
+            match result {
+                Err(ResolveError::Resource(error)) => {
+                    if let CodecError::ResourceLimit(refusal) = &error {
+                        assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+                        if refusal.operation.ends_with("typed_name_copy") {
+                            assert_eq!(refusal.used, 3);
+                            assert_eq!(refusal.additional, 7);
+                        }
+                    }
+                    Err(error)
+                }
+                Ok(_) => Ok(()),
+                other => panic!("unexpected typed resolution result: {other:?}"),
+            }
+        })
     });
 }
 
 #[test]
 fn reference_typed_name_copy_refuses_work_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 3;
-    with_policy_context(b"", &policy, |_, ctx| {
-        let anchors = BTreeMap::new();
-        let value = Value::Typed("MEASURE".into(), Box::new(Value::Integer(1)));
-        let mut resolver = ReferenceResolver::new(&[], &anchors, ctx).expect("empty bindings");
-        assert!(matches!(resolver.resolve_value(&value, 0),
-            Err(ResolveError::Resource(CodecError::ResourceLimit(refusal)))
-                if refusal.dimension == ResourceDimension::WorkUnits
-                    && refusal.operation == "step_reference_typed_name_copy"
-                    && refusal.used == 3 && refusal.additional == 7));
+    // The copy pays the seven name bytes once; value visits precede it.
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "step_reference_typed_name_copy", |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        with_policy_context(b"", &policy, |_, ctx| {
+            let anchors = BTreeMap::new();
+            let value = Value::Typed("MEASURE".into(), Box::new(Value::Integer(1)));
+            let result = ReferenceResolver::new(&[], &anchors, ctx).expect("empty bindings").resolve_value(&value, 0);
+            match result {
+                Err(ResolveError::Resource(error)) => {
+                    if let CodecError::ResourceLimit(refusal) = &error {
+                        assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+                        if refusal.operation.ends_with("typed_name_copy") {
+                            assert_eq!(refusal.used, 3);
+                            assert_eq!(refusal.additional, 7);
+                        }
+                    }
+                    Err(error)
+                }
+                Ok(_) => Ok(()),
+                other => panic!("unexpected typed resolution result: {other:?}"),
+            }
+        })
     });
 }
