@@ -145,7 +145,7 @@ pub(super) fn decode(
             let Some(item) = exchange.records().get(&item_id) else {
                 continue;
             };
-            let scale = geometry.units.length([item_id, representation_id]).get();
+            let scale = geometry.units.length([item_id, representation_id], ctx)?.get();
             let expected = expected_value(item_id, item, exchange, scale, &mut losses, ctx)?;
             let Some(expected) = expected else {
                 push_validation_loss(

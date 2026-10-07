@@ -24,10 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_ENDPOINT_WITNESS: f64 = 1.0e-6;
 
-fn source_curve_refusal(
-    collection_limit: u64,
-    depth_limit: Option<u64>,
-) -> cadmpeg_core::CodecError {
+fn source_curve_refusal(operation: &'static str) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CIRCLE();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
@@ -39,16 +36,17 @@ fn source_curve_refusal(
         length: BTreeMap::new(),
         angle: BTreeMap::new(),
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    if let Some(limit) = depth_limit {
-        policy.limits.max_recursion_depth = limit;
-    }
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    super::super::resolve_source_curve_parameter_scales(&exchange, &scales, &ctx)
-        .expect_err("source curve admission exceeds the limit")
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
+            super::super::resolve_source_curve_parameter_scales(&exchange, &scales, &ctx)
+        },
+    )
 }
 
 /// Runs the parameter-scale walk over a fresh index of `ir`.
@@ -75,38 +73,27 @@ fn surface_parameter_scales_for_step(
 }
 
 #[test]
-fn source_curve_parameter_active_refuses_collection_limit() {
+fn source_curve_parameter_memo_refuses_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;
 
     assert!(matches!(
-        source_curve_refusal(0, None),
+        source_curve_refusal("step source curve scale memo"),
         cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_source_curve_parameter_active"
+                && refusal.operation == "step source curve scale memo"
     ));
 }
 
 #[test]
 fn source_curve_parameter_scales_refuse_collection_limit() {
+    // One memo slot and one path slot precede the first resolved scale slot.
     use cadmpeg_core::decode::ResourceDimension;
 
     assert!(matches!(
-        source_curve_refusal(1, None),
+        source_curve_refusal("step_source_curve_parameter_scales"),
         cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_source_curve_parameter_scales"
-    ));
-}
-
-#[test]
-fn source_curve_parameter_walk_refuses_depth_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    assert!(matches!(
-        source_curve_refusal(2, Some(0)),
-        cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::RecursionDepth
-                && refusal.operation == "step_source_curve_parameter_walk"
     ));
 }
 
