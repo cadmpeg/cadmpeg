@@ -604,7 +604,7 @@ impl RecordFamily {
         kind: u16,
         node_id: Option<u32>,
         position: Option<[f64; 3]>,
-        references: Vec<u32>,
+        references: &[u32],
     ) -> Option<Self> {
         let position = match position {
             Some(value) => Some(FixedPosition::new(kind, value)?),
@@ -617,7 +617,7 @@ impl RecordFamily {
         kind: u16,
         node_id: Option<u32>,
         position: Option<FixedPosition>,
-        references: Vec<u32>,
+        references: &[u32],
     ) -> Option<Self> {
         Some(match kind {
             13 => Self::Shell {
@@ -1011,8 +1011,7 @@ mod point_coordinate_tests {
         ] {
             let position = [f64::from_bits(1), -0.0, 42.0];
             let family =
-                RecordFamily::from_fixed(kind, Some(7), Some(position), references.clone())
-                    .unwrap();
+                RecordFamily::from_fixed(kind, Some(7), Some(position), &references).unwrap();
             assert_eq!(
                 family.position().unwrap().map(f64::to_bits),
                 position.map(f64::to_bits)
@@ -1047,7 +1046,7 @@ mod point_coordinate_tests {
                     kind,
                     Some(7),
                     Some([invalid, 0.0, 0.0]),
-                    references.clone()
+                    &references
                 )
                 .is_none());
             }

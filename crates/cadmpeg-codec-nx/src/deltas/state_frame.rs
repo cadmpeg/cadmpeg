@@ -29,10 +29,9 @@ impl StateFrames {
         ctx: &DecodeContext<'_>,
         first: ReferenceStateFrame,
     ) -> Result<Self, CodecError> {
-        Ok(Self(ctx.collect_retained_vec(
-            [first],
-            "NX reference state frames",
-        )?))
+        let mut frames = ctx.collection_vec(1, "NX reference state frames")?;
+        frames.push(first);
+        Ok(Self(frames))
     }
     pub(super) fn push(
         &mut self,
@@ -75,6 +74,34 @@ impl From<StateFrames> for Vec<ReferenceStateFrame> {
 #[cfg(test)]
 mod tests {
     use super::{StateFrames, STATE_FRAMES_INTO_WIRE_COUNT};
+
+    #[test]
+    fn state_frames_first_frame_requires_storage_without_work() {
+        let frame = super::ReferenceStateFrame {
+            references: super::StateReferences::try_from([2, 3, 4, 1]).unwrap(),
+            state_words: [34, 6, 11, 22362, 1],
+            state_byte: 65,
+        };
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                assert_eq!(
+                    StateFrames::new(ctx, frame.clone()).unwrap().as_slice(),
+                    std::slice::from_ref(&frame)
+                );
+            },
+        );
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_retained_bytes = 0,
+            |ctx| {
+                assert!(matches!(StateFrames::new(ctx, frame),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+            },
+        );
+    }
 
     #[test]
     fn state_frames_preserve_array_wire_and_reject_empty_packets() {

@@ -3,6 +3,8 @@
 
 use super::record_kind::RecordKind;
 use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
 
@@ -82,16 +84,54 @@ impl Serialize for TaggedReferences {
         sequence.end()
     }
 }
+
+fn tagged_entry((kind, reference): (u16, u32)) -> Result<(TaggedKind, NonNullXmt), &'static str> {
+    Ok((
+        TaggedKind::new(kind)?,
+        NonNullXmt::try_from(reference).map_err(|_| "references.reference: must exceed one")?,
+    ))
+}
+
+fn map_entry((reference, kind): (u32, u16)) -> Result<(u32, MapKind), &'static str> {
+    if reference == 1 {
+        return Err("entries.reference: one is the terminal clause");
+    }
+    Ok((reference, MapKind::new(kind)?))
+}
+
+impl TaggedReferences {
+    pub(super) fn from_wire(
+        ctx: &DecodeContext<'_>,
+        raw: Vec<(u16, u32)>,
+    ) -> Result<Result<Self, &'static str>, CodecError> {
+        let convert = tagged_entry;
+        let mut entries = raw.into_iter();
+        let Some(first) = entries.next() else {
+            return Ok(Err("references: require at least one tagged reference"));
+        };
+        let first = match convert(first) {
+            Ok(first) => first,
+            Err(error) => return Ok(Err(error)),
+        };
+        let mut rest = Vec::new();
+        let mut storage = ctx.reserve_scoped(0, "NX references converted entries")?;
+        while let Some(entry) = ctx.next_charged(&mut entries, "NX references conversion")? {
+            let entry = match convert(entry) {
+                Ok(entry) => entry,
+                Err(error) => return Ok(Err(error)),
+            };
+            storage.with_storage(|| {
+                ctx.push_vec(&mut rest, entry, "NX references converted entries")
+            })?;
+        }
+        storage.commit()?;
+        Ok(Ok(Self { first, rest }))
+    }
+}
 impl TryFrom<Vec<(u16, u32)>> for TaggedReferences {
     type Error = &'static str;
     fn try_from(raw: Vec<(u16, u32)>) -> Result<Self, Self::Error> {
-        let mut entries = raw.into_iter().map(|(kind, reference)| {
-            Ok((
-                TaggedKind::new(kind)?,
-                NonNullXmt::try_from(reference)
-                    .map_err(|_| "references.reference: must exceed one")?,
-            ))
-        });
+        let mut entries = raw.into_iter().map(tagged_entry);
         let first = entries
             .next()
             .ok_or("references: require at least one tagged reference")??;
@@ -136,16 +176,38 @@ impl MapEntries {
     pub(super) fn last_kind(&self) -> u16 {
         self.rest.last().unwrap_or(&self.first).1.code()
     }
+
+    pub(super) fn from_wire(
+        ctx: &DecodeContext<'_>,
+        raw: Vec<(u32, u16)>,
+    ) -> Result<Result<Self, &'static str>, CodecError> {
+        let convert = map_entry;
+        let mut entries = raw.into_iter();
+        let Some(first) = entries.next() else {
+            return Ok(Err("entries: require at least one map entry"));
+        };
+        let first = match convert(first) {
+            Ok(first) => first,
+            Err(error) => return Ok(Err(error)),
+        };
+        let mut rest = Vec::new();
+        let mut storage = ctx.reserve_scoped(0, "NX entries converted entries")?;
+        while let Some(entry) = ctx.next_charged(&mut entries, "NX entries conversion")? {
+            let entry = match convert(entry) {
+                Ok(entry) => entry,
+                Err(error) => return Ok(Err(error)),
+            };
+            storage
+                .with_storage(|| ctx.push_vec(&mut rest, entry, "NX entries converted entries"))?;
+        }
+        storage.commit()?;
+        Ok(Ok(Self { first, rest }))
+    }
 }
 impl TryFrom<Vec<(u32, u16)>> for MapEntries {
     type Error = &'static str;
     fn try_from(raw: Vec<(u32, u16)>) -> Result<Self, Self::Error> {
-        let mut entries = raw.into_iter().map(|(reference, kind)| {
-            if reference == 1 {
-                return Err("entries.reference: one is the terminal clause");
-            }
-            Ok((reference, MapKind::new(kind)?))
-        });
+        let mut entries = raw.into_iter().map(map_entry);
         let first = entries
             .next()
             .ok_or("entries: require at least one map entry")??;
