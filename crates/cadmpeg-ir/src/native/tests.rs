@@ -194,7 +194,7 @@ fn native_arena_json_copy_refuses_retained_limit_before_materialization() {
 }
 
 #[test]
-fn native_arena_typed_load_refuses_retained_limit_before_value_clone() {
+fn native_arena_typed_load_refuses_retained_limit_before_reading() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let record = serde_json::json!({

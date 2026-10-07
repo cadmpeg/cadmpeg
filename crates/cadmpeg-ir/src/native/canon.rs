@@ -1006,13 +1006,6 @@ impl ser::Serializer for CanonKey<'_> {
     }
 
     fn serialize_str(self, value: &str) -> Result<String, Error> {
-        self.ctx.charge_work(
-            u64::try_from(value.len())
-                .ok()
-                .and_then(|len| len.checked_mul(8))
-                .ok_or_else(|| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?,
-            WORK,
-        )?;
         copy_text(self.ctx, value)
     }
 

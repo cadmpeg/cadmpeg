@@ -14,6 +14,7 @@ use serde_json::{Map, Value};
 mod canon;
 pub mod catalogue;
 mod copy;
+mod read;
 mod replay;
 pub(crate) mod view;
 
@@ -480,26 +481,36 @@ impl NativeRecord {
         self.fields.get(name).cloned()
     }
 
-    /// Read the record as a codec-owned type, admitting the read first.
+    /// Read the record as a codec-owned type.
     ///
-    /// The reader borrows the stored value directly; only the typed result is
-    /// built.
+    /// The reader borrows the stored value; each of its requests is admitted
+    /// before it acts, as [`read`] states.
     fn to_typed<T: DeserializeOwned>(
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<T, NativeConvertError> {
-        admit_typed_record(ctx, self.id.as_str(), &self.fields)?;
-        let mut storage = ctx.reserve_scoped(0, TYPED_READ)?;
-        let id = Value::String(ctx.copy_scoped_text(self.id.as_str(), &mut storage, TYPED_READ)?);
+        let mut storage = ctx.reserve_scoped(0, read::TYPED_READ)?;
+        let id = Value::String(ctx.copy_scoped_text(
+            self.id.as_str(),
+            &mut storage,
+            read::TYPED_READ,
+        )?);
         #[cfg(test)]
         TYPED_RECORD_READ_COUNT.with(|count| count.set(count.get() + 1));
+        let kept = std::cell::Cell::new(0);
         let members = std::iter::once(("id", &id))
             .chain(self.fields.iter().map(|(key, value)| (key.as_str(), value)));
-        match T::deserialize(
-            serde::de::value::MapDeserializer::<_, serde_json::Error>::new(members),
-        ) {
-            Ok(value) => Ok(value),
-            Err(source) => Err(NativeConvertError::ReadRecord {
+        let read = T::deserialize(read::Record {
+            account: read::Account::new(ctx, &kept),
+            members,
+        });
+        match (read, ctx.resource_refusal()) {
+            (Ok(value), _) => Ok(value),
+            // A budget refusal fused the session; report it, not the reader's text.
+            (Err(_), Some(limit)) => Err(NativeConvertError::Resource(CodecError::ResourceLimit(
+                limit,
+            ))),
+            (Err(source), None) => Err(NativeConvertError::ReadRecord {
                 id: self
                     .id
                     .try_clone_for_decode(ctx, "retain native record error identity")?,
@@ -507,75 +518,6 @@ impl NativeRecord {
             }),
         }
     }
-}
-
-const TYPED_READ: &str = "load typed native record";
-
-/// Admits a typed reader's visit to a record: its `id` member and its fields.
-fn admit_typed_record(
-    ctx: &DecodeContext<'_>,
-    id: &str,
-    fields: &Map<String, Value>,
-) -> Result<(), CodecError> {
-    ctx.charge_work(1, TYPED_READ)?;
-    let _depth = ctx.enter_nested(TYPED_READ)?;
-    let members = fields
-        .len()
-        .checked_add(1)
-        .ok_or_else(|| ctx.refuse_codec_limit(TYPED_READ, u64::MAX - 1, u64::MAX))?;
-    admit_typed_members(ctx, members)?;
-    admit_typed_text(ctx, "id")?;
-    admit_typed_text(ctx, id)?;
-    for (key, value) in ctx.admit_iter(fields, TYPED_READ)? {
-        admit_typed_text(ctx, key)?;
-        admit_typed_value(ctx, value)?;
-    }
-    Ok(())
-}
-
-/// Admits a typed reader's visit to one stored value and everything in it.
-///
-/// A reader visits every value once and copies every text it keeps, so a
-/// value pays one visit and a text pays its bytes as work and as retained
-/// storage. Each sequence or object member pays one collection item and one
-/// stored value's width, the storage a reader's own collections take, and
-/// each container is entered as deep as the reader descends.
-fn admit_typed_value(ctx: &DecodeContext<'_>, value: &Value) -> Result<(), CodecError> {
-    ctx.charge_work(1, TYPED_READ)?;
-    match value {
-        Value::Null | Value::Bool(_) | Value::Number(_) => {}
-        Value::String(text) => admit_typed_text(ctx, text)?,
-        Value::Array(items) => {
-            let _depth = ctx.enter_nested(TYPED_READ)?;
-            admit_typed_members(ctx, items.len())?;
-            for item in ctx.admit_iter(items, TYPED_READ)? {
-                admit_typed_value(ctx, item)?;
-            }
-        }
-        Value::Object(members) => {
-            let _depth = ctx.enter_nested(TYPED_READ)?;
-            admit_typed_members(ctx, members.len())?;
-            for (key, item) in ctx.admit_iter(members, TYPED_READ)? {
-                admit_typed_text(ctx, key)?;
-                admit_typed_value(ctx, item)?;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn admit_typed_text(ctx: &DecodeContext<'_>, text: &str) -> Result<(), CodecError> {
-    ctx.charge_work(u64_from_index(text.len()), TYPED_READ)?;
-    ctx.charge_retained(u64_from_index(text.len()), TYPED_READ)
-}
-
-fn admit_typed_members(ctx: &DecodeContext<'_>, count: usize) -> Result<(), CodecError> {
-    let bytes = count
-        .checked_mul(std::mem::size_of::<Value>())
-        .map(u64_from_index)
-        .ok_or_else(|| ctx.refuse_codec_limit(TYPED_READ, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_collection_items(u64_from_index(count), TYPED_READ)?;
-    ctx.charge_retained(bytes, TYPED_READ)
 }
 
 #[derive(Serialize)]
