@@ -584,8 +584,6 @@ fn decode_binds_adjacent_entity53_color_to_disc14_face() {
 
 #[test]
 fn appearance_searches_refuse_marker_free_ranges() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
     let mut source = outer_header();
     source.extend(make_block(0x43, "ThirdPtyStore/VisualStates", &[0; 64]));
     let scan = crate::test_support::container::scan(&source);
@@ -594,28 +592,21 @@ fn appearance_searches_refuse_marker_free_ranges() {
         .unwrap()
         .next()
         .unwrap();
-    // Whole-scan routes count one section visit before payload work.
-    for (work, operation, route) in [
-        (1, "scan SLDPRT appearance definitions", 0),
-        (0, "scan inline SLDPRT appearances", 1),
-        (65, "scan SLDPRT feature appearance markers", 2),
+    for (operation, route) in [
+        ("scan SLDPRT appearance definitions", 0),
+        ("scan inline SLDPRT appearances", 1),
+        ("scan SLDPRT feature appearance markers", 2),
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = work;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = match route {
-            0 => super::definitions(&ctx, &scan).unwrap_err(),
-            1 => super::inline_definitions(&ctx, section, 0, 64).unwrap_err(),
-            _ => super::feature_assignments(&ctx, &scan).unwrap_err(),
-        };
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation));
+        crate::test_support::work_refusal_at(operation, |ctx| match route {
+            0 => super::definitions(ctx, &scan).map(|found| found.len()),
+            1 => super::inline_definitions(ctx, section, 0, 64).map(|found| found.len()),
+            _ => super::feature_assignments(ctx, &scan).map(|found| found.len()),
+        });
     }
 }
 
 #[test]
 fn appearance_face_class_search_refuses_without_assignments() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let payload = [&[0xff, 0xff, 1, 0, 1, 0][..], b"x", &[0; 64]].concat();
     let mut source = outer_header();
     source.extend(make_block(0x43, "DisplayLists", &payload));
@@ -637,22 +628,14 @@ fn appearance_face_class_search_refuses_without_assignments() {
     )
     .unwrap();
 
-    let arena = DecodeArena::new();
     let section = scan
         .sections(&cadmpeg_test_support::service_decode_context())
         .unwrap()
         .next()
         .unwrap();
-    cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "match SLDPRT appearance classes",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            super::display_assignments(&ctx, section, &faces)
-        },
-    );
+    crate::test_support::work_refusal_at("match SLDPRT appearance classes", |ctx| {
+        super::display_assignments(ctx, section, &faces)
+    });
 }
 
 fn unicode_appearance_source() -> (Vec<u8>, usize) {

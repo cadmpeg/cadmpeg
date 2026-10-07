@@ -54,6 +54,10 @@ fn native_brep_nurbs_subset_evaluation_refuses_scoped_limit() {
 fn body_stream_index_storage_refusal_uses_the_scoped_dimension() {
     let header = crate::parasolid::StreamHeader {
         description: String::from("test partition"),
+        words: crate::container::NameWords {
+            partition: true,
+            ..crate::container::NameWords::default()
+        },
         schema: cadmpeg_parasolid::OwnedSchemaToken::parse(
             &cadmpeg_test_support::service_decode_context(),
             "SCH_TEST_1_9999".into(),
@@ -85,7 +89,7 @@ fn body_stream_index_storage_refusal_uses_the_scoped_dimension() {
 }
 
 #[test]
-fn reference_qualifier_character_refusal_preserves_the_resource_limit() {
+fn reference_qualifier_refusal_preserves_the_resource_limit() {
     let arena = DecodeArena::new();
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -93,15 +97,16 @@ fn reference_qualifier_character_refusal_preserves_the_resource_limit() {
         super::qualified_reference(&service, "test#1", "scope").unwrap(),
         "test#1@scope"
     );
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::qualified_reference(&ctx, "test#1", "scope").unwrap_err();
+    assert_eq!(
+        super::qualified_reference(&service, "plain", "scope").unwrap(),
+        "plain"
+    );
+    let error = crate::test_support::work_refusal_at("qualify SLDPRT reference", |ctx| {
+        super::qualified_reference(ctx, "test#1", "scope")
+    });
     let CodecError::ResourceLimit(limit) = error else {
-        panic!("character copy refusal");
+        panic!("qualified reference refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.operation, "append SLDPRT reference qualifier");
-    assert_eq!(limit.additional, 1);
-    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert_eq!(limit.operation, "qualify SLDPRT reference");
 }
