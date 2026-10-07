@@ -234,11 +234,10 @@ fn a_scaled_curve_chain_fits_a_small_stack_and_keeps_resource_limits() {
                     if limit.operation == operation)
                 );
             }
-            let scaled = with_scaling_limits(depth, 0, depth, |ctx| {
-                chain.scaled_owned(ctx, scale(25.4))
-            })
-            .expect("exact work and depth budgets")
-            .expect("finite scaled chain");
+            let scaled =
+                with_scaling_limits(depth, 0, depth, |ctx| chain.scaled_owned(ctx, scale(25.4)))
+                    .expect("exact work and depth budgets")
+                    .expect("finite scaled chain");
             assert_eq!(borrowed, scaled);
             assert_eq!(scaled.nesting_depth(), MAX_GEOMETRY_NESTING);
             let mut leaf = &scaled;
@@ -533,10 +532,15 @@ fn owned_nurbs_scaling_refuses_each_pole_work_and_reuses_lanes() {
                 .expect("fixture scaling admission")
         );
         for operation in ["IR NURBS unit scaling rows", "IR NURBS unit scaling work"] {
-            cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, operation,
-                |cap| with_scaling_limits(cap, u64::MAX, u64::MAX, |ctx| {
-                    scaling_surface(1.0, rational).scaled_owned(ctx, scale(2.0))
-                }));
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    with_scaling_limits(cap, u64::MAX, u64::MAX, |ctx| {
+                        scaling_surface(1.0, rational).scaled_owned(ctx, scale(2.0))
+                    })
+                },
+            );
         }
         assert_eq!(
             with_scaling_limits(9, 0, u64::MAX, |ctx| scaling_surface(1.0, rational)
@@ -747,7 +751,6 @@ fn borrowed_scaling_preserves_caller_refusals_and_source_carriers() {
             );
         }
     }
-
 }
 
 #[test]

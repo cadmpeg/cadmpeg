@@ -14,12 +14,33 @@ fn points() -> Vec<Vec<Point3>> {
 
 #[test]
 fn bspline_constructor_admits_each_scan_row_and_pole_before_its_visit() {
-    for operation in ["IR NURBS knot finiteness", "IR NURBS knot order", "IR NURBS grid row shape",
-        "IR admitted B-spline grid rows", "IR admitted B-spline grid poles"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-                BsplineSurface::new(ctx, 1, 1, vec![0., 0., 1., 1.], vec![0., 0., 1., 1.], points())
-            }));
+    for operation in [
+        "IR NURBS knot finiteness",
+        "IR NURBS knot order",
+        "IR NURBS grid row shape",
+        "IR admitted B-spline grid rows",
+        "IR admitted B-spline grid poles",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        BsplineSurface::new(
+                            ctx,
+                            1,
+                            1,
+                            vec![0., 0., 1., 1.],
+                            vec![0., 0., 1., 1.],
+                            points(),
+                        )
+                    },
+                )
+            },
+        );
     }
     // Two nine-probe knot axes, a two-probe shape search and nine collection probes.
     let cap = 29;

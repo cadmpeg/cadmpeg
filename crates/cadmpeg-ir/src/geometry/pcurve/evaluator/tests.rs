@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{
-    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
 use super::PcurveEvaluatorLanes;
@@ -50,8 +48,12 @@ fn evaluator_lanes_admit_each_copy_and_release_both_lanes() {
                     let arena = DecodeArena::new();
                     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
                     let result = PcurveEvaluatorLanes::new(
-                        &ctx, &source, "evaluator point copy", "evaluator weight copy",
-                    ).map(|_| ());
+                        &ctx,
+                        &source,
+                        "evaluator point copy",
+                        "evaluator weight copy",
+                    )
+                    .map(|_| ());
                     if let Err(ref limit) = result {
                         assert!(matches!(ctx.finish_session(),
                             Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
@@ -69,12 +71,22 @@ fn evaluator_lanes_admit_each_copy_and_release_both_lanes() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let lanes = PcurveEvaluatorLanes::new(
-            &ctx, &source, "evaluator point copy", "evaluator weight copy",
-        ).unwrap();
-        assert_eq!(lanes.points(), [Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)]);
+            &ctx,
+            &source,
+            "evaluator point copy",
+            "evaluator weight copy",
+        )
+        .unwrap();
+        assert_eq!(
+            lanes.points(),
+            [Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)]
+        );
         assert_eq!(lanes.weights(), rational.then_some([1.0, 2.0].as_slice()));
         drop(lanes);
-        drop(ctx.reserve_scoped_limit(4096, "evaluator lanes released").unwrap());
+        drop(
+            ctx.reserve_scoped_limit(4096, "evaluator lanes released")
+                .unwrap(),
+        );
         ctx.finish_session().unwrap();
     }
 }
@@ -97,10 +109,17 @@ fn evaluator_lanes_preserve_storage_and_slot_refusals() {
             }
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            let result = PcurveEvaluatorLanes::new(&ctx, &source,
-                "evaluator point copy", "evaluator weight copy").map(|_| ());
+            let result = PcurveEvaluatorLanes::new(
+                &ctx,
+                &source,
+                "evaluator point copy",
+                "evaluator weight copy",
+            )
+            .map(|_| ());
             if let Err(ref limit) = result {
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                );
             }
             result.map_err(Into::into)
         });

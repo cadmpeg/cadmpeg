@@ -37,16 +37,42 @@ fn samples(parameterized: bool) -> PolylineSamples<FiniteReal, FinitePoint3> {
 fn sampled_point_edit_refuses_before_copy_callback_and_copy_back() {
     for parameterized in [false, true] {
         let original = samples(parameterized);
-        for operation in ["IR sampled edit candidate", "IR sampled edit callback", "IR sampled edit copy back"] {
-            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-                |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-                    let mut edited = original.clone();
-                    let mut calls = 0;
-                    let result = edited.edit_admitted_points(|point| { calls += 1; Ok::<_, ()>(point.negated()) }, ctx);
-                    assert_eq!(calls, if operation == "IR sampled edit copy back" { 3 } else { 0 });
-                    assert_eq!(edited, original);
-                    result
-                }));
+        for operation in [
+            "IR sampled edit candidate",
+            "IR sampled edit callback",
+            "IR sampled edit copy back",
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    crate::geometry::tests::budget::with_limit(
+                        ResourceDimension::WorkUnits,
+                        cap,
+                        |ctx| {
+                            let mut edited = original.clone();
+                            let mut calls = 0;
+                            let result = edited.edit_admitted_points(
+                                |point| {
+                                    calls += 1;
+                                    Ok::<_, ()>(point.negated())
+                                },
+                                ctx,
+                            );
+                            assert_eq!(
+                                calls,
+                                if operation == "IR sampled edit copy back" {
+                                    3
+                                } else {
+                                    0
+                                }
+                            );
+                            assert_eq!(edited, original);
+                            result
+                        },
+                    )
+                },
+            );
         }
         let bytes = u64::try_from(
             3 * if parameterized {

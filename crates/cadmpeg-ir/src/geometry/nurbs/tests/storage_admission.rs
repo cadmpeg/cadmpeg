@@ -307,8 +307,10 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
 
 #[test]
 fn context_free_pole_reconstruction_does_not_enter_a_decode_constructor() {
-    use crate::geometry::nurbs::{NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurfaceAxis, PoleValue};
     use crate::features::FinitePoint3;
+    use crate::geometry::nurbs::{
+        NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurfaceAxis, PoleValue,
+    };
 
     #[derive(Clone, Copy)]
     struct Pole(Point3);
@@ -377,4 +379,3 @@ fn context_free_pole_reconstruction_does_not_enter_a_decode_constructor() {
         surface
     );
 }
-

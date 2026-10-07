@@ -89,13 +89,22 @@ fn pcurve_pole_replacement_refuses_before_mutation_and_needs_no_storage() {
         FinitePoint2::new(Point2::new(7., 8.)).unwrap(),
     ];
     for original in [pcurve(), polynomial] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "IR pcurve pole replacement",
-            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-                let mut edited = original.clone();
-                let result = edited.replace_admitted_control_points(&positions, ctx);
-                assert_eq!(edited, original);
-                result
-            }));
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "IR pcurve pole replacement",
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        let mut edited = original.clone();
+                        let result = edited.replace_admitted_control_points(&positions, ctx);
+                        assert_eq!(edited, original);
+                        result
+                    },
+                )
+            },
+        );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 4;

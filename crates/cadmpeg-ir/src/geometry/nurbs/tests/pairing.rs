@@ -85,12 +85,28 @@ fn refusal<T: std::fmt::Debug>(
 #[test]
 fn pairing_all_weight_forms_admit_each_pole_and_row_visit() {
     for form in 0..3 {
-        for (grid_route, operation) in [(false, "IR NURBS paired poles"),
-            (true, "IR NURBS paired grid rows"), (true, "IR NURBS paired poles")] {
-            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-                |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-                    if grid_route { grid(ctx, form).map(|_| ()) } else { curve(ctx, form).map(|_| ()) }
-                }));
+        for (grid_route, operation) in [
+            (false, "IR NURBS paired poles"),
+            (true, "IR NURBS paired grid rows"),
+            (true, "IR NURBS paired poles"),
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    crate::geometry::tests::budget::with_limit(
+                        ResourceDimension::WorkUnits,
+                        cap,
+                        |ctx| {
+                            if grid_route {
+                                grid(ctx, form).map(|_| ())
+                            } else {
+                                curve(ctx, form).map(|_| ())
+                            }
+                        },
+                    )
+                },
+            );
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

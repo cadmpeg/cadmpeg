@@ -344,7 +344,7 @@ impl PlacedCurve {
         ctx.charge_work(1, "IR geometry unit scaling work")?;
         let _depth = ctx.enter_nested("IR geometry unit scaling nesting")?;
         if let SolvedCurveGeometry::Transformed(placed) = self.basis.as_mut() {
-                placed.scale_in_place(ctx, scale)?;
+            placed.scale_in_place(ctx, scale)?;
         } else {
             self.basis.scale_in_place(ctx, scale)?;
         }
@@ -365,7 +365,7 @@ impl PlacedSurface {
         ctx.charge_work(1, "IR geometry unit scaling work")?;
         let _depth = ctx.enter_nested("IR geometry unit scaling nesting")?;
         if let SolvedSurfaceGeometry::Transformed(placed) = self.basis.as_mut() {
-                placed.scale_in_place(ctx, scale)?;
+            placed.scale_in_place(ctx, scale)?;
         } else {
             self.basis.scale_in_place(ctx, scale)?;
         }
