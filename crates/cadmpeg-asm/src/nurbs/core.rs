@@ -16,8 +16,10 @@ use crate::nurbs::subtypes;
 use crate::nurbs::toks;
 use crate::nurbs::toks::Cur;
 use crate::sab::Token;
-use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, WeightedPole3};
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::NonZeroReal;
+use cadmpeg_ir::features::FinitePoint3;
 
 use crate::nurbs::toks::take_knot_table as knots;
 
@@ -28,7 +30,7 @@ macro_rules! propagate_resource {
     ($result:expr) => {
         match $result {
             Ok(value) => value,
-            Err(error) => return Some(Err(error)),
+            Err(error) => return Some(Err(error.into())),
         }
     };
 }
@@ -134,8 +136,43 @@ pub(super) fn surface_block(
 
     // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
     // order where index `u * v_count + v` is pole `(u, v)`.
-    let poles = propagate_resource!(control_points(ctx, &mut cur, pole_count, marker)?);
-    let grid = propagate_resource!(poles.into_counted_transposed_grid(ctx, n_poles_u, n_poles_v)?);
+    let grid = if marker.rational() {
+        let mut rows = propagate_resource!(ctx.collect_indexed_vec(
+            n_poles_u,
+            "ASM NURBS grid rows",
+            |_| ctx.collection_vec(n_poles_v, "ASM NURBS grid row poles"),
+        ));
+        for _ in 0..n_poles_v {
+            for row in propagate_resource!(ctx.admit_iter(&mut rows, "ASM surface control points")) {
+                let point = FinitePoint3::new(Point3::new(
+                    cur.take_f64()? * LEN_TO_MM,
+                    cur.take_f64()? * LEN_TO_MM,
+                    cur.take_f64()? * LEN_TO_MM,
+                ))?;
+                row.push(WeightedPole3 {
+                    point,
+                    weight: NonZeroReal::new(cur.take_f64()?)?,
+                });
+            }
+        }
+        NurbsPoleGrid::Rational { rows }
+    } else {
+        let mut rows = propagate_resource!(ctx.collect_indexed_vec(
+            n_poles_u,
+            "ASM NURBS grid rows",
+            |_| ctx.collection_vec(n_poles_v, "ASM NURBS grid row poles"),
+        ));
+        for _ in 0..n_poles_v {
+            for row in propagate_resource!(ctx.admit_iter(&mut rows, "ASM surface control points")) {
+                row.push(FinitePoint3::new(Point3::new(
+                    cur.take_f64()? * LEN_TO_MM,
+                    cur.take_f64()? * LEN_TO_MM,
+                    cur.take_f64()? * LEN_TO_MM,
+                ))?);
+            }
+        }
+        NurbsPoleGrid::Polynomial { rows }
+    };
     let surface = propagate_resource!(NurbsSurface::new(
         ctx,
         NurbsSurfaceAxis::new(
@@ -460,7 +497,7 @@ pub(super) fn decode_surface_block(
     // order where index `u * v_count + v` is pole `(u, v)`.
     let control_start = pos;
     let poles = read_control_points(b, &mut pos, n_poles_u * n_poles_v, marker)?;
-    let grid = poles.into_transposed_grid(n_poles_u, n_poles_v)?;
+    let grid = poles.into_counted_transposed_grid(&writer_ctx, n_poles_u, n_poles_v)?.ok()?;
     let surface = NurbsSurface::new(
         &writer_ctx,
         NurbsSurfaceAxis::new(
@@ -648,7 +685,7 @@ pub(super) fn decode_owned_surface_cache_at(
     let bytes = scope.bytes();
     let positions = match scope.owned_marker_positions(ctx, int_width) {
         Ok(positions) => positions,
-        Err(error) => return Some(Err(error)),
+        Err(error) => return Some(Err(error.into())),
     };
     Some(Ok(positions.into_iter().find_map(|pos| {
         decode_surface_block(bytes, pos, int_width).map(|decoded| decoded.surface)
@@ -675,7 +712,7 @@ pub fn decode_owned_curve_cache_at(
     let bytes = scope.bytes();
     let positions = match scope.owned_marker_positions(ctx, int_width) {
         Ok(positions) => positions,
-        Err(error) => return Some(Err(error)),
+        Err(error) => return Some(Err(error.into())),
     };
     Some(Ok(positions.into_iter().find_map(|pos| {
         decode_curve_block(bytes, pos, int_width).map(|decoded| decoded.curve)
@@ -707,6 +744,60 @@ mod tests {
     use crate::nurbs::toks::SubtypeTable;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+
+    fn rectangular_surface_tokens(rational: bool) -> Vec<crate::sab::Token> {
+        use crate::sab::Token;
+        let mut tokens = vec![
+            Token::Ident(if rational { "nurbs" } else { "nubs" }.into()),
+            Token::Long(1), Token::Long(1),
+            Token::Enum(0), Token::Enum(0), Token::Enum(0), Token::Enum(0),
+            Token::Long(2), Token::Long(3),
+            Token::Double(0.0), Token::Long(1), Token::Double(1.0), Token::Long(1),
+            Token::Double(0.0), Token::Long(1), Token::Double(1.0), Token::Long(1),
+            Token::Double(2.0), Token::Long(1),
+        ];
+        for ordinal in 0..6 {
+            tokens.extend([Token::Double(f64::from(ordinal)), Token::Double(0.0), Token::Double(0.0)]);
+            if rational { tokens.push(Token::Double(f64::from(ordinal + 1))); }
+        }
+        tokens
+    }
+
+    #[test]
+    fn surface_control_grid_preserves_rectangular_stream_order_and_weights() {
+        for rational in [false, true] {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let tokens = rectangular_surface_tokens(rational);
+            let (surface, end) = super::surface_block(&ctx, &tokens, 0).unwrap().unwrap();
+            assert_eq!(end, tokens.len());
+            assert_eq!((surface.u_count(), surface.v_count()), (2, 3));
+            for u in 0..2 {
+                for v in 0..3 {
+                    assert_eq!(surface.pole(u, v).unwrap().x, f64::from((v * 2 + u) as u32) * 10.0);
+                    assert_eq!(surface.weight(u, v).map(|weight| weight.get()), rational.then_some(f64::from((v * 2 + u + 1) as u32)));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn surface_control_grid_refuses_before_row_allocation() {
+        for rational in [false, true] {
+            let tokens = rectangular_surface_tokens(rational);
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::CollectionItems,
+                "ASM NURBS grid row poles",
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_collection_items = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    super::surface_block(&ctx, &tokens, 0).unwrap()
+                },
+            );
+            assert!(matches!(error, CodecError::ResourceLimit(_)));
+        }
+    }
 
     #[test]
     fn cached_nurbs_recovery_caps_preserve_resource_refusals() {
