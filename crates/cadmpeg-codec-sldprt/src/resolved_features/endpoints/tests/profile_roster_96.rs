@@ -130,12 +130,7 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
     ));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -151,12 +146,7 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
         0
     ));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &alternate_header,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &alternate_header, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -166,12 +156,7 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
 
     let mut equal_endpoints = profile_roster_payload([3, 3]);
     assert!(!compact_legacy_96_profile_roster_curve_uses_complete_roster(&equal_endpoints, 0));
-    assert!(roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &equal_endpoints,
-        &curve,
-        &markers
-    )
+    assert!({ let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &equal_endpoints, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
     .unwrap()
     .is_empty());
 
@@ -199,12 +184,7 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
         &out_of_range,
         0
     ));
-    assert!(roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &out_of_range,
-        &curve,
-        &markers
-    )
+    assert!({ let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &out_of_range, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
     .unwrap()
     .is_empty());
 }

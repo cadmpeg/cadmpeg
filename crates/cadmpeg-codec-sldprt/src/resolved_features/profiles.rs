@@ -14,6 +14,7 @@ use super::curves::{
     resolve_two_center_semicircle_profile, tangent_bounded_curve,
     unique_dimensioned_rectangle_markers, LaneFrameIndex,
 };
+use super::endpoints::arc_centers::unique_arc_center_marker;
 use super::endpoints::geometry_index::{MarkerGeometryIndex, MarkerPrefixIndex};
 use super::endpoints::{
     auxiliary_profile_record, compact_legacy_code_one_line_endpoint_indices,
@@ -32,7 +33,7 @@ use super::endpoints::{
     legacy_unlocated_geometry_handle, marker_is_selected_construction_line,
     marker_profile_curve_role, minor_arc_geometry, output_curve_endpoint_markers,
     packed_compact_legacy_curve_endpoint_indices, relation_reference_curve_record,
-    terminal_relation_class_offset, unique_arc_center_marker, wide_coordinate_roster_full_circle,
+    terminal_relation_class_offset, wide_coordinate_roster_full_circle,
 };
 use super::grid::quantize;
 use super::holes::{feature_input_sketch_frame, sketch_feature_frames};
@@ -1572,31 +1573,6 @@ impl From<CodecError> for MarkerGeometryFailure {
     }
 }
 
-fn collect_marker_arc_centers(
-    ctx: &DecodeContext<'_>,
-    markers: &[&SketchInputEntity],
-    first: &str,
-    second: &str,
-    scale: f64,
-) -> Result<Vec<Point2>, CodecError> {
-    const OPERATION: &str = "collect SLDPRT marker arc center candidates";
-    let mut candidates = Vec::new();
-    for marker in ctx.admit_iter(markers, OPERATION)? {
-        if ctx.equal(marker.id(), first, OPERATION)? || ctx.equal(marker.id(), second, OPERATION)? {
-            continue;
-        }
-        let Some([u, v]) = marker
-            .coordinates_m
-            .map(cadmpeg_ir::units::FiniteVector::get)
-        else {
-            continue;
-        };
-        ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
-        candidates.push(Point2::new(u * scale, v * scale));
-    }
-    Ok(candidates)
-}
-
 /// A lane's classes by offset and its relations by owning feature and class, built once per
 /// lane so each marker tests for a terminal display carrier with keyed lookups.
 struct TerminalCarriers<'lane, 'ctx> {
@@ -2268,13 +2244,7 @@ pub(crate) fn project_marker_backed_sketches(
                                 .ok()
                                 .ok_or(MarkerGeometryFailure::Absent)?
                             } else {
-                                let endpoints = output_curve_endpoint_markers(
-                                    ctx,
-                                    &lane.native_payload,
-                                    marker,
-                                    &markers_by_id,
-                                    &object_markers,
-                                )?;
+                                let endpoints = output_curve_endpoint_markers(ctx, &lane.native_payload, marker, &markers_by_id, &object_markers, &geometry_index)?;
                                 if let [start_marker, end_marker] = endpoints.as_slice() {
                                     let (Some(start), Some(end)) =
                                         (project(start_marker), project(end_marker))
@@ -2336,12 +2306,7 @@ pub(crate) fn project_marker_backed_sketches(
                                         )?;
                                     }
                                     if endpoints.is_none() {
-                                        endpoints = implicit_profile_chain_closure_endpoints(
-                                            ctx,
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                        )?;
+                                        endpoints = implicit_profile_chain_closure_endpoints(ctx, &lane.native_payload, marker, &object_markers, &geometry_index)?;
                                     }
                                     endpoints.or_else(|| {
                                         compact_legacy_142_profile_curve_endpoints(
@@ -2373,13 +2338,7 @@ pub(crate) fn project_marker_backed_sketches(
                             }
                         }
                         SketchInputKind::Arc => {
-                            let endpoints = marker_curve_endpoint_markers(
-                                ctx,
-                                &lane.native_payload,
-                                marker,
-                                &markers_by_id,
-                                &object_markers,
-                            )?;
+                            let endpoints = marker_curve_endpoint_markers(ctx, &lane.native_payload, marker, &markers_by_id, &object_markers, &geometry_index)?;
                             let mut circle_geometry = equal_index_coordinate_roster_full_circle(
                                 ctx,
                                 &lane.native_payload,
@@ -2606,30 +2565,12 @@ pub(crate) fn project_marker_backed_sketches(
                                             .coordinates_m
                                             .ok_or(MarkerGeometryFailure::Absent)?
                                             .get();
-                                        let roster_center = coordinate_roster_arc_center(
-                                            ctx,
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                            [endpoints[0], endpoints[1]],
-                                        )?
+                                        let roster_center = coordinate_roster_arc_center(ctx, &lane.native_payload, marker, &object_markers, [endpoints[0], endpoints[1]], &geometry_index)?
                                         .map(|[u, v]| {
                                             Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR)
                                         });
                                         let roster_center_witness = roster_center.is_some();
-                                        let mut candidates_storage = ctx.reserve_scoped(
-                                            0,
-                                            "collect SLDPRT marker arc center candidates",
-                                        )?;
-                                        let candidates = candidates_storage.with_storage(|| {
-                                            collect_marker_arc_centers(
-                                                ctx,
-                                                &object_markers,
-                                                endpoints[0].id(),
-                                                endpoints[1].id(),
-                                                NATIVE_TO_IR,
-                                            )
-                                        })?;
+
                                         let (center_start, center_end) =
                                             if current_indexed_arc_reverses_center_sweep(
                                                 &lane.native_payload,
@@ -2659,13 +2600,11 @@ pub(crate) fn project_marker_backed_sketches(
                                             };
                                         let center = match roster_center {
                                             Some(center) => Some(center),
-                                            None => unique_arc_center_marker(
-                                                ctx,
-                                                center_start,
-                                                center_end,
-                                                &candidates,
-                                                QUANTUM,
-                                            )?,
+                                            None => match geometry_index.arc_centers(marker, true, QUANTUM)? {
+                                                Some(candidates) => unique_arc_center_marker(ctx, center_start, center_end, candidates, QUANTUM,
+                                                    [Some(endpoints[0].id()), Some(endpoints[1].id())])?,
+                                                None => None,
+                                            },
                                         };
                                         if let Some(center) = center {
                                             let center = transform
@@ -2702,26 +2641,15 @@ pub(crate) fn project_marker_backed_sketches(
                                         .coordinates_m
                                         .ok_or(MarkerGeometryFailure::Absent)?
                                         .get();
-                                    let mut candidates_storage = ctx.reserve_scoped(
-                                        0,
-                                        "collect SLDPRT marker arc center candidates",
-                                    )?;
-                                    let candidates = candidates_storage.with_storage(|| {
-                                        collect_marker_arc_centers(
-                                            ctx,
-                                            &object_markers,
-                                            start_marker.id(),
-                                            end_marker.id(),
-                                            NATIVE_TO_IR,
-                                        )
-                                    })?;
-                                    if let Some(center) = unique_arc_center_marker(
-                                        ctx,
-                                        Point2::new(start_u * NATIVE_TO_IR, start_v * NATIVE_TO_IR),
-                                        Point2::new(end_u * NATIVE_TO_IR, end_v * NATIVE_TO_IR),
-                                        &candidates,
-                                        QUANTUM,
-                                    )? {
+
+                                    let center = match geometry_index.arc_centers(marker, true, QUANTUM)? {
+                                        Some(candidates) => unique_arc_center_marker(ctx,
+                                            Point2::new(start_u * NATIVE_TO_IR, start_v * NATIVE_TO_IR),
+                                            Point2::new(end_u * NATIVE_TO_IR, end_v * NATIVE_TO_IR),
+                                            candidates, QUANTUM, [Some(start_marker.id()), Some(end_marker.id())])?,
+                                        None => None,
+                                    };
+                                    if let Some(center) = center {
                                         let center = transform
                                             .apply(quantize(center, QUANTUM))
                                             .ok_or(MarkerGeometryFailure::Absent)?;
@@ -2824,13 +2752,7 @@ pub(crate) fn project_marker_backed_sketches(
                         marker.kind(),
                         SketchInputKind::LineOrCircle | SketchInputKind::Arc
                     ) {
-                        let endpoints = output_curve_endpoint_markers(
-                            ctx,
-                            &lane.native_payload,
-                            marker,
-                            &markers_by_id,
-                            &object_markers,
-                        )?;
+                        let endpoints = output_curve_endpoint_markers(ctx, &lane.native_payload, marker, &markers_by_id, &object_markers, &geometry_index)?;
                         for endpoint in
                             ctx.admit_iter(&endpoints, "collect SLDPRT marker endpoint references")?
                         {

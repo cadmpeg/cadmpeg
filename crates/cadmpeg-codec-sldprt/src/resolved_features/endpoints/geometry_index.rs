@@ -1,25 +1,30 @@
 //! Marker lookups shared by the geometry queries for one sketch.
 
 use super::sketch_marker_prefix_at;
+use super::arc_centers::ArcCenterIndex;
 use crate::records::{SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use std::collections::HashMap;
 
-struct OwnerGeometry<'a> {
+struct OwnerGeometry<'a, 'ctx> {
+    markers: Vec<&'a SketchInputEntity>,
+    native_arc_centers: std::cell::OnceCell<ArcCenterIndex<'a, 'ctx>>,
+    profile_arc_centers: std::cell::OnceCell<ArcCenterIndex<'a, 'ctx>>,
     points: Vec<&'a SketchInputEntity>,
 }
 
 /// Located markers by owner and object index, with point positions in payload order.
 pub(in crate::resolved_features) struct MarkerGeometryIndex<'a, 'ctx> {
-    owners: HashMap<Option<&'a str>, OwnerGeometry<'a>>,
+    ctx: &'ctx DecodeContext<'ctx>,
+    owners: HashMap<Option<&'a str>, OwnerGeometry<'a, 'ctx>>,
     objects: HashMap<(Option<&'a str>, Option<u32>), Vec<&'a SketchInputEntity>>,
     _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 impl<'a, 'ctx> MarkerGeometryIndex<'a, 'ctx> {
     pub(in crate::resolved_features) fn new(
-        ctx: &'ctx DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'ctx>,
         markers: &[&'a SketchInputEntity],
     ) -> Result<Self, CodecError> {
         const OPERATION: &str = "index SLDPRT marker geometry";
@@ -33,17 +38,18 @@ impl<'a, 'ctx> MarkerGeometryIndex<'a, 'ctx> {
             storage.with_storage(|| {
                 if !ctx.contains_key_hash_map(&owners, &owner, OPERATION)? {
                     ctx.insert_hash_map(&mut owners, owner, OwnerGeometry {
-                        points: Vec::new(),
+                        points: Vec::new(), markers: Vec::new(),
+                        native_arc_centers: std::cell::OnceCell::new(),
+                        profile_arc_centers: std::cell::OnceCell::new(),
                     }, OPERATION)?;
                     ctx.push_vec(&mut owner_order, owner, OPERATION)?;
                 }
                 let Some(group) = ctx.get_mut_hash_map(&mut owners, &owner, OPERATION)? else { return Ok(()); };
+                ctx.push_vec(&mut group.markers, marker, OPERATION)?;
                 if matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint) {
                     ctx.push_vec(&mut group.points, marker, OPERATION)?;
                 }
-                if matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint | SketchInputKind::LineOrCircle | SketchInputKind::Arc) {
-                    ctx.push_hash_group(&mut objects, (owner, marker.object_index()), marker, OPERATION, OPERATION)?;
-                }
+                ctx.push_hash_group(&mut objects, (owner, marker.object_index()), marker, OPERATION, OPERATION)?;
                 Ok::<(), CodecError>(())
             })?;
         }
@@ -52,7 +58,7 @@ impl<'a, 'ctx> MarkerGeometryIndex<'a, 'ctx> {
                 ctx.sort_unstable_by_key(&mut group.points, |marker| marker.offset(), Ord::cmp, OPERATION)?;
             }
         }
-        Ok(Self { owners, objects, _storage: storage })
+        Ok(Self { ctx, owners, objects, _storage: storage })
     }
 
     pub(in crate::resolved_features) fn points<'query>(&'query self, ctx: &DecodeContext<'_>, curve: &'query SketchInputEntity) -> Result<&'query [&'a SketchInputEntity], CodecError> {
@@ -73,6 +79,7 @@ impl<'a, 'ctx> MarkerGeometryIndex<'a, 'ctx> {
         let mut selected = None;
         let ambiguous = ctx.any_by(markers, |&marker| {
             if broad {
+                if !matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint | SketchInputKind::LineOrCircle | SketchInputKind::Arc) { return Ok(false); }
                 if ctx.equal(marker.id(), curve.id(), OPERATION)? { return Ok(false); }
             } else if !matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint) { return Ok(false); }
             if selected.is_some() { return Ok(true); }
@@ -80,6 +87,25 @@ impl<'a, 'ctx> MarkerGeometryIndex<'a, 'ctx> {
             Ok(false)
         }, OPERATION)?;
         Ok(selected.filter(|_| !ambiguous))
+    }
+
+    pub(in crate::resolved_features) fn object_markers<'query>(
+        &'query self, ctx: &DecodeContext<'_>, curve: &'query SketchInputEntity, index: u32,
+    ) -> Result<&'query [&'a SketchInputEntity], CodecError> {
+        Ok(ctx.get_hash_map(&self.objects, &(curve.feature_ref.as_deref(), Some(index)), "lookup SLDPRT curve object markers")?
+            .map_or(&[][..], Vec::as_slice))
+    }
+
+    pub(in crate::resolved_features) fn arc_centers<'query>(
+        &'query self, curve: &'query SketchInputEntity, profile: bool, tolerance: f64,
+    ) -> Result<Option<&'query ArcCenterIndex<'a, 'ctx>>, CodecError> {
+        const OPERATION: &str = "index SLDPRT arc center positions";
+        let Some(owner) = self.ctx.get_hash_map(&self.owners, &curve.feature_ref.as_deref(), OPERATION)? else { return Ok(None); };
+        let cache = if profile { &owner.profile_arc_centers } else { &owner.native_arc_centers };
+        if let Some(index) = cache.get() { return Ok(Some(index)); }
+        let index = ArcCenterIndex::from_markers(self.ctx, &owner.markers,
+            if profile { 1000.0 } else { 1.0 }, !profile, tolerance)?;
+        Ok(Some(cache.get_or_init(|| index)))
     }
 
 
@@ -120,3 +146,6 @@ impl<'payload, 'ctx> MarkerPrefixIndex<'payload, 'ctx> {
             .filter(|offset| *offset <= end).map(u64_from_index))
     }
 }
+
+#[cfg(test)]
+mod tests;

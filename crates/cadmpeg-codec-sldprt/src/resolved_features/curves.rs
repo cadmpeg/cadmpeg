@@ -1,10 +1,11 @@
 //! Marker arc, circle and rectangle profile resolution.
 
 use super::compact_reference_planes::principal_sketch_frame;
+use super::endpoints::arc_centers::{ArcCenterIndex, unique_arc_center_marker};
 use super::endpoints::{
     compact_legacy_code_one_line_endpoint_indices, compact_legacy_curve_endpoint_indices,
     marker_profile_curve_role, minor_arc_angles, minor_arc_geometry, one_based_u16_endpoint_pair,
-    unique_arc_center_marker, wide_indexed_curve_endpoint_indices,
+    wide_indexed_curve_endpoint_indices,
 };
 use super::grid::quantize;
 use super::markers::{
@@ -1067,7 +1068,7 @@ pub(super) fn resolve_connected_marker_arcs(
     let mut points = HashMap::<String, Point2>::new();
     let mut center_replacements = Vec::new();
     {
-        let mut sketch_points = HashMap::<&SketchId, Vec<(&str, Point2)>>::new();
+        let mut sketch_points = BTreeMap::<&SketchId, Vec<(Option<&str>, Point2)>>::new();
         for entity in ctx.admit_iter(&entities[..], OPERATION)? {
             let SketchGeometryDefinition::Point { position } = *entity.geometry.definition() else {
                 continue;
@@ -1075,9 +1076,8 @@ pub(super) fn resolve_connected_marker_arcs(
             let Some(native_ref) = entity.native_ref.as_deref() else {
                 continue;
             };
-            let retained_ref =
-                ctx.copy_retained_text(native_ref, "copy SLDPRT connected arc point identity")?;
             storage.with_storage(|| {
+                let retained_ref = ctx.copy_retained_text(native_ref, "copy SLDPRT connected arc point identity")?;
                 ctx.insert_hash_map(
                     &mut points,
                     retained_ref,
@@ -1086,15 +1086,16 @@ pub(super) fn resolve_connected_marker_arcs(
                 )
             })?;
             storage.with_storage(|| {
-                ctx.push_hash_group(
+                ctx.push_btree_group(
                     &mut sketch_points,
                     &entity.sketch,
-                    (native_ref, position.get()),
+                    (Some(native_ref), position.get()),
                     "index SLDPRT connected arc points",
                     "collect SLDPRT connected arc point records",
                 )
             })?;
         }
+        let mut center_indexes = HashMap::new();
         for (index, entity) in ctx.admit_iter(&entities[..], OPERATION)?.enumerate() {
             if !is_native_arc(entity) {
                 continue;
@@ -1110,26 +1111,14 @@ pub(super) fn resolve_connected_marker_arcs(
             ) else {
                 continue;
             };
-            let mut candidates = Vec::new();
-            for (reference, center) in ctx.admit_iter(
-                ctx.get_hash_map(&sketch_points, &entity.sketch, OPERATION)?
-                    .map_or(&[][..], Vec::as_slice),
-                OPERATION,
-            )? {
-                if *reference != start_ref.as_str() && *reference != end_ref.as_str() {
-                    storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut candidates,
-                            *center,
-                            "collect SLDPRT connected arc centers",
-                        )
-                    })?;
-                }
+            if !ctx.contains_key_hash_map(&center_indexes, &entity.sketch, OPERATION)? {
+                let Some(sketch_points) = ctx.get_btree_map(&sketch_points, &entity.sketch, OPERATION)? else { continue; };
+                let index = ArcCenterIndex::from_points(ctx, sketch_points, tolerance)?;
+                storage.with_storage(|| ctx.insert_hash_map(&mut center_indexes, &entity.sketch, index, OPERATION))?;
             }
-            let Some(center) = unique_arc_center_marker(ctx, start, end, &candidates, tolerance)?
-            else {
-                continue;
-            };
+            let Some(candidates) = ctx.get_hash_map(&center_indexes, &entity.sketch, OPERATION)? else { continue; };
+            let Some(center) = unique_arc_center_marker(ctx, start, end, candidates, tolerance,
+                [Some(start_ref.as_str()), Some(end_ref.as_str())])? else { continue; };
             let Some(geometry) = minor_arc_geometry(start, end, center, tolerance) else {
                 continue;
             };

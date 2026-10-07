@@ -103,12 +103,7 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
         &zero_object,
     ];
     let endpoint_ids = |payload: &[u8]| {
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            payload,
-            &curve,
-            &markers,
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())

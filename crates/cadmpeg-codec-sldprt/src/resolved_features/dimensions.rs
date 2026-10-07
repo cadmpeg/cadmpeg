@@ -92,6 +92,7 @@ const DIMENSIONED_CARRIER_OPERATION: &str = "resolve SLDPRT dimensioned carrier"
 /// One lane's markers in lane order, with the by-identity map curve endpoint resolution reads.
 struct LaneMarkers<'a, 'ctx> {
     ordered: Vec<&'a SketchInputEntity>,
+    geometry: super::endpoints::geometry_index::MarkerGeometryIndex<'a, 'ctx>,
     by_id: HashMap<&'a str, &'a SketchInputEntity>,
     _storage: ScopedReservation<'ctx>,
 }
@@ -292,7 +293,9 @@ impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
                 )
             })?;
         }
+        let geometry = super::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &ordered)?;
         Ok(cell.get_or_init(|| LaneMarkers {
+            geometry,
             ordered,
             by_id,
             _storage: storage,
@@ -485,10 +488,10 @@ fn unique_native_radial_witness(
     Ok(count == 1)
 }
 
-fn dimensioned_arc_native_geometry(
+fn dimensioned_arc_native_geometry<'a>(
     ctx: &DecodeContext<'_>,
-    index: &LaneMarkerIndex<'_, '_>,
-    marker: &SketchInputEntity,
+    index: &LaneMarkerIndex<'a, '_>,
+    marker: &'a SketchInputEntity,
     expected_radius: f64,
 ) -> Result<Option<DimensionedCurveNative>, cadmpeg_core::CodecError> {
     if marker.kind() != SketchInputKind::Arc {
@@ -499,13 +502,7 @@ fn dimensioned_arc_native_geometry(
     };
     let lane = &index.lanes[lane_position];
     let lane_markers = index.lane_markers(lane_position)?;
-    let endpoints = marker_curve_endpoint_markers(
-        ctx,
-        &lane.native_payload,
-        marker,
-        &lane_markers.by_id,
-        &lane_markers.ordered,
-    )?;
+    let endpoints = marker_curve_endpoint_markers(ctx, &lane.native_payload, marker, &lane_markers.by_id, &lane_markers.ordered, &lane_markers.geometry)?;
     let inline = usize::try_from(marker.offset())
         .ok()
         .and_then(|offset| inline_arc_coordinates(&lane.native_payload, offset))
