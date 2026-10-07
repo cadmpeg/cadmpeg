@@ -24,50 +24,57 @@ use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use std::collections::{HashMap, HashSet};
 
 use super::AsmBrep;
-const EPS_GEOMETRY_PCURVE_RANGES_ON_DOMAIN_E9: f64 = 1.0e-9;
-const EPS_GEOMETRY_ANALYTIC_PROCEDURAL_SURFACE_E10: f64 = 1.0e-10;
-const EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10: f64 = 1.0e-10;
-const EPS_GEOMETRY_LINEAR_NURBS_SPINE_E10: f64 = 1.0e-10;
-const EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E12: f64 = 1.0e-12;
-const EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10: f64 = 1.0e-10;
-const EPS_GEOMETRY_REDUCE_HOMOGENEOUS_BEZIER_TO_QUADRATIC_E10: f64 = 1.0e-10;
-const EPS_GEOMETRY_CLAMP_EDGE_RANGES_TO_CARRIER_DOMAINS_E9: f64 = 1.0e-9;
+const EPS_PCURVE_DOMAIN: f64 = 1.0e-9;
+const EPS_EXTRUSION_AXIS_ALIGNMENT: f64 = 1.0e-10;
+const EPS_ROLLING_BALL_MATCH: f64 = 1.0e-10;
+const EPS_SPINE_COLLINEARITY: f64 = 1.0e-10;
+const EPS_RATIONAL_KNOT_MATCH: f64 = 1.0e-12;
+const EPS_RATIONAL_CIRCLE_MATCH: f64 = 1.0e-10;
+const EPS_DEGREE_REDUCTION: f64 = 1.0e-10;
+const EPS_EDGE_DOMAIN_SNAP: f64 = 1.0e-9;
 
 macro_rules! propagate_resource {
     ($result:expr) => {
         match $result {
             Ok(value) => value,
-            Err(error) => return Some(Err(error)),
+            Err(error) => return Some(Err(error.into())),
         }
     };
 }
 
 /// Ordered typed values pulled from a carrier record's payload.
-pub(in crate::brep) struct Carrier {
+pub(in crate::brep) struct Carrier<'ctx> {
     pub(super) positions: Vec<[f64; 3]>,
     pub(super) vectors: Vec<[f64; 3]>,
     doubles: Vec<f64>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
-pub(super) fn collect_carrier(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn collect_carrier<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     rec: &Record,
-) -> Result<Carrier, cadmpeg_core::CodecError> {
+) -> Result<Carrier<'ctx>, cadmpeg_core::CodecError> {
     let mut c = Carrier {
+        storage: ctx.reserve_scoped(0, "ASM analytic carrier scratch")?,
         positions: Vec::new(),
         vectors: Vec::new(),
         doubles: Vec::new(),
     };
-    for t in rec.tokens.iter() {
+    for t in ctx.admit_iter(rec.tokens.as_ref(), "ASM analytic carrier tokens")? {
         match t {
             Token::Position(p) => {
-                ctx.push_vec(&mut c.positions, *p, "ASM carrier positions")?;
+                ctx.push_scoped_vec(
+                    &mut c.storage,
+                    &mut c.positions,
+                    *p,
+                    "ASM carrier positions",
+                )?;
             }
             Token::Vector3(v) => {
-                ctx.push_vec(&mut c.vectors, *v, "ASM carrier vectors")?;
+                ctx.push_scoped_vec(&mut c.storage, &mut c.vectors, *v, "ASM carrier vectors")?;
             }
             Token::Double(d) => {
-                ctx.push_vec(&mut c.doubles, *d, "ASM carrier doubles")?;
+                ctx.push_scoped_vec(&mut c.storage, &mut c.doubles, *d, "ASM carrier doubles")?;
             }
             _ => {}
         }
@@ -118,7 +125,7 @@ pub fn decode_surface(
     decode_surface_carrier(rec, &carrier).map(Ok)
 }
 
-fn decode_surface_carrier(rec: &Record, c: &Carrier) -> Option<(SolvedSurfaceGeometry, bool)> {
+fn decode_surface_carrier(rec: &Record, c: &Carrier<'_>) -> Option<(SolvedSurfaceGeometry, bool)> {
     let origin = *c.positions.first()?;
     match rec.head() {
         "plane" => Some((
@@ -240,98 +247,102 @@ pub(super) fn is_coedge_record(record: &Record) -> bool {
     matches!(record.head(), "coedge" | "tcoedge")
 }
 
-pub(super) fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedgeExtension> {
-    let target = match record.chunk(13)? {
-        Token::Ref(target) => (*target >= 0).then_some(*target),
-        _ => return None,
-    };
-    match record.chunk(14)? {
-        Token::Long(0) if matches!(record.chunk(15), Some(Token::Long(0))) => {
-            Some(TolerantCoedgeExtension::Empty { target })
+pub(super) fn tolerant_coedge_extension(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &Record,
+) -> Result<Option<TolerantCoedgeExtension>, cadmpeg_core::CodecError> {
+    let mut tokens = record.tokens.iter();
+    let mut fields = [None; 16];
+    for field in &mut fields {
+        *field = ctx.find_map(
+            &mut tokens,
+            |token| Ok((!token.is_payload_ident()).then_some(token)),
+            "ASM tolerant coedge fields",
+        )?;
+        if field.is_none() {
+            return Ok(None);
         }
-        Token::Long(1) => {
-            let curve_reversed = match record.chunk(15)? {
-                Token::True => true,
-                Token::False => false,
-                _ => return None,
+    }
+    let target = match fields[13] {
+        Some(Token::Ref(target)) => (*target >= 0).then_some(*target),
+        _ => return Ok(None),
+    };
+    match fields[14] {
+        Some(Token::Long(0)) if matches!(fields[15], Some(Token::Long(0))) => {
+            Ok(Some(TolerantCoedgeExtension::Empty { target }))
+        }
+        Some(Token::Long(1)) => {
+            let curve_reversed = match fields[15] {
+                Some(Token::True) => true,
+                Some(Token::False) => false,
+                _ => return Ok(None),
             };
-            if !matches!(record.chunk(16), Some(Token::SubtypeOpen)) {
-                return None;
+            let open = ctx.find_map(
+                &mut tokens,
+                |token| Ok((!token.is_payload_ident()).then_some(token)),
+                "ASM tolerant coedge fields",
+            )?;
+            if !matches!(open, Some(Token::SubtypeOpen)) {
+                return Ok(None);
             }
-            // Raw index of chunk 16: the payload identifiers inside the
-            // embedded scope are not chunks, and the serialized token count
-            // below is defined over the value tokens alone.
-            let open = record
-                .tokens
-                .iter()
-                .enumerate()
-                .filter(|(_, token)| !token.is_payload_ident())
-                .nth(16)
-                .map(|(index, _)| index)?;
-            let mut depth = 0usize;
-            let mut close = None;
-            for (index, token) in record.tokens.iter().enumerate().skip(open) {
-                match token {
-                    Token::SubtypeOpen => depth += 1,
-                    Token::SubtypeClose => {
-                        depth = depth.checked_sub(1)?;
-                        if depth == 0 {
-                            close = Some(index);
-                            break;
-                        }
+            let mut depth = 1usize;
+            let mut payload_token_count = 0usize;
+            let close = ctx.find_map(
+                &mut tokens,
+                |token| {
+                    match token {
+                        Token::SubtypeOpen => depth += 1,
+                        Token::SubtypeClose => depth -= 1,
+                        _ => {}
                     }
-                    _ => {}
+                    if depth == 0 {
+                        return Ok(Some(()));
+                    }
+                    if !token.is_payload_ident() {
+                        payload_token_count += 1;
+                    }
+                    Ok(None)
+                },
+                "ASM tolerant coedge payload",
+            )?;
+            if close.is_none() {
+                return Ok(None);
+            }
+            let mut suffix = [None; 6];
+            for field in &mut suffix {
+                *field = ctx.find_map(
+                    &mut tokens,
+                    |token| Ok((!token.is_payload_ident()).then_some(token)),
+                    "ASM tolerant coedge suffix",
+                )?;
+                if field.is_none() {
+                    break;
                 }
             }
-            let close = close?;
-            // Suffix in chunk space: a record can end with payload
-            // identifiers (`null_curve` placeholders for absent curve slots),
-            // which are not fields of the extension.
-            let mut suffix = record
-                .tokens
-                .get(close + 1..)?
-                .iter()
-                .filter(|token| !token.is_payload_ident());
-            let parameter_range = match (
-                suffix.next(),
-                suffix.next(),
-                suffix.next(),
-                suffix.next(),
-                suffix.next(),
-                suffix.next(),
-            ) {
-                (
-                    Some(Token::False),
-                    Some(Token::False),
-                    Some(Token::Long(0)),
-                    None,
-                    None,
-                    None,
-                ) => None,
-                (
-                    Some(Token::True),
-                    Some(Token::Double(start)),
-                    Some(Token::True),
-                    Some(Token::Double(end)),
-                    Some(Token::Long(0)),
-                    None,
-                ) => Some(cadmpeg_ir::units::FiniteVector::new([*start, *end])?),
-                _ => return None,
+            let parameter_range = match suffix {
+                [Some(Token::False), Some(Token::False), Some(Token::Long(0)), None, None, None] => {
+                    None
+                }
+                [Some(Token::True), Some(Token::Double(start)), Some(Token::True), Some(Token::Double(end)), Some(Token::Long(0)), None] =>
+                {
+                    let Some(range) = cadmpeg_ir::units::FiniteVector::new([*start, *end]) else {
+                        return Ok(None);
+                    };
+                    Some(range)
+                }
+                _ => return Ok(None),
             };
-            let payload_token_count = record
-                .tokens
-                .get(open + 1..close)?
-                .iter()
-                .filter(|token| !token.is_payload_ident())
-                .count();
-            Some(TolerantCoedgeExtension::EmbeddedCurve {
+            let Ok(payload_token_count) = u32::try_from(payload_token_count) else {
+                return Ok(None);
+            };
+            Ok(Some(TolerantCoedgeExtension::EmbeddedCurve {
                 target,
                 curve_reversed,
-                payload_token_count: u32::try_from(payload_token_count).ok()?,
+                payload_token_count,
                 parameter_range,
-            })
+            }))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -385,13 +396,14 @@ pub(super) fn edge_pcurve_parameter_ranges(edge: &Record) -> Option<[[f64; 2]; 2
 pub(super) fn pcurve_ranges_on_domain(
     candidate: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
     edge: Option<&Record>,
-) -> Option<Vec<[f64; 2]>> {
+) -> Option<impl Iterator<Item = [f64; 2]>> {
     let first = *candidate
         .knots()
         .get(usize::try_from(candidate.degree()).ok()?)?;
     let last = *candidate.knots().get(candidate.pole_rows().count())?;
     (first < last).then_some(())?;
-    let mut ranges = Vec::new();
+    let mut ranges = [None; 3];
+    let mut count = 0;
     for range in edge
         .and_then(edge_pcurve_parameter_ranges)
         .into_iter()
@@ -401,23 +413,20 @@ pub(super) fn pcurve_ranges_on_domain(
             range
                 .iter()
                 .all(|value| {
-                    cadmpeg_ir::math::parameter_in_domain(
-                        *value,
-                        [first, last],
-                        EPS_GEOMETRY_PCURVE_RANGES_ON_DOMAIN_E9,
-                    )
+                    cadmpeg_ir::math::parameter_in_domain(*value, [first, last], EPS_PCURVE_DOMAIN)
                 })
                 .then_some(())?;
             let range = range.map(|value| value.clamp(first, last));
             (range[0] != range[1]).then_some(range)
         })() {
-            ranges.push(range);
+            ranges[count] = Some(range);
+            count += 1;
         }
     }
-    if !ranges.contains(&[first, last]) {
-        ranges.push([first, last]);
+    if !ranges.contains(&Some([first, last])) {
+        ranges[count] = Some([first, last]);
     }
-    Some(ranges)
+    Some(ranges.into_iter().flatten())
 }
 
 /// Decode an analytic curve carrier.
@@ -432,7 +441,7 @@ pub fn decode_curve(
     decode_curve_carrier(rec, &carrier).map(Ok)
 }
 
-fn decode_curve_carrier(rec: &Record, carrier: &Carrier) -> Option<CurveGeometry> {
+fn decode_curve_carrier(rec: &Record, carrier: &Carrier<'_>) -> Option<CurveGeometry> {
     let base = *carrier.positions.first()?;
     match rec.head() {
         "straight" => Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -483,29 +492,41 @@ pub(super) fn sense_at(rec: &Record, i: usize) -> Sense {
 /// marks geometry as the reverse of its cached definition. A reversed intcurve
 /// negates the cache parameterization (`C(t) = cache(-t)`), and a reversed
 /// spline surface flips the cache normal.
-pub(super) fn record_reversed(rec: &Record) -> bool {
-    // Adjacency in chunk space: a freestanding payload identifier (e.g. the
-    // embedded curve's type name) can sit between value tokens without
-    // separating the sense bit from the scope it precedes.
+pub(super) fn record_reversed(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    rec: &Record,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    // Payload identifiers do not separate the sense bit from its scope.
     let mut previous: Option<&Token> = None;
-    rec.chunks()
-        .find_map(|token| {
-            let result = matches!(token, Token::SubtypeOpen)
-                .then(|| match previous {
+    let mut header_fields = 0;
+    let mut header_reversed = false;
+    let scoped = ctx.find_map(
+        rec.tokens.as_ref(),
+        |token| {
+            if token.is_payload_ident() {
+                return Ok(None);
+            }
+            if header_fields < 4 {
+                if header_fields == 3 {
+                    header_reversed = matches!(token, Token::True);
+                }
+                header_fields += 1;
+            }
+            let reversed = if matches!(token, Token::SubtypeOpen) {
+                match previous {
                     Some(Token::True) => Some(true),
                     Some(Token::False) => Some(false),
                     _ => None,
-                })
-                .flatten();
+                }
+            } else {
+                None
+            };
             previous = Some(token);
-            result
-        })
-        .or_else(|| {
-            // A plain `intcurve` companion has no subtype scope after its
-            // base header; its sense remains the fourth payload value.
-            (rec.head() == "intcurve").then(|| matches!(rec.chunk(3), Some(Token::True)))
-        })
-        .unwrap_or(false)
+            Ok(reversed)
+        },
+        "ASM record sense tokens",
+    )?;
+    Ok(scoped.unwrap_or_else(|| rec.head() == "intcurve" && header_reversed))
 }
 
 /// Reverse a curve carrier to its opposite orientation, `C'(t) = C(-t)`.
@@ -550,32 +571,68 @@ pub(super) fn double_at(rec: &Record, i: usize) -> Option<f64> {
     }
 }
 
-pub(super) fn pcurve_parameter_range(rec: &Record) -> Option<[f64; 2]> {
-    // The final two value tokens; a record may end with payload identifiers
-    // (e.g. `null_curve` placeholders), which are not fields.
-    let mut values = rec.chunks().rev();
-    match (values.next(), values.next()) {
-        (Some(Token::Double(end)), Some(Token::Double(start))) => Some([*start, *end]),
-        _ => None,
-    }
+#[derive(Default)]
+pub(super) struct PcurveTailMetadata {
+    pub(super) flags: Option<[bool; 4]>,
+    pub(super) parameter_range: Option<[f64; 2]>,
 }
 
-pub(super) fn pcurve_inline_tail_flags(rec: &Record) -> Option<[bool; 4]> {
-    if !matches!(rec.chunk(3), Some(Token::Long(0))) {
-        return None;
+pub(super) fn pcurve_tail_metadata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    rec: &Record,
+) -> Result<PcurveTailMetadata, cadmpeg_core::CodecError> {
+    let mut metadata = PcurveTailMetadata::default();
+    let mut values = rec.tokens.iter().rev();
+    let mut tail = [None; 6];
+    for slot in &mut tail[..2] {
+        *slot = ctx.find_map(
+            &mut values,
+            |token| Ok((!token.is_payload_ident()).then_some(token)),
+            "ASM pcurve parameter tail",
+        )?;
+        if slot.is_none() {
+            return Ok(metadata);
+        }
     }
-    // End-relative in chunk space: the four booleans precede the final two
-    // value tokens, and trailing payload identifiers are not fields.
-    let start = rec.chunks().count().checked_sub(6)?;
+    metadata.parameter_range = match (tail[0], tail[1]) {
+        (Some(Token::Double(end)), Some(Token::Double(start))) => Some([*start, *end]),
+        _ => None,
+    };
+    let mut prefix = rec.tokens.iter();
+    let mut field = None;
+    for _ in 0..4 {
+        field = ctx.find_map(
+            &mut prefix,
+            |token| Ok((!token.is_payload_ident()).then_some(token)),
+            "ASM pcurve wrapper fields",
+        )?;
+        if field.is_none() {
+            return Ok(metadata);
+        }
+    }
+    if !matches!(field, Some(Token::Long(0))) {
+        return Ok(metadata);
+    }
+    for slot in &mut tail[2..] {
+        *slot = ctx.find_map(
+            &mut values,
+            |token| Ok((!token.is_payload_ident()).then_some(token)),
+            "ASM pcurve boolean tail",
+        )?;
+        if slot.is_none() {
+            return Ok(metadata);
+        }
+    }
     let mut flags = [false; 4];
-    for (slot, token) in flags.iter_mut().zip(rec.chunks().skip(start)) {
+    for (slot, token) in flags.iter_mut().zip(tail[2..].iter().rev()) {
         *slot = match token {
-            Token::True => true,
-            Token::False => false,
-            _ => return None,
+            Some(Token::True) => true,
+            Some(Token::False) => false,
+            _ => return Ok(metadata),
         };
     }
-    Some(flags)
+    metadata.flags = Some(flags);
+    Ok(metadata)
 }
 
 pub(super) fn procedural_surface_definition_is_exact_carrier(
@@ -634,8 +691,7 @@ pub(super) fn analytic_procedural_surface(
             let (center, normal, ref_direction, radius) =
                 propagate_resource!(rational_four_arc_circle(ctx, directrix)?);
             let axis = UnitVector3::normalized(*direction)?;
-            if 1.0 - axis.as_raw().dot(normal).abs() > EPS_GEOMETRY_ANALYTIC_PROCEDURAL_SURFACE_E10
-            {
+            if 1.0 - axis.as_raw().dot(normal).abs() > EPS_EXTRUSION_AXIS_ALIGNMENT {
                 return None;
             }
             Some(Ok(SurfaceGeometry::Solved(
@@ -692,17 +748,17 @@ fn analytic_rolling_ball_surface(
         let first_normal = *plane_surface.frame().axis().as_raw();
         let second_origin = plane_surface_2.origin();
         let second_normal = *plane_surface_2.frame().axis().as_raw();
-        let (origin, axis) = linear_nurbs_spine(spine)?;
-        let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10 * radius;
+        let (origin, axis) = propagate_resource!(linear_nurbs_spine(ctx, spine)?);
+        let tolerance = EPS_ROLLING_BALL_MATCH * radius;
         let support_intersection = first_normal.cross(second_normal);
         let support_intersection_norm = support_intersection.norm();
-        if support_intersection_norm <= EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
+        if support_intersection_norm <= EPS_ROLLING_BALL_MATCH
             || 1.0
                 - axis
                     .as_raw()
                     .dot(support_intersection.scale(1.0 / support_intersection_norm))
                     .abs()
-                > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
+                > EPS_ROLLING_BALL_MATCH
         {
             return None;
         }
@@ -710,8 +766,7 @@ fn analytic_rolling_ball_surface(
             (*first_origin, first_normal),
             (*second_origin, second_normal),
         ] {
-            if axis.as_raw().dot(plane_normal).abs()
-                > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
+            if axis.as_raw().dot(plane_normal).abs() > EPS_ROLLING_BALL_MATCH
                 || (point_vector(plane_origin, origin).dot(plane_normal).abs() - radius).abs()
                     > tolerance
             {
@@ -775,12 +830,12 @@ fn analytic_rolling_ball_surface(
     let (center, axis, ref_direction, major_radius) =
         propagate_resource!(rational_four_arc_circle(ctx, spine)?);
     let scale = major_radius.max(radius).max(cylinder_radius);
-    let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10 * scale;
+    let tolerance = EPS_ROLLING_BALL_MATCH * scale;
     let center_offset = point_vector(cylinder_origin, center);
     let axial_offset = center_offset.dot(cylinder_axis);
     let radial_offset = center_offset - cylinder_axis.scale(axial_offset);
-    if 1.0 - axis.dot(plane_normal).abs() > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
-        || 1.0 - axis.dot(cylinder_axis).abs() > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
+    if 1.0 - axis.dot(plane_normal).abs() > EPS_ROLLING_BALL_MATCH
+        || 1.0 - axis.dot(cylinder_axis).abs() > EPS_ROLLING_BALL_MATCH
         || (point_vector(plane_origin, center).dot(plane_normal).abs() - radius).abs() > tolerance
         || radial_offset.norm() > tolerance
         || ((major_radius - cylinder_radius).abs() - radius).abs() > tolerance
@@ -793,45 +848,64 @@ fn analytic_rolling_ball_surface(
 }
 
 fn linear_nurbs_spine(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> Option<(Point3, UnitVector3)> {
+) -> Option<Result<(Point3, UnitVector3), cadmpeg_core::CodecError>> {
     if curve.degree() == 0 || curve.periodic() {
         return None;
     }
-    if let Some(weights) = curve.weights() {
-        let first_sign = weights.first()?.get().signum();
-        if weights
-            .iter()
-            .any(|weight| weight.get().signum() != first_sign)
-        {
-            return None;
+    match curve.pole_rows() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+            linear_spine_points(ctx, points, |point| *point)
+        }
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+            let first_sign = points.first()?.weight.get().signum();
+            if propagate_resource!(ctx.any_by(
+                points,
+                |pole| { Ok(pole.weight.get().signum() != first_sign) },
+                "ASM spine weight signs"
+            )) {
+                return None;
+            }
+            linear_spine_points(ctx, points, |pole| pole.point)
         }
     }
-    let origin = curve.control_points()[0];
-    let (_, farthest) = curve
-        .control_points()
-        .iter()
-        .copied()
-        .map(|point| (point_vector(origin.get(), point.get()).norm(), point))
-        .max_by(|left, right| left.0.total_cmp(&right.0))?;
-    let extent = point_vector(origin.get(), farthest.get()).norm();
+}
+
+fn linear_spine_points<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    points: &[T],
+    point: impl Fn(&T) -> FinitePoint3,
+) -> Option<Result<(Point3, UnitVector3), cadmpeg_core::CodecError>> {
+    let origin = point(points.first()?);
+    let farthest = propagate_resource!(ctx.max_by_key(
+        points,
+        |pole| Ok(point_vector(origin.get(), point(pole).get()).norm()),
+        |left, right| Ok(left.total_cmp(right)),
+        "ASM spine farthest control point",
+    ))?;
+    let extent = point_vector(origin.get(), point(farthest).get()).norm();
     if !extent.is_finite() || extent <= f64::EPSILON {
         return None;
     }
-    let axis = UnitVector3::normalized(point_vector(origin.get(), farthest.get()))?;
+    let axis = UnitVector3::normalized(point_vector(origin.get(), point(farthest).get()))?;
     // This admits an analytic replacement, not a model-length approximation.
-    if curve.control_points().iter().any(|point| {
-        let relative = point_vector(origin.get(), point.get());
-        let relative = Vector3::new(
-            relative.x / extent,
-            relative.y / extent,
-            relative.z / extent,
-        );
-        axis.as_raw().cross(relative).norm() > EPS_GEOMETRY_LINEAR_NURBS_SPINE_E10
-    }) {
+    if propagate_resource!(ctx.any_by(
+        points,
+        |pole| {
+            let relative = point_vector(origin.get(), point(pole).get());
+            let relative = Vector3::new(
+                relative.x / extent,
+                relative.y / extent,
+                relative.z / extent,
+            );
+            Ok(axis.as_raw().cross(relative).norm() > EPS_SPINE_COLLINEARITY)
+        },
+        "ASM spine collinearity"
+    )) {
         return None;
     }
-    Some((origin.get(), axis))
+    Some(Ok((origin.get(), axis)))
 }
 
 pub(super) fn rational_four_arc_circle(
@@ -845,7 +919,7 @@ pub(super) fn rational_four_arc_circle(
     if degree < 2 || curve.periodic() || points.len() != 4 * degree + 1 {
         return None;
     }
-    let knot_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E12
+    let knot_tolerance = EPS_RATIONAL_KNOT_MATCH
         * (curve.knots()[curve.knots().len() - 1] * 0.5 - curve.knots()[0] * 0.5).abs()
         * 2.0;
     let spans = [
@@ -858,29 +932,35 @@ pub(super) fn rational_four_arc_circle(
     if spans
         .windows(2)
         .any(|pair| pair[1] - pair[0] <= knot_tolerance)
-        || (0..5).any(|span| {
-            let range = if span == 0 {
-                0..degree + 1
-            } else if span == 4 {
-                4 * degree + 1..curve.knots().len()
-            } else {
-                span * degree + 1..(span + 1) * degree + 1
-            };
-            curve.knots()[range]
-                .iter()
-                .any(|value| (*value - spans[span]).abs() > knot_tolerance)
-        })
     {
         return None;
     }
-    let weight_scale = points
-        .iter()
-        .map(|pole| pole.weight.get().abs())
-        .fold(0.0, f64::max);
-    let mut homogeneous = propagate_resource!(
-        ctx.collection_vec(points.len(), "ASM rational four-arc homogeneous poles")
+    for (span, knot) in spans.iter().enumerate() {
+        let range = if span == 0 {
+            0..degree + 1
+        } else if span == 4 {
+            4 * degree + 1..curve.knots().len()
+        } else {
+            span * degree + 1..(span + 1) * degree + 1
+        };
+        if propagate_resource!(ctx.any_by(
+            &curve.knots()[range],
+            |value| Ok((*value - knot).abs() > knot_tolerance),
+            "ASM rational span knots"
+        )) {
+            return None;
+        }
+    }
+    let weight_scale = propagate_resource!(ctx.fold(
+        points,
+        0.0_f64,
+        |scale, pole| Ok(scale.max(pole.weight.get().abs())),
+        "ASM rational weight scale"
+    ));
+    let (mut homogeneous, _homogeneous_storage) = propagate_resource!(
+        ctx.temporary_vec(points.len(), "ASM rational four-arc homogeneous poles")
     );
-    for pole in points {
+    for pole in propagate_resource!(ctx.admit_iter(points, "ASM rational homogeneous pole pass")) {
         let point = pole.point;
         let weight = pole.weight.get() / weight_scale;
         let homogeneous_pole = [point.x * weight, point.y * weight, point.z * weight, weight];
@@ -907,7 +987,7 @@ pub(super) fn rational_four_arc_circle(
     ];
     let base_weight = quadratics[0][0][3];
     let weight_scale = base_weight.abs();
-    let weight_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10 * weight_scale;
+    let weight_tolerance = EPS_RATIONAL_CIRCLE_MATCH * weight_scale;
     if !base_weight.is_finite()
         || base_weight == 0.0
         || quadratics.iter().any(|span| {
@@ -934,7 +1014,7 @@ pub(super) fn rational_four_arc_circle(
         .flat_map(|span| span.windows(2))
         .map(|pair| point_distance(pair[0], pair[1]))
         .fold(0.0_f64, f64::max);
-    let tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10 * scale;
+    let tolerance = EPS_RATIONAL_CIRCLE_MATCH * scale;
     if point_distance(quadratic_points[0][0], quadratic_points[3][2]) > tolerance
         || quadratic_points
             .windows(2)
@@ -966,13 +1046,13 @@ pub(super) fn rational_four_arc_circle(
         let radial_unit = FiniteVector3::new(radial)?.unit_nonzero()?;
         let next_unit = FiniteVector3::new(next)?.unit_nonzero()?;
         if (radial.norm() - radius).abs() > tolerance
-            || radial_unit.dot(next_unit).abs() > EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10
+            || radial_unit.dot(next_unit).abs() > EPS_RATIONAL_CIRCLE_MATCH
         {
             return None;
         }
         let span_normal = FiniteVector3::new(radial_unit.cross(next_unit))?.unit_nonzero()?;
         if normal.is_some_and(|normal: Vector3| {
-            normal.dot(span_normal) < 1.0 - EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10
+            normal.dot(span_normal) < 1.0 - EPS_RATIONAL_CIRCLE_MATCH
         }) {
             return None;
         }
@@ -991,14 +1071,15 @@ fn reduce_homogeneous_bezier_to_quadratic(
     input: &[[f64; 4]],
 ) -> Option<Result<[[f64; 4]; 3], cadmpeg_core::CodecError>> {
     (|| -> Result<Option<[[f64; 4]; 3]>, cadmpeg_core::CodecError> {
-        let mut control = ctx.collection_vec(input.len(), "ASM rational four-arc control copy")?;
-        control.extend_from_slice(input);
+        let (mut control, mut control_storage) =
+            ctx.copy_temporary_slice(input, "ASM rational four-arc control copy")?;
         while control.len() > 3 {
             ctx.charge_work(1, "ASM rational four-arc reduction work")?;
             let degree = control.len() - 1;
-            let mut reduced = ctx.collection_vec(degree, "ASM rational four-arc degree reduction")?;
+            let (mut reduced, reduced_storage) =
+                ctx.temporary_vec(degree, "ASM rational four-arc degree reduction")?;
             reduced.push(control[0]);
-            for index in 1..degree {
+            for index in ctx.admit_iter(1..degree, "ASM rational reduction poles")? {
                 let (Some(index_value), Some(degree_value)) = (
                     cadmpeg_core::convert::f64_from_index(index),
                     cadmpeg_core::convert::f64_from_index(degree),
@@ -1012,21 +1093,30 @@ fn reduce_homogeneous_bezier_to_quadratic(
                         / denominator
                 }));
             }
-            if reduced.iter().flatten().any(|value| !value.is_finite()) {
+            if ctx.any_by(
+                &reduced,
+                |point| Ok(point.iter().any(|value| !value.is_finite())),
+                "ASM rational reduced pole finiteness",
+            )? {
                 return Ok(None);
             }
-            if (0..4).any(|coordinate| {
-                let scale = control
-                    .iter()
-                    .map(|point| point[coordinate].abs())
-                    .fold(0.0, f64::max);
-                (reduced[degree - 1][coordinate] - control[degree][coordinate]).abs()
-                    > EPS_GEOMETRY_REDUCE_HOMOGENEOUS_BEZIER_TO_QUADRATIC_E10 * scale
-            }) {
-                return Ok(None);
+            for coordinate in 0..4 {
+                let scale = ctx.fold(
+                    &control,
+                    0.0_f64,
+                    |scale, point| Ok(scale.max(point[coordinate].abs())),
+                    "ASM rational reduction scale",
+                )?;
+                if (reduced[degree - 1][coordinate] - control[degree][coordinate]).abs()
+                    > EPS_DEGREE_REDUCTION * scale
+                {
+                    return Ok(None);
+                }
             }
             control = reduced;
+            control_storage = reduced_storage;
         }
+        drop(control_storage);
         Ok(control.try_into().ok())
     })()
     .transpose()
@@ -1052,26 +1142,32 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let domains: HashMap<&str, [f64; 2]> = ctx.collect_hash_map(
-        out.curves.iter().filter_map(|curve| match &curve.geometry {
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                let first = nurbs.knots().get(usize::try_from(nurbs.degree()).ok()?)?;
-                let last = nurbs.knots().get(nurbs.pole_count())?;
-                Some((curve.id.as_str(), [*first, *last]))
-            }
-            _ => None,
-        }),
-        "ASM edge carrier domains",
-    )?;
-    for edge in &mut out.edges {
+    let mut storage = ctx.reserve_scoped(0, "ASM edge domain storage")?;
+    let domains: HashMap<&str, [f64; 2]> = storage.with_storage(|| {
+        ctx.collect_hash_map(
+            ctx.admit_iter(&out.curves, "ASM edge domain curves")?
+                .filter_map(|curve| match &curve.geometry {
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                        let first = nurbs.knots().get(usize::try_from(nurbs.degree()).ok()?)?;
+                        let last = nurbs.knots().get(nurbs.pole_count())?;
+                        Some((curve.id.as_str(), [*first, *last]))
+                    }
+                    _ => None,
+                }),
+            "ASM edge carrier domains",
+        )
+    })?;
+    for edge in ctx.admit_iter(&mut out.edges, "ASM edge range clamp")? {
         let Some([mut start, mut end]) = edge.param_range().map(FiniteVector::get) else {
             continue;
         };
-        let Some([first, last]) = edge.curve().and_then(|curve| domains.get(curve.as_str())) else {
+        let Some(curve) = edge.curve() else { continue };
+        let Some([first, last]) =
+            ctx.get_hash_map(&domains, curve.as_str(), "ASM edge domain lookup")?
+        else {
             continue;
         };
-        let tolerance = (last * 0.5 - first * 0.5).abs()
-            * (2.0 * EPS_GEOMETRY_CLAMP_EDGE_RANGES_TO_CARRIER_DOMAINS_E9);
+        let tolerance = (last * 0.5 - first * 0.5).abs() * (2.0 * EPS_EDGE_DOMAIN_SNAP);
         if start < *first && *first - start <= tolerance {
             start = *first;
         }
@@ -1093,69 +1189,115 @@ pub(super) fn classify_body_kinds(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "ASM body classification storage")?;
     let mut shell_bodies = HashMap::new();
-    for region in &out.regions {
-        for shell in &region.shells {
-            ctx.insert_hash_map(&mut shell_bodies, shell, &region.body, "ASM shell bodies")?;
+    for region in ctx.admit_iter(&out.regions, "ASM body classification regions")? {
+        for shell in ctx.admit_iter(&region.shells, "ASM region shells")? {
+            storage.with_storage(|| {
+                ctx.insert_hash_map(&mut shell_bodies, shell, &region.body, "ASM shell bodies")
+            })?;
         }
     }
     let mut body_has_faces = HashSet::new();
     let mut body_has_wires = HashSet::new();
     let mut face_bodies = HashMap::new();
-    for shell in &out.shells {
-        let Some(body) = shell_bodies.get(&shell.id).copied() else {
+    for shell in ctx.admit_iter(&out.shells, "ASM body classification shells")? {
+        let Some(body) = ctx
+            .get_hash_map(&shell_bodies, &&shell.id, "ASM body owner lookup")?
+            .copied()
+        else {
             continue;
         };
         if !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty() {
-            ctx.insert_hash_set(&mut body_has_wires, body, "ASM bodies with wires")?;
+            storage.with_storage(|| {
+                ctx.insert_hash_set(&mut body_has_wires, body, "ASM bodies with wires")
+            })?;
         }
         if !shell.faces().is_empty() {
-            ctx.insert_hash_set(&mut body_has_faces, body, "ASM bodies with faces")?;
+            storage.with_storage(|| {
+                ctx.insert_hash_set(&mut body_has_faces, body, "ASM bodies with faces")
+            })?;
         }
-        for face in shell.faces() {
-            ctx.insert_hash_map(&mut face_bodies, face, body, "ASM face bodies")?;
+        for face in ctx.admit_iter(shell.faces(), "ASM shell faces")? {
+            storage.with_storage(|| {
+                ctx.insert_hash_map(&mut face_bodies, face, body, "ASM face bodies")
+            })?;
         }
     }
     let mut loop_bodies = HashMap::new();
-    for face in &out.faces {
-        let Some(body) = face_bodies.get(&face.id).copied() else {
+    for face in ctx.admit_iter(&out.faces, "ASM body classification faces")? {
+        let Some(body) = ctx
+            .get_hash_map(&face_bodies, &&face.id, "ASM body owner lookup")?
+            .copied()
+        else {
             continue;
         };
-        for loop_id in &face.loops {
-            ctx.insert_hash_map(&mut loop_bodies, loop_id, body, "ASM loop bodies")?;
+        let (outer, inner) = match &face.loops {
+            cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => (None, loops),
+            cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => (Some(outer), inner),
+        };
+        if let Some(outer) = outer {
+            storage.with_storage(|| {
+                ctx.insert_hash_map(&mut loop_bodies, outer, body, "ASM loop bodies")
+            })?;
+        }
+        for loop_id in ctx.admit_iter(inner, "ASM face loops")? {
+            storage.with_storage(|| {
+                ctx.insert_hash_map(&mut loop_bodies, loop_id, body, "ASM loop bodies")
+            })?;
         }
     }
     let mut coedge_bodies = HashMap::new();
-    for loop_ in &out.loops {
-        let Some(body) = loop_bodies.get(&loop_.id).copied() else {
+    for loop_ in ctx.admit_iter(&out.loops, "ASM body classification loops")? {
+        let Some(body) = ctx
+            .get_hash_map(&loop_bodies, &&loop_.id, "ASM body owner lookup")?
+            .copied()
+        else {
             continue;
         };
-        for coedge in loop_.coedges() {
-            ctx.insert_hash_map(&mut coedge_bodies, coedge, body, "ASM coedge bodies")?;
+        for coedge in ctx.admit_iter(loop_.coedges(), "ASM loop coedges")? {
+            storage.with_storage(|| {
+                ctx.insert_hash_map(&mut coedge_bodies, coedge, body, "ASM coedge bodies")
+            })?;
         }
     }
-    let mut edge_use_counts = HashMap::<_, HashMap<&EdgeId, usize>>::new();
-    for coedge in &out.coedges {
-        if let Some(body) = coedge_bodies.get(&coedge.id).copied() {
-            ctx.admit_hash_map_entry(&mut edge_use_counts, &body, "ASM body edge use counts")?;
+    let mut edge_use_counts = HashMap::<_, std::collections::BTreeMap<&EdgeId, usize>>::new();
+    for coedge in ctx.admit_iter(&out.coedges, "ASM body classification coedges")? {
+        if let Some(body) = ctx
+            .get_hash_map(&coedge_bodies, &&coedge.id, "ASM body owner lookup")?
+            .copied()
+        {
+            storage.with_storage(|| {
+                ctx.admit_hash_map_entry(&mut edge_use_counts, &body, "ASM body edge use counts")
+            })?;
             let counts = edge_use_counts.entry(body).or_default();
-            ctx.admit_hash_map_entry(counts, &&coedge.edge, "ASM edge use counts")?;
+            storage.with_storage(|| {
+                ctx.admit_btree_entry(counts, &&coedge.edge, "ASM edge use counts")
+            })?;
             *counts.entry(&coedge.edge).or_default() += 1;
         }
     }
-    for body in &mut out.bodies {
-        if !body_has_faces.contains(&body.id) {
+    for body in ctx.admit_iter(&mut out.bodies, "ASM body classification bodies")? {
+        if !ctx.contains_hash_set(&body_has_faces, &&body.id, "ASM body face membership")? {
             body.kind = cadmpeg_ir::topology::BodyKind::Wire;
             continue;
         }
-        if body_has_wires.contains(&body.id) {
+        if ctx.contains_hash_set(&body_has_wires, &&body.id, "ASM body wire membership")? {
             body.kind = cadmpeg_ir::topology::BodyKind::General;
             continue;
         }
-        let counts = edge_use_counts.get(&body.id);
-        body.kind = if counts
-            .is_some_and(|counts| !counts.is_empty() && counts.values().all(|count| *count == 2))
-        {
+        let counts = ctx.get_hash_map(&edge_use_counts, &&body.id, "ASM body edge count lookup")?;
+        body.kind = if match counts {
+            Some(counts) => {
+                !counts.is_empty()
+                    && ctx.all_by(
+                        counts,
+                        |(_, count)| Ok(*count == 2),
+                        "ASM closed body edge counts",
+                    )?
+            }
+            None => false,
+        } {
             cadmpeg_ir::topology::BodyKind::Solid
         } else {
             cadmpeg_ir::topology::BodyKind::Sheet
@@ -1294,13 +1436,17 @@ mod sense_tests {
                 offset: 0,
                 len: 0,
             };
-            assert_eq!(record_reversed(&record), expected);
+            assert_eq!(
+                record_reversed(&cadmpeg_test_support::service_decode_context(), &record).unwrap(),
+                expected
+            );
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    mod budget;
     mod numerical_ranges;
     use super::Point3;
     const SMALL_CURVED_SPINE_EXTENT: f64 = 1.0e-10;
@@ -1310,14 +1456,19 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
 
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 6;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let poles = [[0.0, 0.0, 0.0, 1.0]; 4];
-        let error = super::reduce_homogeneous_bezier_to_quadratic(&ctx, &poles)
-            .expect("degree-four input")
-            .expect_err("control copy and degree reduction need seven items");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "ASM rational four-arc degree reduction",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                super::reduce_homogeneous_bezier_to_quadratic(&ctx, &poles)
+                    .expect("degree-four input")
+            },
+        );
         let CodecError::ResourceLimit(limit) = error else {
             panic!("expected collection refusal: {error:?}");
         };
@@ -1328,14 +1479,19 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
 
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let poles = [[0.0, 0.0, 0.0, 1.0]; 4];
-        let error = super::reduce_homogeneous_bezier_to_quadratic(&ctx, &poles)
-            .expect("degree-four input")
-            .expect_err("degree reduction exceeds admitted work");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "ASM rational four-arc reduction work",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                super::reduce_homogeneous_bezier_to_quadratic(&ctx, &poles)
+                    .expect("degree-four input")
+            },
+        );
         let CodecError::ResourceLimit(limit) = error else {
             panic!("expected work refusal: {error:?}");
         };
@@ -1345,6 +1501,7 @@ mod tests {
 
     #[test]
     fn numerical_seventh_analytic_spine_rejects_relative_curvature_at_small_scale() {
+        let ctx = cadmpeg_test_support::service_decode_context();
         for scale in [1.0, SMALL_CURVED_SPINE_EXTENT, 1.0e100] {
             let spine = |height| {
                 cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -1362,8 +1519,14 @@ mod tests {
                 .expect("fixture constructor admission")
                 .unwrap()
             };
-            assert!(super::linear_nurbs_spine(&spine(0.4)).is_none());
-            assert!(super::linear_nurbs_spine(&spine(0.0)).is_some());
+            assert!(super::linear_nurbs_spine(&ctx, &spine(0.4))
+                .transpose()
+                .unwrap()
+                .is_none());
+            assert!(super::linear_nurbs_spine(&ctx, &spine(0.0))
+                .transpose()
+                .unwrap()
+                .is_some());
         }
     }
     #[test]

@@ -100,12 +100,17 @@ fn emit(record: &Record) -> Result<(), cadmpeg_core::CodecError> {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
     );
     carriers.procedural_surface_defs.insert(0, decoded);
+    let mut scratch = asm_decode_ctx.reserve_scoped(0, "ASM test scratch")?;
     emit_carrier_surface(
         &asm_decode_ctx,
         &mut AsmBrep::default(),
         record,
         0,
-        &mut carriers,
+        (
+            &mut carriers,
+            &mut scratch,
+            crate::brep::DecodePurpose::Model,
+        ),
         &Reachable::default(),
         crate::asm_format!("f3d"),
     )
