@@ -29,7 +29,7 @@ fn fallback_emitted_identity_lookup_preserves_work_refusal() {
             draft.draft.model_mut().curves.extend(curves.clone());
             let result = draft.free_carrier_fallback(&ctx, "test fallback");
             if let Err(CodecError::ResourceLimit(ref refusal)) = result {
-                assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(*refusal));
             }
             result
         },

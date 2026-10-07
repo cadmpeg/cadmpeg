@@ -174,23 +174,26 @@ fn instance_path_segment_refuses_scoped_storage_before_formatting() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "Rhino instance path segment",
-        |cap| with_transaction_limits(&scan, 100, None, Some(cap), |expand| {
-            let context = DecodeContext::new(&scan, expand)?;
-            // One KiB of live traversal scratch keeps the segment boundary above setup's peak.
-            let mut scratch = expand.ctx().reserve_scoped(1024, "Rhino instance traversal scratch")?;
-            context.reference_segment(
-                0,
-                scan.objects[0].identity().expect("identity"),
-                &mut scratch,
-            )
-        }),
+        |cap| {
+            with_transaction_limits(&scan, 100, None, Some(cap), |expand| {
+                let context = DecodeContext::new(&scan, expand)?;
+                // One KiB of live traversal scratch keeps the segment boundary above setup's peak.
+                let mut scratch = expand
+                    .ctx()
+                    .reserve_scoped(1024, "Rhino instance traversal scratch")?;
+                context.reference_segment(
+                    0,
+                    scan.objects[0].identity().expect("identity"),
+                    &mut scratch,
+                )
+            })
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
         if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
             && refusal.operation == "Rhino instance path segment")
     );
-
 }
 
 #[test]
