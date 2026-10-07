@@ -1262,8 +1262,8 @@ fn classify(ctx: &DecodeContext<'_>, inflated: &[u8]) -> Result<StreamBody, Code
     };
     Ok(StreamBody::Parasolid {
         subtype,
-        schema: cadmpeg_parasolid::find_schema_token(window)
-            .map(cadmpeg_parasolid::OwnedSchemaToken::from),
+        schema: cadmpeg_parasolid::find_schema_token(ctx, window)?
+            .map(|token| token.into_owned(ctx)).transpose()?,
     })
 }
 
