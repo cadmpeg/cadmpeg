@@ -55,41 +55,20 @@ use crate::global::GlobalTable;
 #[test]
 fn surface_grid_error_fields_refuse_retained_limit_before_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext};
-
     let point = FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap();
     let cases = [
-        (vec![Vec::new()], Vec::<Vec<f64>>::new(), 8_u64),
-        (
-            vec![Vec::new()],
-            vec![vec![1.0]],
-            12_u64
-                + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    Vec<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>,
-                >()),
-        ),
-        (
-            vec![vec![point]],
-            vec![vec![0.0]],
-            12_u64
-                + cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<
-                        Vec<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>,
-                    >() + std::mem::size_of::<
-                        cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>,
-                    >(),
-                ),
-        ),
+        (vec![Vec::new()], Vec::<Vec<f64>>::new()),
+        (vec![Vec::new()], vec![vec![1.0]]),
+        (vec![vec![point]], vec![vec![0.0]]),
     ];
-    for (rows, weights, cap) in cases {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result =
-            super::pair_admitted_surface_poles(&ctx, rows, Some(weights), "outer", "inner");
-        assert!(
-            matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges surface grid error field")
-        );
+    for (rows, weights) in cases {
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "iges surface grid error field", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::pair_admitted_surface_poles(&ctx, rows.clone(), Some(weights.clone()), "outer", "inner")
+        });
     }
 }
 
@@ -99,67 +78,28 @@ const EPS_LINEAR_BEZIER_RULED: f64 = 1.0e-5;
 use super::{angular_basis, offset_indicator_parameters, tabulated_directrix_type_allowed};
 
 fn assert_surface_collection_refusal(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
+    let dimension = ResourceDimension::CollectionItems;
+    cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
-        match crate::IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation {
-                    return;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            Ok(_) => {
-                panic!("expected surface collection refusal at {operation}, but decode succeeded")
-            }
-            Err(error) => panic!("expected surface collection refusal at {operation}: {error:?}"),
-        }
-    }
-    panic!("surface collection refusal was not reached: {operation}");
+        IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
+            .map_err(|failure| match failure {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("unexpected decode failure: {other:?}"),
+            })
+    });
 }
 
 #[test]
 fn surface_identity_copies_refuse_at_retained_byte_limit() {
-    for bytes in [placed_tabulated_line_file()] {
-        IgesCodec
-            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-            .unwrap();
-        let mut cap = 0_u64;
-        let mut refused = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            match IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            ) {
-                Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                    if limit.operation == "iges surface identity copy" {
-                        refused = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                Ok(_) => {
-                    panic!("expected surface identity refusal at cap {cap}, but decode succeeded")
-                }
-                Err(error) => panic!("expected surface identity refusal at cap {cap}: {error:?}"),
-            }
-        }
-        assert!(refused, "surface identity refusal was not reached");
-    }
+    let bytes = placed_tabulated_line_file();
+    IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "iges surface identity copy", |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
+            .map_err(|failure| match failure { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
+    });
 }
 
 #[test]
@@ -373,13 +313,7 @@ fn type128_projection_refuses_source_lanes_nested_rows_and_surface_slot() {
     for operation in [
         "iges NURBS surface source u knots",
         "iges NURBS surface source v knots",
-        "iges NURBS surface admitted u knots",
-        "iges NURBS surface admitted v knots",
         "iges NURBS surface source weights",
-        "iges NURBS surface positive weights",
-        "iges NURBS surface source poles",
-        "iges NURBS surface source ranges",
-        "iges NURBS surface placed controls",
         "iges NURBS surface pole rows",
         "iges NURBS surface pole row controls",
         "iges NURBS surface neutral slots",
@@ -398,9 +332,6 @@ fn type128_projection_refuses_source_lanes_nested_rows_and_surface_slot() {
         .unwrap();
     assert_eq!(service.ir().model.surfaces.len(), 1);
     for operation in [
-        "iges NURBS surface neutral weights",
-        "iges NURBS surface weight rows",
-        "iges NURBS surface weight row controls",
         "iges NURBS surface weighted rows",
         "iges NURBS surface weighted row controls",
     ] {
@@ -409,17 +340,15 @@ fn type128_projection_refuses_source_lanes_nested_rows_and_surface_slot() {
 }
 
 #[test]
-fn interval_certified_ruled_rails_refuse_coordinate_arrays() {
+fn interval_certified_ruled_rails_refuse_interval_proof_work() {
     let bytes = interval_certified_linear_bezier_ruled_surface_file();
-    for operation in [
-        "iges ruled linear x values",
-        "iges ruled linear y values",
-        "iges ruled linear z values",
-        "iges ruled linear x uncertainties",
-        "iges ruled linear y uncertainties",
-        "iges ruled linear z uncertainties",
-    ] {
-        assert_surface_collection_refusal(&bytes, operation);
+    for operation in ["iges ruled linear intervals", "iges ruled linear first controls", "iges ruled linear second controls"] {
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
+                .map_err(|failure| match failure { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
+        });
     }
     let service = crate::IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -533,41 +462,19 @@ fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
             "iges span normalized boundaries",
             "iges span combined boundaries",
             "iges span partition controls",
-            "iges span split levels",
-            "iges span split first controls",
-            "iges span split level controls",
-            "iges span split left controls",
+                "iges span split first controls",
+                "iges span split left controls",
             "iges span split right controls",
             "iges span partition slots",
             "iges span aligned pairs",
         ] {
-            let mut cap = 0_u64;
-            let mut found = false;
-            for _ in 0..4096 {
+            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
                 let arena = cadmpeg_core::decode::DecodeArena::new();
-                let (ctx, _) =
-                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                        .unwrap();
-                match super::aligned_homogeneous_spans(&ctx, &first, &second) {
-                    Err(CodecError::ResourceLimit(limit)) => {
-                        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                        if limit.operation == operation {
-                            found = true;
-                            break;
-                        }
-                        cap = limit.used.checked_add(limit.additional).unwrap();
-                    }
-                    Ok(_) => {
-                        panic!(
-                            "expected aligned-span refusal at {operation}, but alignment succeeded"
-                        )
-                    }
-                    Err(error) => panic!("expected aligned-span refusal at {operation}: {error:?}"),
-                }
-            }
-            assert!(found, "aligned-span refusal was not reached: {operation}");
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::aligned_homogeneous_spans(&ctx, &first, &second)
+            });
         }
     });
 }
@@ -589,32 +496,13 @@ fn unclamped_ruled_span_extraction_refuses_knot_insertion_storage() {
             .unwrap()
             .unwrap();
         for operation in ["Bezier knot insertion", "Bezier inserted knot"] {
-            let mut cap = 0_u64;
-            let mut found = false;
-            for _ in 0..128 {
+            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
                 let arena = cadmpeg_core::decode::DecodeArena::new();
-                let (ctx, _) =
-                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                        .unwrap();
-                match super::homogeneous_bezier_spans(&ctx, &curve) {
-                    Err(CodecError::ResourceLimit(limit)) => {
-                        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                        if limit.operation == operation {
-                            found = true;
-                            break;
-                        }
-                        cap = limit.used.checked_add(limit.additional).unwrap();
-                    }
-                    Ok(_) => panic!("span extraction succeeded before {operation}"),
-                    Err(error) => panic!("unexpected span refusal at {operation}: {error}"),
-                };
-            }
-            assert!(
-                found,
-                "span insertion boundary was not reached: {operation}"
-            );
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::homogeneous_bezier_spans(&ctx, &curve).map(|_| ())
+            });
         }
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -656,31 +544,13 @@ fn same_basis_ruled_surface_refuses_nested_weight_rows() {
             "iges ruled same-basis weighted rows",
             "iges ruled same-basis weighted row controls",
         ] {
-            let mut cap = 0_u64;
-            let mut found = false;
-            for _ in 0..4096 {
+            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
                 let arena = cadmpeg_core::decode::DecodeArena::new();
-                let (ctx, _) =
-                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                        .unwrap();
-                match super::same_basis_ruled_surface(&rail, &rail, &weights, &ctx) {
-                    Err(CodecError::ResourceLimit(limit)) => {
-                        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                        if limit.operation == operation {
-                            found = true;
-                            break;
-                        }
-                        cap = limit.used.checked_add(limit.additional).unwrap();
-                    }
-                    Ok(_) => {
-                        panic!("expected same-basis refusal at {operation}, but construction succeeded")
-                    }
-                    Err(error) => panic!("expected same-basis refusal at {operation}: {error:?}"),
-                }
-            }
-            assert!(found, "same-basis refusal was not reached: {operation}");
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::same_basis_ruled_surface(&rail, &rail, &weights, &ctx)
+            });
         }
     });
 }
@@ -1008,17 +878,13 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_we
         let surface = super::ruled_surface_carrier(&first, &second, decode_ctx)
             .expect("ruled lanes pair")
             .expect("relative-parameter rational ruled carrier");
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::ruled_surface_carrier(&first, &second, &ctx)
-            .expect_err("two unit weights exceed one admitted collection item");
-        assert!(matches!(
-            error,
-            CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems
-        ));
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "iges_surface_closure_points", |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::ruled_surface_carrier(&first, &second, &ctx)
+        });
         assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
         assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
         for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
@@ -1601,4 +1467,153 @@ fn surfaces_directory_pass_refuses_before_traversal() {
             })
         },
     );
+}
+
+#[test]
+fn surface_projection_refuses_variable_work_and_scratch() {
+    for (bytes, dimension, operation) in [
+        (nurbs_surface_file(), ResourceDimension::WorkUnits, "iges NURBS surface weight positivity"),
+        (nurbs_surface_file(), ResourceDimension::WorkUnits, "iges NURBS surface weight equality"),
+        (nurbs_surface_file(), ResourceDimension::WorkUnits, "iges NURBS surface source poles"),
+        (nurbs_surface_file(), ResourceDimension::WorkUnits, "iges NURBS surface u poles"),
+        (nurbs_surface_file(), ResourceDimension::MaterializedBytes, "iges NURBS surface source weights"),
+        (interval_certified_linear_bezier_ruled_surface_file(), ResourceDimension::MaterializedBytes, "iges ruled linear interval controls"),
+        (rational_ruled_surface_file(), ResourceDimension::WorkUnits, "iges Bernstein binomial factors"),
+        (rational_ruled_surface_file(), ResourceDimension::WorkUnits, "iges Bernstein product controls"),
+        (offset_plane_file(1.0, 2.0), ResourceDimension::WorkUnits, "iges offset support lookup"),
+        (offset_plane_file(1.0, 2.0), ResourceDimension::MaterializedBytes, "iges offset surface index keys"),
+    ] {
+        // Isolate projection storage from the scanner's earlier materialization peak.
+        let projection_inputs = (dimension == ResourceDimension::MaterializedBytes).then(|| {
+            let decoded = IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+            crate::test_support::with_service_context(&bytes, |ctx| {
+                let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
+                let (global, _) = crate::global::parse(&scan, ctx).unwrap();
+                let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(ctx).unwrap(), ctx).unwrap();
+                assert!(quarantined.is_empty());
+                let parameters = crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, ctx).unwrap().records;
+                (decoded.ir().clone(), directory, parameters, global.length_context(ctx).unwrap().unwrap())
+            })
+        });
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                _ => panic!("unexpected test dimension"),
+            }
+            if let Some((source, directory, parameters, global)) = &projection_inputs {
+                let mut ir = source.clone();
+                crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                    super::project(&mut ir, directory, parameters, global, ctx, &mut super::super::geometry::SourceSequences::default()).map(|_| ())
+                })
+            } else {
+                IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
+                    .map(|_| ())
+                    .map_err(|failure| match failure { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
+            }
+        });
+    }
+}
+
+#[test]
+fn offset_lookup_positions_preserve_first_and_last_duplicate_carriers() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+    let source = IgesCodec.decode(&mut Cursor::new(plane_file()), &DecodeOptions::default()).unwrap();
+    let mut ir = source.ir().clone();
+    ir.model.surfaces.push(ir.model.surfaces[0].clone());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "test offset lookup storage").unwrap();
+    let lookups = storage.with_storage(|| super::OffsetLookups::from_ir(&ir, &ctx)).unwrap();
+    assert_eq!(lookups.surfaces.get(&ir.model.surfaces[0].id), Some(&(0, 1)));
+}
+
+#[test]
+fn quadratic_linear_bezier_rails_use_fixed_interval_proof() {
+    let file = owned_test_file(&[
+        OwnedTestEntity { entity_type: 126, form: 0, label: "QUAD1".into(), status: "00000000", parameters: "126,2,2,0,0,1,0,0,0,0,1,1,1,1,1,1,0,0,0,1,0,0,2,0,0,0,1;".into() },
+        OwnedTestEntity { entity_type: 126, form: 0, label: "QUAD2".into(), status: "00000000", parameters: "126,2,2,0,0,1,0,0,0,0,1,1,1,1,1,1,0,1,0,1,1,0,2,1,0,0,1;".into() },
+        OwnedTestEntity { entity_type: 118, form: 0, label: "QUADRULE".into(), status: "00000000", parameters: "118,1,3,0,0;".into() },
+    ]);
+    let result = IgesCodec.decode(&mut Cursor::new(file), &DecodeOptions::default()).unwrap();
+    assert_eq!(result.ir().model.surfaces.len(), 1);
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = result.ir().model.surfaces[0].geometry.solved() else { panic!("quadratic ruled carrier") };
+    let midpoint = cadmpeg_ir::eval::decode::nurbs_surface_point(cadmpeg_ir::eval::admission::EvaluationAdmission::Standard, surface, 0.5, 0.5).unwrap();
+    assert!(midpoint.distance(Point3::new(1.0, 0.5, 0.0)) <= EPS_LINEAR_BEZIER_RULED);
+}
+
+#[test]
+fn offset_lookup_excludes_repeated_procedural_owners() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+    let source = IgesCodec.decode(&mut Cursor::new(offset_plane_file(1.0, 2.0)), &DecodeOptions::default()).unwrap();
+    let mut ir = source.ir().clone();
+    let owner_position = ir.model.surfaces.iter().position(|surface| surface.geometry.procedural_construction().is_some()).unwrap();
+    let owner_id = ir.model.surfaces[owner_position].id.clone();
+    ir.model.surfaces.push(ir.model.surfaces[owner_position].clone());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "test offset lookup storage").unwrap();
+    let lookups = storage.with_storage(|| super::OffsetLookups::from_ir(&ir, &ctx)).unwrap();
+    assert!(!lookups.procedural.contains_key(&owner_id));
+}
+
+#[test]
+fn placed_line_source_interval_refuses_variable_basis_walk() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+    use cadmpeg_ir::geometry::{CurveGeometry, PlacedCurve};
+    use cadmpeg_ir::geometry::analytic::LineCurve;
+    use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::transform::Transform;
+    let line = SolvedCurveGeometry::Line(LineCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0),
+    ).unwrap());
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(super::source_parameter_interval(&CurveGeometry::Solved(line.clone()), [2.0, 3.0], &ctx).unwrap(), [0.0, 1.0]);
+    let mut basis = line;
+    for _ in 0..3 {
+        basis = SolvedCurveGeometry::Transformed(PlacedCurve::try_new(Box::new(basis), Transform::identity()).unwrap());
+    }
+    let geometry = CurveGeometry::Solved(basis);
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "iges source placed curve classification", |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        super::source_parameter_interval(&geometry, [2.0, 3.0], &ctx)
+    });
+    let policy = DecodePolicy::service();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(super::source_parameter_interval(&geometry, [2.0, 3.0], &ctx).unwrap(), [0.0, 1.0]);
+}
+
+#[test]
+fn homogeneous_rail_extraction_uses_scoped_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+    let decoded = IgesCodec.decode(&mut Cursor::new(rational_ruled_surface_file()), &DecodeOptions::default()).unwrap();
+    let curve = decoded.ir().model.curves.iter().find_map(|curve| match curve.geometry.solved() {
+        Some(SolvedCurveGeometry::Nurbs(curve)) if curve.pole_rows().weight_at(0).is_some() => Some(curve),
+        _ => None,
+    }).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "iges_surface_closure_weights", |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        super::homogeneous_bezier_spans(&ctx, curve).map(|_| ())
+    });
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let spans = super::homogeneous_bezier_spans(&ctx, curve).unwrap().unwrap();
+    assert!(!spans.is_empty());
 }
