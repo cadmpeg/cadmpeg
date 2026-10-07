@@ -61,6 +61,34 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
         Ok(ctx.get_hash_map(&self.table, &source, operation)?.copied())
     }
 
+    /// The feature that carries a native source: `None` when none does,
+    /// `Some(None)` when more than one does.
+    pub(super) fn source(
+        &self,
+        ctx: &DecodeContext<'_>,
+        source: u32,
+        operation: &'static str,
+    ) -> Result<Option<Option<&'a Feature>>, CodecError> {
+        Ok(ctx.get_hash_map(&self.table, &source, operation)?.copied())
+    }
+
+    /// The feature the last resolvable component names, if one feature
+    /// carries its source.
+    pub(super) fn terminal_feature(
+        &self,
+        ctx: &DecodeContext<'_>,
+        components: &[FeatureInputComponentPathEntry],
+    ) -> Result<Option<&'a Feature>, CodecError> {
+        const OPERATION: &str = "resolve SLDPRT component path terminal";
+        Ok(ctx
+            .find_map(
+                components.iter().rev(),
+                |component| self.component(ctx, component, OPERATION),
+                OPERATION,
+            )?
+            .flatten())
+    }
+
     /// The distinct features the components name, in component order.
     pub(super) fn features(
         &self,
@@ -93,13 +121,7 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
         components: &[FeatureInputComponentPathEntry],
     ) -> Result<Option<String>, CodecError> {
         const OPERATION: &str = "resolve SLDPRT component path terminal";
-        let terminal = ctx.find_map(
-            components.iter().rev(),
-            |component| self.component(ctx, component, OPERATION),
-            OPERATION,
-        )?;
-        terminal
-            .flatten()
+        self.terminal_feature(ctx, components)?
             .map(|feature| ctx.copy_retained_text(&feature.id, OPERATION))
             .transpose()
     }

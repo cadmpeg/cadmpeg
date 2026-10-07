@@ -780,7 +780,7 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
     crate::test_support::work_refusal_at("lookup SLDPRT scalar marker group", |ctx| {
         super::finalize_lane_bindings(ctx, &[], &mut marker_group_lane.clone())
     });
-    crate::test_support::work_refusal_at("lookup SLDPRT scalar endpoint group", |ctx| {
+    crate::test_support::work_refusal_at("scan SLDPRT indexed curve endpoints", |ctx| {
         super::normalize_indexed_curve_entities(ctx, &mut lane.clone())
     });
     normalize_indexed_curve_entities(&cadmpeg_test_support::service_decode_context(), &mut lane)
