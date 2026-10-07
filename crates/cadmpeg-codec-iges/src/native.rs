@@ -1637,7 +1637,8 @@ impl OverdeclaredCounts {
     }
 }
 
-pub(crate) struct NativeStoreResult {
+pub(crate) struct NativeStoreResult<'ctx> {
+    pub(crate) reference_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     pub(crate) occurrence_expansion: ProductOccurrenceExpansion,
     pub(crate) ambiguous_parameter_boundaries: Vec<AmbiguousParameterBoundary>,
     pub(crate) overdeclared_counts: BTreeMap<u32, OverdeclaredCount>,
@@ -2405,14 +2406,14 @@ pub(crate) struct NativeStoreInputs<'a, 'b> {
     pub(crate) boundary_vertex_derivations: &'a [BoundaryVertexDerivation],
 }
 
-pub(crate) fn store(
+pub(crate) fn store<'ctx>(
     ir: &mut CadIr,
     inputs: NativeStoreInputs<'_, '_>,
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &ResolvedGlobal,
     limits: ProductOccurrenceLimits,
-    ctx: &DecodeContext<'_>,
-) -> Result<NativeStoreResult, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<NativeStoreResult<'ctx>, CodecError> {
     let global_table = global.global_table(ctx)?;
     let NativeStoreInputs {
         scan,
@@ -2641,6 +2642,7 @@ pub(crate) fn store(
         cadmpeg_core::decode::u64_from_index(directory.len()),
         "iges_native_entities",
     )?;
+    let mut reference_copy_storage = ctx.reserve_scoped(0, "IGES native reference copies")?;
     let mut entities =
         ctx.collect_indexed_vec(directory.len(), "iges native entity slots", |index| {
             let entry = &directory[index];
@@ -2776,7 +2778,7 @@ pub(crate) fn store(
                         let mut copies =
                             ctx.collection_vec(edges.len(), "iges native reference slots")?;
                         for edge in edges {
-                            copies.push(edge.copy_for_native(ctx)?);
+                            copies.push(edge.copy_for_native(ctx, &mut reference_copy_storage)?);
                         }
                         copies
                     }
@@ -6962,7 +6964,7 @@ pub(crate) fn store(
             })
         },
     )?;
-    parameter_resolver.append_to(references)?;
+    let reference_storage = parameter_resolver.append_to(references)?;
     for entity in &mut entities {
         entity.links = native_entity_ids(
             ctx,
@@ -6978,7 +6980,7 @@ pub(crate) fn store(
                 let mut copies =
                     ctx.collection_vec(edges.len(), "iges resolved native reference slots")?;
                 for edge in edges {
-                    copies.push(edge.copy_for_native(ctx)?);
+                    copies.push(edge.copy_for_native(ctx, &mut reference_copy_storage)?);
                 }
                 copies
             }
@@ -7109,6 +7111,7 @@ pub(crate) fn store(
         quarantined_parameter_records,
     )?;
     Ok(NativeStoreResult {
+        reference_storage,
         occurrence_expansion: ProductOccurrenceExpansion {
             malformed_definition_sequences,
             malformed_placement_sequences: {

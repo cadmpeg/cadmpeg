@@ -170,7 +170,7 @@ fn global_supplied_string_refuses_utf8_work() {
             with_work_limit(b"abc", cap, |ctx| {
         let resolution = crate::global::Resolution {
             ctx,
-            values: vec![crate::global::Value::String(b"abc")],
+            values: std::array::from_fn(|index| if index == 0 { crate::global::Value::String(b"abc") } else { crate::global::Value::Omitted }),
             losses: Vec::new(),
         };
         resolution.supplied_string(0).map(|_| ())
@@ -221,14 +221,18 @@ fn fixed_ascii_with_global_chunks(chunks: &[&[u8]]) -> Vec<u8> {
 #[test]
 fn global_layout_card_refuses_retained_limit_before_allocation() {
     let bytes = b"1H,,1H;,;";
+    let result = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes, "iges global layout card bytes", |cap| {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 71;
+    policy.limits.max_retained_bytes = cap;
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let result = crate::global::layout_global_cards(bytes, &ctx);
+    crate::global::layout_global_cards(bytes, &ctx)
+        },
+    );
     assert!(matches!(
         result,
-        Err(CodecError::ResourceLimit(limit))
+        CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.used == 0
                 && limit.additional == 72
@@ -248,14 +252,18 @@ fn global_layout_card_refuses_retained_limit_before_allocation() {
 #[test]
 fn global_d_exponent_refuses_temporary_limit_before_normalization() {
     let text = "1D+0";
+    let result = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes, "iges global numeric text", |cap| {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 3;
+    policy.limits.max_materialized_bytes = cap;
     let (ctx, _) = DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy).unwrap();
-    let result = crate::global::parse_real_text(text, &ctx);
+    crate::global::parse_real_text(text, &ctx)
+        },
+    );
     assert!(matches!(
         result,
-        Err(CodecError::ResourceLimit(limit))
+        CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.used == 0
                 && limit.additional == 4
@@ -283,7 +291,7 @@ fn global_supplied_string_borrows_text_without_storage() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
     let resolution = crate::global::Resolution {
         ctx: &ctx,
-        values: vec![crate::global::Value::String(b"abc")],
+        values: std::array::from_fn(|index| if index == 0 { crate::global::Value::String(b"abc") } else { crate::global::Value::Omitted }),
         losses: Vec::new(),
     };
     assert!(matches!(
@@ -294,13 +302,14 @@ fn global_supplied_string_borrows_text_without_storage() {
 
 #[test]
 fn global_loss_note_refuses_collection_limit_before_push() {
+    let result = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "iges global loss notes", |cap| {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = cap;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut resolution = crate::global::Resolution {
         ctx: &ctx,
-        values: Vec::new(),
+        values: [crate::global::Value::Omitted; 26],
         losses: Vec::new(),
     };
     let result = resolution.charge(
@@ -309,21 +318,22 @@ fn global_loss_note_refuses_collection_limit_before_push() {
         crate::global::Defect::Malformed,
         "its value was not transferred",
     );
+        assert!(resolution.losses.is_empty());
+        result
+    });
     assert!(matches!(
         result,
-        Err(CodecError::ResourceLimit(limit))
+        CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.used == 0
                 && limit.additional == 1
                 && limit.operation == "iges global loss notes"
     ));
-    assert!(resolution.losses.is_empty());
-
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut resolution = crate::global::Resolution {
         ctx: &ctx,
-        values: Vec::new(),
+        values: [crate::global::Value::Omitted; 26],
         losses: Vec::new(),
     };
     resolution
@@ -383,44 +393,25 @@ fn global_stream_refuses_temporary_limit_before_copy() {
 }
 
 #[test]
-fn global_fields_refuse_collection_limit_before_values() {
-    let global = format!("{};", valid_global_fields().join(","));
-    let bytes = fixed_ascii_with_global(global.as_bytes());
-    let scan = crate::test_support::scan(&bytes).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 25;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-
-    let error = crate::global::parse(&scan, &ctx).unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
 fn global_excess_fields_are_counted_without_retaining_values() {
     let mut fields = valid_global_fields();
     fields.extend(std::iter::repeat_n(String::new(), 1_000));
     let global = format!("{};", fields.join(","));
     let bytes = fixed_ascii_with_global(global.as_bytes());
     let scan = crate::test_support::scan(&bytes).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 26;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let result = crate::global::parse(&scan, &ctx);
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.used == 26
-                && limit.additional == 1
-                && limit.operation == "iges global loss notes"
-    ));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "iges global loss notes", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)?;
+        crate::global::parse(&scan, &ctx).map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.additional == 1 && limit.operation == "iges global loss notes"));
 
     let arena = DecodeArena::new();
-    policy.limits.max_collection_items = 27;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let (_, losses, _global_storage) = crate::global::parse(&scan, &ctx).unwrap();
     assert!(losses
@@ -728,7 +719,7 @@ fn global_integer_parse_refuses_after_utf8_admission() {
             with_work_limit(b"42", cap, |ctx| {
         let resolution = crate::global::Resolution {
             ctx,
-            values: vec![crate::global::Value::Atom(b"42")],
+            values: std::array::from_fn(|index| if index == 0 { crate::global::Value::Atom(b"42") } else { crate::global::Value::Omitted }),
             losses: Vec::new(),
         };
         resolution.supplied_integer(0)
@@ -749,7 +740,6 @@ fn global_variable_scans_refuse_at_their_own_boundaries() {
         "iges global exponent normalization",
         "iges global recovered exponent",
         "iges global date digits",
-        "iges global string fields",
         "iges global string policy",
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
@@ -765,7 +755,7 @@ fn global_variable_scans_refuse_at_their_own_boundaries() {
                     _ => {
                         let mut resolution = crate::global::Resolution {
                             ctx,
-                            values: vec![crate::global::Value::String(b"abc")],
+                            values: std::array::from_fn(|index| if index == 0 { crate::global::Value::String(b"abc") } else { crate::global::Value::Omitted }),
                             losses: Vec::new(),
                         };
                         resolution.apply_string_policy(crate::global::GlobalTable::V5Later)
@@ -799,4 +789,20 @@ fn global_resolved_text_has_scoped_storage_and_no_retained_copy() {
     drop(global);
     drop(storage);
     assert!(ctx.reserve_scoped(policy.limits.max_materialized_bytes, "released Global storage").is_ok());
+}
+
+#[test]
+fn recovered_real_declaration_refuses_temporary_storage() {
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "iges global declaration text", |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let mut resolution = crate::global::Resolution {
+            ctx: &ctx,
+            values: std::array::from_fn(|index| if index == 0 { crate::global::Value::Atom(b"1D+0.") } else { crate::global::Value::Omitted }),
+            losses: Vec::new(),
+        };
+        resolution.charge_recovered_real(0, 1.0)
+    });
 }

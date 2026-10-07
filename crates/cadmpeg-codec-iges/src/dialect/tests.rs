@@ -28,13 +28,16 @@ fn unverified_dialect_loss_refuses_message_limit() {
     use cadmpeg_core::CodecError;
 
     let global = resolved_global("1");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "iges dialect loss message", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        dialect_loss(&global, &ctx)
+    });
     assert!(matches!(
-        dialect_loss(&global, &ctx),
-        Err(CodecError::ResourceLimit(limit))
+        error,
+        CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "iges dialect loss message"
     ));

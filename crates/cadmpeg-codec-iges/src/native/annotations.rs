@@ -188,18 +188,18 @@ pub(super) enum NativeAnnotation {
 /// One admitted directory entry under construction: its record, its
 /// precomputed clamped primary end, and the resolver context the link
 /// builders read.
-struct Subject<'a, 'ctx> {
+struct Subject<'a, 'scope, 'ctx> {
     sequence: u32,
     form: i64,
     record: Option<&'a ParameterRecord>,
     primary_end: usize,
     entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
-    parameter_resolver: &'a ParameterResolver<'a, 'ctx>,
+    parameter_resolver: &'a ParameterResolver<'a, 'scope, 'ctx>,
     ctx: &'a DecodeContext<'ctx>,
     v5_null_string_rule: bool,
 }
 
-impl Subject<'_, '_> {
+impl Subject<'_, '_, '_> {
     fn id(&self) -> Result<String, CodecError> {
         self.ctx.format_retained(
             format_args!("iges:presentation:annotation#D{}", self.sequence),
@@ -473,7 +473,7 @@ impl Subject<'_, '_> {
 }
 
 fn general_note(
-    subject: &Subject<'_, '_>,
+    subject: &Subject<'_, '_, '_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
 ) -> Result<NativeAnnotation, CodecError> {
@@ -494,7 +494,7 @@ fn general_note(
 }
 
 fn new_general_note(
-    subject: &Subject<'_, '_>,
+    subject: &Subject<'_, '_, '_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
 ) -> Result<NativeAnnotation, CodecError> {
@@ -555,7 +555,7 @@ fn new_general_note(
 }
 
 fn leader(
-    subject: &Subject<'_, '_>,
+    subject: &Subject<'_, '_, '_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
 ) -> Result<NativeAnnotation, CodecError> {
@@ -592,7 +592,7 @@ fn leader(
 }
 
 fn flag_note(
-    subject: &Subject<'_, '_>,
+    subject: &Subject<'_, '_, '_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
 ) -> Result<NativeAnnotation, CodecError> {
@@ -615,7 +615,7 @@ fn flag_note(
 }
 
 fn general_label(
-    subject: &Subject<'_, '_>,
+    subject: &Subject<'_, '_, '_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
 ) -> Result<NativeAnnotation, CodecError> {
@@ -632,7 +632,7 @@ fn general_label(
 }
 
 fn general_symbol(
-    subject: &Subject<'_, '_>,
+    subject: &Subject<'_, '_, '_>,
     transformation: Option<String>,
     global_table: GlobalTable,
 ) -> Result<NativeAnnotation, CodecError> {
@@ -683,7 +683,7 @@ fn general_symbol(
 }
 
 fn sectioned_area(
-    subject: &Subject<'_, '_>,
+    subject: &Subject<'_, '_, '_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
 ) -> Result<NativeAnnotation, CodecError> {
@@ -712,17 +712,17 @@ fn sectioned_area(
     })
 }
 
-pub(super) fn build(
+pub(super) fn build<'arena>(
     directory: &[DirectoryEntry],
     indexes: (
         &BTreeMap<u32, &ParameterRecord>,
         &BTreeMap<u32, &DirectoryEntry>,
     ),
-    parameter_resolver: &ParameterResolver<'_, '_>,
+    parameter_resolver: &ParameterResolver<'_, '_, 'arena>,
     clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
     overdeclared_counts: &mut OverdeclaredCounts,
     global_table: GlobalTable,
-    ctx: &DecodeContext<'_>,
+    ctx: &DecodeContext<'arena>,
 ) -> Result<Vec<NativeAnnotation>, CodecError> {
     let (by_directory, entries) = indexes;
     collect_native_items(
