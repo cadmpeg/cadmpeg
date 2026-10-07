@@ -702,6 +702,17 @@ pub(super) fn extrude_feature_op(feature: &Feature) -> Option<BooleanOp> {
         .or_else(|| extrude_op(&feature.kind))
 }
 
+/// Whether a retained record is a reference plane whose `D1` distance parses,
+/// for the writer.
+pub(super) fn is_offset_plane_record(feature: &Feature) -> bool {
+    classify(feature) == Some(FeatureClass::ReferencePlane)
+        && feature
+            .parameters
+            .get("D1")
+            .and_then(|distance| parse_dimension_length_mm(distance))
+            .is_some()
+}
+
 /// Whether `feature` is a reference plane whose `D1` distance parses.
 pub(super) fn is_offset_plane(
     ctx: &DecodeContext<'_>,

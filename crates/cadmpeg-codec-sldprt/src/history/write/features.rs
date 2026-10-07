@@ -377,7 +377,6 @@ pub(in crate::history) fn sync_neutral_features(
             mut parameters,
             mut properties,
         } = NeutralFeatureEncoder {
-            ctx: &ctx,
             feature,
             existing: existing.as_deref(),
             principal_planes_by_record: &principal_planes_by_record,

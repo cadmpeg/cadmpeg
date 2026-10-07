@@ -14,7 +14,7 @@ use cadmpeg_ir::features::{
     BooleanOp, RibConstruction, RibDraft, RibSide,
 };
 
-impl NeutralFeatureEncoder<'_, '_, '_, '_> {
+impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_rib(
         &self,
         construction: &RibConstruction,

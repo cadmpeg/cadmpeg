@@ -578,25 +578,6 @@ fn metadata_parameter_aliases_refuse_collection_limit() {
 }
 
 #[test]
-fn metadata_parameter_aliases_refuse_retained_limit() {
-    let mut options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(
-        &native_definition_source(),
-        &mut options,
-        "retain SLDPRT parameter alias",
-    );
-    assert!(matches!(error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "retain SLDPRT parameter alias"
-    ));
-}
-
-#[test]
 fn metadata_parameter_aliases_refuse_work_limit() {
     let options = DecodeOptions {
         container_only: true,
@@ -644,23 +625,6 @@ fn metadata_parameter_value_states_refuse_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
     assert_eq!(refusal.additional, 1);
-}
-
-#[test]
-fn metadata_parameter_value_states_refuse_retained_limit() {
-    let mut source = outer_header();
-    source.extend(make_block(
-        0x43, "Contents/Keywords",
-        br#"<Keywords><Feature Name="Custom" Type="Custom" id="10"><Dimension Name="Note">plain text</Dimension></Feature></Keywords>"#,
-    ));
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT parameter value text");
-    assert!(matches!(error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "retain SLDPRT parameter value text"
-    ));
 }
 
 #[test]

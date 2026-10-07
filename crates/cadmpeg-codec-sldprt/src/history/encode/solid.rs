@@ -47,7 +47,7 @@ pub(super) struct HoleDefinition<'a> {
     pub(super) allow_multi_profile_faces: Option<bool>,
 }
 
-impl NeutralFeatureEncoder<'_, '_, '_, '_> {
+impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_extrude(
         &self,
         definition: ExtrudeDefinition<'_>,

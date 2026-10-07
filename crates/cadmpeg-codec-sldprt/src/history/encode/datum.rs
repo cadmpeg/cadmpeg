@@ -5,7 +5,7 @@ use super::super::literals::{valid_direction, valid_plane_frame};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
 use super::support::require_same_family;
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
-use crate::history::classify::is_offset_plane;
+use crate::history::classify::is_offset_plane_record;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
@@ -13,7 +13,7 @@ use cadmpeg_ir::{
     scalar::Length,
 };
 
-impl NeutralFeatureEncoder<'_, '_, '_, '_> {
+impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_datum_principal_plane(
         &self,
         plane: PrincipalPlane,
@@ -100,7 +100,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
         let parent_sources = self.parent_sources;
         Ok({
             if match existing {
-                Some(record) => !is_offset_plane(self.ctx, record)?,
+                Some(record) => !is_offset_plane_record(record),
                 None => false,
             } {
                 return Err(CodecError::NotImplemented(format!(

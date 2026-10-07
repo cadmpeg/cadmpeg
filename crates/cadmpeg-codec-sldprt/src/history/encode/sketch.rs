@@ -10,7 +10,7 @@ use crate::history::classify::feature_input_class;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FaceSelection, FeatureId, PlanarProfileRef, WrapMode};
 
-impl NeutralFeatureEncoder<'_, '_, '_, '_> {
+impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_sketch_block_definition(
         &self,
         sketch: Option<&cadmpeg_ir::sketches::SketchId>,
