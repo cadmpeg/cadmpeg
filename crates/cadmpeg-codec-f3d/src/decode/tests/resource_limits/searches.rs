@@ -52,7 +52,7 @@ fn unique_asset_identity_search_preserves_work_refusal() {
     });
     for operation in [
         "find F3D embedded asset identity",
-        "compare F3D embedded asset identities",
+        "index F3D embedded asset identities",
     ] {
         let error = crate::test_support::resource_refusal_at(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
