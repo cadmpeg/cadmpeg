@@ -280,7 +280,7 @@ fn linear_boundary_path_refuses_collection_limit_before_append() {
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut target = Vec::new();
-            let result = append_path(&mut target, vec![1_u8, 2, 3], &ctx);
+            let result = append_path(&mut target, &[1_u8, 2, 3], &ctx);
             assert!(target.is_empty());
             result
         },
@@ -291,6 +291,6 @@ fn linear_boundary_path_refuses_collection_limit_before_append() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(append_path(&mut target, vec![1_u8, 2, 3], &ctx).unwrap());
+    assert!(append_path(&mut target, &[1_u8, 2, 3], &ctx).unwrap());
     assert_eq!(target, [1, 2, 3]);
 }

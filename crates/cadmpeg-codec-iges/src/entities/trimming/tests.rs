@@ -657,7 +657,9 @@ fn boundary_vertex_creation_refuses_each_collection_before_growth() {
                 .map(|_| ())
                 .map_err(|error| match error {
                     BoundaryVertexCreationError::Resource(error) => error,
-                    other => panic!("unexpected cluster refusal: {other:?}"),
+                    other @ BoundaryVertexCreationError::Cluster(_) => {
+                        panic!("unexpected cluster refusal: {other:?}")
+                    }
                 })
             },
         );
@@ -692,7 +694,9 @@ fn boundary_vertex_clustering_refuses_pairwise_work_before_comparisons() {
                 .map(|_| ())
                 .map_err(|error| match error {
                     BoundaryVertexCreationError::Resource(error) => error,
-                    other => panic!("unexpected cluster refusal: {other:?}"),
+                    other @ BoundaryVertexCreationError::Cluster(_) => {
+                        panic!("unexpected cluster refusal: {other:?}")
+                    }
                 })
             },
         );
