@@ -765,18 +765,6 @@ pub(crate) fn losses(
         let index = usize::try_from(sequence).ok()?.checked_sub(1)?;
         cards.get(index).map(|card| card.line.offset)
     };
-    let mut index_storage = ctx.reserve_scoped(0, "IGES graph loss indices")?;
-    let mut records = BTreeMap::new();
-    for record in ctx.admit_iter(parameters, "iges graph loss record index")? {
-        index_storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut records,
-                record.directory_sequence,
-                record,
-                "iges graph loss parameter records",
-            )
-        })?;
-    }
     let mut losses = Vec::new();
     for (source, edges) in ctx.admit_iter(graph, "iges graph loss sources")? {
         for edge in ctx
@@ -784,8 +772,12 @@ pub(crate) fn losses(
             .filter(|edge| !matches!(edge.resolution, Resolution::Resolved(_)))
         {
             ctx.reserve_vec(&mut losses, 1, "iges graph loss notes")?;
+            let record = match edge.origin.parameter_index() {
+                Some(_) => crate::parameter::record_by_sequence(parameters, *source, ctx)?,
+                None => None,
+            };
             let parameter_location = edge.origin.parameter_index().and_then(|index| {
-                let record = records.get(source)?;
+                let record = record?;
                 let span = record.tokens().get(index)?.span.start;
                 let card = u32::try_from(span / 64).ok()?;
                 let sequence = record.line_range.start.checked_add(card)?;
