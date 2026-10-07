@@ -379,19 +379,30 @@ fn polygon_uniqueness_refuses_scoped_storage_and_work() {
 fn sketch_member_comparisons_refuse_before_first_and_later_visits_and_shifts() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "sketch member comparison test", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = crate::sketches::distinct_sketch_members(&ctx, &["z", "x", "x-a"], |id| *id, "sketch member comparison test");
-        if let Err(CodecError::ResourceLimit(limit)) = &result {
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, "sketch member comparison test");
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit));
-        }
-        result
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "sketch member comparison test",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = crate::sketches::distinct_sketch_members(
+                &ctx,
+                &["z", "x", "x-a"],
+                |id| *id,
+                "sketch member comparison test",
+            );
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(limit.operation, "sketch member comparison test");
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit)
+                );
+            }
+            result
+        },
+    );
     let ctx = cadmpeg_test_support::service_decode_context();
     assert!(crate::sketches::distinct_sketch_members(
         &ctx,
@@ -430,45 +441,59 @@ fn sketch_constructors_keep_original_refusals_without_retaining_temporary_slots(
             ResourceDimension::CollectionItems,
             ResourceDimension::WorkUnits,
         ] {
-            cadmpeg_test_support::refusal::resource_limit_at(dimension, "sketch constructor test", |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-                _ => panic!("test dimension"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = if profile {
-                SpatialSketchProfile::try_new(
-                    origin,
-                    normal,
-                    u_axis,
-                    boundary.to_vec(),
-                    &ctx,
-                    "sketch constructor test",
-                )
-                .map(|_| ())
-            } else {
-                crate::sketches::SketchPolygon::try_new(
-                    members.to_vec(),
-                    &ctx,
-                    "sketch constructor test",
-                )
-                .map(|_| ())
-            };
-            if let Err(CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(limit.dimension, dimension);
-                assert_eq!(limit.operation, "sketch constructor test");
-                assert!(matches!(crate::sketches::SketchPolygon::try_new(Vec::new(), &ctx, "later polygon"),
-                    Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
-                assert!(matches!(SpatialSketchProfile::try_new(origin, Vector3::new(0.0, 0.0, 0.0), u_axis,
-                    Vec::new(), &ctx, "later profile"), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit));
-            }
-            result
-            });
+            cadmpeg_test_support::refusal::resource_limit_at(
+                dimension,
+                "sketch constructor test",
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    match dimension {
+                        ResourceDimension::MaterializedBytes => {
+                            policy.limits.max_materialized_bytes = cap;
+                        }
+                        ResourceDimension::CollectionItems => {
+                            policy.limits.max_collection_items = cap;
+                        }
+                        ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                        _ => panic!("test dimension"),
+                    }
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    let result = if profile {
+                        SpatialSketchProfile::try_new(
+                            origin,
+                            normal,
+                            u_axis,
+                            boundary.to_vec(),
+                            &ctx,
+                            "sketch constructor test",
+                        )
+                        .map(|_| ())
+                    } else {
+                        crate::sketches::SketchPolygon::try_new(
+                            members.to_vec(),
+                            &ctx,
+                            "sketch constructor test",
+                        )
+                        .map(|_| ())
+                    };
+                    if let Err(CodecError::ResourceLimit(limit)) = &result {
+                        assert_eq!(limit.dimension, dimension);
+                        assert_eq!(limit.operation, "sketch constructor test");
+                        assert!(
+                            matches!(crate::sketches::SketchPolygon::try_new(Vec::new(), &ctx, "later polygon"),
+                    Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                        );
+                        assert!(
+                            matches!(SpatialSketchProfile::try_new(origin, Vector3::new(0.0, 0.0, 0.0), u_axis,
+                    Vec::new(), &ctx, "later profile"), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                        );
+                        assert!(
+                            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit)
+                        );
+                    }
+                    result
+                },
+            );
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
