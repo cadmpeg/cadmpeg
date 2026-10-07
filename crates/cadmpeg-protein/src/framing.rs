@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Paged logical-record framing.
 
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
+use crate::admission::ProteinAdmission;
 use crate::layout::{continuation_page, instance_stream_header, record_start_page, terminal_page};
 use crate::{CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER};
 
@@ -31,12 +32,12 @@ impl RecordFrame {
 
 /// Temporary frames and the reservation that remains live while their bytes exist.
 #[derive(Debug)]
-pub struct RecordFrames<'ctx> {
+pub struct RecordFrames<S> {
     frames: Vec<RecordFrame>,
-    _reservation: ScopedReservation<'ctx>,
+    _reservation: S,
 }
 
-impl RecordFrames<'_> {
+impl<S> RecordFrames<S> {
     /// Borrows the framed records without releasing their storage reservation.
     pub fn frames(&self) -> &[RecordFrame] {
         &self.frames
@@ -52,23 +53,29 @@ impl RecordFrames<'_> {
 /// [`TERMINAL_MARKER`] closes it and carries the used byte count as a `u16` at
 /// offset 4. Every record is returned with the opening marker restored so
 /// record offsets match the on-page layout.
-pub fn record_frames_admitted<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+pub fn record_frames_admitted<A: ProteinAdmission>(
+    admission: A,
     bytes: &[u8],
-) -> Result<RecordFrames<'ctx>, CodecError> {
-    let mut reservation = ctx.reserve_scoped(0, "Protein temporary frames")?;
-    let frames = frame_records(bytes, ctx, &mut reservation)?;
+) -> Result<RecordFrames<A::Scope>, CodecError>
+where
+    CodecError: From<A::Error>,
+{
+    let mut reservation = admission.scope("Protein temporary frames")?;
+    let frames = frame_records(bytes, admission, &mut reservation)?;
     Ok(RecordFrames {
         frames,
         _reservation: reservation,
     })
 }
 
-fn frame_records(
+fn frame_records<A: ProteinAdmission>(
     bytes: &[u8],
-    ctx: &DecodeContext<'_>,
-    scope: &mut ScopedReservation<'_>,
-) -> Result<Vec<RecordFrame>, CodecError> {
+    admission: A,
+    scope: &mut A::Scope,
+) -> Result<Vec<RecordFrame>, CodecError>
+where
+    CodecError: From<A::Error>,
+{
     if bytes.len() < STREAM_HEADER_LEN + PAGE_SIZE {
         return Err(CodecError::Malformed(
             "Protein page stream is shorter than its header and one page".into(),
@@ -93,7 +100,7 @@ fn frame_records(
     // Each page costs one step of fixed marker tests; its payload copy is
     // charged by the copy itself.
     let mut pages = bytes[STREAM_HEADER_LEN..].chunks_exact(PAGE_SIZE);
-    while let Some(page) = ctx.next_charged(&mut pages, "Protein page framing scan")? {
+    while let Some(page) = admission.next(&mut pages, "Protein page framing scan")? {
         let (payload, terminal) = if page.get(record_start_page::MARKER..record_start_page::BODY)
             == Some(RECORD_MARKER)
         {
@@ -142,24 +149,26 @@ fn frame_records(
                 logical_offset,
                 bytes: Vec::new(),
             };
-            ctx.push_scoped_vec(scope, &mut records, frame, "Protein logical record frame")?;
+            admission.scoped(scope, || {
+                Ok(admission.push(&mut records, frame, "Protein logical record frame")?)
+            })?;
             let frame = records
                 .last_mut()
                 .ok_or_else(|| CodecError::Malformed("Protein page has no record owner".into()))?;
-            scope.with_storage(|| {
-                ctx.extend_from_slice(
+            admission.scoped(scope, || {
+                Ok(admission.extend_bytes(
                     &mut frame.bytes,
                     RECORD_MARKER,
                     "Protein copied record range",
-                )
+                )?)
             })?;
             current = true;
         }
         let frame = records
             .last_mut()
             .ok_or_else(|| CodecError::Malformed("Protein page has no record owner".into()))?;
-        scope.with_storage(|| {
-            ctx.extend_from_slice(&mut frame.bytes, payload, "Protein copied record range")
+        admission.scoped(scope, || {
+            Ok(admission.extend_bytes(&mut frame.bytes, payload, "Protein copied record range")?)
         })?;
         if terminal {
             logical_offset = logical_offset

@@ -3,10 +3,11 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
+
+use admission::ProteinAdmission;
 
 /// Typed admission shared by decode and writers.
 pub mod admission;
@@ -39,12 +40,15 @@ pub const TERMINAL_MARKER: &[u8] = &terminal_page::MARKER_VALUE;
 pub(crate) const MAX_SCHEMA_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_RECOVERY_VALUES: u64 = 1_024;
 
-fn take_lp_utf8_capped(
-    ctx: &DecodeContext<'_>,
+fn take_lp_utf8_capped<A: ProteinAdmission>(
+    admission: A,
     bytes: &[u8],
     at: &mut usize,
     max: usize,
-) -> Result<Option<String>, CodecError> {
+) -> Result<Option<String>, CodecError>
+where
+    CodecError: From<A::Error>,
+{
     let mut view = View::over_retained(bytes);
     let Some(()) = view.seek(*at) else {
         return Ok(None);
@@ -65,10 +69,10 @@ fn take_lp_utf8_capped(
     let Some(value_bytes) = bytes.get(*at..end) else {
         return Ok(None);
     };
-    let Ok(value) = ctx.validate_utf8(value_bytes, "Protein decoded string UTF-8")? else {
+    let Ok(value) = admission.validate_utf8(value_bytes, "Protein decoded string UTF-8")? else {
         return Ok(None);
     };
-    let value = ctx.copy_retained_text(value, "Protein decoded string")?;
+    let value = admission.copy_text(value, "Protein decoded string")?;
     *at = end;
     Ok(Some(value))
 }
@@ -110,70 +114,56 @@ struct Schema {
 
 /// Parsed Protein schemas with inherited properties resolved once per schema.
 ///
-/// The catalog is decode scratch: its names and maps live under one scoped
-/// reservation that is released when the catalog is dropped.
-pub struct SchemaCatalog<'ctx> {
+/// The catalog names and maps live under the admission storage owner, which
+/// is released when the catalog is dropped.
+pub struct SchemaCatalog<A: ProteinAdmission> {
     schemas: HashMap<String, Schema>,
     properties: HashMap<String, BTreeMap<String, Property>>,
-    storage: ScopedReservation<'ctx>,
+    storage: A::Scope,
 }
 
-impl<'ctx> SchemaCatalog<'ctx> {
-    /// Parse the schemas in one nested Protein archive through the decode session.
+impl<A: ProteinAdmission> SchemaCatalog<A>
+where
+    CodecError: From<A::Error>,
+{
+    /// Parse the schemas in one nested Protein archive through the admission.
     /// Returns `None` when the archive has no schema entries.
-    pub fn load<'a>(
-        ctx: &'ctx DecodeContext<'a>,
-        protein: View<'a>,
-    ) -> Result<Option<Self>, CodecError> {
-        let archive = ArchiveSnapshot::new(ctx, protein)?;
-        let mut catalog = Self::empty(ctx)?;
-        for entry in ctx.admit_iter(archive.entries(), "Protein schema entries")? {
-            if !is_schema_entry(ctx, &entry.name)? {
-                continue;
-            }
-            if entry.uncompressed_size > MAX_SCHEMA_BYTES {
-                return Err(ctx.refuse_codec_limit(
-                    "Protein schema bytes",
-                    MAX_SCHEMA_BYTES,
-                    entry.uncompressed_size,
-                ));
-            }
-            let xml = archive.open(ctx, &entry.name)?;
-            parse_schema_document(
-                ctx,
-                &mut catalog.storage,
-                &entry.name,
-                xml.window(),
-                &mut catalog.schemas,
-            )?;
-        }
+    pub fn load(admission: A, protein: A::Archive<'_>) -> Result<Option<Self>, CodecError> {
+        let mut catalog = Self::empty(admission)?;
+        let Self {
+            schemas, storage, ..
+        } = &mut catalog;
+        admission.read_schemas(protein, |name, xml| {
+            parse_schema_document(admission, storage, name, xml, schemas)
+        })?;
         if catalog.schemas.is_empty() {
             return Ok(None);
         }
         Ok(Some(catalog))
     }
 
-    fn empty(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+    fn empty(admission: A) -> Result<Self, CodecError> {
         Ok(Self {
             schemas: HashMap::new(),
             properties: HashMap::new(),
-            storage: ctx.reserve_scoped(0, "Protein schema catalog")?,
+            storage: admission.scope("Protein schema catalog")?,
         })
     }
 
     fn properties_for(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        admission: A,
         name: &str,
     ) -> Result<&BTreeMap<String, Property>, CodecError> {
         resolve_inheritance(
-            ctx,
+            admission,
             &mut self.storage,
             &self.schemas,
             &mut self.properties,
             name,
         )?;
-        ctx.get_hash_map(&self.properties, name, "Protein resolved schema lookup")?
+        admission
+            .get_hash_map(&self.properties, name, "Protein resolved schema lookup")?
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "Protein instance references absent schema {name}"
@@ -184,78 +174,86 @@ impl<'ctx> SchemaCatalog<'ctx> {
 
 /// Resolves the inherited property closure of `name` and of every base it
 /// names that is not yet resolved, base first.
-fn resolve_inheritance<'s>(
-    ctx: &DecodeContext<'_>,
-    storage: &mut ScopedReservation<'_>,
+fn resolve_inheritance<'s, A: ProteinAdmission>(
+    admission: A,
+    storage: &mut A::Scope,
     schemas: &'s HashMap<String, Schema>,
     resolved: &mut HashMap<String, BTreeMap<String, Property>>,
     name: &'s str,
-) -> Result<(), CodecError> {
-    let mut path_storage = ctx.reserve_scoped(0, "Protein schema inheritance path")?;
-    let mut active_storage = ctx.reserve_scoped(0, "Protein schema inheritance active set")?;
-    let mut guard_storage = ctx.reserve_scoped(0, "Protein schema inheritance guards")?;
+) -> Result<(), CodecError>
+where
+    CodecError: From<A::Error>,
+{
+    let mut path_storage = admission.scope("Protein schema inheritance path")?;
+    let mut active_storage = admission.scope("Protein schema inheritance active set")?;
+    let mut guard_storage = admission.scope("Protein schema inheritance guards")?;
     let mut path: Vec<(&'s str, &'s Schema)> = Vec::new();
     let mut active = BTreeSet::new();
-    let mut depth_guards = Vec::new();
+    let mut depth_guards: Vec<A::Depth> = Vec::new();
     let mut current = name;
     loop {
-        ctx.charge_work(1, "Protein schema inheritance traversal")?;
-        if ctx.contains_key_hash_map(resolved, current, "Protein resolved schema lookup")? {
+        admission.work(1, "Protein schema inheritance traversal")?;
+        if admission.contains_key_hash_map(resolved, current, "Protein resolved schema lookup")? {
             break;
         }
-        if ctx.contains_btree_set(&active, current, "Protein inheritance cycle lookup")? {
+        if admission.contains_name(&active, current, "Protein inheritance cycle lookup")? {
             return Err(CodecError::malformed(format_args!(
                 "Protein schema inheritance contains a cycle at {current}"
             )));
         }
-        let schema = ctx
+        let schema = admission
             .get_hash_map(schemas, current, "Protein inherited schema lookup")?
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "Protein instance references absent schema {current}"
                 ))
             })?;
-        ctx.push_scoped_vec(
-            &mut guard_storage,
-            &mut depth_guards,
-            ctx.enter_nested("Protein schema inheritance")?,
-            "Protein schema inheritance guards",
-        )?;
-        active_storage.with_storage(|| {
-            ctx.insert_btree_set(
+        let depth = admission.enter_nested("Protein schema inheritance")?;
+        admission.scoped(&mut guard_storage, || {
+            Ok(admission.push(
+                &mut depth_guards,
+                depth,
+                "Protein schema inheritance guards",
+            )?)
+        })?;
+        admission.scoped(&mut active_storage, || {
+            Ok(admission.insert_name(
                 &mut active,
                 current,
                 "Protein schema inheritance active set",
-            )
+            )?)
         })?;
-        ctx.push_scoped_vec(
-            &mut path_storage,
-            &mut path,
-            (current, schema),
-            "Protein schema inheritance path",
-        )?;
+        admission.scoped(&mut path_storage, || {
+            Ok(admission.push(
+                &mut path,
+                (current, schema),
+                "Protein schema inheritance path",
+            )?)
+        })?;
         let Some(base) = schema.base.as_deref() else {
             break;
         };
         current = base;
     }
     loop {
-        ctx.charge_work(1, "Protein schema inheritance closure traversal")?;
+        admission.work(1, "Protein schema inheritance closure traversal")?;
         let Some((current, schema)) = path.pop() else {
             break;
         };
         let inherited = match schema.base.as_deref() {
-            Some(base) => ctx.get_hash_map(resolved, base, "Protein inherited closure lookup")?,
+            Some(base) => {
+                admission.get_hash_map(resolved, base, "Protein inherited closure lookup")?
+            }
             None => None,
         };
-        let properties = storage.with_storage(|| {
+        let properties = admission.scoped(storage, || {
             let mut properties = BTreeMap::new();
             if let Some(inherited) = inherited {
                 for (id, property) in
-                    ctx.admit_iter(inherited, "Protein inherited property closure")?
+                    admission.traverse(inherited, "Protein inherited property closure")?
                 {
-                    let id = ctx.copy_retained_text(id, "Protein inherited property names")?;
-                    ctx.insert_btree_map(
+                    let id = admission.copy_text(id, "Protein inherited property names")?;
+                    admission.insert_btree_map(
                         &mut properties,
                         id,
                         property.clone(),
@@ -264,15 +262,17 @@ fn resolve_inheritance<'s>(
                 }
             }
             for (id, property) in
-                ctx.admit_iter(&schema.properties, "Protein inherited property closure")?
+                admission.traverse(&schema.properties, "Protein inherited property closure")?
             {
-                if let Some(value) =
-                    ctx.get_mut_btree_map(&mut properties, id, "Protein local property override")?
-                {
+                if let Some(value) = admission.get_mut_btree_map(
+                    &mut properties,
+                    id,
+                    "Protein local property override",
+                )? {
                     *value = property.clone();
                 } else {
-                    let id = ctx.copy_retained_text(id, "Protein inherited property names")?;
-                    ctx.insert_btree_map(
+                    let id = admission.copy_text(id, "Protein inherited property names")?;
+                    admission.insert_btree_map(
                         &mut properties,
                         id,
                         property.clone(),
@@ -282,9 +282,9 @@ fn resolve_inheritance<'s>(
             }
             Ok::<_, CodecError>(properties)
         })?;
-        storage.with_storage(|| {
-            let name = ctx.copy_retained_text(current, "Protein inherited property names")?;
-            ctx.insert_hash_map(resolved, name, properties, "Protein resolved schema")
+        admission.scoped(storage, || {
+            let name = admission.copy_text(current, "Protein inherited property names")?;
+            Ok(admission.insert_hash_map(resolved, name, properties, "Protein resolved schema")?)
         })?;
         drop(depth_guards.pop());
     }
@@ -344,25 +344,34 @@ pub fn decode_detailed<'a>(
 }
 
 /// Decode frames admitted by the caller against one parsed schema catalog.
-pub fn decode_frames_admitted(
-    ctx: &DecodeContext<'_>,
-    catalog: &mut SchemaCatalog<'_>,
+pub fn decode_frames_admitted<A: ProteinAdmission>(
+    admission: A,
+    catalog: &mut SchemaCatalog<A>,
     frames: &[framing::RecordFrame],
-) -> Result<DecodeOutcome, CodecError> {
+) -> Result<DecodeOutcome, CodecError>
+where
+    CodecError: From<A::Error>,
+{
     let mut outcome = DecodeOutcome::default();
-    for (ordinal, frame) in ctx
-        .admit_iter(frames, "Protein record outcome traversal")?
+    for (ordinal, frame) in admission
+        .traverse(frames, "Protein record outcome traversal")?
         .enumerate()
     {
         let ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
-        match decode_record(ctx, frame.bytes(), catalog, ordinal, frame.logical_offset()) {
+        match decode_record(
+            admission,
+            frame.bytes(),
+            catalog,
+            ordinal,
+            frame.logical_offset(),
+        ) {
             Ok(Some(record)) => {
-                ctx.push_vec(&mut outcome.records, record, "Protein record outcome")?;
+                admission.push(&mut outcome.records, record, "Protein record outcome")?;
             }
             Ok(None) => {
                 const DETAIL: &str = "Protein instance record header is malformed";
-                let detail = ctx.copy_retained_text(DETAIL, "Protein rejected record detail")?;
-                ctx.push_vec(
+                let detail = admission.copy_text(DETAIL, "Protein rejected record detail")?;
+                admission.push(
                     &mut outcome.rejected,
                     RejectedRecord { ordinal, detail },
                     "Protein record outcome",
@@ -370,9 +379,9 @@ pub fn decode_frames_admitted(
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                let detail =
-                    ctx.format_retained(format_args!("{error}"), "Protein rejected record detail")?;
-                ctx.push_vec(
+                let detail = admission
+                    .format_text(format_args!("{error}"), "Protein rejected record detail")?;
+                admission.push(
                     &mut outcome.rejected,
                     RejectedRecord { ordinal, detail },
                     "Protein record outcome",
@@ -383,28 +392,112 @@ pub fn decode_frames_admitted(
     Ok(outcome)
 }
 
-fn is_schema_entry(ctx: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
-    // The fixed suffix test runs first, so only schema-named entries pay for
-    // the directory search.
-    Ok(name.ends_with("Schema.xml")
-        && (name.starts_with("Schemas/")
-            || ctx.contains_text(name, "/Schemas/", "Protein schema entry path search")?))
-}
-
-fn parse_schema_document(
-    ctx: &DecodeContext<'_>,
-    storage: &mut ScopedReservation<'_>,
+fn parse_schema_document<A: ProteinAdmission>(
+    admission: A,
+    storage: &mut A::Scope,
     name: &str,
     bytes: &[u8],
     schemas: &mut HashMap<String, Schema>,
-) -> Result<(), CodecError> {
-    let xml = ctx
+) -> Result<(), CodecError>
+where
+    CodecError: From<A::Error>,
+{
+    let xml = admission
         .validate_utf8(bytes, "validate Protein XML UTF-8")?
         .map_err(|error| {
             CodecError::malformed(format_args!("Protein schema {name} is not UTF-8: {error}"))
         })?;
-    let admitted_document = ctx
-        .parse_xml(xml, "Protein schema XML tree")
+    admission
+        .with_xml(xml, "Protein schema XML tree", |document| {
+            let root = admission
+                .xml_root(document, "Protein schema root search")?
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!("Protein schema {name} has no root"))
+                })?;
+            let mut uid_node = None;
+            let mut children = root.children();
+            // The tag comparison is against a fixed three-byte name.
+            while let Some(node) =
+                admission.next(&mut children, "Protein schema UID node search")?
+            {
+                if node.has_tag_name("UID") {
+                    uid_node = Some(node);
+                    break;
+                }
+            }
+            let uid_node = uid_node.ok_or_else(|| {
+                CodecError::malformed(format_args!("Protein schema {name} has no UID"))
+            })?;
+            let uid = admission
+                .xml_attribute(uid_node, "val", "Protein schema UID search")?
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!("Protein schema {name} has no UID"))
+                })?;
+            let mut schema = Schema::default();
+            let mut children = root.children();
+            while let Some(node) = admission.next(&mut children, "Protein schema child scan")? {
+                if !node.is_element() {
+                    continue;
+                }
+                if node.has_tag_name("Base") {
+                    if let Some(value) =
+                        admission.xml_attribute(node, "val", "Protein schema base search")?
+                    {
+                        schema.base = Some(admission.scoped(storage, || {
+                            Ok(admission.copy_text(value, "Protein schema base name")?)
+                        })?);
+                    }
+                    continue;
+                }
+                if node.has_tag_name("PropertyAlias") {
+                    continue;
+                }
+                if admission.xml_attribute(node, "readonly", "Protein readonly attribute search")?
+                    == Some("true")
+                {
+                    continue;
+                }
+                if admission.xml_attribute(
+                    node,
+                    "definitionIteratorData",
+                    "Protein definition attribute search",
+                )? == Some("true")
+                {
+                    continue;
+                }
+                let Some(property) = schema_property(admission, node)? else {
+                    continue;
+                };
+                let Some(id) = admission.xml_attribute(node, "id", "Protein property id search")?
+                else {
+                    continue;
+                };
+                let replaced = admission.scoped(storage, || {
+                    let key = admission.copy_text(id, "Protein schema property name")?;
+                    Ok(admission.insert_btree_map(
+                        &mut schema.properties,
+                        key,
+                        property,
+                        "Protein schema property",
+                    )?)
+                })?;
+                if replaced.is_some() {
+                    return Err(CodecError::malformed(format_args!(
+                        "Protein schema {uid} declares property {id} more than once"
+                    )));
+                }
+            }
+            let replaced = admission.scoped(storage, || {
+                let key = admission.copy_text(uid, "Protein schema UID")?;
+                Ok(admission.insert_hash_map(schemas, key, schema, "Protein parsed schema")?)
+            })?;
+            if replaced.is_some() {
+                return Err(CodecError::malformed(format_args!(
+                    "Protein archive defines schema {uid} more than once"
+                )));
+            }
+            Ok(())
+        })
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error;
@@ -412,102 +505,22 @@ fn parse_schema_document(
             CodecError::malformed(format_args!(
                 "Protein schema {name} is malformed XML: {error}"
             ))
-        })?;
-    let document = admitted_document.document();
-    let root = match ctx.xml_root_element(document, "Protein schema root search") {
-        Ok(root) => root,
-        Err(CodecError::Malformed(_)) => {
-            return Err(CodecError::malformed(format_args!(
-                "Protein schema {name} has no root"
-            )));
-        }
-        Err(error) => return Err(error),
-    };
-    let mut uid_node = None;
-    let mut children = root.children();
-    // The tag comparison is against a fixed three-byte name.
-    while let Some(node) = ctx.next_charged(&mut children, "Protein schema UID node search")? {
-        if node.has_tag_name("UID") {
-            uid_node = Some(node);
-            break;
-        }
-    }
-    let uid_node = uid_node
-        .ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no UID")))?;
-    let uid = ctx
-        .xml_attribute(uid_node, "val", "Protein schema UID search")?
-        .ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no UID")))?;
-    let mut schema = Schema::default();
-    let mut children = root.children();
-    while let Some(node) = ctx.next_charged(&mut children, "Protein schema child scan")? {
-        if !node.is_element() {
-            continue;
-        }
-        if node.has_tag_name("Base") {
-            if let Some(value) = ctx.xml_attribute(node, "val", "Protein schema base search")? {
-                schema.base =
-                    Some(ctx.copy_scoped_text(value, storage, "Protein schema base name")?);
-            }
-            continue;
-        }
-        if node.has_tag_name("PropertyAlias") {
-            continue;
-        }
-        if ctx.xml_attribute(node, "readonly", "Protein readonly attribute search")? == Some("true")
-        {
-            continue;
-        }
-        if ctx.xml_attribute(
-            node,
-            "definitionIteratorData",
-            "Protein definition attribute search",
-        )? == Some("true")
-        {
-            continue;
-        }
-        let Some(property) = schema_property(ctx, node)? else {
-            continue;
-        };
-        let Some(id) = ctx.xml_attribute(node, "id", "Protein property id search")? else {
-            continue;
-        };
-        let replaced = storage.with_storage(|| {
-            let key = ctx.copy_retained_text(id, "Protein schema property name")?;
-            ctx.insert_btree_map(
-                &mut schema.properties,
-                key,
-                property,
-                "Protein schema property",
-            )
-        })?;
-        if replaced.is_some() {
-            return Err(CodecError::malformed(format_args!(
-                "Protein schema {uid} declares property {id} more than once"
-            )));
-        }
-    }
-    let replaced = storage.with_storage(|| {
-        let key = ctx.copy_retained_text(uid, "Protein schema UID")?;
-        ctx.insert_hash_map(schemas, key, schema, "Protein parsed schema")
-    })?;
-    if replaced.is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "Protein archive defines schema {uid} more than once"
-        )));
-    }
-    Ok(())
+        })?
 }
 
-fn schema_property(
-    ctx: &DecodeContext<'_>,
+fn schema_property<A: ProteinAdmission>(
+    admission: A,
     node: roxmltree::Node<'_, '_>,
-) -> Result<Option<Property>, CodecError> {
-    let multiple = ctx.xml_attribute(
+) -> Result<Option<Property>, CodecError>
+where
+    CodecError: From<A::Error>,
+{
+    let multiple = admission.xml_attribute(
         node,
         "allowmultiplevalues",
         "Protein multiple-values attribute search",
     )? == Some("true");
-    let connectable = ctx
+    let connectable = admission
         .xml_attribute(
             node,
             "allowconnectedassets",
@@ -525,7 +538,7 @@ fn schema_property(
         "Boolean" => ValueCarrier::Boolean,
         "Integer" | "Choice" => ValueCarrier::Integer,
         "Float" => {
-            if ctx
+            if admission
                 .xml_attribute(node, "unit", "Protein unit attribute search")?
                 .is_some()
             {
@@ -549,36 +562,39 @@ fn schema_property(
     }))
 }
 
-fn decode_record(
-    ctx: &DecodeContext<'_>,
+fn decode_record<A: ProteinAdmission>(
+    admission: A,
     record: &[u8],
-    catalog: &mut SchemaCatalog<'_>,
+    catalog: &mut SchemaCatalog<A>,
     ordinal: u64,
     logical_offset: usize,
-) -> Result<Option<DecodedRecord>, CodecError> {
+) -> Result<Option<DecodedRecord>, CodecError>
+where
+    CodecError: From<A::Error>,
+{
     if !record.starts_with(RECORD_MARKER) {
         return Ok(None);
     }
     let mut at = RECORD_MARKER.len();
-    let Some(schema) = take_lp_utf8_capped(ctx, record, &mut at, 1_048_576)? else {
+    let Some(schema) = take_lp_utf8_capped(admission, record, &mut at, 1_048_576)? else {
         return Ok(None);
     };
-    let Some(guid) = take_lp_utf8_capped(ctx, record, &mut at, 1_048_576)? else {
+    let Some(guid) = take_lp_utf8_capped(admission, record, &mut at, 1_048_576)? else {
         return Ok(None);
     };
-    let Some(base) = take_lp_utf8_capped(ctx, record, &mut at, 1_048_576)? else {
+    let Some(base) = take_lp_utf8_capped(admission, record, &mut at, 1_048_576)? else {
         return Ok(None);
     };
     // The fourth header string is `AssetLibID`, the first member of
     // `CommonSchema` in serialization order. It is carried in the record header
     // rather than in the value block, so `instance_property_serializes` drops
     // the member there.
-    let Some(asset_lib_id) = take_lp_utf8_capped(ctx, record, &mut at, 1_048_576)? else {
+    let Some(asset_lib_id) = take_lp_utf8_capped(admission, record, &mut at, 1_048_576)? else {
         return Ok(None);
     };
-    let properties = catalog.properties_for(ctx, &schema)?;
+    let properties = catalog.properties_for(admission, &schema)?;
     let mut values = BTreeMap::new();
-    for (id, property) in ctx.admit_iter(properties, "Protein decoded properties")? {
+    for (id, property) in admission.traverse(properties, "Protein decoded properties")? {
         if !instance_property_serializes(id) {
             continue;
         }
@@ -619,10 +635,10 @@ fn decode_record(
         let content = match property {
             Property::Reference { multiple } => {
                 let count = (*multiple)
-                    .then(|| read_count(ctx, record, &mut at, id))
+                    .then(|| read_count(admission, record, &mut at, id))
                     .transpose()
                     .map_err(|error| value_error(error, at))?;
-                let targets = read_connections(ctx, record, &mut at)
+                let targets = read_connections(admission, record, &mut at)
                     .map_err(|error| connection_error(error, at))?;
                 match count {
                     Some(count) => match std::num::NonZeroUsize::new(count) {
@@ -639,19 +655,19 @@ fn decode_record(
                 layout,
                 connectable,
             } => {
-                let value = read_property(ctx, record, &mut at, *layout, id)
+                let value = read_property(admission, record, &mut at, *layout, id)
                     .map_err(|error| value_error(error, at))?;
                 let connections = (*connectable)
-                    .then(|| read_connections(ctx, record, &mut at))
+                    .then(|| read_connections(admission, record, &mut at))
                     .transpose()
                     .map_err(|error| connection_error(error, at))?
                     .unwrap_or_default();
                 PropertyContent::Value { value, connections }
             }
         };
-        ctx.insert_btree_map(
+        admission.insert_btree_map(
             &mut values,
-            ctx.copy_retained_text(id, "Protein decoded property name")?,
+            admission.copy_text(id, "Protein decoded property name")?,
             DecodedProperty {
                 value_offset,
                 content,
@@ -692,23 +708,26 @@ fn instance_property_serializes(id: &str) -> bool {
     !matches!(id, "AssetLibID" | "texture_MapChannel_ID_Advanced")
 }
 
-fn read_property(
-    ctx: &DecodeContext<'_>,
+fn read_property<A: ProteinAdmission>(
+    admission: A,
     bytes: &[u8],
     at: &mut usize,
     layout: ValueLayout,
     id: &str,
-) -> Result<PropertyValue, CodecError> {
+) -> Result<PropertyValue, CodecError>
+where
+    CodecError: From<A::Error>,
+{
     match layout {
-        ValueLayout::Single(carrier) => read_value(ctx, bytes, at, carrier, id),
+        ValueLayout::Single(carrier) => read_value(admission, bytes, at, carrier, id),
         // TextureURI owns its kind byte and optional count; the schema's
         // multiple-value declaration does not add another count prefix.
-        ValueLayout::TextureUri => read_texture_uri(ctx, bytes, at, id),
+        ValueLayout::TextureUri => read_texture_uri(admission, bytes, at, id),
         ValueLayout::Multiple(carrier) => {
-            let count = read_count(ctx, bytes, at, id)?;
+            let count = read_count(admission, bytes, at, id)?;
             let values =
-                ctx.collect_indexed_vec(count, "Protein multiple property members", |_| {
-                    read_value(ctx, bytes, at, carrier, id)
+                admission.collect_indexed(count, "Protein multiple property members", |_| {
+                    read_value(admission, bytes, at, carrier, id)
                 })?;
             // `read_value` yields the one scalar variant its carrier selects,
             // so the members already share one scalar carrier.
@@ -721,19 +740,22 @@ fn read_property(
 
 /// A `TextureURI` value: a kind byte, then either a counted list of paths
 /// (kind 0, used for cloud resource references) or a single path (kind 1).
-fn read_texture_uri(
-    ctx: &DecodeContext<'_>,
+fn read_texture_uri<A: ProteinAdmission>(
+    admission: A,
     bytes: &[u8],
     at: &mut usize,
     id: &str,
-) -> Result<PropertyValue, CodecError> {
+) -> Result<PropertyValue, CodecError>
+where
+    CodecError: From<A::Error>,
+{
     let malformed = || CodecError::malformed(format_args!("Protein property {id} is truncated"));
     let kind = take::<1>(bytes, at).ok_or_else(malformed)?[0];
     if kind == 1 {
-        return Ok(PropertyValue::TextureUri(ctx.collect_indexed_vec(
+        return Ok(PropertyValue::TextureUri(admission.collect_indexed(
             1,
             "Protein texture URI paths",
-            |_| take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(malformed),
+            |_| take_lp_utf8_capped(admission, bytes, at, 1_048_576)?.ok_or_else(malformed),
         )?));
     }
     if kind != 0 {
@@ -741,26 +763,29 @@ fn read_texture_uri(
             "Protein TextureURI property {id} has invalid kind {kind}"
         )));
     }
-    let count = read_count(ctx, bytes, at, id)?;
-    let paths = ctx.collect_indexed_vec(count, "Protein texture URI paths", |_| {
-        take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(malformed)
+    let count = read_count(admission, bytes, at, id)?;
+    let paths = admission.collect_indexed(count, "Protein texture URI paths", |_| {
+        take_lp_utf8_capped(admission, bytes, at, 1_048_576)?.ok_or_else(malformed)
     })?;
     Ok(PropertyValue::TextureUri(paths))
 }
 
-fn read_count(
-    ctx: &DecodeContext<'_>,
+fn read_count<A: ProteinAdmission>(
+    admission: A,
     bytes: &[u8],
     at: &mut usize,
     id: &str,
-) -> Result<usize, CodecError> {
+) -> Result<usize, CodecError>
+where
+    CodecError: From<A::Error>,
+{
     let count = usize::try_from(read_u32_le(bytes, at).ok_or_else(|| {
         CodecError::malformed(format_args!("Protein property {id} is truncated"))
     })?)
     .map_err(|_| CodecError::Malformed("Protein value count exceeds usize".into()))?;
     let population = cadmpeg_core::decode::u64_from_index(count);
     if population > MAX_RECOVERY_VALUES {
-        return Err(ctx.refuse_codec_limit(
+        return Err(admission.format_ceiling(
             "Protein counted value recovery",
             MAX_RECOVERY_VALUES,
             population,
@@ -781,13 +806,16 @@ fn read_f64_le(bytes: &[u8], at: &mut usize) -> Option<f64> {
     Some(value)
 }
 
-fn read_value(
-    ctx: &DecodeContext<'_>,
+fn read_value<A: ProteinAdmission>(
+    admission: A,
     bytes: &[u8],
     at: &mut usize,
     carrier: ValueCarrier,
     id: &str,
-) -> Result<PropertyValue, CodecError> {
+) -> Result<PropertyValue, CodecError>
+where
+    CodecError: From<A::Error>,
+{
     let malformed = || CodecError::malformed(format_args!("Protein property {id} is truncated"));
     Ok(match carrier {
         ValueCarrier::Boolean => {
@@ -812,7 +840,7 @@ fn read_value(
             value: finite_value(read_f64_le(bytes, at).ok_or_else(malformed)?, id)?,
         },
         ValueCarrier::String => PropertyValue::String(
-            take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(malformed)?,
+            take_lp_utf8_capped(admission, bytes, at, 1_048_576)?.ok_or_else(malformed)?,
         ),
         ValueCarrier::Color => {
             let mut rgba = [FiniteReal::ZERO; 4];
@@ -832,11 +860,14 @@ fn finite_value(value: f64, id: &str) -> Result<FiniteReal, CodecError> {
 /// The connection block that follows every connectable member and every
 /// `Reference`: a presence byte, then a kind byte, a `u32` count, and that many
 /// length-prefixed connected-asset GUIDs.
-fn read_connections(
-    ctx: &DecodeContext<'_>,
+fn read_connections<A: ProteinAdmission>(
+    admission: A,
     bytes: &[u8],
     at: &mut usize,
-) -> Result<Vec<String>, CodecError> {
+) -> Result<Vec<String>, CodecError>
+where
+    CodecError: From<A::Error>,
+{
     let Some(present) = take::<1>(bytes, at) else {
         return Err(CodecError::Malformed(
             "Protein property connection flag is truncated".into(),
@@ -860,9 +891,9 @@ fn read_connections(
             kind[0]
         )));
     }
-    let count = read_count(ctx, bytes, at, "connection")?;
-    ctx.collect_indexed_vec(count, "Protein connected asset GUIDs", |_| {
-        take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(|| {
+    let count = read_count(admission, bytes, at, "connection")?;
+    admission.collect_indexed(count, "Protein connected asset GUIDs", |_| {
+        take_lp_utf8_capped(admission, bytes, at, 1_048_576)?.ok_or_else(|| {
             CodecError::Malformed("Protein property connection GUID is truncated".into())
         })
     })
@@ -907,6 +938,71 @@ mod tests {
         super::decode_detailed(&ctx, protein_view, instance_view)
     }
 
+    #[test]
+    fn standard_admission_matches_decode_context_records() {
+        let protein = schema_archive(&[
+            (
+                "Schemas/RootSchema.xml",
+                r#"<Schema>
+                    <UID val="Root"/>
+                    <String id="AssetLibID"/>
+                    <Color id="a_color" allowconnectedassets="single"/>
+                    <Boolean id="c_comment"/>
+                </Schema>"#,
+            ),
+            (
+                "Asset/Schemas/ChildSchema.xml",
+                r#"<Schema>
+                    <UID val="Child"/>
+                    <Base val="Root"/>
+                    <String id="c_comment"/>
+                    <TextureURI id="d_paths" allowmultiplevalues="true"/>
+                    <Reference id="e_targets" allowmultiplevalues="true"/>
+                    <Integer id="f_values" allowmultiplevalues="true"/>
+                </Schema>"#,
+            ),
+        ]);
+        let mut records = Vec::new();
+        for guid in ["first-guid", "second-guid"] {
+            let mut record = Vec::new();
+            for value in ["Child", guid, "base", "library"] {
+                push_lp(&mut record, value);
+            }
+            for value in [0.1_f64, 0.2, 0.3, 1.0] {
+                record.extend_from_slice(&value.to_le_bytes());
+            }
+            push_connections(&mut record, &["color-guid"]);
+            push_lp(&mut record, &"comment".repeat(50));
+            record.push(0);
+            record.extend_from_slice(&2_u32.to_le_bytes());
+            push_lp(&mut record, "cloud/first");
+            push_lp(&mut record, "cloud/second");
+            record.extend_from_slice(&2_u32.to_le_bytes());
+            push_connections(&mut record, &["first-target", "second-target"]);
+            record.extend_from_slice(&2_u32.to_le_bytes());
+            record.extend_from_slice(&3_u32.to_le_bytes());
+            record.extend_from_slice(&7_u32.to_le_bytes());
+            records.push(record);
+        }
+        let mut absent_schema = Vec::new();
+        for value in ["Absent", "missing-guid", "base", "library"] {
+            push_lp(&mut absent_schema, value);
+        }
+        let instance = paged_stream(&[&records[0], b"bad header", &absent_schema, &records[1]]);
+        let expected = decode_fixture(&protein, &instance).expect("context decode");
+        assert_eq!(expected.records.len(), 2);
+        assert_eq!(expected.rejected.len(), 2);
+        let admission = super::admission::StandardAdmission;
+        let mut catalog = super::SchemaCatalog::load(admission, protein.as_slice())
+            .expect("standard schema load")
+            .expect("schema entries");
+        let frames =
+            framing::record_frames_admitted(admission, &instance).expect("standard page framing");
+        let actual = super::decode_frames_admitted(admission, &mut catalog, frames.frames())
+            .expect("standard decode");
+        assert_eq!(actual, expected);
+    }
+
     fn with_service_context<T>(
         bytes: &[u8],
         use_context: impl FnOnce(&DecodeContext<'_>) -> T,
@@ -934,11 +1030,11 @@ mod tests {
     }
 
     /// A catalog from parsed schemas and already resolved property closures.
-    fn catalog_of<'ctx>(
-        ctx: &'ctx DecodeContext<'_>,
+    fn catalog_of<'ctx, 'input>(
+        ctx: &'ctx DecodeContext<'input>,
         schemas: HashMap<String, super::Schema>,
         properties: HashMap<String, BTreeMap<String, super::Property>>,
-    ) -> super::SchemaCatalog<'ctx> {
+    ) -> super::SchemaCatalog<&'ctx DecodeContext<'input>> {
         super::SchemaCatalog {
             schemas,
             properties,
