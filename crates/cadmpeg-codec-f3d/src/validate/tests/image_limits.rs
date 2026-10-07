@@ -32,6 +32,11 @@ fn image_index_error(module: &str, canvas: bool) -> cadmpeg_core::CodecError {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let mut native = crate::native::F3dNative::default();
         native.design_types.push(design_type(module));
+        if canvas {
+            native.design_canvas_images.push(canvas_image());
+        } else {
+            native.design_decal_images.push(decal_image());
+        }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;

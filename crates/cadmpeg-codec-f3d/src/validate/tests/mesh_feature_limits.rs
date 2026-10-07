@@ -154,7 +154,7 @@ fn projected_body_feature() -> crate::records::mesh::DesignMeshFeature {
 
 #[test]
 fn mesh_asset_id_refuses_collection_limit() {
-    let error = mesh_error(false, true, false, 0, u64::MAX);
+    let error = mesh_error(true, true, false, 0, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D mesh asset IDs")
@@ -163,7 +163,7 @@ fn mesh_asset_id_refuses_collection_limit() {
 
 #[test]
 fn mesh_tessellation_id_refuses_collection_limit() {
-    let error = mesh_error(false, false, true, 0, u64::MAX);
+    let error = mesh_error(true, false, true, 0, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D mesh tessellation IDs")

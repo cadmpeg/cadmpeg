@@ -453,22 +453,36 @@ fn body_bounds_error(
     })
 }
 
+fn body_bounds_collection_refusal(operation: &str) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = validation_body_bounds(true);
+        crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            0,
+            |decode| {
+                let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx)?;
+                ctx.decode = decode;
+                super::super::validate_body_bounds(&ctx, &mut Vec::new())
+            },
+        )
+    })
+}
+
+#[test]
+fn body_bounds_binding_group_refuses_collection_limit() {
+    body_bounds_collection_refusal("group F3D body bounds bindings");
+}
+
 #[test]
 fn body_bounds_binding_collection_refuses_collection_limit() {
-    let error = body_bounds_error(validation_body_bounds(true), 0, u64::MAX);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D expected body bounds bindings")
-    );
+    body_bounds_collection_refusal("collect F3D expected body bounds bindings");
 }
 
 #[test]
 fn body_bounds_index_refuses_collection_limit() {
-    let error = body_bounds_error(validation_body_bounds(true), 1, u64::MAX);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D bounded bodies")
-    );
+    body_bounds_collection_refusal("index F3D bounded bodies");
 }
 
 #[test]
