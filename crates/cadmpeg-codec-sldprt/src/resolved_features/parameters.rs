@@ -247,8 +247,9 @@ pub(crate) fn enrich_history_parameters<'a>(
             ScalarUnit::Length => {
                 let diameter = match existing {
                     Some(expression) => {
-                        ctx.charge_work(
-                            u64_from_index(expression.len()),
+                        crate::history::literals::admit_literal(
+                            ctx,
+                            expression,
                             "check SLDPRT diameter parameter",
                         )?;
                         crate::history::literals::strip_diameter_modifier(expression).is_some()
