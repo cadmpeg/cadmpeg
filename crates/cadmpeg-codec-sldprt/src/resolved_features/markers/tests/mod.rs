@@ -42,12 +42,7 @@ fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
 }
 
 fn extended_geometry_locus_single_link_point(payload: &[u8], offset: usize) -> bool {
-    super::extended_geometry_locus_single_link_point(
-        &cadmpeg_test_support::service_decode_context(),
-        payload,
-        offset,
-    )
-    .expect("extended geometry-locus scan fits service policy")
+    super::extended_geometry_locus_single_link_point(payload, offset)
 }
 
 #[test]
