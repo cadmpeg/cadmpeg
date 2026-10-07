@@ -35,7 +35,7 @@ use state_frame::{ReferenceStateFrame, StateFrames};
 use state_references::StateReferences;
 use transmit_state::TransmitState;
 pub(crate) mod preamble_state;
-use preamble_state::PreambleState;
+use preamble_state::{PreambleFields, PreambleState};
 pub(crate) mod type150_state;
 use packet_marker::{ReferenceMarker, Type150Marker};
 use type150_state::Type150State;
@@ -1025,13 +1025,15 @@ fn schema_reference_preamble(
             }
             let state = PreambleState::from_wire(
                 ctx,
-                identity,
-                references,
-                state_references,
-                state_words,
-                count,
-                entries,
-                terminal_value,
+                PreambleFields {
+                    identity,
+                    references,
+                    state_references,
+                    state_words,
+                    count,
+                    entries,
+                    terminal_value,
+                },
             )?
             .ok();
             if state.is_some() {
@@ -1398,7 +1400,7 @@ fn inline_schema_declaration(
             let prefix = stream.get(at..at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?);
             let prefix_state = prefix.map(|prefix| [prefix[7], prefix[10], prefix[30]]);
             let full_prefix = match (prefix_state, prefix) {
-                (Some(state), Some(prefix)) if matches!(state, [3, 4, 1] | [1, 1, 0]) => prefix
+                (Some([3, 4, 1] | [1, 1, 0]), Some(prefix)) => prefix
                     .iter()
                     .zip(TYPE_101_SCHEMA_STATE_PREFIX)
                     .enumerate()

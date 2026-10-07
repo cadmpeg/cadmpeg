@@ -59,13 +59,15 @@ fn deltas_preamble_validation_stops_at_first_invalid_entry() {
             |ctx| {
                 let validation = crate::deltas::preamble_state::PreambleState::from_wire(
                     ctx,
-                    2,
-                    [2, 3],
-                    [1; 3],
-                    [0, 0, 1, 0],
-                    1,
-                    entries,
-                    0,
+                    crate::deltas::preamble_state::PreambleFields {
+                        identity: 2,
+                        references: [2, 3],
+                        state_references: [1; 3],
+                        state_words: [0, 0, 1, 0],
+                        count: 1,
+                        entries,
+                        terminal_value: 0,
+                    },
                 )
                 .expect("only the first invalid entry is visited");
                 assert_eq!(validation.unwrap_err(), expected);
