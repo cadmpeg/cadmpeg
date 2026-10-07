@@ -277,42 +277,37 @@ fn tail_interval_search_preserves_refusals_and_releases_its_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let boundaries = [0., 1., 1., 2., 3.];
-    for cap in 0..8 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let limit = super::super::bounded_tail_intervals(&ctx, &boundaries)
-            .err()
-            .expect("every scan, copy and swap requires work");
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
+    for (dimension, operation) in [
+        (ResourceDimension::WorkUnits, "IR pcurve search interval scan"),
+        (ResourceDimension::WorkUnits, "IR pcurve search interval copy"),
+        (ResourceDimension::WorkUnits, "IR pcurve search interval reversal"),
+        (ResourceDimension::MaterializedBytes, "IR pcurve search intervals"),
+        (ResourceDimension::CollectionItems, "IR pcurve search intervals"),
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        if dimension == ResourceDimension::MaterializedBytes {
-            policy.limits.max_materialized_bytes = 0;
-        } else {
-            policy.limits.max_collection_items = 0;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let limit = super::super::bounded_tail_intervals(&ctx, &boundaries)
-            .err()
-            .expect("scratch requires admission");
-        assert_eq!(limit.dimension, dimension);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                _ => unreachable!("tested interval dimensions"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = super::super::bounded_tail_intervals(&ctx, &boundaries)
+                .map(drop).map_err(CodecError::from);
+            let Err(CodecError::ResourceLimit(limit)) = &result else {
+                panic!("each named interval boundary needs admission");
+            };
+            assert_eq!(limit.dimension, dimension);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+            result
+        });
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 8;
+    // Four window visits, three output copies and two moved reversal rows.
+    policy.limits.max_work_units = 9;
     policy.limits.max_materialized_bytes = 4096;
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 5;

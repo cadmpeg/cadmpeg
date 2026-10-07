@@ -266,6 +266,30 @@ mod tests {
     }
 
     #[test]
+    fn sketch_nurbs_endpoint_scans_do_not_charge_an_invalid_tail() {
+        let nonclamped = PcurveNurbs::from_lanes(
+            &cadmpeg_test_support::service_decode_context(), 1,
+            vec![-1.0, 0.0, 0.5, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0), Point2::new(2.0, 0.0)],
+            None, false,
+        ).unwrap().unwrap();
+        let invalid_weight = curve(0.0, Some(vec![-1.0, 1.0, 1.0]));
+        // The first endpoint knot fails after one visit. The first weight
+        // fails after the four endpoint-knot visits and its own visit.
+        for (curve, work) in [(nonclamped, 1), (invalid_weight, 5)] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert_eq!(super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve).unwrap(), None);
+            ctx.finish_session().unwrap();
+        }
+    }
+
+    #[test]
     fn sketch_nurbs_endpoint_frames_keep_weight_and_degenerate_absence() {
         let ctx = cadmpeg_test_support::service_decode_context();
         let negative_weight = curve(0.0, Some(vec![1.0, -1.0, 1.0]));

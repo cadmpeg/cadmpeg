@@ -402,7 +402,7 @@ fn numerical_audit_chain_rules_keep_finite_composed_derivatives() {
 
 #[test]
 fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
-    use super::super::{polyline_point, polyline_tangent};
+    use super::super::polyline::{polyline_point, polyline_tangent};
     use crate::features::FinitePoint3;
     use crate::scalar::FiniteReal;
     let far = [
@@ -439,8 +439,9 @@ fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
     );
     let tangent = polyline_tangent(
         crate::eval::admission::EvaluationAdmission::Standard,
-        &points,
-        &wide,
+        points.len(),
+        |index| points.get(index).copied(),
+        |index| wide.get(index).copied(),
         0.0,
     )
     .unwrap();

@@ -21,7 +21,7 @@ use crate::geometry::nurbs::bezier::{homogeneous_spans, positive_controls};
 use crate::geometry::nurbs::bounds::speed_bound_by;
 use crate::geometry::nurbs::scoped::ScopedRows;
 use crate::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis},
+    nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface, SurfaceParameterAxis},
     pcurve::PcurveGeometry,
     CurveGeometry, LawExpression, LawFormula, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -63,7 +63,7 @@ mod sweep_law;
 mod test_support;
 use basis::fill_bspline_basis;
 use depth::{ModelEvaluationDepthGuard, ModelEvaluationIdentity};
-use polyline::{polyline_point, polyline_tangent};
+use polyline::polyline_point;
 use priority_queue::PriorityQueue;
 use rational::{finite_lanes, Homogeneous};
 use sketch_offset::{clamped_nurbs_pcurve_endpoint_frames, fitted_nurbs_offset_candidate};
@@ -334,35 +334,28 @@ fn rational_surface_patches_with_budget<'ctx>(
             ctx.reserve_temporary_vec(&mut values, control_count, "IR surface control points")?;
         (reservation, values)
     };
-    let _weight_storage;
-    let mut weights = if surface.weight(0, 0).is_some() {
-        let mut weights = Vec::new();
-        _weight_storage = Some(ctx.reserve_temporary_vec(
-            &mut weights,
-            control_count,
-            "IR surface control weights",
-        )?);
-        Some(weights)
-    } else {
-        _weight_storage = None;
-        None
-    };
-    for u in 0..u_count {
-        for v in 0..v_count {
-            ctx.charge_work_limit(1, "IR surface control point copy")?;
-            let Some(point) = surface.pole(u, v) else {
-                return Ok(None);
-            };
-            points.push(point);
-            if let Some(weights) = &mut weights {
-                ctx.charge_work_limit(1, "IR surface control weight copy")?;
-                let Some(weight) = surface.weight(u, v) else {
-                    return Ok(None);
-                };
-                weights.push(weight.get());
+    let (weights, _weight_storage) = match surface.pole_grid() {
+        NurbsPoleGrid::Polynomial { rows } => {
+            for row in ctx.admit_iter(rows, "IR surface control row visit")? {
+                points.extend(ctx.admit_iter(row, "IR surface control point copy")?.copied());
             }
+            (None, None)
         }
-    }
+        NurbsPoleGrid::Rational { rows } => {
+            let mut weights = Vec::new();
+            let storage = ctx.reserve_temporary_vec(
+                &mut weights, control_count, "IR surface control weights",
+            )?;
+            for row in ctx.admit_iter(rows, "IR surface control row visit")? {
+                for pole in ctx.admit_iter(row, "IR surface control point copy")? {
+                    points.push(pole.point);
+                    ctx.charge_work_limit(1, "IR surface control weight copy")?;
+                    weights.push(pole.weight.get());
+                }
+            }
+            (Some(weights), Some(storage))
+        }
+    };
     let Some(homogeneous_controls) =
         positive_controls(ctx, &points, weights.as_deref(), "Bezier positive controls")?
     else {
@@ -586,8 +579,7 @@ fn rational_patch_parameter_segment<'ctx>(
             ctx.reserve_temporary_vec(&mut values, count, "IR rational surface diagonal")?;
         (reservation, values)
     };
-    ctx.charge_work_limit(u64_from_index(count), "IR rational surface diagonal fill")?;
-    diagonal.resize(count, [0.0; 4]);
+    diagonal.extend(ctx.admit_iter(0..count, "IR rational surface diagonal fill")?.map(|_| [0.0; 4]));
     let mut u = 0;
     if !ctx.all_by_limit(&restricted, |row| {
         let mut v = 0;
@@ -1294,9 +1286,8 @@ fn complete_nurbs_surface_starts<'ctx>(
             ]
         };
         let mut u_variation = 0.0_f64;
-        for u in 0..patch.u_degree {
-            for v in 0..=patch.v_degree {
-                ctx.charge_work_limit(1, "IR surface u variation scan")?;
+        for u in ctx.admit_iter(0..patch.u_degree, "IR surface u variation row visit")? {
+            for v in ctx.admit_iter(0..=patch.v_degree, "IR surface u variation scan")? {
                 let first = control(u, v);
                 let second = control(u + 1, v);
                 let variation = (0..3)
@@ -1306,9 +1297,8 @@ fn complete_nurbs_surface_starts<'ctx>(
             }
         }
         let mut v_variation = 0.0_f64;
-        for u in 0..=patch.u_degree {
-            for v in 0..patch.v_degree {
-                ctx.charge_work_limit(1, "IR surface v variation scan")?;
+        for u in ctx.admit_iter(0..=patch.u_degree, "IR surface v variation row visit")? {
+            for v in ctx.admit_iter(0..patch.v_degree, "IR surface v variation scan")? {
                 let first = control(u, v);
                 let second = control(u, v + 1);
                 let variation = (0..3)
@@ -2329,7 +2319,7 @@ fn bounded_tail_intervals<'ctx>(
         }
     }
     ctx.charge_work_limit(
-        u64_from_index(intervals.len() / 2),
+        u64_from_index(intervals.len() / 2) * 2,
         "IR pcurve search interval reversal",
     )?;
     intervals.reverse();
@@ -3981,27 +3971,13 @@ fn curve_derivative_unsettled(
             )
         }
         SolvedCurveGeometry::Polyline(polyline) => {
-            let points = scratch
-                .collect(
-                    polyline.points().map(Some),
-                    "IR polyline derivative points",
-                    "IR polyline derivative points work",
-                )
-                .ok_or(EvaluationFailure::NoValue)?;
-            let parameters = match polyline.parameters() {
-                Some(parameters) => scratch.collect(
-                    parameters.map(Some),
-                    "IR polyline derivative parameters",
-                    "IR polyline derivative parameters work",
-                ),
-                None => scratch.collect(
-                    (0..points.len()).map(FiniteReal::from_index),
-                    "IR polyline derivative parameters",
-                    "IR polyline derivative parameters work",
-                ),
-            }
-            .ok_or(EvaluationFailure::NoValue)?;
-            let tangent = polyline_tangent(scratch.admission, &points, &parameters, t)?;
+            let tangent = polyline::polyline_tangent(
+                scratch.admission,
+                polyline.point_count(),
+                |index| polyline.point_at(index),
+                |index| polyline.parameter_at(index),
+                t,
+            )?;
             Ok(if second { FiniteVector3::ZERO } else { tangent })
         }
         SolvedCurveGeometry::Transformed(placed) => {
@@ -5364,88 +5340,12 @@ fn model_curve_parameter_near_point_with_tolerance(
                 (denominator.is_finite() && denominator > 0.0)
                     .then(|| offset.dot(tangent) / denominator)
             }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
-                analytic_surface_parameters(&surface.geometry, point)
-                    .map(Point2::from)
-                    .and_then(|mut uv| {
-                        if direction.v == 0.0 && direction.u != 0.0 {
-                            let expected = origin.u + direction.u * seed;
-                            uv.u += ((expected - uv.u) / std::f64::consts::TAU).round()
-                                * std::f64::consts::TAU;
-                            Some((uv.u - origin.u) / direction.u)
-                        } else if direction.u == 0.0
-                            && direction.v != 0.0
-                            && matches!(
-                                surface.geometry.solved(),
-                                Some(SolvedSurfaceGeometry::Torus(_))
-                            )
-                        {
-                            let expected = origin.v + direction.v * seed;
-                            uv.v += ((expected - uv.v) / std::f64::consts::TAU).round()
-                                * std::f64::consts::TAU;
-                            Some((uv.v - origin.v) / direction.v)
-                        } else if direction.u == 0.0 && direction.v != 0.0 {
-                            Some((uv.v - origin.v) / direction.v)
-                        } else {
-                            None
-                        }
-                    })
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => {
-                analytic_surface_parameters(&surface.geometry, point)
-                    .map(Point2::from)
-                    .and_then(|mut uv| {
-                        if direction.v == 0.0 && direction.u != 0.0 {
-                            let expected = origin.u + direction.u * seed;
-                            uv.u += ((expected - uv.u) / std::f64::consts::TAU).round()
-                                * std::f64::consts::TAU;
-                            Some((uv.u - origin.u) / direction.u)
-                        } else if direction.u == 0.0
-                            && direction.v != 0.0
-                            && matches!(
-                                surface.geometry.solved(),
-                                Some(SolvedSurfaceGeometry::Torus(_))
-                            )
-                        {
-                            let expected = origin.v + direction.v * seed;
-                            uv.v += ((expected - uv.v) / std::f64::consts::TAU).round()
-                                * std::f64::consts::TAU;
-                            Some((uv.v - origin.v) / direction.v)
-                        } else if direction.u == 0.0 && direction.v != 0.0 {
-                            Some((uv.v - origin.v) / direction.v)
-                        } else {
-                            None
-                        }
-                    })
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => {
-                analytic_surface_parameters(&surface.geometry, point)
-                    .map(Point2::from)
-                    .and_then(|mut uv| {
-                        if direction.v == 0.0 && direction.u != 0.0 {
-                            let expected = origin.u + direction.u * seed;
-                            uv.u += ((expected - uv.u) / std::f64::consts::TAU).round()
-                                * std::f64::consts::TAU;
-                            Some((uv.u - origin.u) / direction.u)
-                        } else if direction.u == 0.0
-                            && direction.v != 0.0
-                            && matches!(
-                                surface.geometry.solved(),
-                                Some(SolvedSurfaceGeometry::Torus(_))
-                            )
-                        {
-                            let expected = origin.v + direction.v * seed;
-                            uv.v += ((expected - uv.v) / std::f64::consts::TAU).round()
-                                * std::f64::consts::TAU;
-                            Some((uv.v - origin.v) / direction.v)
-                        } else if direction.u == 0.0 && direction.v != 0.0 {
-                            Some((uv.v - origin.v) / direction.v)
-                        } else {
-                            None
-                        }
-                    })
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {
+            SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Cylinder(_)
+                | SolvedSurfaceGeometry::Cone(_)
+                | SolvedSurfaceGeometry::Sphere(_)
+                | SolvedSurfaceGeometry::Torus(_),
+            ) => {
                 analytic_surface_parameters(&surface.geometry, point)
                     .map(Point2::from)
                     .and_then(|mut uv| {
