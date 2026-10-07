@@ -462,10 +462,19 @@ fn solved_curve(
         previous = point;
     }
     let mut point_storage = ctx.reserve_scoped(0, "hold intersection chart points")?;
-    let mut points = point_storage.with_storage(|| ctx.vector_storage(point_count, "construct intersection chart points"))?;
-    point_storage.with_storage(|| ctx.push_vec(&mut points, start, "construct intersection chart points"))?;
-    point_storage.with_storage(|| ctx.extend_from_slice(&mut points, &chart.interior_points, "construct intersection chart points"))?;
-    point_storage.with_storage(|| ctx.push_vec(&mut points, end, "construct intersection chart points"))?;
+    let mut points = point_storage
+        .with_storage(|| ctx.vector_storage(point_count, "construct intersection chart points"))?;
+    point_storage
+        .with_storage(|| ctx.push_vec(&mut points, start, "construct intersection chart points"))?;
+    point_storage.with_storage(|| {
+        ctx.extend_from_slice(
+            &mut points,
+            &chart.interior_points,
+            "construct intersection chart points",
+        )
+    })?;
+    point_storage
+        .with_storage(|| ctx.push_vec(&mut points, end, "construct intersection chart points"))?;
     let reversed = if ctx.all_by(
         parameters.windows(2),
         |pair| Ok(pair[0] < pair[1]),
@@ -490,10 +499,16 @@ fn solved_curve(
     };
     let mut knots = ctx.vector_storage(point_count + 2, "construct intersection chart knots")?;
     ctx.push_vec(&mut (knots), first, "construct intersection chart knots")?;
-    ctx.extend_from_slice(&mut knots, &parameters, "construct intersection chart knots")?;
+    ctx.extend_from_slice(
+        &mut knots,
+        &parameters,
+        "construct intersection chart knots",
+    )?;
     ctx.push_vec(&mut (knots), last, "construct intersection chart knots")?;
     let controls = ctx.collect_vec(
-        points.iter().map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM)),
+        points
+            .iter()
+            .map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM)),
         "construct intersection curve controls",
     )?;
     let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -564,7 +579,11 @@ fn solved_support_uv(
             )?
             .chunks(const { crate::nonzero(4) })
         {
-            ctx.push_vec(control_points, Point2::new(row[support * 2], row[support * 2 + 1]), "construct intersection support UV controls")?;
+            ctx.push_vec(
+                control_points,
+                Point2::new(row[support * 2], row[support * 2 + 1]),
+                "construct intersection support UV controls",
+            )?;
         }
         if reversed {
             ctx.reverse(control_points, "reverse intersection support UV controls")?;

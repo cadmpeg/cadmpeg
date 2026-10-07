@@ -450,8 +450,11 @@ impl<'a, 'ctx> ShellFaceIndex<'a, 'ctx> {
                 for (_, edge_faces) in
                     ctx.admit_iter(&faces_by_edge, "index Parasolid face neighbors")?
                 {
-                    let mut edge_faces = ctx.admit_iter(edge_faces, "index Parasolid face neighbors")?;
-                    let Some(&root) = edge_faces.next() else { continue; };
+                    let mut edge_faces =
+                        ctx.admit_iter(edge_faces, "index Parasolid face neighbors")?;
+                    let Some(&root) = edge_faces.next() else {
+                        continue;
+                    };
                     for &other in edge_faces {
                         for (face, neighbor) in [(root, other), (other, root)] {
                             ctx.insert_btree_group_set(
@@ -931,11 +934,28 @@ fn resolve_sweep_surface(
                 ctx.admit_iter(&face.loops, "scan SLDPRT resolve_sweep_surface values")?
             {
                 for ce_attr in ctx.admit_iter(ring, "scan SLDPRT ring values")? {
-                    let Some(vuse) = ctx.get_btree_map(tables.coedges(), ce_attr, "lookup Parasolid coedges")?.map(|ce| ce.refs[4]) else {
+                    let Some(vuse) = ctx
+                        .get_btree_map(tables.coedges(), ce_attr, "lookup Parasolid coedges")?
+                        .map(|ce| ce.refs[4])
+                    else {
                         continue;
                     };
-                    let Some(vertex) = ctx.get_btree_map(tables.vertex_uses(), &vuse, "lookup Parasolid vertex uses")? else { continue; };
-                    let Some(point) = ctx.get_btree_map(tables.points(), &vertex.refs[4], "lookup Parasolid points")? else { continue; };
+                    let Some(vertex) = ctx.get_btree_map(
+                        tables.vertex_uses(),
+                        &vuse,
+                        "lookup Parasolid vertex uses",
+                    )?
+                    else {
+                        continue;
+                    };
+                    let Some(point) = ctx.get_btree_map(
+                        tables.points(),
+                        &vertex.refs[4],
+                        "lookup Parasolid points",
+                    )?
+                    else {
+                        continue;
+                    };
                     let coordinates = point.xyz_m;
                     let travel = coordinates[0] * LEN_TO_MM * direction.x
                         + coordinates[1] * LEN_TO_MM * direction.y
@@ -1120,7 +1140,14 @@ fn ensure_surface_support(
     }
     // A carrier owned by an emitted face names that face's surface. Any other
     // carrier names its hidden support surface, which is emitted once.
-    let emitted_bridge = sink.ctx.get_btree_map(emitted_face_surface_by_carrier, &attr, "lookup Parasolid emitted_face_surface_by_carrier")?.copied();
+    let emitted_bridge = sink
+        .ctx
+        .get_btree_map(
+            emitted_face_surface_by_carrier,
+            &attr,
+            "lookup Parasolid emitted_face_surface_by_carrier",
+        )?
+        .copied();
     let surface_id = || emitted_bridge.map_or_else(|| id_hidden_support_surface(attr), id_surf);
     let result = (|| -> Result<Option<SurfaceId>, cadmpeg_core::CodecError> {
         let emit_hidden = emitted_bridge.is_none()
@@ -1232,7 +1259,8 @@ fn ensure_surface_support(
             Ok(Some(surface))
         }
     })();
-    sink.ctx.remove_btree_set(resolving, &attr, "finish Parasolid surface support")?;
+    sink.ctx
+        .remove_btree_set(resolving, &attr, "finish Parasolid surface support")?;
     result
 }
 
@@ -1256,7 +1284,11 @@ fn walk_face(
         let owner_bridge = lp.refs[2];
         let same_face_use = owner_bridge == bridge.attr
             || match bridge.owner {
-                Some(owner) => ctx.get_btree_map(t.bridges(), &owner_bridge, "lookup Parasolid bridges")?.and_then(|candidate| candidate.owner) == Some(owner),
+                Some(owner) => {
+                    ctx.get_btree_map(t.bridges(), &owner_bridge, "lookup Parasolid bridges")?
+                        .and_then(|candidate| candidate.owner)
+                        == Some(owner)
+                }
                 None => false,
             };
         if !same_face_use {
@@ -1272,7 +1304,8 @@ fn walk_face(
             if !ctx.insert_hash_set(&mut ce_guard, ce_ref, "walk Parasolid face coedges")? {
                 break;
             }
-            let Some(ce) = ctx.get_btree_map(t.coedges(), &ce_ref, "lookup Parasolid coedges")? else {
+            let Some(ce) = ctx.get_btree_map(t.coedges(), &ce_ref, "lookup Parasolid coedges")?
+            else {
                 break;
             };
             if ce.refs[1] != loop_ref {
@@ -1365,10 +1398,22 @@ fn canonical_coedge_attr(
         .and_then(|record| record.references.canonical())
         .filter(|attr| *attr > 1)
     {
-        let Some(coedge) = ctx.get_btree_map(coedges, &explicit, "lookup Parasolid coedges")? else { return Ok(None); };
-        return Ok((coedge.refs[6] == edge_attr && coedge.sense == Sense::Forward).then_some(explicit));
+        let Some(coedge) = ctx.get_btree_map(coedges, &explicit, "lookup Parasolid coedges")?
+        else {
+            return Ok(None);
+        };
+        return Ok(
+            (coedge.refs[6] == edge_attr && coedge.sense == Sense::Forward).then_some(explicit),
+        );
     }
-    Ok(ctx.get_btree_map(forward_coedges, &edge_attr, "lookup Parasolid forward coedges")?.copied().flatten())
+    Ok(ctx
+        .get_btree_map(
+            forward_coedges,
+            &edge_attr,
+            "lookup Parasolid forward coedges",
+        )?
+        .copied()
+        .flatten())
 }
 
 /// The one forward coedge of each edge attr, or `None` for an edge that has
@@ -1395,8 +1440,14 @@ fn forward_coedges_by_edge(
     Ok(forward)
 }
 
-fn edge_end_vuse(ctx: &DecodeContext<'_>, canonical: u16, ring_end: u16, coedges: &BTreeMap<u16, topology::Coedge>) -> Result<u16, cadmpeg_core::CodecError> {
-    let Some(twin) = ctx.get_btree_map(coedges, &canonical, "lookup Parasolid coedges")?
+fn edge_end_vuse(
+    ctx: &DecodeContext<'_>,
+    canonical: u16,
+    ring_end: u16,
+    coedges: &BTreeMap<u16, topology::Coedge>,
+) -> Result<u16, cadmpeg_core::CodecError> {
+    let Some(twin) = ctx
+        .get_btree_map(coedges, &canonical, "lookup Parasolid coedges")?
         .map(|coedge| coedge.refs[5])
         .filter(|twin| *twin != canonical)
     else {
@@ -1589,9 +1640,11 @@ pub(crate) fn decode_bodies(
         })?;
     }
     for stream_typed_facts in ctx.admit_iter(&typed_streams, "scan SLDPRT decode_bodies values")? {
-        index_storage.with_storage(|| typed_facts.merge_missing(ctx, stream_typed_facts.try_clone(ctx)?))?;
+        index_storage
+            .with_storage(|| typed_facts.merge_missing(ctx, stream_typed_facts.try_clone(ctx)?))?;
     }
-    let typed_bridge_attrs = index_storage.with_storage(|| typed_facts.valid_ownership_face_attrs(ctx))?;
+    let typed_bridge_attrs =
+        index_storage.with_storage(|| typed_facts.valid_ownership_face_attrs(ctx))?;
     let selected_bridge_attrs = typed_bridge_attrs.as_ref();
     for (stream_order, ((payload, header, is_deltas), stream_typed_facts)) in ctx
         .admit_iter(&ordered, "scan Parasolid topology body streams")?
@@ -1600,21 +1653,30 @@ pub(crate) fn decode_bodies(
         .enumerate()
     {
         let body = header_body(payload, header)?;
-        let typed_face_offsets =
-            index_storage.with_storage(|| selected_typed_face_offsets(ctx, stream_typed_facts, typed_bridge_attrs.as_ref()))?;
+        let typed_face_offsets = index_storage.with_storage(|| {
+            selected_typed_face_offsets(ctx, stream_typed_facts, typed_bridge_attrs.as_ref())
+        })?;
         index_storage.with_storage(|| carriers.merge_missing(ctx, scan_carriers(ctx, body)?))?;
         let curve_attrs = index_storage.with_storage(|| carriers.curve_attrs(ctx))?;
-        let scanned_tables = index_storage.with_storage(|| if is_deltas {
-            topology::scan_deltas_with_curve_attrs_excluding(
-                ctx,
-                body,
-                &curve_attrs,
-                &typed_face_offsets,
-            )
-        } else {
-            topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets)
+        let scanned_tables = index_storage.with_storage(|| {
+            if is_deltas {
+                topology::scan_deltas_with_curve_attrs_excluding(
+                    ctx,
+                    body,
+                    &curve_attrs,
+                    &typed_face_offsets,
+                )
+            } else {
+                topology::scan_with_curve_attrs_excluding(
+                    ctx,
+                    body,
+                    &curve_attrs,
+                    &typed_face_offsets,
+                )
+            }
         })?;
-        let mut scanned_facts = entity::scan_metadata(ctx, body, is_deltas)?;
+        let mut scanned_facts =
+            index_storage.with_storage(|| entity::scan_metadata(ctx, body, is_deltas))?;
         for color in ctx.admit_iter(
             &mut scanned_facts.face_colors,
             "order Parasolid face colors by stream",
@@ -1629,19 +1691,23 @@ pub(crate) fn decode_bodies(
         }
         if !initialized || !is_deltas {
             if initialized {
-                index_storage.with_storage(|| tables.merge_deltas(ctx, scanned_tables, selected_bridge_attrs))?;
-                append_entity_facts(ctx, &mut facts, scanned_facts)?;
+                index_storage.with_storage(|| {
+                    tables.merge_deltas(ctx, scanned_tables, selected_bridge_attrs)
+                })?;
+                index_storage
+                    .with_storage(|| append_entity_facts(ctx, &mut facts, scanned_facts))?;
             } else {
                 tables = scanned_tables;
                 facts = scanned_facts;
                 initialized = true;
             }
         } else {
-            index_storage.with_storage(|| tables.merge_deltas(ctx, scanned_tables, selected_bridge_attrs))?;
-            append_entity_facts(ctx, &mut facts, scanned_facts)?;
+            index_storage
+                .with_storage(|| tables.merge_deltas(ctx, scanned_tables, selected_bridge_attrs))?;
+            index_storage.with_storage(|| append_entity_facts(ctx, &mut facts, scanned_facts))?;
         }
     }
-    decode_graph(ctx, &mut carriers, &tables, facts, &typed_facts, stream)
+    decode_graph(ctx, &carriers, &tables, facts, &typed_facts, stream)
 }
 
 fn decode_body(
@@ -1650,16 +1716,19 @@ fn decode_body(
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     let mut index_storage = ctx.reserve_scoped(0, "hold Parasolid source indexes")?;
-    let mut carriers = index_storage.with_storage(|| scan_carriers(ctx, body))?;
+    let carriers = index_storage.with_storage(|| scan_carriers(ctx, body))?;
     let curve_attrs = index_storage.with_storage(|| carriers.curve_attrs(ctx))?;
     let typed_facts = index_storage.with_storage(|| typed::scan(body, ctx))?;
-    let typed_face_attrs = index_storage.with_storage(|| typed_facts.valid_ownership_face_attrs(ctx))?;
-    let typed_face_offsets =
-        index_storage.with_storage(|| selected_typed_face_offsets(ctx, &typed_facts, typed_face_attrs.as_ref()))?;
-    let t =
-        index_storage.with_storage(|| topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets))?;
-    let entity_facts = entity::scan_metadata(ctx, body, false)?;
-    decode_graph(ctx, &mut carriers, &t, entity_facts, &typed_facts, stream)
+    let typed_face_attrs =
+        index_storage.with_storage(|| typed_facts.valid_ownership_face_attrs(ctx))?;
+    let typed_face_offsets = index_storage.with_storage(|| {
+        selected_typed_face_offsets(ctx, &typed_facts, typed_face_attrs.as_ref())
+    })?;
+    let t = index_storage.with_storage(|| {
+        topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets)
+    })?;
+    let entity_facts = index_storage.with_storage(|| entity::scan_metadata(ctx, body, false))?;
+    decode_graph(ctx, &carriers, &t, entity_facts, &typed_facts, stream)
 }
 
 fn admit_brep_entity(ctx: &DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError> {
@@ -1734,7 +1803,11 @@ fn unique_face_colors(
     let by_face = scratch.with_storage(|| {
         let mut by_face = BTreeMap::<u16, Vec<entity::FaceColor>>::new();
         for color in ctx.admit_iter(colors, "select Parasolid face colors")? {
-            if ctx.get_btree_map(&current_versions, &color.face_attr, "lookup Parasolid current_versions")? == Some(&(color.face_seq, color.stream_order))
+            if ctx.get_btree_map(
+                &current_versions,
+                &color.face_attr,
+                "lookup Parasolid current_versions",
+            )? == Some(&(color.face_seq, color.stream_order))
             {
                 ctx.push_btree_group(
                     &mut by_face,
@@ -1873,10 +1946,19 @@ fn typed_body_records(
         let mut regions = Vec::new();
         for region in ctx.admit_iter(&hierarchy.regions, "assemble typed Parasolid regions")? {
             let mut shells = Vec::new();
-            let region_shells = ctx.get_btree_map(&shells_by_region, &region.attr, "lookup Parasolid shells_by_region")?
+            let region_shells = ctx
+                .get_btree_map(
+                    &shells_by_region,
+                    &region.attr,
+                    "lookup Parasolid shells_by_region",
+                )?
                 .map_or(&[][..], Vec::as_slice);
             for shell in ctx.admit_iter(region_shells, "assemble typed Parasolid shells")? {
-                let mut refs = match ctx.get_btree_map(&faces_by_shell, &shell.attr, "lookup Parasolid faces_by_shell")? {
+                let mut refs = match ctx.get_btree_map(
+                    &faces_by_shell,
+                    &shell.attr,
+                    "lookup Parasolid faces_by_shell",
+                )? {
                     Some(faces) => ctx.copy_slice(faces, "collect typed Parasolid shell faces")?,
                     None => Vec::new(),
                 };
@@ -2006,10 +2088,14 @@ fn bind_bridges(
     let mut bridge_group = BTreeMap::new();
     let mut bridge_shell = BTreeMap::new();
     for face in ctx.admit_iter(faces, BIND)? {
-        let owner = ctx.get_btree_map(t.bridges(), &face.bridge_attr, "lookup Parasolid bridges")?.and_then(|r| r.owner);
+        let owner = ctx
+            .get_btree_map(t.bridges(), &face.bridge_attr, "lookup Parasolid bridges")?
+            .and_then(|r| r.owner);
         let groups_naming = |attr: Option<u16>| -> Result<&[usize], cadmpeg_core::CodecError> {
             Ok(match attr {
-                Some(attr) => ctx.get_btree_map(&groups_by_ref, &attr, BIND)?.map_or(&[][..], Vec::as_slice),
+                Some(attr) => ctx
+                    .get_btree_map(&groups_by_ref, &attr, BIND)?
+                    .map_or(&[][..], Vec::as_slice),
                 None => &[],
             })
         };
@@ -2040,7 +2126,10 @@ fn bind_bridges(
             let mut selected = None;
             for attr in [Some(face.bridge_attr), owner].into_iter().flatten() {
                 if let Some(&candidate) = ctx.get_btree_map(&shell_by_ref, &(attr, next), BIND)? {
-                    selected = Some(selected.map_or(candidate, |previous: (usize, u16)| previous.min(candidate)));
+                    selected = Some(
+                        selected
+                            .map_or(candidate, |previous: (usize, u16)| previous.min(candidate)),
+                    );
                 }
             }
             if let Some((_, shell)) = selected {
@@ -2054,13 +2143,16 @@ fn bind_bridges(
 
 fn decode_graph(
     ctx: &DecodeContext<'_>,
-    carriers: &mut CarrierIndex,
+    carriers: &CarrierIndex,
     t: &topology::Tables,
     entity_facts: entity::Facts,
     typed_facts: &typed::Facts,
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    let (typed_records, _body_record_storage) = ctx.with_scoped_storage("hold Parasolid body records", || typed_body_records(ctx, typed_facts, t))?;
+    let (typed_records, _body_record_storage) = ctx
+        .with_scoped_storage("hold Parasolid body records", || {
+            typed_body_records(ctx, typed_facts, t)
+        })?;
     let body_records = typed_records.unwrap_or_default();
     let body_modifiers = unique_body_modifiers(ctx, entity_facts.body_modifiers)?;
     let (face_colors, conflicting_face_colors) = unique_face_colors(
@@ -2107,7 +2199,10 @@ fn decode_graph(
         vertex_use_sequences,
         body_modifiers,
         losses: ctx.try_collect_vec(
-            carriers.lane_refusals.iter().map(|note| note.try_clone_for_decode(ctx, "retain Parasolid carrier losses")),
+            carriers
+                .lane_refusals
+                .iter()
+                .map(|note| note.try_clone_for_decode(ctx, "retain Parasolid carrier losses")),
             "retain Parasolid carrier losses",
         )?,
         stats: Stats {
@@ -2210,12 +2305,16 @@ fn decode_graph(
                 .admit_iter(ring, "index Parasolid edge incidences")?
                 .enumerate()
             {
-                let Some(ce) = ctx.get_btree_map(t.coedges(), &ce_attr, "lookup Parasolid coedges")? else {
+                let Some(ce) =
+                    ctx.get_btree_map(t.coedges(), &ce_attr, "lookup Parasolid coedges")?
+                else {
                     continue;
                 };
                 let next_attr = ring[(i + 1) % k];
                 let start_vuse = ce.refs[4];
-                let next_vuse = ctx.get_btree_map(t.coedges(), &next_attr, "lookup Parasolid coedges")?.map_or(0, |next| next.refs[4]);
+                let next_vuse = ctx
+                    .get_btree_map(t.coedges(), &next_attr, "lookup Parasolid coedges")?
+                    .map_or(0, |next| next.refs[4]);
                 let edge_attr = ce.refs[6];
                 if edge_attr != 0 {
                     scratch.with_storage(|| {
@@ -2261,7 +2360,8 @@ fn decode_graph(
             continue;
         };
         let end_vuse = edge_end_vuse(ctx, canonical, ring_end_vuse, t.coedges())?;
-        let curve_attr = ctx.get_btree_map(t.edge_uses(), &edge_attr, "lookup Parasolid edge_uses")?
+        let curve_attr = ctx
+            .get_btree_map(t.edge_uses(), &edge_attr, "lookup Parasolid edge_uses")?
             .map_or(0, |edge_use| edge_use.references.curve());
         scratch.with_storage(|| {
             ctx.insert_btree_map(
@@ -2275,7 +2375,9 @@ fn decode_graph(
             if vuse == 0 {
                 continue;
             }
-            if let Some(vu) = ctx.get_btree_map(t.vertex_uses(), &vuse, "lookup Parasolid vertex_uses")? {
+            if let Some(vu) =
+                ctx.get_btree_map(t.vertex_uses(), &vuse, "lookup Parasolid vertex_uses")?
+            {
                 let point_attr = vu.refs[4];
                 if ctx.contains_key_btree_map(t.points(), &point_attr, "lookup Parasolid points")? {
                     scratch.with_storage(|| {
@@ -2315,7 +2417,8 @@ fn decode_graph(
 
     // Vertices, in attr order.
     for &a in ctx.admit_iter(&kept_vertices, "emit Parasolid vertices")? {
-        let Some(rec) = ctx.get_btree_map(t.vertex_uses(), &a, "lookup Parasolid vertex_uses")? else {
+        let Some(rec) = ctx.get_btree_map(t.vertex_uses(), &a, "lookup Parasolid vertex_uses")?
+        else {
             continue;
         };
         let point_attr = rec.refs[4];
@@ -2342,9 +2445,20 @@ fn decode_graph(
     let mut edge_endpoint_positions = BTreeMap::<u16, [cadmpeg_ir::math::Point3; 2]>::new();
     let mut reversed_edge_orientation = BTreeSet::<u16>::new();
     for (&e, &(start_v, end_v, curve_attr)) in ctx.admit_iter(&edge_ends, "emit Parasolid edges")? {
-        let resolved_endpoints = ctx.contains_btree_set(&kept_vertices, &start_v, "test Parasolid kept_vertices")? && ctx.contains_btree_set(&kept_vertices, &end_v, "test Parasolid kept_vertices")?;
-        let closed_carrier = if !resolved_endpoints && start_v <= 1 && end_v <= 1 { carriers.curve(ctx, curve_attr)? } else { None };
-        let closed_circle_point = closed_carrier.and_then(|carrier| match &carrier.carrier().geometry {
+        let resolved_endpoints =
+            ctx.contains_btree_set(&kept_vertices, &start_v, "test Parasolid kept_vertices")?
+                && ctx.contains_btree_set(
+                    &kept_vertices,
+                    &end_v,
+                    "test Parasolid kept_vertices",
+                )?;
+        let closed_carrier = if !resolved_endpoints && start_v <= 1 && end_v <= 1 {
+            carriers.curve(ctx, curve_attr)?
+        } else {
+            None
+        };
+        let closed_circle_point =
+            closed_carrier.and_then(|carrier| match &carrier.carrier().geometry {
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                     let center = circle_curve.center().get();
                     let ref_direction = circle_curve.frame().reference().as_raw();
@@ -2408,11 +2522,29 @@ fn decode_graph(
             (id_vertex(start_v), id_vertex(end_v))
         };
         if resolved_endpoints {
-            let position = |vertex_use: u16| -> Result<Option<cadmpeg_ir::math::Point3>, cadmpeg_core::CodecError> {
-                let Some(vertex) = ctx.get_btree_map(t.vertex_uses(), &vertex_use, "lookup Parasolid vertex uses")? else { return Ok(None); };
-                let Some(point) = ctx.get_btree_map(t.points(), &vertex.refs[4], "lookup Parasolid points")? else { return Ok(None); };
+            let position = |vertex_use: u16| -> Result<
+                Option<cadmpeg_ir::math::Point3>,
+                cadmpeg_core::CodecError,
+            > {
+                let Some(vertex) = ctx.get_btree_map(
+                    t.vertex_uses(),
+                    &vertex_use,
+                    "lookup Parasolid vertex uses",
+                )?
+                else {
+                    return Ok(None);
+                };
+                let Some(point) =
+                    ctx.get_btree_map(t.points(), &vertex.refs[4], "lookup Parasolid points")?
+                else {
+                    return Ok(None);
+                };
                 let [x, y, z] = point.xyz_m;
-                Ok(Some(cadmpeg_ir::math::Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM)))
+                Ok(Some(cadmpeg_ir::math::Point3::new(
+                    x * LEN_TO_MM,
+                    y * LEN_TO_MM,
+                    z * LEN_TO_MM,
+                )))
             };
             if let (Some(start), Some(end)) = (position(start_v)?, position(end_v)?) {
                 scratch.with_storage(|| {
@@ -2425,19 +2557,29 @@ fn decode_graph(
                 })?;
             }
         }
-        let parameter_range = carriers.curve(ctx, curve_attr)?
+        let parameter_range = carriers
+            .curve(ctx, curve_attr)?
             .map(|carrier| {
                 edge_parameter_range(
                     ctx,
                     carrier.carrier(),
-                    ctx.get_btree_map(&edge_endpoint_positions, &e, "lookup Parasolid edge_endpoint_positions")?.copied(),
+                    ctx.get_btree_map(
+                        &edge_endpoint_positions,
+                        &e,
+                        "lookup Parasolid edge_endpoint_positions",
+                    )?
+                    .copied(),
                 )
             })
             .transpose()?
             .flatten();
         if parameter_range.is_some_and(|(_, reversed)| reversed) {
             std::mem::swap(&mut start_id, &mut end_id);
-            if let Some(endpoints) = ctx.get_mut_btree_map(&mut edge_endpoint_positions, &e, "lookup Parasolid edge_endpoint_positions")? {
+            if let Some(endpoints) = ctx.get_mut_btree_map(
+                &mut edge_endpoint_positions,
+                &e,
+                "lookup Parasolid edge_endpoint_positions",
+            )? {
                 endpoints.swap(0, 1);
             }
             scratch.with_storage(|| {
@@ -2552,11 +2694,13 @@ fn decode_graph(
             let ok = !ring.is_empty()
                 && ctx.all_by(
                     ring,
-                    |c| {
-                        match ctx.get_btree_map(t.coedges(), c, "lookup Parasolid coedges")? {
-                            Some(ce) => ctx.contains_btree_set(&edge_set, &ce.refs[6], "test emitted Parasolid edges"),
-                            None => Ok(false),
-                        }
+                    |c| match ctx.get_btree_map(t.coedges(), c, "lookup Parasolid coedges")? {
+                        Some(ce) => ctx.contains_btree_set(
+                            &edge_set,
+                            &ce.refs[6],
+                            "test emitted Parasolid edges",
+                        ),
+                        None => Ok(false),
                     },
                     "check Parasolid loop ring",
                 )?;
@@ -2586,15 +2730,27 @@ fn decode_graph(
                 continue;
             }
             for &ce_attr in ctx.admit_iter(ring, "emit Parasolid coedges")? {
-                let Some(ce) = ctx.get_btree_map(t.coedges(), &ce_attr, "lookup Parasolid coedges")? else {
+                let Some(ce) =
+                    ctx.get_btree_map(t.coedges(), &ce_attr, "lookup Parasolid coedges")?
+                else {
                     continue;
                 };
                 let edge_attr = ce.refs[6];
                 let twin = ce.refs[5];
-                let partner = match ctx.get_btree_map(t.coedges(), &twin, "lookup Parasolid coedges")? {
-                    Some(tw) if tw.refs[5] == ce_attr && ctx.contains_btree_set(&emitted_coedges, &twin, "test emitted Parasolid coedges")? => Some(id_coedge(twin)),
-                    _ => None,
-                };
+                let partner =
+                    match ctx.get_btree_map(t.coedges(), &twin, "lookup Parasolid coedges")? {
+                        Some(tw)
+                            if tw.refs[5] == ce_attr
+                                && ctx.contains_btree_set(
+                                    &emitted_coedges,
+                                    &twin,
+                                    "test emitted Parasolid coedges",
+                                )? =>
+                        {
+                            Some(id_coedge(twin))
+                        }
+                        _ => None,
+                    };
                 annotations.note(
                     ctx,
                     id_coedge(ce_attr).as_str(),
@@ -2604,9 +2760,12 @@ fn decode_graph(
                 )?;
                 let mut pcurve_refusal = crate::lane_refusal::LaneRefusals::new();
                 let pcurve_refusal = &mut pcurve_refusal;
-                let pcurves = if let Some((_, _, curve_attr)) = ctx.get_btree_map(&edge_ends, &edge_attr, "lookup Parasolid edge_ends")? {
+                let pcurves = if let Some((_, _, curve_attr)) =
+                    ctx.get_btree_map(&edge_ends, &edge_attr, "lookup Parasolid edge_ends")?
+                {
                     (|| -> Result<_, cadmpeg_core::CodecError> {
-                        let Some(IndexedCurve::Derived(intersection)) = carriers.curve(ctx, *curve_attr)?
+                        let Some(IndexedCurve::Derived(intersection)) =
+                            carriers.curve(ctx, *curve_attr)?
                         else {
                             return Ok(None);
                         };
@@ -2621,7 +2780,11 @@ fn decode_graph(
                             return Ok(None);
                         };
                         let surface = &surface.geometry;
-                        let Some(endpoint_positions) = ctx.get_btree_map(&edge_endpoint_positions, &edge_attr, "lookup Parasolid edge_endpoint_positions")?
+                        let Some(endpoint_positions) = ctx.get_btree_map(
+                            &edge_endpoint_positions,
+                            &edge_attr,
+                            "lookup Parasolid edge_endpoint_positions",
+                        )?
                         else {
                             return Ok(None);
                         };
@@ -2717,7 +2880,11 @@ fn decode_graph(
                     .map_err(cadmpeg_core::CodecError::malformed)?
                     .unwrap_or_default();
                 let mut sense = ce.sense;
-                if ctx.contains_btree_set(&reversed_edge_orientation, &edge_attr, "test Parasolid reversed_edge_orientation")? {
+                if ctx.contains_btree_set(
+                    &reversed_edge_orientation,
+                    &edge_attr,
+                    "test Parasolid reversed_edge_orientation",
+                )? {
                     sense = match sense {
                         Sense::Forward => Sense::Reversed,
                         Sense::Reversed => Sense::Forward,
@@ -2748,7 +2915,9 @@ fn decode_graph(
                 ring.iter().map(|a| id_coedge(*a)),
                 "collect Parasolid loop coedges",
             )?;
-            let off = ctx.get_btree_map(t.loops(), loop_attr, "lookup Parasolid loops")?.map_or(0, |r| r.offset);
+            let off = ctx
+                .get_btree_map(t.loops(), loop_attr, "lookup Parasolid loops")?
+                .map_or(0, |r| r.offset);
             annotations.note(
                 ctx,
                 id_loop(*loop_attr).as_str(),
@@ -2779,7 +2948,13 @@ fn decode_graph(
         let walked = faces.len();
         ctx.retain_vec(
             &mut faces,
-            |face| Ok(ctx.contains_key_btree_map(&bridge_group, &face.bridge_attr, "lookup Parasolid bridge_group")?),
+            |face| {
+                ctx.contains_key_btree_map(
+                    &bridge_group,
+                    &face.bridge_attr,
+                    "lookup Parasolid bridge_group",
+                )
+            },
             "select claimed Parasolid faces",
         )?;
         out.stats.unclaimed_faces += walked - faces.len();
@@ -2790,7 +2965,10 @@ fn decode_graph(
             let mut edges = BTreeSet::new();
             for (_, ring) in ctx.admit_iter(&face.loops, "index Parasolid face loop edges")? {
                 for coedge in ctx.admit_iter(ring, "index Parasolid face edges")? {
-                    if let Some(edge) = ctx.get_btree_map(t.coedges(), coedge, "lookup Parasolid coedges")?.map(|coedge| coedge.refs[6]) {
+                    if let Some(edge) = ctx
+                        .get_btree_map(t.coedges(), coedge, "lookup Parasolid coedges")?
+                        .map(|coedge| coedge.refs[6])
+                    {
                         if edge != 0 {
                             ctx.insert_btree_set(&mut edges, edge, "track Parasolid face edges")?;
                         }
@@ -2812,7 +2990,9 @@ fn decode_graph(
         for face in ctx.admit_iter(&faces, "select Parasolid face surface carriers")? {
             if ctx.any_by(
                 &face.loops,
-                |(loop_attr, _)| Ok(ctx.contains_btree_set(&loop_set, loop_attr, "test Parasolid loop_set")?),
+                |(loop_attr, _)| {
+                    ctx.contains_btree_set(&loop_set, loop_attr, "test Parasolid loop_set")
+                },
                 "select Parasolid face surface carriers",
             )? {
                 match ctx.entry_btree_map(
@@ -2863,7 +3043,9 @@ fn decode_graph(
             continue;
         }
         // Support surface: a decoded surface carrier, else an opaque carrier.
-        let surf_off = ctx.get_btree_map(t.bridges(), &f.bridge_attr, "lookup Parasolid bridges")?.map_or(0, |r| r.offset);
+        let surf_off = ctx
+            .get_btree_map(t.bridges(), &f.bridge_attr, "lookup Parasolid bridges")?
+            .map_or(0, |r| r.offset);
         let mut surface_orientation_reversed = false;
         match carriers.surface(ctx, f.surface_attr)? {
             Some(c) => {
@@ -2929,7 +3111,9 @@ fn decode_graph(
                         ctx.admit_iter(&f.loops, "select Parasolid blend face loop edges")?
                     {
                         for coedge in ctx.admit_iter(ring, "select Parasolid blend face edges")? {
-                            if let Some(edge) = ctx.get_btree_map(t.coedges(), coedge, "lookup Parasolid coedges")?.map(|coedge| coedge.refs[6])
+                            if let Some(edge) = ctx
+                                .get_btree_map(t.coedges(), coedge, "lookup Parasolid coedges")?
+                                .map(|coedge| coedge.refs[6])
                             {
                                 if edge != 0 {
                                     ctx.insert_btree_set(
@@ -2954,8 +3138,11 @@ fn decode_graph(
                                     }
                                     let mut selected = None;
                                     for candidate in &pair.supports {
-                                        let Some(edges) =
-                                            ctx.get_btree_map(&face_edges_by_surface_carrier, candidate, "lookup Parasolid face_edges_by_surface_carrier")?
+                                        let Some(edges) = ctx.get_btree_map(
+                                            &face_edges_by_surface_carrier,
+                                            candidate,
+                                            "lookup Parasolid face_edges_by_surface_carrier",
+                                        )?
                                         else {
                                             continue;
                                         };
@@ -3196,9 +3383,23 @@ fn decode_graph(
         )?;
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.faces, 1, "collect Parasolid faces")?;
-        let shell_attr = match ctx.get_btree_map(&bridge_shell, &f.bridge_attr, "lookup Parasolid bridge_shell")?.copied() {
+        let shell_attr = match ctx
+            .get_btree_map(
+                &bridge_shell,
+                &f.bridge_attr,
+                "lookup Parasolid bridge_shell",
+            )?
+            .copied()
+        {
             Some(shell_attr) => shell_attr,
-            None => match ctx.get_btree_map(&bridge_group, &f.bridge_attr, "lookup Parasolid bridge_group")?.copied() {
+            None => match ctx
+                .get_btree_map(
+                    &bridge_group,
+                    &f.bridge_attr,
+                    "lookup Parasolid bridge_group",
+                )?
+                .copied()
+            {
                 Some(group) => u16::try_from(group).map_err(|_| {
                     ctx.refuse_codec_limit("index Parasolid bridge groups", u64::MAX - 1, u64::MAX)
                 })?,
@@ -3212,8 +3413,13 @@ fn decode_graph(
             sense: surface_sense(f.sense, surface_orientation_reversed),
             loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
             name: None,
-            color: match ctx.get_btree_map(t.bridges(), &f.bridge_attr, "lookup Parasolid bridges")?.and_then(|bridge| bridge.owner) {
-                Some(owner) => ctx.get_btree_map(&owner_colors, &owner, "lookup Parasolid owner colors")?.copied(),
+            color: match ctx
+                .get_btree_map(t.bridges(), &f.bridge_attr, "lookup Parasolid bridges")?
+                .and_then(|bridge| bridge.owner)
+            {
+                Some(owner) => ctx
+                    .get_btree_map(&owner_colors, &owner, "lookup Parasolid owner colors")?
+                    .copied(),
                 None => None,
             },
             tolerance: None,
@@ -3231,7 +3437,8 @@ fn decode_graph(
     let first_face_by_owner = scratch.with_storage(|| {
         let mut first_face_by_owner = BTreeMap::new();
         for face in ctx.admit_iter(&faces, "index Parasolid face owners")? {
-            let Some(owner) = ctx.get_btree_map(t.bridges(), &face.bridge_attr, "lookup Parasolid bridges")?
+            let Some(owner) = ctx
+                .get_btree_map(t.bridges(), &face.bridge_attr, "lookup Parasolid bridges")?
                 .and_then(|bridge| bridge.owner)
             else {
                 continue;
@@ -3247,8 +3454,20 @@ fn decode_graph(
         Ok::<_, cadmpeg_core::CodecError>(first_face_by_owner)
     })?;
     for appearance in ctx.admit_iter(&mut out.face_colors, "bind Parasolid face colors")? {
-        appearance.value.target = match ctx.get_btree_map(&first_face_by_owner, &appearance.value.face_attr, "lookup Parasolid first face by owner")? {
-            Some(bridge) if ctx.contains_btree_set(&emitted_bridges, bridge, "test emitted Parasolid faces")? => Some(id_face(*bridge).into_string()),
+        appearance.value.target = match ctx.get_btree_map(
+            &first_face_by_owner,
+            &appearance.value.face_attr,
+            "lookup Parasolid first face by owner",
+        )? {
+            Some(bridge)
+                if ctx.contains_btree_set(
+                    &emitted_bridges,
+                    bridge,
+                    "test emitted Parasolid faces",
+                )? =>
+            {
+                Some(id_face(*bridge).into_string())
+            }
             _ => None,
         };
     }
@@ -3257,7 +3476,11 @@ fn decode_graph(
         let Some(identity) = atom.identity else {
             continue;
         };
-        if !ctx.contains_btree_set(&emitted_bridges, &atom.face_attr, "test Parasolid emitted_bridges")? {
+        if !ctx.contains_btree_set(
+            &emitted_bridges,
+            &atom.face_attr,
+            "test Parasolid emitted_bridges",
+        )? {
             continue;
         }
         if scratch.with_storage(|| {
@@ -3422,7 +3645,11 @@ fn decode_graph(
         }
     }
     for modifier in ctx.admit_iter(&mut out.body_modifiers, "bind Parasolid body modifiers")? {
-        modifier.target = match ctx.get_btree_map(&body_ids_by_attr, &modifier.body_attr, "lookup Parasolid body_ids_by_attr")? {
+        modifier.target = match ctx.get_btree_map(
+            &body_ids_by_attr,
+            &modifier.body_attr,
+            "lookup Parasolid body_ids_by_attr",
+        )? {
             Some(Some(id)) => Some(ctx.copy_retained_text(id, "copy Parasolid modifier body ID")?),
             _ => None,
         };
@@ -4503,7 +4730,9 @@ fn inverse_coordinate_tolerance(
 ) -> Result<f64, cadmpeg_core::CodecError> {
     let mut largest = None;
     let mut points = points.into_iter();
-    while let Some(point) = ctx.next_charged(&mut points, "measure Parasolid inverse coordinate scale")? {
+    while let Some(point) =
+        ctx.next_charged(&mut points, "measure Parasolid inverse coordinate scale")?
+    {
         for magnitude in [point.x.abs(), point.y.abs(), point.z.abs()] {
             if magnitude.is_finite() && largest.is_none_or(|known| magnitude > known) {
                 largest = Some(magnitude);
@@ -4511,7 +4740,10 @@ fn inverse_coordinate_tolerance(
         }
     }
     Ok(match largest {
-        Some(scale) => looser_tolerance(INVERSE_ABSOLUTE_TOLERANCE_MM, scale * INVERSE_RELATIVE_TOLERANCE),
+        Some(scale) => looser_tolerance(
+            INVERSE_ABSOLUTE_TOLERANCE_MM,
+            scale * INVERSE_RELATIVE_TOLERANCE,
+        ),
         None => INVERSE_ABSOLUTE_TOLERANCE_MM,
     })
 }
@@ -4737,7 +4969,8 @@ fn nurbs_parameter_at_point(
     };
     let tolerance = match nurbs.pole_rows() {
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
-            inverse_coordinate_tolerance(ctx, 
+            inverse_coordinate_tolerance(
+                ctx,
                 ctx.admit_iter(&points[..], "scan SLDPRT nurbs_parameter_at_point values")?
                     .copied()
                     .map(FinitePoint3::get)
@@ -4745,7 +4978,8 @@ fn nurbs_parameter_at_point(
             )?
         }
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-            inverse_coordinate_tolerance(ctx, 
+            inverse_coordinate_tolerance(
+                ctx,
                 ctx.admit_iter(&points[..], "scan SLDPRT nurbs_parameter_at_point values")?
                     .map(|pole| pole.point.get())
                     .chain(std::iter::once(target)),
@@ -5787,9 +6021,13 @@ fn nurbs_boundary_pcurve(
     {
         return Ok(InverseResolution::NoMatch);
     }
-    let tolerance = inverse_coordinate_tolerance(ctx, 
+    let tolerance = inverse_coordinate_tolerance(
+        ctx,
         surface_poles(ctx, surface)?
-            .chain(ctx.admit_iter(0..curve.pole_count(), "scan Parasolid inverse curve poles")?.filter_map(|index| curve.pole_rows().point_at(index)))
+            .chain(
+                ctx.admit_iter(0..curve.pole_count(), "scan Parasolid inverse curve poles")?
+                    .filter_map(|index| curve.pole_rows().point_at(index)),
+            )
             .map(FinitePoint3::get),
     )?;
     let same_curve = |candidate: &cadmpeg_ir::geometry::nurbs::NurbsCurve| -> Result<bool, cadmpeg_core::CodecError> {
@@ -5828,7 +6066,10 @@ fn nurbs_boundary_pcurve(
         .filter(|parameter| parameter.is_finite())
     {
         if nurbs_surface_isocurve(ctx, surface, fixed_axis, parameter)?
-            .as_ref().map(same_curve).transpose()?.unwrap_or(false)
+            .as_ref()
+            .map(same_curve)
+            .transpose()?
+            .unwrap_or(false)
         {
             if fixed.is_some() {
                 return Ok(InverseResolution::Ambiguous);
@@ -5900,7 +6141,11 @@ fn nurbs_strict_isocurve_pcurve(
             ),
         };
         if curve.degree() != varying_degree
-            || !ctx.equal(curve.knots().as_slice(), varying_knots.as_slice(), "compare Parasolid ruled curve knots")?
+            || !ctx.equal(
+                curve.knots().as_slice(),
+                varying_knots.as_slice(),
+                "compare Parasolid ruled curve knots",
+            )?
             || curve.periodic() != varying_periodic
             || curve.pole_count() != varying_count
         {
@@ -5921,21 +6166,27 @@ fn nurbs_strict_isocurve_pcurve(
             SurfaceParameterAxis::U => (varying, vc + varying),
             SurfaceParameterAxis::V => (varying * vc, varying * vc + 1),
         };
-        let weight_mismatch = ctx.any_by(0..varying_count, |varying| {
-            let (a, b) = pole_indices(varying);
-            Ok(match (
-                surface.weight(a / vc, a % vc),
-                surface.weight(b / vc, b % vc),
-                curve.pole_rows().weight_at(varying),
-            ) {
-                (None, None, None) => false,
-                (Some(a), Some(b), Some(actual)) => {
-                    (a.get() - b.get()).abs() > EPS_NURBS_WEIGHT
-                        || (a.get() - actual).abs() > EPS_NURBS_WEIGHT
-                }
-                _ => true,
-            })
-        }, "compare Parasolid ruled curve weights")?;
+        let weight_mismatch = ctx.any_by(
+            0..varying_count,
+            |varying| {
+                let (a, b) = pole_indices(varying);
+                Ok(
+                    match (
+                        surface.weight(a / vc, a % vc),
+                        surface.weight(b / vc, b % vc),
+                        curve.pole_rows().weight_at(varying),
+                    ) {
+                        (None, None, None) => false,
+                        (Some(a), Some(b), Some(actual)) => {
+                            (a.get() - b.get()).abs() > EPS_NURBS_WEIGHT
+                                || (a.get() - actual).abs() > EPS_NURBS_WEIGHT
+                        }
+                        _ => true,
+                    },
+                )
+            },
+            "compare Parasolid ruled curve weights",
+        )?;
         if weight_mismatch {
             return Ok(InverseResolution::NoMatch);
         }
@@ -5960,24 +6211,32 @@ fn nurbs_strict_isocurve_pcurve(
                 .map(|(relative, delta)| relative * delta)
                 .sum::<f64>();
         }
-        let tolerance = inverse_coordinate_tolerance(ctx, 
+        let tolerance = inverse_coordinate_tolerance(
+            ctx,
             surface_poles(ctx, surface)?
                 .chain(
-                    ctx.admit_iter(0..curve.pole_count(), "scan Parasolid inverse curve poles")?.filter_map(|index| curve.pole_rows().point_at(index)),
+                    ctx.admit_iter(0..curve.pole_count(), "scan Parasolid inverse curve poles")?
+                        .filter_map(|index| curve.pole_rows().point_at(index)),
                 )
                 .map(FinitePoint3::get),
         )?;
         if delta_squared <= f64::EPSILON {
-            let all_equal = ctx.all_by(0..varying_count, |varying| {
-                let (Some(a), Some(point)) = (
-                    pole_at(pole_indices(varying).0),
-                    curve.pole_rows().point_at(varying),
-                ) else {
-                    return Ok(false);
-                };
-                Ok((point.x - a.x).powi(2) + (point.y - a.y).powi(2) + (point.z - a.z).powi(2)
-                    <= tolerance * tolerance)
-            }, "compare Parasolid degenerate ruling poles")?;
+            let all_equal = ctx.all_by(
+                0..varying_count,
+                |varying| {
+                    let (Some(a), Some(point)) = (
+                        pole_at(pole_indices(varying).0),
+                        curve.pole_rows().point_at(varying),
+                    ) else {
+                        return Ok(false);
+                    };
+                    Ok(
+                        (point.x - a.x).powi(2) + (point.y - a.y).powi(2) + (point.z - a.z).powi(2)
+                            <= tolerance * tolerance,
+                    )
+                },
+                "compare Parasolid degenerate ruling poles",
+            )?;
             return Ok(if all_equal {
                 InverseResolution::Ambiguous
             } else {
@@ -5985,7 +6244,8 @@ fn nurbs_strict_isocurve_pcurve(
             });
         }
         let factor = relative_dot_delta / delta_squared;
-        let residual_squared = ctx.admit_iter(0..varying_count, "measure Parasolid ruling residual")?
+        let residual_squared = ctx
+            .admit_iter(0..varying_count, "measure Parasolid ruling residual")?
             .filter_map(|varying| {
                 let (a_index, b_index) = pole_indices(varying);
                 let a = pole_at(a_index)?;
@@ -6497,7 +6757,8 @@ fn extended_nurbs_isocurve_axis_candidate(
         let parameter = overlap[0].midpoint(overlap[1]);
         let point = super::evaluation::nurbs_curve_point(ctx, curve, parameter)?;
         if let Some(point) = point {
-            let tolerance = inverse_coordinate_tolerance(ctx, 
+            let tolerance = inverse_coordinate_tolerance(
+                ctx,
                 surface_poles(ctx, surface)?
                     .map(FinitePoint3::get)
                     .chain(std::iter::once(point.get())),
@@ -6696,7 +6957,8 @@ fn nurbs_edge_endpoint_parameters(
     // The inverse-projection tolerance of this surface's coordinates against
     // the NURBS endpoint tolerance.
     let tolerance = looser_tolerance(
-        inverse_coordinate_tolerance(ctx, 
+        inverse_coordinate_tolerance(
+            ctx,
             surface_poles(ctx, surface)?
                 .chain([first, last])
                 .map(FinitePoint3::get),
@@ -7053,7 +7315,8 @@ fn ruled_surface_line_pcurve(
     let resolution = unique_inverse_parameter(
         ctx,
         candidates,
-        inverse_coordinate_tolerance(ctx, 
+        inverse_coordinate_tolerance(
+            ctx,
             surface_poles(ctx, surface)?
                 .map(FinitePoint3::get)
                 .chain(std::iter::once(line_origin)),
@@ -8053,13 +8316,25 @@ fn emit_curve(
 mod tests {
     #[test]
     fn inverse_coordinate_scale_admits_each_point() {
-        let points = [cadmpeg_ir::math::Point3::new(2.0, 3.0, 4.0), cadmpeg_ir::math::Point3::new(5.0, 6.0, 7.0)];
+        let points = [
+            cadmpeg_ir::math::Point3::new(2.0, 3.0, 4.0),
+            cadmpeg_ir::math::Point3::new(5.0, 6.0, 7.0),
+        ];
         crate::test_support::work_refusal_at("measure Parasolid inverse coordinate scale", |ctx| {
             super::inverse_coordinate_tolerance(ctx, points)
         });
         let ctx = cadmpeg_test_support::service_decode_context();
-        assert_eq!(super::inverse_coordinate_tolerance(&ctx, []).unwrap(), super::INVERSE_ABSOLUTE_TOLERANCE_MM);
-        assert_eq!(super::inverse_coordinate_tolerance(&ctx, points).unwrap(), super::looser_tolerance(super::INVERSE_ABSOLUTE_TOLERANCE_MM, 7.0 * super::INVERSE_RELATIVE_TOLERANCE));
+        assert_eq!(
+            super::inverse_coordinate_tolerance(&ctx, []).unwrap(),
+            super::INVERSE_ABSOLUTE_TOLERANCE_MM
+        );
+        assert_eq!(
+            super::inverse_coordinate_tolerance(&ctx, points).unwrap(),
+            super::looser_tolerance(
+                super::INVERSE_ABSOLUTE_TOLERANCE_MM,
+                7.0 * super::INVERSE_RELATIVE_TOLERANCE
+            )
+        );
     }
 
     #[test]
@@ -8144,29 +8419,66 @@ mod tests {
     #[test]
     fn shell_components_use_linear_stars_within_each_shell() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena,
-            &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut brep = one_face_shell();
         let template = brep.faces[0].clone();
-        brep.faces = (0..5).map(|i| {
-            let mut face = template.clone();
-            face.id = super::id_face(i + 2);
-            if i < 2 { face.shell = super::ShellId::compose(&super::shell_namespace(), 2_u16); }
-            face
-        }).collect();
+        brep.faces = (0..5)
+            .map(|i| {
+                let mut face = template.clone();
+                face.id = super::id_face(i + 2);
+                if i < 2 {
+                    face.shell = super::ShellId::compose(&super::shell_namespace(), 2_u16);
+                }
+                face
+            })
+            .collect();
         for (i, face) in brep.faces.iter().enumerate() {
             let attr = u16::try_from(i + 2).unwrap();
             let loop_id = super::id_loop(attr);
-            brep.loops.push(super::Loop { id: loop_id.clone(), face: face.id.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Vertex { vertex: super::id_vertex(attr), pcurves: Vec::new() } });
-            brep.coedges.push(super::Coedge { id: super::id_coedge(attr), owner_loop: loop_id,
-                edge: super::id_edge(1), radial_next: super::id_coedge(attr), sense: super::Sense::Forward,
-                use_curve: None, pcurves: Vec::new() });
+            brep.loops.push(super::Loop {
+                id: loop_id.clone(),
+                face: face.id.clone(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
+                    vertex: super::id_vertex(attr),
+                    pcurves: Vec::new(),
+                },
+            });
+            brep.coedges.push(super::Coedge {
+                id: super::id_coedge(attr),
+                owner_loop: loop_id,
+                edge: super::id_edge(1),
+                radial_next: super::id_coedge(attr),
+                sense: super::Sense::Forward,
+                use_curve: None,
+                pcurves: Vec::new(),
+            });
         }
-        let mut index = super::ShellFaceIndex::new(&ctx, &brep.faces, &brep.loops, &brep.coedges).unwrap();
-        assert_eq!(index.neighbors.values().map(std::collections::BTreeSet::len).sum::<usize>(), 6);
-        assert_eq!(index.take_components(&ctx, "test:model:shell#1").unwrap().0, vec![vec![2, 3, 4]]);
-        assert_eq!(index.take_components(&ctx, "sldprt:brep:shell#2").unwrap().0, vec![vec![0, 1]]);
+        let mut index =
+            super::ShellFaceIndex::new(&ctx, &brep.faces, &brep.loops, &brep.coedges).unwrap();
+        assert_eq!(
+            index
+                .neighbors
+                .values()
+                .map(std::collections::BTreeSet::len)
+                .sum::<usize>(),
+            6
+        );
+        assert_eq!(
+            index.take_components(&ctx, "test:model:shell#1").unwrap().0,
+            vec![vec![2, 3, 4]]
+        );
+        assert_eq!(
+            index
+                .take_components(&ctx, "sldprt:brep:shell#2")
+                .unwrap()
+                .0,
+            vec![vec![0, 1]]
+        );
     }
 
     #[test]
@@ -9039,7 +9351,8 @@ mod tests {
         let canonical = |edge_use: &EdgeUse, coedges: &BTreeMap<u16, Coedge>| {
             let forward =
                 super::forward_coedges_by_edge(&ctx, coedges).expect("forward coedge index");
-            super::canonical_coedge_attr(&ctx, 7, Some(edge_use), coedges, &forward).expect("canonical coedge lookup")
+            super::canonical_coedge_attr(&ctx, 7, Some(edge_use), coedges, &forward)
+                .expect("canonical coedge lookup")
         };
 
         assert_eq!(canonical(&prefixed_edge, &coedges), Some(11));
@@ -9072,13 +9385,19 @@ mod tests {
         };
         let boundary = BTreeMap::from([(10, record(10, [0, 0, 0, 0, 101, 10, 7, 0, 0]))]);
         let ctx = cadmpeg_test_support::service_decode_context();
-        assert_eq!(super::edge_end_vuse(&ctx, 10, 102, &boundary).expect("edge end lookup"), 102);
+        assert_eq!(
+            super::edge_end_vuse(&ctx, 10, 102, &boundary).expect("edge end lookup"),
+            102
+        );
 
         let reciprocal = BTreeMap::from([
             (10, record(10, [0, 0, 0, 0, 101, 11, 7, 0, 0])),
             (11, record(11, [0, 0, 0, 0, 102, 10, 7, 0, 0])),
         ]);
-        assert_eq!(super::edge_end_vuse(&ctx, 10, 103, &reciprocal).expect("edge end lookup"), 102);
+        assert_eq!(
+            super::edge_end_vuse(&ctx, 10, 103, &reciprocal).expect("edge end lookup"),
+            102
+        );
     }
 
     #[test]
@@ -9330,7 +9649,7 @@ mod tests {
             .expect("bridge");
         let decoded = super::decode_graph(
             &ctx,
-            &mut crate::brep::index::CarrierIndex::default(),
+            &crate::brep::index::CarrierIndex::default(),
             &tables,
             super::entity::Facts {
                 entity_count: 1,

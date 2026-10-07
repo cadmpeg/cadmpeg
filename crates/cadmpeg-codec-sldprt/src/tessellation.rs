@@ -347,7 +347,10 @@ pub(crate) fn scene_feature_classes(
     let mut candidates = std::collections::BTreeMap::<u32, Option<&str>>::new();
     for section in scan.sections(ctx)? {
         let payload = section.payload();
-        let (classes, _class_storage) = ctx.with_scoped_storage("hold SLDPRT scene class intervals", || class_intervals(ctx, payload))?;
+        let (classes, _class_storage) = ctx
+            .with_scoped_storage("hold SLDPRT scene class intervals", || {
+                class_intervals(ctx, payload)
+            })?;
         for class in ctx.admit_iter(classes, "scan SLDPRT scene class intervals")? {
             if !is_scene_light(class.name) {
                 continue;
@@ -581,7 +584,11 @@ fn probe_table<'ctx>(
             .admit_iter(strips.data, "decode display-list strips")?
             .chunks(const { crate::nonzero(4) })
         {
-            ctx.extend_vec(&mut spans, View::u32_le_at(length, 0), "decode display-list strips")?;
+            ctx.extend_vec(
+                &mut spans,
+                View::u32_le_at(length, 0),
+                "decode display-list strips",
+            )?;
         }
         Ok::<_, cadmpeg_core::CodecError>(spans)
     })?;
@@ -2643,9 +2650,10 @@ fn polygon_outer_and_holes(
         if ctx.all_by(
             polygons.iter().enumerate(),
             |(inner_index, inner)| {
-                Ok(inner_index == index || (simple(inner_index)
-                    && simple(index)
-                    && polygon_inside_polygon(ctx, inner, outer, tolerance)?))
+                Ok(inner_index == index
+                    || (simple(inner_index)
+                        && simple(index)
+                        && polygon_inside_polygon(ctx, inner, outer, tolerance)?))
             },
             COMPARE,
         )? && ctx.all_by(
@@ -2706,9 +2714,17 @@ fn polygon_outer_and_holes(
         return Ok(None);
     }
     let mut holes = Vec::new();
-    ctx.reserve_capacity(&mut holes, circles.len() + hole_count, "collect SLDPRT planar trim holes")?;
+    ctx.reserve_capacity(
+        &mut holes,
+        circles.len() + hole_count,
+        "collect SLDPRT planar trim holes",
+    )?;
     for circle in ctx.admit_iter(circles, "scan SLDPRT circles values")? {
-        ctx.push_vec(&mut holes, PlanarHole::Circle(*circle), "collect SLDPRT planar trim holes")?;
+        ctx.push_vec(
+            &mut holes,
+            PlanarHole::Circle(*circle),
+            "collect SLDPRT planar trim holes",
+        )?;
     }
     let mut outer = Vec::new();
     for (index, polygon) in ctx
@@ -3505,7 +3521,13 @@ fn polygon_contains_triangle(
         }
         let (mut cuts, mut reservation) =
             ctx.scoped_vector_storage(capacity, "collect SLDPRT triangle boundary cuts")?;
-        reservation.with_storage(|| ctx.extend_vec(&mut cuts, [0.0_f64, 1.0], "collect SLDPRT triangle boundary cuts"))?;
+        reservation.with_storage(|| {
+            ctx.extend_vec(
+                &mut cuts,
+                [0.0_f64, 1.0],
+                "collect SLDPRT triangle boundary cuts",
+            )
+        })?;
         for (index, point) in ctx
             .admit_iter(boundary, "intersect SLDPRT planar outer triangle")?
             .enumerate()

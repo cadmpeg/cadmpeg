@@ -357,18 +357,20 @@ impl<'a> PayloadRuns<'a, '_> {
             let Some(node) = View::u16_be_at(buf, at) else {
                 break PayloadResolution::Conflicting;
             };
-            let values = match ctx.get_btree_map(lists, &node, "look up Parasolid attribute value lists")? {
-                Some(Some(list)) => {
-                    let values = list.as_slice();
-                    let accepted = if atom {
-                        ATOM_WIDTHS.contains(&values.len()) && values.get(ATOM_GUARD) == Some(&0)
-                    } else {
-                        values.len() == 1 && values[0] > 0
-                    };
-                    accepted.then_some(values)
-                }
-                _ => None,
-            };
+            let values =
+                match ctx.get_btree_map(lists, &node, "look up Parasolid attribute value lists")? {
+                    Some(Some(list)) => {
+                        let values = list.as_slice();
+                        let accepted = if atom {
+                            ATOM_WIDTHS.contains(&values.len())
+                                && values.get(ATOM_GUARD) == Some(&0)
+                        } else {
+                            values.len() == 1 && values[0] > 0
+                        };
+                        accepted.then_some(values)
+                    }
+                    _ => None,
+                };
             ctx.push_scoped_vec(&mut path_storage, &mut path, (at, values), INDEX)?;
             at += 2;
         };
@@ -380,7 +382,9 @@ impl<'a> PayloadRuns<'a, '_> {
                     _ => PayloadResolution::Conflicting,
                 };
             }
-            self.storage.with_storage(|| ctx.insert_btree_map(&mut self.resolved, (at, atom), resolution, INDEX))?;
+            self.storage.with_storage(|| {
+                ctx.insert_btree_map(&mut self.resolved, (at, atom), resolution, INDEX)
+            })?;
         }
         Ok(match resolution {
             PayloadResolution::Unique(values) => Some(values),
@@ -476,8 +480,8 @@ pub(super) fn bindings(
     let mut modifiers = BTreeMap::<u16, Option<u32>>::new();
     for instance in ctx.admit_iter(&instances, "resolve Parasolid attribute instances")? {
         if instance.family == Family::FaceAtom {
-            let Some(identity) =
-                runs.resolve(ctx, buf, instance.references, &lists, true)?
+            let Some(identity) = runs
+                .resolve(ctx, buf, instance.references, &lists, true)?
                 .and_then(atom_identity)
             else {
                 continue;
@@ -493,9 +497,10 @@ pub(super) fn bindings(
                 })
                 .or_insert(Some(identity));
         } else {
-            let ordinal = runs.resolve(ctx, buf, instance.references, &lists, false)?
-            .and_then(<[u32]>::first)
-            .copied();
+            let ordinal = runs
+                .resolve(ctx, buf, instance.references, &lists, false)?
+                .and_then(<[u32]>::first)
+                .copied();
             storage
                 .with_storage(|| {
                     ctx.entry_btree_map(
@@ -698,18 +703,46 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let lists = std::collections::BTreeMap::from([
-            (300, Some(IntegerList { values: [9, 0, 0, 0, 0, 0, 0], len: 1 })),
-            (301, Some(IntegerList { values: [8, 0, 0, 0, 0, 0, 0], len: 1 })),
+            (
+                300,
+                Some(IntegerList {
+                    values: [9, 0, 0, 0, 0, 0, 0],
+                    len: 1,
+                }),
+            ),
+            (
+                301,
+                Some(IntegerList {
+                    values: [8, 0, 0, 0, 0, 0, 0],
+                    len: 1,
+                }),
+            ),
         ]);
         let bytes = [1, 45, 1, 44, 1, 44];
-        let mut runs = PayloadRuns { resolved: Default::default(), storage: ctx.reserve_scoped(0, "test tails").unwrap() };
-        assert!(runs.resolve(&ctx, &bytes, 0, &lists, false).unwrap().is_none());
+        let mut runs = PayloadRuns {
+            resolved: Default::default(),
+            storage: ctx.reserve_scoped(0, "test tails").unwrap(),
+        };
+        assert!(runs
+            .resolve(&ctx, &bytes, 0, &lists, false)
+            .unwrap()
+            .is_none());
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits, "scan Parasolid attribute references", None);
-        assert_eq!(runs.resolve(&ctx, &bytes, 2, &lists, false).unwrap(), Some(&[9][..]));
-        assert_eq!(runs.resolve(&ctx, &bytes, 4, &lists, false).unwrap(), Some(&[9][..]));
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan Parasolid attribute references",
+            None,
+        );
+        assert_eq!(
+            runs.resolve(&ctx, &bytes, 2, &lists, false).unwrap(),
+            Some(&[9][..])
+        );
+        assert_eq!(
+            runs.resolve(&ctx, &bytes, 4, &lists, false).unwrap(),
+            Some(&[9][..])
+        );
     }
 
     #[test]

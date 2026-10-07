@@ -73,32 +73,19 @@ const MAX_ARRAY_VALUES: usize = 1_000_000;
 /// Lookup of the arrays a curve descriptor names.
 const CURVE_ARRAYS: &str = "find Parasolid curve arrays";
 
-fn charge_items(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_collection_items(
-        u64::try_from(count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-        operation,
-    )
-}
-
 fn read_array<T>(
     ctx: &DecodeContext<'_>,
     count: usize,
     operation: &'static str,
     mut read: impl FnMut(usize) -> Option<T>,
 ) -> Result<Option<Vec<T>>, cadmpeg_core::CodecError> {
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)?;
     let mut values = Vec::new();
-    ctx.reserve_vec(&mut values, count, operation)?;
-    for index in 0..count {
+    let mut indices = 0..count;
+    while let Some(index) = ctx.next_charged(&mut indices, operation)? {
         let Some(value) = read(index) else {
             return Ok(None);
         };
-        values.push(value);
+        ctx.push_vec(&mut values, value, operation)?;
     }
     Ok(Some(values))
 }
@@ -524,7 +511,10 @@ fn expanded_knots(
         if next_len > expected {
             return Ok(None);
         }
-        for _ in ctx.admit_iter(0..usize::from(multiplicity), "emit Parasolid expanded knots")? {
+        for _ in ctx.admit_iter(
+            0..usize::from(multiplicity),
+            "emit Parasolid expanded knots",
+        )? {
             ctx.push_vec(&mut out, *value, "expand Parasolid knots")?;
         }
     }
@@ -1108,8 +1098,9 @@ pub(crate) fn scan_curve_carriers(
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<u16, CurveCarrier>, cadmpeg_core::CodecError> {
-    let arrays = scan_arrays(ctx, bytes, None)?;
-    let descriptors = scan_curve_descriptors(ctx, bytes)?;
+    let mut scratch = ctx.reserve_scoped(0, "hold Parasolid curve source tables")?;
+    let arrays = scratch.with_storage(|| scan_arrays(ctx, bytes, None))?;
+    let descriptors = scratch.with_storage(|| scan_curve_descriptors(ctx, bytes))?;
     let mut out = BTreeMap::new();
     let starts = 0..bytes.len().checked_sub(6).map_or(0, |end| end);
     for off in ctx.admit_iter(starts, "scan Parasolid curve wrappers")? {
@@ -1226,13 +1217,11 @@ pub(crate) fn scan_curve_carriers(
                 return Err(limit.into())
             }
             Err(error) => {
-                charge_items(ctx, 1, "collect Parasolid spline refusals")?;
                 let note = crate::loss::spline_lane_refusal(
                     ctx,
                     format_args!("curve carrier attribute {attr}: {error}"),
                 )?;
-                ctx.reserve_capacity(refusals, 1, "collect Parasolid spline refusals")?;
-                refusals.push(note);
+                ctx.push_vec(refusals, note, "collect Parasolid spline refusals")?;
                 continue;
             }
         };
@@ -1392,7 +1381,8 @@ pub(crate) fn scan_surface_carriers(
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<u16, SurfaceCarrier>, cadmpeg_core::CodecError> {
-    let descriptors = scan_surface_descriptors(ctx, bytes)?;
+    let mut scratch = ctx.reserve_scoped(0, "hold Parasolid surface source tables")?;
+    let descriptors = scratch.with_storage(|| scan_surface_descriptors(ctx, bytes))?;
     let mut compact_attrs = BTreeSet::new();
     for (_, descriptor) in
         ctx.admit_iter(&descriptors, "collect Parasolid surface array references")?
@@ -1401,14 +1391,16 @@ pub(crate) fn scan_surface_carriers(
             &descriptor.refs,
             "collect Parasolid surface array references",
         )? {
-            ctx.insert_btree_set(
-                &mut compact_attrs,
-                attr,
-                "collect Parasolid surface array references",
-            )?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut compact_attrs,
+                    attr,
+                    "collect Parasolid surface array references",
+                )
+            })?;
         }
     }
-    let arrays = scan_arrays(ctx, bytes, Some(&compact_attrs))?;
+    let arrays = scratch.with_storage(|| scan_arrays(ctx, bytes, Some(&compact_attrs)))?;
     let mut out = BTreeMap::new();
     let starts = 0..bytes.len().checked_sub(1).map_or(0, |end| end);
     for off in ctx.admit_iter(starts, "scan Parasolid surface wrappers")? {
@@ -1560,7 +1552,9 @@ pub(crate) fn scan_surface_carriers(
         } else {
             None
         };
-        let Some(pole_width) = std::num::NonZeroUsize::new(dimension) else { continue; };
+        let Some(pole_width) = std::num::NonZeroUsize::new(dimension) else {
+            continue;
+        };
         let mut valid = true;
         for row in ctx
             .admit_iter(control.as_ref(), "scan Parasolid surface poles")?
@@ -1573,18 +1567,28 @@ pub(crate) fn scan_surface_carriers(
             } else {
                 None
             };
-            for pole in ctx.admit_iter(&row[..row.len() / dimension * dimension], "scan Parasolid surface row poles")?.chunks(pole_width) {
+            for pole in ctx
+                .admit_iter(
+                    &row[..row.len() / dimension * dimension],
+                    "scan Parasolid surface row poles",
+                )?
+                .chunks(pole_width)
+            {
                 let weight = if descriptor.rational { pole[3] } else { 1.0 };
                 // A pole holds three or four values.
                 if pole.iter().any(|value| !value.is_finite()) || weight.abs() <= f64::EPSILON {
                     valid = false;
                     break;
                 }
-                ctx.push_vec(&mut points, Point3::new(
-                    pole[0] / weight * LEN_TO_MM,
-                    pole[1] / weight * LEN_TO_MM,
-                    pole[2] / weight * LEN_TO_MM,
-                ), "decode Parasolid surface poles")?;
+                ctx.push_vec(
+                    &mut points,
+                    Point3::new(
+                        pole[0] / weight * LEN_TO_MM,
+                        pole[1] / weight * LEN_TO_MM,
+                        pole[2] / weight * LEN_TO_MM,
+                    ),
+                    "decode Parasolid surface poles",
+                )?;
                 if let Some(values) = &mut weights {
                     ctx.push_vec(values, weight, "decode Parasolid surface weights")?;
                 }
@@ -1592,7 +1596,11 @@ pub(crate) fn scan_surface_carriers(
             if !valid {
                 break;
             }
-            ctx.push_vec(&mut pole_rows, points, "partition Parasolid surface pole rows")?;
+            ctx.push_vec(
+                &mut pole_rows,
+                points,
+                "partition Parasolid surface pole rows",
+            )?;
             if let (Some(rows), Some(weights)) = (&mut weight_rows, weights) {
                 ctx.push_vec(rows, weights, "partition Parasolid surface weight rows")?;
             }
@@ -1620,13 +1628,11 @@ pub(crate) fn scan_surface_carriers(
                 return Err(limit.into())
             }
             Err(error) => {
-                charge_items(ctx, 1, "collect Parasolid spline refusals")?;
                 let note = crate::loss::spline_lane_refusal(
                     ctx,
                     format_args!("surface carrier attribute {attr}: {error}"),
                 )?;
-                ctx.reserve_capacity(refusals, 1, "collect Parasolid spline refusals")?;
-                refusals.push(note);
+                ctx.push_vec(refusals, note, "collect Parasolid spline refusals")?;
                 continue;
             }
         };
@@ -1653,13 +1659,65 @@ mod tests {
     use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
 
     #[test]
+    fn spline_source_tables_release_storage_when_no_wrapper_uses_them() {
+        let bytes = crate::test_support::parasolid::f64_array(0x2d, 12, &[0.0, 1.0, 2.0]);
+        for curve in [true, false] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = 4096;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut refusals = Vec::new();
+            if curve {
+                assert!(scan_curve_carriers(&ctx, &bytes, &mut refusals).unwrap().is_empty());
+            } else {
+                assert!(scan_surface_carriers(&ctx, &bytes, &mut refusals).unwrap().is_empty());
+            }
+            assert!(refusals.is_empty());
+            let _storage = ctx.reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "test released spline source storage",
+            ).expect("no source table storage remains charged");
+        }
+    }
+
+    #[test]
+    fn scalar_array_read_stops_at_first_missing_cell() {
+        use std::cell::Cell;
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let calls = Cell::new(0);
+        assert_eq!(
+            super::read_array(&ctx, 100, "read missing scalar cell", |index| {
+                calls.set(calls.get() + 1);
+                (index < 2).then_some(index)
+            })
+            .unwrap(),
+            None
+        );
+        assert_eq!(calls.get(), 3);
+        crate::test_support::work_refusal_at("read missing scalar cell", |ctx| {
+            super::read_array(ctx, 100, "read missing scalar cell", |index| {
+                (index < 2).then_some(index)
+            })
+        });
+    }
+
+    #[test]
     fn parasolid_scalar_array_values_refuse_collection_limit_before_allocation() {
         let bytes = crate::test_support::parasolid::f64_array(0x2d, 12, &[0.0, 1.0, 2.0]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_arrays(&ctx, &bytes, None).expect_err("three values exceed two items");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "decode Parasolid scalar array values",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+                scan_arrays(&ctx, &bytes, None)
+            },
+        );
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -1681,11 +1739,18 @@ mod tests {
     #[test]
     fn parasolid_integer_array_values_refuse_collection_limit_before_allocation() {
         let bytes = crate::test_support::parasolid::u16_array(12, &[1, 2, 3]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_arrays(&ctx, &bytes, None).expect_err("three values exceed two items");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "decode Parasolid integer array values",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+                scan_arrays(&ctx, &bytes, None)
+            },
+        );
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
