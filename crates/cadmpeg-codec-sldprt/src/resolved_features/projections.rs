@@ -17,6 +17,7 @@ use super::relation_geometry::{
 };
 use super::relation_loci::same_dimension_length;
 use super::scalars::ObjectNames;
+use super::selections::diameter_index::CosmeticDiameterIndex;
 use super::selections::{
     cosmetic_thread_cylinder_marker_reference, variable_fillet_control_references,
     variable_fillet_dimension_index_for_feature,
@@ -2978,14 +2979,14 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         lookup_storage.with_storage(|| {
             ctx.push_vec(
                 &mut lane_contexts,
-                (lane, lane_key, ranges, cylinder_tokens),
+                (lane, lane_key, ranges, cylinder_tokens, CosmeticDiameterIndex::new(ctx, lane)?),
                 TOKEN_OPERATION,
             )
         })?;
     }
     // Each feature's surface selections with the key of the lane that holds them.
     let mut selections = HashMap::<&str, Vec<(&str, &FeatureInputSurfaceSelection)>>::new();
-    for (lane, lane_key, _, _) in ctx.admit_iter(&lane_contexts, REFERENCE_OPERATION)? {
+    for (lane, lane_key, _, _, _) in ctx.admit_iter(&lane_contexts, REFERENCE_OPERATION)? {
         for selection in ctx.admit_iter(&lane.surface_selections, REFERENCE_OPERATION)? {
             lookup_storage.with_storage(|| {
                 ctx.push_hash_group(
@@ -3052,7 +3053,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         )
                     })?;
                 }
-                for (lane, lane_key, ranges, cylinder_tokens) in
+                for (lane, lane_key, ranges, cylinder_tokens, diameter_index) in
                     ctx.admit_iter(&lane_contexts, TOKEN_OPERATION)?
                 {
                     let Some((_, start, end)) = ctx
@@ -3070,7 +3071,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                                 start,
                                 end,
                                 cylinder_tokens,
-                            )?,
+                             diameter_index)?,
                             REFERENCE_OPERATION,
                         )?
                     {

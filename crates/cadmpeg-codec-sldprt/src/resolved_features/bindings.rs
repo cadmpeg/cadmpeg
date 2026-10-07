@@ -1745,8 +1745,9 @@ pub(crate) fn finalize_lane_bindings(
     lane.body_selections = compact_body_selections(ctx, histories, lane)?;
     let history_features = selection_history.for_lane(ctx, lane)?;
     lane.edge_selections = compact_edge_selections(ctx, histories, history_features, lane)?;
-    lane.surface_selections = compact_surface_selections(ctx, histories, history_features, lane)?;
-    lane.generated_surface_identities = generated_surface_identities(ctx, lane)?;
+    let identities = generated_surface_identities(ctx, lane)?;
+    lane.surface_selections = compact_surface_selections(ctx, histories, history_features, lane, &identities)?;
+    lane.generated_surface_identities = identities;
     Ok(())
 }
 
