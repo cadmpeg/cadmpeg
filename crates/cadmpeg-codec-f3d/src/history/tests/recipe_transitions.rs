@@ -1323,14 +1323,17 @@ fn face_selection_scope_identity_comparison_propagates_work_refusal() {
         |ctx| {
             let mut selection =
                 FaceSelection::Native("f3d:Design/OtherStream.dat:group#100".into());
-            crate::history::selection::bind_face_selection(
-                ctx,
-                &mut selection,
-                &scope,
-                &[],
-                &[],
-                &[],
-            )
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &[],
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &[],
+                    histories: &[],
+                },
+            );
+            crate::history::selection::bind_face_selection(ctx, &mut selection, &scope, &index, &[])
         },
     );
     assert!(matches!(
@@ -1340,7 +1343,7 @@ fn face_selection_scope_identity_comparison_propagates_work_refusal() {
 }
 
 #[test]
-fn face_selection_group_identity_search_propagates_work_refusal() {
+fn face_selection_group_index_propagates_work_refusal() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_ir::features::FaceSelection;
 
@@ -1351,21 +1354,24 @@ fn face_selection_group_identity_search_propagates_work_refusal() {
         DesignOperandRole::ROLE_0X10,
         Vec::new(),
     )];
-    let operation = "compare F3D face selection group identity";
+    let operation = "index F3D operand groups";
     let error = crate::test_support::resource_refusal_at(
         ResourceDimension::WorkUnits,
         operation,
         0,
         |ctx| {
             let mut selection = FaceSelection::Native(group_id.into());
-            crate::history::selection::bind_face_selection(
-                ctx,
-                &mut selection,
-                &scope,
-                &groups,
-                &[],
-                &[],
-            )
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &groups,
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &[],
+                    histories: &[],
+                },
+            );
+            crate::history::selection::bind_face_selection(ctx, &mut selection, &scope, &index, &[])
         },
     );
     assert!(matches!(
@@ -1396,14 +1402,17 @@ fn face_selection_group_member_scan_propagates_work_refusal() {
         0,
         |ctx| {
             let mut selection = FaceSelection::Native(group_id.into());
-            crate::history::selection::bind_face_selection(
-                ctx,
-                &mut selection,
-                &scope,
-                &groups,
-                &[],
-                &[],
-            )
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &groups,
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &[],
+                    histories: &[],
+                },
+            );
+            crate::history::selection::bind_face_selection(ctx, &mut selection, &scope, &index, &[])
         },
     );
     assert!(matches!(
@@ -1413,7 +1422,7 @@ fn face_selection_group_member_scan_propagates_work_refusal() {
 }
 
 #[test]
-fn body_recipe_face_selection_group_identity_propagates_work_refusal() {
+fn body_recipe_face_selection_group_index_propagates_work_refusal() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_ir::features::{FaceSelection, FeatureId};
 
@@ -1425,21 +1434,30 @@ fn body_recipe_face_selection_group_identity_propagates_work_refusal() {
         Vec::new(),
     )];
     let feature_id = FeatureId::mint("f3d:test:feature#42").unwrap();
-    let operation = "compare F3D body recipe face selection group identity";
+    let operation = "index F3D operand groups";
     let error = crate::test_support::resource_refusal_at(
         ResourceDimension::WorkUnits,
         operation,
         0,
         |ctx| {
             let mut selection = FaceSelection::Native(group_id.into());
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &groups,
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &[],
+                    histories: &[],
+                },
+            );
             crate::history::selection::bind_body_recipe_face_selection(
                 ctx,
                 &mut selection,
                 &feature_id,
                 1,
                 &scope,
-                &groups,
-                &[],
+                &index,
             )
         },
     );
@@ -1509,14 +1527,23 @@ fn body_recipe_face_selection_slot_scan_propagates_work_refusal() {
         0,
         |ctx| {
             let mut selection = FaceSelection::Native(group_id.into());
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &groups,
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &operands,
+                    histories: &[],
+                },
+            );
             crate::history::selection::bind_body_recipe_face_selection(
                 ctx,
                 &mut selection,
                 &feature_id,
                 1,
                 &scope,
-                &groups,
-                &operands,
+                &index,
             )
         },
     );

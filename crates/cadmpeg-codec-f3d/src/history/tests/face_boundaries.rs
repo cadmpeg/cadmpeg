@@ -176,10 +176,10 @@ fn bounded_face_copy_matches_cyclic_boundary_with_split_vertices() {
         point(0.0, 0.0),
         point(2.0, 0.0),
     ];
-    assert!(cyclic_point_subsequence(&source, &split_copy));
+    assert!(cyclic(&source, &split_copy));
 
     let reversed = split_copy.iter().copied().rev().collect::<Vec<_>>();
-    assert!(cyclic_point_subsequence(&source, &reversed));
+    assert!(cyclic(&source, &reversed));
 
     let wrong_order = [
         point(0.0, 0.0),
@@ -187,8 +187,8 @@ fn bounded_face_copy_matches_cyclic_boundary_with_split_vertices() {
         point(2.0, 0.0),
         point(0.0, 2.0),
     ];
-    assert!(!cyclic_point_subsequence(&source, &wrong_order));
-    assert!(!cyclic_point_subsequence(&source, &split_copy[..3]));
+    assert!(!cyclic(&source, &wrong_order));
+    assert!(!cyclic(&source, &split_copy[..3]));
 }
 
 fn bounded_face_rule_fixture() -> (
@@ -402,4 +402,14 @@ fn bounded_face_identity_comparisons_propagate_work_refusal() {
             if limit.operation == operation)
         );
     }
+}
+
+fn cyclic(
+    candidate: &[cadmpeg_ir::math::Point3],
+    construction: &[cadmpeg_ir::math::Point3],
+) -> bool {
+    crate::test_support::with_decode_context(|ctx| {
+        cyclic_point_subsequence(ctx, candidate, construction)
+    })
+    .unwrap()
 }

@@ -108,14 +108,24 @@ fn bind_with_limits(
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let feature = FeatureId::mint("f3d:model:feature#path").unwrap();
     super::super::bind_entity_selection_path(
-        &ctx, &mut path, &feature, 1, &scope, &groups, &operands,
+        &ctx,
+        &mut path,
+        &feature,
+        1,
+        &scope,
+        &super::super::group_index(&groups),
+        &super::super::path_operand_index(&operands),
     )?;
     Ok(path)
 }
 
 #[test]
 fn path_edge_slots_refuse_collection_limit() {
-    let error = bind_with_limits(0, u64::MAX).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D path edge slots",
+        |cap| bind_with_limits(cap, u64::MAX),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D path edge slots")
@@ -124,7 +134,11 @@ fn path_edge_slots_refuse_collection_limit() {
 
 #[test]
 fn path_edge_ids_refuse_collection_limit() {
-    let error = bind_with_limits(1, u64::MAX).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D path edge identities",
+        |cap| bind_with_limits(cap, u64::MAX),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D path edge identities")
@@ -160,7 +174,7 @@ fn path_edge_validation_refuses_collection_limit() {
 #[test]
 fn path_edges_keep_historical_identity() {
     assert!(matches!(
-        bind_with_limits(3, u64::MAX).unwrap(),
+        bind_with_limits(u64::MAX, u64::MAX).unwrap(),
         PathRef::HistoricalEdges { .. }
     ));
 }

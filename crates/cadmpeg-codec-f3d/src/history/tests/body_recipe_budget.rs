@@ -18,74 +18,55 @@ fn complete_body_topology() -> crate::history_records::AsmHistoricalTopology {
     }
 }
 
-fn complete_body_error(max_items: u64) -> cadmpeg_core::CodecError {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::complete_body_face_slots(&ctx, &complete_body_topology(), 1).unwrap_err()
+fn complete_body_error(operation: &str) -> cadmpeg_core::CodecError {
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| {
+            let topology = complete_body_topology();
+            let index = super::super::body_face_index(ctx, &topology)?;
+            super::super::complete_body_face_slots(ctx, &index, 1)
+        },
+    )
 }
 
-#[test]
-fn complete_body_entity_counts_refuse_collection_limit() {
-    let error = complete_body_error(0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D complete body entity counts")
-    );
+macro_rules! complete_body_limit_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let error = complete_body_error($operation);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == $operation));
+        }
+    };
 }
 
-#[test]
-fn complete_body_relation_owners_refuse_collection_limit() {
-    let error = complete_body_error(4);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D complete body relation owners")
-    );
-}
-
-#[test]
-fn complete_body_relation_members_refuse_collection_limit() {
-    let error = complete_body_error(5);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D complete body relation members")
-    );
-}
-
-#[test]
-fn complete_body_regions_refuse_collection_limit() {
-    let error = complete_body_error(10);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D complete body regions")
-    );
-}
-
-#[test]
-fn complete_body_shells_refuse_collection_limit() {
-    let error = complete_body_error(11);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D complete body shells")
-    );
-}
-
-#[test]
-fn complete_body_faces_refuse_collection_limit() {
-    let error = complete_body_error(12);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D complete body faces")
-    );
-}
-
-#[test]
-fn complete_body_face_slots_refuse_collection_limit() {
-    let error = complete_body_error(13);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D complete body face slots")
-    );
-}
+complete_body_limit_test!(
+    complete_body_entity_counts_refuse_collection_limit,
+    "index F3D complete body entity counts"
+);
+complete_body_limit_test!(
+    complete_body_relation_owners_refuse_collection_limit,
+    "index F3D complete body relation owners"
+);
+complete_body_limit_test!(
+    complete_body_relation_members_refuse_collection_limit,
+    "index F3D complete body relation members"
+);
+complete_body_limit_test!(
+    complete_body_regions_refuse_collection_limit,
+    "collect F3D complete body regions"
+);
+complete_body_limit_test!(
+    complete_body_shells_refuse_collection_limit,
+    "collect F3D complete body shells"
+);
+complete_body_limit_test!(
+    complete_body_faces_refuse_collection_limit,
+    "collect F3D complete body faces"
+);
+complete_body_limit_test!(
+    complete_body_face_slots_refuse_collection_limit,
+    "collect F3D complete body face slots"
+);

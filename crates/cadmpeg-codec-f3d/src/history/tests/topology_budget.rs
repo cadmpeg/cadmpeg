@@ -372,7 +372,7 @@ fn face_boundary_topology(with_members: bool) -> crate::history_records::AsmHist
 #[test]
 fn historical_face_loop_relation_scan_refuses_work() {
     let topology = face_boundary_topology(true);
-    let operation = "scan F3D boundary relations";
+    let operation = "index F3D boundary face loops";
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         operation,
@@ -388,11 +388,11 @@ fn historical_face_loop_relation_scan_refuses_work() {
 #[test]
 fn historical_loop_coedge_relation_scan_refuses_work() {
     let topology = face_boundary_topology(true);
-    let operation = "scan F3D boundary relations";
+    let operation = "index F3D boundary loop coedges";
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         operation,
-        1,
+        0,
         |ctx| super::super::face_boundary_edge_index(ctx, &topology).map(|_| ()),
     );
     assert!(matches!(

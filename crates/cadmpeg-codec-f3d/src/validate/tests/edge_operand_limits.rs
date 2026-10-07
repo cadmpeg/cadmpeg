@@ -130,7 +130,7 @@ fn edge_error(valid: bool, after_reload_items: u64, max_retained: u64) -> cadmpe
 
 #[test]
 fn edge_operand_expected_index_refuses_collection_limit() {
-    let error = edge_error(true, 1, u64::MAX);
+    let error = edge_error(true, 3, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D expected edge operands")
@@ -139,7 +139,7 @@ fn edge_operand_expected_index_refuses_collection_limit() {
 
 #[test]
 fn edge_operand_slot_refuses_collection_limit() {
-    let error = edge_error(true, 2, u64::MAX);
+    let error = edge_error(true, 4, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D edge operand slots")
@@ -148,7 +148,7 @@ fn edge_operand_slot_refuses_collection_limit() {
 
 #[test]
 fn edge_operand_record_refuses_collection_limit() {
-    let error = edge_error(true, 3, u64::MAX);
+    let error = edge_error(true, 5, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D edge operand records")

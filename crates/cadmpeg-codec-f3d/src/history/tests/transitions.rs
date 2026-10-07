@@ -50,9 +50,7 @@ fn historical_transition_source_scans_refuse_work() {
     for operation in [
         "scan F3D current transition version keys",
         "scan F3D previous transition version keys",
-        "scan F3D inserted transition entities",
-        "scan F3D deleted transition entities",
-        "scan F3D shared transition entities",
+        "merge F3D transition entities",
     ] {
         let error = refuse(operation);
         assert!(matches!(

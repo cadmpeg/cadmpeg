@@ -136,7 +136,10 @@ fn face_transition_requires_one_changed_surface_geometry() {
     );
 }
 
-fn draft_limit_case(max_items: u64) -> Result<Option<i64>, cadmpeg_core::CodecError> {
+fn draft_limit_case(
+    max_items: u64,
+    alternates: bool,
+) -> Result<Option<i64>, cadmpeg_core::CodecError> {
     use crate::records::dimensions::DesignRecipeReference;
     use crate::records::topology::face::DesignFaceOperand;
     let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
@@ -182,7 +185,11 @@ fn draft_limit_case(max_items: u64) -> Result<Option<i64>, cadmpeg_core::CodecEr
         design_reference_offset: 0,
         candidate_faces: vec![crate::ids::brep_face_id(10)],
         candidate_edges: Vec::new(),
-        alternate_selector_faces: vec![crate::ids::brep_face_id(10)],
+        alternate_selector_faces: if alternates {
+            vec![crate::ids::brep_face_id(10)]
+        } else {
+            Vec::new()
+        },
         alternate_selector_edges: Vec::new(),
     }];
     let topology = AsmHistoricalTopology::default();
@@ -196,7 +203,11 @@ fn draft_limit_case(max_items: u64) -> Result<Option<i64>, cadmpeg_core::CodecEr
 
 #[test]
 fn draft_face_candidates_refuse_collection_limit() {
-    let error = draft_limit_case(0).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D draft face candidates",
+        |cap| draft_limit_case(cap, true),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D draft face candidates")
@@ -205,7 +216,11 @@ fn draft_face_candidates_refuse_collection_limit() {
 
 #[test]
 fn draft_alternate_faces_refuse_collection_limit() {
-    let error = draft_limit_case(1).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D draft alternate faces",
+        |cap| draft_limit_case(cap, true),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D draft alternate faces")
@@ -214,7 +229,11 @@ fn draft_alternate_faces_refuse_collection_limit() {
 
 #[test]
 fn draft_exact_faces_refuse_collection_limit() {
-    let error = draft_limit_case(2).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D draft exact faces",
+        |cap| draft_limit_case(cap, false),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D draft exact faces")

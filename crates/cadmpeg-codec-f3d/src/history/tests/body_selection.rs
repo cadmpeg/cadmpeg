@@ -269,13 +269,21 @@ fn pattern_seed_error(
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bind_pattern_body_selections(&ctx, std::slice::from_mut(&mut feature), &inputs)?;
+    super::super::bind_pattern_body_selections(
+        &ctx,
+        std::slice::from_mut(&mut feature),
+        &super::super::BodySelectionIndex::new(&inputs),
+    )?;
     Ok(feature)
 }
 
 #[test]
 fn pattern_body_seed_refuses_collection_limit() {
-    let error = pattern_seed_error(0, u64::MAX).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D pattern body seeds",
+        |cap| pattern_seed_error(cap, u64::MAX),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D pattern body seeds")
