@@ -619,9 +619,8 @@ pub(super) fn decode(
         else {
             continue;
         };
-        let reference_values = ctx
-            .admit_iter(&record.partials[..], "STEP decode traversal")?
-            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE")
+        let reference_values = record
+            .partial(ctx, "GEOMETRIC_TOLERANCE")?
             .map_or(record.parameters(), |partial| partial.parameters.as_slice());
         let refs = collect_pmi_references(
             reference_values,
@@ -681,16 +680,14 @@ pub(super) fn decode(
             )?;
             continue;
         };
-        let defined_unit = ctx
-            .admit_iter(&record.partials[..], "STEP decode traversal")?
-            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT")
+        let defined_unit = record
+            .partial(ctx, "GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT")?
             .and_then(|partial| partial.parameters.first())
             .map(|value| measure(value, exchange, &mut measurements, ctx))
             .transpose()?
             .flatten();
-        let (defined_area_unit, defined_area_second_unit) = if let Some(partial) = ctx
-            .admit_iter(&record.partials[..], "STEP decode traversal")?
-            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT")
+        let (defined_area_unit, defined_area_second_unit) = if let Some(partial) =
+            record.partial(ctx, "GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT")?
         {
             let area = partial
                 .parameters
@@ -1608,9 +1605,8 @@ fn datum_base<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a RawRecord,
 ) -> Result<Option<&'a Value>, CodecError> {
-    Ok(ctx
-        .admit_iter(&record.partials[..], "STEP datum base traversal")?
-        .find(|partial| partial.name == "GENERAL_DATUM_REFERENCE")
+    Ok(record
+        .partial(ctx, "GENERAL_DATUM_REFERENCE")?
         .and_then(|partial| partial.parameters.first())
         .or_else(|| record.parameter(4)))
 }
@@ -1619,9 +1615,8 @@ fn datum_modifiers<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a RawRecord,
 ) -> Result<Option<&'a Value>, CodecError> {
-    Ok(ctx
-        .admit_iter(&record.partials[..], "STEP datum modifiers traversal")?
-        .find(|partial| partial.name == "GENERAL_DATUM_REFERENCE")
+    Ok(record
+        .partial(ctx, "GENERAL_DATUM_REFERENCE")?
         .and_then(|partial| partial.parameters.get(1))
         .or_else(|| record.parameter(5)))
 }
@@ -1669,9 +1664,7 @@ fn modifier_text(
             let Some(record) = exchange.records().get(id) else {
                 return Ok(None);
             };
-            let Some(parameters) = ctx
-                .admit_iter(&record.partials[..], "STEP modifier text traversal")?
-                .find(|partial| partial.name == "DATUM_REFERENCE_MODIFIER_WITH_VALUE")
+            let Some(parameters) = record.partial(ctx, "DATUM_REFERENCE_MODIFIER_WITH_VALUE")?
             else {
                 return Ok(None);
             };
@@ -2050,12 +2043,8 @@ fn datum_target_identification_parameter<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a RawRecord,
 ) -> Result<Option<&'a Value>, CodecError> {
-    Ok(ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP datum target identification parameter traversal",
-        )?
-        .find(|partial| partial.name == "DATUM_TARGET")
+    Ok(record
+        .partial(ctx, "DATUM_TARGET")?
         .and_then(|partial| partial.parameters.last())
         .or_else(|| record.parameter(4)))
 }
@@ -2202,13 +2191,7 @@ fn shape_aspect_parameter<'a>(
     record: &'a RawRecord,
     index: usize,
 ) -> Result<Option<&'a Value>, CodecError> {
-    if let Some(partial) = ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP shape aspect parameter traversal",
-        )?
-        .find(|partial| partial.name == "SHAPE_ASPECT")
-    {
+    if let Some(partial) = record.partial(ctx, "SHAPE_ASPECT")? {
         Ok(partial.parameters.get(index))
     } else {
         Ok(record.parameter(index))
@@ -2313,10 +2296,7 @@ fn tolerance_modifiers(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<String>, CodecError> {
     let mut modifiers = Vec::new();
-    if let Some(partial) = ctx
-        .admit_iter(&record.partials[..], "STEP tolerance modifiers traversal")?
-        .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_MODIFIERS")
-    {
+    if let Some(partial) = record.partial(ctx, "GEOMETRIC_TOLERANCE_WITH_MODIFIERS")? {
         for value in ctx.admit_iter(
             &(partial.parameters)[..],
             "STEP tolerance modifiers traversal",
@@ -2393,11 +2373,9 @@ fn characteristic_values(
                         .get(&id)
                         .map(|record| {
                             Ok::<_, CodecError>(
-                                ctx.admit_iter(
-                                    &record.partials[..],
-                                    "STEP characteristic representation partial traversal",
-                                )?
-                                .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION"),
+                                record
+                                    .partial(ctx, "SHAPE_DIMENSION_REPRESENTATION")?
+                                    .is_some(),
                             )
                         })
                         .transpose()?
@@ -2407,13 +2385,10 @@ fn characteristic_values(
         })?;
         let representation_items =
             if let Some(record) = representation.and_then(|id| exchange.records().get(&id)) {
-                ctx.admit_iter(
-                    &record.partials[..],
-                    "STEP characteristic item partial traversal",
-                )?
-                .find(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
-                .and_then(|partial| partial.parameters.get(1))
-                .and_then(ValueExt::list)
+                record
+                    .partial(ctx, "SHAPE_DIMENSION_REPRESENTATION")?
+                    .and_then(|partial| partial.parameters.get(1))
+                    .and_then(ValueExt::list)
             } else {
                 None
             };
@@ -2632,15 +2607,14 @@ fn measure_item_name(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
-    Ok(ctx
-        .admit_iter(&record.partials[..], "STEP measure item name traversal")?
-        .find(|partial| partial.name == "REPRESENTATION_ITEM")
+    Ok(record
+        .partial(ctx, "REPRESENTATION_ITEM")?
         .and_then(|partial| partial.parameters.first())
         .map_or_else(
             || {
                 Ok::<_, CodecError>(
-                    ctx.admit_iter(&record.partials[..], "STEP PMI fallback partial traversal")?
-                        .find(|partial| partial.name == "MEASURE_REPRESENTATION_ITEM")
+                    record
+                        .partial(ctx, "MEASURE_REPRESENTATION_ITEM")?
                         .and_then(|partial| partial.parameters.first()),
                 )
             },

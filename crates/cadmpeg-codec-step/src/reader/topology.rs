@@ -386,7 +386,7 @@ fn representation_item_values<'a>(
 fn named_reference_values<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a RawRecord,
-    name: &str,
+    name: &'static str,
     simple_index: usize,
 ) -> Result<Option<&'a [Value]>, CodecError> {
     if record.partials.len() == 1 {
@@ -2642,16 +2642,9 @@ fn edge_vertices(
         let end = entity_parameter(ctx, record, name, 2)?.and_then(ValueExt::reference);
         return Ok(start.zip(end));
     }
-    let mut partial = ctx
-        .admit_iter(&record.partials[..], "STEP edge vertex partial traversal")?
-        .find(|partial| partial.name == "EDGE");
+    let mut partial = record.partial(ctx, "EDGE")?;
     if partial.is_none() {
-        partial = ctx
-            .admit_iter(
-                &record.partials[..],
-                "STEP edge curve vertex partial traversal",
-            )?
-            .find(|partial| partial.name == "EDGE_CURVE");
+        partial = record.partial(ctx, "EDGE_CURVE")?;
     }
     let Some(partial) = partial else {
         return Ok(None);
@@ -6567,10 +6560,7 @@ fn oriented_face_element(
     ctx: &DecodeContext<'_>,
     record: &RawRecord,
 ) -> Result<Option<u64>, CodecError> {
-    if let Some(partial) = ctx
-        .admit_iter(&record.partials[..], "STEP oriented face partial traversal")?
-        .find(|partial| partial.name == "ORIENTED_FACE")
-    {
+    if let Some(partial) = record.partial(ctx, "ORIENTED_FACE")? {
         return Ok(ctx
             .admit_iter(
                 partial.parameters.as_slice(),
@@ -6604,13 +6594,7 @@ fn oriented_face_orientation(
     ctx: &DecodeContext<'_>,
     record: &RawRecord,
 ) -> Result<Option<bool>, CodecError> {
-    if let Some(partial) = ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP oriented face orientation partial traversal",
-        )?
-        .find(|partial| partial.name == "ORIENTED_FACE")
-    {
+    if let Some(partial) = record.partial(ctx, "ORIENTED_FACE")? {
         if let Some(forward) = ctx
             .admit_iter(
                 partial.parameters.as_slice(),
@@ -6625,10 +6609,7 @@ fn oriented_face_orientation(
 }
 
 fn subface_parent(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u64>, CodecError> {
-    if let Some(partial) = ctx
-        .admit_iter(&record.partials[..], "STEP subface partial traversal")?
-        .find(|partial| partial.name == "SUBFACE")
-    {
+    if let Some(partial) = record.partial(ctx, "SUBFACE")? {
         if let Some(parent) = ctx
             .admit_iter(
                 partial.parameters.as_slice(),
@@ -6741,7 +6722,7 @@ fn connected_face_set_type(
 fn connected_set_members<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a RawRecord,
-    set_type: &str,
+    set_type: &'static str,
 ) -> Result<Option<&'a [Value]>, CodecError> {
     let base_type = match set_type {
         "CONNECTED_EDGE_SUB_SET" => "CONNECTED_EDGE_SET",
@@ -6757,7 +6738,7 @@ fn connected_set_members<'a>(
 fn validate_subset_parent(
     id: u64,
     record: &RawRecord,
-    subset_type: &str,
+    subset_type: &'static str,
     exchange: &Exchange,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,

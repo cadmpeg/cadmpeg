@@ -1628,19 +1628,11 @@ fn is_two_dimensional_mapping(
         let Some(record) = exchange.records().get(&id) else {
             return Ok(false);
         };
-        let placement = ctx
-            .admit_iter(
-                &record.partials[..],
-                "STEP 2D placement classifier traversal",
-            )?
-            .any(|partial| partial.name == "AXIS2_PLACEMENT_2D");
+        let placement = record.partial(ctx, "AXIS2_PLACEMENT_2D")?.is_some();
         if !placement
-            && !ctx
-                .admit_iter(
-                    &record.partials[..],
-                    "STEP 2D transformation classifier traversal",
-                )?
-                .any(|partial| partial.name == "CARTESIAN_TRANSFORMATION_OPERATOR_2D")
+            && !record
+                .partial(ctx, "CARTESIAN_TRANSFORMATION_OPERATOR_2D")?
+                .is_some()
         {
             return Ok(false);
         }
@@ -1737,12 +1729,8 @@ fn occurrence_placement_definition(
     else {
         return Ok(None);
     };
-    let Some(transform_id) = ctx
-        .admit_iter(
-            &relation.partials[..],
-            "STEP occurrence transform partial traversal",
-        )?
-        .find(|partial| partial.name == "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
+    let Some(transform_id) = relation
+        .partial(ctx, "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")?
         .and_then(|partial| partial.parameters.first())
         .and_then(ValueExt::reference)
     else {
@@ -1786,19 +1774,9 @@ fn representation_relationship_endpoints(
     ctx: &DecodeContext<'_>,
     record: &RawRecord,
 ) -> Result<Option<(u64, u64)>, CodecError> {
-    let mut relationship = ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP representation relationship partial traversal",
-        )?
-        .find(|partial| partial.name == "REPRESENTATION_RELATIONSHIP");
+    let mut relationship = record.partial(ctx, "REPRESENTATION_RELATIONSHIP")?;
     if relationship.is_none() {
-        relationship = ctx
-            .admit_iter(
-                &record.partials[..],
-                "STEP shape relationship partial traversal",
-            )?
-            .find(|partial| partial.name == "SHAPE_REPRESENTATION_RELATIONSHIP");
+        relationship = record.partial(ctx, "SHAPE_REPRESENTATION_RELATIONSHIP")?;
     }
     let Some(relationship) = relationship else {
         return Ok(None);
@@ -1840,13 +1818,7 @@ fn product_definition_formation_parameters<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a RawRecord,
 ) -> Result<Option<&'a [Value]>, CodecError> {
-    if let Some(partial) = ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP product definition partial traversal",
-        )?
-        .find(|partial| partial.name == "PRODUCT_DEFINITION_FORMATION")
-    {
+    if let Some(partial) = record.partial(ctx, "PRODUCT_DEFINITION_FORMATION")? {
         return Ok(Some(partial.parameters.as_slice()));
     }
     Ok(match record.simple_name() {
@@ -1861,13 +1833,7 @@ fn product_definition_parameters<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a RawRecord,
 ) -> Result<Option<&'a [Value]>, CodecError> {
-    if let Some(partial) = ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP product definition partial traversal",
-        )?
-        .find(|partial| partial.name == "PRODUCT_DEFINITION")
-    {
+    if let Some(partial) = record.partial(ctx, "PRODUCT_DEFINITION")? {
         return Ok(Some(partial.parameters.as_slice()));
     }
     Ok(match record.simple_name() {

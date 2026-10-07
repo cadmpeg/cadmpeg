@@ -643,10 +643,7 @@ pub(super) fn decode(
         .admit_iter(exchange.records(), "STEP decode map traversal")?
         .map(|(_, value)| value)
     {
-        if ctx
-            .admit_iter(&record.partials[..], "STEP decode traversal")?
-            .any(|partial| partial.name == "VERTEX_POINT")
-        {
+        if record.partial(ctx, "VERTEX_POINT")?.is_some() {
             if let Some(id) = vertex_point_reference(ctx, record)? {
                 ctx.insert_btree_set(&mut point_carriers, id, "step_geometry_point_carriers")?;
             }
@@ -678,10 +675,7 @@ pub(super) fn decode(
                 }
             }
         }
-        if ctx
-            .admit_iter(&record.partials[..], "STEP decode traversal")?
-            .any(|partial| partial.name == "POLY_LOOP")
-        {
+        if record.partial(ctx, "POLY_LOOP")?.is_some() {
             if let Some(items) = first_named_list(ctx, record, &["POLY_LOOP"])? {
                 for id in items.filter(|id| points.contains_key(id)) {
                     ctx.insert_btree_set(&mut point_carriers, id, "step_geometry_point_carriers")?;
@@ -3008,12 +3002,8 @@ fn tessellated_curve_parameter<'a>(
     index: usize,
 ) -> Result<Option<&'a Value>, CodecError> {
     let offset = usize::from(record.partials.len() == 1);
-    Ok(ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP tessellated curve attribute partial traversal",
-        )?
-        .find(|partial| partial.name == "TESSELLATED_CURVE_SET")
+    Ok(record
+        .partial(ctx, "TESSELLATED_CURVE_SET")?
         .and_then(|partial| partial.parameters.get(index + offset)))
 }
 
@@ -3410,12 +3400,8 @@ fn representation_item_name<'a>(
     if record.partials.len() == 1 {
         return Ok(record.parameter(0));
     }
-    Ok(ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP representation item name partial traversal",
-        )?
-        .find(|partial| partial.name == "REPRESENTATION_ITEM")
+    Ok(record
+        .partial(ctx, "REPRESENTATION_ITEM")?
         .and_then(|partial| partial.parameters.first()))
 }
 
@@ -3603,11 +3589,11 @@ impl LeafSurfaceEntity {
     }
 }
 
-fn entity_type<'a>(
+fn entity_type(
     ctx: &DecodeContext<'_>,
     record: &RawRecord,
-    names: &[&'a str],
-) -> Result<Option<&'a str>, CodecError> {
+    names: &[&'static str],
+) -> Result<Option<&'static str>, CodecError> {
     for &name in ctx.admit_iter(names, "STEP geometry entity name traversal")? {
         if record.partial(ctx, name)?.is_some() {
             return Ok(Some(name));
@@ -5578,12 +5564,8 @@ fn composite_curve_segment_parameters<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a RawRecord,
 ) -> Result<Option<&'a [Value]>, CodecError> {
-    Ok(ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP composite curve segment partial traversal",
-        )?
-        .find(|partial| partial.name == "COMPOSITE_CURVE_SEGMENT")
+    Ok(record
+        .partial(ctx, "COMPOSITE_CURVE_SEGMENT")?
         .map(|partial| partial.parameters.as_slice()))
 }
 

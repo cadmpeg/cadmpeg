@@ -33,9 +33,9 @@ fn pmi_presentation_predicate_preserves_lookup_refusal() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Two partial visits and both occurrence-name operands fit; the PMI key lookup refuses.
-    policy.limits.max_work_units =
-        2 + u64::try_from("DATUM".len() + "NEXT_ASSEMBLY_USAGE_OCCURRENCE".len()).unwrap();
+    // The occurrence test visits the one partial and probes the end; the PMI
+    // test visits it again; the PMI key lookup then refuses.
+    policy.limits.max_work_units = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
     let error = presentation_item_one(1, &exchange, &entity_ids, indices, &ctx).unwrap_err();
     let CodecError::ResourceLimit(refusal) = error else {
