@@ -10,7 +10,7 @@ use crate::nurbs::pcurve::pcurve_block_with_end;
 use crate::nurbs::proc_curve::{
     decode_embedded_surface_with_ranges, decode_par_int_cur_isoline,
     embedded_base_curve_resolving_refs, embedded_surface, embedded_surface_with_ranges,
-    optional_embedded_surface_with_bounds, par_int_cur_isoline,
+    optional_embedded_surface_with_bounds, par_int_cur_isoline, EmbeddedSurfaceWithRanges,
 };
 use crate::nurbs::proc_surface::{
     decode_nullable_embedded_pcurve, nullable_embedded_pcurve, revision_surface_tail,
@@ -121,15 +121,23 @@ pub(super) fn cyl_spl_sur(
         let direction = cur.take_vector3()?;
         let native_position = cur.take_position()?;
         let cache_fit_tolerance = {
-        let (positions, _marker_storage) = propagate_resource!(ctx.with_scoped_storage("ASM extrusion marker positions", || scope.owned_marker_positions(ctx)));
-        let (cache, _cache_storage) = propagate_resource!(ctx.with_scoped_storage("ASM extrusion cache", || ctx.find_map(positions.into_iter().rev(), |at| surface_block(ctx, span, at).transpose(), "ASM extrusion cache candidates")));
-        match cache {
-            Some((_, cache_end)) => match span.get(cache_end) {
-                Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
-                _ => None,
-            },
-            None => None,
-        }
+            let (positions, _marker_storage) = propagate_resource!(ctx
+                .with_scoped_storage("ASM extrusion marker positions", || scope
+                    .owned_marker_positions(ctx)));
+            let (cache, _cache_storage) =
+                propagate_resource!(ctx.with_scoped_storage("ASM extrusion cache", || ctx
+                    .find_map(
+                        positions.into_iter().rev(),
+                        |at| surface_block(ctx, span, at).transpose(),
+                        "ASM extrusion cache candidates"
+                    )));
+            match cache {
+                Some((_, cache_end)) => match span.get(cache_end) {
+                    Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+                    _ => None,
+                },
+                None => None,
+            }
         };
         Some(Ok(DecodedProceduralSurface::legacy(
             DecodedProceduralSurfaceDefinition::Extrusion {
@@ -158,10 +166,7 @@ pub(super) fn decode_rolling_ball_side(
     position: &mut usize,
     int_width: RefWidth,
 ) -> Option<
-    Result<
-        RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>,
-        cadmpeg_core::CodecError,
-    >,
+    Result<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>, cadmpeg_core::CodecError>,
 > {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
     let support_kind = match take_native_string(ctx, bytes, position, int_width)? {
@@ -189,10 +194,12 @@ pub(super) fn decode_rolling_ball_side(
         None
     } else {
         *position = saved;
-        Some(match decode_rolling_ball_curve(ctx, bytes, position, int_width)? {
-            Ok(curve) => curve,
-            Err(error) => return Some(Err(error)),
-        })
+        Some(
+            match decode_rolling_ball_curve(ctx, bytes, position, int_width)? {
+                Ok(curve) => curve,
+                Err(error) => return Some(Err(error)),
+            },
+        )
     };
     let pcurve = match decode_nullable_embedded_pcurve(ctx, bytes, position, int_width)? {
         Ok(pcurve) => pcurve.value(),
@@ -245,12 +252,8 @@ pub(super) fn decode_optional_rolling_ball_surface(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<
-    Result<
-        Nullable<RollingBallSupportSurface<SurfaceGeometry>>,
-        cadmpeg_core::CodecError,
-    >,
-> {
+) -> Option<Result<Nullable<RollingBallSupportSurface<SurfaceGeometry>>, cadmpeg_core::CodecError>>
+{
     let saved = *position;
     let is_null = match take_native_ident(ctx, bytes, position) {
         None => false,
@@ -262,12 +265,13 @@ pub(super) fn decode_optional_rolling_ball_surface(
     }
     *position = saved;
     match decode_rolling_ball_surface(ctx, bytes, position, int_width)? {
-        Ok((surface, parameter_ranges)) => Some(Ok(Nullable::Value(
-            RollingBallSupportSurface {
-                surface,
-                parameter_ranges,
-            },
-        ))),
+        Ok(EmbeddedSurfaceWithRanges {
+            surface,
+            ranges: parameter_ranges,
+        }) => Some(Ok(Nullable::Value(RollingBallSupportSurface {
+            surface,
+            parameter_ranges,
+        }))),
         Err(error) => Some(Err(error)),
     }
 }
@@ -277,12 +281,7 @@ pub(super) fn decode_rolling_ball_surface(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<
-    Result<
-        (SurfaceGeometry, [[Option<f64>; 2]; 2]),
-        cadmpeg_core::CodecError,
-    >,
-> {
+) -> Option<Result<EmbeddedSurfaceWithRanges, cadmpeg_core::CodecError>> {
     let saved = *position;
     let kind = match take_native_ident(ctx, bytes, position)? {
         Ok(kind) => kind,
@@ -295,10 +294,10 @@ pub(super) fn decode_rolling_ball_surface(
             let surface = decode_surface_block(bytes, *position, int_width)?;
             *position = surface.end();
             let ranges = decode_surface_ranges(bytes, position)?;
-            return Some(Ok((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.surface)),
+            return Some(Ok(EmbeddedSurfaceWithRanges {
+                surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.surface)),
                 ranges,
-            )));
+            }));
         }
         take_bool(bytes, position)?;
         let scope = match subtype_span(ctx, bytes, *position, int_width) {
@@ -312,10 +311,10 @@ pub(super) fn decode_rolling_ball_surface(
         };
         *position += scope.bytes().len();
         let ranges = decode_surface_ranges(bytes, position)?;
-        return Some(Ok((
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+        return Some(Ok(EmbeddedSurfaceWithRanges {
+            surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             ranges,
-        )));
+        }));
     }
     *position = saved;
     decode_embedded_surface_with_ranges(ctx, bytes, position, int_width)
@@ -881,7 +880,11 @@ fn variable_blend_value(
                     Err(error) => return Some(Err(error)),
                 };
             let mut visits = 0..count;
-            while propagate_resource!(ctx.next_charged(&mut visits, "ASM variable blend value entries")).is_some() {
+            while propagate_resource!(
+                ctx.next_charged(&mut visits, "ASM variable blend value entries")
+            )
+            .is_some()
+            {
                 let parameter = cur.take_f64()?;
                 let radius = cur.take_f64()? * LEN_TO_MM;
                 let tangents = [cur.take_f64()?, cur.take_f64()?]
@@ -1380,7 +1383,9 @@ pub(super) fn vertex_blend_spl_sur(
         Err(error) => return Some(Err(error)),
     };
     let mut visits = 0..count;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM vertex blend spl sur entries")).is_some() {
+    while propagate_resource!(ctx.next_charged(&mut visits, "ASM vertex blend spl sur entries"))
+        .is_some()
+    {
         boundaries.push(if revision.is_some() {
             match revision_vertex_blend_boundary(ctx, &mut cur, resolver)? {
                 Ok(boundary) => boundary,
@@ -1535,11 +1540,13 @@ pub(super) fn compact_rb_blend_spl_sur(
             let payload_start = cur.pos();
             let support = if !has_outer_kind {
                 let end = {
-                    let (decoded, _cache_storage) = ctx.with_scoped_storage(
-                        "ASM compact blend support cache",
-                        || surface_block(ctx, span, cur.pos()).transpose(),
-                    )?;
-                    let Some((_, end)) = decoded else { return Ok(None); };
+                    let (decoded, _cache_storage) = ctx
+                        .with_scoped_storage("ASM compact blend support cache", || {
+                            surface_block(ctx, span, cur.pos()).transpose()
+                        })?;
+                    let Some((_, end)) = decoded else {
+                        return Ok(None);
+                    };
                     end
                 };
                 cur.set_pos(end);
@@ -1571,10 +1578,10 @@ pub(super) fn compact_rb_blend_spl_sur(
     let offsets = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
     (cur.take_enum()? == -1).then_some(())?;
     let cache_end = {
-        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-            "ASM construction cache",
-            || surface_block(ctx, span, cur.pos()).transpose(),
-        ));
+        let (decoded, _cache_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM construction cache", || {
+                surface_block(ctx, span, cur.pos()).transpose()
+            },));
         decoded?.1
     };
     cur.set_pos(cache_end);
@@ -1611,14 +1618,29 @@ mod compact_blend_work_tests {
             Token::Ident("rbblnsur".into()),
             Token::Str("blend_support_surface".into()),
             Token::Ident("nubs".into()),
-            Token::Long(1), Token::Long(1),
-            Token::Enum(0), Token::Enum(0), Token::Enum(0), Token::Enum(0),
-            Token::Long(2), Token::Long(2),
+            Token::Long(1),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Long(2),
         ];
         for _ in 0..2 {
-            tokens.extend([Token::Double(0.0), Token::Long(1), Token::Double(1.0), Token::Long(1)]);
+            tokens.extend([
+                Token::Double(0.0),
+                Token::Long(1),
+                Token::Double(1.0),
+                Token::Long(1),
+            ]);
         }
-        for point in [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]] {
+        for point in [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0],
+        ] {
             tokens.extend(point.map(Token::Double));
         }
         tokens.push(Token::SubtypeClose);
@@ -1647,12 +1669,11 @@ mod compact_blend_work_tests {
             ResourceDimension::WorkUnits,
             "ASM compact blend support scan",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                compact_rb_blend_spl_sur(&ctx, &tokens)
-            .expect("recognized refusal route")
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                compact_rb_blend_spl_sur(&ctx, &tokens).expect("recognized refusal route")
             },
         );
         let CodecError::ResourceLimit(limit) = error else {
@@ -1683,16 +1704,17 @@ mod variable_blend_value_tests {
             "ASM rolling ball third-side label",
             |cap| {
                 let mut cur = Cur::at(&tokens, 0);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-                rolling_ball_third_side(&ctx, &mut cur)
-            .expect("recognized refusal route")
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty test input fits input limit");
+                rolling_ball_third_side(&ctx, &mut cur).expect("recognized refusal route")
             },
         );
-        let CodecError::ResourceLimit(refusal) = error else { panic!("expected resource refusal"); };
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal");
+        };
         assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(refusal.operation, "ASM rolling ball third-side label");
     }
@@ -1727,16 +1749,17 @@ mod variable_blend_value_tests {
             "ASM variable blend terminal text",
             |cap| {
                 let mut cur = Cur::at(&tokens, 0);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-                variable_blend_value(&ctx, &mut cur, 0)
-            .expect("recognized refusal route")
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty test input fits input limit");
+                variable_blend_value(&ctx, &mut cur, 0).expect("recognized refusal route")
             },
         );
-        let CodecError::ResourceLimit(refusal) = error else { panic!("expected resource refusal"); };
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal");
+        };
         assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(refusal.operation, "ASM variable blend terminal text");
     }
@@ -1759,16 +1782,17 @@ mod variable_blend_value_tests {
             "decode ASM variable blend value",
             |cap| {
                 let mut cur = Cur::at(&tokens, 0);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_recursion_depth = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-                variable_blend_value(&ctx, &mut cur, 0)
-            .expect("recognized refusal route")
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_recursion_depth = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty test input fits input limit");
+                variable_blend_value(&ctx, &mut cur, 0).expect("recognized refusal route")
             },
         );
-        let CodecError::ResourceLimit(refusal) = error else { panic!("expected resource refusal"); };
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal");
+        };
         assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
         assert_eq!(refusal.operation, "decode ASM variable blend value");
     }
@@ -2014,8 +2038,9 @@ mod variable_blend_value_tests {
                 let arena = cadmpeg_core::decode::DecodeArena::new();
                 let mut policy = cadmpeg_core::decode::DecodePolicy::default();
                 policy.limits.max_collection_items = cap;
-                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                    .expect("input is within the root byte limit");
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                        .expect("input is within the root byte limit");
                 variable_blend_value(&ctx, &mut Cur::at(&tokens, 0), 0)
                     .expect("interpolation grammar reaches its point collection")
             },
