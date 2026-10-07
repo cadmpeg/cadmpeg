@@ -8,6 +8,9 @@ use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
+/// Typed admission shared by decode and writers.
+pub mod admission;
+
 /// Neutral material and texture projection.
 pub mod appearance;
 
@@ -33,7 +36,7 @@ pub const RECORD_MARKER: &[u8] = &record_start_page::MARKER_VALUE;
 pub const CONTINUATION_MARKER: &[u8] = &continuation_page::MARKER_VALUE;
 /// Terminal marker at page bytes 0..4.
 pub const TERMINAL_MARKER: &[u8] = &terminal_page::MARKER_VALUE;
-const MAX_SCHEMA_BYTES: u64 = 128 * 1024 * 1024;
+pub(crate) const MAX_SCHEMA_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_RECOVERY_VALUES: u64 = 1_024;
 
 fn take_lp_utf8_capped(
