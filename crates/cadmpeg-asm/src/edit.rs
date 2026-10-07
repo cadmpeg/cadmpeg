@@ -348,7 +348,7 @@ impl AsmEditSet {
         let encoded_length = usize::from(bytes.get(offset + 1).copied().ok_or_else(|| {
             CodecError::malformed(format_args!("{} record string is truncated", record.head()))
         })?);
-        if value.len() != encoded_length || !value.is_ascii() {
+        if value.len() != encoded_length || !ctx.is_ascii(value.as_bytes(), "ASM ASCII edit value")? {
             return Err(CodecError::NotImplemented(format!(
                 "{} record {} string edit must retain its encoded ASCII length",
                 record.head(),
@@ -439,8 +439,19 @@ impl AsmEditSet {
                 record.index
             )));
         }
-        let encoded = format!("{packed:0width$}");
-        Self::patch_bytes_at(bytes, offset, 1 + length_width, encoded.as_bytes())
+        let (encoded, _storage) = ctx.format_scoped(
+            format_args!("{packed:0width$}"), "ASM decimal color edit text",
+        )?;
+        let start = offset.checked_add(1 + length_width).ok_or_else(|| {
+            CodecError::Malformed("native byte payload offset overflows".into())
+        })?;
+        let end = start.checked_add(encoded.len()).ok_or_else(|| {
+            CodecError::Malformed("native byte payload offset overflows".into())
+        })?;
+        let target = bytes.get_mut(start..end).ok_or_else(|| {
+            CodecError::Malformed("native byte payload is truncated".into())
+        })?;
+        ctx.copy_into(target, encoded.as_bytes(), "ASM decimal color edit payload")
     }
 
     fn patch_bytes_at(
@@ -596,6 +607,7 @@ impl AsmEditSet {
 
     /// Replace knot values and multiplicities without changing cardinality.
     pub fn patch_knot_structure(
+        ctx: &DecodeContext<'_>,
         bytes: &mut [u8],
         record_offset: usize,
         layout: &KnotLayout,
@@ -603,14 +615,15 @@ impl AsmEditSet {
         int_width: RefWidth,
     ) -> Result<(), CodecError> {
         let mut runs: Vec<(f64, usize)> = Vec::new();
-        for knot in knots {
+        let mut run_storage = ctx.reserve_scoped(0, "ASM knot edit runs")?;
+        for knot in ctx.admit_iter(knots, "ASM knot edit values")? {
             if let Some((value, count)) = runs.last_mut() {
                 if *value == *knot {
                     *count += 1;
                     continue;
                 }
             }
-            runs.push((*knot, 1));
+            ctx.push_scoped_vec(&mut run_storage, &mut runs, (*knot, 1), "ASM knot edit runs")?;
         }
         if runs.len() != layout.value_offsets.len() {
             return Err(CodecError::NotImplemented(
@@ -618,7 +631,7 @@ impl AsmEditSet {
             ));
         }
         for (ordinal, ((value, expanded_count), value_offset)) in
-            runs.into_iter().zip(&layout.value_offsets).enumerate()
+            ctx.admit_iter(runs, "ASM knot edit runs")?.zip(ctx.admit_iter(&layout.value_offsets, "ASM knot edit offsets")?).enumerate()
         {
             let endpoint_extra =
                 usize::from(ordinal == 0 || ordinal + 1 == layout.value_offsets.len());
@@ -1210,15 +1223,12 @@ fn patch_compound_definition(
     AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
-        layout
-            .parameters
-            .into_iter()
-            .chain(layout.component_parameters)
+        ctx.admit_iter(layout.parameters, "ASM compound edit parameter offsets")?
+            .chain(ctx.admit_iter(layout.component_parameters, "ASM compound edit component offsets")?)
             .zip(
-                parameters
-                    .iter()
+                ctx.admit_iter(parameters, "ASM compound edit parameters")?
                     .map(|value| value.get())
-                    .chain(components.iter().map(|item| item.parameter.get())),
+                    .chain(ctx.admit_iter(components, "ASM compound edit components")?.map(|item| item.parameter.get())),
             ),
     )?;
     Ok(())
@@ -1255,7 +1265,7 @@ fn patch_two_sided_offset_definition(
         AsmEditSet::patch_f64_payload(bytes, record.offset + at, value)?;
     }
     for (locations, values) in layout.discontinuities.iter().zip(context.discontinuities()) {
-        for (at, value) in locations.iter().zip(values) {
+        for (at, value) in ctx.admit_iter(locations, "ASM offset edit locations")?.zip(ctx.admit_iter(values, "ASM offset edit values")?) {
             AsmEditSet::patch_f64_payload(bytes, record.offset + *at, value.get())?;
         }
     }
@@ -1282,15 +1292,21 @@ struct SurfaceOffsetFields<'a> {
     scale: FiniteReal,
 }
 
-fn patch_intcurve_context(
-    bytes: &mut [u8],
-    record: &Record,
+struct IntcurveContextLayout {
     parameter_range: [usize; 2],
     discontinuities: [Vec<usize>; 3],
     flag: Option<(usize, bool)>,
+}
+
+fn patch_intcurve_context(
+    ctx: &DecodeContext<'_>,
+    bytes: &mut [u8],
+    record: &Record,
+    layout: IntcurveContextLayout,
     context: &IntcurveSupportContext,
     label: &str,
 ) -> Result<(), CodecError> {
+    let IntcurveContextLayout { parameter_range, discontinuities, flag } = layout;
     if discontinuities
         .iter()
         .map(Vec::len)
@@ -1300,22 +1316,13 @@ fn patch_intcurve_context(
             "{label} context is incomplete"
         )));
     }
-    AsmEditSet::patch_f64_payloads(
-        bytes,
-        record.offset,
-        parameter_range
-            .into_iter()
-            .chain(discontinuities.into_iter().flatten())
-            .zip(
-                context.parameter_range().endpoints().into_iter().chain(
-                    context
-                        .discontinuities()
-                        .iter()
-                        .flatten()
-                        .map(|value| value.get()),
-                ),
-            ),
-    )?;
+    AsmEditSet::patch_f64_payloads(bytes, record.offset, parameter_range.into_iter().zip(context.parameter_range().endpoints()))?;
+    for (locations, values) in discontinuities.iter().zip(context.discontinuities()) {
+        for (offset, value) in ctx.admit_iter(locations, "ASM context edit locations")?.zip(ctx.admit_iter(values, "ASM context edit values")?) {
+            let at = record.offset.checked_add(*offset).ok_or_else(|| CodecError::Malformed("native double payload offset overflows".into()))?;
+            AsmEditSet::patch_f64_payload(bytes, at, value.get())?;
+        }
+    }
     if let Some((offset, value)) = flag {
         AsmEditSet::patch_native_bool(bytes, record.offset + offset, value)?;
     }
@@ -1347,11 +1354,10 @@ fn patch_surface_offset_definition(
     let layout = crate::nurbs::proc_curve::surface_offset_patch_layout(ctx, record_bytes, stream_width)?
         .ok_or_else(|| CodecError::Malformed("surface-offset construction is malformed".into()))?;
     patch_intcurve_context(
+        ctx,
         bytes,
         record,
-        layout.parameter_range,
-        layout.discontinuities,
-        Some((layout.discontinuity_flag, *discontinuity_flag)),
+        IntcurveContextLayout { parameter_range: layout.parameter_range, discontinuities: layout.discontinuities, flag: Some((layout.discontinuity_flag, *discontinuity_flag)) },
         context,
         "surface-offset",
     )?;
@@ -1398,11 +1404,10 @@ fn patch_spring_definition(
     let layout = crate::nurbs::proc_curve::spring_patch_layout(ctx, record_bytes, stream_width)?
         .ok_or_else(|| CodecError::Malformed("spring construction is malformed".into()))?;
     patch_intcurve_context(
+        ctx,
         bytes,
         record,
-        layout.parameter_range,
-        layout.discontinuities,
-        Some((layout.discontinuity_flag, discontinuity_flag)),
+        IntcurveContextLayout { parameter_range: layout.parameter_range, discontinuities: layout.discontinuities, flag: Some((layout.discontinuity_flag, discontinuity_flag)) },
         context,
         "spring",
     )?;
@@ -1474,11 +1479,10 @@ fn patch_projection_definition(
     }
 
     patch_intcurve_context(
+        ctx,
         bytes,
         record,
-        layout.parameter_range,
-        layout.discontinuities,
-        Some((layout.discontinuity_flag, discontinuity_flag)),
+        IntcurveContextLayout { parameter_range: layout.parameter_range, discontinuities: layout.discontinuities, flag: Some((layout.discontinuity_flag, discontinuity_flag)) },
         context,
         "projection",
     )?;
@@ -1497,11 +1501,10 @@ fn patch_intersection_definition(
     let layout = crate::nurbs::proc_curve::intersection_patch_layout(ctx, record_bytes, stream_width)?
         .ok_or_else(|| CodecError::Malformed("intersection construction is malformed".into()))?;
     patch_intcurve_context(
+        ctx,
         bytes,
         record,
-        layout.parameter_range,
-        layout.discontinuities,
-        Some((layout.discontinuity_flag, discontinuity_flag)),
+        IntcurveContextLayout { parameter_range: layout.parameter_range, discontinuities: layout.discontinuities, flag: Some((layout.discontinuity_flag, discontinuity_flag)) },
         context,
         "intersection",
     )?;
@@ -1523,11 +1526,10 @@ fn patch_three_surface_intersection_definition(
         CodecError::Malformed("three-surface construction is malformed".into())
     })?;
     patch_intcurve_context(
+        ctx,
         bytes,
         record,
-        layout.parameter_range,
-        layout.discontinuities,
-        None,
+        IntcurveContextLayout { parameter_range: layout.parameter_range, discontinuities: layout.discontinuities, flag: None },
         context,
         "three-surface intersection",
     )?;
@@ -1558,11 +1560,10 @@ fn patch_surface_curve_definition(
     )?
     .ok_or_else(|| CodecError::Malformed("surface-curve construction is malformed".into()))?;
     patch_intcurve_context(
+        ctx,
         bytes,
         record,
-        layout.parameter_range,
-        layout.discontinuities,
-        None,
+        IntcurveContextLayout { parameter_range: layout.parameter_range, discontinuities: layout.discontinuities, flag: None },
         context,
         "surface-curve",
     )?;
@@ -1643,6 +1644,7 @@ fn patch_nurbs_surface_record(
         )));
     }
     AsmEditSet::patch_knot_structure(
+        ctx,
         bytes,
         record.offset,
         &layout.u_knots,
@@ -1650,6 +1652,7 @@ fn patch_nurbs_surface_record(
         stream_width,
     )?;
     AsmEditSet::patch_knot_structure(
+        ctx,
         bytes,
         record.offset,
         &layout.v_knots,
@@ -1671,25 +1674,26 @@ fn patch_nurbs_surface_record(
             AsmEditSet::patch_layout_integer(bytes, at, stream_width, value)?;
         }
     }
+    let mut control_offsets = layout.control_value_offsets();
     match surface.pole_grid() {
         cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows } => {
-            let values = (0..v_count).flat_map(|v| {
-                rows.iter().flat_map(move |row| {
+            for v in ctx.admit_iter(0..v_count, "ASM surface edit columns")? {
+                let values = ctx.admit_iter(rows, "ASM surface edit rows")?.flat_map(move |row| {
                     let point = row[v];
                     [
                         point.x / LEN_TO_MM,
                         point.y / LEN_TO_MM,
                         point.z / LEN_TO_MM,
                     ]
-                })
-            });
-            for (offset, value) in layout.control_value_offsets().zip(values) {
-                AsmEditSet::patch_f64_payload(bytes, record.offset + offset, value)?;
+                });
+                for (value, offset) in values.zip(control_offsets.by_ref()) {
+                    AsmEditSet::patch_f64_payload(bytes, record.offset + offset, value)?;
+                }
             }
         }
         cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { rows } => {
-            let values = (0..v_count).flat_map(|v| {
-                rows.iter().flat_map(move |row| {
+            for v in ctx.admit_iter(0..v_count, "ASM surface edit columns")? {
+                let values = ctx.admit_iter(rows, "ASM surface edit rows")?.flat_map(move |row| {
                     let pole = row[v];
                     [
                         pole.point.x / LEN_TO_MM,
@@ -1697,10 +1701,10 @@ fn patch_nurbs_surface_record(
                         pole.point.z / LEN_TO_MM,
                         pole.weight.get(),
                     ]
-                })
-            });
-            for (offset, value) in layout.control_value_offsets().zip(values) {
-                AsmEditSet::patch_f64_payload(bytes, record.offset + offset, value)?;
+                });
+                for (value, offset) in values.zip(control_offsets.by_ref()) {
+                    AsmEditSet::patch_f64_payload(bytes, record.offset + offset, value)?;
+                }
             }
         }
     }
@@ -1731,8 +1735,8 @@ fn patch_nurbs_curve_record(
             record.index
         ))
     })?;
-    if layout.curve.control_points().len() != curve.control_points().len()
-        || layout.curve.weights().is_some() != curve.weights().is_some()
+    if layout.curve.pole_count() != curve.pole_count()
+        || matches!(layout.curve.pole_rows(), cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }) != matches!(curve.pole_rows(), cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. })
     {
         return Err(CodecError::NotImplemented(format!(
             "spline record {} changed NURBS curve structure",
@@ -1740,6 +1744,7 @@ fn patch_nurbs_curve_record(
         )));
     }
     AsmEditSet::patch_knot_structure(
+        ctx,
         bytes,
         record.offset,
         &layout.knots,
@@ -1753,29 +1758,21 @@ fn patch_nurbs_curve_record(
         let periodic_at = record.offset + layout.periodic_value_offset;
         AsmEditSet::patch_layout_integer(bytes, periodic_at, stream_width, periodic)?;
     }
-    let components = if layout.curve.weights().is_some() {
-        4
-    } else {
-        3
-    };
-    let weights = curve.weights();
-    let control_points = curve.control_points();
-    let values = control_points
-        .iter()
-        .enumerate()
-        .flat_map(|(index, point)| {
-            [
-                point.x / LEN_TO_MM,
-                point.y / LEN_TO_MM,
-                point.z / LEN_TO_MM,
-                weights.as_ref().map_or(0.0, |weights| weights[index].get()),
-            ]
-            .into_iter()
-            .take(components)
-        });
-    for (offset, value) in layout.control_value_offsets().zip(values) {
-        AsmEditSet::patch_f64_payload(bytes, record.offset + offset, value)?;
+    match curve.pole_rows() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+            let values = ctx.admit_iter(points, "ASM curve edit control points")?.flat_map(|point| {
+                [point.x / LEN_TO_MM, point.y / LEN_TO_MM, point.z / LEN_TO_MM]
+            });
+            AsmEditSet::patch_f64_payloads(bytes, record.offset, layout.control_value_offsets().zip(values))?;
+        }
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+            let values = ctx.admit_iter(points, "ASM curve edit control points")?.flat_map(|pole| {
+                [pole.point.x / LEN_TO_MM, pole.point.y / LEN_TO_MM, pole.point.z / LEN_TO_MM, pole.weight.get()]
+            });
+            AsmEditSet::patch_f64_payloads(bytes, record.offset, layout.control_value_offsets().zip(values))?;
+        }
     }
+
     Ok(())
 }
 
@@ -1864,8 +1861,8 @@ fn patch_nurbs_pcurve_record(
             record.index
         ))
     })?;
-    if layout.control_count != nurbs.control_points().len()
-        || layout.rational() != nurbs.weights().is_some()
+    if layout.control_count != nurbs.pole_rows().count()
+        || layout.rational() != matches!(nurbs.pole_rows(), cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { .. })
     {
         return Err(CodecError::NotImplemented(format!(
             "pcurve record {} changed UV cache structure",
@@ -1873,6 +1870,7 @@ fn patch_nurbs_pcurve_record(
         )));
     }
     AsmEditSet::patch_knot_structure(
+        ctx,
         bytes,
         scope.start,
         &layout.knots,
@@ -1909,24 +1907,19 @@ fn patch_nurbs_pcurve_record(
             )));
         }
         // Chunk space, because `payload_token` indexes value tokens.
-        let suffix_start = record.chunk_len().checked_sub(6).ok_or_else(|| {
+        let chunk_count = ctx.admit_iter(record.tokens.as_ref(), "ASM pcurve suffix field count")?.filter(|token| !token.is_payload_ident()).count();
+        let suffix_start = chunk_count.checked_sub(6).ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "pcurve record {} lacks its native metadata suffix",
                 record.index
             ))
         })?;
-        let suffix_offsets = (suffix_start..record.chunk_len())
-            .map(|index| {
-                sab::payload_token(ctx, bytes, record, stream_width, index)?
-                    .map(|(offset, _)| offset)
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "pcurve record {} has an incomplete native metadata suffix",
-                            record.index
-                        ))
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut suffix_offsets = [0; 6];
+        for (ordinal, offset) in suffix_offsets.iter_mut().enumerate() {
+            *offset = sab::payload_token(ctx, bytes, record, stream_width, suffix_start + ordinal)?
+                .map(|(offset, _)| offset)
+                .ok_or_else(|| CodecError::malformed(format_args!("pcurve record {} has an incomplete native metadata suffix", record.index)))?;
+        }
         if let Some(flags) = native_tail_flags {
             for (offset, flag) in suffix_offsets[..4].iter().zip(flags) {
                 if !matches!(bytes.get(*offset), Some(0x0a | 0x0b)) {
@@ -1969,22 +1962,26 @@ fn patch_nurbs_pcurve_record(
         let at = scope.start + layout.control_end() + 1;
         AsmEditSet::patch_f64_payload(bytes, at, tolerance)?;
     }
-    for (point, offsets) in nurbs
-        .control_points()
-        .iter()
-        .zip(layout.control_value_offsets())
-    {
-        for (value, offset) in [point.u, point.v].into_iter().zip(offsets) {
-            let at = scope.start + offset;
-            AsmEditSet::patch_f64_payload(bytes, at, value)?;
+    match nurbs.pole_rows() {
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => {
+            for (point, offsets) in ctx.admit_iter(points, "ASM pcurve edit control points")?.zip(layout.control_value_offsets()) {
+                for (value, offset) in [point.u, point.v].into_iter().zip(offsets) {
+                    AsmEditSet::patch_f64_payload(bytes, scope.start + offset, value)?;
+                }
+            }
+        }
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
+            for (pole, offsets) in ctx.admit_iter(points, "ASM pcurve edit control points")?.zip(layout.control_value_offsets()) {
+                for (value, offset) in [pole.point.u, pole.point.v].into_iter().zip(offsets) {
+                    AsmEditSet::patch_f64_payload(bytes, scope.start + offset, value)?;
+                }
+            }
+            for (pole, offset) in ctx.admit_iter(points, "ASM pcurve edit weights")?.zip(layout.weight_value_offsets()) {
+                AsmEditSet::patch_f64_payload(bytes, scope.start + offset, pole.weight.get())?;
+            }
         }
     }
-    if let Some(weights) = nurbs.weights() {
-        for (weight, offset) in weights.iter().zip(layout.weight_value_offsets()) {
-            let at = scope.start + offset;
-            AsmEditSet::patch_f64_payload(bytes, at, weight.get())?;
-        }
-    }
+
     Ok(())
 }
 
@@ -2552,4 +2549,27 @@ mod tests {
 
         assert!(error.to_string().contains("BinaryFile4 range"));
     }
+    #[test]
+    fn knot_edit_traversal_refuses_before_writing() {
+        use super::{CodecError, DecodeContext, KnotLayout};
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits, "ASM knot edit values", |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let mut bytes = [0; 40];
+                let result = AsmEditSet::patch_knot_structure(
+                    &ctx, &mut bytes, 0,
+                    &KnotLayout { value_offsets: vec![0, 20] },
+                    &[0.0, 0.0, 1.0, 1.0], RefWidth::Four,
+                );
+                assert_eq!(bytes, [0; 40]);
+                result
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+        assert_eq!(limit.operation, "ASM knot edit values");
+    }
+
 }

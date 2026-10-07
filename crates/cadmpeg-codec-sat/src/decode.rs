@@ -385,11 +385,11 @@ fn build_result(
             "SAT loss notes",
         )?;
     }
-    if stats.unknown_surface_faces() > 0 {
+    if stats.unknown_surface_faces(ctx)? > 0 {
         let message = ctx.format_retained(
             format_args!(
                 "{} face(s) rest on procedural surface constructions without a decoded carrier",
-                stats.unknown_surface_faces()
+                stats.unknown_surface_faces(ctx)?
             ),
             "SAT procedural surface loss",
         )?;
@@ -404,7 +404,7 @@ fn build_result(
     coverage.record(
         ctx,
         crate::coverage::UNKNOWN_SURFACE_FACES,
-        stats.unknown_surface_faces(),
+        stats.unknown_surface_faces(ctx)?,
     )?;
     let body = DecodeBody {
         coverage,

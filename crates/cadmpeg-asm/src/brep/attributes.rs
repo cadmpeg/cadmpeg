@@ -17,10 +17,11 @@ pub fn collect_attributes(
     entity: &Record,
     target: &AttributeTarget,
     by_index: &HashMap<i64, &Record, RandomState>,
-    emitted: &mut HashSet<i64, RandomState>,
+    emitted: (&mut HashSet<i64, RandomState>, &mut cadmpeg_core::decode::ScopedReservation<'_>),
     out: &mut Vec<SourceAttribute>,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let (emitted, emitted_storage) = emitted;
     let mut current = entity.ref_at(0);
     let mut chain = HashSet::new();
     let mut chain_storage = ctx.reserve_scoped(0, "ASM attribute chain")?;
@@ -32,7 +33,7 @@ pub fn collect_attributes(
         let Some(record) = by_index.get(&index) else {
             break;
         };
-        if ctx.insert_hash_set(emitted, index, "ASM emitted attributes")? {
+        if emitted_storage.with_storage(|| ctx.insert_hash_set(emitted, index, "ASM emitted attributes"))? {
             ctx.reserve_vec(out, 1, "ASM source attributes")?;
             out.push(source_attribute(
                 ctx,
@@ -604,7 +605,7 @@ mod tests {
             &entity,
             &AttributeTarget::Document,
             &by_index,
-            &mut HashSet::new(),
+            (&mut HashSet::new(), &mut ctx.reserve_scoped(0, "ASM test emitted attributes").unwrap()),
             &mut Vec::new(),
             crate::asm_format!("f3d"),
         )

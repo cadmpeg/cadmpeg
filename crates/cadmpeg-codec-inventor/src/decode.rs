@@ -852,14 +852,14 @@ fn decode_container<'a>(
         )?;
     }
     if !ctx.container_only() {
-        if kernel_stats.unknown_surface_faces() != 0 {
+        if kernel_stats.unknown_surface_faces(ctx)? != 0 {
             admitted_loss(
                 ctx,
                 &mut losses,
                 InventorLossCode::GeometryProceduralSurfaceNotTransferred,
                 format_args!(
                     "{} face(s) use procedural surfaces without a decoded carrier.",
-                    kernel_stats.unknown_surface_faces()
+                    kernel_stats.unknown_surface_faces(ctx)?
                 ),
             )?;
         }
@@ -1398,7 +1398,7 @@ fn decode_container<'a>(
         ),
         (
             crate::coverage::KERNEL_UNKNOWN_SURFACE_FACES,
-            kernel_stats.unknown_surface_faces(),
+            kernel_stats.unknown_surface_faces(ctx)?,
         ),
     ];
     let coverage =
