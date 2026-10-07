@@ -8,7 +8,7 @@ use crate::container::{Block, BlockName, PayloadFamily, Section};
 use crate::tessellation::descriptor_table_offset;
 use crate::tessellation::parse_table;
 use crate::tessellation::parse_table_sequence;
-use crate::tessellation::scene_classes;
+use crate::tessellation::scene_feature_classes;
 use crate::tessellation::section_display_faces;
 use crate::tessellation::CLASS_MARKER;
 use crate::test_support::container::make_block;
@@ -29,20 +29,31 @@ fn scene_objects_carry_history_source_identity() {
     class(&mut payload, "moVisualProperties_c", &[99]);
     class(&mut payload, "moPointLight_c", &[21]);
     class(&mut payload, "moSpotLight_c", &[20]);
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
 
     assert_eq!(
-        scene_classes(&ctx, &payload).unwrap(),
-        vec![
-            (12, "moAmbientLight_c".into()),
-            (30, "moDirectionLight_c".into()),
-            (32, "moDirectionLight_c".into()),
-            (21, "moPointLight_c".into()),
-            (20, "moSpotLight_c".into()),
+        display_scene_classes(&payload),
+        [
+            (12, "moAmbientLight_c"),
+            (30, "moDirectionLight_c"),
+            (32, "moDirectionLight_c"),
+            (21, "moPointLight_c"),
+            (20, "moSpotLight_c"),
         ]
+        .into_iter()
+        .map(|(source, class)| (source, class.to_owned()))
+        .collect()
     );
+}
+
+/// The scene classes of a document whose display-list section is `payload`.
+fn display_scene_classes(payload: &[u8]) -> std::collections::HashMap<u32, String> {
+    let mut source = crate::test_support::container::outer_header();
+    source.extend(make_block(0x41, "Contents/DisplayLists", payload));
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    scene_feature_classes(&ctx, &scan).unwrap()
 }
 
 #[test]
@@ -62,10 +73,7 @@ fn anonymous_scene_object_counts_do_not_create_source_bindings() {
         payload.extend_from_slice(&[0xff, 0xfe, 0xff]);
     }
 
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
-    assert!(scene_classes(&ctx, &payload).unwrap().is_empty());
+    assert!(display_scene_classes(&payload).is_empty());
 }
 
 #[test]
@@ -74,11 +82,7 @@ fn compact_face_tessellation_header_places_table_at_plus_8() {
     payload.extend(1_u32.to_le_bytes());
     payload.extend(1_u32.to_le_bytes());
     payload.extend(table());
-    assert_eq!(
-        descriptor_table_offset(&cadmpeg_test_support::service_decode_context(), &payload, 0)
-            .unwrap(),
-        8
-    );
+    assert_eq!(descriptor_table_offset(&payload, 0), 8);
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
@@ -94,11 +98,7 @@ fn extended_face_tessellation_header_places_table_at_plus_40() {
         payload.extend(word.to_le_bytes());
     }
     payload.extend(table());
-    assert_eq!(
-        descriptor_table_offset(&cadmpeg_test_support::service_decode_context(), &payload, 0)
-            .unwrap(),
-        40
-    );
+    assert_eq!(descriptor_table_offset(&payload, 0), 40);
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
@@ -156,11 +156,7 @@ fn incomplete_extended_header_does_not_shift_the_table() {
         payload.extend(word.to_le_bytes());
     }
     payload.extend(table());
-    assert_eq!(
-        descriptor_table_offset(&cadmpeg_test_support::service_decode_context(), &payload, 0)
-            .unwrap(),
-        8
-    );
+    assert_eq!(descriptor_table_offset(&payload, 0), 8);
 }
 
 #[test]
@@ -204,35 +200,24 @@ fn a_strip_span_past_the_vertex_lane_refuses_the_recognised_table() {
     );
 }
 
-#[test]
-fn display_table_vertices_refuse_collection_limit_before_allocation() {
-    let payload = table();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
-    let error = parse_table(&ctx, &payload, 0)
-        .expect_err("three vertices exceed the remaining two collection items");
-    assert!(matches!(error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "decode display-list vertices"));
-
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).expect("root");
-    assert!(parse_table(&ctx, &payload, 0)
-        .expect("service profile admits vertices")
-        .is_some());
-}
-
-fn table_collection_refusal(max_items: u64, operation: &'static str) {
-    let payload = table();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
-    let error = parse_table(&ctx, &payload, 0).expect_err("table allocation exceeds the limit");
+/// Refuse `operation` one collection item below its need, with every earlier
+/// charge admitted.
+fn collection_refusal<T>(
+    operation: &'static str,
+    payload: &[u8],
+    decode: impl Fn(&DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root");
+            decode(&ctx)
+        },
+    );
     assert!(matches!(error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -240,38 +225,25 @@ fn table_collection_refusal(max_items: u64, operation: &'static str) {
 }
 
 #[test]
-fn display_table_channels_refuse_collection_limit_before_allocation() {
-    table_collection_refusal(0, "decode display-list channels");
-}
-
-#[test]
-fn display_table_strips_refuse_collection_limit_before_allocation() {
-    table_collection_refusal(1, "decode display-list strips");
-}
-
-#[test]
-fn display_table_normals_refuse_collection_limit_before_allocation() {
-    table_collection_refusal(9, "decode display-list normals");
-}
-
-#[test]
-fn display_table_span_rows_refuse_collection_limit_before_allocation() {
-    table_collection_refusal(13, "pair display-list strip spans");
-}
-
-#[test]
-fn display_table_shaded_rows_refuse_collection_limit_before_allocation() {
-    table_collection_refusal(14, "pair display-list shaded vertices");
-}
-
-#[test]
-fn display_table_partitioned_vertices_refuse_collection_limit_before_allocation() {
-    table_collection_refusal(17, "partition display-list strip vertices");
-}
-
-#[test]
-fn display_table_partitioned_strips_refuse_collection_limit_before_allocation() {
-    table_collection_refusal(20, "partition display-list strips");
+fn display_table_lanes_refuse_collection_limit_before_allocation() {
+    let payload = table();
+    for operation in [
+        "decode display-list strips",
+        "decode display-list vertices",
+        "decode display-list normals",
+        "decode display-list channels",
+        "pair display-list shaded vertices",
+        "partition display-list strip vertices",
+        "partition display-list strips",
+    ] {
+        collection_refusal(operation, &payload, |ctx| parse_table(ctx, &payload, 0));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).expect("root");
+    assert!(parse_table(&ctx, &payload, 0)
+        .expect("service profile admits the table")
+        .is_some());
 }
 
 #[test]
@@ -297,30 +269,30 @@ fn display_table_channel_bytes_refuse_retained_limit_before_copy() {
 #[test]
 fn display_table_sequence_refuses_collection_limit_before_adding_first_table() {
     let payload = table();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 21;
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
-    let error = parse_table_sequence(&ctx, &payload, 0, payload.len())
-        .expect_err("table collection exceeds the limit");
-    assert!(matches!(error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect display-list tables"));
+    collection_refusal("collect display-list tables", &payload, |ctx| {
+        parse_table_sequence(ctx, &payload, 0, payload.len())
+    });
 }
 
 #[test]
 fn display_table_sequence_refuses_collection_limit_before_adding_next_table() {
     let mut payload = table();
     payload.extend(table());
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 43;
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
-    let error = parse_table_sequence(&ctx, &payload, 0, payload.len())
-        .expect_err("second table collection exceeds the limit");
-    assert!(matches!(error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
+    // The second table's slot is the sequence's last collection charge, so
+    // one item below the smallest admitting cap refuses there.
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
+        parse_table_sequence(&ctx, &payload, 0, payload.len()).map(|tables| tables.map(|t| t.len()))
+    };
+    let need = (0..1024)
+        .find(|cap| run(*cap).is_ok())
+        .expect("a cap admits both tables");
+    assert_eq!(run(need).expect("admitted"), Some(2));
+    assert!(matches!(run(need - 1),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect display-list tables"));
 
@@ -348,20 +320,14 @@ fn display_faces_refuse_collection_limit_before_insertion() {
         type_id: 0x41,
         comp_sz: 0,
         section: BlockName::Named(cadmpeg_ir::stream_name!("Contents/DisplayLists")),
+        name_words: crate::container::NameWords::default(),
         family: PayloadFamily::Tessellation,
         payload,
         ps_streams: Vec::new(),
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 22;
-    let (ctx, _) = DecodeContext::from_root_bytes(&block.payload, &arena, &policy).expect("root");
-    let error = section_display_faces(&ctx, Section::Block(&block))
-        .expect_err("face insertion exceeds the limit");
-    assert!(matches!(error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect display-list faces"));
+    collection_refusal("collect display-list faces", &block.payload, |ctx| {
+        section_display_faces(ctx, Section::Block(&block))
+    });
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&block.payload, &arena, &DecodePolicy::service())

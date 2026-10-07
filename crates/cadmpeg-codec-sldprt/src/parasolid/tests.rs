@@ -280,11 +280,7 @@ fn parasolid_stream_header_is_parsed() {
         panic!("synthetic native block selected as compound stream");
     };
     assert_eq!(block.family, container::PayloadFamily::Parasolid);
-    assert!(crate::parasolid::is_body_stream(
-        &cadmpeg_test_support::service_decode_context(),
-        site.header
-    )
-    .unwrap());
+    assert!(site.header.is_body_stream());
 }
 
 #[test]

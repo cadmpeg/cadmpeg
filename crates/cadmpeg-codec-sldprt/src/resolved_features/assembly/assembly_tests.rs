@@ -38,6 +38,10 @@ fn legacy_sketch_object_stream_requires_a_sketch_and_entity_declaration() {
 fn feature_input_parent_identity_propagates_format_work_refusal() {
     let stream = crate::container::CompoundStream {
         path: cadmpeg_ir::StreamName::try_from("Contents/ResolvedFeatures".to_owned()).unwrap(),
+        name_words: crate::container::NameWords {
+            resolved_features: true,
+            ..crate::container::NameWords::default()
+        },
         directory_id: 12,
         start_sector: 0,
         payload: Vec::new(),
