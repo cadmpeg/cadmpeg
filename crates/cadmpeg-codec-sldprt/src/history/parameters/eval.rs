@@ -34,6 +34,13 @@ pub(super) struct ParameterExpressionParser<'a, 'ctx, 'arena> {
     offset: usize,
     aliases: ParameterAliasMap<'a>,
     values: &'a HashMap<ParameterId, ParameterValue>,
+    blocked: Option<&'a ParameterId>,
+}
+
+pub(super) enum ParameterEvaluation {
+    Value(ParameterValue),
+    Blocked(ParameterId),
+    Invalid,
 }
 
 enum ParameterAliasMap<'a> {
@@ -42,12 +49,12 @@ enum ParameterAliasMap<'a> {
     Flat(&'a HashMap<String, Option<ParameterId>>),
 }
 
-impl ParameterAliasMap<'_> {
+impl<'a> ParameterAliasMap<'a> {
     fn get(
         &self,
         ctx: &DecodeContext<'_>,
         alias: &str,
-    ) -> Result<Option<&Option<ParameterId>>, CodecError> {
+    ) -> Result<Option<&'a Option<ParameterId>>, CodecError> {
         match self {
             Self::Layered(aliases) => aliases.get(ctx, alias),
             #[cfg(test)]
@@ -69,6 +76,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             offset: 0,
             aliases: ParameterAliasMap::Layered(aliases),
             values,
+            blocked: None,
         }
     }
 
@@ -85,6 +93,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             offset: 0,
             aliases: ParameterAliasMap::Flat(aliases),
             values,
+            blocked: None,
         }
     }
 
@@ -92,6 +101,24 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
         match self.parse_value() {
             Ok(value) => Ok(Some(value)),
             Err(ExpressionFailure::NoValue) => Ok(None),
+            Err(ExpressionFailure::Resource(error)) => Err(error),
+        }
+    }
+
+    /// Evaluate once and name the first absent value that prevented evaluation.
+    pub(super) fn evaluate(
+        mut self,
+        storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ) -> Result<ParameterEvaluation, CodecError> {
+        match self.parse_value() {
+            Ok(value) => Ok(ParameterEvaluation::Value(value)),
+            Err(ExpressionFailure::NoValue) => match self.blocked {
+                Some(id) => {
+                    let id = storage.with_storage(|| id.try_clone_for_decode(self.ctx, "index SLDPRT blocked parameter evaluations"))?;
+                    Ok(ParameterEvaluation::Blocked(id))
+                }
+                None => Ok(ParameterEvaluation::Invalid),
+            },
             Err(ExpressionFailure::Resource(error)) => Err(error),
         }
     }
@@ -227,16 +254,16 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                     .ok_or(ExpressionFailure::NoValue);
             }
         }
-        let referenced = |token: &str| -> Result<ParameterValue, ExpressionFailure> {
+        let mut referenced = |token: &str| -> Result<ParameterValue, ExpressionFailure> {
             let id = self
                 .aliases
                 .get(self.ctx, token)?
                 .and_then(Option::as_ref)
                 .ok_or(ExpressionFailure::NoValue)?;
-            let value = self
-                .ctx
-                .get_hash_map(self.values, id, "look up SLDPRT hash key")?
-                .ok_or(ExpressionFailure::NoValue)?;
+            let Some(value) = self.ctx.get_hash_map(self.values, id, "look up SLDPRT hash key")? else {
+                self.blocked = Some(id);
+                return Err(ExpressionFailure::NoValue);
+            };
             Ok(value.try_clone_for_decode(self.ctx, "retain SLDPRT parameter value text")?)
         };
         match token {
@@ -281,21 +308,19 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             let start = self.offset;
             let mut end = start;
             let mut closed = false;
-            while end < self.input.len() {
-                self.ctx
-                    .charge_work(1, "scan SLDPRT quoted parameter token")?;
-                let rest = &self.input[end..];
-                if rest.starts_with("\"\"") {
-                    end += 2;
-                } else if rest.starts_with('"') {
-                    closed = true;
-                    break;
+            let mut characters = self.input[start..].char_indices();
+            while let Some((at, character)) = self.ctx.next_charged(&mut characters, "scan SLDPRT quoted parameter token")? {
+                end = start + at;
+                if character == '"' {
+                    if self.input[end + 1..].starts_with('"') {
+                        self.ctx.next_charged(&mut characters, "scan SLDPRT quoted parameter token")?;
+                        end += 2;
+                    } else {
+                        closed = true;
+                        break;
+                    }
                 } else {
-                    end += rest
-                        .chars()
-                        .next()
-                        .ok_or(ExpressionFailure::NoValue)?
-                        .len_utf8();
+                    end += character.len_utf8();
                 }
             }
             if !closed {
@@ -312,12 +337,9 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             .chars()
             .next()
             .is_some_and(|character| character.is_ascii_digit() || character == '.');
-        while self.offset < self.input.len() {
-            self.ctx.charge_work(1, "scan SLDPRT parameter token")?;
-            let character = self.input[self.offset..]
-                .chars()
-                .next()
-                .ok_or(ExpressionFailure::NoValue)?;
+        let mut characters = self.input[start..].char_indices();
+        while let Some((at, character)) = self.ctx.next_charged(&mut characters, "scan SLDPRT parameter token")? {
+            self.offset = start + at;
             let exponent_sign = numeric
                 && matches!(character, '+' | '-')
                 && self.input[start..self.offset].ends_with(['e', 'E']);

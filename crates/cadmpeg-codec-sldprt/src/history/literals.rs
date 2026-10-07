@@ -20,11 +20,8 @@ const EPS_LITERALS_PARSE_LENGTH_MM_E6: f64 = 1.0e-6;
 const EPS_LITERALS_PARSE_LENGTH_MM_E7: f64 = 1.0e-7;
 const EPS_LITERALS_FORMAT_F64_LITERAL_E6: f64 = 1.0e-6;
 
-/// Admits a reading of `text` by the grammars in this module, one work unit per
-/// input byte. Each grammar reads every input byte a bounded number of times:
-/// trims, tests of fixed unit suffixes and display modifiers, and numeric
-/// parses. A caller that runs a fixed number of grammars over the same text
-/// admits it once.
+/// Charges one work unit per input byte for a shared literal-grammar call.
+/// A caller that runs a fixed number of grammars over the same text charges it once.
 pub(crate) fn admit_literal(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     text: &str,

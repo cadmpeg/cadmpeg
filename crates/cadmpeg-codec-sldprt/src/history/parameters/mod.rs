@@ -76,9 +76,7 @@ pub(crate) fn project_parameters(
                     )
                 })?;
             }
-            for (ordinal, name) in projected_parameter_names(ctx, feature)?
-                .into_iter()
-                .enumerate()
+            for (ordinal, name) in ctx.admit_iter(projected_parameter_names(ctx, feature)?, OPERATION)?.enumerate()
             {
                 let expression = ctx
                     .get_btree_map(
@@ -773,12 +771,12 @@ pub(in crate::history) struct ParameterAliasView<'a> {
     owner: Option<&'a FeatureId>,
 }
 
-impl ParameterAliasView<'_> {
+impl<'a> ParameterAliasView<'a> {
     pub(super) fn get(
         &self,
         ctx: &DecodeContext<'_>,
         alias: &str,
-    ) -> Result<Option<&Option<ParameterId>>, CodecError> {
+    ) -> Result<Option<&'a Option<ParameterId>>, CodecError> {
         if let Some(value) =
             ctx.get_hash_map(&self.aliases.exact, alias, "look up SLDPRT hash key")?
         {
@@ -806,6 +804,9 @@ fn evaluate_parameter_expressions(
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
 ) -> Result<(), CodecError> {
+    if !ctx.any_by(&*parameters, |parameter| Ok(parameter.value.is_none()), "find SLDPRT unevaluated parameters")? {
+        return Ok(());
+    }
     let (aliases, _aliases_storage) =
         ParameterAliases::scoped(ctx, parameters, feature_names, global_owners)?;
     let mut values_storage = ctx.reserve_scoped(0, "index SLDPRT parameter values")?;
@@ -818,11 +819,12 @@ fn evaluate_parameter_expressions(
     }
     const OPERATION: &str = "schedule SLDPRT parameter evaluation";
     let mut graph_storage = ctx.reserve_scoped(0, OPERATION)?;
-    let (identities, _identity_storage) = ctx.unique_index(parameters.iter().map(|parameter| (&parameter.id, ())), OPERATION)?;
-    let repeated = ctx.any_by(&*parameters, |parameter| {
-        Ok(ctx.get_hash_map(&identities, &parameter.id, OPERATION)?.and_then(Option::as_ref).is_none())
-    }, OPERATION)?;
-    drop(identities);
+    let repeated = {
+        let (identities, _identity_storage) = ctx.unique_index(parameters.iter().map(|parameter| (&parameter.id, ())), OPERATION)?;
+        ctx.any_by(&*parameters, |parameter| {
+            Ok(ctx.get_hash_map(&identities, &parameter.id, OPERATION)?.and_then(Option::as_ref).is_none())
+        }, OPERATION)?
+    };
     if repeated {
         // Repeated identities share one value slot. Preserve source-pass replacement order.
     loop {
@@ -851,28 +853,12 @@ fn evaluate_parameter_expressions(
     }
         return Ok(());
     }
-    let mut waiting = graph_storage.with_storage(|| ctx.alloc_filled(parameters.len(), 0_usize, OPERATION))?;
-    let mut consumers = HashMap::<ParameterId, Vec<usize>>::new();
+    // Retry a blocked expression when its first missing value is published.
+    let mut blocked = HashMap::<ParameterId, Vec<usize>>::new();
     let mut ready = Vec::new();
     let mut ready_storage = ctx.reserve_scoped(0, OPERATION)?;
     for (index, parameter) in ctx.admit_iter(&*parameters, OPERATION)?.enumerate() {
-        if parameter.value.is_some() { continue; }
-        for dependency in ctx.admit_iter(parameter.dependencies.as_slice(), OPERATION)? {
-            if ctx.get_hash_map(&values, dependency, OPERATION)?.is_some() { continue; }
-            graph_storage.with_storage(|| {
-                if let Some(group) = ctx.get_mut_hash_map(&mut consumers, dependency, OPERATION)? {
-                    ctx.push_vec(group, index, OPERATION)?;
-                } else {
-                    let key = dependency.try_clone_for_decode(ctx, OPERATION)?;
-                    let mut group = Vec::new();
-                    ctx.push_vec(&mut group, index, OPERATION)?;
-                    ctx.insert_hash_map(&mut consumers, key, group, OPERATION)?;
-                }
-                Ok::<_, CodecError>(())
-            })?;
-            waiting[index] += 1;
-        }
-        if waiting[index] == 0 {
+        if parameter.value.is_none() {
             ctx.push_scoped_vec(&mut ready_storage, &mut ready, index, OPERATION)?;
         }
     }
@@ -881,16 +867,22 @@ fn evaluate_parameter_expressions(
         let current_storage = std::mem::replace(&mut ready_storage, ctx.reserve_scoped(0, OPERATION)?);
         for index in ctx.admit_iter(current, "evaluate SLDPRT parameter expressions")? {
             let parameter = &mut parameters[index];
+            if parameter.value.is_some() { continue; }
             let aliases = aliases.for_owner(parameter.owner.as_ref());
-            let Some(value) = ParameterExpressionParser::new(ctx, &parameter.expression, aliases, &values).parse()? else { continue; };
+            let evaluation = ParameterExpressionParser::new(ctx, &parameter.expression, aliases, &values).evaluate(&mut graph_storage)?;
+            let value = match evaluation {
+                eval::ParameterEvaluation::Value(value) => value,
+                eval::ParameterEvaluation::Invalid => continue,
+                eval::ParameterEvaluation::Blocked(id) => {
+                    graph_storage.with_storage(|| ctx.push_hash_group(&mut blocked, id, index, OPERATION, OPERATION))?;
+                    continue;
+                }
+            };
             values_storage.with_storage(|| insert_parameter_value(ctx, &mut values, &parameter.id, &value))?;
             parameter.value = Some(value);
-            if let Some(dependents) = ctx.remove_hash_map(&mut consumers, &parameter.id, OPERATION)? {
+            if let Some(dependents) = ctx.remove_hash_map(&mut blocked, &parameter.id, OPERATION)? {
                 for dependent in ctx.admit_iter(dependents, OPERATION)? {
-                    waiting[dependent] -= 1;
-                    if waiting[dependent] == 0 {
-                        ctx.push_scoped_vec(&mut ready_storage, &mut ready, dependent, OPERATION)?;
-                    }
+                    ctx.push_scoped_vec(&mut ready_storage, &mut ready, dependent, OPERATION)?;
                 }
             }
         }
@@ -977,13 +969,12 @@ pub(crate) fn parameters_with_unevaluable_expressions(
                 &parameter.id,
                 "check SLDPRT parameter evaluation",
             )?;
-            let evaluated =
-                match ParameterExpressionParser::new(ctx, &parameter.expression, aliases, values)
-                    .parse()?
-                {
-                    Some(value) => Some(value),
-                    None => text_parameter_literal(ctx, &parameter.name, &parameter.expression)?,
-                };
+            let (evaluated, _evaluation_storage) = ctx.with_scoped_storage("check SLDPRT parameter evaluation", || {
+                match ParameterExpressionParser::new(ctx, &parameter.expression, aliases, values).parse()? {
+                    Some(value) => Ok(Some(value)),
+                    None => text_parameter_literal(ctx, &parameter.name, &parameter.expression),
+                }
+            })?;
             if let Some((id, value)) = own {
                 ctx.insert_hash_map(values, id, value, "check SLDPRT parameter evaluation")?;
             }
@@ -1046,9 +1037,9 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
                 &parameter.id,
                 "check SLDPRT parameter evaluation",
             )?;
-            let evaluated =
-                ParameterExpressionParser::new(ctx, &parameter.expression, aliases, values)
-                    .parse()?;
+            let (evaluated, _evaluation_storage) = ctx.with_scoped_storage("check SLDPRT evaluated parameter coherence", || {
+                ParameterExpressionParser::new(ctx, &parameter.expression, aliases, values).parse()
+            })?;
             let incoherent =
                 own.as_ref()
                     .zip(evaluated.as_ref())
@@ -1282,13 +1273,13 @@ pub(super) fn expression_identifier_tokens<'a, 'ctx>(
     const OPERATION: &str = "scan SLDPRT parameter identifiers";
     let mut storage = ctx.reserve_scoped(0, "collect SLDPRT parameter identifiers")?;
     let mut identifiers = Vec::new();
-    let mut characters = expression.char_indices().peekable();
+    let mut characters = expression.char_indices();
     while let Some((start, character)) = ctx.next_charged(&mut characters, OPERATION)? {
         if character == '"' {
             let mut closed = None;
             while let Some((at, character)) = ctx.next_charged(&mut characters, OPERATION)? {
                 if character != '"' { continue; }
-                if characters.peek().is_some_and(|(_, character)| *character == '"') {
+                if expression[at + 1..].starts_with('"') {
                     ctx.next_charged(&mut characters, OPERATION)?;
                 } else {
                     closed = Some(at + 1);
@@ -1301,9 +1292,8 @@ pub(super) fn expression_identifier_tokens<'a, 'ctx>(
             }
         } else if character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.') {
             let mut end = start + character.len_utf8();
-            while let Some(&(at, character)) = characters.peek() {
-                if !(character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.')) { break; }
-                ctx.next_charged(&mut characters, OPERATION)?;
+            while expression[end..].starts_with(|character: char| character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.')) {
+                let Some((at, character)) = ctx.next_charged(&mut characters, OPERATION)? else { break; };
                 end = at + character.len_utf8();
             }
             if let Some(identifier) = ExpressionIdentifier::plain(expression, start, end) {

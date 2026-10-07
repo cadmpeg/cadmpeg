@@ -1111,3 +1111,46 @@ fn explicit_offset_plane_reference_orders_a_later_derived_plane_first() {
     assert_eq!(projected[1].ordinal, 0);
     assert_eq!(projected[0].ordinal, 1);
 }
+
+#[test]
+fn ambiguous_planar_faces_leave_identity_copies_and_suffix_unpaid() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let surface = Surface {
+        id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface").unwrap(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 12.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ).unwrap(),
+        )),
+        source_object: None,
+    };
+    let face = Face {
+        id: cadmpeg_ir::ids::FaceId::mint("test:model:entity#face").unwrap(),
+        shell: cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell").unwrap(),
+        surface: surface.id.clone(),
+        sense: cadmpeg_ir::topology::Sense::Forward,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+    };
+    let mut second = face.clone();
+    second.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#second").unwrap();
+    let mut faces = vec![face.clone(), second];
+    faces.extend(std::iter::repeat_n(face, 4096));
+    let surfaces = HashMap::from([(&surface.id, &surface)]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_work_units = 256;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut selection = FaceSelection::Unresolved;
+    resolve_planar_face_selection(
+        &ctx, &mut selection, Point3::new(0.0, 0.0, 12.0),
+        Vector3::new(0.0, 0.0, 1.0), &faces, &surfaces,
+    ).unwrap();
+    assert_eq!(selection, FaceSelection::Unresolved);
+    assert!(ctx.resource_refusal().is_none());
+}
