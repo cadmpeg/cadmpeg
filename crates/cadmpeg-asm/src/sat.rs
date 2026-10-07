@@ -2043,21 +2043,6 @@ mod tests {
         Ok(use_context(&ctx))
     }
 
-    fn assert_work_refusal(
-        error: StreamFailure,
-        operation: &str,
-        used: u64,
-        additional: u64,
-    ) {
-        let StreamFailure::Resource(refusal) = error else {
-            panic!("expected work refusal, got {error:?}");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(refusal.operation, operation);
-        assert_eq!(refusal.used, used);
-        assert_eq!(refusal.additional, additional);
-    }
-
     fn assert_lex_prim_work_refusal(field: &str, operation: &str, additional: u64) {
         let source = format!("0 0 0 0\n0 0 0 \n1 0 0\naudit {field} #\nEnd-of-ASM-data \n").into_bytes();
         let refusal = crate::test_support::resource_limit_at(&source, ResourceDimension::WorkUnits,
@@ -2099,131 +2084,43 @@ mod tests {
 
     #[test]
     fn sat_field_reader_refuses_whitespace_and_field_scan_work() {
-        let whitespace = with_work_limit(b" ", 0, |ctx| {
-            let mut reader = super::FieldReader {
-                bytes: b" ",
-                pos: 0,
-            };
-            reader.skip_ws(ctx)
-        })
-        .expect("test context")
-        .expect_err("whitespace scan work must refuse");
-        let StreamFailure::Resource(whitespace) = whitespace else {
-            panic!("expected whitespace scan refusal");
-        };
+        let whitespace = crate::test_support::resource_limit_at(b" ", ResourceDimension::WorkUnits,
+            "scan SAT whitespace", |ctx| { let mut reader = super::FieldReader { bytes: b" ", pos: 0 }; reader.skip_ws(ctx) }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
         assert_eq!(whitespace.operation, "scan SAT whitespace");
-
-        let field = with_work_limit(b"x", 1, |ctx| {
-            let mut reader = super::FieldReader {
-                bytes: b"x",
-                pos: 0,
-            };
-            reader.next_field(ctx)
-        })
-        .expect("test context")
-        .expect_err("field scan work must refuse");
-        let StreamFailure::Resource(field) = field else {
-            panic!("expected field scan refusal");
-        };
+        let field = crate::test_support::resource_limit_at(b"x", ResourceDimension::WorkUnits,
+            "scan SAT field bytes", |ctx| { let mut reader = super::FieldReader { bytes: b"x", pos: 0 }; reader.next_field(ctx) }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
         assert_eq!(field.operation, "scan SAT field bytes");
     }
 
     #[test]
     fn sat_counted_string_refuses_whitespace_and_count_scan_work() {
-        let whitespace = with_work_limit(b" 1 x", 0, |ctx| {
-            let mut pos = 0;
-            super::counted_string(ctx, b" 1 x", &mut pos, 0, "fixture")
-        })
-        .expect("test context")
-        .expect_err("header whitespace scan work must refuse");
-        let StreamFailure::Resource(whitespace) = whitespace else {
-            panic!("expected header whitespace scan refusal");
-        };
+        let whitespace = crate::test_support::resource_limit_at(b" 1 x", ResourceDimension::WorkUnits,
+            "scan SAT header string whitespace", |ctx| { let mut pos = 0; super::counted_string(ctx, b" 1 x", &mut pos, 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
         assert_eq!(whitespace.operation, "scan SAT header string whitespace");
-
-        let digits = with_work_limit(b"1 x", 1, |ctx| {
-            let mut pos = 0;
-            super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture")
-        })
-        .expect("test context")
-        .expect_err("header count scan work must refuse");
-        let StreamFailure::Resource(digits) = digits else {
-            panic!("expected header count scan refusal");
-        };
+        let digits = crate::test_support::resource_limit_at(b"1 x", ResourceDimension::WorkUnits,
+            "scan SAT header string count", |ctx| { let mut pos = 0; super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
         assert_eq!(digits.operation, "scan SAT header string count");
     }
 
     #[test]
     fn sat_utf8_validation_refusals_preserve_work_errors() {
-        let field = with_work_limit(b"x", 2, |ctx| {
-            let mut reader = super::FieldReader {
-                bytes: b"x",
-                pos: 0,
-            };
-            reader.next_field(ctx)
-        })
-        .expect("test context")
-        .expect_err("field UTF-8 validation must refuse");
-        let StreamFailure::Resource(field) = field else {
-            panic!("expected field UTF-8 refusal");
-        };
+        let field = crate::test_support::resource_limit_at(b"x", ResourceDimension::WorkUnits,
+            "validate SAT field text", |ctx| { let mut reader = super::FieldReader { bytes: b"x", pos: 0 }; reader.next_field(ctx) }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
         assert_eq!(field.operation, "validate SAT field text");
-
-        let payload = with_work_limit(b" abc", 0, |ctx| {
-            let mut reader = super::FieldReader {
-                bytes: b" abc",
-                pos: 0,
-            };
-            reader.read_str_payload(ctx, 3, 0)
-        })
-        .expect("test context")
-        .expect_err("string payload UTF-8 validation must refuse");
-        let StreamFailure::Resource(payload) = payload else {
-            panic!("expected string payload UTF-8 refusal");
-        };
+        let payload = crate::test_support::resource_limit_at(b" abc", ResourceDimension::WorkUnits,
+            "validate SAT string payload", |ctx| { let mut reader = super::FieldReader { bytes: b" abc", pos: 0 }; reader.read_str_payload(ctx, 3, 0) }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
         assert_eq!(payload.operation, "validate SAT string payload");
-
-        let integer = with_work_limit(b"1", 0, |ctx| {
-            super::header_int::<u32>(ctx, Some(b"1"), 0, "fixture")
-        })
-        .expect("test context")
-        .expect_err("header integer UTF-8 validation must refuse");
-        let StreamFailure::Resource(integer) = integer else {
-            panic!("expected header integer UTF-8 refusal");
-        };
+        let integer = crate::test_support::resource_limit_at(b"1", ResourceDimension::WorkUnits,
+            "validate SAT header integer", |ctx| { super::header_int::<u32>(ctx, Some(b"1"), 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
         assert_eq!(integer.operation, "validate SAT header integer");
-
-        let length = with_work_limit(b"1 x", 3, |ctx| {
-            let mut pos = 0;
-            super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture")
-        })
-        .expect("test context")
-        .expect_err("header string length UTF-8 validation must refuse");
-        let StreamFailure::Resource(length) = length else {
-            panic!("expected header string length UTF-8 refusal");
-        };
+        let length = crate::test_support::resource_limit_at(b"1 x", ResourceDimension::WorkUnits,
+            "validate SAT header string length", |ctx| { let mut pos = 0; super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
         assert_eq!(length.operation, "validate SAT header string length");
-
-        // One whitespace probe, two count probes, UTF-8 and scalar parsing cost five.
-        let value = with_work_limit(b"1 x", 5, |ctx| {
-            let mut pos = 0;
-            super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture")
-        })
-        .expect("test context")
-        .expect_err("header string value UTF-8 validation must refuse");
-        let StreamFailure::Resource(value) = value else {
-            panic!("expected header string value UTF-8 refusal");
-        };
+        let value = crate::test_support::resource_limit_at(b"1 x", ResourceDimension::WorkUnits,
+            "validate SAT header string value", |ctx| { let mut pos = 0; super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
         assert_eq!(value.operation, "validate SAT header string value");
-
-        let float = with_work_limit(b"1", 0, |ctx| {
-            super::header_float(ctx, Some(b"1"), 0, "fixture")
-        })
-        .expect("test context")
-        .expect_err("header tolerance UTF-8 validation must refuse");
-        let StreamFailure::Resource(float) = float else {
-            panic!("expected header tolerance UTF-8 refusal");
-        };
+        let float = crate::test_support::resource_limit_at(b"1", ResourceDimension::WorkUnits,
+            "validate SAT header tolerance", |ctx| { super::header_float(ctx, Some(b"1"), 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
         assert_eq!(float.operation, "validate SAT header tolerance");
     }
 
@@ -2241,28 +2138,24 @@ mod tests {
 
     #[test]
     fn sat_header_text_scalar_parses_refuse_after_utf8_validation() {
-        let integer = with_work_limit(b"12", 2, |ctx| {
-            super::header_int::<u32>(ctx, Some(b"12"), 0, "fixture")
-        })
-        .expect("test context")
-        .expect_err("header integer parsing must refuse");
-        assert_work_refusal(integer, "parse SAT header integer", 2, 2);
-
-        let length = with_work_limit(b"12 x", 6, |ctx| {
-            let mut pos = 0;
-            super::counted_string(ctx, b"12 x", &mut pos, 0, "fixture")
-        })
-        .expect("test context")
-        .expect_err("header string count parsing must refuse");
-        // One whitespace probe, three count probes, and two UTF-8 bytes cost six units.
-        assert_work_refusal(length, "parse SAT header string length", 6, 2);
-
-        let tolerance = with_work_limit(b"1.5", 3, |ctx| {
-            super::header_float(ctx, Some(b"1.5"), 0, "fixture")
-        })
-        .expect("test context")
-        .expect_err("header tolerance parsing must refuse");
-        assert_work_refusal(tolerance, "parse SAT header tolerance", 3, 3);
+        let integer = crate::test_support::resource_limit_at(b"12", ResourceDimension::WorkUnits,
+            "parse SAT header integer", |ctx| { super::header_int::<u32>(ctx, Some(b"12"), 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        assert_eq!(integer.operation, "parse SAT header integer");
+        assert_eq!(integer.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(integer.used, 2);
+        assert_eq!(integer.additional, 2);
+        let length = crate::test_support::resource_limit_at(b"12 x", ResourceDimension::WorkUnits,
+            "parse SAT header string length", |ctx| { let mut pos = 0; super::counted_string(ctx, b"12 x", &mut pos, 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        assert_eq!(length.operation, "parse SAT header string length");
+        assert_eq!(length.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(length.used, 6);
+        assert_eq!(length.additional, 2);
+        let tolerance = crate::test_support::resource_limit_at(b"1.5", ResourceDimension::WorkUnits,
+            "parse SAT header tolerance", |ctx| { super::header_float(ctx, Some(b"1.5"), 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        assert_eq!(tolerance.operation, "parse SAT header tolerance");
+        assert_eq!(tolerance.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(tolerance.used, 3);
+        assert_eq!(tolerance.additional, 3);
     }
 
     #[test]
@@ -2588,19 +2481,12 @@ mod tests {
     #[test]
     fn sat_kernel_header_copy_refuses_retained_limit() {
         let source = asm_stream("");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 91;
-        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
-            .expect("source fits input limit");
-        let stream = super::parse(&ctx, &source).expect("header and terminator fit retained limit");
-        let error = stream
-            .header
-            .as_kernel_header(&ctx)
-            .expect_err("kernel header copy exceeds retained limit");
-        let CodecError::ResourceLimit(refusal) = error else {
-            panic!("expected resource refusal, got {error:?}");
-        };
+        let refusal = crate::test_support::resource_limit_at(&source, ResourceDimension::RetainedBytes,
+            "retain SAT kernel header string", |ctx| {
+                let stream = super::parse(ctx, &source)
+                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))?;
+                stream.header.as_kernel_header(ctx)
+            });
         assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(refusal.operation, "retain SAT kernel header string");
     }

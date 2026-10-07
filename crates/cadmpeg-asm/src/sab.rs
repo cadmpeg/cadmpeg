@@ -275,7 +275,7 @@ pub fn payload_subtype_range(
                     else {
                         return Ok(None);
                     };
-                    if name != expected {
+                    if !ctx.equal_bytes(name.as_bytes(), expected.as_bytes(), "match SAB payload subtype name")? {
                         return Ok(None);
                     }
                     pos = start;
@@ -853,50 +853,30 @@ mod tests {
     fn sab_payload_scans_refuse_work_before_lexing() {
         let bytes = b"\x0d\x01x\x0f\x0d\x01y\x0a\x10\x11";
         let records = frame(bytes, 0, bytes.len(), RefWidth::Eight).expect("complete record");
-        for (cap, operation) in [
-            (0, "scan SAB payload subtype token"),
-            // Two outer probes and two one-byte identifier validations precede the nested probe.
-            (4, "scan SAB nested payload token"),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-                .expect("input fits policy");
-            assert!(matches!(super::payload_subtype_range(
-                &ctx, bytes, &records[0], 0, RefWidth::Eight, "y"
-            ), Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == operation && limit.used == cap && limit.additional == 1));
+        for operation in ["scan SAB payload subtype token", "scan SAB nested payload token"] {
+            let limit = crate::test_support::resource_limit_at(bytes, ResourceDimension::WorkUnits, operation,
+                |ctx| super::payload_subtype_range(ctx, bytes, &records[0], 0, RefWidth::Eight, "y"));
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, operation);
+            assert_eq!(limit.used, limit.limit);
+            assert_eq!(limit.additional, 1);
         }
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .expect("input fits policy");
-        assert!(matches!(payload_token(&ctx, bytes, &records[0], RefWidth::Eight, 0),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "scan SAB payload token" && limit.used == 0 && limit.additional == 1));
+        let limit = crate::test_support::resource_limit_at(bytes, ResourceDimension::WorkUnits,
+            "scan SAB payload token", |ctx| payload_token(ctx, bytes, &records[0], RefWidth::Eight, 0));
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "scan SAB payload token");
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 1);
     }
 
     #[test]
     fn sab_history_boundary_refuses_token_loop_work() {
         let bytes = b"\x0d\x01x\x11";
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .expect("source fits input policy");
-        let Err(CodecError::ResourceLimit(refusal)) =
-            super::scan_history_boundary(&ctx, bytes, 0, RefWidth::Eight, None)
-        else {
-            panic!("token scan must refuse after the record charge");
-        };
+        let refusal = crate::test_support::resource_limit_at(bytes, ResourceDimension::WorkUnits,
+            "scan SAB history token", |ctx| super::scan_history_boundary(ctx, bytes, 0, RefWidth::Eight, None));
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(refusal.operation, "scan SAB history token");
-        // The record-loop admission spends one unit before the token-loop admission.
-        assert_eq!(refusal.used, 1);
+        assert_eq!(refusal.used, refusal.limit);
     }
 
     #[test]
@@ -920,55 +900,42 @@ mod tests {
     #[test]
     fn sab_framing_refuses_record_and_token_loop_work() {
         let bytes = b"\x0d\x01x\x0f\x07\x01s\x10\x11";
-        for (limit, operation) in [(0, "frame SAB record"), (1, "lex SAB token")] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-                .expect("source fits input policy");
-            let Err(StreamFailure::Resource(refusal)) =
-                frame_stream(&ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
-            else {
-                panic!("record and token loops must refuse at their own work charge");
-            };
+        for operation in ["frame SAB record", "lex SAB token"] {
+            let refusal = crate::test_support::resource_limit_at(bytes, ResourceDimension::WorkUnits, operation,
+                |ctx| frame_stream(ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
+                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
             assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
             assert_eq!(refusal.operation, operation);
         }
     }
 
-    fn assert_framed_collection_limit(max_items: u64, operation: &str) {
+    fn assert_framed_collection_limit(operation: &str) {
         let bytes = b"\x0d\x01x\x0f\x07\x01s\x10\x11";
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = max_items;
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-        let error = frame_stream(&ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
-            .expect_err("collection refusal");
-        let StreamFailure::Resource(limit) = error else {
-            panic!("expected resource refusal: {error:?}")
-        };
+        let limit = crate::test_support::resource_limit_at(bytes, ResourceDimension::CollectionItems, operation,
+            |ctx| frame_stream(ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
+                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, operation);
     }
 
     #[test]
     fn sab_name_parts_refuse_collection_limit() {
-        assert_framed_collection_limit(0, "frame SAB name part");
+        assert_framed_collection_limit("frame SAB name part");
     }
 
     #[test]
     fn sab_subtype_guards_refuse_collection_limit() {
-        assert_framed_collection_limit(1, "frame SAB subtype guards");
+        assert_framed_collection_limit("frame SAB subtype guards");
     }
 
     #[test]
     fn sab_tokens_refuse_collection_limit() {
-        assert_framed_collection_limit(2, "frame SAB token");
+        assert_framed_collection_limit("frame SAB token");
     }
 
     #[test]
     fn sab_records_refuse_collection_limit() {
-        assert_framed_collection_limit(5, "frame SAB record");
+        assert_framed_collection_limit("frame SAB record");
     }
 
     #[test]
