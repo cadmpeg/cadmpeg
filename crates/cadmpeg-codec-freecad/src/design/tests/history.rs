@@ -10,44 +10,6 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
-fn spreadsheet_cells_refuse_at_caller_limit() {
-    let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new(
-            "fcstd:native:object#Sheet".into(),
-            "Sheet".into(),
-        )
-        .expect("object identity"),
-        type_name: "Spreadsheet::Sheet".into(),
-        persistent_id: None,
-        view_type: None,
-        attributes: std::collections::BTreeMap::default(),
-        dependencies: Vec::new(),
-        dependency_allow_partial: None,
-        order: 0,
-        data: None,
-    };
-    let property = crate::native::PropertyRecord {
-        id: "property".into(),
-        owner: object.id().clone(),
-        name: "cells".into(),
-        type_name: "Spreadsheet::PropertySheet".into(),
-        family: crate::native::PropertyFamily::Unknown,
-        status: None,
-        body: crate::native::PropertyBody::Transient,
-        order: 0,
-        xml: crate::native::RetainedXml::from_text(
-            "<Property><Cells Count=\"1\"><Cell address=\"A1\" content=\"5\"/></Cells></Property>"
-                .into(),
-            0,
-        )
-        .expect("valid XML span"),
-    };
-    crate::test_support::assert_collection_refusal_at(&[], "FreeCAD spreadsheet cells", |ctx| {
-        super::super::spreadsheets::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&property])
-    });
-}
-
-#[test]
 fn distinguishes_stored_base_and_application_owned_features() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">

@@ -14,7 +14,7 @@ use cadmpeg_ir::spreadsheets::{
 use super::{design_identity_text, feature_id, malformed_design, MAX_SKETCH_RECORDS};
 use crate::native::{malformed, ObjectRecord, PropertyRecord};
 
-pub(super) fn direct_spreadsheet_value<'a, 'input: 'a>(
+fn direct_spreadsheet_value<'a, 'input: 'a>(
     ctx: &DecodeContext<'_>,
     xml: &'a roxmltree::Document<'input>,
     tag: &str,
@@ -418,7 +418,7 @@ fn spreadsheet_dimensions(
     Ok(dimensions)
 }
 
-pub(super) fn merged_range(
+fn merged_range(
     ctx: &DecodeContext<'_>,
     cell: roxmltree::Node<'_, '_>,
 ) -> Result<Option<SpreadsheetRange>, CodecError> {
@@ -483,7 +483,7 @@ pub(super) fn merged_range(
         .map(Some)
 }
 
-pub(super) fn offset_cell_address(
+fn offset_cell_address(
     ctx: &DecodeContext<'_>,
     address: &str,
     rows: u32,
@@ -510,10 +510,7 @@ pub(super) fn offset_cell_address(
     })()?)
 }
 
-pub(super) fn cell_address(
-    ctx: &DecodeContext<'_>,
-    address: &str,
-) -> Result<Option<(u32, u32)>, CodecError> {
+fn cell_address(ctx: &DecodeContext<'_>, address: &str) -> Result<Option<(u32, u32)>, CodecError> {
     let split = required!(ctx.position_by(
         address.as_bytes(),
         |byte| Ok(byte.is_ascii_digit()),
@@ -536,6 +533,9 @@ pub(super) fn cell_address(
 }
 
 #[cfg(test)]
-pub(super) fn range_contains_address(range: &SpreadsheetRange, address: &str) -> bool {
+fn range_contains_address(range: &SpreadsheetRange, address: &str) -> bool {
     CellAddress::parse(address).is_some_and(|address| range.contains(address))
 }
+
+#[cfg(test)]
+mod tests;
