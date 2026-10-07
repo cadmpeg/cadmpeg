@@ -7,12 +7,12 @@ use super::geometry::{
     plane_coordinates, source_object, BoundaryEndpoint, BoundaryVertexDerivation,
     BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
 };
-use super::{affine_parameter_map, line_directrix, pointer};
-use crate::directory::{DirectoryEntry, UseFlag};
+use super::{affine_parameter_map, pointer};
+use crate::directory::{entry_by_sequence, DirectoryEntry, UseFlag};
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
-use crate::parameter::{ParameterRecord, TokenValue};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use crate::parameter::{record_by_sequence, ParameterRecord, TokenValue};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::eval::finite_or_refusal;
@@ -24,7 +24,7 @@ use cadmpeg_ir::geometry::{
     ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{CurveId, SurfaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::{
@@ -76,6 +76,14 @@ enum BoundaryVertexCreationError {
     Resource(CodecError),
 }
 
+impl From<CodecError> for BoundaryEdgeSelectionError {
+    fn from(error: CodecError) -> Self { Self::Resource(error) }
+}
+
+impl From<cadmpeg_core::decode::ResourceLimit> for BoundaryVertexCreationError {
+    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self { Self::Resource(limit.into()) }
+}
+
 impl From<BoundaryVertexClusterError> for BoundaryVertexCreationError {
     fn from(error: BoundaryVertexClusterError) -> Self {
         Self::Cluster(error)
@@ -104,29 +112,23 @@ struct FaceTolerancePolicy {
 }
 
 impl FaceTolerancePolicy {
-    fn from_global(global: &ProjectedGlobal, points: impl Iterator<Item = Point3>) -> Self {
+    fn from_global(global: &ProjectedGlobal, points: impl Iterator<Item = Point3>, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let carrier_agreement = global.minimum_resolution_mm();
-        let coordinate_quantum = coordinate_quantum(global, points);
-        Self {
+        let coordinate_quantum = coordinate_quantum(global, points, ctx)?;
+        Ok(Self {
             topology_sewing: carrier_agreement.max(coordinate_quantum),
-        }
+        })
     }
 }
 
-fn coordinate_quantum(global: &ProjectedGlobal, points: impl Iterator<Item = Point3>) -> f64 {
-    let magnitude = points.fold(0.0_f64, |magnitude, point| {
-        magnitude
-            .max(point.x.abs())
-            .max(point.y.abs())
-            .max(point.z.abs())
-    });
-    if magnitude > 0.0 {
-        10.0_f64.powf(
-            magnitude.log10().floor() - f64::from(global.single_precision_significance()) + 1.0,
-        )
-    } else {
-        0.0
+fn coordinate_quantum(global: &ProjectedGlobal, mut points: impl Iterator<Item = Point3>, ctx: &DecodeContext<'_>) -> Result<f64, CodecError> {
+    let mut magnitude = 0.0_f64;
+    while let Some(point) = ctx.next_charged(&mut points, "iges face coordinate magnitude")? {
+        magnitude = magnitude.max(point.x.abs()).max(point.y.abs()).max(point.z.abs());
     }
+    Ok(if magnitude > 0.0 {
+        10.0_f64.powf(magnitude.log10().floor() - f64::from(global.single_precision_significance()) + 1.0)
+    } else { 0.0 })
 }
 
 fn point_order(left: Point3, right: Point3) -> Ordering {
@@ -142,8 +144,9 @@ fn find_cluster_root(
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
     let mut root = index;
+    let mut steps = std::iter::repeat(());
     loop {
-        ctx.charge_work(1, "iges boundary cluster root traversal")?;
+        ctx.next_charged(&mut steps, "iges boundary cluster root traversal")?;
         let parent = *parents
             .get(root)
             .ok_or_else(|| CodecError::malformed("boundary cluster parent is out of range"))?;
@@ -154,7 +157,7 @@ fn find_cluster_root(
     }
     let mut current = index;
     while current != root {
-        ctx.charge_work(1, "iges boundary cluster path compression")?;
+        ctx.next_charged(&mut steps, "iges boundary cluster path compression")?;
         let parent = parents
             .get_mut(current)
             .ok_or_else(|| CodecError::malformed("boundary cluster parent is out of range"))?;
@@ -171,24 +174,13 @@ fn cluster_boundary_positions(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<BoundaryVertexCluster>, BoundaryVertexCreationError> {
     let tolerance = tolerance.get();
-    let count = u64_from_index(positions.len());
-    let pair_count = if count == 0 {
-        0
-    } else {
-        count.checked_mul(count - 1).ok_or_else(|| {
-            ctx.refuse_codec_limit("iges boundary clustering comparisons", u64::MAX, u64::MAX)
-        })? / 2
-    };
-    ctx.charge_work(pair_count, "iges boundary clustering comparisons")?;
-    let mut parents = ctx.collection_vec(positions.len(), "iges boundary cluster parents")?;
-    let initialization_work = count.checked_mul(2).ok_or_else(|| {
-        ctx.refuse_codec_limit("iges boundary cluster initialization", u64::MAX, u64::MAX)
-    })?;
-    ctx.charge_work(initialization_work, "iges boundary cluster initialization")?;
-    parents.extend(0..positions.len());
-    let mut sizes = ctx.alloc_filled(positions.len(), 1usize, "iges boundary cluster sizes")?;
-    for (left_index, left) in positions.iter().enumerate() {
-        for (right_index, right) in positions.iter().enumerate().skip(left_index + 1) {
+    let (mut parents, _parent_storage) = ctx.temporary_vec(positions.len(), "iges boundary cluster parents")?;
+    parents.extend(ctx.admit_iter(0..positions.len(), "iges boundary cluster initialization")?);
+    let mut size_storage = ctx.reserve_scoped(0, "iges boundary cluster sizes")?;
+    let mut sizes = size_storage.with_storage(|| ctx.alloc_filled(positions.len(), 1usize, "iges boundary cluster sizes"))?;
+    for (left_index, left) in ctx.admit_iter(positions, "iges boundary clustering positions")?.enumerate() {
+        for (offset, right) in ctx.admit_iter(&positions[left_index + 1..], "iges boundary clustering comparisons")?.enumerate() {
+            let right_index = left_index + 1 + offset;
             if !close(left.get(), right.get(), tolerance) {
                 continue;
             }
@@ -209,40 +201,27 @@ fn cluster_boundary_positions(
         }
     }
     let mut members_by_root = BTreeMap::<usize, Vec<usize>>::new();
-    for index in 0..positions.len() {
+    let mut root_storage = ctx.reserve_scoped(0, "iges boundary cluster roots")?;
+    for index in ctx.admit_iter(0..positions.len(), "iges boundary cluster membership traversal")? {
         let root = find_cluster_root(&mut parents, index, ctx)?;
-        ctx.admit_btree_entry(&members_by_root, &root, "iges boundary cluster roots")?;
+        root_storage.with_storage(|| ctx.admit_btree_entry(&members_by_root, &root, "iges boundary cluster roots"))?;
         let members = members_by_root.entry(root).or_default();
         ctx.reserve_vec(members, 1, "iges boundary cluster members")?;
         members.push(index);
     }
     let mut clusters = ctx.collection_vec(members_by_root.len(), "iges boundary cluster slots")?;
-    ctx.charge_work(pair_count, "iges boundary cluster transitivity comparisons")?;
-    for members in members_by_root.into_values() {
-        if members.iter().enumerate().any(|(offset, left)| {
-            members
-                .iter()
-                .skip(offset + 1)
-                .any(|right| !close(positions[*left].get(), positions[*right].get(), tolerance))
-        }) {
+    for (_, members) in ctx.admit_iter(members_by_root, "iges boundary cluster groups")? {
+        if ctx.any_by(members.iter().enumerate(), |(offset, left)| {
+            ctx.any_by(&members[offset + 1..], |right| {
+                Ok(!close(positions[*left].get(), positions[*right].get(), tolerance))
+            }, "iges boundary cluster transitivity comparisons")
+        }, "iges boundary cluster transitivity members")? {
             return Err(BoundaryVertexClusterError::NonTransitive.into());
         }
-        let representative_comparisons = members
-            .len()
-            .checked_sub(1)
-            .ok_or(BoundaryVertexClusterError::NonTransitive)?;
-        ctx.charge_work(
-            u64_from_index(representative_comparisons),
-            "iges boundary cluster representative comparisons",
-        )?;
-        let representative = members
-            .iter()
-            .copied()
-            .min_by(|left, right| {
-                point_order(positions[*left].get(), positions[*right].get())
-                    .then_with(|| left.cmp(right))
-            })
-            .map(|index| positions[index])
+        let representative = ctx.min_by(&members, |left, right| {
+            Ok(point_order(positions[*left].get(), positions[*right].get()).then_with(|| left.cmp(right)))
+        }, "iges boundary cluster representative comparisons")?
+            .map(|index| positions[*index])
             .ok_or(BoundaryVertexClusterError::NonTransitive)?;
         clusters.push(BoundaryVertexCluster {
             representative,
@@ -258,25 +237,31 @@ fn cluster_boundary_positions(
     Ok(clusters)
 }
 
-fn create_boundary_vertices(
+#[derive(Debug)]
+struct BoundaryVertices<'ctx> {
+    ids: Vec<VertexId>,
+    derivations: Vec<BoundaryVertexDerivation>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+fn create_boundary_vertices<'ctx>(
     candidate: &mut ModelDraft,
     stem: &crate::ids::Stem,
     source: (&str, usize),
     source_endpoints: &[BoundaryVertexSourceEndpoint],
     tolerance: cadmpeg_ir::scalar::PositiveReal,
     sequences: &mut super::geometry::SourceSequences,
-    ctx: &DecodeContext<'_>,
-) -> Result<(Vec<VertexId>, Vec<BoundaryVertexDerivation>), BoundaryVertexCreationError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<BoundaryVertices<'ctx>, BoundaryVertexCreationError> {
     let (source_entity, boundary) = source;
-    let mut positions =
-        ctx.collection_vec(source_endpoints.len(), "iges boundary endpoint positions")?;
-    positions.extend(source_endpoints.iter().map(|endpoint| endpoint.position));
-    let clusters = cluster_boundary_positions(&positions, tolerance, ctx)?;
-    let mut vertex_ids =
-        ctx.collection_vec(positions.len(), "iges boundary endpoint vertex slots")?;
-    vertex_ids.extend(std::iter::repeat_with(|| None).take(positions.len()));
+    let (mut positions, _position_storage) = ctx.temporary_vec(source_endpoints.len(), "iges boundary endpoint positions")?;
+    positions.extend(ctx.admit_iter(source_endpoints, "iges boundary endpoint position copy")?.map(|endpoint| endpoint.position));
+    let mut cluster_storage = ctx.reserve_scoped(0, "iges boundary clustering storage")?;
+    let clusters = cluster_storage.with_storage(|| cluster_boundary_positions(&positions, tolerance, ctx))?;
+    let mut vertex_storage = ctx.reserve_scoped(0, "iges boundary endpoint vertex storage")?;
+    let mut vertex_ids = vertex_storage.with_storage(|| ctx.collect_indexed_vec(positions.len(), "iges boundary endpoint vertex slots", |_| Ok(None)))?;
     let mut derivations = ctx.collection_vec(clusters.len(), "iges boundary vertex derivations")?;
-    for (index, cluster) in clusters.into_iter().enumerate() {
+    for (index, cluster) in ctx.admit_iter(clusters, "iges boundary vertex cluster traversal")?.enumerate() {
         let point_id = crate::ids::point_admitted(&stem.slot(boundary).slot(index), ctx)?;
         ctx.reserve_vec(&mut candidate.model_mut().points, 1, "iges boundary points")?;
         ctx.reserve_vec(
@@ -285,7 +270,7 @@ fn create_boundary_vertices(
             "iges boundary vertices",
         )?;
         sequences.record_point(&point_id, stem, ctx)?;
-        let vertex_id = crate::ids::vertex_admitted(&stem.slot(boundary).slot(index), ctx)?;
+        let vertex_id = vertex_storage.with_storage(|| crate::ids::vertex_admitted(&stem.slot(boundary).slot(index), ctx))?;
         ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.model_mut().points.push(Point::new(
             point_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
@@ -300,7 +285,7 @@ fn create_boundary_vertices(
         });
         let mut derivation_endpoints =
             ctx.collection_vec(cluster.members.len(), "iges boundary derivation endpoints")?;
-        for member in &cluster.members {
+        for member in ctx.admit_iter(&cluster.members, "iges boundary derivation member traversal")? {
             let endpoint = &source_endpoints[*member];
             derivation_endpoints.push(BoundaryVertexSourceEndpoint {
                 edge: ctx.format_retained(
@@ -321,14 +306,13 @@ fn create_boundary_vertices(
             tolerance: tolerance.get(),
             source_endpoints: derivation_endpoints,
         });
-        for member in cluster.members {
-            vertex_ids[member] =
-                Some(vertex_id.try_clone_for_decode(ctx, "iges trimming identity copy")?);
+        for member in ctx.admit_iter(cluster.members, "iges boundary vertex member traversal")? {
+            vertex_ids[member] = Some(vertex_storage.with_storage(|| vertex_id.try_clone_for_decode(ctx, "iges trimming identity copy"))?);
         }
     }
-    let mut result_ids = ctx.collection_vec(vertex_ids.len(), "iges boundary result vertex ids")?;
-    result_ids.extend(vertex_ids.into_iter().flatten());
-    Ok((result_ids, derivations))
+    let mut result_ids = vertex_storage.with_storage(|| ctx.collection_vec(vertex_ids.len(), "iges boundary result vertex ids"))?;
+    result_ids.extend(ctx.admit_iter(vertex_ids, "iges boundary result vertex traversal")?.flatten());
+    Ok(BoundaryVertices { ids: result_ids, derivations, _storage: vertex_storage })
 }
 
 fn point_position(
@@ -358,36 +342,36 @@ enum ProceduralSourceParameterMap {
 }
 
 fn procedural_source_parameter_map(
-    ir: &CadIr,
+    index: &ModelIndex<'_>,
     support: &PcurveSupport<'_>,
-) -> ProceduralSourceParameterMap {
-    let procedural = ir.model.procedural_surfaces.iter().find(|procedural| {
-        ir.model.procedural_surface_owner(&procedural.id) == Some(support.surface_id)
-    });
+    ctx: &DecodeContext<'_>,
+) -> Result<ProceduralSourceParameterMap, CodecError> {
+    let procedural = index.procedural_surface_for_surface(support.surface_id.as_str(), ctx)?;
     if let Some(procedural) = procedural.filter(|procedural| {
         matches!(
             procedural.definition(),
             ProceduralSurfaceDefinition::Extrusion(_) | ProceduralSurfaceDefinition::Revolution(_)
         )
     }) {
-        return procedural_pcurve_parameter_map(ir, &procedural.id).map_or(
+        return Ok(procedural_pcurve_parameter_map(index, procedural, ctx)?.map_or(
             ProceduralSourceParameterMap::Unavailable,
             ProceduralSourceParameterMap::Mapped,
-        );
+        ));
     }
-    match support.geometry {
+    Ok(match support.geometry {
         SurfaceGeometry::Procedural { construction, .. } => {
-            procedural_pcurve_parameter_map(ir, construction).map_or(
-                ProceduralSourceParameterMap::Unavailable,
-                ProceduralSourceParameterMap::Mapped,
-            )
+            let mapped = match index.procedural_surfaces(construction.as_str(), ctx)? {
+                Some(procedural) => procedural_pcurve_parameter_map(index, procedural, ctx)?,
+                None => None,
+            };
+            mapped.map_or(ProceduralSourceParameterMap::Unavailable, ProceduralSourceParameterMap::Mapped)
         }
         SurfaceGeometry::Solved(_) => ProceduralSourceParameterMap::NotApplicable,
-    }
+    })
 }
 
-fn pcurve_parameter_map(ir: &CadIr, support: &PcurveSupport<'_>) -> Option<(f64, f64, f64, f64)> {
-    match procedural_source_parameter_map(ir, support) {
+fn pcurve_parameter_map(support: &PcurveSupport<'_>, source: ProceduralSourceParameterMap) -> Option<(f64, f64, f64, f64)> {
+    match source {
         ProceduralSourceParameterMap::Mapped(parameter_map) => {
             source_parameter_map_to_neutral(parameter_map, support.factor)
         }
@@ -453,26 +437,29 @@ fn source_parameter_point_to_neutral(
 }
 
 pub(super) fn pcurve_geometry(
-    ir: &CadIr,
+    index: &ModelIndex<'_>,
     sequence: u32,
     support: &PcurveSupport<'_>,
     tolerance: Option<f64>,
     ctx: &DecodeContext<'_>,
     composite_index: Option<&CompositeIndex>,
 ) -> Result<Option<(PcurveGeometry, [f64; 2])>, super::composite::CompositeCurveError> {
-    let curve_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx)?;
+    let ir = index.ir();
+    let mut identity_storage = ctx.reserve_scoped(0, "iges pcurve source identity")?;
+    let curve_id = identity_storage.with_storage(|| crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx))?;
     let Some((nurbs, range)) =
         bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?
     else {
         return Ok(None);
     };
-    let source_parameter_map = match procedural_source_parameter_map(ir, support) {
+    let source_map = procedural_source_parameter_map(index, support, ctx)?;
+    let source_parameter_map = match source_map {
         ProceduralSourceParameterMap::Mapped(parameter_map) => Some(parameter_map),
         ProceduralSourceParameterMap::NotApplicable | ProceduralSourceParameterMap::Unavailable => {
             None
         }
     };
-    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(ir, support) else {
+    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(support, source_map) else {
         return Ok(None);
     };
     let map_point = |point: FinitePoint3| -> Result<FinitePoint2, NurbsError> {
@@ -501,7 +488,7 @@ pub(super) fn pcurve_geometry(
         NurbsPoles3::Polynomial { points } => {
             let mut mapped =
                 ctx.collection_vec(points.len(), "iges pcurve mapped polynomial poles")?;
-            for point in points {
+            for point in ctx.admit_iter(points, "iges pcurve polynomial pole mapping")? {
                 mapped.push(map_point(point)?);
             }
             PcurveNurbsPoles::Polynomial { points: mapped }
@@ -509,7 +496,7 @@ pub(super) fn pcurve_geometry(
         NurbsPoles3::Rational { points } => {
             let mut mapped =
                 ctx.collection_vec(points.len(), "iges pcurve mapped rational poles")?;
-            for pole in points {
+            for pole in ctx.admit_iter(points, "iges pcurve rational pole mapping")? {
                 mapped.push(WeightedPole2 {
                     point: map_point(pole.point)?,
                     weight: pole.weight,
@@ -528,39 +515,52 @@ pub(super) fn pcurve_geometry(
 }
 
 fn procedural_pcurve_parameter_map(
-    ir: &CadIr,
-    construction: &ProceduralSurfaceId,
-) -> Option<(f64, f64, f64, f64)> {
-    let procedural = ir
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|procedural| procedural.id == *construction)?;
+    index: &ModelIndex<'_>,
+    procedural: &ProceduralSurface,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(f64, f64, f64, f64)>, CodecError> {
     let Some([Some(carrier_start), Some(carrier_end), _, _]) =
         procedural.record_bounds().map(RecordBounds::get)
     else {
-        return None;
+        return Ok(None);
     };
     let carrier_interval = [carrier_start, carrier_end];
     if carrier_interval[0] >= carrier_interval[1] {
-        return None;
+        return Ok(None);
     }
+    let directrix = match procedural.definition() {
+        ProceduralSurfaceDefinition::Extrusion(payload) => Some(payload.directrix()),
+        ProceduralSurfaceDefinition::Revolution(payload) => Some(payload.directrix()),
+        _ => None,
+    };
+    let mut directrix_is_line = false;
+    if let Some(directrix) = directrix {
+        if let Some(curve) = index.curves(directrix.as_str(), ctx)? {
+            let mut geometry = curve.geometry.solved();
+            let mut steps = std::iter::repeat(());
+            while let Some(current) = geometry {
+                ctx.next_charged(&mut steps, "iges procedural directrix chain")?;
+                match current {
+                    SolvedCurveGeometry::Line(_) => { directrix_is_line = true; break; }
+                    SolvedCurveGeometry::Transformed(placed) => geometry = Some(placed.basis()),
+                    _ => break,
+                }
+            }
+        }
+    }
+    Ok((|| {
     let mut u_map = (1.0, 0.0);
     let mut v_map = (1.0, 0.0);
     match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
-            let directrix = definition_payload.directrix();
             let parameter_interval = definition_payload.parameter_interval();
-            {
-                if line_directrix(ir, directrix) {
-                    u_map = affine_parameter_map([0.0, 1.0], carrier_interval)?;
-                } else if let Some(parameter_interval) = parameter_interval {
-                    u_map = affine_parameter_map(parameter_interval.get(), carrier_interval)?;
-                }
+            if directrix_is_line {
+                u_map = affine_parameter_map([0.0, 1.0], carrier_interval)?;
+            } else if let Some(parameter_interval) = parameter_interval {
+                u_map = affine_parameter_map(parameter_interval.get(), carrier_interval)?;
             }
         }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
-            let directrix = definition_payload.directrix();
             let angular_interval = definition_payload.angular_interval().endpoints();
             let angular_parameter_interval = definition_payload
                 .angular_parameter_interval()
@@ -569,8 +569,7 @@ fn procedural_pcurve_parameter_map(
                 .parameter_interval()
                 .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints);
             let transposed = definition_payload.transposed();
-            {
-                let directrix_map = if line_directrix(ir, directrix) {
+            let directrix_map = if directrix_is_line {
                     affine_parameter_map([0.0, 1.0], carrier_interval)?
                 } else if let Some(parameter_interval) = parameter_interval {
                     affine_parameter_map(parameter_interval, carrier_interval)?
@@ -590,11 +589,11 @@ fn procedural_pcurve_parameter_map(
                     u_map = directrix_map;
                     v_map = angular_map;
                 }
-            }
         }
         _ => return None,
     }
     Some((u_map.0, u_map.1, v_map.0, v_map.1))
+    })())
 }
 
 fn native_sequence_from_id(
@@ -605,9 +604,7 @@ fn native_sequence_from_id(
     let Some(suffix) = id.strip_prefix(prefix) else {
         return Ok(None);
     };
-    let end = suffix
-        .bytes()
-        .position(|byte| !byte.is_ascii_digit())
+    let end = ctx.position_by(suffix.bytes(), |byte| Ok(!byte.is_ascii_digit()), "iges native identity digits")?
         .unwrap_or(suffix.len());
     if end == 0 {
         return Ok(None);
@@ -617,16 +614,15 @@ fn native_sequence_from_id(
 
 fn parameter_curve_carrier_id(
     sequence: u32,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    entries: &[DirectoryEntry],
+    records: &[ParameterRecord],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<CurveId>, CodecError> {
-    let Some(entry) = entries.get(&sequence).copied() else {
+    let Some(entry) = entry_by_sequence(entries, sequence, ctx)? else {
         return Ok(None);
     };
     let carrier_sequence = if entry.entity_type == 142 && entry.form == 0 {
-        let Some(carrier_sequence) = records
-            .get(&sequence)
+        let Some(carrier_sequence) = record_by_sequence(records, sequence, ctx)?
             .and_then(|record| record.integer(3))
             .and_then(|value| u32::try_from(value).ok())
             .filter(|sequence| sequence % 2 == 1)
@@ -646,8 +642,8 @@ fn parameter_curve_carrier_id(
 fn surface_parameter_bound_intervals(
     bounds: Option<[Option<f64>; 4]>,
     surface_id: &SurfaceId,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    entries: &[DirectoryEntry],
+    records: &[ParameterRecord],
     precision: RealPrecision,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<[Option<DeclaredInterval>; 4]>, CodecError> {
@@ -659,13 +655,13 @@ fn surface_parameter_bound_intervals(
     else {
         return Ok(Some(intervals));
     };
-    let Some(entry) = entries.get(&sequence).copied() else {
+    let Some(entry) = entry_by_sequence(entries, sequence, ctx)? else {
         return Ok(Some(intervals));
     };
     if entry.entity_type != 128 {
         return Ok(Some(intervals));
     }
-    let Some(record) = records.get(&sequence).copied() else {
+    let Some(record) = record_by_sequence(records, sequence, ctx)? else {
         return Ok(Some(intervals));
     };
     if let Some(declared) = super::surfaces::type128_parameter_bound_intervals(record, precision) {
@@ -679,11 +675,11 @@ fn surface_parameter_bound_intervals(
 }
 
 fn source_curve_control_intervals(
-    ir: &CadIr,
+    index: &ModelIndex<'_>,
     curve_id: &CurveId,
     tables: (
-        &BTreeMap<u32, &DirectoryEntry>,
-        &BTreeMap<u32, &ParameterRecord>,
+        &[DirectoryEntry],
+        &[ParameterRecord],
     ),
     precision: RealPrecision,
     factor: f64,
@@ -692,21 +688,21 @@ fn source_curve_control_intervals(
 ) -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
     let (entries, records) = tables;
     let _nested = ctx.enter_nested("iges source curve intervals")?;
-    if active.contains(curve_id) {
+    if ctx.contains_btree_set(active, curve_id, "iges source active curve lookup")? {
         return Ok(None);
     }
     let active_id = curve_id.try_clone_for_decode(ctx, "iges source active curve ID")?;
     ctx.insert_btree_set(active, active_id, "iges source active curve nodes")?;
     let result = (|| -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
-        let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) else {
+        let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
             return Ok(None);
         };
         if let Some(sequence) = native_sequence_from_id(curve_id.as_str(), "iges:model:curve#D", ctx)? {
-            let Some(entry) = entries.get(&sequence).copied() else {
+            let Some(entry) = entry_by_sequence(entries, sequence, ctx)? else {
                 return Ok(None);
             };
             if entry.entity_type == 102 && entry.form == 0 {
-                let Some(record) = records.get(&sequence).copied() else {
+                let Some(record) = record_by_sequence(records, sequence, ctx)? else {
                     return Ok(None);
                 };
                 let Some(child_count) = record.count(1) else {
@@ -714,7 +710,7 @@ fn source_curve_control_intervals(
                 };
                 let mut child_ids =
                     ctx.collection_vec(child_count, "iges source composite child IDs")?;
-                for offset in 0..child_count {
+                for offset in ctx.admit_iter(0..child_count, "iges source composite children")? {
                     let Some(child_sequence) = offset
                         .checked_add(2)
                         .and_then(|index| record.integer(index))
@@ -730,15 +726,14 @@ fn source_curve_control_intervals(
                     child_ids.push(child_id);
                 }
                 let mut controls = Vec::new();
-                for child_id in child_ids {
+                for child_id in ctx.admit_iter(child_ids, "iges source child control traversal")? {
                     let Some(child) = source_curve_control_intervals(
-                        ir, &child_id, tables, precision, factor, active, ctx,
+                        index, &child_id, tables, precision, factor, active, ctx,
                     )?
                     else {
                         return Ok(None);
                     };
-                    ctx.reserve_vec(&mut controls, child.len(), "iges source composite controls")?;
-                    controls.extend(child);
+                    ctx.extend_vec(&mut controls, child, "iges source composite controls")?;
                 }
                 return Ok((!controls.is_empty()).then_some(controls));
             }
@@ -746,9 +741,9 @@ fn source_curve_control_intervals(
         match curve.geometry.solved() {
             Some(SolvedCurveGeometry::Composite { segments, .. }) => {
                 let mut controls = Vec::new();
-                for segment in segments {
+                for segment in ctx.admit_iter(&segments[..], "iges source solved composite traversal")? {
                     let Some(child) = source_curve_control_intervals(
-                        ir,
+                        index,
                         &segment.curve,
                         tables,
                         precision,
@@ -759,28 +754,19 @@ fn source_curve_control_intervals(
                     else {
                         return Ok(None);
                     };
-                    ctx.reserve_vec(
-                        &mut controls,
-                        child.len(),
-                        "iges source solved composite controls",
-                    )?;
-                    controls.extend(child);
+                    ctx.extend_vec(&mut controls, child, "iges source solved composite controls")?;
                 }
                 Ok((!controls.is_empty()).then_some(controls))
             }
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                if (0..nurbs.pole_count()).any(|index| {
-                    nurbs
-                        .pole_rows()
-                        .weight_at(index)
-                        .is_some_and(|weight| weight <= 0.0)
-                }) {
+                if matches!(nurbs.pole_rows(), NurbsPoles3::Rational { .. })
+                    && ctx.any_by(0..nurbs.pole_count(), |index| Ok(nurbs.pole_rows().weight_at(index).is_some_and(|weight| weight <= 0.0)), "iges source positive weights")? {
                     return Ok(None);
                 }
                 let exact = || -> Result<Vec<[DeclaredInterval; 3]>, CodecError> {
                     let mut controls =
                         ctx.collection_vec(nurbs.pole_count(), "iges source exact controls")?;
-                    for index in 0..nurbs.pole_count() {
+                    for index in ctx.admit_iter(0..nurbs.pole_count(), "iges source exact control traversal")? {
                         let point = nurbs
                             .pole_rows()
                             .point_at(index)
@@ -798,7 +784,7 @@ fn source_curve_control_intervals(
                 else {
                     return Ok(Some(exact()?));
                 };
-                let Some(entry) = entries.get(&sequence).copied() else {
+                let Some(entry) = entry_by_sequence(entries, sequence, ctx)? else {
                     return Ok(Some(exact()?));
                 };
                 if entry.entity_type != 126 {
@@ -807,7 +793,7 @@ fn source_curve_control_intervals(
                 if entry.transform != 0 {
                     return Ok(None);
                 }
-                let Some(record) = records.get(&sequence).copied() else {
+                let Some(record) = record_by_sequence(records, sequence, ctx)? else {
                     return Ok(None);
                 };
                 let Some(mut raw_controls) =
@@ -818,7 +804,7 @@ fn source_curve_control_intervals(
                 if raw_controls.len() != nurbs.pole_count() {
                     return Ok(None);
                 }
-                for control in &mut raw_controls {
+                for control in ctx.admit_iter(&mut raw_controls, "iges source control interval scaling")? {
                     *control = control.map(|value| value.scale(factor));
                 }
                 Ok(Some(raw_controls))
@@ -826,7 +812,7 @@ fn source_curve_control_intervals(
             _ => Ok(None),
         }
     })();
-    active.remove(curve_id);
+    ctx.remove_btree_set(active, curve_id, "iges source active curve removal")?;
     result
 }
 
@@ -859,25 +845,28 @@ fn parameter_interval_reaches_bounds(
 }
 
 fn source_curve_control_polygon_within_bounds(
-    ir: &CadIr,
+    index: &ModelIndex<'_>,
     curve_id: &CurveId,
     support: &PcurveSupport<'_>,
     bounds: Option<[Option<DeclaredInterval>; 4]>,
     tables: (
-        &BTreeMap<u32, &DirectoryEntry>,
-        &BTreeMap<u32, &ParameterRecord>,
+        &[DirectoryEntry],
+        &[ParameterRecord],
     ),
     precision: RealPrecision,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "iges source curve control polygon within bounds scratch")?;
+    scratch.with_storage(|| {
     let Some(bounds) = bounds else {
         return Ok(true);
     };
-    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(ir, support) else {
+    let source_map = procedural_source_parameter_map(index, support, ctx)?;
+    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(support, source_map) else {
         return Ok(false);
     };
     let Some(controls) = source_curve_control_intervals(
-        ir,
+        index,
         curve_id,
         tables,
         precision,
@@ -889,16 +878,17 @@ fn source_curve_control_polygon_within_bounds(
         return Ok(false);
     };
     Ok(!controls.is_empty()
-        && controls.into_iter().all(|[u, v, _]| {
+        && ctx.all_by(controls, |[u, v, _]| {
             let Some(u) = affine_parameter_interval(u, u_factor, u_offset) else {
-                return false;
+                return Ok(false);
             };
             let Some(v) = affine_parameter_interval(v, v_factor, v_offset) else {
-                return false;
+                return Ok(false);
             };
-            parameter_interval_reaches_bounds(u, bounds[0], bounds[1])
-                && parameter_interval_reaches_bounds(v, bounds[2], bounds[3])
-        }))
+            Ok(parameter_interval_reaches_bounds(u, bounds[0], bounds[1])
+                && parameter_interval_reaches_bounds(v, bounds[2], bounds[3]))
+        }, "iges source control bound proof")?)
+    })
 }
 
 fn linear_model_nurbs_points(
@@ -906,12 +896,8 @@ fn linear_model_nurbs_points(
     range: [f64; 2],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Point3>>, CodecError> {
-    if (0..nurbs.pole_count()).any(|index| {
-        nurbs
-            .pole_rows()
-            .weight_at(index)
-            .is_some_and(|weight| weight != 1.0)
-    }) {
+    if matches!(nurbs.pole_rows(), NurbsPoles3::Rational { .. })
+        && ctx.any_by(0..nurbs.pole_count(), |index| Ok(nurbs.pole_rows().weight_at(index).is_some_and(|weight| weight != 1.0)), "iges linear boundary weights")? {
         return Ok(None);
     }
     let Some(parameters) = linear_nurbs_parameters(
@@ -923,18 +909,16 @@ fn linear_model_nurbs_points(
     ) else {
         return Ok(None);
     };
-    let mut points = ctx.collection_vec(
-        parameters.clone().count(),
-        "iges linear model boundary points",
-    )?;
-    for parameter in parameters {
+    let mut points = Vec::new();
+    let mut parameters = parameters;
+    while let Some(parameter) = ctx.next_charged(&mut parameters, "iges linear boundary parameter traversal")? {
         let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
             cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, nurbs, parameter),
         )?)?
         else {
             return Ok(None);
         };
-        points.push(point.get());
+        ctx.push_vec(&mut points, point.get(), "iges linear model boundary points")?;
     }
     Ok(Some(points))
 }
@@ -947,12 +931,8 @@ fn linear_pcurve_points(
     let PcurveGeometry::Nurbs { nurbs } = geometry else {
         return Ok(None);
     };
-    if (0..nurbs.pole_rows().count()).any(|index| {
-        nurbs
-            .pole_rows()
-            .weight_at(index)
-            .is_some_and(|weight| weight != 1.0)
-    }) {
+    if matches!(nurbs.pole_rows(), PcurveNurbsPoles::Rational { .. })
+        && ctx.any_by(0..nurbs.pole_rows().count(), |index| Ok(nurbs.pole_rows().weight_at(index).is_some_and(|weight| weight != 1.0)), "iges linear boundary weights")? {
         return Ok(None);
     }
     let Some(parameters) = linear_nurbs_parameters(
@@ -964,18 +944,16 @@ fn linear_pcurve_points(
     ) else {
         return Ok(None);
     };
-    let mut points = ctx.collection_vec(
-        parameters.clone().count(),
-        "iges linear parameter boundary points",
-    )?;
-    for parameter in parameters {
+    let mut points = Vec::new();
+    let mut parameters = parameters;
+    while let Some(parameter) = ctx.next_charged(&mut parameters, "iges linear boundary parameter traversal")? {
         let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
             cadmpeg_ir::eval::decode::pcurve_uv(ctx, geometry, parameter),
         )?)?
         else {
             return Ok(None);
         };
-        points.push([point.u, point.v]);
+        ctx.push_vec(&mut points, [point.u, point.v], "iges linear parameter boundary points")?;
     }
     Ok(Some(points))
 }
@@ -996,12 +974,8 @@ fn append_path<T: Copy + PartialEq>(
     } else {
         path.len() - 1
     };
-    ctx.reserve_vec(target, additional, "iges linear boundary path")?;
-    if target.is_empty() {
-        target.extend(path);
-    } else {
-        target.extend(path.into_iter().skip(1));
-    }
+    let first = path.len() - additional;
+    ctx.extend_from_slice(target, &path[first..], "iges linear boundary path")?;
     Ok(true)
 }
 
@@ -1029,7 +1003,7 @@ fn linear_boundary_model_points(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Point3>>, CodecError> {
     let mut points = Vec::new();
-    for item in items {
+    for item in ctx.admit_iter(items, "iges linear boundary items")? {
         let Some(curve) = index.curves(item.model_curve.as_str(), ctx)? else {
             return Ok(None);
         };
@@ -1057,7 +1031,7 @@ fn linear_boundary_model_points(
             return Ok(None);
         }
         if item.segment.sense == Sense::Reversed {
-            curve_points.reverse();
+            ctx.reverse(&mut curve_points, "iges model ring reversal")?;
         }
         if !append_path(&mut points, curve_points, ctx)? {
             return Ok(None);
@@ -1104,7 +1078,7 @@ fn linear_boundary_geometry(
         return Ok(None);
     };
     let model_plane = (origin, *normal);
-    for item in items {
+    for item in ctx.admit_iter(items, "iges linear boundary items")? {
         let Some(curve) = index.curves(item.model_curve.as_str(), ctx)? else {
             return Ok(None);
         };
@@ -1127,22 +1101,18 @@ fn linear_boundary_geometry(
         return Ok(None);
     };
     if surface_kind == BoundarySurfaceKind::Trimmed
-        && items
-            .iter()
-            .any(|item| item.segment.parameter_curves_authoritative)
+        && ctx.any_by(items, |item| Ok(item.segment.parameter_curves_authoritative), "iges authoritative boundary search")?
     {
-        if !items
-            .iter()
-            .all(|item| item.segment.parameter_curves_authoritative)
+        if !ctx.all_by(items, |item| Ok(item.segment.parameter_curves_authoritative), "iges authoritative boundary proof")?
         {
             return Ok(None);
         }
         let mut parameter_points = Vec::new();
-        for item in items {
+        for item in ctx.admit_iter(items, "iges linear boundary items")? {
             if item.pcurves.is_empty() {
                 return Ok(None);
             }
-            for (geometry, range) in &item.pcurves {
+            for (geometry, range) in ctx.admit_iter(&item.pcurves, "iges linear boundary pcurves")? {
                 let Some(points) = linear_pcurve_points(geometry, *range, ctx)? else {
                     return Ok(None);
                 };
@@ -1172,17 +1142,9 @@ impl SimpleRing {
         if points.len() < 4 || points.first() != points.last() {
             return Ok(Err(NonSimpleRing));
         }
-        for point in &points {
-            ctx.charge_work(2, "iges simple ring coordinate admission")?;
-            if point.iter().any(|coordinate| !coordinate.is_finite()) {
-                return Ok(Err(NonSimpleRing));
-            }
-        }
-        for segment in points.windows(2) {
-            ctx.charge_work(1, "iges simple ring adjacent vertex comparisons")?;
-            if segment[0] == segment[1] {
-                return Ok(Err(NonSimpleRing));
-            }
+        if ctx.any_by(&points, |point| Ok(point.iter().any(|coordinate| !coordinate.is_finite())), "iges simple ring coordinate admission")?
+            || ctx.any_by(points.windows(2), |segment| Ok(segment[0] == segment[1]), "iges simple ring adjacent vertex comparisons")? {
+            return Ok(Err(NonSimpleRing));
         }
         if super::geometry::closed_polyline_has_duplicate(
             &points,
@@ -1215,15 +1177,14 @@ fn planar_point_is_strictly_inside(
     ring: &SimpleRing,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    for segment in ring.points().windows(2) {
-        ctx.charge_work(1, "iges planar point boundary comparisons")?;
-        if super::geometry::planar_segments_contain_point(point, [segment[0], segment[1]]) {
-            return Ok(false);
-        }
+    if ctx.any_by(ring.points().windows(2), |segment| {
+        Ok(super::geometry::planar_segments_contain_point(point, [segment[0], segment[1]]))
+    }, "iges planar point boundary comparisons")? {
+        return Ok(false);
     }
     let mut inside = false;
-    for segment in ring.points().windows(2) {
-        ctx.charge_work(1, "iges planar point containment comparisons")?;
+    for index in ctx.admit_iter(0..ring.points().len() - 1, "iges planar point containment comparisons")? {
+        let segment = &ring.points()[index..=index + 1];
         let [left, right] = [segment[0], segment[1]];
         if (left[1] > point[1]) != (right[1] > point[1]) {
             let crossing =
@@ -1245,19 +1206,14 @@ fn linear_boundary_rings(
         return Ok(None);
     }
     let mut rings = ctx.collection_vec(candidates.len(), "iges linear boundary ring slots")?;
-    for candidate in candidates {
+    for candidate in ctx.admit_iter(candidates, "iges linear boundary candidates")? {
         let ((BoundarySpace::Parameter, Some(LinearBoundaryGeometry::Parameter(points)))
         | (BoundarySpace::Model, Some(LinearBoundaryGeometry::Model(points)))) =
             (space, candidate.as_ref())
         else {
             return Ok(None);
         };
-        let mut copied = ctx.collection_vec(points.len(), "iges linear boundary ring points")?;
-        ctx.charge_work(
-            u64_from_index(points.len()),
-            "iges linear boundary ring copy",
-        )?;
-        copied.extend_from_slice(points);
+        let copied = ctx.copy_slice(points, "iges linear boundary ring points")?;
         match SimpleRing::new(copied, ctx)? {
             Ok(ring) => rings.push(ring),
             Err(error) => return Ok(Some(Err(error))),
@@ -1267,18 +1223,13 @@ fn linear_boundary_rings(
 }
 
 fn rings_are_disjoint(rings: &[SimpleRing], ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
-    for (left_index, left) in rings.iter().enumerate() {
-        for right in rings.iter().skip(left_index + 1) {
-            ctx.charge_work(1, "iges inner ring pair comparisons")?;
-            if planar_polylines_intersect(left.points(), right.points(), ctx)?
+    Ok(!ctx.any_by(rings.iter().enumerate(), |(left_index, left)| {
+        ctx.any_by(&rings[left_index + 1..], |right| {
+            Ok(planar_polylines_intersect(left.points(), right.points(), ctx)?
                 || planar_point_is_strictly_inside(left.first(), right, ctx)?
-                || planar_point_is_strictly_inside(right.first(), left, ctx)?
-            {
-                return Ok(false);
-            }
-        }
-    }
-    Ok(true)
+                || planar_point_is_strictly_inside(right.first(), left, ctx)?)
+        }, "iges inner ring pair comparisons")
+    }, "iges inner ring traversal")?)
 }
 
 fn inner_boundaries_are_disjoint_and_inside(
@@ -1286,15 +1237,11 @@ fn inner_boundaries_are_disjoint_and_inside(
     inners: &[SimpleRing],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    for inner in inners {
-        if planar_polylines_intersect(outer.points(), inner.points(), ctx)? {
-            return Ok(false);
-        }
-        for point in inner.interior() {
-            if !planar_point_is_strictly_inside(*point, outer, ctx)? {
-                return Ok(false);
-            }
-        }
+    if ctx.any_by(inners, |inner| {
+        Ok(planar_polylines_intersect(outer.points(), inner.points(), ctx)?
+            || !ctx.all_by(inner.interior(), |point| planar_point_is_strictly_inside(*point, outer, ctx), "iges inner ring containment traversal")?)
+    }, "iges inner ring containment proof")? {
+        return Ok(false);
     }
     rings_are_disjoint(inners, ctx)
 }
@@ -1335,17 +1282,12 @@ fn linear_boundary_relationship_is_valid(
                 && u_lower < u_upper
                 && v_lower < v_upper =>
         {
-            for ring in rings {
-                for point in ring.interior() {
-                    ctx.charge_work(1, "iges ring support bound comparisons")?;
-                    if point[0] <= u_lower
-                        || point[0] >= u_upper
-                        || point[1] <= v_lower
-                        || point[1] >= v_upper
-                    {
-                        return Ok(Some(false));
-                    }
-                }
+            if ctx.any_by(rings, |ring| {
+                ctx.any_by(ring.interior(), |point| {
+                    Ok(point[0] <= u_lower || point[0] >= u_upper || point[1] <= v_lower || point[1] >= v_upper)
+                }, "iges ring support bound comparisons")
+            }, "iges ring support bound traversal")? {
+                return Ok(Some(false));
             }
         }
         Some(_) => return Ok(None),
@@ -1433,6 +1375,7 @@ fn homogeneous_pcurve_spans(
     let mut inserted = 0;
     for (index, &knot) in ctx.admit_iter(knots, "iges pcurve knot runs")?.enumerate() {
         if knot == previous {
+            if knot.total_cmp(&previous).is_lt() { previous = knot; }
             multiplicity += 1;
             continue;
         }
@@ -1487,38 +1430,23 @@ fn split_homogeneous_pcurve(
     if controls.is_empty() || !parameter.is_finite() || !(0.0..=1.0).contains(&parameter) {
         return Ok(None);
     }
-    let mut levels = ctx.collection_vec(controls.len(), "iges pcurve split levels")?;
-    let mut first = ctx.collection_vec(controls.len(), "iges pcurve split first controls")?;
-    first.extend_from_slice(controls);
-    levels.push(first);
-    while levels.last().is_some_and(|level| level.len() > 1) {
-        ctx.charge_work(1, "iges pcurve split levels")?;
-        let Some(previous) = levels.last() else {
-            return Ok(None);
-        };
-        let mut next =
-            ctx.collection_vec(previous.len() - 1, "iges pcurve split level controls")?;
-        for pair in previous.windows(2) {
-            next.push(std::array::from_fn(|axis| {
+    let (mut current, _working_storage) = ctx.copy_temporary_slice(controls, "iges pcurve split first controls")?;
+    let mut left = ctx.collection_vec(controls.len(), "iges pcurve split left controls")?;
+    let mut right = ctx.collection_vec(controls.len(), "iges pcurve split right controls")?;
+    left.push(current[0]);
+    right.push(current[current.len() - 1]);
+    for _ in ctx.admit_iter(1..controls.len(), "iges pcurve split traversal")? {
+        for index in ctx.admit_iter(0..current.len() - 1, "iges pcurve split interpolation")? {
+            let pair = [current[index], current[index + 1]];
+            current[index] = std::array::from_fn(|axis| {
                 (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
-            }));
+            });
         }
-        levels.push(next);
+        current.pop();
+        left.push(current[0]);
+        right.push(current[current.len() - 1]);
     }
-    let mut left = ctx.collection_vec(levels.len(), "iges pcurve split left controls")?;
-    let mut right = ctx.collection_vec(levels.len(), "iges pcurve split right controls")?;
-    for level in &levels {
-        let Some(point) = level.first().copied() else {
-            return Ok(None);
-        };
-        left.push(point);
-    }
-    for level in levels.iter().rev() {
-        let Some(point) = level.last().copied() else {
-            return Ok(None);
-        };
-        right.push(point);
-    }
+    ctx.reverse(&mut right, "iges pcurve split right reversal")?;
     Ok(Some((left, right)))
 }
 
@@ -1533,12 +1461,12 @@ fn restrict_homogeneous_pcurve(
         let Some(mut restricted) = restrict_homogeneous_pcurve(controls, end, start, ctx)? else {
             return Ok(None);
         };
-        restricted.reverse();
+        ctx.reverse(&mut restricted, "iges restricted pcurve reversal")?;
         return Ok(Some(restricted));
     }
     if start == end {
         let Some(point) = split_homogeneous_pcurve(controls, start, ctx)?
-            .and_then(|(left, _)| left.into_iter().last())
+            .and_then(|(left, _)| left.last().copied())
         else {
             return Ok(None);
         };
@@ -1579,6 +1507,8 @@ fn pcurve_within_declared_intervals(
     periodic: [bool; 2],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "iges pcurve within declared intervals scratch")?;
+    scratch.with_storage(|| {
     let Some(bounds) = bounds else {
         return Ok(true);
     };
@@ -1591,11 +1521,8 @@ fn pcurve_within_declared_intervals(
     if !range[0].is_finite() || !range[1].is_finite() || range[0] >= range[1] {
         return Ok(false);
     }
-    let mut controls = ctx.collection_vec(
-        nurbs.pole_rows().count(),
-        "iges pcurve homogeneous controls",
-    )?;
-    for index in 0..nurbs.pole_rows().count() {
+    let (mut controls, control_storage) = ctx.temporary_vec(nurbs.pole_rows().count(), "iges pcurve homogeneous controls")?;
+    for index in ctx.admit_iter(0..nurbs.pole_rows().count(), "iges homogeneous control traversal")? {
         let Some(point) = nurbs
             .pole_rows()
             .point_at(index)
@@ -1612,6 +1539,7 @@ fn pcurve_within_declared_intervals(
     let Some(spans) = homogeneous_pcurve_spans(degree, nurbs.knots(), controls, ctx)? else {
         return Ok(false);
     };
+    drop(control_storage);
     let Some(first_span) = spans.first() else {
         return Ok(false);
     };
@@ -1647,7 +1575,7 @@ fn pcurve_within_declared_intervals(
         return Ok(false);
     };
     let mut covered = false;
-    for span in spans {
+    for span in ctx.admit_iter(spans, "iges pcurve bounded span traversal")? {
         let start = range[0].max(span.domain[0]);
         let end = range[1].min(span.domain[1]);
         if start >= end {
@@ -1664,22 +1592,25 @@ fn pcurve_within_declared_intervals(
         else {
             return Ok(false);
         };
-        let Some(restricted) =
-            restrict_homogeneous_pcurve(&span.controls, local_start.get(), local_end.get(), ctx)?
+        let mut restricted_storage = ctx.reserve_scoped(0, "iges restricted pcurve scratch")?;
+        let Some(restricted) = restricted_storage.with_storage(||
+            restrict_homogeneous_pcurve(&span.controls, local_start.get(), local_end.get(), ctx))?
         else {
             return Ok(false);
         };
-        if restricted.iter().any(|control| {
+        if ctx.any_by(&restricted, |control| {
             let weight = control[0];
+            Ok(
             !weight.is_finite()
                 || weight <= 0.0
                 || !in_bound(control[1] / weight, u_lower, u_upper)
-                || !in_bound(control[2] / weight, v_lower, v_upper)
-        }) {
+                || !in_bound(control[2] / weight, v_lower, v_upper))
+        }, "iges restricted pcurve bounds")? {
             return Ok(false);
         }
     }
     Ok(covered)
+    })
 }
 
 fn periodic_surface_parameters(surface: &SurfaceGeometry) -> [bool; 2] {
@@ -1696,6 +1627,8 @@ fn surface_parameter_bounds(
     surface_id: &SurfaceId,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<[Option<f64>; 4]>, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "iges surface parameter bounds scratch")?;
+    scratch.with_storage(|| {
     fn visit(
         index: &ModelIndex<'_>,
         surface_id: &SurfaceId,
@@ -1703,7 +1636,7 @@ fn surface_parameter_bounds(
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<[Option<f64>; 4]>, CodecError> {
         let _nested = ctx.enter_nested("iges support-bound surface chain")?;
-        if visiting.contains(surface_id) {
+        if ctx.contains_btree_set(visiting, surface_id, "iges support-bound visited lookup")? {
             return Ok(None);
         }
         let visited_id =
@@ -1761,6 +1694,7 @@ fn surface_parameter_bounds(
     }
 
     visit(index, surface_id, &mut BTreeSet::new(), ctx)
+    })
 }
 
 fn pcurves_agree(
@@ -1772,8 +1706,8 @@ fn pcurves_agree(
     tolerance: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    let mut mapped = ctx.collection_vec(pcurves.len(), "iges trimmed mapped pcurves")?;
-    for (geometry, range) in pcurves {
+    let mut previous_end = None;
+    let agrees = ctx.all_by(pcurves, |(geometry, range)| -> Result<bool, CodecError> {
         let Some(start_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
             cadmpeg_ir::eval::decode::pcurve_uv(ctx, geometry, range[0]),
         )?)?
@@ -1790,6 +1724,9 @@ fn pcurves_agree(
         else {
             return Ok(false);
         };
+        if !close(start.get(), previous_end.unwrap_or(expected_start), tolerance) {
+            return Ok(false);
+        }
         let Some(end_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
             cadmpeg_ir::eval::decode::pcurve_uv(ctx, geometry, range[1]),
         )?)?
@@ -1806,17 +1743,10 @@ fn pcurves_agree(
         else {
             return Ok(false);
         };
-        mapped.push((start.get(), end.get()));
-    }
-    Ok(mapped
-        .first()
-        .is_some_and(|(start, _)| close(*start, expected_start, tolerance))
-        && mapped
-            .last()
-            .is_some_and(|(_, end)| close(*end, expected_end, tolerance))
-        && mapped
-            .windows(2)
-            .all(|pair| close(pair[0].1, pair[1].0, tolerance)))
+        previous_end = Some(end.get());
+        Ok(true)
+    }, "iges trimmed pcurve endpoint traversal")?;
+    Ok(agrees && previous_end.is_some_and(|end| close(end, expected_end, tolerance)))
 }
 
 fn edge_range_matches_curve(
@@ -1880,98 +1810,70 @@ fn select_boundary_edge(
         tolerance,
         parameter_curves_authoritative,
     } = boundary;
-    let mut candidates_with_endpoints = 0;
-    let mut matched = ctx
-        .collection_vec(candidates.len(), "iges trimmed edge candidates")
-        .map_err(BoundaryEdgeSelectionError::Resource)?;
-    for &edge in candidates {
-        let Some(start) = point_position(carrier_index, &edge.start, ctx)
-            .map_err(BoundaryEdgeSelectionError::Resource)?
-        else {
-            continue;
+    let mut endpoints_found = false;
+    let mut matched = None;
+    let mut multiple_matched = false;
+    let mut agreeing = None;
+    let ambiguous = ctx.any_by(candidates, |&edge| {
+        let Some(start) = point_position(carrier_index, &edge.start, ctx)? else {
+            return Ok(false);
         };
-        let Some(end) = point_position(carrier_index, &edge.end, ctx)
-            .map_err(BoundaryEdgeSelectionError::Resource)?
-        else {
-            continue;
+        let Some(end) = point_position(carrier_index, &edge.end, ctx)? else {
+            return Ok(false);
         };
-        candidates_with_endpoints += 1;
-        if edge_range_matches_curve(ctx, edge, carrier_index, start.get(), end.get(), tolerance)
-            .map_err(|limit| BoundaryEdgeSelectionError::Resource(limit.into()))?
-        {
-            matched.push((edge, start, end));
+        endpoints_found = true;
+        if !edge_range_matches_curve(ctx, edge, carrier_index, start.get(), end.get(), tolerance)? {
+            return Ok(false);
         }
-    }
-    let candidates = matched;
-    if candidates.is_empty() {
-        return Err(if candidates_with_endpoints == 0 {
-            BoundaryEdgeSelectionError::MissingEndpoints
+        if matched.is_some() {
+            multiple_matched = true;
         } else {
-            BoundaryEdgeSelectionError::InvalidRange
-        });
-    }
-    if pcurves.is_empty() {
-        return if candidates.len() == 1 {
-            let (edge, start, end) = candidates[0];
-            Ok((
-                clone_boundary_edge(edge, ctx).map_err(BoundaryEdgeSelectionError::Resource)?,
-                start,
-                end,
-                true,
-            ))
-        } else {
-            Err(BoundaryEdgeSelectionError::Ambiguous)
-        };
-    }
-
-    let mut agreeing = ctx
-        .collection_vec(candidates.len(), "iges trimmed agreeing edges")
-        .map_err(BoundaryEdgeSelectionError::Resource)?;
-    for candidate @ (_, start, end) in &candidates {
+            matched = Some((edge, start, end));
+        }
+        if pcurves.is_empty() {
+            return Ok(multiple_matched);
+        }
         let (expected_start, expected_end) = if sense == Sense::Forward {
-            (*start, *end)
+            (start, end)
         } else {
-            (*end, *start)
+            (end, start)
         };
         if pcurves_agree(
-            carrier_index,
-            surface_id,
-            pcurves,
-            expected_start.get(),
-            expected_end.get(),
-            tolerance,
-            ctx,
-        )
-        .map_err(BoundaryEdgeSelectionError::Resource)?
-        {
-            agreeing.push(candidate);
-        }
-    }
-    match agreeing.as_slice() {
-        [(edge, start, end)] => Ok((
-            clone_boundary_edge(edge, ctx).map_err(BoundaryEdgeSelectionError::Resource)?,
-            *start,
-            *end,
-            true,
-        )),
-        [] if !parameter_curves_authoritative && candidates.len() == 1 => {
-            let (edge, start, end) = candidates[0];
-            Ok((
-                clone_boundary_edge(edge, ctx).map_err(BoundaryEdgeSelectionError::Resource)?,
-                start,
-                end,
-                false,
-            ))
-        }
-        [] => {
-            if parameter_curves_authoritative {
-                Err(BoundaryEdgeSelectionError::PcurveDisagreement)
-            } else {
-                Err(BoundaryEdgeSelectionError::Ambiguous)
+            carrier_index, surface_id, pcurves,
+            expected_start.get(), expected_end.get(), tolerance, ctx,
+        )? {
+            if agreeing.is_some() {
+                return Ok(true);
             }
+            agreeing = Some((edge, start, end));
         }
-        _ => Err(BoundaryEdgeSelectionError::Ambiguous),
+        Ok(false)
+    }, "iges trimmed edge candidate traversal")?;
+    if ambiguous {
+        return Err(BoundaryEdgeSelectionError::Ambiguous);
     }
+    let Some(matched) = matched else {
+        return Err(if endpoints_found {
+            BoundaryEdgeSelectionError::InvalidRange
+        } else {
+            BoundaryEdgeSelectionError::MissingEndpoints
+        });
+    };
+    let (selected, pcurves_agree) = if pcurves.is_empty() {
+        (matched, true)
+    } else if let Some(agreeing) = agreeing {
+        (agreeing, true)
+    } else if !parameter_curves_authoritative && !multiple_matched {
+        (matched, false)
+    } else {
+        return Err(if parameter_curves_authoritative {
+            BoundaryEdgeSelectionError::PcurveDisagreement
+        } else {
+            BoundaryEdgeSelectionError::Ambiguous
+        });
+    };
+    let (edge, start, end) = selected;
+    Ok((clone_boundary_edge(edge, ctx)?, start, end, pcurves_agree))
 }
 
 pub(super) fn clone_boundary_edge(
@@ -2017,28 +1919,8 @@ pub(super) fn project(
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(ProjectionOutcome, Vec<BoundaryVertexDerivation>), CodecError> {
     let mut lookup_storage = ctx.reserve_scoped(0, "IGES projection source lookup")?;
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        lookup_storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut records,
-                record.directory_sequence,
-                record,
-                "iges trimming parameter index",
-            )
-        })?;
-    }
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        lookup_storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut entries,
-                entry.sequence,
-                entry,
-                "iges trimming directory index",
-            )
-        })?;
-    }
+    let records = parameters;
+    let entries = directory;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut boundary_vertex_derivations = Vec::new();
@@ -2048,7 +1930,7 @@ pub(super) fn project(
     let mut composite_storage = ctx.reserve_scoped(0, "IGES trimming composite index")?;
     let mut composite_index: Option<CompositeIndex> = None;
     let mut edges_by_curve = BTreeMap::<&CurveId, Vec<&Edge>>::new();
-    for edge in &ir.model.edges {
+    for edge in ctx.admit_iter(&ir.model.edges, "iges boundary carrier traversal")? {
         if let Some(curve) = edge.curve() {
             lookup_storage.with_storage(|| {
                 ctx.admit_btree_entry(&edges_by_curve, &curve, "iges boundary carrier index nodes")
@@ -2061,11 +1943,11 @@ pub(super) fn project(
         }
     }
     let mut staged = Vec::new();
-    for entry in directory
-        .iter()
+    let mut staged_storage = ctx.reserve_scoped(0, "iges trimming staged candidates")?;
+    for entry in ctx.admit_iter(directory, "iges trimming directory traversal")?
         .filter(|entry| entry.entity_type == 142 && entry.form == 0)
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = record_by_sequence(records, entry.sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -2126,11 +2008,12 @@ pub(super) fn project(
             )?;
             continue;
         };
-        if pcurve.is_some_and(|pcurve| {
-            entries.get(&pcurve).is_none_or(|entry| {
+        if match pcurve {
+            Some(pcurve) => entry_by_sequence(entries, pcurve, ctx)?.is_none_or(|entry| {
                 entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
-            })
-        }) {
+            }),
+            None => false,
+        } {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -2139,37 +2022,35 @@ pub(super) fn project(
             )?;
             continue;
         }
-        let mut pcurves = ctx.collection_vec(
+        let mut pcurves = lookup_storage.with_storage(|| ctx.collection_vec(
             usize::from(pcurve.is_some()),
-            "iges Type142 boundary pcurve pointers",
-        )?;
+            "iges Type142 boundary pcurve pointers"))?;
         if let Some(pcurve) = pcurve {
             pcurves.push(pcurve);
         }
-        let mut segments = ctx.collection_vec(1, "iges Type142 boundary segments")?;
+        let mut segments = lookup_storage.with_storage(|| ctx.collection_vec(1, "iges Type142 boundary segments"))?;
         segments.push(BoundarySegment {
             pcurves,
             model_curve,
             sense: Sense::Forward,
             parameter_curves_authoritative: pcurve.is_some() && preference != 2,
         });
-        ctx.insert_btree_map(
+        lookup_storage.with_storage(|| ctx.insert_btree_map(
             &mut boundaries,
             entry.sequence,
             BoundaryDefinition { surface, segments },
             "iges trimming boundary index nodes",
-        )?;
+        ))?;
         ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges trimming decoded sequences",
         )?;
     }
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges trimming directory traversal")?
         .filter(|entry| entry.entity_type == 141 && entry.form == 0)
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = record_by_sequence(records, entry.sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -2215,9 +2096,9 @@ pub(super) fn project(
             continue;
         };
         let mut index = 5;
-        let mut segments = ctx.collection_vec(segment_count, "iges Type141 boundary segments")?;
+        let mut segments = lookup_storage.with_storage(|| ctx.collection_vec(segment_count, "iges Type141 boundary segments"))?;
         let mut valid = true;
-        for _ in 0..segment_count {
+        for _ in ctx.admit_iter(0..segment_count, "iges Type141 segment traversal")? {
             let Some(model_curve) = pointer(record, index) else {
                 super::push_entity_loss(
                     ctx,
@@ -2259,13 +2140,13 @@ pub(super) fn project(
                 valid = false;
                 break;
             }
-            let mut pcurves = ctx.collection_vec(pcurve_count, "iges Type141 segment pcurves")?;
-            for pcurve_index in 0..pcurve_count {
+            let mut pcurves = lookup_storage.with_storage(|| ctx.collection_vec(pcurve_count, "iges Type141 segment pcurves"))?;
+            for pcurve_index in ctx.admit_iter(0..pcurve_count, "iges Type141 pcurve traversal")? {
                 let Some(pcurve) = pointer(record, index + 3 + pcurve_index) else {
-                    pcurves.clear();
+                    ctx.clear_vec(&mut pcurves, "iges trimming rejected pcurves")?;
                     break;
                 };
-                if entries.get(&pcurve).is_none_or(|entry| {
+                if entry_by_sequence(entries, pcurve, ctx)?.is_none_or(|entry| {
                     entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
                 }) {
                     super::push_entity_loss(
@@ -2274,7 +2155,7 @@ pub(super) fn project(
                         entry,
                         format_args!("{}", "boundary pcurve does not have entity-use flag 05"),
                     )?;
-                    pcurves.clear();
+                    ctx.clear_vec(&mut pcurves, "iges trimming rejected pcurves")?;
                     break;
                 }
                 pcurves.push(pcurve);
@@ -2298,12 +2179,12 @@ pub(super) fn project(
             index += 3 + pcurve_count;
         }
         if valid {
-            ctx.insert_btree_map(
+            lookup_storage.with_storage(|| ctx.insert_btree_map(
                 &mut boundaries,
                 entry.sequence,
                 BoundaryDefinition { surface, segments },
                 "iges trimming boundary index nodes",
-            )?;
+            ))?;
             ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
@@ -2311,13 +2192,13 @@ pub(super) fn project(
             )?;
         }
     }
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges trimming directory traversal")?
         .filter(|entry| matches!(entry.entity_type, 143 | 144) && entry.form == 0)
     {
+        let mut sequence_storage = ctx.reserve_scoped(0, "iges trimming boundary sequence scratch")?;
         let factor = global.length_factor_mm();
         let carrier_agreement_tolerance = global.minimum_resolution_mm();
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = record_by_sequence(records, entry.sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -2375,7 +2256,7 @@ pub(super) fn project(
                     ctx.refuse_codec_limit("iges Type144 boundary sequences", u64::MAX, 1)
                 })?;
             let mut sequences =
-                ctx.collection_vec(sequence_count, "iges Type144 boundary sequences")?;
+                sequence_storage.with_storage(|| ctx.collection_vec(sequence_count, "iges Type144 boundary sequences"))?;
             // The outer boundary is stated in its own PTO field, so it travels
             // as its own value and is never recovered from a list position.
             let mut explicit_outer_sequence = None;
@@ -2389,8 +2270,7 @@ pub(super) fn project(
                     )?;
                     continue;
                 };
-                if entries
-                    .get(&outer)
+                if entry_by_sequence(entries, outer, ctx)?
                     .is_none_or(|target| target.entity_type != 142 || target.form != 0)
                 {
                     super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface outer-boundary pointer does not target a Type 142 Form 0 entity"))?;
@@ -2406,7 +2286,7 @@ pub(super) fn project(
                 continue;
             }
             let mut valid = true;
-            for index in 0..inner_count {
+            for index in ctx.admit_iter(0..inner_count, "iges Type144 inner traversal")? {
                 let Some(sequence) = pointer(record, 5 + index) else {
                     super::push_entity_loss(
                         ctx,
@@ -2417,8 +2297,7 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
-                if entries
-                    .get(&sequence)
+                if entry_by_sequence(entries, sequence, ctx)?
                     .is_none_or(|target| target.entity_type != 142 || target.form != 0)
                 {
                     super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "trimmed-surface inner-boundary pointer does not target a Type 142 Form 0 entity"))?;
@@ -2463,9 +2342,9 @@ pub(super) fn project(
                 )?;
                 continue;
             };
-            let mut sequences = ctx.collection_vec(count, "iges Type143 boundary sequences")?;
+            let mut sequences = sequence_storage.with_storage(|| ctx.collection_vec(count, "iges Type143 boundary sequences"))?;
             let mut valid = true;
-            for index in 0..count {
+            for index in ctx.admit_iter(0..count, "iges Type143 boundary traversal")? {
                 let Some(sequence) = pointer(record, 4 + index) else {
                     super::push_entity_loss(
                         ctx,
@@ -2476,26 +2355,20 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
-                if entries
-                    .get(&sequence)
+                if entry_by_sequence(entries, sequence, ctx)?
                     .is_none_or(|target| target.entity_type != 141 || target.form != 0)
                 {
                     super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "bounded-surface boundary pointer does not target a Type 141 Form 0 entity"))?;
                     valid = false;
                     break;
                 }
-                if boundaries.get(&sequence).is_some_and(|boundary| {
-                    (representation == 0
-                        && boundary
-                            .segments
-                            .iter()
-                            .all(|segment| segment.pcurves.is_empty()))
-                        || (representation == 1
-                            && boundary
-                                .segments
-                                .iter()
-                                .all(|segment| !segment.pcurves.is_empty()))
-                }) {
+                let representation_matches = match boundaries.get(&sequence) {
+                    Some(boundary) => ctx.all_by(&boundary.segments, |segment| {
+                        Ok(if representation == 0 { segment.pcurves.is_empty() } else { !segment.pcurves.is_empty() })
+                    }, "iges bounded representation proof")?,
+                    None => false,
+                };
+                if representation_matches {
                     sequences.push(sequence);
                 } else {
                     super::push_entity_loss(
@@ -2516,9 +2389,16 @@ pub(super) fn project(
         if !valid {
             continue;
         }
-        let surface_id =
-            crate::ids::surface_admitted(&crate::ids::Stem::directory(surface_sequence), ctx)?;
-        let Some(support_geometry) = carrier_index
+        let mut face_scratch = ctx.reserve_scoped(0, "iges trimming face scratch")?;
+        let implicit_outer_domain = surface_kind == BoundarySurfaceKind::Trimmed
+            && !has_explicit_outer
+            && !boundary_sequences.is_empty();
+        let surface_id = if implicit_outer_domain {
+            face_scratch.with_storage(|| crate::ids::surface_admitted(&crate::ids::Stem::directory(surface_sequence), ctx))?
+        } else {
+            crate::ids::surface_admitted(&crate::ids::Stem::directory(surface_sequence), ctx)?
+        };
+        let copy_support = || carrier_index
             .surfaces(surface_id.as_str(), ctx)?
             .map(|surface| match &surface.geometry {
                 SurfaceGeometry::Solved(solved) => solved
@@ -2539,8 +2419,12 @@ pub(super) fn project(
                     cache: None,
                 }),
             })
-            .transpose()?
-        else {
+            .transpose();
+        let Some(support_geometry) = (if implicit_outer_domain {
+            copy_support()
+        } else {
+            face_scratch.with_storage(copy_support)
+        })? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -2562,23 +2446,20 @@ pub(super) fn project(
         let support_parameter_intervals = surface_parameter_bound_intervals(
             support_parameter_bounds,
             &surface_id,
-            &entries,
-            &records,
+            entries,
+            records,
             global.real_precision(),
             ctx,
         )?;
         let periodic_parameters = periodic_surface_parameters(&support_geometry);
-        let implicit_outer_domain = surface_kind == BoundarySurfaceKind::Trimmed
-            && !has_explicit_outer
-            && !boundary_sequences.is_empty();
         let mut implicit_boundary_curves = Vec::new();
         let mut implicit_boundary_pcurves = Vec::new();
         let mut loop_ids = Vec::new();
         let mut explicit_outer_loop: Option<cadmpeg_ir::ids::LoopId> = None;
-        let mut linear_boundary_candidates =
-            ctx.collection_vec(boundary_sequences.len(), "iges trimming linear candidates")?;
+        let mut linear_boundary_candidates = face_scratch.with_storage(||
+            ctx.collection_vec(boundary_sequences.len(), "iges trimming linear candidates"))?;
         let mut face_tolerance = 0.0_f64;
-        for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
+        for (boundary_index, sequence) in ctx.admit_iter(&boundary_sequences, "iges trimming boundary traversal")?.copied().enumerate() {
             let Some(boundary) = boundaries.get(&sequence) else {
                 super::push_entity_loss(
                     ctx,
@@ -2602,14 +2483,14 @@ pub(super) fn project(
                 valid = false;
                 break;
             }
-            let mut items =
-                ctx.collection_vec(boundary.segments.len(), "iges trimming boundary items")?;
-            for segment in &boundary.segments {
+            let mut boundary_storage = ctx.reserve_scoped(0, "iges trimming boundary scratch")?;
+            let mut items = boundary_storage.with_storage(|| ctx.collection_vec(boundary.segments.len(), "iges trimming boundary items"))?;
+            for segment in ctx.admit_iter(&boundary.segments, "iges trimming segment traversal")? {
                 let model_curve_id = crate::ids::curve_admitted(
                     &crate::ids::Stem::directory(segment.model_curve),
                     ctx,
                 )?;
-                let Some(candidates) = edges_by_curve.get(&model_curve_id) else {
+                let Some(candidates) = ctx.get_btree_map(&edges_by_curve, &model_curve_id, "iges boundary carrier query")? else {
                     super::push_entity_loss(
                         ctx,
                         &mut losses,
@@ -2620,10 +2501,10 @@ pub(super) fn project(
                     break;
                 };
                 let mut pcurves = Some(
-                    ctx.collection_vec(segment.pcurves.len(), "iges trimming segment pcurves")?,
+                    boundary_storage.with_storage(|| ctx.collection_vec(segment.pcurves.len(), "iges trimming segment pcurves"))?,
                 );
                 let mut pcurve_refusal = None;
-                for sequence in &segment.pcurves {
+                for sequence in ctx.admit_iter(&segment.pcurves, "iges trimming pcurve traversal")? {
                     if composite_index.is_none() {
                         composite_index = Some(
                             composite_storage.with_storage(|| CompositeIndex::from_ir(ir, ctx))?,
@@ -2633,7 +2514,7 @@ pub(super) fn project(
                         CodecError::Malformed("IGES trimming composite index is absent".into())
                     })?;
                     match pcurve_geometry(
-                        ir,
+                        &carrier_index,
                         *sequence,
                         &PcurveSupport {
                             surface_id: &surface_id,
@@ -2685,31 +2566,27 @@ pub(super) fn project(
                     }
                     None => Vec::new(),
                 };
-                let mut pcurve_outside_support = false;
-                for ((geometry, range), sequence) in pcurves.iter().zip(&segment.pcurves) {
-                    if !pcurve_within_declared_intervals(
+                let pcurve_outside_support = ctx.any_by(pcurves.iter().zip(&segment.pcurves), |((geometry, range), sequence)| {
+                    Ok(!pcurve_within_declared_intervals(
                         geometry,
                         *range,
                         support_parameter_intervals,
                         periodic_parameters,
                         ctx,
                     )? && !source_curve_control_polygon_within_bounds(
-                        ir,
-                        &crate::ids::curve_admitted(&crate::ids::Stem::directory(*sequence), ctx)?,
+                        &carrier_index,
+                        &boundary_storage.with_storage(|| crate::ids::curve_admitted(&crate::ids::Stem::directory(*sequence), ctx))?,
                         &PcurveSupport {
                             surface_id: &surface_id,
                             geometry: &support_geometry,
                             factor,
                         },
                         support_parameter_intervals,
-                        (&entries, &records),
+                        (entries, records),
                         global.real_precision(),
                         ctx,
-                    )? {
-                        pcurve_outside_support = true;
-                        break;
-                    }
-                }
+                    )?)
+                }, "iges trimming support pcurves")?;
                 if pcurve_outside_support {
                     if segment.parameter_curves_authoritative {
                         super::push_attributed_loss(ctx, &mut losses, entry,
@@ -2723,9 +2600,9 @@ pub(super) fn project(
                         IgesLossCode::BoundaryPcurveOutsideSupportDomain,
                         format_args!("IGES entity type {} form {}: alternate boundary parameter curve leaves the declared support parameter bounds; model-space curve retained", entry.entity_type, entry.form),
                     )?;
-                    pcurves.clear();
+                    ctx.clear_vec(&mut pcurves, "iges trimming rejected pcurves")?;
                 }
-                let (source_edge, start, end, pcurves_agree) = match select_boundary_edge(
+                let (source_edge, start, end, pcurves_agree) = match boundary_storage.with_storage(|| select_boundary_edge(
                     candidates,
                     &carrier_index,
                     BoundaryMatch {
@@ -2736,7 +2613,7 @@ pub(super) fn project(
                         parameter_curves_authoritative: segment.parameter_curves_authoritative,
                     },
                     ctx,
-                ) {
+                )) {
                     Ok(selected) => selected,
                     Err(BoundaryEdgeSelectionError::MissingEndpoints) => {
                         super::push_entity_loss(
@@ -2790,7 +2667,7 @@ pub(super) fn project(
                     Err(BoundaryEdgeSelectionError::Resource(error)) => return Err(error),
                 };
                 if !pcurves_agree {
-                    pcurves.clear();
+                    ctx.clear_vec(&mut pcurves, "iges trimming rejected pcurves")?;
                 }
                 items.push(BoundaryItem {
                     segment,
@@ -2810,7 +2687,7 @@ pub(super) fn project(
                     items.len(),
                     "iges implicit boundary curve IDs",
                 )?;
-                for item in &items {
+                for item in ctx.admit_iter(&items, "iges implicit boundary traversal")? {
                     implicit_boundary_curves.push(
                         item.model_curve
                             .try_clone_for_decode(ctx, "iges implicit boundary curve ID text")?,
@@ -2826,17 +2703,17 @@ pub(super) fn project(
             };
             let tolerance_policy = FaceTolerancePolicy::from_global(
                 global,
-                items
-                    .iter()
+                ctx.admit_iter(&items, "iges face coordinate endpoints")?
                     .flat_map(|item| [item.start.get(), item.end.get()]),
-            );
+                ctx,
+            )?;
             let sewing_tolerance = tolerance_policy.topology_sewing;
             face_tolerance = face_tolerance.max(sewing_tolerance);
-            if items.iter().enumerate().any(|(index, item)| {
+            if ctx.any_by(items.iter().enumerate(), |(index, item)| {
                 let (_, end) = traversal(item);
                 let (next_start, _) = traversal(&items[(index + 1) % items.len()]);
-                !close(end.get(), next_start.get(), sewing_tolerance)
-            }) {
+                Ok(!close(end.get(), next_start.get(), sewing_tolerance))
+            }, "iges boundary closure comparisons")? {
                 super::push_entity_loss(
                     ctx,
                     &mut losses,
@@ -2846,7 +2723,7 @@ pub(super) fn project(
                 valid = false;
                 break;
             }
-            linear_boundary_candidates.push(linear_boundary_geometry(
+            linear_boundary_candidates.push(face_scratch.with_storage(|| linear_boundary_geometry(
                 &items,
                 &carrier_index,
                 &support_geometry,
@@ -2854,7 +2731,7 @@ pub(super) fn project(
                 sewing_tolerance,
                 surface_kind,
                 ctx,
-            )?);
+            ))?);
             let loop_id = crate::ids::loop_admitted(&stem.slot(boundary_index), ctx)?;
             let mut coedge_ids = ctx.collection_vec(items.len(), "iges trimming coedge ids")?;
             let endpoint_count = items.len().checked_mul(2).ok_or_else(|| {
@@ -2864,9 +2741,8 @@ pub(super) fn project(
                     1,
                 )
             })?;
-            let mut source_endpoints =
-                ctx.collection_vec(endpoint_count, "iges trimming source endpoints")?;
-            for (index, item) in items.iter().enumerate() {
+            let mut source_endpoints = boundary_storage.with_storage(|| ctx.collection_vec(endpoint_count, "iges trimming source endpoints"))?;
+            for (index, item) in ctx.admit_iter(&items, "iges trimming endpoint traversal")?.enumerate() {
                 coedge_ids.push(crate::ids::coedge_admitted(
                     &stem.slot(boundary_index).slot(index),
                     ctx,
@@ -2876,10 +2752,10 @@ pub(super) fn project(
                     (BoundaryEndpoint::End, item.end),
                 ] {
                     source_endpoints.push(BoundaryVertexSourceEndpoint {
-                        edge: ctx.format_retained(
+                        edge: boundary_storage.with_storage(|| ctx.format_retained(
                             format_args!("{}", item.source_edge.id),
                             "iges trimming source endpoint edge text",
-                        )?,
+                        ))?,
                         endpoint,
                         position,
                     });
@@ -2897,14 +2773,14 @@ pub(super) fn project(
                 valid = false;
                 break;
             };
-            let (vertex_ids, derivations) = match create_boundary_vertices(
+            let BoundaryVertices { ids: vertex_ids, derivations, _storage: _vertex_storage } = match create_boundary_vertices(
                 &mut candidate,
                 &stem,
                 (
-                    &ctx.format_retained(
+                    &boundary_storage.with_storage(|| ctx.format_retained(
                         format_args!("iges:entity:directory#{}", entry.sequence),
                         "iges trimming source entity text",
-                    )?,
+                    ))?,
                     boundary_index,
                 ),
                 &source_endpoints,
@@ -2930,13 +2806,8 @@ pub(super) fn project(
                 }
                 Err(BoundaryVertexCreationError::Resource(error)) => return Err(error),
             };
-            ctx.reserve_vec(
-                &mut candidate_boundary_vertex_derivations,
-                derivations.len(),
-                "iges trimming candidate vertex derivations",
-            )?;
-            candidate_boundary_vertex_derivations.extend(derivations);
-            for (segment_index, item) in items.into_iter().enumerate() {
+            ctx.extend_vec(&mut candidate_boundary_vertex_derivations, derivations, "iges trimming candidate vertex derivations")?;
+            for (segment_index, item) in ctx.admit_iter(items, "iges trimming edge traversal")?.enumerate() {
                 let edge_id =
                     crate::ids::edge_admitted(&stem.slot(boundary_index).slot(segment_index), ctx)?;
                 let start_vertex = vertex_ids[segment_index * 2]
@@ -2957,6 +2828,7 @@ pub(super) fn project(
                     }
                 };
                 ctx.charge_entities(1, "iges_geometry_trimming")?;
+                ctx.reserve_vec(&mut candidate.model_mut().edges, 1, "iges trimming edges slots")?;
                 candidate.model_mut().edges.push(Edge {
                     id: edge_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
                     carrier,
@@ -2964,10 +2836,7 @@ pub(super) fn project(
                     end: end_vertex,
                     tolerance: Some(checked_sewing_tolerance),
                 });
-                if item
-                    .pcurves
-                    .iter()
-                    .any(|(_, range)| cadmpeg_ir::units::FiniteVector::new(*range).is_none())
+                if ctx.any_by(&item.pcurves, |(_, range)| Ok(cadmpeg_ir::units::FiniteVector::new(*range).is_none()), "iges pcurve parameter range proof")?
                 {
                     super::push_entity_loss(
                         ctx,
@@ -2981,7 +2850,7 @@ pub(super) fn project(
                 let mut pcurve_uses =
                     ctx.collection_vec(item.pcurves.len(), "iges trimming coedge pcurve uses")?;
                 for (pcurve_index, (geometry, parameter_range)) in
-                    item.pcurves.into_iter().enumerate()
+                    ctx.admit_iter(item.pcurves, "iges trimming pcurve use traversal")?.enumerate()
                 {
                     let id = crate::ids::pcurve_admitted(
                         &stem
@@ -3024,6 +2893,7 @@ pub(super) fn project(
                 let coedge_id = coedge_ids[segment_index]
                     .try_clone_for_decode(ctx, "iges trimming identity copy")?;
                 ctx.charge_entities(1, "iges_geometry_trimming")?;
+                ctx.reserve_vec(&mut candidate.model_mut().coedges, 1, "iges trimming coedges slots")?;
                 candidate.model_mut().coedges.push(Coedge {
                     id: coedge_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
                     owner_loop: loop_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
@@ -3047,6 +2917,7 @@ pub(super) fn project(
                 break;
             };
             ctx.charge_entities(1, "iges_geometry_trimming")?;
+            ctx.reserve_vec(&mut candidate.model_mut().loops, 1, "iges trimming loops slots")?;
             candidate.model_mut().loops.push(Loop {
                 id: loop_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
                 face: face_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
@@ -3062,13 +2933,13 @@ pub(super) fn project(
         if !valid {
             continue;
         }
-        let linear_rings = match linear_boundary_rings(
+        let linear_rings = match face_scratch.with_storage(|| linear_boundary_rings(
             &linear_boundary_candidates,
             BoundarySpace::Parameter,
             ctx,
-        )? {
+        ))? {
             Some(rings) => Some(rings),
-            None => linear_boundary_rings(&linear_boundary_candidates, BoundarySpace::Model, ctx)?,
+            None => face_scratch.with_storage(|| linear_boundary_rings(&linear_boundary_candidates, BoundarySpace::Model, ctx))?,
         };
         let linear_relationship = match linear_rings {
             Some(rings) => linear_boundary_relationship_is_valid(
@@ -3105,6 +2976,7 @@ pub(super) fn project(
             )?;
             sequences.record_surface(&derived_surface_id, entry.sequence, ctx)?;
             ctx.charge_entities(1, "iges_geometry_trimming")?;
+            ctx.reserve_vec(&mut candidate.model_mut().surfaces, 1, "iges trimming surfaces slots")?;
             candidate.model_mut().surfaces.push(Surface {
                 id: derived_surface_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
                 geometry: support_geometry,
@@ -3172,14 +3044,13 @@ pub(super) fn project(
         };
         let face_loops = match explicit_outer_loop {
             Some(outer) => {
-                let inner_count = loop_ids.iter().filter(|id| **id != outer).count();
-                let mut inner = ctx.collection_vec(inner_count, "iges trimming inner loop IDs")?;
-                inner.extend(loop_ids.into_iter().filter(|id| *id != outer));
-                cadmpeg_ir::topology::FaceLoops::classified(outer, inner)
+                ctx.retain_vec(&mut loop_ids, |id| Ok(!ctx.equal_bytes(id.as_str().as_bytes(), outer.as_str().as_bytes(), "iges outer loop identity comparison")?), "iges trimming inner loop IDs")?;
+                cadmpeg_ir::topology::FaceLoops::classified(outer, loop_ids)
             }
             None => cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids),
         };
         ctx.charge_entities(1, "iges_geometry_trimming")?;
+        ctx.reserve_vec(&mut candidate.model_mut().faces, 1, "iges trimming faces slots")?;
         candidate.model_mut().faces.push(Face {
             id: face_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
             shell: shell_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
@@ -3208,10 +3079,12 @@ pub(super) fn project(
                 )?))
             }
         };
+        ctx.reserve_vec(&mut candidate.model_mut().shells, 1, "iges trimming shells slots")?;
         candidate.model_mut().shells.push(shell);
         let mut region_shells = ctx.collection_vec(1, "iges trimming region shell IDs")?;
         region_shells.push(shell_id);
         ctx.charge_entities(1, "iges_geometry_trimming")?;
+        ctx.reserve_vec(&mut candidate.model_mut().regions, 1, "iges trimming regions slots")?;
         candidate.model_mut().regions.push(Region {
             id: region_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
             body: body_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
@@ -3220,6 +3093,7 @@ pub(super) fn project(
         let mut body_regions = ctx.collection_vec(1, "iges trimming body region IDs")?;
         body_regions.push(region_id);
         ctx.charge_entities(1, "iges_geometry_trimming")?;
+        ctx.reserve_vec(&mut candidate.model_mut().bodies, 1, "iges trimming bodies slots")?;
         candidate.model_mut().bodies.push(Body {
             id: body_id,
             kind: BodyKind::Sheet,
@@ -3230,12 +3104,12 @@ pub(super) fn project(
             visible: None,
         });
         candidate.model_mut().finalize(ctx)?;
-        ctx.reserve_vec(&mut staged, 1, "iges trimming staged candidates")?;
+        staged_storage.with_storage(|| ctx.reserve_vec(&mut staged, 1, "iges trimming staged candidates"))?;
         staged.push((entry, candidate, candidate_boundary_vertex_derivations));
     }
     drop(carrier_index);
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
-    for (entry, candidate, derivations) in staged {
+    for (entry, candidate, derivations) in ctx.admit_iter(staged, "iges trimming commit traversal")? {
         if commit_session.commit_model(candidate)?.is_err() {
             super::push_entity_loss(
                 ctx,
@@ -3250,12 +3124,7 @@ pub(super) fn project(
             entry.sequence,
             "iges trimming decoded sequences",
         )?;
-        ctx.reserve_vec(
-            &mut boundary_vertex_derivations,
-            derivations.len(),
-            "iges trimming committed vertex derivations",
-        )?;
-        boundary_vertex_derivations.extend(derivations);
+        ctx.extend_vec(&mut boundary_vertex_derivations, derivations, "iges trimming committed vertex derivations")?;
     }
 
     Ok((
