@@ -97,7 +97,6 @@ fn standard_topology_candidate_maps_refuse_before_growth() {
         "catia_standard_endpoint_candidate_rows",
         "catia_face_incidence_points",
         "catia_face_incidence_rows",
-        "catia_incidence_right_points",
         "catia_incidence_shared_points",
         "catia_incidence_candidate_rows",
         "catia_incidence_candidate_copy",

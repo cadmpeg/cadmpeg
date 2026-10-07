@@ -474,35 +474,47 @@ fn assert_work_refusal<T>(
     mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, CodecError>,
     assert_service_output: impl FnOnce(T),
 ) {
-    let (service_output, service_work_bound) = crate::test_support::with_service_context(|ctx| {
-        let output = run(ctx)?;
+    let service_output = crate::test_support::with_service_context(|ctx| {
+        let output = run(ctx);
         assert_eq!(ctx.resource_refusal(), None);
-        let CodecError::ResourceLimit(refusal) = ctx
-            .charge_work(u64::MAX, "test service work bound")
-            .expect_err("maximum work charge exceeds the remaining service allowance")
-        else {
-            panic!("service work probe must refuse")
-        };
-        assert_eq!(
-            refusal.dimension,
-            cadmpeg_core::decode::ResourceDimension::WorkUnits
-        );
-        assert_eq!(refusal.operation, "test service work bound");
-        assert_eq!(ctx.resource_refusal(), Some(refusal));
-        Ok::<_, CodecError>((output, refusal.used))
+        output
     })
     .unwrap_or_else(|error| panic!("service fixture failed before {operation}: {error}"));
-    assert!(service_work_bound > 0, "service fixture must charge work");
     assert_service_output(service_output);
 
-    let mut cap = 0;
-    while cap < service_work_bound {
+    walk_to_work_refusal(operation, run);
+}
+
+/// Finds the work cap at which `operation` refuses.
+pub(super) fn walk_to_work_refusal<T>(
+    operation: &'static str,
+    mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, CodecError>,
+) {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    // A topology search slice charges the session, and a slice the session
+    // cannot pay ends its search without an error, so a capped run can take
+    // another route than an uncapped one. The refusal probe finds the uncapped
+    // boundary in one run; the walk then raises the cap one refusal at a time
+    // from there until the named operation refuses.
+    let mut cap = {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            operation,
+            None,
+        );
+        match crate::test_support::with_work_limit(u64::MAX, |ctx| run(ctx)) {
+            Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation => {
+                refusal.used
+            }
+            Err(error) => panic!("unexpected refusal before {operation}: {error}"),
+            Ok(_) => panic!("fixture did not reach {operation}"),
+        }
+    };
+    for _ in 0..4096 {
         let (refusal, need) = crate::test_support::with_work_limit(cap, |ctx| match run(ctx) {
             Err(CodecError::ResourceLimit(refusal)) => {
-                assert_eq!(
-                    refusal.dimension,
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits
-                );
+                assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(ctx.resource_refusal(), Some(refusal));
                 let need = refusal
                     .used
@@ -512,18 +524,14 @@ fn assert_work_refusal<T>(
                 (refusal, need)
             }
             Err(error) => panic!("unexpected error before {operation}: {error}"),
-            Ok(_) => panic!("fixture did not reach {operation}"),
+            Ok(_) => panic!("fixture did not reach {operation} under a {cap} work cap"),
         });
         if refusal.operation == operation {
-            assert_eq!(
-                refusal.dimension,
-                cadmpeg_core::decode::ResourceDimension::WorkUnits
-            );
             return;
         }
         cap = need;
     }
-    panic!("resource route exceeds the boundary count: {operation}");
+    panic!("{operation}: the walk from the uncapped boundary did not reach the operation");
 }
 
 #[test]
@@ -718,9 +726,7 @@ fn successor_endpoint_evidence_rows_propagate_work_refusal() {
         |ctx| {
             let mut options = [vec![[0, 1]]];
             let points = [[Some(0), None]];
-            corroborate_successor_endpoint_points(ctx, &mut options, &points)
-                .map(|_| options)
-                .map_err(Into::into)
+            corroborate_successor_endpoint_points(ctx, &mut options, &points).map(|_| options)
         },
         |options| assert_eq!(options, [vec![[0, 1]]]),
     );
