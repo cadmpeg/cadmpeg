@@ -439,18 +439,6 @@ pub(crate) fn principal_plane_in_layout(
     }
 }
 
-/// Classify a built-in principal plane from a complete reserved-identity triplet.
-pub(crate) fn principal_plane_with_siblings(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    feature: &Feature,
-    siblings: &[Feature],
-) -> Result<Option<PrincipalPlane>, cadmpeg_core::CodecError> {
-    Ok(principal_plane_in_layout(
-        principal_plane_layout(ctx, siblings)?,
-        feature,
-    ))
-}
-
 fn classify_input_class(class: Option<&str>) -> Option<FeatureClass> {
     native_object_class(class?).feature()
 }
@@ -536,7 +524,8 @@ pub(crate) fn classify_type_token(kind: &str) -> Option<FeatureClass> {
 #[cfg(test)]
 mod tests {
     use super::{
-        classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
+        classify, native_object_class, principal_plane_in_layout, principal_plane_layout,
+        FeatureClass, NativeClassKind,
     };
     use crate::records::Feature;
     use crate::records::FeatureInputClassRole;
@@ -604,31 +593,19 @@ mod tests {
             plane.source_id = FeatureSource::from_value(source);
         }
 
+        let layout =
+            principal_plane_layout(&cadmpeg_test_support::service_decode_context(), &planes)
+                .unwrap();
         assert_eq!(
-            principal_plane_with_siblings(
-                &cadmpeg_test_support::service_decode_context(),
-                &planes[0],
-                &planes
-            )
-            .unwrap(),
+            principal_plane_in_layout(layout, &planes[0]),
             Some(PrincipalPlane::Front)
         );
         assert_eq!(
-            principal_plane_with_siblings(
-                &cadmpeg_test_support::service_decode_context(),
-                &planes[1],
-                &planes
-            )
-            .unwrap(),
+            principal_plane_in_layout(layout, &planes[1]),
             Some(PrincipalPlane::Top)
         );
         assert_eq!(
-            principal_plane_with_siblings(
-                &cadmpeg_test_support::service_decode_context(),
-                &planes[2],
-                &planes
-            )
-            .unwrap(),
+            principal_plane_in_layout(layout, &planes[2]),
             Some(PrincipalPlane::Right)
         );
     }

@@ -5877,7 +5877,7 @@ pub(super) fn feature_input_sketch_frame(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     plane_frames: &HashMap<u32, SketchPlaneFrame>,
-    plane_index: &CompactReferencePlaneIndex,
+    plane_index: &CompactReferencePlaneIndex<'_>,
     context_start: usize,
     start: usize,
     end: usize,

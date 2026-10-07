@@ -1,8 +1,7 @@
 //! Native lane validation findings.
 
-use crate::records::charged_clone::CloneCharged;
-
 use super::assembly::is_supplemental_config_lane;
+use crate::records::charged_clone::CloneCharged;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::{
@@ -48,7 +47,9 @@ pub(crate) fn validate_native(
         if !history.content.is_empty() {
             let configurations = temporary.with_storage(|| {
                 ctx.collect_btree_set(
-                    ctx.admit_iter(&history.configurations, "scan SLDPRT native configurations")?
+                    history
+                        .configurations
+                        .iter()
                         .map(|configuration| configuration.id.as_str()),
                     "index SLDPRT native history content",
                 )
@@ -63,8 +64,7 @@ pub(crate) fn validate_native(
             })?;
             let all_features = temporary.with_storage(|| {
                 ctx.collect_hash_set(
-                    ctx.admit_iter(&history.features, "scan SLDPRT native features")?
-                        .map(|feature| feature.id.as_str()),
+                    history.features.iter().map(|feature| feature.id.as_str()),
                     "index SLDPRT native history content",
                 )
             })?;
@@ -206,15 +206,13 @@ pub(crate) fn validate_native(
                 |record| record.clone_charged(ctx, "validate SLDPRT expected histories"),
             )
         })?;
-    let (history_lanes, _lane_reservation) =
-        ctx.with_scoped_storage("validate SLDPRT history lanes", || {
-            ctx.try_collect_retained_with(
-                ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT validation lanes")?
-                    .filter(|lane| !is_supplemental_config_lane(lane)),
-                "validate SLDPRT history lanes",
-                |record| record.clone_charged(ctx, "validate SLDPRT history lanes"),
-            )
-        })?;
+    let history_lanes = temporary.with_storage(|| {
+        ctx.collect_vec(
+            ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT validation lanes")?
+                .filter(|lane| !is_supplemental_config_lane(lane)),
+            "validate SLDPRT history lanes",
+        )
+    })?;
     history_reservation.with_storage(|| {
         crate::resolved_features::classes::bind_history_classes(
             ctx,
@@ -224,14 +222,11 @@ pub(crate) fn validate_native(
     })?;
     for (history, expected_history) in ctx
         .admit_iter(&native.feature_histories, "scan SLDPRT expected histories")?
-        .zip(ctx.admit_iter(&expected_histories, "scan SLDPRT expected history copies")?)
+        .zip(&expected_histories)
     {
         for (feature, expected_feature) in ctx
             .admit_iter(&history.features, "scan SLDPRT expected history features")?
-            .zip(ctx.admit_iter(
-                &expected_history.features,
-                "scan SLDPRT expected history feature copies",
-            )?)
+            .zip(&expected_history.features)
         {
             if !ctx.equal(
                 &feature.input_class,
@@ -259,10 +254,7 @@ pub(crate) fn validate_native(
                 &lane.sketch_entities,
                 "scan SLDPRT expected sketch entities",
             )?
-            .zip(ctx.admit_iter(
-                &expected_lane.sketch_entities,
-                "scan SLDPRT expected sketch entity copies",
-            )?)
+            .zip(&expected_lane.sketch_entities)
         {
             if !ctx.equal(
                 &entity.feature_ref,
@@ -309,7 +301,6 @@ fn invalid_namespace(
     ctx: &DecodeContext<'_>,
     error: &cadmpeg_ir::NativeConvertError,
 ) -> Result<Vec<Finding>, CodecError> {
-    ctx.charge_work(0, "validate SLDPRT native namespace")?;
     let mut findings = Vec::new();
     let message = ctx.format_retained(
         format_args!("invalid SolidWorks native namespace: {error}"),
@@ -329,20 +320,7 @@ fn invalid_namespace(
 }
 
 fn copy_finding_id(ctx: &DecodeContext<'_>, id: &str) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(id.len())
-        .checked_mul(4)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "retain SLDPRT native finding identity",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-    ctx.charge_work(copy_work, "retain SLDPRT native finding identity")?;
-    ctx.format_retained(
-        format_args!("{id}"),
-        "retain SLDPRT native finding identity",
-    )
+    ctx.copy_retained_text(id, "retain SLDPRT native finding identity")
 }
 
 fn push_finding(
@@ -350,9 +328,7 @@ fn push_finding(
     findings: &mut Vec<Finding>,
     finding: Finding,
 ) -> Result<(), CodecError> {
-    ctx.reserve_vec(findings, 1, "collect SLDPRT native findings")?;
-    findings.push(finding);
-    Ok(())
+    ctx.push_vec(findings, finding, "collect SLDPRT native findings")
 }
 
 #[cfg(test)]

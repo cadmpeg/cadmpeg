@@ -5,11 +5,12 @@ use super::legacy_feature_input_section;
 
 #[test]
 fn legacy_feature_input_section_is_an_exact_numeric_config_stream() {
-    assert!(legacy_feature_input_section("Contents/Config-0"));
-    assert!(legacy_feature_input_section("Contents\\Config-37"));
-    assert!(!legacy_feature_input_section("Contents/Config-0-Partition"));
-    assert!(!legacy_feature_input_section("Contents/Config-name"));
-    assert!(!legacy_feature_input_section("Other/Config-0"));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(legacy_feature_input_section(&ctx, "Contents/Config-0").unwrap());
+    assert!(legacy_feature_input_section(&ctx, "Contents\\Config-37").unwrap());
+    assert!(!legacy_feature_input_section(&ctx, "Contents/Config-0-Partition").unwrap());
+    assert!(!legacy_feature_input_section(&ctx, "Contents/Config-name").unwrap());
+    assert!(!legacy_feature_input_section(&ctx, "Other/Config-0").unwrap());
 }
 
 #[test]
