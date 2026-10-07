@@ -928,25 +928,42 @@ fn snapshot_edge_identity_requires_one_edge_record_and_positive_revision() {
     };
 
     assert_eq!(
-        snapshot_edge_identity_revision(3, &history(vec![record(3, "edge", Some(17))])),
+        crate::test_support::with_decode_context(|decode| snapshot_edge_identity_revision(
+            decode,
+            3,
+            &history(vec![record(3, "edge", Some(17))])
+        ))
+        .unwrap(),
         Some(17)
     );
     assert_eq!(
-        snapshot_edge_identity_revision(3, &history(vec![record(3, "face", Some(17))])),
+        crate::test_support::with_decode_context(|decode| snapshot_edge_identity_revision(
+            decode,
+            3,
+            &history(vec![record(3, "face", Some(17))])
+        ))
+        .unwrap(),
         None
     );
     assert_eq!(
-        snapshot_edge_identity_revision(
+        crate::test_support::with_decode_context(|decode| snapshot_edge_identity_revision(
+            decode,
             3,
             &history(vec![
                 record(3, "edge", Some(17)),
                 record(3, "face", Some(18))
             ]),
-        ),
+        ))
+        .unwrap(),
         None
     );
     assert_eq!(
-        snapshot_edge_identity_revision(3, &history(vec![record(3, "edge", Some(0))])),
+        crate::test_support::with_decode_context(|decode| snapshot_edge_identity_revision(
+            decode,
+            3,
+            &history(vec![record(3, "edge", Some(0))])
+        ))
+        .unwrap(),
         None
     );
 }

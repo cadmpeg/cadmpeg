@@ -123,7 +123,7 @@ fn vertex_recipe_candidate_faces_refuse_collection_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "collect F3D vertex recipe candidate faces",
-        |cap| select(cap),
+        select,
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -136,7 +136,7 @@ fn vertex_recipe_face_slots_refuse_collection_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "collect F3D vertex recipe face slots",
-        |cap| select(cap),
+        select,
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

@@ -238,22 +238,6 @@ fn historical_topology_relation_member_slices_refuse_work() {
 }
 
 #[test]
-fn historical_topology_classified_face_loop_refuses_work() {
-    let brep = relation_brep(true);
-    let operation = "visit F3D historical classified face loop";
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        operation,
-        0,
-        |ctx| super::super::historical_topology(ctx, &brep).map(|_| ()),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
-    ));
-}
-
-#[test]
 fn historical_topology_classified_face_loop_members_refuse_work() {
     let brep = relation_brep(true);
     let operation = "scan F3D historical topology relation members";
@@ -479,4 +463,79 @@ fn historical_face_boundary_edges_refuse_materialized_limit() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
+}
+
+#[test]
+fn historical_topology_does_not_visit_reference_tail_after_missing_slot() {
+    let mut short = body_brep(false);
+    short.bodies[0].id = cadmpeg_ir::ids::BodyId::mint("test:model:body#missing").unwrap();
+    let mut long = cadmpeg_asm::brep::AsmBrep {
+        bodies: short.bodies.clone(),
+        ..Default::default()
+    };
+    long.bodies.resize(8192, short.bodies[0].clone());
+    let measure = |brep: &cadmpeg_asm::brep::AsmBrep| {
+        let operation = "measure historical topology work";
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                assert!(super::super::historical_topology(ctx, brep)?.is_none());
+                ctx.charge_work(1, operation)
+            },
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal");
+        };
+        limit.used
+    };
+    assert_eq!(measure(&long), measure(&short));
+}
+
+#[test]
+fn historical_topology_releases_partial_output_storage() {
+    let mut brep = body_brep(false);
+    let mut missing = brep.bodies[0].clone();
+    missing.id = cadmpeg_ir::ids::BodyId::mint("test:model:body#missing").unwrap();
+    brep.bodies.push(missing);
+    let operation = "measure historical topology retention";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        operation,
+        0,
+        |ctx| {
+            assert!(super::super::historical_topology(ctx, &brep)?.is_none());
+            ctx.charge_retained(1, operation)
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.used == 0));
+}
+
+#[test]
+fn historical_coedge_ring_index_preserves_first_matching_loop() {
+    use cadmpeg_ir::ids::CoedgeId;
+    use cadmpeg_ir::topology::{LoopBoundary, LoopRing};
+
+    let mut brep = relation_brep(false);
+    let mut duplicate = brep.loops[0].clone();
+    duplicate.boundary = LoopBoundary::Ring(
+        LoopRing::new(
+            &cadmpeg_test_support::service_decode_context(),
+            vec![
+                brep.coedges[0].id.clone(),
+                CoedgeId::mint("f3d:brep:entity#42").unwrap(),
+            ],
+            Vec::new(),
+        )
+        .unwrap()
+        .unwrap(),
+    );
+    brep.loops.push(duplicate);
+    let topology =
+        super::super::historical_topology(&cadmpeg_test_support::service_decode_context(), &brep)
+            .unwrap()
+            .unwrap();
+    assert_eq!(topology.coedge_topology[0].next, 6);
+    assert_eq!(topology.coedge_topology[0].previous, 6);
 }

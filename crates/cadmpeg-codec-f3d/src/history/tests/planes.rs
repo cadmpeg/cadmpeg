@@ -551,14 +551,12 @@ fn historical_loop_plane_refuses_collection_limit() {
         }],
         ..Default::default()
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = historical_loop_plane(&ctx, 5, &topology)
-        .err()
-        .expect("limit refusal");
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D loop mirror planes",
+        0,
+        |ctx| historical_loop_plane(ctx, 5, &topology),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D loop mirror planes")

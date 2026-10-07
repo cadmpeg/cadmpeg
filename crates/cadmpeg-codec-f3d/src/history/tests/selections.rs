@@ -1834,7 +1834,11 @@ fn profile_candidate_limit_case(
 
 #[test]
 fn profile_preceding_faces_refuse_collection_limit() {
-    let error = profile_candidate_limit_case(0).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D profile candidate faces",
+        profile_candidate_limit_case,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D profile candidate faces")
@@ -1843,7 +1847,11 @@ fn profile_preceding_faces_refuse_collection_limit() {
 
 #[test]
 fn profile_face_carriers_refuse_collection_limit() {
-    let error = profile_candidate_limit_case(1).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D profile face carriers",
+        profile_candidate_limit_case,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D profile face carriers")
@@ -1852,7 +1860,11 @@ fn profile_face_carriers_refuse_collection_limit() {
 
 #[test]
 fn profile_carrier_faces_refuse_collection_limit() {
-    let error = profile_candidate_limit_case(2).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D profile carrier faces",
+        profile_candidate_limit_case,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D profile carrier faces")

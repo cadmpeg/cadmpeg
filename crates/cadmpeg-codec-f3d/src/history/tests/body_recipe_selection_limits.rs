@@ -303,16 +303,18 @@ fn external_body_materialized(
     policy.limits.max_materialized_bytes = max_materialized_bytes;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let external = super::super::external_bodies(
-        &ctx,
-        std::slice::from_ref(&body),
-        std::slice::from_ref(&region),
-        std::slice::from_ref(&shell),
-    )?;
-    Ok(
-        super::super::unique_external_body_candidate(&ctx, &operands[0], source, &external)?
-            .cloned(),
-    )
+    crate::test_support::with_decode_context(|setup| {
+        let external = super::super::external_bodies(
+            setup,
+            std::slice::from_ref(&body),
+            std::slice::from_ref(&region),
+            std::slice::from_ref(&shell),
+        )?;
+        Ok(
+            super::super::unique_external_body_candidate(&ctx, &operands[0], source, &external)?
+                .cloned(),
+        )
+    })
 }
 
 fn linked_body_with_context(
