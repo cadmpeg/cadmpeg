@@ -25,29 +25,11 @@ fn native(valid: bool) -> crate::native::F3dNative {
     native
 }
 
-fn typed_reload_collection_cost(ir: &cadmpeg_ir::document::CadIr) -> u64 {
-    fn nested_items(value: &serde_json::Value) -> u64 {
-        match value {
-            serde_json::Value::Array(values) => {
-                u64::try_from(values.len()).unwrap() + values.iter().map(nested_items).sum::<u64>()
-            }
-            serde_json::Value::Object(values) => {
-                u64::try_from(values.len()).unwrap()
-                    + values.values().map(nested_items).sum::<u64>()
-            }
-            _ => 0,
-        }
-    }
-    let record = &ir
-        .native
-        .namespace("f3d")
-        .unwrap()
-        .arenas()
-        .get("design_edge_identity_operands")
-        .unwrap()[0];
-    let fields = record.fields();
-    // The record and its identity field count one item each.
-    2 + u64::try_from(fields.len()).unwrap() + fields.values().map(nested_items).sum::<u64>()
+fn typed_reload_collection_cost(ir: &cadmpeg_ir::CadIr) -> u64 {
+    super::typed_reload_items::<crate::records::topology::edge_identity::DesignEdgeIdentityOperand>(
+        ir,
+        "design_edge_identity_operands",
+    )
 }
 
 fn edge_error(valid: bool, after_reload_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
