@@ -322,7 +322,7 @@ pub(crate) fn decode(
         .ctx()
         .collection_vec(source_boundaries.len(), "Rhino extrusion orientations")
         .map_err(crate::curves::GeometryError::from)?;
-    for source in source_boundaries {
+    for source in expand.ctx().admit_iter(source_boundaries, "Rhino extrusion profile traversal").map_err(cadmpeg_core::CodecError::from)? {
         orientations.push(exact_orientation(expand.ctx(), &source, version_offset)?);
         let source_nurbs = exact_nurbs(expand.ctx(), &source, version_offset)?;
         require_profile_plane(expand.ctx(), &source_nurbs, version_offset)?;
@@ -607,6 +607,7 @@ fn exact_orientation(
             continue;
         }
         for sample in 0..samples_per_span {
+            ctx.charge_work(1, "Rhino extrusion exact_orientation records")?;
             let fraction = cadmpeg_core::convert::f64_from_index(sample)
                 .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?
                 / cadmpeg_core::convert::f64_from_index(samples_per_span)
@@ -802,7 +803,7 @@ fn cap_pcurve(
     let mut points = ctx
         .collection_vec(curve.pole_count(), "Rhino extrusion cap points")
         .map_err(crate::curves::GeometryError::from)?;
-    for index in 0..curve.pole_count() {
+    for index in ctx.admit_iter(0..curve.pole_count(), "Rhino extrusion cap pole traversal").map_err(cadmpeg_core::CodecError::from)? {
         let point = curve
             .pole_rows()
             .point_at(index)
@@ -897,6 +898,7 @@ fn read_mesh_cache(
     let mut cache_children = Vec::new();
     let mut index = 0_usize;
     loop {
+        expand.ctx().charge_work(1, "Rhino extrusion mesh-cache scan")?;
         match cache_reader.u8()? {
             0 => break,
             1 => {}

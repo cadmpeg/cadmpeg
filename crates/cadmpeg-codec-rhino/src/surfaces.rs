@@ -691,9 +691,7 @@ fn revolution_nurbs(
             .admit_iter(&profile_points[..], "Rhino revolution nurbs traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .zip(
-                ctx.admit_iter(&profile_weights[..], "Rhino revolution nurbs traversal")
-                    .map_err(cadmpeg_core::CodecError::from)?
-                    .copied(),
+                profile_weights.iter().copied(),
             )
         {
             let relative = Vector3::new(
@@ -817,18 +815,14 @@ fn sum_nurbs(
         .admit_iter(&first_points[..], "Rhino sum nurbs traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .zip(
-            ctx.admit_iter(&first_weights[..], "Rhino sum nurbs traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .copied(),
+            first_weights.iter().copied(),
         )
     {
         for (second_point, second_weight) in ctx
             .admit_iter(&second_points[..], "Rhino sum nurbs traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .zip(
-                ctx.admit_iter(&second_weights[..], "Rhino sum nurbs traversal")
-                    .map_err(cadmpeg_core::CodecError::from)?
-                    .copied(),
+                second_weights.iter().copied(),
             )
         {
             let Some(product) = NonZeroReal::new(first_weight * second_weight) else {
@@ -1016,9 +1010,7 @@ fn extrusion_rows<T: Copy>(
         .map_err(cadmpeg_core::CodecError::from)?
         .copied()
         .zip(
-            ctx.admit_iter(&end[..], "Rhino extrusion rows traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .copied(),
+            end.iter().copied(),
         )
     {
         let mut row = Vec::new();
@@ -1381,6 +1373,7 @@ fn read_knots(
 ) -> Result<Vec<FiniteReal>, GeometryError> {
     let mut knots = ctx.collection_vec(count, "Rhino NURBS knots")?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino surfaces read_knots records")?;
         let knot_offset = reader.position();
         let value = reader.f64()?;
         let Some(value) = FiniteReal::new(value) else {
@@ -1409,6 +1402,7 @@ fn read_poles(
         None
     };
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino surfaces read_poles records")?;
         let pole_offset = reader.position();
         let x = reader.f64()?;
         let y = reader.f64()?;
@@ -1563,21 +1557,19 @@ fn periodic_knots_by<T>(
         return Ok(false);
     }
     let mut scale = 0.0_f64;
-    for knot in knots {
-        ctx.charge_work(1, "Rhino periodic knot scale")?;
-        scale = scale.max(value(knot).abs());
-    }
-    if scale == 0.0 || !scale.is_finite() {
-        return Ok(false);
-    }
     if require_source_finite {
-        for knot in knots {
-            ctx.charge_work(1, "Rhino periodic knot finiteness")?;
-            if !value(knot).is_finite() {
-                return Ok(false);
-            }
+        if !ctx.all_by(knots, |knot| {
+            let value = value(knot);
+            if !value.is_finite() { return Ok(false); }
+            scale = scale.max(value.abs());
+            Ok(true)
+        }, "Rhino periodic knot scale")? { return Ok(false); }
+    } else {
+        for knot in ctx.admit_iter(knots, "Rhino periodic knot scale")? {
+            scale = scale.max(value(knot).abs());
         }
     }
+    if scale == 0.0 || !scale.is_finite() { return Ok(false); }
     let knot = |index: usize| value(&knots[index]) / scale;
     let mut tolerance = (knot(order - 1) - knot(order - 3)).abs() * f64::EPSILON.sqrt();
     tolerance = tolerance.max((knot(cv_count - 1) - knot(order - 2)).abs() * f64::EPSILON.sqrt());

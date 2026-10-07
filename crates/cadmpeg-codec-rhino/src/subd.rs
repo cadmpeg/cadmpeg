@@ -405,6 +405,7 @@ fn read_subdimple(
     let mut level_zero = None;
     let mut children = Vec::new();
     for expected_level in 0..level_count {
+        ctx.charge_work(1, "Rhino subd read_subdimple records")?;
         let start = reader.position();
         let level = read_level(ctx, reader, archive, expected_level, warnings)?;
         ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges")
@@ -510,6 +511,7 @@ fn read_level(
         .collection_vec(vertex_count, "Rhino SubD level vertices")
         .map_err(SubdError::from)?;
     for archive_id in partitions[0]..partitions[1] {
+        ctx.charge_work(1, "Rhino subd read_level records")?;
         vertices.push(read_vertex(
             ctx,
             &mut reader,
@@ -522,6 +524,7 @@ fn read_level(
         .collection_vec(edge_count, "Rhino SubD level edges")
         .map_err(SubdError::from)?;
     for archive_id in partitions[1]..partitions[2] {
+        ctx.charge_work(1, "Rhino subd read_level records")?;
         edges.push(read_edge(
             ctx,
             &mut reader,
@@ -534,6 +537,7 @@ fn read_level(
         .collection_vec(face_count, "Rhino SubD level faces")
         .map_err(SubdError::from)?;
     for archive_id in partitions[2]..partitions[3] {
+        ctx.charge_work(1, "Rhino subd read_level records")?;
         faces.push(read_face(
             ctx,
             &mut reader,
@@ -602,6 +606,7 @@ fn read_vertex(
             ));
         }
         for _ in 0..limit_count {
+            ctx.charge_work(1, "Rhino subd read_vertex records")?;
             read_finite_values(ctx, reader, 12, "saved SubD limit point")?;
             read_pointer(reader, true)?;
         }
@@ -663,8 +668,10 @@ fn read_edge(
             "SubD edge vertex count is not two",
         ));
     }
-    let endpoint_list = read_pointers(ctx, reader, 2, false)?;
-    let vertices = [endpoint_list[0], endpoint_list[1]];
+    if reader.remaining() < 10 {
+        return Err(malformed(reader.position(), "SubD pointer count exceeds bounded cap"));
+    }
+    let vertices = [read_pointer(reader, false)?, read_pointer(reader, false)?];
     let serialized_faces = usize::from(reader.u16()?);
     if serialized_faces != face_count {
         return Err(malformed(
@@ -776,6 +783,7 @@ fn read_face(
                     ));
                 }
                 for _ in 0..ten_count {
+                    ctx.charge_work(1, "Rhino subd read_face records")?;
                     if reader.u8()? != 240 {
                         return Err(malformed(
                             reader.position() - 1,
@@ -794,7 +802,10 @@ fn read_face(
                             "SubD texture remainder size disagrees",
                         ));
                     }
-                    read_finite_values(ctx, reader, remainder * 3, "SubD texture points")?;
+                    for _ in 0..remainder {
+                        ctx.charge_work(1, "Rhino SubD texture remainder")?;
+                        read_finite_values(ctx, reader, 3, "SubD texture points")?;
+                    }
                 }
             }
         }
@@ -898,6 +909,7 @@ fn consume_known_addition(
     label: &str,
 ) -> Result<Addition, SubdError> {
     loop {
+        ctx.charge_work(1, "Rhino SubD known addition scan")?;
         match reader.u8()? {
             0 => return Ok(Addition::Absent),
             value if value == expected => return Ok(Addition::Present),
@@ -922,6 +934,7 @@ fn finish_additions(
     archive: ArchiveVersion,
 ) -> Result<(), SubdError> {
     loop {
+        ctx.charge_work(1, "Rhino SubD future addition scan")?;
         match reader.u8()? {
             255 => return Ok(()),
             254 => consume_anonymous(ctx, reader, archive, "future SubD addition")?,
@@ -959,6 +972,7 @@ fn read_pointers(
         .collection_vec(count, "Rhino SubD component pointers")
         .map_err(SubdError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino SubD component pointer reads")?;
         pointers.push(read_pointer(reader, allow_null)?);
     }
     Ok(pointers)
