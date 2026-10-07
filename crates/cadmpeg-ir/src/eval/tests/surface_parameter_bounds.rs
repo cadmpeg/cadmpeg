@@ -380,3 +380,62 @@ fn surface_start_search_keeps_only_output_storage_after_both_contracts() {
         ctx.finish_session().expect("no retained search storage");
     }
 }
+
+
+#[test]
+fn surface_distance_bounds_stop_at_the_first_invalid_control() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, WorkBudget};
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let patch = RationalBezierSurfacePatch {
+        u_domain: IncreasingParameterInterval::new([0.0, 1.0]).unwrap(),
+        v_domain: IncreasingParameterInterval::new([0.0, 1.0]).unwrap(),
+        u_degree: 1,
+        v_degree: 1,
+        controls: vec![[0.0, 0.0, 0.0, -1.0], [1.0, 1.0, 1.0, 1.0],
+            [2.0, 2.0, 2.0, 1.0], [3.0, 3.0, 3.0, 1.0]],
+        _scratch: ctx.reserve_scoped_limit(0, "test patch controls").unwrap(),
+    };
+    assert_eq!(
+        super::super::rational_patch_distance_bounds_with_budget(
+            &ctx, &patch, &WorkBudget::new(1),
+        ).unwrap(),
+        None,
+    );
+    drop(patch);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn surface_segment_validation_preserves_named_work_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let surface = bilinear_surface();
+    for operation in [
+        "IR surface u span count scan",
+        "IR surface v span count scan",
+        "IR rational surface diagonal finite scan",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = nurbs_surface_parameter_segment_chord_bound(
+                    &ctx, &surface,
+                    [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+                    [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                );
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                    assert!(matches!(ctx.finish_session(),
+                        Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == *limit));
+                }
+                result
+            },
+        );
+    }
+}

@@ -362,11 +362,12 @@ fn rational_surface_patches_with_budget<'ctx>(
         ctx.charge_work_limit(1, "IR surface u span append")?;
         u_spans_by_v.push(spans);
     }
-    for spans in &u_spans_by_v {
-        ctx.charge_work_limit(1, "IR surface u span count scan")?;
-        if spans.len() != u_domains.len() {
-            return Ok(None);
-        }
+    if !ctx.all_by_limit(
+        &u_spans_by_v,
+        |spans| Ok(spans.len() == u_domains.len()),
+        "IR surface u span count scan",
+    )? {
+        return Ok(None);
     }
     let storage;
     let mut patches = Vec::new();
@@ -398,11 +399,12 @@ fn rational_surface_patches_with_budget<'ctx>(
             ctx.charge_work_limit(1, "IR surface v span append")?;
             v_spans_by_u.push(spans);
         }
-        for spans in &v_spans_by_u {
-            ctx.charge_work_limit(1, "IR surface v span count scan")?;
-            if spans.len() != v_domains.len() {
-                return Ok(None);
-            }
+        if !ctx.all_by_limit(
+            &v_spans_by_u,
+            |spans| Ok(spans.len() == v_domains.len()),
+            "IR surface v span count scan",
+        )? {
+            return Ok(None);
         }
         for (v_span, &v_domain) in v_domains.iter().enumerate() {
             ctx.charge_work_limit(1, "IR surface v domain visit")?;
@@ -582,11 +584,12 @@ fn rational_patch_parameter_segment<'ctx>(
             }
         }
     }
-    for value in diagonal.iter().flatten() {
-        ctx.charge_work_limit(1, "IR rational surface diagonal finite scan")?;
-        if !value.is_finite() {
-            return Ok(None);
-        }
+    if !ctx.all_by_limit(
+        &diagonal,
+        |control| Ok(control.iter().all(|value| value.is_finite())),
+        "IR rational surface diagonal finite scan",
+    )? {
+        return Ok(None);
     }
     Ok(Some(ScopedRows::new(diagonal, diagonal_storage)))
 }
@@ -770,19 +773,25 @@ fn rational_patch_distance_bounds_with_budget(
     }
     let mut minimum = [f64::INFINITY; 3];
     let mut maximum = [f64::NEG_INFINITY; 3];
-    for control in &patch.controls {
-        ctx.charge_work_limit(1, "IR surface distance control scan")?;
-        if !control[3].is_finite() || control[3] <= 0.0 {
-            return Ok(None);
-        }
-        for axis in 0..3 {
-            let coordinate = control[axis] / control[3];
-            if !coordinate.is_finite() {
-                return Ok(None);
+    if !ctx.all_by_limit(
+        &patch.controls,
+        |control| {
+            if !control[3].is_finite() || control[3] <= 0.0 {
+                return Ok(false);
             }
-            minimum[axis] = minimum[axis].min(coordinate);
-            maximum[axis] = maximum[axis].max(coordinate);
-        }
+            for axis in 0..3 {
+                let coordinate = control[axis] / control[3];
+                if !coordinate.is_finite() {
+                    return Ok(false);
+                }
+                minimum[axis] = minimum[axis].min(coordinate);
+                maximum[axis] = maximum[axis].max(coordinate);
+            }
+            Ok(true)
+        },
+        "IR surface distance control scan",
+    )? {
+        return Ok(None);
     }
     let lower = (0..3)
         .map(|axis| {
@@ -1029,21 +1038,31 @@ fn complete_nurbs_surface_starts<'ctx>(
         return Ok(None);
     };
     let mut coordinate_scale = 1.0_f64;
-    for patch in &patches.rows {
-        for control in &patch.controls {
-            ctx.charge_work_limit(1, "IR surface inverse coordinate scale scan")?;
-            let weight = control[3];
-            if !weight.is_finite() || weight <= 0.0 {
-                return Ok(None);
-            }
-            for coordinate in &control[..3] {
-                let coordinate = (coordinate / weight).abs();
-                if !coordinate.is_finite() {
-                    return Ok(None);
-                }
-                coordinate_scale = coordinate_scale.max(coordinate);
-            }
-        }
+    if !ctx.all_by_limit(
+        &patches.rows,
+        |patch| {
+            ctx.all_by_limit(
+                &patch.controls,
+                |control| {
+                    let weight = control[3];
+                    if !weight.is_finite() || weight <= 0.0 {
+                        return Ok(false);
+                    }
+                    for coordinate in &control[..3] {
+                        let coordinate = (coordinate / weight).abs();
+                        if !coordinate.is_finite() {
+                            return Ok(false);
+                        }
+                        coordinate_scale = coordinate_scale.max(coordinate);
+                    }
+                    Ok(true)
+                },
+                "IR surface inverse coordinate scale scan",
+            )
+        },
+        "IR surface inverse patch scale scan",
+    )? {
+        return Ok(None);
     }
     let requested_tolerance = match fit_tolerance {
         Some(tolerance) if tolerance.is_finite() && tolerance >= 0.0 => tolerance,
@@ -2151,18 +2170,22 @@ fn validated_nurbs_curve_weights(
         curve.pole_count(),
         "IR curve inversion weights",
     )?;
-    ctx.charge_work(
-        u64_from_index(curve.pole_count()),
+    let crate::geometry::nurbs::NurbsPoles3::Rational { points } = curve.pole_rows() else {
+        return Ok(None);
+    };
+    if !ctx.all_by_limit(
+        points,
+        |pole| {
+            let weight = pole.weight.get();
+            if weight <= 0.0 {
+                return Ok(false);
+            }
+            weights.push(weight);
+            Ok(true)
+        },
         "IR curve inversion weight scan",
-    )?;
-    for index in 0..curve.pole_count() {
-        let Some(weight) = curve.pole_rows().weight_at(index) else {
-            return Ok(None);
-        };
-        if weight <= 0.0 {
-            return Ok(None);
-        }
-        weights.push(weight);
+    )? {
+        return Ok(None);
     }
     Ok(Some(ValidatedNurbsWeights::Rational(weights)))
 }
@@ -2342,24 +2365,29 @@ where
     let mut previous_boundary = None;
     let mut nearest = None;
     let mut nearest_seed_distance = f64::INFINITY;
-    for parameter in boundaries {
-        ctx.charge_work_limit(1, "IR curve inversion boundary witness scan")?;
-        let parameter = *parameter;
-        if previous_boundary == Some(parameter) {
-            continue;
-        }
-        previous_boundary = Some(parameter);
-        let seed_distance = (parameter.get() - seed.get()).abs();
-        if seed_distance >= nearest_seed_distance {
-            continue;
-        }
-        let Some(candidate_distance) = distance(parameter)? else {
-            return Ok(BoundaryWitness::Invalid);
-        };
-        if candidate_distance <= tolerance {
-            nearest = Some(parameter);
-            nearest_seed_distance = seed_distance;
-        }
+    if !ctx.all_by_limit(
+        boundaries,
+        |&parameter| {
+            if previous_boundary == Some(parameter) {
+                return Ok(true);
+            }
+            previous_boundary = Some(parameter);
+            let seed_distance = (parameter.get() - seed.get()).abs();
+            if seed_distance >= nearest_seed_distance {
+                return Ok(true);
+            }
+            let Some(candidate_distance) = distance(parameter)? else {
+                return Ok(false);
+            };
+            if candidate_distance <= tolerance {
+                nearest = Some(parameter);
+                nearest_seed_distance = seed_distance;
+            }
+            Ok(true)
+        },
+        "IR curve inversion boundary witness scan",
+    )? {
+        return Ok(BoundaryWitness::Invalid);
     }
     Ok(nearest.map_or(BoundaryWitness::NoMatch, BoundaryWitness::Found))
 }
