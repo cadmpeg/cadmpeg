@@ -196,7 +196,13 @@ pub(crate) fn classify_layers(
         }
     }
     let declaration = crate::container::declared_sw_version(scan);
-    let host = SldprtDialect::from_declaration(declaration);
+    let version = match declaration {
+        Some(value) => ctx
+            .parse_text::<u32>(value, "parse SLDPRT version declaration")?
+            .ok(),
+        None => None,
+    };
+    let host = SldprtDialect::from_version_number(version);
     let mut layers = DialectLayers::of(host.matched(ctx, declaration)?);
     let extra = cadmpeg_parasolid::extra_layers(ctx, kernels, &VERIFIED_KERNELS)?;
     let mut losses = Vec::new();
@@ -239,7 +245,11 @@ impl SldprtDialect {
     /// the padding rule cannot use — absent, non-numeric, negative,
     /// wider than `u32`, or zero — lands on [`Self::Unknown`].
     pub(crate) fn from_declaration(sw_version: Option<&str>) -> Self {
-        match sw_version.and_then(|value| value.parse::<u32>().ok()) {
+        Self::from_version_number(sw_version.and_then(|value| value.parse::<u32>().ok()))
+    }
+
+    fn from_version_number(version: Option<u32>) -> Self {
+        match version {
             Some(1..12_000) => Self::SwVersionPre12000,
             Some(12_000..) => Self::SwVersion12000Plus,
             _ => Self::Unknown,

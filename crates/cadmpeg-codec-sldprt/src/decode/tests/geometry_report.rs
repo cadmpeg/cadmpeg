@@ -51,12 +51,16 @@ fn appearance_assignment_loss_retains_exact_text_and_refuses_limit() {
     assert_eq!(message.as_deref(), Some(expected));
 
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len() - 1);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        super::super::appearance_assignment_loss_message(&ctx, &assigned, &matched, &conflicts)
-            .expect_err("one byte below the exact message length must refuse");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain SLDPRT appearance assignment loss",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            super::super::appearance_assignment_loss_message(&ctx, &assigned, &matched, &conflicts)
+        },
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -86,12 +90,21 @@ fn conflicting_display_reference_retains_exact_text_and_refuses_limit() {
     assert_eq!(text, expected);
 
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len() - 1);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        super::super::conflicting_display_reference(&ctx, "SyntheticDisplayStream", 7, &candidates)
-            .expect_err("one byte below the exact message length must refuse");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain SLDPRT conflicting display reference",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            super::super::conflicting_display_reference(
+                &ctx,
+                "SyntheticDisplayStream",
+                7,
+                &candidates,
+            )
+        },
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -659,10 +672,16 @@ fn unsupported_swift_loss_refuses_collection_limit() {
     let source = unresolved_swift_source();
     let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    let error = super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new()).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "collect SLDPRT unsupported SWIFT classes",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)?;
+            super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new())
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -676,14 +695,20 @@ fn unsupported_swift_loss_refuses_retained_limit() {
     let source = unresolved_swift_source();
     let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    let error = super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new()).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain SLDPRT unsupported SWIFT loss",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)?;
+            super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new())
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "retain SLDPRT unsupported SWIFT class")
+            && limit.operation == "retain SLDPRT unsupported SWIFT loss")
     );
 }
 
@@ -693,11 +718,16 @@ fn unsupported_swift_loss_refuses_scoped_limit() {
     let source = unresolved_swift_source();
     let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes =
-        cadmpeg_core::decode::u64_from_index("GdtAnalysisGraphUnresolved (1)".len() - 1);
-    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    let error = super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new()).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "format SLDPRT unsupported SWIFT classes",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)?;
+            super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new())
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes

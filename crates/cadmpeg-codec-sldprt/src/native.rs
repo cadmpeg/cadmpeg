@@ -108,9 +108,8 @@ macro_rules! lane_family {
                 namespace.set_arena_from(
                     ctx,
                     row.arena,
-                    model
-                        .feature_input_lanes
-                        .iter()
+                    ctx.admit_iter(&model.feature_input_lanes, "scan SLDPRT native lane arenas")
+                        .map_err(cadmpeg_core::CodecError::from)?
                         .flat_map(|lane| lane.$field.iter()),
                 )
             },
@@ -159,10 +158,12 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
             namespace.set_arena_from(
                 ctx,
                 row.arena,
-                model
-                    .feature_histories
-                    .iter()
-                    .flat_map(|history| history.configurations.iter()),
+                ctx.admit_iter(
+                    &model.feature_histories,
+                    "scan SLDPRT native history arenas",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
+                .flat_map(|history| history.configurations.iter()),
             )
         },
         len: |model| {
@@ -182,10 +183,12 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
             namespace.set_arena_from(
                 ctx,
                 row.arena,
-                model
-                    .feature_histories
-                    .iter()
-                    .flat_map(|history| history.features.iter()),
+                ctx.admit_iter(
+                    &model.feature_histories,
+                    "scan SLDPRT native history arenas",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
+                .flat_map(|history| history.features.iter()),
             )
         },
         len: |model| {
@@ -684,22 +687,17 @@ impl SldprtNative {
                             "test SLDPRT hashed identity",
                         )?
                         || record.components.is_empty()
-                        || ctx
-                            .admit_iter(
-                                &record.producer_feature_refs[..],
-                                "scan SLDPRT load_charged values",
-                            )
-                            .map_err(cadmpeg_core::CodecError::from)?
-                            .try_fold(false, |found, producer| {
-                                Ok::<_, cadmpeg_core::CodecError>(
-                                    found
-                                        || (!ctx.contains_hash_set(
-                                            &(feature_ids),
-                                            producer.as_str(),
-                                            "test SLDPRT hashed identity",
-                                        )?),
-                                )
-                            })?
+                        || ctx.any_by(
+                            &record.producer_feature_refs,
+                            |producer| {
+                                Ok(!ctx.contains_hash_set(
+                                    &feature_ids,
+                                    producer.as_str(),
+                                    "test SLDPRT hashed identity",
+                                )?)
+                            },
+                            "scan SLDPRT load_charged values",
+                        )?
                         || match record.terminal_feature_ref.as_deref() {
                             Some(feature) => !ctx.contains_hash_set(
                                 &(feature_ids),
@@ -770,8 +768,8 @@ impl SldprtNative {
         // in reverse.
         let (classes_by_id, _classes_by_id_reservation) = ctx.collect_scoped_string_map(
             classes.len(),
-            ctx.admit_iter(&classes, "index SLDPRT classes")
-                .map_err(cadmpeg_core::CodecError::from)?
+            classes
+                .iter()
                 .rev()
                 .map(|record| (record.id.as_str(), record)),
             "index SLDPRT classes",
@@ -873,12 +871,16 @@ impl SldprtNative {
         // Lane records are validated against a context of all history
         // features, so lanes are filled before the features move into their
         // histories.
-        let lane_ids = ctx.try_collect_vec(
-            ctx.admit_iter(&native.feature_input_lanes, "index SLDPRT native lanes")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .map(|lane| Ok::<_, cadmpeg_core::CodecError>(lane.id.as_str())),
-            "index SLDPRT native lanes",
-        )?;
+        let (lane_ids, _lane_ids_storage) =
+            ctx.with_scoped_storage("index SLDPRT native lanes", || {
+                ctx.collect_vec(
+                    native
+                        .feature_input_lanes
+                        .iter()
+                        .map(|lane| lane.id.as_str()),
+                    "index SLDPRT native lanes",
+                )
+            })?;
         let mut lane_classes = attach_to_owners(
             ctx,
             &lane_ids,
@@ -972,9 +974,9 @@ impl SldprtNative {
             lane.relation_bindings = std::mem::take(&mut lane_relation_bindings[index]);
             lane.relation_instances = std::mem::take(&mut lane_relation_instances[index]);
             lane.body_selections = std::mem::take(&mut lane_body_selections[index]);
-            for record in ctx
-                .admit_iter(&lane.body_selections, "validate SLDPRT body selections")
-                .map_err(cadmpeg_core::CodecError::from)?
+            let mut body_selections = lane.body_selections.iter();
+            while let Some(record) =
+                ctx.next_charged(&mut body_selections, "validate SLDPRT body selections")?
             {
                 if body_selection_disagrees_with_payload(ctx, lane, record)? {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
@@ -1007,12 +1009,16 @@ impl SldprtNative {
             }
             lane.sketch_entities = std::mem::take(&mut lane_entities[index]);
         }
-        let history_ids = ctx.try_collect_vec(
-            ctx.admit_iter(&native.feature_histories, "index SLDPRT native histories")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .map(|history| Ok::<_, cadmpeg_core::CodecError>(history.id.as_str())),
-            "index SLDPRT native histories",
-        )?;
+        let (history_ids, _history_ids_storage) =
+            ctx.with_scoped_storage("index SLDPRT native histories", || {
+                ctx.collect_vec(
+                    native
+                        .feature_histories
+                        .iter()
+                        .map(|history| history.id.as_str()),
+                    "index SLDPRT native histories",
+                )
+            })?;
         let mut history_configurations = attach_to_owners(
             ctx,
             &history_ids,
@@ -1159,8 +1165,8 @@ impl SldprtNative {
             // Filled in reverse so the first class with an identity answers.
             let (classes_by_id, _classes_by_id_reservation) = ctx.collect_scoped_string_map(
                 lane.classes.len(),
-                ctx.admit_iter(&lane.classes, "index SLDPRT stored classes")
-                    .map_err(cadmpeg_core::CodecError::from)?
+                lane.classes
+                    .iter()
                     .rev()
                     .map(|record| (record.id.as_str(), record)),
                 "index SLDPRT stored classes",
@@ -1565,12 +1571,14 @@ impl SldprtNative {
                         "group SLDPRT stored sketch entities",
                     )?
                     .map_or(&[][..], Vec::as_slice);
-                let resolved_operands =
-                    crate::resolved_features::operands::resolve_scalar_operand_markers(
-                        ctx,
-                        candidates,
-                        &scalar.operands,
-                    )?;
+                let (resolved_operands, _operand_storage) =
+                    ctx.with_scoped_storage("SLDPRT scalar operand validation workspace", || {
+                        crate::resolved_features::operands::resolve_scalar_operand_markers(
+                            ctx,
+                            candidates,
+                            &scalar.operands,
+                        )
+                    })?;
                 for (operand, resolved) in ctx
                     .admit_iter(&scalar.operands, "scan SLDPRT scalar operands")
                     .map_err(cadmpeg_core::CodecError::from)?
@@ -1704,8 +1712,11 @@ impl SldprtNative {
                             )?,
                         ));
                     };
-                    if target.feature_ref != record.feature_ref
-                        || target.local_id() != Some(u32::from(link.local_id))
+                    if !ctx.equal(
+                        &target.feature_ref,
+                        &record.feature_ref,
+                        "compare SLDPRT linked feature identities",
+                    )? || target.local_id() != Some(u32::from(link.local_id))
                     {
                         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                             ctx.format_retained(
@@ -1721,8 +1732,8 @@ impl SldprtNative {
                 }
             }
         }
-        let (mut expected_histories, _expected_histories_reservation) =
-            ctx.with_scoped_storage("validate SLDPRT expected histories", || {
+        let (mut expected_histories, mut expected_histories_reservation) = ctx
+            .with_scoped_storage("validate SLDPRT expected histories", || {
                 ctx.try_collect_retained_with(
                     self.feature_histories.iter(),
                     "validate SLDPRT expected histories",
@@ -1741,11 +1752,13 @@ impl SldprtNative {
                     |record| record.clone_charged(ctx, "validate SLDPRT history lanes"),
                 )
             })?;
-        crate::resolved_features::classes::bind_history_classes(
-            ctx,
-            &mut expected_histories,
-            &history_lanes,
-        )?;
+        expected_histories_reservation.with_storage(|| {
+            crate::resolved_features::classes::bind_history_classes(
+                ctx,
+                &mut expected_histories,
+                &history_lanes,
+            )
+        })?;
         if ctx.any_by(
             self.feature_histories.iter().zip(&expected_histories),
             |(history, expected)| {
@@ -1822,7 +1835,8 @@ impl<'a, 'ctx> ScalarLookup<'a, 'ctx> {
         // Filled in reverse so the first record with an identity is the last write.
         let (scalar_index, scalar_storage) = ctx.collect_scoped_string_map(
             scalars.len(),
-            ctx.admit_iter(scalars, Self::OPERATION)?
+            scalars
+                .iter()
                 .enumerate()
                 .rev()
                 .map(|(position, scalar)| (scalar.id.as_str(), (position, scalar))),
@@ -1830,7 +1844,8 @@ impl<'a, 'ctx> ScalarLookup<'a, 'ctx> {
         )?;
         let (name_values, name_storage) = ctx.collect_scoped_string_map(
             names.len(),
-            ctx.admit_iter(names, Self::OPERATION)?
+            names
+                .iter()
                 .rev()
                 .map(|name| (name.id.as_str(), name.value.as_str())),
             Self::OPERATION,
@@ -1897,7 +1912,8 @@ impl RelationInstanceOwners<'_, '_> {
         }
         let mut workspace = ctx.reserve_scoped(0, OPERATION)?;
         let mut seen = std::collections::HashSet::new();
-        for scalar in ctx.admit_iter(record.scalar_refs(), OPERATION)? {
+        let mut scalars = record.scalar_refs().iter();
+        while let Some(scalar) = ctx.next_charged(&mut scalars, OPERATION)? {
             if !workspace
                 .with_storage(|| ctx.insert_hash_set(&mut seen, scalar.as_str(), OPERATION))?
                 || self.lookup.scalar(ctx, scalar)?.is_none()
@@ -1988,24 +2004,26 @@ fn validate_lane_selections(
     features: &[crate::records::Feature],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     const OPERATION: &str = "validate SLDPRT lane selections";
-    let (mut lane_features, _lane_features_reservation) =
-        ctx.with_scoped_storage(OPERATION, || {
-            ctx.try_collect_retained_with(
-                ctx.admit_iter(features, OPERATION)?,
-                OPERATION,
-                |record| record.clone_charged(ctx, OPERATION),
-            )
-        })?;
-    crate::resolved_features::selections::enrich_feature_object_sources(
-        ctx,
-        &mut lane_features,
-        std::slice::from_ref(lane),
+    let (lane_features, _lane_features_reservation) = ctx.with_scoped_storage(
+        OPERATION,
+        || -> Result<_, cadmpeg_ir::NativeConvertError> {
+            let mut lane_features =
+                ctx.try_collect_retained_with(features, OPERATION, |record| {
+                    record.clone_charged(ctx, OPERATION)
+                })?;
+            crate::resolved_features::selections::enrich_feature_object_sources(
+                ctx,
+                &mut lane_features,
+                std::slice::from_ref(lane),
+            )?;
+            Ok(lane_features)
+        },
     )?;
     let (features_by_id, _features_by_id_reservation) = ctx.collect_scoped_string_map(
         lane_features.len(),
         // Filled in reverse so the first feature with an identity answers.
-        ctx.admit_iter(&lane_features, OPERATION)
-            .map_err(cadmpeg_core::CodecError::from)?
+        lane_features
+            .iter()
             .rev()
             .map(|feature| (feature.id.as_str(), feature)),
         OPERATION,
@@ -2017,27 +2035,27 @@ fn validate_lane_selections(
         )
         .map(cadmpeg_ir::NativeConvertError::InvalidOwner)
     };
-    for record in ctx
-        .admit_iter(&lane.edge_selections, OPERATION)
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut edge_selections = lane.edge_selections.iter();
+    while let Some(record) = ctx.next_charged(&mut edge_selections, OPERATION)? {
         if edge_selection_disagrees_with_payload(ctx, lane, record, &lane_features)? {
             return Err(disagrees(&record.id, "edge")?);
         }
-        let references = match usize::try_from(record.offset) {
-            Ok(offset) => {
-                let feature_kind = ctx
-                    .get_hash_map(&features_by_id, record.feature_ref.as_str(), OPERATION)?
-                    .map_or("", |feature| feature.kind.as_str());
-                crate::resolved_features::selections::compact_edge_reference_list_for_feature(
-                    ctx,
-                    &lane.native_payload,
-                    offset,
-                    feature_kind,
-                )?
-            }
-            Err(_) => None,
-        };
+        let (references, _references_storage) = ctx.with_scoped_storage(OPERATION, || {
+            Ok::<_, cadmpeg_ir::NativeConvertError>(match usize::try_from(record.offset) {
+                Ok(offset) => {
+                    let feature_kind = ctx
+                        .get_hash_map(&features_by_id, record.feature_ref.as_str(), OPERATION)?
+                        .map_or("", |feature| feature.kind.as_str());
+                    crate::resolved_features::selections::compact_edge_reference_list_for_feature(
+                        ctx,
+                        &lane.native_payload,
+                        offset,
+                        feature_kind,
+                    )?
+                }
+                Err(_) => None,
+            })
+        })?;
         if !ctx.equal(
             &references.unwrap_or_default(),
             &record.references,
@@ -2046,10 +2064,8 @@ fn validate_lane_selections(
             return Err(disagrees(&record.id, "edge")?);
         }
     }
-    for record in ctx
-        .admit_iter(&lane.surface_selections, OPERATION)
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut surface_selections = lane.surface_selections.iter();
+    while let Some(record) = ctx.next_charged(&mut surface_selections, OPERATION)? {
         if surface_selection_disagrees_with_payload(ctx, lane, record, &lane_features)? {
             return Err(disagrees(&record.id, "surface")?);
         }
@@ -2083,8 +2099,10 @@ fn generated_surface_identities_disagree_with_payload(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    let regenerated =
-        crate::resolved_features::selections::generated_surface_identities(ctx, lane)?;
+    let (regenerated, _regenerated_storage) = ctx
+        .with_scoped_storage("SLDPRT regenerated surface identity workspace", || {
+            crate::resolved_features::selections::generated_surface_identities(ctx, lane)
+        })?;
     Ok(!ctx.equal(
         &lane.generated_surface_identities,
         &regenerated,
@@ -2097,10 +2115,16 @@ fn body_state_ids_disagree_with_payload(
     lane: &FeatureInputLane,
     record: &FeatureInputBodySelection,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    let ids = crate::resolved_features::selections::compact_body_state_ids_for_selection(
-        ctx, lane, record,
+    let (disagrees, _workspace) = ctx.with_scoped_storage(
+        "SLDPRT body-state validation workspace",
+        || -> Result<bool, cadmpeg_ir::NativeConvertError> {
+            let ids = crate::resolved_features::selections::compact_body_state_ids_for_selection(
+                ctx, lane, record,
+            )?;
+            Ok(!ctx.equal(&ids, &record.body_state_ids, PAYLOAD_AGREEMENT)?)
+        },
     )?;
-    Ok(!ctx.equal(&ids, &record.body_state_ids, PAYLOAD_AGREEMENT)?)
+    Ok(disagrees)
 }
 
 /// Whether a value read back from the payload differs from the stored one;
@@ -2122,18 +2146,24 @@ fn body_selection_disagrees_with_payload(
     lane: &FeatureInputLane,
     record: &FeatureInputBodySelection,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    let selection = match usize::try_from(record.offset) {
-        Ok(offset) => crate::resolved_features::selections::compact_body_selection_at(
-            ctx,
-            &lane.native_payload,
-            offset,
-        )?,
-        Err(_) => None,
-    };
-    Ok(differs(ctx, selection.as_ref(), &record.local_body_ids)?
-        || crate::resolved_features::selections::compact_body_retention_mode_for_selection(
-            ctx, lane, record,
-        )? != record.mode)
+    let (disagrees, _workspace) = ctx.with_scoped_storage(
+        "SLDPRT body-selection validation workspace",
+        || -> Result<bool, cadmpeg_ir::NativeConvertError> {
+            let selection = match usize::try_from(record.offset) {
+                Ok(offset) => crate::resolved_features::selections::compact_body_selection_at(
+                    ctx,
+                    &lane.native_payload,
+                    offset,
+                )?,
+                Err(_) => None,
+            };
+            Ok(differs(ctx, selection.as_ref(), &record.local_body_ids)?
+                || crate::resolved_features::selections::compact_body_retention_mode_for_selection(
+                    ctx, lane, record,
+                )? != record.mode)
+        },
+    )?;
+    Ok(disagrees)
 }
 
 /// `true` when an edge selection disagrees with the compact selection in its lane payload.
@@ -2145,46 +2175,52 @@ fn edge_selection_disagrees_with_payload(
     record: &FeatureInputEdgeSelection,
     edge_features: &[crate::records::Feature],
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    use crate::resolved_features::selections::{
-        compact_edge_component_path_at, compact_edge_owner_feature_at,
-        compact_edge_producer_features_at, compact_edge_selection_at,
-    };
-    let Ok(offset) = usize::try_from(record.offset) else {
-        // An offset no index can name reads no selection from the payload.
-        return Ok(true);
-    };
-    let payload = &lane.native_payload;
-    Ok(differs(
-        ctx,
-        compact_edge_selection_at(ctx, payload, offset)?.as_ref(),
-        &record.local_edge_ids,
-    )? || !ctx.equal(
-        &compact_edge_component_path_at(ctx, payload, offset)?.unwrap_or_default(),
-        &record.components,
-        PAYLOAD_AGREEMENT,
-    )? || !ctx.equal(
-        &compact_edge_producer_features_at(
-            ctx,
-            payload,
-            offset,
-            &record.components,
-            edge_features,
-            &record.feature_ref,
-        )?,
-        &record.producer_feature_refs,
-        PAYLOAD_AGREEMENT,
-    )? || !ctx.equal(
-        &compact_edge_owner_feature_at(
-            ctx,
-            payload,
-            offset,
-            &record.components,
-            edge_features,
-            &record.feature_ref,
-        )?,
-        &record.terminal_feature_ref,
-        PAYLOAD_AGREEMENT,
-    )?)
+    let (disagrees, _workspace) = ctx.with_scoped_storage(
+        "SLDPRT edge-selection validation workspace",
+        || -> Result<bool, cadmpeg_ir::NativeConvertError> {
+            use crate::resolved_features::selections::{
+                compact_edge_component_path_at, compact_edge_owner_feature_at,
+                compact_edge_producer_features_at, compact_edge_selection_at,
+            };
+            let Ok(offset) = usize::try_from(record.offset) else {
+                // An offset no index can name reads no selection from the payload.
+                return Ok(true);
+            };
+            let payload = &lane.native_payload;
+            Ok(differs(
+                ctx,
+                compact_edge_selection_at(ctx, payload, offset)?.as_ref(),
+                &record.local_edge_ids,
+            )? || !ctx.equal(
+                &compact_edge_component_path_at(ctx, payload, offset)?.unwrap_or_default(),
+                &record.components,
+                PAYLOAD_AGREEMENT,
+            )? || !ctx.equal(
+                &compact_edge_producer_features_at(
+                    ctx,
+                    payload,
+                    offset,
+                    &record.components,
+                    edge_features,
+                    &record.feature_ref,
+                )?,
+                &record.producer_feature_refs,
+                PAYLOAD_AGREEMENT,
+            )? || !ctx.equal(
+                &compact_edge_owner_feature_at(
+                    ctx,
+                    payload,
+                    offset,
+                    &record.components,
+                    edge_features,
+                    &record.feature_ref,
+                )?,
+                &record.terminal_feature_ref,
+                PAYLOAD_AGREEMENT,
+            )?)
+        },
+    )?;
+    Ok(disagrees)
 }
 
 /// `true` when a surface selection disagrees with the compact reference in its lane payload.
@@ -2196,39 +2232,45 @@ fn surface_selection_disagrees_with_payload(
     record: &FeatureInputSurfaceSelection,
     surface_features: &[crate::records::Feature],
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    // An offset no index can name names no byte of the payload in memory, so
-    // the selection states nothing the payload agrees with.
-    let Ok(offset) = usize::try_from(record.offset) else {
-        return Ok(true);
-    };
-    if !crate::resolved_features::selections::surface_reference_matches_at(
-        ctx,
-        &lane.native_payload,
-        offset,
-        &record.components,
-    )? {
-        return Ok(true);
-    }
-    Ok(!ctx.equal(
-        &crate::resolved_features::component_paths::surface_selection_producer_features(
-            ctx,
-            &record.components,
-            record.terminal_feature_ref.as_deref(),
-            surface_features,
-        )?,
-        &record.producer_feature_refs,
-        PAYLOAD_AGREEMENT,
-    )? || !ctx.equal(
-        &crate::resolved_features::selections::surface_selection_terminal_feature_at(
-            ctx,
-            &lane.native_payload,
-            offset,
-            &record.components,
-            surface_features,
-        )?,
-        &record.terminal_feature_ref,
-        PAYLOAD_AGREEMENT,
-    )?)
+    let (disagrees, _workspace) = ctx.with_scoped_storage(
+        "SLDPRT surface-selection validation workspace",
+        || -> Result<bool, cadmpeg_ir::NativeConvertError> {
+            // An offset no index can name names no byte of the payload in memory, so
+            // the selection states nothing the payload agrees with.
+            let Ok(offset) = usize::try_from(record.offset) else {
+                return Ok(true);
+            };
+            if !crate::resolved_features::selections::surface_reference_matches_at(
+                ctx,
+                &lane.native_payload,
+                offset,
+                &record.components,
+            )? {
+                return Ok(true);
+            }
+            Ok(!ctx.equal(
+                &crate::resolved_features::component_paths::surface_selection_producer_features(
+                    ctx,
+                    &record.components,
+                    record.terminal_feature_ref.as_deref(),
+                    surface_features,
+                )?,
+                &record.producer_feature_refs,
+                PAYLOAD_AGREEMENT,
+            )? || !ctx.equal(
+                &crate::resolved_features::selections::surface_selection_terminal_feature_at(
+                    ctx,
+                    &lane.native_payload,
+                    offset,
+                    &record.components,
+                    surface_features,
+                )?,
+                &record.terminal_feature_ref,
+                PAYLOAD_AGREEMENT,
+            )?)
+        },
+    )?;
+    Ok(disagrees)
 }
 
 fn relation_instance_shape_valid(
@@ -2251,7 +2293,8 @@ fn relation_instance_shape_valid(
     ) {
         return Ok(false);
     }
-    for scalar_ref in ctx.admit_iter(record.scalar_refs(), OPERATION)? {
+    let mut scalar_refs = record.scalar_refs().iter();
+    while let Some(scalar_ref) = ctx.next_charged(&mut scalar_refs, OPERATION)? {
         let Some((_, scalar)) = lookup.scalar(ctx, scalar_ref)? else {
             return Ok(false);
         };
@@ -2298,7 +2341,8 @@ fn relation_instance_shape_valid(
     }
     let mut last_operand_position = None;
     let mut detached = None;
-    for scalar_ref in ctx.admit_iter(record.scalar_refs(), OPERATION)? {
+    let mut scalar_refs = record.scalar_refs().iter();
+    while let Some(scalar_ref) = ctx.next_charged(&mut scalar_refs, OPERATION)? {
         let Some((position, scalar)) = lookup.scalar(ctx, scalar_ref)? else {
             return Ok(false);
         };
@@ -2356,7 +2400,8 @@ fn repeated_circle_display_shape_valid(
     let mut workspace = ctx.reserve_scoped(0, OPERATION)?;
     let mut entities = std::collections::HashSet::new();
     let mut previous_ordinal = None;
-    for scalar_id in ctx.admit_iter(record.scalar_refs(), OPERATION)? {
+    let mut scalar_ids = record.scalar_refs().iter();
+    while let Some(scalar_id) = ctx.next_charged(&mut scalar_ids, OPERATION)? {
         let Some((_, scalar)) = lookup.scalar(ctx, scalar_id)? else {
             return Ok(false);
         };

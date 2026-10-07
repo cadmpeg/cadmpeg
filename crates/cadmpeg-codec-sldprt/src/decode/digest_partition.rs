@@ -4,7 +4,8 @@
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
-pub(super) struct DigestPartition<T> {
+pub(super) struct DigestPartition<'ctx, T> {
+    _storage: ScopedReservation<'ctx>,
     original_len: usize,
     original: Vec<T>,
     kept: Vec<T>,
@@ -16,11 +17,11 @@ pub(super) struct PreparedDigestPartition<'source, 'ctx, T> {
     source: &'source mut Vec<T>,
     decisions: Vec<bool>,
     _decisions: ScopedReservation<'ctx>,
-    partition: DigestPartition<T>,
+    partition: DigestPartition<'ctx, T>,
 }
 
-impl<T> DigestPartition<T> {
-    pub(super) fn prepare<'source, 'ctx>(
+impl<'ctx, T> DigestPartition<'ctx, T> {
+    pub(super) fn prepare<'source>(
         ctx: &'ctx DecodeContext<'_>,
         source: &'source mut Vec<T>,
         mut keep: impl FnMut(&T) -> Result<bool, CodecError>,
@@ -44,11 +45,17 @@ impl<T> DigestPartition<T> {
             }
         }
         let excluded_count = source.len() - kept_count;
-        let kept = ctx.collection_vec(kept_count, operation)?;
-        let excluded = ctx.collection_vec(excluded_count, operation)?;
-        let kept_positions = ctx.collection_vec(kept_count, operation)?;
+        let ((kept, excluded, kept_positions), storage) =
+            ctx.with_scoped_storage(operation, || {
+                Ok::<_, CodecError>((
+                    ctx.collection_vec(kept_count, operation)?,
+                    ctx.collection_vec(excluded_count, operation)?,
+                    ctx.collection_vec(kept_count, operation)?,
+                ))
+            })?;
         Ok(PreparedDigestPartition {
             partition: Self {
+                _storage: storage,
                 original_len: source.len(),
                 original: Vec::new(),
                 kept,
@@ -93,8 +100,8 @@ impl<T> DigestPartition<T> {
     }
 }
 
-impl<T> PreparedDigestPartition<'_, '_, T> {
-    pub(super) fn move_from(mut self) -> DigestPartition<T> {
+impl<'ctx, T> PreparedDigestPartition<'_, 'ctx, T> {
+    pub(super) fn move_from(mut self) -> DigestPartition<'ctx, T> {
         self.partition.original = std::mem::take(self.source);
         for ((position, item), keep) in self
             .partition

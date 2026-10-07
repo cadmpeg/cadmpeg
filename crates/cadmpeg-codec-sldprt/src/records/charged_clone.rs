@@ -24,7 +24,6 @@ impl CloneCharged for String {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.len()), operation)?;
         ctx.copy_retained_text(self, operation)
     }
 }
@@ -54,10 +53,9 @@ impl<T: CloneCharged> CloneCharged for Vec<T> {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         let mut copy = Vec::new();
-        ctx.reserve_vec(&mut copy, self.len(), operation)?;
-        for value in self {
-            ctx.charge_work(1, operation)?;
-            copy.push(value.clone_charged(ctx, operation)?);
+        for value in ctx.admit_iter(self, operation)? {
+            let value = value.clone_charged(ctx, operation)?;
+            ctx.push_vec(&mut copy, value, operation)?;
         }
         Ok(copy)
     }
@@ -84,10 +82,6 @@ impl CloneCharged for Configuration {
 }
 
 fn copy_history_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(value.len()),
-        "clone SLDPRT history text",
-    )?;
     ctx.copy_retained_text(value, "clone SLDPRT history text")
 }
 

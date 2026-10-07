@@ -145,14 +145,17 @@ fn scan_length_user_units(
         if bytes.is_empty() || bytes.len() % 2 != 0 {
             continue;
         }
-        let units = ctx
-            .admit_iter(bytes, "validate SLDPRT linear unit name")?
-            .chunks(const { crate::nonzero(2) })
-            .filter_map(|unit| View::u16_le_at(unit, 0));
-        if char::decode_utf16(units)
-            .map(|unit| unit.unwrap_or(char::REPLACEMENT_CHARACTER))
-            .all(char::is_whitespace)
-        {
+        if ctx.all_by(
+            bytes.chunks_exact(2),
+            |unit| {
+                Ok(View::u16_le_at(unit, 0).is_some_and(|value| {
+                    char::from_u32(u32::from(value))
+                        .unwrap_or(char::REPLACEMENT_CHARACTER)
+                        .is_whitespace()
+                }))
+            },
+            "validate SLDPRT linear unit name",
+        )? {
             continue;
         }
         let value = ctx.utf16le_lossy_text(
@@ -182,12 +185,15 @@ fn scan_units_xml(
     annotations: &mut Annotations,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "read SLDPRT document unit XML";
-    let Some(text) = crate::container::xml_text_charged(
-        ctx,
-        section.payload(),
-        "materialize SLDPRT document metadata XML",
-    )?
-    else {
+    let (text, _text_storage) =
+        ctx.with_scoped_storage("SLDPRT document metadata XML workspace", || {
+            crate::container::xml_text_charged(
+                ctx,
+                section.payload(),
+                "materialize SLDPRT document metadata XML",
+            )
+        })?;
+    let Some(text) = text else {
         return Ok(());
     };
     let admitted_document = match ctx.parse_xml(text.as_str(), "decode XML tree") {

@@ -593,7 +593,7 @@ fn native_derived_lane_collection_limit_refuses_before_reconstruction() {
         },
     );
     assert!(matches!(
-        cadmpeg_core::CodecError::from(error),
+        error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "validate SLDPRT expected primary lanes"

@@ -369,8 +369,22 @@ fn numerically_equivalent_pattern_sizes_supply_diameter_without_rendered_text() 
 
 #[test]
 fn diameter_equivalence_does_not_merge_distinct_sizes() {
-    assert_eq!(unique_diameter([10.0, 10.000_005].into_iter()), Some(10.0));
-    assert_eq!(unique_diameter([10.0, 10.000_02].into_iter()), None);
+    assert_eq!(
+        unique_diameter(
+            &cadmpeg_test_support::service_decode_context(),
+            [10.0, 10.000_005].into_iter()
+        )
+        .unwrap(),
+        Some(10.0)
+    );
+    assert_eq!(
+        unique_diameter(
+            &cadmpeg_test_support::service_decode_context(),
+            [10.0, 10.000_02].into_iter()
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -1294,17 +1308,14 @@ fn swift_rendered_utf16_preserves_surrogate_pairs_and_rejects_invalid_pairs() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut text = String::new();
-    assert_eq!(
-        decode_rendered_utf16(&ctx, &[0x3d, 0xd8, 0x00, 0xde], 0, 2, &mut text).unwrap(),
-        Some(())
-    );
+    let (text, storage) = decode_rendered_utf16(&ctx, &[0x3d, 0xd8, 0x00, 0xde], 0, 2)
+        .unwrap()
+        .expect("valid surrogate pair");
     assert_eq!(text, "😀");
-    text.clear();
-    assert_eq!(
-        decode_rendered_utf16(&ctx, &[0x00, 0xd8], 0, 1, &mut text).unwrap(),
-        None
-    );
+    drop((text, storage));
+    assert!(decode_rendered_utf16(&ctx, &[0x00, 0xd8], 0, 1)
+        .unwrap()
+        .is_none());
 }
 fn zero_nominal_angle_root() -> Entity {
     let mut angle = entity("GdtAngleBetween");
@@ -1364,23 +1375,29 @@ fn dimension_without_a_nominal_key_is_skipped() {
 fn rendered_utf16_character_refusal_preserves_the_resource_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let mut output = String::new();
-    assert_eq!(
-        decode_rendered_utf16(&ctx, &[0xb5, 0], 0, 1, &mut output).unwrap(),
-        Some(())
-    );
+    let (output, storage) = decode_rendered_utf16(&ctx, &[0xb5, 0], 0, 1)
+        .unwrap()
+        .expect("valid UTF-16");
     assert_eq!(output, "µ");
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut output = String::new();
-    let error = decode_rendered_utf16(&ctx, &[0xb5, 0], 0, 1, &mut output).unwrap_err();
+    drop((output, storage));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "decode SWIFT rendered literal text",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let result = decode_rendered_utf16(&ctx, &[0xb5, 0], 0, 1);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result.map(|_| ())
+        },
+    );
     let CodecError::ResourceLimit(limit) = error else {
         panic!("rendered character refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.operation, "append SLDPRT decoded character");
+    assert_eq!(limit.operation, "decode SWIFT rendered literal text");
     assert_eq!(limit.additional, 2);
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(output.is_empty());
 }

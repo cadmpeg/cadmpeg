@@ -44,11 +44,9 @@ fn dimension_subtype(
         "" if empty_subtype_is_count && exact_count(record.value.get()).is_some() => {
             PmiDimensionSubtype::Count
         }
-        other => PmiDimensionSubtype::Native(copy_pmi_text(
-            ctx,
-            other,
-            "retain SLDPRT PMI native subtype",
-        )?),
+        other => PmiDimensionSubtype::Native(
+            ctx.copy_retained_text(other, "retain SLDPRT PMI native subtype")?,
+        ),
     })
 }
 
@@ -116,18 +114,21 @@ fn agreed_dimension_records<'a>(
     records: &'a [PmiDimension],
 ) -> Result<Vec<&'a PmiDimension>, CodecError> {
     let mut groups = BTreeMap::<&str, Vec<&PmiDimension>>::new();
+    let mut group_storage = ctx.reserve_scoped(0, "SLDPRT PMI dimension groups")?;
     for record in ctx.admit_iter(records, "scan SLDPRT agreed_dimension_records values")? {
-        ctx.push_btree_group(
-            &mut groups,
-            record.cad_text.as_str(),
-            record,
-            "group SLDPRT PMI dimension names",
-            "group SLDPRT PMI dimension records",
-        )?;
+        group_storage.with_storage(|| {
+            ctx.push_btree_group(
+                &mut groups,
+                record.cad_text.as_str(),
+                record,
+                "group SLDPRT PMI dimension names",
+                "group SLDPRT PMI dimension records",
+            )
+        })?;
     }
 
     let mut representatives = Vec::new();
-    for mut group in groups.into_values() {
+    for (_, mut group) in ctx.admit_iter(groups, "scan SLDPRT PMI dimension groups")? {
         ctx.sort_unstable_by(
             &mut group,
             |value| &value.id,
@@ -250,7 +251,8 @@ pub(crate) fn enrich_history_parameters_with_features(
                         "collect SLDPRT PMI owner positions",
                     )?;
                 } else {
-                    let name = copy_pmi_text(ctx, &feature.name, "copy SLDPRT PMI owner name")?;
+                    let name =
+                        ctx.copy_retained_text(&feature.name, "copy SLDPRT PMI owner name")?;
                     let mut owner = ctx.collection_vec(1, "collect SLDPRT PMI owner positions")?;
                     owner.push((history_index, feature_index));
                     ctx.insert_btree_map(
@@ -340,12 +342,12 @@ pub(crate) fn enrich_history_parameters_with_features(
             cadmpeg_ir::features::PmiDimensionSubtype::Native(_) => continue,
         };
         let parameters = &mut histories[*history_index].features[*feature_index].parameters;
-        if ctx.contains_key_btree_map(&(parameters), name, "test SLDPRT map key")? {
+        if ctx.contains_key_btree_map(parameters, name, "test SLDPRT map key")? {
             continue;
         }
         let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(
             ctx,
-            copy_pmi_text(ctx, name, "retain SLDPRT PMI history parameter name")?,
+            ctx.copy_retained_text(name, "retain SLDPRT PMI history parameter name")?,
             "validate nonblank text",
         )?
         else {
@@ -547,7 +549,11 @@ pub(crate) fn apply_to_parameters(
             .admit_iter(&parameters[..], "index SLDPRT PMI parameters")?
             .enumerate()
         {
-            let Some(owner) = parameter.owner.as_ref().map(|owner| owner.as_str()) else {
+            let Some(owner) = parameter
+                .owner
+                .as_ref()
+                .map(cadmpeg_ir::features::FeatureId::as_str)
+            else {
                 continue;
             };
             lookup_storage.with_storage(|| {
@@ -719,12 +725,15 @@ pub(crate) fn apply_to_parameters(
             precision: record.precision,
             display_text: record
                 .display_text()
-                .map(|text| copy_pmi_text(ctx, text, "retain SLDPRT PMI parameter display text"))
+                .map(|text| {
+                    ctx.copy_retained_text(text, "retain SLDPRT PMI parameter display text")
+                })
                 .transpose()?,
             basic: record.basic,
             inspection: record.inspection,
             reference_only: record.reference_only,
-            native_ref: copy_pmi_text(ctx, &record.id, "retain SLDPRT PMI parameter native ID")?,
+            native_ref: ctx
+                .copy_retained_text(&record.id, "retain SLDPRT PMI parameter native ID")?,
         };
         if let Some(parameter) = existing_parameter.map(|index| &mut parameters[index]) {
             // Keywords is the authoritative design value when it already
@@ -755,8 +764,7 @@ pub(crate) fn apply_to_parameters(
             id: ParameterId::compose(
                 &cadmpeg_ir::identity_namespace!("sldprt", "model", "parameter"),
                 cadmpeg_ir::identity_key!("pmi:").then(
-                    cadmpeg_ir::ids::IdentityKey::try_new(copy_pmi_text(
-                        ctx,
+                    cadmpeg_ir::ids::IdentityKey::try_new(ctx.copy_retained_text(
                         &record.guid,
                         "retain SLDPRT PMI parameter identity key",
                     )?)
@@ -768,15 +776,12 @@ pub(crate) fn apply_to_parameters(
                 ),
             ),
             owner: Some(
-                cadmpeg_ir::features::FeatureId::mint(copy_pmi_text(
-                    ctx,
-                    owner.id.as_str(),
-                    "retain SLDPRT PMI parameter owner ID",
-                )?)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                owner
+                    .id
+                    .try_clone_for_decode(ctx, "retain SLDPRT PMI parameter owner ID")?,
             ),
             ordinal,
-            name: copy_pmi_text(ctx, name, "retain SLDPRT PMI parameter name")?,
+            name: ctx.copy_retained_text(name, "retain SLDPRT PMI parameter name")?,
             expression,
             display,
             value,
@@ -915,13 +920,13 @@ fn collect_dimensions(
         let (guid, offset) = candidate?;
         let normalized = seen_storage
             .with_storage(|| ctx.to_ascii_lowercase(guid, "normalize SLDPRT PMI candidate GUID"))?;
-        if ctx.contains_hash_set(&(seen), &normalized, "test SLDPRT hashed identity")? {
+        if ctx.contains_hash_set(seen, &normalized, "test SLDPRT hashed identity")? {
             continue;
         }
         match extract_dimension(ctx, payload, offset, &normalized, parent) {
             Ok(Some(record)) => {
                 let annotation_id =
-                    copy_pmi_text(ctx, &record.id, "retain SLDPRT PMI annotation ID")?;
+                    ctx.copy_retained_text(&record.id, "retain SLDPRT PMI annotation ID")?;
                 crate::annotations::note(
                     ctx,
                     annotations,
@@ -1001,21 +1006,6 @@ impl From<CodecError> for PmiParseError {
     }
 }
 
-fn copy_pmi_text(
-    ctx: &DecodeContext<'_>,
-    text: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(text.len())
-        .checked_mul(4)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(copy_work, operation)?;
-    let mut copy = String::new();
-    ctx.try_reserve_retained_text(&mut copy, text.len(), operation)?;
-    copy.push_str(text);
-    Ok(copy)
-}
-
 /// `Ok(None)` means the map is not a PMI dimension.
 /// Malformed candidates carry a loss; resource refusals end the decode.
 fn extract_dimension(
@@ -1041,8 +1031,10 @@ fn extract_dimension(
     let ValueKind::Map(outer) = outer_value.kind else {
         return Ok(None);
     };
-    let has_cad_text = outer.contains_key("cadText");
-    let has_dim_items = outer.contains_key("dimItems");
+    let has_cad_text =
+        ctx.contains_key_btree_map(&outer, "cadText", "read SLDPRT PMI dimension fields")?;
+    let has_dim_items =
+        ctx.contains_key_btree_map(&outer, "dimItems", "read SLDPRT PMI dimension fields")?;
     if !has_cad_text && !has_dim_items {
         return Ok(None);
     }
@@ -1052,7 +1044,9 @@ fn extract_dimension(
     let Some(cad_text) = string_field(ctx, &outer, "cadText")? else {
         return Err("cadText is not a string".into());
     };
-    let Some(items_value) = outer.get("dimItems") else {
+    let Some(items_value) =
+        ctx.get_btree_map(&outer, "dimItems", "read SLDPRT PMI dimension fields")?
+    else {
         return Err("dimItems missing after key check".into());
     };
     let ValueKind::Array(items) = &items_value.kind else {
@@ -1073,53 +1067,49 @@ fn extract_dimension(
     if string_field(ctx, item, "class")? != Some("DimSemData") {
         return Err("first dimItems element is not DimSemData".into());
     }
-    let value_field = item
-        .get("value")
+    let value_field = ctx
+        .get_btree_map(item, "value", "read SLDPRT PMI dimension fields")?
         .ok_or_else(|| "DimSemData lacks value".to_string())?;
     if payload.get(value_field.start) != Some(&Marker::F64.to_u8()) {
         return Err("value is not an f64 (0xcb) MessagePack float".into());
     }
     let value = float_from(value_field).ok_or_else(|| "value is not a finite float".to_string())?;
-    let precision_field = item
-        .get("valPrecision")
+    let precision_field = ctx
+        .get_btree_map(item, "valPrecision", "read SLDPRT PMI dimension fields")?
         .ok_or_else(|| "DimSemData lacks valPrecision".to_string())?;
-    let basic_field = item
-        .get("isBasic")
+    let basic_field = ctx
+        .get_btree_map(item, "isBasic", "read SLDPRT PMI dimension fields")?
         .ok_or_else(|| "DimSemData lacks isBasic".to_string())?;
-    let inspection_field = item
-        .get("isInspection")
+    let inspection_field = ctx
+        .get_btree_map(item, "isInspection", "read SLDPRT PMI dimension fields")?
         .ok_or_else(|| "DimSemData lacks isInspection".to_string())?;
-    let reference_field = item
-        .get("isReferenceOnly")
+    let reference_field = ctx
+        .get_btree_map(item, "isReferenceOnly", "read SLDPRT PMI dimension fields")?
         .ok_or_else(|| "DimSemData lacks isReferenceOnly".to_string())?;
-    let mut id = String::new();
-    ctx.try_reserve_retained_text(
-        &mut id,
-        "sldprt:pmi:dimension#".len() + guid.len(),
+    let id = ctx.format_retained(
+        format_args!("sldprt:pmi:dimension#{guid}"),
         "retain SLDPRT PMI dimension ID",
     )?;
-    id.push_str("sldprt:pmi:dimension#");
-    id.push_str(guid);
-    let display_text = match outer.get("dimText") {
-        Some(SpannedValue {
-            kind: ValueKind::String(text),
-            data_offset,
-            ..
-        }) => Some((
-            copy_pmi_text(ctx, text, "retain SLDPRT PMI display text")?,
-            u64_from_index(*data_offset),
-        )),
-        _ => None,
-    };
+    let display_text =
+        match ctx.get_btree_map(&outer, "dimText", "read SLDPRT PMI dimension fields")? {
+            Some(SpannedValue {
+                kind: ValueKind::String(text),
+                data_offset,
+                ..
+            }) => Some((
+                ctx.copy_retained_text(text, "retain SLDPRT PMI display text")?,
+                u64_from_index(*data_offset),
+            )),
+            _ => None,
+        };
     Ok(Some(PmiDimension {
         id,
-        parent: copy_pmi_text(ctx, parent, "retain SLDPRT PMI parent")?,
+        parent: ctx.copy_retained_text(parent, "retain SLDPRT PMI parent")?,
         offset: u64_from_index(offset),
-        guid: copy_pmi_text(ctx, guid, "retain SLDPRT PMI GUID")?,
-        cad_text: copy_pmi_text(ctx, cad_text, "retain SLDPRT PMI CAD text")?,
+        guid: ctx.copy_retained_text(guid, "retain SLDPRT PMI GUID")?,
+        cad_text: ctx.copy_retained_text(cad_text, "retain SLDPRT PMI CAD text")?,
         item_count,
-        subtype: copy_pmi_text(
-            ctx,
+        subtype: ctx.copy_retained_text(
             string_field(ctx, item, "dimSubType")?.unwrap_or_default(),
             "retain SLDPRT PMI subtype",
         )?,
@@ -1169,20 +1159,15 @@ fn contains_fixstr_key(
     let Ok(key_len) = u8::try_from(key.len()) else {
         return Ok(false);
     };
-    let mut encoded = Vec::with_capacity(key.len() + 1);
-    ctx.push_vec(
-        &mut (encoded),
-        0xa0 | key_len,
-        "collect SLDPRT decoded vector items",
-    )?;
-    encoded.extend_from_slice(key.as_bytes());
-    Ok(ctx
-        .admit_iter(window, "scan SLDPRT PMI encoded map key")?
-        .windows(
-            std::num::NonZeroUsize::new(encoded.len())
-                .ok_or_else(|| CodecError::malformed("zero map key width"))?,
-        )
-        .any(|candidate| candidate == encoded))
+    let mut encoded = [0_u8; 32];
+    encoded[0] = 0xa0 | key_len;
+    encoded[1..=key.len()].copy_from_slice(key.as_bytes());
+    let encoded = &encoded[..=key.len()];
+    ctx.any_by(
+        window.windows(encoded.len()),
+        |candidate| Ok(candidate == encoded),
+        "scan SLDPRT PMI encoded map key",
+    )
 }
 
 /// Locate GUID-prefixed `MessagePack` maps. Key order and map length do not matter.
@@ -1209,7 +1194,7 @@ fn candidate_maps<'a>(
 }
 
 fn guid_before<'a>(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     payload: &'a [u8],
     offset: usize,
 ) -> Result<Option<&'a str>, CodecError> {
@@ -1227,8 +1212,8 @@ fn guid_before<'a>(
         && bytes.get(13) == Some(&b'-')
         && bytes.get(18) == Some(&b'-')
         && bytes.get(23) == Some(&b'-')
-        && ctx
-            .admit_iter(bytes, "scan SLDPRT PMI GUID characters")?
+        && bytes
+            .iter()
             .enumerate()
             .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()))
     .then_some(guid))
@@ -1597,7 +1582,7 @@ fn string_field<'a>(
     key: &str,
 ) -> Result<Option<&'a str>, cadmpeg_core::CodecError> {
     Ok::<_, cadmpeg_core::CodecError>(
-        match &match ctx.get_btree_map(&(map), key, "look up SLDPRT ordered key")? {
+        match &match ctx.get_btree_map(map, key, "look up SLDPRT ordered key")? {
             Some(value) => value,
             None => return Ok::<_, cadmpeg_core::CodecError>(None),
         }
