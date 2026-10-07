@@ -3,6 +3,7 @@
 
 #![allow(clippy::doc_markdown)]
 
+mod decode_budget;
 mod resource_admission;
 
 use cadmpeg_test_support::wire;
@@ -30,12 +31,12 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
         end: vertex,
         tolerance: None,
     });
-    let mut plan = super::AppearancePlan::default();
     let mut losses = Vec::new();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
+    let mut plan = super::AppearancePlan::new(&ctx).expect("plan storage");
     super::transfer_primitive_appearance(
         &ctx,
         &ir,
@@ -91,11 +92,18 @@ fn a_negative_point_size_records_an_appearance_loss() {
 #[test]
 fn a_nonfinite_line_width_records_an_appearance_loss() {
     assert!(matches!(
-        super::PrimitiveSize::from_source(Some("not a number")),
+        crate::test_support::with_service_context(&[], |ctx| super::PrimitiveSize::from_source(
+            ctx,
+            Some("not a number")
+        ))
+        .expect("primitive size"),
         super::PrimitiveSize::Absent
     ));
     assert_untransferred_primitive_size_reports_loss(super::PrimitiveStyle::Line(
-        super::PrimitiveSize::from_source(Some("NaN")),
+        crate::test_support::with_service_context(&[], |ctx| {
+            super::PrimitiveSize::from_source(ctx, Some("NaN"))
+        })
+        .expect("primitive size"),
     ));
 }
 
@@ -128,13 +136,13 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
         end: vertex_id,
         tolerance: None,
     });
-    let mut plan = super::AppearancePlan::default();
     let mut losses = Vec::new();
     let prefixes = [String::from("shape:")];
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
+    let mut plan = super::AppearancePlan::new(&ctx).expect("plan storage");
     for style in [
         super::PrimitiveStyle::Line(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
         super::PrimitiveStyle::Point(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
