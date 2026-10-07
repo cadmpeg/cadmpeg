@@ -2982,11 +2982,15 @@ pub(crate) fn project_geometry(
     boundary_vertex_derivations.extend(trimming_vertex_derivations);
     trimming_projection.merge_into(&mut decoded, &mut losses, ctx)?;
 
-    super::brep::project(ir, directory, (&entries, &records), global, ctx, &mut sequences)?.merge_into(
-        &mut decoded,
-        &mut losses,
+    super::brep::project(
+        ir,
+        directory,
+        (&entries, &records),
+        global,
         ctx,
-    )?;
+        &mut sequences,
+    )?
+    .merge_into(&mut decoded, &mut losses, ctx)?;
 
     super::csg::project(ir, directory, parameters, global, ctx)?.merge_into(
         &mut decoded,

@@ -12,13 +12,17 @@ use std::io::Cursor;
 
 #[test]
 fn diagnostic_error_text_refuses_before_retained_copy() {
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "iges diagnostic error text", |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        super::non_resource_error(CodecError::Malformed("invalid source".into()), &ctx)
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges diagnostic error text",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::non_resource_error(CodecError::Malformed("invalid source".into()), &ctx)
+        },
+    );
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -29,12 +33,30 @@ fn diagnostic_error_text_refuses_before_retained_copy() {
 }
 
 fn assert_entity_loss_limit(bytes: &[u8], operation: &str, retained: bool) {
-    let dimension = if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems };
+    let dimension = if retained {
+        ResourceDimension::RetainedBytes
+    } else {
+        ResourceDimension::CollectionItems
+    };
     cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
         let mut policy = DecodePolicy::service();
-        if retained { policy.limits.max_retained_bytes = cap; } else { policy.limits.max_collection_items = cap; }
-        IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-            .map_err(|failure| match failure { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
+        if retained {
+            policy.limits.max_retained_bytes = cap;
+        } else {
+            policy.limits.max_collection_items = cap;
+        }
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            )
+            .map_err(|failure| match failure {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("unexpected decode failure: {other:?}"),
+            })
     });
 }
 
@@ -165,14 +187,24 @@ fn directed_cycle_refuses_stack_and_tree_nodes_before_allocation() {
     let graph = [(1_u32, vec![2_u32]), (2, Vec::new())]
         .into_iter()
         .collect::<BTreeMap<_, _>>();
-    for operation in ["iges cycle stack", "iges cycle active", "iges cycle visited"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            crate::entities::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| graph.get(&sequence).into_iter().flatten().copied())
-        });
+    for operation in [
+        "iges cycle stack",
+        "iges cycle active",
+        "iges cycle visited",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                crate::entities::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| {
+                    graph.get(&sequence).into_iter().flatten().copied()
+                })
+            },
+        );
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -190,11 +222,17 @@ fn directed_cycle_refuses_stack_and_tree_nodes_before_allocation() {
 
 #[test]
 fn directed_cycle_work_refusal_reaches_caller() {
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "iges cycle work", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        super::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| (sequence == 1).then_some(2).into_iter())
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges cycle work",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| {
+                (sequence == 1).then_some(2).into_iter()
+            })
+        },
+    );
 }

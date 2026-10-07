@@ -74,7 +74,9 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     let mut stack = Vec::new();
     search_storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
     stack.push((sequence, false));
-    while let Some((current, expanded)) = ctx.next_charged(&mut std::iter::from_fn(|| stack.pop()), "iges cycle work")? {
+    while let Some((current, expanded)) =
+        ctx.next_charged(&mut std::iter::from_fn(|| stack.pop()), "iges cycle work")?
+    {
         if expanded {
             active.remove(&current);
             ctx.insert_btree_set(visited, current, "iges cycle visited")?;
