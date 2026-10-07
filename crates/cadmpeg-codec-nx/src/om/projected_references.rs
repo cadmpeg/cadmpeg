@@ -27,19 +27,27 @@ enum Body {
 }
 
 impl ProjectedCurveReferences {
-    pub(crate) fn read(ctx: &cadmpeg_core::decode::DecodeContext<'_>, record: OperationPayload<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+    pub(crate) fn read(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        record: OperationPayload<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         let bytes = record.payload();
         let read_token = |at: &mut usize| {
             let token = PayloadIndexToken::read(bytes.get(*at..)?)?;
             *at += token.raw().len();
             Some(token)
         };
-        let consume = |at: &mut usize, expected: &[u8]| -> Result<Option<()>, cadmpeg_core::CodecError> {
-            let Some(end) = at.checked_add(expected.len()) else { return Ok(None); };
-            if !ctx.equal(&bytes.get(*at..end), &Some(expected), "NX read equality")? { return Ok(None); }
-            *at = end;
-            Ok(Some(()))
-        };
+        let consume =
+            |at: &mut usize, expected: &[u8]| -> Result<Option<()>, cadmpeg_core::CodecError> {
+                let Some(end) = at.checked_add(expected.len()) else {
+                    return Ok(None);
+                };
+                if !ctx.equal(&bytes.get(*at..end), &Some(expected), "NX read equality")? {
+                    return Ok(None);
+                }
+                *at = end;
+                Ok(Some(()))
+            };
         let decode = |start: usize| {
             let mut at = start;
             let body = match record.name() {
@@ -91,12 +99,25 @@ impl ProjectedCurveReferences {
             "CPROJ_CMB" => &CMB_PREFIX[..],
             _ => return Ok(None),
         };
-        let Some(candidate_end) = bytes.len().checked_sub(marker.len()) else { return Ok(None); };
+        let Some(candidate_end) = bytes.len().checked_sub(marker.len()) else {
+            return Ok(None);
+        };
         let mut candidate = None;
-        for start in ctx.admit_iter(&(0..=candidate_end), "NX projected curve reference candidate search")? {
-            if !ctx.equal(&bytes.get(start..start + marker.len()), &Some(marker), "NX read equality")? { continue; }
+        for start in ctx.admit_iter(
+            &(0..=candidate_end),
+            "NX projected curve reference candidate search",
+        )? {
+            if !ctx.equal(
+                &bytes.get(start..start + marker.len()),
+                &Some(marker),
+                "NX read equality",
+            )? {
+                continue;
+            }
             if let Some(parsed) = decode(start).transpose()? {
-                if candidate.is_some() { return Ok(None); }
+                if candidate.is_some() {
+                    return Ok(None);
+                }
                 candidate = Some(parsed);
             }
         }
@@ -146,7 +167,14 @@ mod tests {
     fn projected_reference_equality_refusal_propagates() {
         let bytes = [1, 2, 0xf0, 1];
         let payload = super::OperationPayload::new(&bytes, 100, "CPROJ").unwrap();
-        let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX read equality", |ctx| super::ProjectedCurveReferences::read(ctx, payload));
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 3));
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX read equality",
+            |ctx| super::ProjectedCurveReferences::read(ctx, payload),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 3)
+        );
     }
 }

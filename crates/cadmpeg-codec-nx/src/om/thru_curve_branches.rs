@@ -30,34 +30,66 @@ impl<B> ThruCurveBranch<B> {
         })
     }
 
-    pub(crate) fn new(mode: NonZeroU8, members: ThruCurveBranchItems<(PayloadIndexToken, B)>, terminal: (PayloadIndexToken, B), suffix: ThruCurveBranchSuffix) -> Result<Self, &'static str> {
+    pub(crate) fn new(
+        mode: NonZeroU8,
+        members: ThruCurveBranchItems<(PayloadIndexToken, B)>,
+        terminal: (PayloadIndexToken, B),
+        suffix: ThruCurveBranchSuffix,
+    ) -> Result<Self, &'static str> {
         let terminal_position = match Self::extent(&members, |members| {
             Ok::<_, std::convert::Infallible>(members.iter())
         }) {
             Ok(position) => position?,
             Err(error) => match error {},
         };
-        Ok(Self { mode, terminal_position, members, terminal, suffix })
+        Ok(Self {
+            mode,
+            terminal_position,
+            members,
+            terminal,
+            suffix,
+        })
     }
 
-    fn from_wire(ctx: &DecodeContext<'_>, mode: NonZeroU8, members: ThruCurveBranchItems<(PayloadIndexToken, B)>, terminal: (PayloadIndexToken, B), suffix: ThruCurveBranchSuffix) -> Result<Result<Self, &'static str>, CodecError> {
+    fn from_wire(
+        ctx: &DecodeContext<'_>,
+        mode: NonZeroU8,
+        members: ThruCurveBranchItems<(PayloadIndexToken, B)>,
+        terminal: (PayloadIndexToken, B),
+        suffix: ThruCurveBranchSuffix,
+    ) -> Result<Result<Self, &'static str>, CodecError> {
         Ok(Self::extent(&members, |members| {
             ctx.admit_iter(members, "NX thru-curve branch token widths")
-        })?.map(|terminal_position| Self { mode, terminal_position, members, terminal, suffix }))
+        })?
+        .map(|terminal_position| Self {
+            mode,
+            terminal_position,
+            members,
+            terminal,
+            suffix,
+        }))
     }
 
     fn extent<'a, E, I: Iterator<Item = &'a (PayloadIndexToken, B)>>(
         members: &'a ThruCurveBranchItems<(PayloadIndexToken, B)>,
         admit: impl FnOnce(&'a [(PayloadIndexToken, B)]) -> Result<I, E>,
-    ) -> Result<Result<u64, &'static str>, E> where B: 'a {
-        let position = admit(members.as_slice())?.try_fold(3_u64, |at, (token, _)| at.checked_add(u64_from_index(token.raw().len())))
+    ) -> Result<Result<u64, &'static str>, E>
+    where
+        B: 'a,
+    {
+        let position = admit(members.as_slice())?
+            .try_fold(3_u64, |at, (token, _)| {
+                at.checked_add(u64_from_index(token.raw().len()))
+            })
             .and_then(|at| at.checked_add(2))
             .and_then(|at| at.checked_add(u64_from_index(members.state_lane_len())))
             .and_then(|at| at.checked_add(3));
         Ok(position.ok_or("THRU_CURVE branch frame overflows"))
     }
 
-    pub(crate) fn terminal_position(&self) -> u64 { self.terminal_position }
+    pub(crate) fn terminal_position(&self) -> u64 {
+        self.terminal_position
+    }
 
     fn byte_len(&self) -> u64 {
         self.terminal_position()
@@ -85,23 +117,47 @@ impl<B> ThruCurveGroup<B> {
             Ok(valid) => valid?,
             Err(error) => match error {},
         }
-        Ok(Self { offset, branches, terminator })
+        Ok(Self {
+            offset,
+            branches,
+            terminator,
+        })
     }
 
-    fn from_wire(ctx: &DecodeContext<'_>, offset: u64, branches: BranchItems<ThruCurveBranch<B>>, terminator: ThruCurveGroupTerminator) -> Result<Result<Self, &'static str>, CodecError> {
-        Ok(Self::validate(offset, branches.as_slice(), terminator, |branches| {
-            ctx.admit_iter(branches, "NX thru-curve group branch widths")
-        })?.map(|()| Self { offset, branches, terminator }))
+    fn from_wire(
+        ctx: &DecodeContext<'_>,
+        offset: u64,
+        branches: BranchItems<ThruCurveBranch<B>>,
+        terminator: ThruCurveGroupTerminator,
+    ) -> Result<Result<Self, &'static str>, CodecError> {
+        Ok(
+            Self::validate(offset, branches.as_slice(), terminator, |branches| {
+                ctx.admit_iter(branches, "NX thru-curve group branch widths")
+            })?
+            .map(|()| Self {
+                offset,
+                branches,
+                terminator,
+            }),
+        )
     }
 
     fn validate<'a, E, I: Iterator<Item = &'a ThruCurveBranch<B>>>(
-        offset: u64, branches: &'a [ThruCurveBranch<B>], terminator: ThruCurveGroupTerminator,
+        offset: u64,
+        branches: &'a [ThruCurveBranch<B>],
+        terminator: ThruCurveGroupTerminator,
         admit: impl FnOnce(&'a [ThruCurveBranch<B>]) -> Result<I, E>,
-    ) -> Result<Result<(), &'static str>, E> where B: 'a {
-        let end = admit(branches)?.try_fold(offset, |end, branch| end.checked_add(branch.byte_len()))
+    ) -> Result<Result<(), &'static str>, E>
+    where
+        B: 'a,
+    {
+        let end = admit(branches)?
+            .try_fold(offset, |end, branch| end.checked_add(branch.byte_len()))
             .and_then(|end| end.checked_add(1))
             .and_then(|end| end.checked_add(u64_from_index(terminator.bytes().len())));
-        Ok(end.map(|_| ()).ok_or("source_offset: THRU_CURVE group frame overflows"))
+        Ok(end
+            .map(|_| ())
+            .ok_or("source_offset: THRU_CURVE group frame overflows"))
     }
 
     pub(crate) fn offset(&self) -> u64 {
@@ -169,7 +225,16 @@ fn thru_curve_payload_branch(
         };
         let mut cursor = at + 3;
         let mut members = Vec::new();
-        for _ in match ctx.admit_iter(&(1..declared_count), "NX thru curve payload branch row traversal") { Ok(rows) => rows, Err(error) => { failure = Some(error.into()); return None; } } {
+        for _ in match ctx.admit_iter(
+            &(1..declared_count),
+            "NX thru curve payload branch row traversal",
+        ) {
+            Ok(rows) => rows,
+            Err(error) => {
+                failure = Some(error.into());
+                return None;
+            }
+        } {
             let token = PayloadIndexToken::read(record.payload().get(cursor..)?)?;
             cursor += token.raw().len();
             if let Err(error) = ctx.reserve_vec(&mut members, 1, "NX thru-curve branch members") {
@@ -185,7 +250,10 @@ fn thru_curve_payload_branch(
         let lane = record.payload().get(cursor..cursor + standard_len)?;
         let mut lane_bytes = match ctx.admit_iter(lane, "NX thru-curve state lane selection") {
             Ok(bytes) => bytes,
-            Err(error) => { failure = Some(error.into()); return None; }
+            Err(error) => {
+                failure = Some(error.into());
+                return None;
+            }
         };
         let lane = if lane_bytes.all(|&byte| byte == 0) {
             lane
@@ -195,7 +263,10 @@ fn thru_curve_payload_branch(
         let lane_len = lane.len();
         let members = match ThruCurveBranchItems::from_wire(ctx, members, lane) {
             Ok(members) => members.ok()?,
-            Err(error) => { failure = Some(error); return None; }
+            Err(error) => {
+                failure = Some(error);
+                return None;
+            }
         };
         cursor += lane_len;
         (record.payload().get(cursor..cursor + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
@@ -211,7 +282,10 @@ fn thru_curve_payload_branch(
 
         let branch = match ThruCurveBranch::from_wire(ctx, mode, members, terminal, suffix) {
             Ok(branch) => branch.ok()?,
-            Err(error) => { failure = Some(error); return None; }
+            Err(error) => {
+                failure = Some(error);
+                return None;
+            }
         };
         Some((branch, cursor))
     })();
@@ -245,7 +319,20 @@ pub(crate) fn thru_curve_payload_branch_group(
         branches.push(branch);
         at = next;
     }
-    let Some(terminator) = ctx.find_by(&ThruCurveGroupTerminator::ALL, |terminator| Ok(ctx.equal(&record.payload().get(at..at + terminator.bytes().len()), &Some(terminator.bytes()), "NX thru curve payload branch group equality")?), "NX thru curve group terminator lookup")?.copied() else {
+    let Some(terminator) = ctx
+        .find_by(
+            &ThruCurveGroupTerminator::ALL,
+            |terminator| {
+                Ok(ctx.equal(
+                    &record.payload().get(at..at + terminator.bytes().len()),
+                    &Some(terminator.bytes()),
+                    "NX thru curve payload branch group equality",
+                )?)
+            },
+            "NX thru curve group terminator lookup",
+        )?
+        .copied()
+    else {
         return Ok(None);
     };
     let Some(offset) = record.payload_offset().checked_add(group_offset) else {

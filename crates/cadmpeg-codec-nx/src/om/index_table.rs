@@ -20,19 +20,17 @@ impl<'a> DescendingU32Edges<'a> {
         bytes: &'a [u8],
     ) -> Result<Self, CodecError> {
         let mut offsets_by_alignment = <[Vec<usize>; 4]>::default();
-        if let Some(range_end) = bytes
-            .len()
-            .checked_sub(7) {
+        if let Some(range_end) = bytes.len().checked_sub(7) {
             for offset in ctx.admit_iter(&(0..range_end), "NX descending index edge scan")? {
-            if View::u32_le_at(bytes, offset)
-                .zip(View::u32_le_at(bytes, offset + 4))
-                .is_some_and(|(current, next)| current > next)
-            {
-                let offsets = &mut offsets_by_alignment[offset % 4];
-                ctx.reserve_scoped_vec(reservation, offsets, 1, "nx descending index edges")?;
-                offsets.push(offset);
+                if View::u32_le_at(bytes, offset)
+                    .zip(View::u32_le_at(bytes, offset + 4))
+                    .is_some_and(|(current, next)| current > next)
+                {
+                    let offsets = &mut offsets_by_alignment[offset % 4];
+                    ctx.reserve_scoped_vec(reservation, offsets, 1, "nx descending index edges")?;
+                    offsets.push(offset);
+                }
             }
-        }
         }
         Ok(Self {
             bytes,
@@ -90,13 +88,23 @@ struct IndexRecords<'a> {
 }
 
 impl<'a> IndexRecords<'a> {
-    fn records(self, ctx: &DecodeContext<'_>) -> Result<impl Iterator<Item = EntityRecord<'a>>, CodecError> {
-        let width = NonZeroUsize::new(4).ok_or_else(|| CodecError::Malformed("zero OM index word width".into()))?;
+    fn records(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<impl Iterator<Item = EntityRecord<'a>>, CodecError> {
+        let width = NonZeroUsize::new(4)
+            .ok_or_else(|| CodecError::Malformed("zero OM index word width".into()))?;
         let mut start = self.first;
-        Ok(ctx.admit_iter(self.words.unread(), "NX OM record bounds traversal")?
-            .chunks(width).map_while(move |word| {
-                let end = self.base + cadmpeg_core::decode::index_from_u32(View::u32_le_at(word, 0)?);
-                let record = EntityRecord { offset: start, bytes: &self.source[start..end] };
+        Ok(ctx
+            .admit_iter(self.words.unread(), "NX OM record bounds traversal")?
+            .chunks(width)
+            .map_while(move |word| {
+                let end =
+                    self.base + cadmpeg_core::decode::index_from_u32(View::u32_le_at(word, 0)?);
+                let record = EntityRecord {
+                    offset: start,
+                    bytes: &self.source[start..end],
+                };
                 start = end;
                 Some(record)
             }))
@@ -152,16 +160,34 @@ impl<'a> FixedIndex<'a> {
         self.object_id_table_offset
     }
 
-    pub(super) fn records(self, ctx: &DecodeContext<'_>) -> Result<impl Iterator<Item = FixedEntityRecord<'a>>, CodecError> {
-        let width = NonZeroUsize::new(4).ok_or_else(|| CodecError::Malformed("zero OM identity word width".into()))?;
+    pub(super) fn records(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<impl Iterator<Item = FixedEntityRecord<'a>>, CodecError> {
+        let width = NonZeroUsize::new(4)
+            .ok_or_else(|| CodecError::Malformed("zero OM identity word width".into()))?;
         let ids_start = self.object_id_table_offset + 8;
-        let ids = ctx.admit_iter(self.object_ids.unread(), "NX OM object identity traversal")?
-            .chunks(width).enumerate().map_while(move |(ordinal, word)| {
-                View::u32_le_at(word, 0).map(|value| (value, cadmpeg_core::decode::u64_from_index(ids_start + ordinal * 4)))
+        let ids = ctx
+            .admit_iter(self.object_ids.unread(), "NX OM object identity traversal")?
+            .chunks(width)
+            .enumerate()
+            .map_while(move |(ordinal, word)| {
+                View::u32_le_at(word, 0).map(|value| {
+                    (
+                        value,
+                        cadmpeg_core::decode::u64_from_index(ids_start + ordinal * 4),
+                    )
+                })
             });
-        Ok(self.records.records(ctx)?.zip(ids).map(|(record, object_id)| FixedEntityRecord {
-            object_id, offset: record.offset, bytes: record.bytes,
-        }))
+        Ok(self
+            .records
+            .records(ctx)?
+            .zip(ids)
+            .map(|(record, object_id)| FixedEntityRecord {
+                object_id,
+                offset: record.offset,
+                bytes: record.bytes,
+            }))
     }
 }
 
@@ -212,7 +238,10 @@ impl<'a> OffsetIndex<'a> {
     pub(super) fn column_storage(&self) -> &'a [u8] {
         &self.records.source[self.records.first..]
     }
-    pub(super) fn records(&self, ctx: &DecodeContext<'_>) -> Result<impl Iterator<Item = EntityRecord<'a>>, CodecError> {
+    pub(super) fn records(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<impl Iterator<Item = EntityRecord<'a>>, CodecError> {
         self.records.records(ctx)
     }
 }

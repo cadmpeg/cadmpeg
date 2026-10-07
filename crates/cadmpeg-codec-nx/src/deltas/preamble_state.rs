@@ -2,12 +2,12 @@
 //! Checked schema-reference preamble payload.
 
 use crate::iter_wire::IterWire;
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize};
-use std::num::NonZeroU16;
-use std::convert::Infallible;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Serialize};
+use std::convert::Infallible;
+use std::num::NonZeroU16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StateForm {
@@ -56,7 +56,15 @@ impl PreambleState {
         entries: Vec<(u16, u32)>,
         terminal_value: u16,
     ) -> Result<Self, &'static str> {
-        let (first_reference, linked, form, count) = match validate_preamble(identity, references, state_references, state_words, count, &entries, |values| Ok::<_, Infallible>(values.iter())) {
+        let (first_reference, linked, form, count) = match validate_preamble(
+            identity,
+            references,
+            state_references,
+            state_words,
+            count,
+            &entries,
+            |values| Ok::<_, Infallible>(values.iter()),
+        ) {
             Ok(validation) => validation?,
             Err(never) => match never {},
         };
@@ -82,12 +90,27 @@ impl PreambleState {
         entries: Vec<(u16, u32)>,
         terminal_value: u16,
     ) -> Result<Result<Self, &'static str>, CodecError> {
-        let validation = validate_preamble(identity, references, state_references, state_words, count, &entries, |values| {
-            ctx.admit_iter(values, "NX schema preamble entry validation")
-        })?;
-        Ok(validation.map(|(first_reference, linked, form, count)| Self {
-            identity, first_reference, linked, form, last_word: state_words[3], count, entries, terminal_value,
-        }))
+        let validation = validate_preamble(
+            identity,
+            references,
+            state_references,
+            state_words,
+            count,
+            &entries,
+            |values| ctx.admit_iter(values, "NX schema preamble entry validation"),
+        )?;
+        Ok(
+            validation.map(|(first_reference, linked, form, count)| Self {
+                identity,
+                first_reference,
+                linked,
+                form,
+                last_word: state_words[3],
+                count,
+                entries,
+                terminal_value,
+            }),
+        )
     }
 
     pub(crate) fn identity(&self) -> u16 {
@@ -135,42 +158,46 @@ fn validate_preamble<'entries, E, I: Iterator<Item = &'entries (u16, u32)>>(
     entries: &'entries [(u16, u32)],
     admit: impl FnOnce(&'entries [(u16, u32)]) -> Result<I, E>,
 ) -> Result<Result<(u32, bool, StateForm, NonZeroU16), &'static str>, E> {
-        if identity <= 1 {
-            return Ok(Err("identity: must exceed one"));
+    if identity <= 1 {
+        return Ok(Err("identity: must exceed one"));
+    }
+    let [first_reference, second] = references;
+    if first_reference <= 1
+        || first_reference.checked_add(1) != Some(second)
+        || second.checked_add(1).is_none()
+    {
+        return Ok(Err(
+            "references: require consecutive non-null references with a state successor",
+        ));
+    }
+    let linked = if state_references == [1; 3] {
+        false
+    } else if state_references == [1, second + 1, 1] {
+        true
+    } else {
+        return Ok(Err(
+            "state_reference: must be the reference successor between nulls",
+        ));
+    };
+    let form = match state_words {
+        [0, 0, 1, _] => StateForm::Zero,
+        [2, 0, 1, _] => StateForm::Two,
+        _ => return Ok(Err("state_words: require [0|2, 0, 1, value]")),
+    };
+    let Some(count) = NonZeroU16::new(count) else {
+        return Ok(Err("count: must be nonzero"));
+    };
+    if entries.is_empty() {
+        return Ok(Err("entries: require at least one entry"));
+    }
+    for (kind, reference) in admit(entries)? {
+        if *reference <= 1 {
+            return Ok(Err("entries.reference: must exceed one"));
         }
-        let [first_reference, second] = references;
-        if first_reference <= 1
-            || first_reference.checked_add(1) != Some(second)
-            || second.checked_add(1).is_none()
-        {
-            return Ok(Err(
-                "references: require consecutive non-null references with a state successor",
-            ));
+        if !matches!(*kind, 81 | 82) {
+            return Ok(Err("entries.kind: must be 81 or 82"));
         }
-        let linked = if state_references == [1; 3] {
-            false
-        } else if state_references == [1, second + 1, 1] {
-            true
-        } else {
-            return Ok(Err("state_reference: must be the reference successor between nulls"));
-        };
-        let form = match state_words {
-            [0, 0, 1, _] => StateForm::Zero,
-            [2, 0, 1, _] => StateForm::Two,
-            _ => return Ok(Err("state_words: require [0|2, 0, 1, value]")),
-        };
-        let Some(count) = NonZeroU16::new(count) else { return Ok(Err("count: must be nonzero")); };
-        if entries.is_empty() {
-            return Ok(Err("entries: require at least one entry"));
-        }
-        for (kind, reference) in admit(entries)? {
-            if *reference <= 1 {
-                return Ok(Err("entries.reference: must exceed one"));
-            }
-            if !matches!(*kind, 81 | 82) {
-                return Ok(Err("entries.kind: must be 81 or 82"));
-            }
-        }
+    }
     Ok(Ok((first_reference, linked, form, count)))
 }
 
@@ -302,13 +329,25 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
         let error = crate::test_support::resource_refusal_at(
-            &[], ResourceDimension::WorkUnits, "NX schema preamble entry validation",
-            |ctx| { super::PreambleState::from_wire(ctx, 300, [40000, 40001], [1; 3], [2, 0, 1, 55], 7, vec![(81, 4), (82, 40000), (81, 5)], 9) },
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX schema preamble entry validation",
+            |ctx| {
+                super::PreambleState::from_wire(
+                    ctx,
+                    300,
+                    [40000, 40001],
+                    [1; 3],
+                    [2, 0, 1, 55],
+                    7,
+                    vec![(81, 4), (82, 40000), (81, 5)],
+                    9,
+                )
+            },
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX schema preamble entry validation"));
     }
-
 }
 
 // Each optional key below names itself in whatever it refuses.

@@ -18,7 +18,9 @@ impl<O> MultiInstanceOutputs<O> {
         rows: Vec<(LocatedCompactIndex<O>, u8)>,
         references: Vec<PayloadObjectReference<FeatureReferenceToken, O>>,
     ) -> Result<Self, &'static str> {
-        match Self::validate(&rows, &references, |rows| Ok::<_, std::convert::Infallible>(rows.iter())) {
+        match Self::validate(&rows, &references, |rows| {
+            Ok::<_, std::convert::Infallible>(rows.iter())
+        }) {
             Ok(validation) => validation?,
             Err(error) => match error {},
         };
@@ -33,23 +35,36 @@ impl<O> MultiInstanceOutputs<O> {
         references: &[PayloadObjectReference<FeatureReferenceToken, O>],
         mut admit: impl FnMut(&'a [(LocatedCompactIndex<O>, u8)]) -> Result<I, E>,
     ) -> Result<Result<(), &'static str>, E>
-    where O: 'a {
+    where
+        O: 'a,
+    {
         if !(1..=254).contains(&rows.len()) {
             return Ok(Err("selectors: must contain 1 through 254 rows"));
         }
         if !(1..=254).contains(&references.len()) {
-            return Ok(Err("trailing_object_indices: must contain 1 through 254 references"));
+            return Ok(Err(
+                "trailing_object_indices: must contain 1 through 254 references",
+            ));
         }
         for (position, (selector, ordinal)) in admit(rows)?.enumerate() {
             let preceding = admit(&rows[..position])?
-                .filter(|(prior, _)| prior.atom.value() == selector.atom.value()).count();
+                .filter(|(prior, _)| prior.atom.value() == selector.atom.value())
+                .count();
             if usize::from(*ordinal) != preceding + 2 {
-                return Ok(Err("ordinals: each selector must enumerate instances from two"));
+                return Ok(Err(
+                    "ordinals: each selector must enumerate instances from two",
+                ));
             }
         }
         for (selector, _) in admit(rows)? {
-            if admit(rows)?.filter(|(other, _)| other.atom.value() == selector.atom.value()).count() != references.len() {
-                return Ok(Err("trailing_object_indices: each selector must cover every instance"));
+            if admit(rows)?
+                .filter(|(other, _)| other.atom.value() == selector.atom.value())
+                .count()
+                != references.len()
+            {
+                return Ok(Err(
+                    "trailing_object_indices: each selector must cover every instance",
+                ));
             }
         }
         Ok(Ok(()))
@@ -60,12 +75,21 @@ impl<O> MultiInstanceOutputs<O> {
         rows: Vec<(LocatedCompactIndex<O>, u8)>,
         references: Vec<PayloadObjectReference<FeatureReferenceToken, O>>,
     ) -> Result<Option<Self>, CodecError>
-    where O: Copy {
-        if Self::validate(&rows, &references, |rows| ctx.admit_iter(rows, "nx instance selector validation"))?.is_err() {
+    where
+        O: Copy,
+    {
+        if Self::validate(&rows, &references, |rows| {
+            ctx.admit_iter(rows, "nx instance selector validation")
+        })?
+        .is_err()
+        {
             return Ok(None);
         }
         let mut selectors = Vec::new();
-        for (selector, _) in ctx.admit_iter(&rows, "nx instance selector projection")?.copied() {
+        for (selector, _) in ctx
+            .admit_iter(&rows, "nx instance selector projection")?
+            .copied()
+        {
             ctx.reserve_vec(&mut selectors, 1, "nx instance selectors")?;
             selectors.push(selector);
         }
@@ -102,7 +126,9 @@ impl<O> MultiInstanceOutputs<O> {
         ctx: &DecodeContext<'_>,
         mut map: impl FnMut(O) -> P,
     ) -> Result<MultiInstanceOutputs<P>, CodecError>
-    where O: Copy {
+    where
+        O: Copy,
+    {
         let mut selectors = Vec::new();
         for selector in ctx.admit_iter(&self.selectors, "nx mapped instance selectors")? {
             ctx.reserve_vec(&mut selectors, 1, "nx mapped instance selectors")?;
@@ -197,19 +223,28 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
         let selector = LocatedCompactIndex {
-            atom: CompactIndexAtom::from_wire(7, &[7]).unwrap(), offset: 0_usize,
+            atom: CompactIndexAtom::from_wire(7, &[7]).unwrap(),
+            offset: 0_usize,
         };
         let reference = PayloadObjectReference {
-            token: FeatureReferenceToken::from_wire(9, &[9]).unwrap(), offset: 0_usize,
+            token: FeatureReferenceToken::from_wire(9, &[9]).unwrap(),
+            offset: 0_usize,
         };
         for ordinal in [2, 3] {
             let error = crate::test_support::resource_refusal_at(
-                &[], ResourceDimension::WorkUnits, "nx instance selector validation",
-                |ctx| MultiInstanceOutputs::new_charged(ctx, vec![(selector, ordinal)], vec![reference.clone()]),
+                &[],
+                ResourceDimension::WorkUnits,
+                "nx instance selector validation",
+                |ctx| {
+                    MultiInstanceOutputs::new_charged(
+                        ctx,
+                        vec![(selector, ordinal)],
+                        vec![reference.clone()],
+                    )
+                },
             );
             assert!(matches!(error, CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "nx instance selector validation"));
         }
     }
-
 }

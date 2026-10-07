@@ -222,8 +222,11 @@ fn offset_store_named_point_test<'a>(
 ) -> Option<crate::om::OffsetStoreNamedPoint> {
     crate::test_support::with_decode_context(|ctx| offset_store_named_point(ctx, blocks)).unwrap()
 }
-fn operation_body_reference(record: crate::om::operation_record::OperationBodyInput<'_>) -> Option<crate::om::OperationBodyReference> {
-    crate::test_support::with_decode_context(|ctx| crate::om::operation_body_reference(ctx, record)).unwrap()
+fn operation_body_reference(
+    record: crate::om::operation_record::OperationBodyInput<'_>,
+) -> Option<crate::om::OperationBodyReference> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_body_reference(ctx, record))
+        .unwrap()
 }
 fn operation_body_references(
     record: crate::om::operation_record::OperationBodyInput<'_>,
@@ -1030,7 +1033,11 @@ fn om_hole_package_lane_retains_the_exact_four_block_group() {
     ];
     let record =
         crate::om::operation_record::OperationPayload::new(&payload, 200, "HOLE PACKAGE").unwrap();
-    let lane = crate::test_support::with_decode_context(|ctx| hole_package_construction_group_lane(ctx, record)).unwrap().unwrap();
+    let lane = crate::test_support::with_decode_context(|ctx| {
+        hole_package_construction_group_lane(ctx, record)
+    })
+    .unwrap()
+    .unwrap();
     assert_eq!(lane.offset, 1);
     assert_eq!(lane.selector.get(), 0x46);
     assert_eq!(lane.branch.get(), 0x11);
@@ -1051,15 +1058,19 @@ fn om_hole_package_lane_retains_the_exact_four_block_group() {
 
     let mut mismatched_branch = payload;
     mismatched_branch[17] = 0x12;
-    assert!(crate::test_support::with_decode_context(|ctx| hole_package_construction_group_lane(ctx,
-        crate::om::operation_record::OperationPayload::new(
-            &mismatched_branch,
-            record.payload_offset(),
-            record.name()
-        )
+    assert!(
+        crate::test_support::with_decode_context(|ctx| hole_package_construction_group_lane(
+            ctx,
+            crate::om::operation_record::OperationPayload::new(
+                &mismatched_branch,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
+        ))
         .unwrap()
-    )).unwrap()
-    .is_none());
+        .is_none()
+    );
 }
 
 #[test]
@@ -1749,11 +1760,13 @@ fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
 
     crate::test_support::with_decode_context(|ctx| {
         let payload = [
-            0x01, 0x13, 0x3c, b'T', b';', b':', b'S', b'5', b'6', b'7', b'R', b'8', b'9', b'3', 0x90,
-            0x19, 0x40, 0x90, 0x19, 0x41, 0x3e, 0x90, 0x19, 0x30, 0x90, 0x19, 0x31, 0x90, 0x19, 0x32,
-            0x00, 0x03, 0x00,
+            0x01, 0x13, 0x3c, b'T', b';', b':', b'S', b'5', b'6', b'7', b'R', b'8', b'9', b'3',
+            0x90, 0x19, 0x40, 0x90, 0x19, 0x41, 0x3e, 0x90, 0x19, 0x30, 0x90, 0x19, 0x31, 0x90,
+            0x19, 0x32, 0x00, 0x03, 0x00,
         ];
-        let graph = crate::om::fset_references::FsetReferences::read(ctx, record(&payload)).unwrap().unwrap();
+        let graph = crate::om::fset_references::FsetReferences::read(ctx, record(&payload))
+            .unwrap()
+            .unwrap();
         assert_eq!(graph.selector(), "T;:S567R893");
         assert_eq!(graph.offset(), 100);
         assert_eq!(
@@ -1781,17 +1794,32 @@ fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
 
         let mut wrong_length = payload;
         wrong_length[1] -= 1;
-        assert!(crate::om::fset_references::FsetReferences::read(ctx, record(&wrong_length)).unwrap().is_none());
+        assert!(
+            crate::om::fset_references::FsetReferences::read(ctx, record(&wrong_length))
+                .unwrap()
+                .is_none()
+        );
         let mut wrong_suffix = payload;
         wrong_suffix[31] = 0x04;
-        assert!(crate::om::fset_references::FsetReferences::read(ctx, record(&wrong_suffix)).unwrap().is_none());
+        assert!(
+            crate::om::fset_references::FsetReferences::read(ctx, record(&wrong_suffix))
+                .unwrap()
+                .is_none()
+        );
         let mut wrong_reference_form = payload;
         wrong_reference_form[14] = 0xf1;
-        assert!(
-            crate::om::fset_references::FsetReferences::read(ctx, record(&wrong_reference_form)).unwrap().is_none()
-        );
+        assert!(crate::om::fset_references::FsetReferences::read(
+            ctx,
+            record(&wrong_reference_form)
+        )
+        .unwrap()
+        .is_none());
         let duplicate = [payload.as_slice(), payload.as_slice()].concat();
-        assert!(crate::om::fset_references::FsetReferences::read(ctx, record(&duplicate)).unwrap().is_none());
+        assert!(
+            crate::om::fset_references::FsetReferences::read(ctx, record(&duplicate))
+                .unwrap()
+                .is_none()
+        );
     });
 }
 

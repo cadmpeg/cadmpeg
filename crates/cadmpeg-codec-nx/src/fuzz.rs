@@ -130,13 +130,13 @@ pub fn topology(data: &[u8]) {
     };
     if let Ok(graph) = crate::topology::Graph::parse(&ctx, data) {
         {
-        for node in graph.of_kind(NodeKind::Body) {
-            // discarded-value: fuzz this bounded node read without using its value.
-            let _ = node.byte_at(0);
-            // discarded-value: fuzz this bounded scalar read without using its value.
-            let _ = node.f64_at(0);
+            for node in graph.of_kind(NodeKind::Body) {
+                // discarded-value: fuzz this bounded node read without using its value.
+                let _ = node.byte_at(0);
+                // discarded-value: fuzz this bounded scalar read without using its value.
+                let _ = node.f64_at(0);
+            }
         }
-    }
     }
     drop(crate::topology::composite_curves(&ctx, data));
     drop(crate::topology::intersection_data_curves(&ctx, data));

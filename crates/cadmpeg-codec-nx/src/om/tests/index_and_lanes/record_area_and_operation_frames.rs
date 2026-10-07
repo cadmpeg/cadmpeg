@@ -45,7 +45,8 @@ fn om_feature_section_accepts_the_legacy_record_area_pointer_and_product_frame()
         16 + 3 + 1 + b"UGS::FEATURE_RECORD".len() + 1 + 12 + 20
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| section.record_area_header(ctx)).unwrap()
+        crate::test_support::with_decode_context(|ctx| section.record_area_header(ctx))
+            .unwrap()
             .expect("record header")
             .product
             .value

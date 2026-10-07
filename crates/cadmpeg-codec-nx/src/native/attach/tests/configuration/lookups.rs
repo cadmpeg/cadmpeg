@@ -21,7 +21,8 @@ fn nx_construction_dependency_preserves_lookup_refusals() {
                         let positions = BTreeMap::from([("csys", 1)]);
                         let feature = FeatureId::mint("nx:test:feature#csys").unwrap();
                         let features = BTreeMap::from([("csys", feature)]);
-                        let result = preceding_operation_dependency(ctx, "csys", 2, &positions, &features);
+                        let result =
+                            preceding_operation_dependency(ctx, "csys", 2, &positions, &features);
                         if let Err(CodecError::ResourceLimit(limit)) = &result {
                             assert_eq!(ctx.resource_refusal(), Some(*limit));
                         }
@@ -63,7 +64,12 @@ fn parameter_property_membership_result(
     let key = NonBlankString::from_ascii_leading(query.clone()).unwrap();
     let mut properties = BTreeMap::from([(key, "old".to_string())]);
     crate::test_support::with_decode_context_over(&[], configure, |ctx| {
-        let result = insert_parameter_property(ctx, &mut properties, format_args!("{query}"), "new".to_string());
+        let result = insert_parameter_property(
+            ctx,
+            &mut properties,
+            format_args!("{query}"),
+            "new".to_string(),
+        );
         if let Err(CodecError::ResourceLimit(limit)) = &result {
             assert_eq!(ctx.resource_refusal(), Some(*limit));
             assert_eq!(properties.values().next().map(String::as_str), Some("old"));
@@ -112,12 +118,16 @@ fn hole_output_relation_membership_refusal_propagates() {
                 &[],
                 |policy| policy.limits.max_work_units = cap,
                 |ctx| {
-                    let result = hole_operations_by_body(ctx, &CadIr::empty(), &operations, &outputs);
+                    let result =
+                        hole_operations_by_body(ctx, &CadIr::empty(), &operations, &outputs);
                     if let Err(CodecError::ResourceLimit(limit)) = &result {
                         assert_eq!(ctx.resource_refusal(), Some(*limit));
                     }
                     let groups = result?.unwrap();
-                    assert_eq!(groups, BTreeMap::from([(body.clone(), vec![operation.clone()])]));
+                    assert_eq!(
+                        groups,
+                        BTreeMap::from([(body.clone(), vec![operation.clone()])])
+                    );
                     Ok(())
                 },
             )
@@ -137,7 +147,21 @@ fn result_group_equality_cost_counts_member_text() {
         vertices: Vec::new(),
     };
     // Member text costs seven UTF-8 face bytes and four edge bytes.
-    crate::test_support::with_decode_context(|ctx| assert_eq!(group.decode_cost(ctx, "NX group member equality cost").unwrap(), 7 + 4));
-    let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits, "NX group member equality cost", |ctx| ctx.equal(&group, &group, "NX group member equality cost"));
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "NX group member equality cost"));
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(
+            group
+                .decode_cost(ctx, "NX group member equality cost")
+                .unwrap(),
+            7 + 4
+        )
+    });
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "NX group member equality cost",
+        |ctx| ctx.equal(&group, &group, "NX group member equality cost"),
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "NX group member equality cost")
+    );
 }

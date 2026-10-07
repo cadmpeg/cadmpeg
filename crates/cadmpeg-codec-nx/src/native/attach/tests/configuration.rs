@@ -1796,7 +1796,8 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
                 None,
                 BooleanOp::NewBody,
                 &[cadmpeg_ir::topology::BodyKind::Solid],
-            ).unwrap(),
+            )
+            .unwrap(),
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Native("nx:profile#1".to_string())),
                 direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
@@ -1822,7 +1823,8 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
                 None,
                 BooleanOp::Unresolved,
                 &[cadmpeg_ir::topology::BodyKind::Sheet],
-            ).unwrap(),
+            )
+            .unwrap(),
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
                 solid: Some(false),
@@ -1839,7 +1841,8 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
                     cadmpeg_ir::topology::BodyKind::Solid,
                     cadmpeg_ir::topology::BodyKind::Sheet,
                 ],
-            ).unwrap(),
+            )
+            .unwrap(),
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
                 solid: None,
@@ -1939,7 +1942,7 @@ mod colors;
 
 mod body_selection;
 
-mod parameter_projection;
 mod formatting;
+mod parameter_projection;
 
 mod lookups;

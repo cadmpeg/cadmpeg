@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Valid transmit-header text and consecutive identities.
 
-use serde::{Deserialize, Serialize};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -38,7 +38,9 @@ impl TransmitState {
         schema: String,
         references: [u32; 2],
     ) -> Result<Self, &'static str> {
-        match validate_text(&description, &schema, references, |value| Ok::<_, Infallible>(value.chars())) {
+        match validate_text(&description, &schema, references, |value| {
+            Ok::<_, Infallible>(value.chars())
+        }) {
             Ok(validation) => validation?,
             Err(never) => match never {},
         }
@@ -58,7 +60,11 @@ impl TransmitState {
         let validation = validate_text(&description, &schema, references, |value| {
             ctx.admit_iter(value, "NX transmit text validation")
         })?;
-        Ok(validation.map(|()| Self { description, schema, first_reference: references[0] }))
+        Ok(validation.map(|()| Self {
+            description,
+            schema,
+            first_reference: references[0],
+        }))
     }
     #[cfg(test)]
     pub(crate) fn description(&self) -> &str {
@@ -79,23 +85,27 @@ fn validate_text<'text, E, I: Iterator<Item = char>>(
     references: [u32; 2],
     mut admit: impl FnMut(&'text str) -> Result<I, E>,
 ) -> Result<Result<(), &'static str>, E> {
-        if !description.contains("(deltas)")
-            || !admit(description)?
-                .all(|byte| byte.is_ascii_graphic() || byte == ' ')
-        {
-            return Ok(Err("description: require printable ASCII containing (deltas)"));
-        }
-        if schema.len() <= 4
-            || !schema.starts_with("SCH_")
-            || !admit(schema)?
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == '_')
-        {
-            return Ok(Err("schema: require SCH_ followed by ASCII letters, digits, or underscores"));
-        }
-        let [first_reference, second] = references;
-        if first_reference <= 1 || first_reference.checked_add(1) != Some(second) {
-            return Ok(Err("references: require two consecutive non-null identities"));
-        }
+    if !description.contains("(deltas)")
+        || !admit(description)?.all(|byte| byte.is_ascii_graphic() || byte == ' ')
+    {
+        return Ok(Err(
+            "description: require printable ASCII containing (deltas)",
+        ));
+    }
+    if schema.len() <= 4
+        || !schema.starts_with("SCH_")
+        || !admit(schema)?.all(|byte| byte.is_ascii_alphanumeric() || byte == '_')
+    {
+        return Ok(Err(
+            "schema: require SCH_ followed by ASCII letters, digits, or underscores",
+        ));
+    }
+    let [first_reference, second] = references;
+    if first_reference <= 1 || first_reference.checked_add(1) != Some(second) {
+        return Ok(Err(
+            "references: require two consecutive non-null identities",
+        ));
+    }
     Ok(Ok(()))
 }
 
@@ -184,11 +194,19 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
         let error = crate::test_support::resource_refusal_at(
-            &[], ResourceDimension::WorkUnits, "NX transmit text validation",
-            |ctx| { super::TransmitState::from_wire(ctx, "header (deltas)".into(), "SCH_A".into(), [2, 3]) },
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX transmit text validation",
+            |ctx| {
+                super::TransmitState::from_wire(
+                    ctx,
+                    "header (deltas)".into(),
+                    "SCH_A".into(),
+                    [2, 3],
+                )
+            },
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX transmit text validation"));
     }
-
 }

@@ -25,8 +25,13 @@ fn native_feature_kind_releases_canonical_tag_storage() {
             |ctx| {
                 let kind = native_feature_kind(ctx, text).unwrap();
                 assert_eq!(kind, expected);
-                assert_eq!(serde_json::to_string(&kind).unwrap(), serde_json::to_string(text).unwrap());
-                let storage = ctx.reserve_scoped(bytes, "canonical tag storage released").unwrap();
+                assert_eq!(
+                    serde_json::to_string(&kind).unwrap(),
+                    serde_json::to_string(text).unwrap()
+                );
+                let storage = ctx
+                    .reserve_scoped(bytes, "canonical tag storage released")
+                    .unwrap();
                 drop(storage);
             },
         );
@@ -43,8 +48,13 @@ fn native_feature_kind_retains_unknown_tag_bytes_once() {
         |ctx| {
             let kind = native_feature_kind(ctx, text).unwrap();
             assert_eq!(kind, NativeFeatureKind::Other(text.to_owned()));
-            assert_eq!(serde_json::to_string(&kind).unwrap(), serde_json::to_string(text).unwrap());
-            let CodecError::ResourceLimit(limit) = ctx.charge_retained(1, "retained tag probe").unwrap_err() else {
+            assert_eq!(
+                serde_json::to_string(&kind).unwrap(),
+                serde_json::to_string(text).unwrap()
+            );
+            let CodecError::ResourceLimit(limit) =
+                ctx.charge_retained(1, "retained tag probe").unwrap_err()
+            else {
                 panic!("the retained tag occupies the byte limit");
             };
             // Retained bytes count the unknown tag's UTF-8 payload.
@@ -64,7 +74,8 @@ fn native_feature_kind_refusal(dimension: ResourceDimension) {
             _ => panic!("tag copies use work, scoped bytes and retained bytes"),
         },
         |ctx| {
-            let CodecError::ResourceLimit(limit) = native_feature_kind(ctx, "BLEND").unwrap_err() else {
+            let CodecError::ResourceLimit(limit) = native_feature_kind(ctx, "BLEND").unwrap_err()
+            else {
                 panic!("tag copies must propagate resource refusals");
             };
             assert_eq!(limit.operation, "NX native feature kind");

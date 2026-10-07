@@ -190,7 +190,9 @@ impl LegalOwnerFlags {
 impl TryFrom<&[u8]> for LegalOwnerFlags {
     type Error = &'static str;
     fn try_from(flags: &[u8]) -> Result<Self, Self::Error> {
-        match Self::validate(flags, |flags| Ok::<_, std::convert::Infallible>(flags.iter())) {
+        match Self::validate(flags, |flags| {
+            Ok::<_, std::convert::Infallible>(flags.iter())
+        }) {
             Ok(result) => result,
             Err(error) => match error {},
         }
@@ -210,7 +212,9 @@ impl LegalOwnerFlags {
         } else if let Ok(flags) = <[u8; 14]>::try_from(flags) {
             Ok(Ok(Self::Fourteen(flags.map(|flag| flag == 1))))
         } else {
-            Ok(Err("attribute owner flags require fourteen or sixteen bytes"))
+            Ok(Err(
+                "attribute owner flags require fourteen or sixteen bytes",
+            ))
         }
     }
 
@@ -218,7 +222,9 @@ impl LegalOwnerFlags {
         ctx: &DecodeContext<'_>,
         flags: &[u8],
     ) -> Result<Result<Self, &'static str>, CodecError> {
-        Ok(Self::validate(flags, |flags| ctx.admit_iter(flags, "NX attribute owner flag validation"))?)
+        Ok(Self::validate(flags, |flags| {
+            ctx.admit_iter(flags, "NX attribute owner flag validation")
+        })?)
     }
 }
 
@@ -367,7 +373,10 @@ fn referenced_value_xmts<'ctx>(
             continue;
         }
         for record in ctx.admit_iter(records, "NX grouped attribute records")? {
-            for &xmt in ctx.admit_iter(record.trailing_references.values(), "NX attribute trailing references")? {
+            for &xmt in ctx.admit_iter(
+                record.trailing_references.values(),
+                "NX attribute trailing references",
+            )? {
                 ctx.insert_scoped_btree_set(
                     &mut reference_guard,
                     &mut referenced,
@@ -447,7 +456,10 @@ fn referenced_value_xmts<'ctx>(
             continue;
         }
         for record in ctx.admit_iter(records, "NX grouped attribute records")? {
-            for xmt in ctx.admit_iter(record.name_xmts.as_slice(), "NX attribute field-name references")? {
+            for xmt in ctx.admit_iter(
+                record.name_xmts.as_slice(),
+                "NX attribute field-name references",
+            )? {
                 ctx.insert_scoped_btree_set(
                     &mut reference_guard,
                     &mut referenced,
@@ -518,7 +530,10 @@ fn field_names_record_at(
         // Each reference requires at least two source bytes.
         (count <= bytes.len().checked_sub(at)? / 2).then_some(())?;
         let mut probe = at;
-        for _ in propagate_resource!(ctx.admit_iter(&(0..count), "read NX field-name references").map_err(CodecError::from)) {
+        for _ in propagate_resource!(ctx
+            .admit_iter(&(0..count), "read NX field-name references")
+            .map_err(CodecError::from))
+        {
             NonNullXmt::try_from(read_xmt(bytes, &mut probe)?).ok()?;
         }
         let mut name_xmts = Vec::new();
@@ -528,7 +543,10 @@ fn field_names_record_at(
             count,
             "NX field-name reference lanes"
         ));
-        for _ in propagate_resource!(ctx.admit_iter(&(0..count), "materialize NX field-name references").map_err(CodecError::from)) {
+        for _ in propagate_resource!(ctx
+            .admit_iter(&(0..count), "materialize NX field-name references")
+            .map_err(CodecError::from))
+        {
             name_xmts.push(NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?);
         }
         Some(Ok(FieldNamesRecord {
@@ -620,34 +638,43 @@ impl Entity51Frame {
     }
 }
 
-fn entity_51_frame_at(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8], offset: usize) -> Result<Option<Entity51Frame>, cadmpeg_core::CodecError> {
+fn entity_51_frame_at(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    offset: usize,
+) -> Result<Option<Entity51Frame>, cadmpeg_core::CodecError> {
     let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
-    let mut at = offset.checked_add(2)?;
-    (bytes.get(offset..at) == Some(&[0x00, 0x51])).then_some(())?;
-    if bytes.get(at) == Some(&0xff) {
-        at += 1;
-    }
-    let flags = View::u32_be_at(bytes, at)?;
-    at += 4;
-    let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
-    let sequence = NonZeroU32::new(View::u32_be_at(bytes, at)?)?;
-    at += 4;
-    let definition_xmt = read_xmt(bytes, &mut at)?;
-    (1..=0x20).contains(&flags).then_some(())?;
-    let reference_count = usize::try_from(flags).ok()?.checked_add(5)?;
-    let references_at = at;
-    let (end, shared_terminal) = propagate_resource!(entity_51_reference_end(ctx, bytes, &mut at, reference_count))?;
-    (Some(Entity51Frame {
-        offset,
-        end,
-        xmt,
-        sequence,
-        definition_xmt,
-        references_at,
-        reference_count,
-        shared_terminal,
-    })).map(Ok)
-
+        let mut at = offset.checked_add(2)?;
+        (bytes.get(offset..at) == Some(&[0x00, 0x51])).then_some(())?;
+        if bytes.get(at) == Some(&0xff) {
+            at += 1;
+        }
+        let flags = View::u32_be_at(bytes, at)?;
+        at += 4;
+        let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
+        let sequence = NonZeroU32::new(View::u32_be_at(bytes, at)?)?;
+        at += 4;
+        let definition_xmt = read_xmt(bytes, &mut at)?;
+        (1..=0x20).contains(&flags).then_some(())?;
+        let reference_count = usize::try_from(flags).ok()?.checked_add(5)?;
+        let references_at = at;
+        let (end, shared_terminal) = propagate_resource!(entity_51_reference_end(
+            ctx,
+            bytes,
+            &mut at,
+            reference_count
+        ))?;
+        (Some(Entity51Frame {
+            offset,
+            end,
+            xmt,
+            sequence,
+            definition_xmt,
+            references_at,
+            reference_count,
+            shared_terminal,
+        }))
+        .map(Ok)
     })();
     parsed.transpose()
 }
@@ -676,7 +703,13 @@ fn entity_51_record_from_frame(
             frame.reference_count.checked_sub(5)?,
             "NX entity-51 reference lanes"
         ));
-        for _ in propagate_resource!(ctx.admit_iter(&(5..frame.reference_count), "NX entity 51 record from frame range traversal").map_err(CodecError::from)) {
+        for _ in propagate_resource!(ctx
+            .admit_iter(
+                &(5..frame.reference_count),
+                "NX entity 51 record from frame range traversal"
+            )
+            .map_err(CodecError::from))
+        {
             if prefixed {
                 matches!(bytes.get(at), Some(0 | 1)).then_some(())?;
                 at += 1;
@@ -696,24 +729,34 @@ fn entity_51_record_from_frame(
     parsed.transpose()
 }
 
-fn entity_51_reference_end(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8], at: &mut usize, count: usize) -> Result<Option<(usize, bool)>, cadmpeg_core::CodecError> {
+fn entity_51_reference_end(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+    count: usize,
+) -> Result<Option<(usize, bool)>, cadmpeg_core::CodecError> {
     let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
-    if bytes.get(*at) == Some(&1) {
-        let mut prefixed_at = *at;
-        for _ in propagate_resource!(ctx.admit_iter(&(0..count), "NX entity 51 reference validation").map_err(CodecError::from)) {
+        if bytes.get(*at) == Some(&1) {
+            let mut prefixed_at = *at;
+            for _ in propagate_resource!(ctx
+                .admit_iter(&(0..count), "NX entity 51 reference validation")
+                .map_err(CodecError::from))
+            {
+                matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
+                prefixed_at += 1;
+                read_xmt(bytes, &mut prefixed_at)?;
+            }
             matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
-            prefixed_at += 1;
-            read_xmt(bytes, &mut prefixed_at)?;
+            *at = prefixed_at + 1;
+            return (Some((*at, true))).map(Ok);
         }
-        matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
-        *at = prefixed_at + 1;
-        return (Some((*at, true))).map(Ok);
-    }
-    for _ in propagate_resource!(ctx.admit_iter(&(0..count), "NX entity 51 reference validation").map_err(CodecError::from)) {
-        read_xmt(bytes, at)?;
-    }
-    (Some((*at, false))).map(Ok)
-
+        for _ in propagate_resource!(ctx
+            .admit_iter(&(0..count), "NX entity 51 reference validation")
+            .map_err(CodecError::from))
+        {
+            read_xmt(bytes, at)?;
+        }
+        (Some((*at, false))).map(Ok)
     })();
     parsed.transpose()
 }
@@ -756,7 +799,14 @@ fn attribute_identifiers<'bytes, 'ctx>(
             Some(Ok(AttributeIdentifier {
                 offset,
                 xmt,
-                name: propagate_resource!(PrintableString::from_wire(ctx, propagate_resource!(ctx.validate_utf8(name_bytes, "NX attribute name UTF-8 validation")).ok()?)).ok()?,
+                name: propagate_resource!(PrintableString::from_wire(
+                    ctx,
+                    propagate_resource!(
+                        ctx.validate_utf8(name_bytes, "NX attribute name UTF-8 validation")
+                    )
+                    .ok()?
+                ))
+                .ok()?,
             }))
         })();
         if let Some(identifier) = candidate.transpose()? {
@@ -825,15 +875,18 @@ pub(crate) fn attribute_definitions<'bytes, 'ctx>(
                 .into_iter()
                 .find_map(|flag_count| {
                     let flags = bytes.get(at..at.checked_add(flag_count)?)?;
-                    let legal_owner_flags = propagate_resource!(LegalOwnerFlags::from_wire(ctx, flags)).ok()?;
+                    let legal_owner_flags =
+                        propagate_resource!(LegalOwnerFlags::from_wire(ctx, flags)).ok()?;
                     let field_codes_start = at.checked_add(flag_count)?;
                     let field_codes_end = field_codes_start.checked_add(field_count_usize)?;
                     let field_codes = bytes.get(field_codes_start..field_codes_end)?;
                     if flag_count == 14 && !attribute_definition_boundary(bytes, field_codes_end) {
                         return None;
                     }
-                    propagate_resource!(ctx.admit_iter(field_codes, "validate NX attribute fields").map_err(CodecError::from))
-                        .try_for_each(|code| AttributeField::try_from(*code).map(|_| ()).ok())?;
+                    propagate_resource!(ctx
+                        .admit_iter(field_codes, "validate NX attribute fields")
+                        .map_err(CodecError::from))
+                    .try_for_each(|code| AttributeField::try_from(*code).map(|_| ()).ok())?;
                     Some(Ok((legal_owner_flags, field_codes)))
                 })
                 .transpose())?;
@@ -844,7 +897,10 @@ pub(crate) fn attribute_definitions<'bytes, 'ctx>(
                 field_codes.len(),
                 "NX attribute field lanes"
             ));
-            for code in propagate_resource!(ctx.admit_iter(field_codes, "materialize NX attribute fields").map_err(CodecError::from)) {
+            for code in propagate_resource!(ctx
+                .admit_iter(field_codes, "materialize NX attribute fields")
+                .map_err(CodecError::from))
+            {
                 fields.push(AttributeField::try_from(*code).ok()?);
             }
             Some(Ok(AttributeDefinition {
@@ -890,7 +946,8 @@ pub(crate) fn extract_streams<'a>(
     root: View<'a>,
     container: &Container,
 ) -> Result<Vec<Stream>, CodecError> {
-    let Some((part_offset, part_size)) = ctx.admit_iter(&container.entries, "find NX part stream")?
+    let Some((part_offset, part_size)) = ctx
+        .admit_iter(&container.entries, "find NX part stream")?
         .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
         .and_then(crate::container::DirEntry::file_span)
     else {
@@ -952,7 +1009,10 @@ pub(crate) fn extract_streams<'a>(
                 "NX embedded stream slots",
             )?;
         }
-        if ctx.admit_iter(&streams, "classify NX stream roster")?.any(|stream| stream.kind().is_parasolid()) {
+        if ctx
+            .admit_iter(&streams, "classify NX stream roster")?
+            .any(|stream| stream.kind().is_parasolid())
+        {
             return Ok(streams);
         }
         append_unindexed_structural_streams(ctx, part_view, start, &mut streams)?;
@@ -1068,7 +1128,9 @@ fn structural_stream_candidate(
         NodeKind::Vertex,
         NodeKind::Region,
     ] {
-        if graph.of_kind(kind).next().is_some() { return Ok(true); }
+        if graph.of_kind(kind).next().is_some() {
+            return Ok(true);
+        }
     }
     Ok(false)
 }

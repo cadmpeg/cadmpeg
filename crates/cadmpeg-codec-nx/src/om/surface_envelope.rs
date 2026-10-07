@@ -4,9 +4,9 @@
 use super::operation_record::OperationPayload;
 use super::reference_index::PayloadIndexToken;
 use super::thru_curve_controls::ThruCurveControls;
-use std::num::{NonZeroU8, NonZeroUsize};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use std::num::{NonZeroU8, NonZeroUsize};
 
 const TRAILING_PREFIX: [u8; 10] = [0x03, 0x03, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b];
 const TRAILING_SUFFIX: [u8; 17] = [
@@ -22,18 +22,29 @@ pub(crate) struct SurfaceFeaturePayloadReferenceField {
 }
 
 impl SurfaceFeaturePayloadReferenceField {
-    pub(crate) fn relocate(mut self, ctx: &DecodeContext<'_>, base: u64) -> Result<Option<Self>, CodecError> {
-        let Some(origin) = base.checked_add(self.origin) else { return Ok(None); };
+    pub(crate) fn relocate(
+        mut self,
+        ctx: &DecodeContext<'_>,
+        base: u64,
+    ) -> Result<Option<Self>, CodecError> {
+        let Some(origin) = base.checked_add(self.origin) else {
+            return Ok(None);
+        };
         let leading_len = self.tokens[..11].iter().try_fold(17u64, |length, token| {
             length.checked_add(cadmpeg_core::decode::u64_from_index(token.raw().len()))
         });
-        let trailing_len = ctx.admit_iter(&self.tokens[11..], "NX surface trailing token widths")?
-            .try_fold(cadmpeg_core::decode::u64_from_index(TRAILING_SUFFIX.len()), |length, token| {
-                length.checked_add(cadmpeg_core::decode::u64_from_index(token.raw().len()))
-            });
+        let trailing_len = ctx
+            .admit_iter(&self.tokens[11..], "NX surface trailing token widths")?
+            .try_fold(
+                cadmpeg_core::decode::u64_from_index(TRAILING_SUFFIX.len()),
+                |length, token| {
+                    length.checked_add(cadmpeg_core::decode::u64_from_index(token.raw().len()))
+                },
+            );
         Ok((|| {
             origin.checked_add(leading_len?)?;
-            origin.checked_add(cadmpeg_core::decode::u64_from_index(self.trailing_start))?
+            origin
+                .checked_add(cadmpeg_core::decode::u64_from_index(self.trailing_start))?
                 .checked_add(trailing_len?)?;
             self.origin = origin;
             Some(self)
@@ -102,55 +113,62 @@ pub(crate) fn surface_feature_payload_references(
     record: OperationPayload<'_>,
 ) -> Result<Option<SurfaceFeaturePayloadReferenceField>, CodecError> {
     (|| {
-    let discriminator = *record.payload().first()?;
-    match record.name() {
-        "SKIN" if matches!(discriminator, 0x3e | 0x3f) => {}
-        "Studio Surface" if discriminator == 0x14 => {}
-        _ => return None,
-    }
-    if record.payload().get(1..5) != Some(&[0, 0, 1, 0]) {
-        return None;
-    }
-    let mut at = 5;
-    let first = PayloadIndexToken::read(record.payload().get(at..)?)?;
-    at += first.raw().len();
-    let mut tokens = [first; 14];
-    for (slot, token) in tokens[..11].iter_mut().enumerate().skip(1) {
-        if slot == 3 {
-            if record.payload().get(at..at + 2) != Some(&[1, 9])
-                || record.payload().get(at + 10..at + 12) != Some(&[1, 9])
-            {
-                return None;
+        let discriminator = *record.payload().first()?;
+        match record.name() {
+            "SKIN" if matches!(discriminator, 0x3e | 0x3f) => {}
+            "Studio Surface" if discriminator == 0x14 => {}
+            _ => return None,
+        }
+        if record.payload().get(1..5) != Some(&[0, 0, 1, 0]) {
+            return None;
+        }
+        let mut at = 5;
+        let first = PayloadIndexToken::read(record.payload().get(at..)?)?;
+        at += first.raw().len();
+        let mut tokens = [first; 14];
+        for (slot, token) in tokens[..11].iter_mut().enumerate().skip(1) {
+            if slot == 3 {
+                if record.payload().get(at..at + 2) != Some(&[1, 9])
+                    || record.payload().get(at + 10..at + 12) != Some(&[1, 9])
+                {
+                    return None;
+                }
+                at += 12;
             }
-            at += 12;
+            *token = PayloadIndexToken::read(record.payload().get(at..)?)?;
+            at += token.raw().len();
         }
-        *token = PayloadIndexToken::read(record.payload().get(at..)?)?;
-        at += token.raw().len();
-    }
-    let width = NonZeroUsize::new(TRAILING_PREFIX.len())?;
-    let mut trailing_start = None;
-    for (start, bytes) in propagate_resource!(ctx.admit_iter(record.payload(), "NX surface trailing witness windows").map_err(CodecError::from))
-        .windows(width).enumerate() {
-        if bytes == TRAILING_PREFIX {
-            if trailing_start.is_some() { return None; }
-            trailing_start = Some(start);
+        let width = NonZeroUsize::new(TRAILING_PREFIX.len())?;
+        let mut trailing_start = None;
+        for (start, bytes) in propagate_resource!(ctx
+            .admit_iter(record.payload(), "NX surface trailing witness windows")
+            .map_err(CodecError::from))
+        .windows(width)
+        .enumerate()
+        {
+            if bytes == TRAILING_PREFIX {
+                if trailing_start.is_some() {
+                    return None;
+                }
+                trailing_start = Some(start);
+            }
         }
-    }
-    let trailing_start = trailing_start? + TRAILING_PREFIX.len();
-    at = trailing_start;
-    for token in &mut tokens[11..] {
-        *token = PayloadIndexToken::read(record.payload().get(at..)?)?;
-        at += token.raw().len();
-    }
-    if record.payload().get(at..at + TRAILING_SUFFIX.len()) != Some(&TRAILING_SUFFIX) {
-        return None;
-    }
-    Some(Ok(SurfaceFeaturePayloadReferenceField {
-        origin: cadmpeg_core::decode::u64_from_index(record.payload_offset()),
-        trailing_start,
-        tokens,
-    }))
-    })().transpose()
+        let trailing_start = trailing_start? + TRAILING_PREFIX.len();
+        at = trailing_start;
+        for token in &mut tokens[11..] {
+            *token = PayloadIndexToken::read(record.payload().get(at..)?)?;
+            at += token.raw().len();
+        }
+        if record.payload().get(at..at + TRAILING_SUFFIX.len()) != Some(&TRAILING_SUFFIX) {
+            return None;
+        }
+        Some(Ok(SurfaceFeaturePayloadReferenceField {
+            origin: cadmpeg_core::decode::u64_from_index(record.payload_offset()),
+            trailing_start,
+            tokens,
+        }))
+    })()
+    .transpose()
 }
 
 pub(crate) fn thru_curve_payload_references(
@@ -207,13 +225,15 @@ pub(crate) fn thru_curve_payload_references(
 #[cfg(test)]
 mod tests {
     use super::super::operation_record::OperationPayload;
-    use super::{
-        thru_curve_payload_references, TRAILING_PREFIX,
-        TRAILING_SUFFIX,
-    };
+    use super::{thru_curve_payload_references, TRAILING_PREFIX, TRAILING_SUFFIX};
 
-    fn surface_feature_payload_references_test(record: OperationPayload<'_>) -> Option<super::SurfaceFeaturePayloadReferenceField> {
-        crate::test_support::with_decode_context(|ctx| super::surface_feature_payload_references(ctx, record)).unwrap()
+    fn surface_feature_payload_references_test(
+        record: OperationPayload<'_>,
+    ) -> Option<super::SurfaceFeaturePayloadReferenceField> {
+        crate::test_support::with_decode_context(|ctx| {
+            super::surface_feature_payload_references(ctx, record)
+        })
+        .unwrap()
     }
 
     #[test]
@@ -244,11 +264,23 @@ mod tests {
         );
         assert_eq!([rows[11].1, rows[12].1, rows[13].1], [159, 161, 164]);
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| frame.clone().relocate(ctx, 1000)).unwrap().unwrap().references()[13].1,
+            crate::test_support::with_decode_context(|ctx| frame.clone().relocate(ctx, 1000))
+                .unwrap()
+                .unwrap()
+                .references()[13]
+                .1,
             1164
         );
-        assert!(crate::test_support::with_decode_context(|ctx| frame.clone().relocate(ctx, u64::MAX - 183)).unwrap().is_some());
-        assert!(crate::test_support::with_decode_context(|ctx| frame.relocate(ctx, u64::MAX - 182)).unwrap().is_none());
+        assert!(crate::test_support::with_decode_context(|ctx| frame
+            .clone()
+            .relocate(ctx, u64::MAX - 183))
+        .unwrap()
+        .is_some());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| frame.relocate(ctx, u64::MAX - 182))
+                .unwrap()
+                .is_none()
+        );
         payload.extend(TRAILING_PREFIX);
         assert!(surface_feature_payload_references_test(
             OperationPayload::new(&payload, 100, "SKIN").unwrap()

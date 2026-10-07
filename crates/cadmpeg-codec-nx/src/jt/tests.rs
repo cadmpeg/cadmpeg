@@ -1065,40 +1065,78 @@ fn jt_variable_bitlength_delta_cycles_refuse_code_work() {
 #[test]
 fn msb_bit_range_refusal_precedes_read() {
     let bytes = [0xa5];
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 3, |ctx| {
-        let mut bits = super::MsbBitReader::new(&bytes);
-        let error = bits.read(ctx, 4).unwrap_err();
-        assert!(matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 3,
+        |ctx| {
+            let mut bits = super::MsbBitReader::new(&bytes);
+            let error = bits.read(ctx, 4).unwrap_err();
+            assert!(
+                matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "decode JT bit field" && limit.additional == 4));
-        assert_eq!(bits.bit, 0);
-        assert_eq!(ctx.resource_refusal(), match error { cadmpeg_core::CodecError::ResourceLimit(limit) => Some(limit), _ => unreachable!() });
-    });
+                && limit.operation == "decode JT bit field" && limit.additional == 4)
+            );
+            assert_eq!(bits.bit, 0);
+            assert_eq!(
+                ctx.resource_refusal(),
+                match error {
+                    cadmpeg_core::CodecError::ResourceLimit(limit) => Some(limit),
+                    _ => unreachable!(),
+                }
+            );
+        },
+    );
 }
 
 #[test]
 fn code_bit_range_refusal_precedes_read() {
     let bytes = [0, 0, 0, 0];
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 3, |ctx| {
-        let mut bits = super::CodeBits { words: &bytes, bit_len: 32, bit: 0 };
-        let error = bits.read(ctx, 4).unwrap_err();
-        assert!(matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 3,
+        |ctx| {
+            let mut bits = super::CodeBits {
+                words: &bytes,
+                bit_len: 32,
+                bit: 0,
+            };
+            let error = bits.read(ctx, 4).unwrap_err();
+            assert!(
+                matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "decode JT bit field" && limit.additional == 4));
-        assert_eq!(bits.bit, 0);
-        assert_eq!(ctx.resource_refusal(), match error { cadmpeg_core::CodecError::ResourceLimit(limit) => Some(limit), _ => unreachable!() });
-    });
+                && limit.operation == "decode JT bit field" && limit.additional == 4)
+            );
+            assert_eq!(bits.bit, 0);
+            assert_eq!(
+                ctx.resource_refusal(),
+                match error {
+                    cadmpeg_core::CodecError::ResourceLimit(limit) => Some(limit),
+                    _ => unreachable!(),
+                }
+            );
+        },
+    );
 }
 
 #[test]
 fn signed_code_bit_range_refusal_propagates() {
     let bytes = [0xff; 4];
-    crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 3, |ctx| {
-        let mut bits = super::CodeBits { words: &bytes, bit_len: 32, bit: 0 };
-        let error = bits.read_signed(ctx, 4).unwrap_err();
-        assert!(matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 3,
+        |ctx| {
+            let mut bits = super::CodeBits {
+                words: &bytes,
+                bit_len: 32,
+                bit: 0,
+            };
+            let error = bits.read_signed(ctx, 4).unwrap_err();
+            assert!(
+                matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "decode JT bit field" && limit.additional == 4));
-        assert_eq!(bits.bit, 0);
-    });
+                && limit.operation == "decode JT bit field" && limit.additional == 4)
+            );
+            assert_eq!(bits.bit, 0);
+        },
+    );
 }

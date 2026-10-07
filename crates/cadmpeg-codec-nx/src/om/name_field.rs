@@ -62,25 +62,33 @@ impl<T> NameField<String, u64, T> {
     }
 
     fn from_wire(
-        ctx: &DecodeContext<'_>, value: String, offset: u64,
+        ctx: &DecodeContext<'_>,
+        value: String,
+        offset: u64,
         code: Option<CompactIndexTarget<T>>,
     ) -> Result<Result<Self, &'static str>, CodecError> {
         Ok(Self::validate(&value, offset, code, |text| {
             ctx.admit_iter(text, "NX native name field validation")
-        })?.map(|form| Self { form, value }))
+        })?
+        .map(|form| Self { form, value }))
     }
 
     fn validate<'a, E, I: Iterator<Item = char>>(
-        text: &'a str, offset: u64, code: Option<CompactIndexTarget<T>>,
+        text: &'a str,
+        offset: u64,
+        code: Option<CompactIndexTarget<T>>,
         admit: impl FnOnce(&'a str) -> Result<I, E>,
     ) -> Result<Result<Form<u64, T>, &'static str>, E> {
-        if text.is_empty() || text.len() > 253 || !admit(text)?.all(|ch| ch.is_ascii_graphic())
-        {
+        if text.is_empty() || text.len() > 253 || !admit(text)?.all(|ch| ch.is_ascii_graphic()) {
             return Ok(Err("value: expected 1..=253 graphic ASCII bytes"));
         }
         let form = match code {
             None if offset == 0 => Form::Leading,
-            None => return Ok(Err("payload_offset: payload-leading name must start at zero")),
+            None => {
+                return Ok(Err(
+                    "payload_offset: payload-leading name must start at zero",
+                ))
+            }
             Some(code) => {
                 let byte_len = 4
                     + cadmpeg_core::decode::u64_from_index(code.atom.raw().len())
@@ -132,46 +140,58 @@ pub(crate) fn scan<'a>(
             });
         }
     }
-    if let Some(range_end) = bytes
-        .len()
-        .checked_sub(5) {
-            for start in ctx.admit_iter(&(0..range_end), "scan NX name fields")? {
-        if bytes[start] != 0x66 {
-            continue;
+    if let Some(range_end) = bytes.len().checked_sub(5) {
+        for start in ctx.admit_iter(&(0..range_end), "scan NX name fields")? {
+            if bytes[start] != 0x66 {
+                continue;
+            }
+            let Some(atom) = bytes.get(start + 1..).and_then(CompactIndexAtom::read) else {
+                continue;
+            };
+            let marker = start + 1 + atom.raw().len();
+            if bytes.get(marker) != Some(&3) {
+                continue;
+            }
+            let Some(value) = name_text(ctx, bytes, marker + 1)? else {
+                continue;
+            };
+            ctx.reserve_vec(&mut fields, 1, "NX name fields")?;
+            fields.push(NameField {
+                form: Form::Typed {
+                    offset: start,
+                    code: atom.into(),
+                },
+                value,
+            });
         }
-        let Some(atom) = bytes.get(start + 1..).and_then(CompactIndexAtom::read) else {
-            continue;
-        };
-        let marker = start + 1 + atom.raw().len();
-        if bytes.get(marker) != Some(&3) {
-            continue;
-        }
-        let Some(value) = name_text(ctx, bytes, marker + 1)? else {
-            continue;
-        };
-        ctx.reserve_vec(&mut fields, 1, "NX name fields")?;
-        fields.push(NameField {
-            form: Form::Typed {
-                offset: start,
-                code: atom.into(),
-            },
-            value,
-        });
     }
-        }
     Ok(fields)
 }
 
-fn name_text<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8], length_offset: usize) -> Result<Option<&'a str>, CodecError> {
+fn name_text<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+    length_offset: usize,
+) -> Result<Option<&'a str>, CodecError> {
     (|| {
         let text_len = usize::from(bytes.get(length_offset).copied()?.checked_sub(2)?);
         let text_start = length_offset.checked_add(1)?;
         let text_end = text_start.checked_add(text_len)?;
         let text = bytes.get(text_start..text_end)?;
-        if text.is_empty() || !propagate_resource!(ctx.admit_iter(text, "NX name text validation").map_err(CodecError::from)).all(u8::is_ascii_graphic)
-            || bytes.get(text_end) != Some(&0) { return None; }
-        propagate_resource!(ctx.validate_utf8(text, "NX name text UTF-8 validation")).ok().map(Ok)
-    })().transpose()
+        if text.is_empty()
+            || !propagate_resource!(ctx
+                .admit_iter(text, "NX name text validation")
+                .map_err(CodecError::from))
+            .all(u8::is_ascii_graphic)
+            || bytes.get(text_end) != Some(&0)
+        {
+            return None;
+        }
+        propagate_resource!(ctx.validate_utf8(text, "NX name text UTF-8 validation"))
+            .ok()
+            .map(Ok)
+    })()
+    .transpose()
 }
 
 #[cfg(test)]
@@ -187,9 +207,20 @@ mod tests {
     #[test]
     fn name_text_utf8_refusal_propagates() {
         let bytes = [3, 5, b'A', b'B', b'C', 0];
-        assert_eq!(crate::test_support::with_decode_context(|ctx| super::name_text(ctx, &bytes, 1)).unwrap(), Some("ABC"));
-        let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX name text UTF-8 validation", |ctx| super::name_text(ctx, &bytes, 1));
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 3));
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| super::name_text(ctx, &bytes, 1))
+                .unwrap(),
+            Some("ABC")
+        );
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX name text UTF-8 validation",
+            |ctx| super::name_text(ctx, &bytes, 1),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 3)
+        );
     }
 
     #[test]
@@ -314,8 +345,10 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
         let error = crate::test_support::resource_refusal_at(
-            &[], ResourceDimension::WorkUnits, "NX native name field validation",
-            |ctx| { NameField::<_, u64, ()>::from_wire(ctx, "Name".to_owned(), 0, None) },
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX native name field validation",
+            |ctx| NameField::<_, u64, ()>::from_wire(ctx, "Name".to_owned(), 0, None),
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX native name field validation"));

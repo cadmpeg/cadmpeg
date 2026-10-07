@@ -24,11 +24,12 @@ fn native_validation_format_preserves_the_finding() {
     let ir = incomplete_native_segment();
     let namespace = ir.native.namespace("nx").unwrap();
     crate::test_support::with_decode_context(|ctx| {
-        let expected = crate::native::display_jt::admission::DisplayJtGraph::from_namespace_with_context(
-            ctx, namespace,
-        )
-        .unwrap_err()
-        .to_string();
+        let expected =
+            crate::native::display_jt::admission::DisplayJtGraph::from_namespace_with_context(
+                ctx, namespace,
+            )
+            .unwrap_err()
+            .to_string();
         let findings = crate::NxCodec::validate_native(ctx, &ir).unwrap();
         assert_eq!(
             findings,

@@ -35,12 +35,19 @@ impl<B> CountedPatternReferences<B> {
         offset: u64,
         entries: &'a [(PayloadIndexToken, B)],
         admit: impl FnOnce(&'a [(PayloadIndexToken, B)]) -> Result<I, E>,
-    ) -> Result<Result<(), &'static str>, E> where B: 'a {
-        let end = admit(entries)?.try_fold(offset, |end, (token, _)| {
-            end.checked_add(u64_from_index(token.raw().len()))
-        }).and_then(|end| end.checked_add(2))
+    ) -> Result<Result<(), &'static str>, E>
+    where
+        B: 'a,
+    {
+        let end = admit(entries)?
+            .try_fold(offset, |end, (token, _)| {
+                end.checked_add(u64_from_index(token.raw().len()))
+            })
+            .and_then(|end| end.checked_add(2))
             .and_then(|end| end.checked_add(u64_from_index(TRAILER.len())));
-        Ok(end.map(|_| ()).ok_or("source_offset: counted reference frame overflows"))
+        Ok(end
+            .map(|_| ())
+            .ok_or("source_offset: counted reference frame overflows"))
     }
 
     fn from_wire(
@@ -50,7 +57,11 @@ impl<B> CountedPatternReferences<B> {
     ) -> Result<Option<Self>, CodecError> {
         if Self::validate(offset, entries.as_slice(), |entries| {
             ctx.admit_iter(entries, "NX counted pattern token widths")
-        })?.is_err() { return Ok(None); }
+        })?
+        .is_err()
+        {
+            return Ok(None);
+        }
         Ok(Some(Self { offset, entries }))
     }
 
@@ -92,7 +103,10 @@ impl CountedPatternReferences<()> {
             let at = start.checked_add(2)?;
             cadmpeg_core::decode::bounded_len(u64::from(count), 2, bytes.len().checked_sub(at)?)?;
             let mut scan_at = at;
-            for _ in propagate_resource!(ctx.admit_iter(&(0..count), "NX counted pattern reference validation").map_err(CodecError::from)) {
+            for _ in propagate_resource!(ctx
+                .admit_iter(&(0..count), "NX counted pattern reference validation")
+                .map_err(CodecError::from))
+            {
                 let token = PayloadIndexToken::read(bytes.get(scan_at..)?)?;
                 scan_at += token.raw().len();
             }
@@ -104,13 +118,17 @@ impl CountedPatternReferences<()> {
             (Some((start, count))).map(Ok)
         };
         let Some((start, count)) = ({
-
-let mut candidates = ctx.admit_iter(&(0..bytes.len()), "scan NX counted pattern references")?.filter_map(shape);
-let first = candidates.next().transpose()?;
-let second = candidates.next().transpose()?;
-if second.is_none() { first } else { None }
-})
-        else {
+            let mut candidates = ctx
+                .admit_iter(&(0..bytes.len()), "scan NX counted pattern references")?
+                .filter_map(shape);
+            let first = candidates.next().transpose()?;
+            let second = candidates.next().transpose()?;
+            if second.is_none() {
+                first
+            } else {
+                None
+            }
+        }) else {
             return Ok(None);
         };
         let count = usize::from(count);
@@ -129,7 +147,9 @@ if second.is_none() { first } else { None }
         let Some(offset) = record.payload_offset().checked_add(start) else {
             return Ok(None);
         };
-        let Ok(entries) = BranchItems::new(entries) else { return Ok(None); };
+        let Ok(entries) = BranchItems::new(entries) else {
+            return Ok(None);
+        };
         Self::from_wire(ctx, u64_from_index(offset), entries)
     }
 
@@ -157,9 +177,17 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
         let error = crate::test_support::resource_refusal_at(
-            &[], ResourceDimension::WorkUnits, "NX counted pattern token widths",
-            |ctx| { let entries = super::BranchItems::new(vec![(super::PayloadIndexToken::read(&[0xf0, 1]).unwrap(), ())]).unwrap();
-        super::CountedPatternReferences::from_wire(ctx, 0, entries) },
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX counted pattern token widths",
+            |ctx| {
+                let entries = super::BranchItems::new(vec![(
+                    super::PayloadIndexToken::read(&[0xf0, 1]).unwrap(),
+                    (),
+                )])
+                .unwrap();
+                super::CountedPatternReferences::from_wire(ctx, 0, entries)
+            },
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX counted pattern token widths"));

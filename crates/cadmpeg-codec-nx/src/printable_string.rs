@@ -16,11 +16,13 @@ impl<S: crate::immutable_text::ImmutableText> PrintableString<S> {
     }
 
     pub(crate) fn from_wire(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: S,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: S,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
         Ok(Self::validate(value.as_ref(), |text| {
             ctx.admit_iter(text, "NX printable string syntax")
-        })?.map(|()| Self(value)))
+        })?
+        .map(|()| Self(value)))
     }
 
     fn validate<'a, E, I: Iterator<Item = char>>(
@@ -113,7 +115,9 @@ mod tests {
         use cadmpeg_core::CodecError;
         for text in ["Name", "Nameμ"] {
             let error = crate::test_support::resource_refusal_at(
-                &[], ResourceDimension::WorkUnits, "NX printable string syntax",
+                &[],
+                ResourceDimension::WorkUnits,
+                "NX printable string syntax",
                 |ctx| PrintableString::from_wire(ctx, text).map(|value| value.is_ok()),
             );
             assert!(matches!(error, CodecError::ResourceLimit(limit)

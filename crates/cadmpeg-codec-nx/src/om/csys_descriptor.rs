@@ -42,9 +42,16 @@ impl From<CsysIdentity> for String {
 }
 
 impl CsysIdentity {
-    fn validate<'a, E, I: Iterator<Item = char>>(value: &'a str, admit: impl FnOnce(&'a str) -> Result<I, E>) -> Result<Result<(), &'static str>, E> {
-        if !(30..=32).contains(&value.len()) || !admit(value)?.all(|ch| ch.is_ascii_digit() || ('a'..='f').contains(&ch)) {
-            return Ok(Err("identity must contain 30 through 32 lowercase hexadecimal digits"));
+    fn validate<'a, E, I: Iterator<Item = char>>(
+        value: &'a str,
+        admit: impl FnOnce(&'a str) -> Result<I, E>,
+    ) -> Result<Result<(), &'static str>, E> {
+        if !(30..=32).contains(&value.len())
+            || !admit(value)?.all(|ch| ch.is_ascii_digit() || ('a'..='f').contains(&ch))
+        {
+            return Ok(Err(
+                "identity must contain 30 through 32 lowercase hexadecimal digits",
+            ));
         }
         Ok(Ok(()))
     }
@@ -108,7 +115,8 @@ impl CsysDescriptor {
         let Ok(identity) = ctx.validate_utf8(
             &bytes[start..end],
             "NX datum CSYS identity UTF-8 validation",
-        )? else {
+        )?
+        else {
             return Ok(None);
         };
         let identity = ctx.copy_retained_text(identity, "NX datum CSYS descriptor identity")?;
@@ -225,7 +233,10 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(descriptor.prefix(), &[2, 1]);
-        assert_eq!(descriptor.identity().as_str(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        assert_eq!(
+            descriptor.identity().as_str(),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
         assert_eq!(descriptor.suffix(), b"?");
         let error = crate::test_support::resource_refusal_at(
             &[],

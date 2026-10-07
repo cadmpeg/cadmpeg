@@ -84,11 +84,31 @@ fn offset_control_form_refuses_retained_limit() {
 
 #[test]
 fn point_ordinal_decimal_parse_preserves_values_and_refuses_work() {
-    for (name, expected) in [("Point123", Some(123)), ("Point0", None), ("Point", None), ("Point12x", None), ("Point4294967296", None), ("Other123", None)] {
-        assert_eq!(crate::test_support::with_decode_context(|ctx| crate::om::parse_positive_decimal_suffix(ctx, name, "Point")).unwrap(), expected);
+    for (name, expected) in [
+        ("Point123", Some(123)),
+        ("Point0", None),
+        ("Point", None),
+        ("Point12x", None),
+        ("Point4294967296", None),
+        ("Other123", None),
+    ] {
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| {
+                crate::om::parse_positive_decimal_suffix(ctx, name, "Point")
+            })
+            .unwrap(),
+            expected
+        );
     }
     for name in ["Point123", "Point0", "Point4294967296"] {
-        let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX point ordinal decimal parse", |ctx| crate::om::parse_positive_decimal_suffix(ctx, name, "Point"));
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == cadmpeg_core::decode::u64_from_index(name.len() - "Point".len())));
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX point ordinal decimal parse",
+            |ctx| crate::om::parse_positive_decimal_suffix(ctx, name, "Point"),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == cadmpeg_core::decode::u64_from_index(name.len() - "Point".len()))
+        );
     }
 }

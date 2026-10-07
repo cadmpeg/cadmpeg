@@ -18,31 +18,33 @@ impl PlaneDescriptor {
         mut admit: impl FnMut(&'a [u8]) -> Result<I, E>,
     ) -> Result<Option<(&'a [u8], CompactIndexAtom, &'a [u8])>, E> {
         (|| {
-        if bytes.len() != 40 {
-            return None;
-        }
-        let delimiter = propagate_resource!(admit(bytes)).position(|byte| *byte == b'?')?;
-        let identity = bytes.get(..delimiter)?;
-        if identity.is_empty()
-            || !propagate_resource!(admit(identity)).all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
-        {
-            return None;
-        }
-        let suffix = bytes.get(delimiter..)?;
-        if suffix.get(..2) != Some(b"?A") {
-            return None;
-        }
-        let schema = CompactIndexAtom::read(suffix.get(2..)?)?;
-        let label_start = 2 + schema.raw().len() + 3;
-        if suffix.get(2 + schema.raw().len()..label_start) != Some(&[0xff, 0x02, 0x01]) {
-            return None;
-        }
-        let label = suffix.get(label_start..)?;
-        if label.is_empty() || !propagate_resource!(admit(label)).all(u8::is_ascii_graphic) {
-            return None;
-        }
-        Some(Ok((identity, schema, label)))
-        })().transpose()
+            if bytes.len() != 40 {
+                return None;
+            }
+            let delimiter = propagate_resource!(admit(bytes)).position(|byte| *byte == b'?')?;
+            let identity = bytes.get(..delimiter)?;
+            if identity.is_empty()
+                || !propagate_resource!(admit(identity))
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+            {
+                return None;
+            }
+            let suffix = bytes.get(delimiter..)?;
+            if suffix.get(..2) != Some(b"?A") {
+                return None;
+            }
+            let schema = CompactIndexAtom::read(suffix.get(2..)?)?;
+            let label_start = 2 + schema.raw().len() + 3;
+            if suffix.get(2 + schema.raw().len()..label_start) != Some(&[0xff, 0x02, 0x01]) {
+                return None;
+            }
+            let label = suffix.get(label_start..)?;
+            if label.is_empty() || !propagate_resource!(admit(label)).all(u8::is_ascii_graphic) {
+                return None;
+            }
+            Some(Ok((identity, schema, label)))
+        })()
+        .transpose()
     }
 
     pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
@@ -66,7 +68,8 @@ impl PlaneDescriptor {
     ) -> Result<Option<Self>, CodecError> {
         let Some((identity, schema, label)) = Self::parse(bytes, |bytes| {
             ctx.admit_iter(bytes, "NX datum plane descriptor validation")
-        })? else {
+        })?
+        else {
             return Ok(None);
         };
         let identity = ctx.validate_utf8(identity, "NX datum plane identity UTF-8 validation")?;
@@ -135,11 +138,10 @@ mod tests {
     #[test]
     fn plane_descriptor_utf8_refusals_propagate() {
         let bytes = b"012345678901234567890123456789?A\x00\xff\x02\x01abcd";
-        let descriptor = crate::test_support::with_decode_context(|ctx| {
-            PlaneDescriptor::from_bytes(ctx, bytes)
-        })
-        .unwrap()
-        .unwrap();
+        let descriptor =
+            crate::test_support::with_decode_context(|ctx| PlaneDescriptor::from_bytes(ctx, bytes))
+                .unwrap()
+                .unwrap();
         assert_eq!(descriptor.identity(), "012345678901234567890123456789");
         assert_eq!(descriptor.label(), "abcd");
         assert_eq!(descriptor.schema_index(), 0);
@@ -196,8 +198,15 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
         let error = crate::test_support::resource_refusal_at(
-            &[], ResourceDimension::WorkUnits, "NX datum plane descriptor validation",
-            |ctx| { PlaneDescriptor::from_bytes(ctx, b"012345678901234567890123456789?A\x00\xff\x02\x01abcd") },
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX datum plane descriptor validation",
+            |ctx| {
+                PlaneDescriptor::from_bytes(
+                    ctx,
+                    b"012345678901234567890123456789?A\x00\xff\x02\x01abcd",
+                )
+            },
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX datum plane descriptor validation"));

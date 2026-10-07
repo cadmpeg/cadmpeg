@@ -52,7 +52,9 @@ impl SupportUvLane {
             if pair.contains(&MISSING_PARAMETER) {
                 return Ok(None);
             }
-            let Some(pair) = FiniteVector::new(*pair) else { return Ok(None); };
+            let Some(pair) = FiniteVector::new(*pair) else {
+                return Ok(None);
+            };
             checked.push(pair);
         }
         Ok(Some(Self(checked)))
@@ -63,7 +65,9 @@ impl SupportUvLane {
         values: Vec<[f64; 2]>,
     ) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
         let (checked, reservation) = ctx.temporary_vec(values.len(), "NX chart support-UV lane")?;
-        let lane = Self::present_with_storage(&values, checked, |values| ctx.admit_iter(values, "admit NX chart support-UV lane"))?;
+        let lane = Self::present_with_storage(&values, checked, |values| {
+            ctx.admit_iter(values, "admit NX chart support-UV lane")
+        })?;
         Ok(lane.map(|lane| (lane, reservation)))
     }
     /// Construct one parameter pair per chart sample.
@@ -89,7 +93,9 @@ impl SupportUvLane {
             storage.try_reserve_exact(values.len()).map(|()| storage)
         }
         .ok()?;
-        match Self::present_with_storage(&values, checked, |values| Ok::<_, Infallible>(values.iter())) {
+        match Self::present_with_storage(&values, checked, |values| {
+            Ok::<_, Infallible>(values.iter())
+        }) {
             Ok(lane) => lane,
             Err(never) => match never {},
         }
@@ -476,7 +482,9 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
     let mut terms = term_records(ctx, base_stream)?;
     let mut uv = uv_records(ctx, base_stream)?;
     let mut bridges = blend_bound_records(ctx, base_stream)?;
-    for replacement_stream in ctx.admit_iter(replacement_streams, "NX auxiliary replacement traversal")? {
+    for replacement_stream in
+        ctx.admit_iter(replacement_streams, "NX auxiliary replacement traversal")?
+    {
         extend_replacement_map(
             ctx,
             &mut charts,
@@ -596,7 +604,10 @@ fn scan_with_auxiliaries(
             CrossFormCollision::PreferDeltaTwin => construction.delta_twin,
         }
     });
-    for construction in ctx.admit_iter(&constructions, "NX intersection construction traversal")?.copied() {
+    for construction in ctx
+        .admit_iter(&constructions, "NX intersection construction traversal")?
+        .copied()
+    {
         match enrich(ctx, construction, charts, terms, uv, bridges, graph) {
             Ok(curve) => {
                 ctx.push_vec(
@@ -698,7 +709,12 @@ fn enrich(
                     Rejection::MissingEndTerm
                 }
             })?;
-        let matching_permutations = ctx.admit_iter(&[[0usize, 1usize], [1usize, 0usize]], "NX endpoint permutation traversal").map_err(CodecError::from)?
+        let matching_permutations = ctx
+            .admit_iter(
+                &[[0usize, 1usize], [1usize, 0usize]],
+                "NX endpoint permutation traversal",
+            )
+            .map_err(CodecError::from)?
             .filter(|permutation| {
                 permutation.iter().enumerate().all(|(ordinal, topology)| {
                     Point3::distance(
@@ -804,9 +820,20 @@ fn construction_has_endpoint_witnesses(
     terms: &BTreeMap<u32, Point3>,
     graph: &topology::Graph,
 ) -> Result<bool, CodecError> {
-    Ok(ctx.admit_iter(&construction.references[2..=4], "NX construction endpoint absence")?.all(Option::is_none)
-        || ctx.admit_iter(&construction.references[3..=4], "NX construction endpoint witnesses")?
-            .all(|reference| reference.is_some_and(|target| terms.contains_key(&u32::from(target))))
+    Ok(ctx
+        .admit_iter(
+            &construction.references[2..=4],
+            "NX construction endpoint absence",
+        )?
+        .all(Option::is_none)
+        || ctx
+            .admit_iter(
+                &construction.references[3..=4],
+                "NX construction endpoint witnesses",
+            )?
+            .all(|reference| {
+                reference.is_some_and(|target| terms.contains_key(&u32::from(target)))
+            })
         || graph.unique_curve_edge_witness(construction.xmt).is_some())
 }
 
@@ -1517,8 +1544,13 @@ fn uv_at(
     )))
 }
 
-fn find_tags<'stream>(ctx: &DecodeContext<'_>, stream: &'stream [u8], tag: [u8; 2]) -> Result<impl Iterator<Item = usize> + 'stream, CodecError> {
-    Ok(ctx.admit_iter(stream, "NX intersection tag traversal")?
+fn find_tags<'stream>(
+    ctx: &DecodeContext<'_>,
+    stream: &'stream [u8],
+    tag: [u8; 2],
+) -> Result<impl Iterator<Item = usize> + 'stream, CodecError> {
+    Ok(ctx
+        .admit_iter(stream, "NX intersection tag traversal")?
         .enumerate()
         .skip(1)
         .filter_map(move |(end, _)| (stream[end - 1..=end] == tag).then_some(end - 1)))

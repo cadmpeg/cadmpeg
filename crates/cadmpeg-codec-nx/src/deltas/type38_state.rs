@@ -63,11 +63,32 @@ enum Lanes {
     },
 }
 impl DecodeCost for Lanes {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
-            Self::Descending { linked, numeric } => (1_u8, (*linked).map(u32::from), numeric.as_ref().map(FiniteVector::as_raw)).decode_cost(ctx, operation),
-            Self::Prior { linked } | Self::Anchor { linked } => (1_u8, (*linked).map(u32::from)).decode_cost(ctx, operation),
-            Self::One { linked, first, start } => (1_u8, u32::from(*linked), u32::from(*first), u32::from(*start)).decode_cost(ctx, operation),
+            Self::Descending { linked, numeric } => (
+                1_u8,
+                (*linked).map(u32::from),
+                numeric.as_ref().map(FiniteVector::as_raw),
+            )
+                .decode_cost(ctx, operation),
+            Self::Prior { linked } | Self::Anchor { linked } => {
+                (1_u8, (*linked).map(u32::from)).decode_cost(ctx, operation)
+            }
+            Self::One {
+                linked,
+                first,
+                start,
+            } => (
+                1_u8,
+                u32::from(*linked),
+                u32::from(*first),
+                u32::from(*start),
+            )
+                .decode_cost(ctx, operation),
         }
     }
 }
@@ -81,8 +102,19 @@ pub(crate) struct Type38State {
     lanes: Lanes,
 }
 impl DecodeCost for Type38State {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        (u32::from(self.xmt), self.node_id, &self.leading_references, u8::from(self.marker), &self.lanes).decode_cost(ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            u32::from(self.xmt),
+            self.node_id,
+            &self.leading_references,
+            u8::from(self.marker),
+            &self.lanes,
+        )
+            .decode_cost(ctx, operation)
     }
 }
 impl Serialize for Type38State {

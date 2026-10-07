@@ -5184,7 +5184,8 @@ pub(super) fn feature_body_references(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let Some(reference) = crate::om::operation_body_reference(ctx, record.body_view())? else {
+            let Some(reference) = crate::om::operation_body_reference(ctx, record.body_view())?
+            else {
                 continue;
             };
             let Some(source_offset) = u64::try_from(reference.offset)

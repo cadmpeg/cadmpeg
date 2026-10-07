@@ -29,7 +29,6 @@ impl<O> DatumIndexLane<O> {
             length.checked_add(u16::from(atom.byte_len()))
         }))
     }
-
 }
 
 impl<O: Copy + Add<Output = O> + From<u16>> DatumIndexLane<O> {
@@ -50,16 +49,33 @@ impl<O: Copy + Add<Output = O> + From<u16>> DatumIndexLane<O> {
 }
 
 impl DatumIndexLane<usize> {
-    fn from_wire(ctx: &DecodeContext<'_>, indices: CountedIndexMembers<CompactIndexAtom, 1>, trailer: u32, offset: usize) -> Result<Option<Self>, CodecError> {
-        let width = Self::extent(indices.as_slice(), |indices| ctx.admit_iter(indices, "NX datum index token widths"))?
-            .ok_or_else(|| ctx.refuse_codec_limit("NX datum index extent", u64::MAX, u64::MAX))?;
-        if offset.checked_add(usize::from(width)).is_none() { return Ok(None); }
-        Ok(Some(Self { offset, indices, trailer }))
+    fn from_wire(
+        ctx: &DecodeContext<'_>,
+        indices: CountedIndexMembers<CompactIndexAtom, 1>,
+        trailer: u32,
+        offset: usize,
+    ) -> Result<Option<Self>, CodecError> {
+        let width = Self::extent(indices.as_slice(), |indices| {
+            ctx.admit_iter(indices, "NX datum index token widths")
+        })?
+        .ok_or_else(|| ctx.refuse_codec_limit("NX datum index extent", u64::MAX, u64::MAX))?;
+        if offset.checked_add(usize::from(width)).is_none() {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            offset,
+            indices,
+            trailer,
+        }))
     }
 }
 
 impl DatumIndexLane<u64> {
-    pub(crate) fn new(indices: CountedIndexMembers<CompactIndexAtom, 1>, trailer: u32, offset: u64) -> Option<Self> {
+    pub(crate) fn new(
+        indices: CountedIndexMembers<CompactIndexAtom, 1>,
+        trailer: u32,
+        offset: u64,
+    ) -> Option<Self> {
         let width = match Self::extent(indices.as_slice(), |indices| {
             Ok::<_, std::convert::Infallible>(indices.iter())
         }) {
@@ -67,7 +83,11 @@ impl DatumIndexLane<u64> {
             Err(error) => match error {},
         };
         offset.checked_add(u64::from(width))?;
-        Some(Self { offset, indices, trailer })
+        Some(Self {
+            offset,
+            indices,
+            trailer,
+        })
     }
 }
 
@@ -88,53 +108,53 @@ pub(crate) fn scan(
 ) -> Result<Vec<DatumIndexLane>, CodecError> {
     let mut lanes = Vec::new();
     if let Some(last) = bytes.len().checked_sub(7) {
-    for start in ctx.admit_iter(&(0..last), "scan NX datum index lanes")? {
-        if bytes[start] != 0x01 {
-            continue;
-        }
-        let declared_count = bytes[start + 1];
-        if declared_count < 2 {
-            continue;
-        }
-        let mut scan_at = start + 2;
-        let mut complete = true;
-        for _ in ctx.admit_iter(&(1..declared_count), "scan NX datum index members")? {
-            let Some(token) =
-                NullableCompactIndex::read(bytes, scan_at).filter(|token| token.atom.is_some())
-            else {
-                complete = false;
-                break;
+        for start in ctx.admit_iter(&(0..last), "scan NX datum index lanes")? {
+            if bytes[start] != 0x01 {
+                continue;
+            }
+            let declared_count = bytes[start + 1];
+            if declared_count < 2 {
+                continue;
+            }
+            let mut scan_at = start + 2;
+            let mut complete = true;
+            for _ in ctx.admit_iter(&(1..declared_count), "scan NX datum index members")? {
+                let Some(token) =
+                    NullableCompactIndex::read(bytes, scan_at).filter(|token| token.atom.is_some())
+                else {
+                    complete = false;
+                    break;
+                };
+                scan_at += token.raw().len();
+            }
+            if !complete || bytes.get(scan_at) != Some(&0x00) || scan_at + 5 != bytes.len() {
+                continue;
+            }
+            let member_count = usize::from(declared_count - 1);
+            let operation = "NX datum index members";
+            let mut indices = ctx.collection_vec(member_count, operation)?;
+            let mut at = start + 2;
+            for _ in ctx.admit_iter(&(0..member_count), "NX datum index member materialization")? {
+                let Some(token) = LocatedCompactIndex::read(&bytes[..scan_at], at) else {
+                    break;
+                };
+                at += token.atom.raw().len();
+                indices.push(token.atom);
+            }
+            if indices.len() != member_count {
+                continue;
+            }
+            let Some(indices) = CountedIndexMembers::new(indices).ok() else {
+                continue;
             };
-            scan_at += token.raw().len();
-        }
-        if !complete || bytes.get(scan_at) != Some(&0x00) || scan_at + 5 != bytes.len() {
-            continue;
-        }
-        let member_count = usize::from(declared_count - 1);
-        let operation = "NX datum index members";
-        let mut indices = ctx.collection_vec(member_count, operation)?;
-        let mut at = start + 2;
-        for _ in ctx.admit_iter(&(0..member_count), "NX datum index member materialization")? {
-            let Some(token) = LocatedCompactIndex::read(&bytes[..scan_at], at) else {
-                break;
+            let Some(trailer) = View::u32_be_at(bytes, scan_at + 1) else {
+                continue;
             };
-            at += token.atom.raw().len();
-            indices.push(token.atom);
+            if let Some(lane) = DatumIndexLane::<usize>::from_wire(ctx, indices, trailer, start)? {
+                ctx.reserve_vec(&mut lanes, 1, "NX datum index lanes")?;
+                lanes.push(lane);
+            }
         }
-        if indices.len() != member_count {
-            continue;
-        }
-        let Some(indices) = CountedIndexMembers::new(indices).ok() else {
-            continue;
-        };
-        let Some(trailer) = View::u32_be_at(bytes, scan_at + 1) else {
-            continue;
-        };
-        if let Some(lane) = DatumIndexLane::<usize>::from_wire(ctx, indices, trailer, start)? {
-            ctx.reserve_vec(&mut lanes, 1, "NX datum index lanes")?;
-            lanes.push(lane);
-        }
-    }
     }
     Ok(lanes)
 }

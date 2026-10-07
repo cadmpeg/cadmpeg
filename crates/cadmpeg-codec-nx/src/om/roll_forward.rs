@@ -65,14 +65,17 @@ impl<O: Copy + From<u16> + std::ops::Add<Output = O>> OperationStateGroup<O> {
     fn header_len(&self) -> u16 {
         3 + u16::from(self.members.count().prefix().is_some())
     }
-    fn byte_len(&self) -> u16 { self.byte_len }
+    fn byte_len(&self) -> u16 {
+        self.byte_len
+    }
 
     fn extent<'a, E, I: Iterator<Item = &'a OperationStateGroupRow>>(
         members: &'a StateGroupMembers<OperationStateGroupRow>,
         admit: impl FnOnce(&'a [OperationStateGroupRow]) -> Result<I, E>,
     ) -> Result<Option<u16>, E> {
         let header = 3 + u16::from(members.count().prefix().is_some());
-        Ok(admit(members.rows())?.try_fold(header, |length, row| length.checked_add(row.byte_len())))
+        Ok(admit(members.rows())?
+            .try_fold(header, |length, row| length.checked_add(row.byte_len())))
     }
     pub(crate) fn end_offset(&self) -> O {
         self.offset + O::from(self.byte_len())
@@ -95,7 +98,12 @@ impl OperationStateGroup {
     pub(crate) fn into_absolute(self, base: u64) -> Option<OperationStateGroup<u64>> {
         let offset = base.checked_add(u64::try_from(self.offset).ok()?)?;
         offset.checked_add(u64::from(self.byte_len))?;
-        Some(OperationStateGroup { offset, byte_len: self.byte_len, opener: self.opener, members: self.members })
+        Some(OperationStateGroup {
+            offset,
+            byte_len: self.byte_len,
+            opener: self.opener,
+            members: self.members,
+        })
     }
 }
 
@@ -111,8 +119,15 @@ impl OperationStateGroup<u64> {
             Ok(width) => width.ok_or("source_offset: roll-forward group extent overflows")?,
             Err(error) => match error {},
         };
-        offset.checked_add(u64::from(byte_len)).ok_or("source_offset: roll-forward group extent overflows")?;
-        Ok(Self { offset, byte_len, opener, members })
+        offset
+            .checked_add(u64::from(byte_len))
+            .ok_or("source_offset: roll-forward group extent overflows")?;
+        Ok(Self {
+            offset,
+            byte_len,
+            opener,
+            members,
+        })
     }
 }
 
@@ -172,20 +187,23 @@ fn operation_state_group_row_at(
     }
 }
 
-pub(super) fn operation_state_group_end_at(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn operation_state_group_end_at(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     at: usize,
     end: usize,
     base_offset: usize,
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
     let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
-    let (_, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
-    let member_count = count.member_row_count();
-    for _ in propagate_resource!(ctx.admit_iter(&(0..member_count), "NX operation-state group validation").map_err(cadmpeg_core::CodecError::from)) {
-        cursor = operation_state_group_row_at(bytes, cursor, base_offset)?.1;
-    }
-    ((cursor <= end).then_some(cursor)).map(Ok)
-
+        let (_, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
+        let member_count = count.member_row_count();
+        for _ in propagate_resource!(ctx
+            .admit_iter(&(0..member_count), "NX operation-state group validation")
+            .map_err(cadmpeg_core::CodecError::from))
+        {
+            cursor = operation_state_group_row_at(bytes, cursor, base_offset)?.1;
+        }
+        ((cursor <= end).then_some(cursor)).map(Ok)
     })();
     parsed.transpose()
 }
@@ -227,8 +245,14 @@ pub(super) fn operation_state_group_at(
     };
     let byte_len = OperationStateGroup::<usize>::extent(&members, |rows| {
         ctx.admit_iter(rows, "NX roll-forward row widths")
-    })?.ok_or_else(|| ctx.refuse_codec_limit("NX roll-forward extent", u64::MAX, u64::MAX))?;
-    Ok(Some(OperationStateGroup { offset, byte_len, opener, members }))
+    })?
+    .ok_or_else(|| ctx.refuse_codec_limit("NX roll-forward extent", u64::MAX, u64::MAX))?;
+    Ok(Some(OperationStateGroup {
+        offset,
+        byte_len,
+        opener,
+        members,
+    }))
 }
 
 /// A nonempty contiguous group sequence with its exact boundary suffix.
@@ -265,21 +289,34 @@ impl GroupTableFooter {
 }
 
 impl OperationStateGroupTable {
-    pub(super) fn new(ctx: &cadmpeg_core::decode::DecodeContext<'_>, groups: Vec<OperationStateGroup>, trailing_bytes: &[u8]) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+    pub(super) fn new(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        groups: Vec<OperationStateGroup>,
+        trailing_bytes: &[u8],
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         (|| {
-        let footer = GroupTableFooter::try_from(trailing_bytes).ok()?;
-        let groups = super::nonempty::NonEmpty::from_admitted_vec(groups)?;
-        let mut end = groups.first().offset();
-        for group in propagate_resource!(ctx.admit_iter(groups.initial(), "NX roll-forward group continuity").map_err(cadmpeg_core::CodecError::from))
-            .chain(propagate_resource!(ctx.admit_iter(std::slice::from_ref(groups.last()), "NX roll-forward group continuity").map_err(cadmpeg_core::CodecError::from))) {
-            if group.offset() != end {
-                return None;
+            let footer = GroupTableFooter::try_from(trailing_bytes).ok()?;
+            let groups = super::nonempty::NonEmpty::from_admitted_vec(groups)?;
+            let mut end = groups.first().offset();
+            for group in propagate_resource!(ctx
+                .admit_iter(groups.initial(), "NX roll-forward group continuity")
+                .map_err(cadmpeg_core::CodecError::from))
+            .chain(propagate_resource!(ctx
+                .admit_iter(
+                    std::slice::from_ref(groups.last()),
+                    "NX roll-forward group continuity"
+                )
+                .map_err(cadmpeg_core::CodecError::from)))
+            {
+                if group.offset() != end {
+                    return None;
+                }
+                end = group.end_offset();
             }
-            end = group.end_offset();
-        }
-        end.checked_add(trailing_bytes.len())?;
-        Some(Ok(Self { groups, footer }))
-        })().transpose()
+            end.checked_add(trailing_bytes.len())?;
+            Some(Ok(Self { groups, footer }))
+        })()
+        .transpose()
     }
     pub(super) fn offset(&self) -> usize {
         self.groups.first().offset()
@@ -336,16 +373,51 @@ mod tests {
         let first = group_at(&bytes, 0, 3, 10).unwrap();
         let second = group_at(&bytes, 0, 3, 13).unwrap();
         for footer in [&[][..], &[1, 1][..]] {
-            let table =
-                crate::test_support::with_decode_context(|ctx| OperationStateGroupTable::new(ctx, vec![first.clone(), second.clone()], footer)).unwrap().unwrap();
+            let table = crate::test_support::with_decode_context(|ctx| {
+                OperationStateGroupTable::new(ctx, vec![first.clone(), second.clone()], footer)
+            })
+            .unwrap()
+            .unwrap();
             assert_eq!(table.offset(), 10);
             assert_eq!(table.end_offset(), 16 + footer.len());
             assert_eq!(table.trailing_bytes(), footer);
         }
-        assert!(crate::test_support::with_decode_context(|ctx| OperationStateGroupTable::new(ctx, Vec::new(), &[])).unwrap().is_none());
-        assert!(crate::test_support::with_decode_context(|ctx| OperationStateGroupTable::new(ctx, vec![first.clone(), first.clone()], &[])).unwrap().is_none());
-        assert!(crate::test_support::with_decode_context(|ctx| OperationStateGroupTable::new(ctx, vec![first], &[1])).unwrap().is_none());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| OperationStateGroupTable::new(
+                ctx,
+                Vec::new(),
+                &[]
+            ))
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            crate::test_support::with_decode_context(|ctx| OperationStateGroupTable::new(
+                ctx,
+                vec![first.clone(), first.clone()],
+                &[]
+            ))
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            crate::test_support::with_decode_context(|ctx| OperationStateGroupTable::new(
+                ctx,
+                vec![first],
+                &[1]
+            ))
+            .unwrap()
+            .is_none()
+        );
         let last = group_at(&bytes, 0, 3, usize::MAX - 3).unwrap();
-        assert!(crate::test_support::with_decode_context(|ctx| OperationStateGroupTable::new(ctx, vec![last], &[1, 1])).unwrap().is_none());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| OperationStateGroupTable::new(
+                ctx,
+                vec![last],
+                &[1, 1]
+            ))
+            .unwrap()
+            .is_none()
+        );
     }
 }
