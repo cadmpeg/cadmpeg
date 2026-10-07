@@ -70,12 +70,18 @@ impl NativeUnknownRecord {
                     )?));
                 };
                 ctx.reserve_vec(&mut links, 1, operation)?;
-                let identity = Identity::new_for_decode(ctx, text.as_str(), operation)?
-                    .map_err(|error| match ctx.format_retained(
-                        format_args!("native arena {arena}: native record {}: {error}", record.id()), operation,
-                    ) {
-                        Ok(message) => CodecError::Malformed(message),
-                        Err(error) => error,
+                let identity =
+                    Identity::new_for_decode(ctx, text.as_str(), operation)?.map_err(|error| {
+                        match ctx.format_retained(
+                            format_args!(
+                                "native arena {arena}: native record {}: {error}",
+                                record.id()
+                            ),
+                            operation,
+                        ) {
+                            Ok(message) => CodecError::Malformed(message),
+                            Err(error) => error,
+                        }
                     })?;
                 links.push(identity);
             }
@@ -96,10 +102,15 @@ impl std::fmt::Display for NativeUnexpected<'_> {
             serde_json::Value::Null => Unexpected::Other("null"),
             serde_json::Value::Bool(value) => Unexpected::Bool(*value),
             serde_json::Value::Number(value) => {
-                if let Some(value) = value.as_u64() { Unexpected::Unsigned(value) }
-                else if let Some(value) = value.as_i64() { Unexpected::Signed(value) }
-                else if value.as_f64().is_some() { return write!(formatter, "floating point `{value}`"); }
-                else { Unexpected::Other("number") }
+                if let Some(value) = value.as_u64() {
+                    Unexpected::Unsigned(value)
+                } else if let Some(value) = value.as_i64() {
+                    Unexpected::Signed(value)
+                } else if value.as_f64().is_some() {
+                    return write!(formatter, "floating point `{value}`");
+                } else {
+                    Unexpected::Other("number")
+                }
             }
             serde_json::Value::String(_) => Unexpected::Other("string"),
             serde_json::Value::Array(_) => Unexpected::Seq,
@@ -486,17 +497,35 @@ mod tests {
             serde_json::json!({"aa_bogus": true, "links": ["bad identity"]}),
         ];
         for fields in cases {
-            let serde_json::Value::Object(fields) = fields else { unreachable!("object fixture"); };
-            let record = crate::native::NativeRecord::new(Identity::new("a:b:c#owner").unwrap(), fields).unwrap();
+            let serde_json::Value::Object(fields) = fields else {
+                unreachable!("object fixture");
+            };
+            let record =
+                crate::native::NativeRecord::new(Identity::new("a:b:c#owner").unwrap(), fields)
+                    .unwrap();
             let mut namespace = crate::native::NativeNamespace::default();
-            namespace.arenas_mut().insert("unknowns".to_owned(), vec![record.clone()]);
-            let expected = namespace.arena_as_for_decode::<NativeUnknownRecord>(&cadmpeg_test_support::service_decode_context(), "unknowns");
+            namespace
+                .arenas_mut()
+                .insert("unknowns".to_owned(), vec![record.clone()]);
+            let expected = namespace.arena_as_for_decode::<NativeUnknownRecord>(
+                &cadmpeg_test_support::service_decode_context(),
+                "unknowns",
+            );
             let ctx = cadmpeg_test_support::service_decode_context();
-            let actual = NativeUnknownRecord::from_native_for_decode(&ctx, &record, "unknowns", "read unknown fixture");
+            let actual = NativeUnknownRecord::from_native_for_decode(
+                &ctx,
+                &record,
+                "unknowns",
+                "read unknown fixture",
+            );
             match (expected, actual) {
                 (Ok(expected), Ok(actual)) => assert_eq!(expected, [actual]),
-                (Err(expected), Err(CodecError::Malformed(actual))) => assert_eq!(expected.to_string(), actual),
-                (expected, actual) => panic!("projection changed admission: {expected:?} versus {actual:?}"),
+                (Err(expected), Err(CodecError::Malformed(actual))) => {
+                    assert_eq!(expected.to_string(), actual)
+                }
+                (expected, actual) => {
+                    panic!("projection changed admission: {expected:?} versus {actual:?}")
+                }
             }
             ctx.finish_session().unwrap();
         }
@@ -505,25 +534,41 @@ mod tests {
     #[test]
     fn decode_native_unknown_projection_refuses_copies_and_grammar() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let record = crate::native::NativeRecord::new(Identity::new("a:b:c#owner").unwrap(), serde_json::Map::from_iter([
-            ("links".to_owned(), serde_json::json!(["a:b:c#é部"]))
-        ])).unwrap();
-        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes, ResourceDimension::CollectionItems] {
-            cadmpeg_test_support::refusal::resource_limit_at(dimension, "read unknown fixture", |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                match dimension {
-                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-                    _ => unreachable!(),
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                NativeUnknownRecord::from_native_for_decode(&ctx, &record, "unknowns", "read unknown fixture")
-            });
+        let record = crate::native::NativeRecord::new(
+            Identity::new("a:b:c#owner").unwrap(),
+            serde_json::Map::from_iter([("links".to_owned(), serde_json::json!(["a:b:c#é部"]))]),
+        )
+        .unwrap();
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::RetainedBytes,
+            ResourceDimension::CollectionItems,
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                dimension,
+                "read unknown fixture",
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    match dimension {
+                        ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                        ResourceDimension::CollectionItems => {
+                            policy.limits.max_collection_items = cap
+                        }
+                        _ => unreachable!(),
+                    }
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    NativeUnknownRecord::from_native_for_decode(
+                        &ctx,
+                        &record,
+                        "unknowns",
+                        "read unknown fixture",
+                    )
+                },
+            );
         }
     }
-
 }
 
 mod identity_rewrite;

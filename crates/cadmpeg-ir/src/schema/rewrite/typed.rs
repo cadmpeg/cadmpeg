@@ -101,12 +101,20 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
         Ok(self)
     }
 
-    fn replacement(&mut self, ctx: &DecodeContext<'_>, source: &str) -> Result<Option<&'ctx str>, CodecError> {
+    fn replacement(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        source: &str,
+    ) -> Result<Option<&'ctx str>, CodecError> {
         let result = (|| {
-            if let Some(limit) = self.resource_refusal { return Err(CodecError::ResourceLimit(limit)); }
+            if let Some(limit) = self.resource_refusal {
+                return Err(CodecError::ResourceLimit(limit));
+            }
             ctx.charge_work(0, self.operation)?;
             match &self.text_index {
-                Some(index) => index.get(ctx, source, self.operation).map_err(CodecError::from),
+                Some(index) => index
+                    .get(ctx, source, self.operation)
+                    .map_err(CodecError::from),
                 None => Ok(None),
             }
         })();
@@ -115,7 +123,9 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
 
     fn remember_resource<T>(&mut self, result: Result<T, CodecError>) -> Result<T, CodecError> {
         if let Err(CodecError::ResourceLimit(limit)) = &result {
-            if self.resource_refusal.is_none() { self.resource_refusal = Some(*limit); }
+            if self.resource_refusal.is_none() {
+                self.resource_refusal = Some(*limit);
+            }
         }
         result
     }
@@ -508,7 +518,9 @@ impl RewriteIdentities for cadmpeg_core::text::NonBlankString {
         let result = match map.replacement(ctx, self.as_str())? {
             Some(target) => Self::for_decode(ctx, target, "rewrite nonblank text")
                 .map_err(CodecError::from)
-                .and_then(|value| value.ok_or_else(|| CodecError::malformed("rewritten text must be nonblank"))),
+                .and_then(|value| {
+                    value.ok_or_else(|| CodecError::malformed("rewritten text must be nonblank"))
+                }),
             None => Ok(self),
         };
         map.remember_resource(result)

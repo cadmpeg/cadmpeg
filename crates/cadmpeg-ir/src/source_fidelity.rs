@@ -293,7 +293,14 @@ impl RetainedSourceRecord {
         let (id, offset, raw, _) = record.into_parts();
         let (id, offset, bytes) = Self::from_unknown_image(stream.as_str(), id, offset, raw)
             .map_err(|error| NativeConvertError::InvalidCollection(error.to_string()))?;
-        Ok((id, Self { stream, offset, bytes }))
+        Ok((
+            id,
+            Self {
+                stream,
+                offset,
+                bytes,
+            },
+        ))
     }
 
     fn from_unknown_image<'stream>(
@@ -313,16 +320,27 @@ impl RetainedSourceRecord {
         };
         let byte_len = bytes.byte_len();
         if offset.checked_add(byte_len).is_none() {
-            return Err(UnknownImageError::Extent { id, stream, offset, byte_len });
+            return Err(UnknownImageError::Extent {
+                id,
+                stream,
+                offset,
+                byte_len,
+            });
         }
         Ok((id, offset, bytes))
     }
-
 }
 
 enum UnknownImageError<'stream> {
-    Digest { id: UnknownId },
-    Extent { id: UnknownId, stream: &'stream str, offset: u64, byte_len: u64 },
+    Digest {
+        id: UnknownId,
+    },
+    Extent {
+        id: UnknownId,
+        stream: &'stream str,
+        offset: u64,
+        byte_len: u64,
+    },
 }
 impl std::fmt::Display for UnknownImageError<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -375,9 +393,17 @@ impl SourceFidelity {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         mut other: Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        if let Some((id, _)) = ctx.find_by(&other.retained_records, |(id, _)| {
-            ctx.contains_key_btree_map(&self.retained_records, *id, "check appended source records")
-        }, "walk appended source records")? {
+        if let Some((id, _)) = ctx.find_by(
+            &other.retained_records,
+            |(id, _)| {
+                ctx.contains_key_btree_map(
+                    &self.retained_records,
+                    *id,
+                    "check appended source records",
+                )
+            },
+            "walk appended source records",
+        )? {
             return Err(CodecError::Malformed(ctx.format_retained(
                 format_args!("duplicate retained or native unknown record {id}"),
                 "report duplicate source record",
@@ -392,7 +418,15 @@ impl SourceFidelity {
         )?;
         self.annotations
             .append(ctx, other.annotations, "append source provenance")?
-            .map_err(cadmpeg_core::CodecError::from)?;
+            .map_err(|error| {
+                match ctx.format_retained(
+                    format_args!("{error}"),
+                    "report source annotation collision",
+                ) {
+                    Ok(message) => CodecError::Malformed(message),
+                    Err(error) => error,
+                }
+            })?;
         self.retained_records.append(&mut other.retained_records);
         Ok(())
     }
@@ -465,27 +499,55 @@ impl SourceFidelity {
         let mut incoming = BTreeMap::new();
         let mut storage = ctx.reserve_scoped(0, "stage source records")?;
         for record in ctx.admit_iter(records, "retain source record batch")? {
-            if ctx.contains_key_btree_map(&self.retained_records, record.id(), "check retained source identity")?
-                || ctx.contains_key_btree_map(&incoming, record.id(), "check staged source identity")? {
+            if ctx.contains_key_btree_map(
+                &self.retained_records,
+                record.id(),
+                "check retained source identity",
+            )? || ctx.contains_key_btree_map(
+                &incoming,
+                record.id(),
+                "check staged source identity",
+            )? {
                 return Err(CodecError::Malformed(ctx.format_retained(
                     format_args!("native collection is invalid: duplicate retained or native unknown record {}", record.id()),
                     "report duplicate source record",
                 )?));
             }
             let (id, offset, raw, _) = record.into_parts();
-            let (id, offset, bytes) = RetainedSourceRecord::from_unknown_image(stream, id, offset, raw)
-                .map_err(|error| match ctx.format_retained(format_args!("native collection is invalid: {error}"), "retain source record refusal") {
-                    Ok(message) => CodecError::Malformed(message), Err(error) => error,
-                })?;
-            let stream = if stream.is_empty() { SourceOwner::Root } else {
+            let (id, offset, bytes) =
+                RetainedSourceRecord::from_unknown_image(stream, id, offset, raw).map_err(
+                    |error| match ctx.format_retained(
+                        format_args!("native collection is invalid: {error}"),
+                        "retain source record refusal",
+                    ) {
+                        Ok(message) => CodecError::Malformed(message),
+                        Err(error) => error,
+                    },
+                )?;
+            let stream = if stream.is_empty() {
+                SourceOwner::Root
+            } else {
                 SourceOwner::from(ctx.copy_retained_text(stream, "retain source record owner")?)
             };
-            let record = RetainedSourceRecord { stream, offset, bytes };
-            storage.with_storage(|| ctx.insert_btree_map(&mut incoming, id, record, "stage source records"))?;
+            let record = RetainedSourceRecord {
+                stream,
+                offset,
+                bytes,
+            };
+            storage.with_storage(|| {
+                ctx.insert_btree_map(&mut incoming, id, record, "stage source records")
+            })?;
         }
-        crate::annotations::admit_btree_append(ctx, &self.retained_records, &incoming,
-            |id| id.as_str().len(), "append retained source records")?;
-        if self.retained_records.is_empty() { storage.commit()?; }
+        crate::annotations::admit_btree_append(
+            ctx,
+            &self.retained_records,
+            &incoming,
+            |id| id.as_str().len(),
+            "append retained source records",
+        )?;
+        if self.retained_records.is_empty() {
+            storage.commit()?;
+        }
         self.retained_records.append(&mut incoming);
         Ok(())
     }
@@ -499,126 +561,253 @@ impl SourceFidelity {
         records: Vec<UnknownRecord>,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        if records.is_empty() { return Ok(()); }
+        if records.is_empty() {
+            return Ok(());
+        }
         let mut native_records = Vec::new();
-        if let Some(namespace) = ctx.get_btree_map(&ir.native.0, format, "find native unknown namespace")? {
-            if let Some(prior) = ctx.get_btree_map(namespace.arenas(), "unknowns", "find native unknown arena")? {
+        if let Some(namespace) =
+            ctx.get_btree_map(&ir.native.0, format, "find native unknown namespace")?
+        {
+            if let Some(prior) =
+                ctx.get_btree_map(namespace.arenas(), "unknowns", "find native unknown arena")?
+            {
                 for record in ctx.admit_iter(prior, "copy native unknown records")? {
                     let mut storage = ctx.reserve_scoped(0, "read native unknown product")?;
                     let product = storage.with_storage(|| {
-                        crate::NativeUnknownRecord::from_native_for_decode(ctx, record, "unknowns", "read native unknown product")
+                        crate::NativeUnknownRecord::from_native_for_decode(
+                            ctx,
+                            record,
+                            "unknowns",
+                            "read native unknown product",
+                        )
                     });
                     let product = match product {
                         Ok(product) => product,
                         Err(CodecError::Malformed(message)) => {
-                            ctx.charge_retained(u64_from_index(message.len()), "native unknown product refusal")?;
+                            ctx.charge_retained(
+                                u64_from_index(message.len()),
+                                "native unknown product refusal",
+                            )?;
                             return Err(CodecError::Malformed(message));
                         }
                         Err(error) => return Err(error),
                     };
                     let id = product.id;
-                    ctx.charge_retained(u64_from_index(id.as_str().len()), "native unknown arena identity")?;
+                    ctx.charge_retained(
+                        u64_from_index(id.as_str().len()),
+                        "native unknown arena identity",
+                    )?;
                     let mut links = Vec::new();
                     for identity in ctx.admit_iter(product.links, "read native unknown links")? {
-                        ctx.charge_retained(u64_from_index(identity.as_str().len()), "native unknown arena link text")?;
-                        ctx.push_vec(&mut links, serde_json::Value::String(identity.into_string()), "native unknown arena links")?;
+                        ctx.charge_retained(
+                            u64_from_index(identity.as_str().len()),
+                            "native unknown arena link text",
+                        )?;
+                        ctx.push_vec(
+                            &mut links,
+                            serde_json::Value::String(identity.into_string()),
+                            "native unknown arena links",
+                        )?;
                     }
                     let mut fields = serde_json::Map::new();
                     if !links.is_empty() {
                         ctx.charge_collection_items(1, "native unknown arena link field")?;
-                        let name = ctx.copy_retained_text("links", "native unknown arena link field name")?;
+                        let name = ctx
+                            .copy_retained_text("links", "native unknown arena link field name")?;
                         fields.insert(name, serde_json::Value::Array(links));
                     }
-                    ctx.push_vec(&mut native_records, crate::native::NativeRecord::new(id.into(), fields)?, "native unknown arena records")?;
+                    ctx.push_vec(
+                        &mut native_records,
+                        crate::native::NativeRecord::new(id.into(), fields)?,
+                        "native unknown arena records",
+                    )?;
                     drop(storage);
                 }
             }
         }
-        let (existing_ids, identity_storage) = ctx.with_scoped_storage("native unknown existing identities", || {
-            let mut existing_ids = BTreeSet::new();
-            for (_, namespace) in ctx.admit_iter(&ir.native.0, "native unknown namespaces")? {
-                if let Some(records) = ctx.get_btree_map(namespace.arenas(), "unknowns", "find existing native unknown arena")? {
-                    for record in ctx.admit_iter(records, "native unknown identity scan")? {
-                        ctx.insert_btree_set(&mut existing_ids, record.id(), "native unknown existing identities")?;
+        let (existing_ids, identity_storage) =
+            ctx.with_scoped_storage("native unknown existing identities", || {
+                let mut existing_ids = BTreeSet::new();
+                for (_, namespace) in ctx.admit_iter(&ir.native.0, "native unknown namespaces")? {
+                    if let Some(records) = ctx.get_btree_map(
+                        namespace.arenas(),
+                        "unknowns",
+                        "find existing native unknown arena",
+                    )? {
+                        for record in ctx.admit_iter(records, "native unknown identity scan")? {
+                            ctx.insert_btree_set(
+                                &mut existing_ids,
+                                record.id(),
+                                "native unknown existing identities",
+                            )?;
+                        }
                     }
                 }
-            }
-            Ok::<_, CodecError>(existing_ids)
-        })?;
+                Ok::<_, CodecError>(existing_ids)
+            })?;
         let mut retained = BTreeMap::new();
         let mut storage = ctx.reserve_scoped(0, "native unknown retained index")?;
         for record in ctx.admit_iter(records, "native unknown incoming records")? {
-            if ctx.contains_key_btree_map(&self.retained_records, record.id(), "native unknown retained lookup")?
-                || ctx.contains_btree_set(&existing_ids, record.id().as_str(), "native unknown existing lookup")?
-                || ctx.contains_key_btree_map(&retained, record.id(), "native unknown staged lookup")? {
+            if ctx.contains_key_btree_map(
+                &self.retained_records,
+                record.id(),
+                "native unknown retained lookup",
+            )? || ctx.contains_btree_set(
+                &existing_ids,
+                record.id().as_str(),
+                "native unknown existing lookup",
+            )? || ctx.contains_key_btree_map(
+                &retained,
+                record.id(),
+                "native unknown staged lookup",
+            )? {
                 return Err(CodecError::Malformed(ctx.format_retained(
                     format_args!("native collection is invalid: duplicate retained or native unknown record {}", record.id()),
                     "native unknown duplicate message",
                 )?));
             }
-            let stream = match ctx.get_btree_map(&self.annotations.provenance, record.id().as_str(), "native unknown provenance lookup")? {
+            let stream = match ctx.get_btree_map(
+                &self.annotations.provenance,
+                record.id().as_str(),
+                "native unknown provenance lookup",
+            )? {
                 Some(provenance) => provenance.stream(),
                 None => "",
             };
             let (id, offset, raw, raw_links) = record.into_parts();
             let mut links = Vec::new();
             for text in ctx.admit_iter(raw_links, "native unknown product links")? {
-                let identity = crate::ids::Identity::new_for_decode(ctx, text, "native unknown product link text")?
-                    .map_err(|error| match ctx.format_retained(format_args!("{error}"), "native unknown link refusal") {
-                        Ok(message) => CodecError::Malformed(message), Err(error) => error,
-                    })?;
-                ctx.push_vec(&mut links, serde_json::Value::String(identity.into_string()), "native unknown arena links")?;
+                let identity = crate::ids::Identity::new_for_decode(
+                    ctx,
+                    text,
+                    "native unknown product link text",
+                )?
+                .map_err(|error| {
+                    match ctx
+                        .format_retained(format_args!("{error}"), "native unknown link refusal")
+                    {
+                        Ok(message) => CodecError::Malformed(message),
+                        Err(error) => error,
+                    }
+                })?;
+                ctx.push_vec(
+                    &mut links,
+                    serde_json::Value::String(identity.into_string()),
+                    "native unknown arena links",
+                )?;
             }
             let mut fields = serde_json::Map::new();
             if !links.is_empty() {
                 ctx.charge_collection_items(1, "native unknown arena link field")?;
-                let name = ctx.copy_retained_text("links", "native unknown arena link field name")?;
+                let name =
+                    ctx.copy_retained_text("links", "native unknown arena link field name")?;
                 fields.insert(name, serde_json::Value::Array(links));
             }
-            let (id, offset, bytes) = RetainedSourceRecord::from_unknown_image(stream, id, offset, raw)
-                .map_err(|error| match ctx.format_retained(format_args!("native collection is invalid: {error}"), "native unknown image refusal") {
-                    Ok(message) => CodecError::Malformed(message), Err(error) => error,
-                })?;
-            let stream = if stream.is_empty() { SourceOwner::Root } else {
+            let (id, offset, bytes) =
+                RetainedSourceRecord::from_unknown_image(stream, id, offset, raw).map_err(
+                    |error| match ctx.format_retained(
+                        format_args!("native collection is invalid: {error}"),
+                        "native unknown image refusal",
+                    ) {
+                        Ok(message) => CodecError::Malformed(message),
+                        Err(error) => error,
+                    },
+                )?;
+            let stream = if stream.is_empty() {
+                SourceOwner::Root
+            } else {
                 SourceOwner::from(ctx.copy_retained_text(stream, "native unknown source stream")?)
             };
             let product_id = id.try_clone_for_decode(ctx, "native unknown product identity")?;
-            ctx.push_vec(&mut native_records, crate::native::NativeRecord::new(product_id.into(), fields)?, "native unknown arena records")?;
-            let record = RetainedSourceRecord { stream, offset, bytes };
-            storage.with_storage(|| ctx.insert_btree_map(&mut retained, id, record, "native unknown retained index"))?;
+            ctx.push_vec(
+                &mut native_records,
+                crate::native::NativeRecord::new(product_id.into(), fields)?,
+                "native unknown arena records",
+            )?;
+            let record = RetainedSourceRecord {
+                stream,
+                offset,
+                bytes,
+            };
+            storage.with_storage(|| {
+                ctx.insert_btree_map(&mut retained, id, record, "native unknown retained index")
+            })?;
         }
-        ctx.stable_sort_by(&mut native_records, |value| value.id(), Ord::cmp, "native unknown arena records sort")?;
-        if let Some(pair) = ctx.find_by(native_records.windows(2), |pair| {
-            ctx.equal_bytes(pair[0].id().as_bytes(), pair[1].id().as_bytes(), "native unknown duplicate comparison")
-        }, "native unknown duplicate scan")? {
+        ctx.stable_sort_by(
+            &mut native_records,
+            |value| value.id(),
+            Ord::cmp,
+            "native unknown arena records sort",
+        )?;
+        if let Some(pair) = ctx.find_by(
+            native_records.windows(2),
+            |pair| {
+                ctx.equal_bytes(
+                    pair[0].id().as_bytes(),
+                    pair[1].id().as_bytes(),
+                    "native unknown duplicate comparison",
+                )
+            },
+            "native unknown duplicate scan",
+        )? {
             return Err(CodecError::Malformed(ctx.format_retained(
-                format_args!("native collection is invalid: duplicate native unknown record {}", pair[0].id()),
+                format_args!(
+                    "native collection is invalid: duplicate native unknown record {}",
+                    pair[0].id()
+                ),
                 "native unknown duplicate message",
             )?));
         }
         drop(existing_ids);
         drop(identity_storage);
-        crate::annotations::admit_btree_append(ctx, &self.retained_records, &retained,
-            |id| id.as_str().len(), "append native unknown source records")?;
-        if self.retained_records.is_empty() { storage.commit()?; }
-        if let Some(namespace) = ctx.get_mut_btree_map(&mut ir.native.0, format, "store native unknown namespace")? {
-            if let Some(arena) = ctx.get_mut_btree_map(namespace.arenas_mut(), "unknowns", "store native unknown arena")? {
+        crate::annotations::admit_btree_append(
+            ctx,
+            &self.retained_records,
+            &retained,
+            |id| id.as_str().len(),
+            "append native unknown source records",
+        )?;
+        if self.retained_records.is_empty() {
+            storage.commit()?;
+        }
+        if let Some(namespace) =
+            ctx.get_mut_btree_map(&mut ir.native.0, format, "store native unknown namespace")?
+        {
+            if let Some(arena) = ctx.get_mut_btree_map(
+                namespace.arenas_mut(),
+                "unknowns",
+                "store native unknown arena",
+            )? {
                 *arena = native_records;
             } else {
                 let name = ctx.copy_retained_text("unknowns", "native unknown arena name")?;
-                ctx.insert_btree_map(namespace.arenas_mut(), name, native_records, "store native unknown arena")?;
+                ctx.insert_btree_map(
+                    namespace.arenas_mut(),
+                    name,
+                    native_records,
+                    "store native unknown arena",
+                )?;
             }
         } else {
             let mut namespace = crate::native::NativeNamespace::default();
             let name = ctx.copy_retained_text("unknowns", "native unknown arena name")?;
-            ctx.insert_btree_map(namespace.arenas_mut(), name, native_records, "store native unknown arena")?;
+            ctx.insert_btree_map(
+                namespace.arenas_mut(),
+                name,
+                native_records,
+                "store native unknown arena",
+            )?;
             let format = ctx.copy_retained_text(format, "native unknown namespace name")?;
-            ctx.insert_btree_map(&mut ir.native.0, format, namespace, "store native unknown namespace")?;
+            ctx.insert_btree_map(
+                &mut ir.native.0,
+                format,
+                namespace,
+                "store native unknown namespace",
+            )?;
         }
         self.retained_records.append(&mut retained);
         Ok(())
     }
-
 }
 
 fn duplicate_record(id: &UnknownId) -> NativeConvertError {

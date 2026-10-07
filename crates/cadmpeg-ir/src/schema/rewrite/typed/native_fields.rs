@@ -21,9 +21,19 @@ pub fn rewrite_field<
     let Value::Object(fields) = value else {
         return Ok(());
     };
-    if let Some(value) = ctx.find_map(fields.iter_mut(), |(key, value)| {
-        Ok(ctx.equal_bytes(key.as_bytes(), name.as_bytes(), "compare typed native field")?.then_some(value))
-    }, "find typed native field")? {
+    if let Some(value) = ctx.find_map(
+        fields.iter_mut(),
+        |(key, value)| {
+            Ok(ctx
+                .equal_bytes(
+                    key.as_bytes(),
+                    name.as_bytes(),
+                    "compare typed native field",
+                )?
+                .then_some(value))
+        },
+        "find typed native field",
+    )? {
         if !value.is_null() {
             Field::rewrite_native_value(ctx, value, map)?;
         }

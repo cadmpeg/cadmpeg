@@ -271,15 +271,20 @@ impl TransferLedger {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         index: &crate::index::ModelIndex<'_>,
     ) -> Result<Result<(), String>, cadmpeg_core::CodecError> {
-        let unresolved = ctx.find_map(&self.entries, |entry| {
-            match entry.target() {
+        let unresolved = ctx.find_map(
+            &self.entries,
+            |entry| match entry.target() {
                 Some(target) if !index.contains(target, ctx)? => Ok(Some((entry, target))),
                 _ => Ok(None),
-            }
-        }, "decode transfer verification")?;
+            },
+            "decode transfer verification",
+        )?;
         match unresolved {
             Some((entry, target)) => Ok(Err(ctx.format_retained(
-                format_args!("transfer source {:?} targets unresolved identity {:?}", entry.source, target),
+                format_args!(
+                    "transfer source {:?} targets unresolved identity {:?}",
+                    entry.source, target
+                ),
                 "decode transfer refusal",
             )?)),
             None => Ok(Ok(())),
@@ -366,7 +371,9 @@ impl Coverage {
         key: CoverageKey,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        if let Some(value) = ctx.get_mut_btree_map(&mut self.entries, key.0, "decode coverage lookup")? {
+        if let Some(value) =
+            ctx.get_mut_btree_map(&mut self.entries, key.0, "decode coverage lookup")?
+        {
             *value = count;
             return Ok(());
         }
@@ -386,7 +393,9 @@ impl Coverage {
             format_args!("{}{index}{}", key.prefix, key.suffix),
             "decode indexed coverage name",
         )?;
-        if let Some(value) = ctx.get_mut_btree_map(&mut self.entries, name.as_str(), "decode coverage lookup")? {
+        if let Some(value) =
+            ctx.get_mut_btree_map(&mut self.entries, name.as_str(), "decode coverage lookup")?
+        {
             *value = count;
             return Ok(());
         }
@@ -406,7 +415,9 @@ impl Coverage {
             format_args!("{}{:02x}{}", key.prefix, value, key.suffix),
             "decode hexadecimal coverage name",
         )?;
-        if let Some(existing) = ctx.get_mut_btree_map(&mut self.entries, name.as_str(), "decode coverage lookup")? {
+        if let Some(existing) =
+            ctx.get_mut_btree_map(&mut self.entries, name.as_str(), "decode coverage lookup")?
+        {
             *existing = count;
             return Ok(());
         }
@@ -424,7 +435,11 @@ impl Coverage {
         name: String,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        if !ctx.equal_bytes(name.as_bytes(), key.0.as_bytes(), "decode coverage name admission")? {
+        if !ctx.equal_bytes(
+            name.as_bytes(),
+            key.0.as_bytes(),
+            "decode coverage name admission",
+        )? {
             return Err(cadmpeg_core::CodecError::malformed(
                 "coverage name does not match its declared key",
             ));

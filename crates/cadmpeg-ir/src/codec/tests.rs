@@ -483,12 +483,34 @@ fn strict_loss_search_charges_only_the_first_rejecting_loss() {
     struct TailCodec(usize);
     impl CodecBackend for TailCodec {
         const FORMAT: FormatId = FormatId::new("test");
-        fn detect_impl(&self, _ctx: &DecodeContext<'_>, _prefix: View<'_>) -> Result<Confidence, CodecError> { Ok(Confidence::No) }
-        fn inspect_impl(&self, _ctx: &DecodeContext<'_>, _root: View<'_>) -> Result<ContainerSummary, CodecError> { unreachable!("decode fixture") }
-        fn decode_impl(&self, _ctx: &DecodeContext<'_>, _root: View<'_>) -> Result<Decoded, CodecError> {
+        fn detect_impl(
+            &self,
+            _ctx: &DecodeContext<'_>,
+            _prefix: View<'_>,
+        ) -> Result<Confidence, CodecError> {
+            Ok(Confidence::No)
+        }
+        fn inspect_impl(
+            &self,
+            _ctx: &DecodeContext<'_>,
+            _root: View<'_>,
+        ) -> Result<ContainerSummary, CodecError> {
+            unreachable!("decode fixture")
+        }
+        fn decode_impl(
+            &self,
+            _ctx: &DecodeContext<'_>,
+            _root: View<'_>,
+        ) -> Result<Decoded, CodecError> {
             let mut value = decoded(unit_cube().expect("valid cube"));
-            value.body.losses.push(LossNote::new(reject_floor_kind(), "first reject"));
-            value.body.losses.extend((0..self.0).map(|_| LossNote::new(reject_floor_kind(), "trailing reject")));
+            value
+                .body
+                .losses
+                .push(LossNote::new(reject_floor_kind(), "first reject"));
+            value
+                .body
+                .losses
+                .extend((0..self.0).map(|_| LossNote::new(reject_floor_kind(), "trailing reject")));
             Ok(value)
         }
     }
@@ -509,8 +531,12 @@ fn strict_loss_search_charges_only_the_first_rejecting_loss() {
         }
     };
     let CodecError::ResourceLimit(limit) = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "decode strict loss scan", |cap| run(cap, 4096),
-    ) else { panic!("work refusal"); };
+        ResourceDimension::WorkUnits,
+        "decode strict loss scan",
+        |cap| run(cap, 4096),
+    ) else {
+        panic!("work refusal");
+    };
     run(limit.used + limit.additional, 0).unwrap();
     run(limit.used + limit.additional, 4096).unwrap();
 }
