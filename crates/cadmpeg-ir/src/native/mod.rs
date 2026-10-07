@@ -500,16 +500,23 @@ impl NativeRecord {
         let kept = std::cell::Cell::new(0);
         let members = std::iter::once(("id", &id))
             .chain(self.fields.iter().map(|(key, value)| (key.as_str(), value)));
+        let len = self
+            .fields
+            .len()
+            .checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(read::TYPED_READ, u64::MAX - 1, u64::MAX))?;
         let read = T::deserialize(read::Record {
             account: read::Account::new(ctx, &kept),
             members,
+            len,
         });
         match (read, ctx.resource_refusal()) {
-            (Ok(value), _) => Ok(value),
-            // A budget refusal fused the session; report it, not the reader's text.
-            (Err(_), Some(limit)) => Err(NativeConvertError::Resource(CodecError::ResourceLimit(
+            // A budget refusal fused the session, even when the reader went on
+            // to recover; report it, not the reader's result.
+            (_, Some(limit)) => Err(NativeConvertError::Resource(CodecError::ResourceLimit(
                 limit,
             ))),
+            (Ok(value), None) => Ok(value),
             (Err(source), None) => Err(NativeConvertError::ReadRecord {
                 id: self
                     .id
