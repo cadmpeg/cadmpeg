@@ -1287,9 +1287,8 @@ pub(crate) fn project_compact_edge_selections(
             if let Some((existing_edges, tangency_weight)) =
                 sole_unresolved_fillet_group(definition)
             {
-                if let Some(radius_groups) =
-                    variable_fillet_radius_groups(ctx, native_ref, histories, lanes, edge_selections)?
-                {
+                let (radius_groups, _radius_groups_storage) = ctx.with_scoped_storage(INDEX_OPERATION, || variable_fillet_radius_groups(ctx, native_ref, histories, lanes, edge_selections))?;
+                if let Some(radius_groups) = radius_groups {
                     let unresolved_edges = matches!(existing_edges, EdgeSelection::Unresolved);
                     if unresolved_edges || radius_groups.len() == 1 {
                         const GROUP_OPERATION: &str = "collect SLDPRT variable fillet groups";
@@ -1303,7 +1302,7 @@ pub(crate) fn project_compact_edge_selections(
                                     .map(|group| std::mem::replace(&mut group.edges, EdgeSelection::Unresolved)),
                             _ => None,
                         };
-                        for RadiusSelectionGroup(radius, selections) in ctx.admit_iter(radius_groups, GROUP_OPERATION)? {
+                        for RadiusSelectionGroup(radius, selections, storage) in ctx.admit_iter(radius_groups, GROUP_OPERATION)? {
                             let edges = if unresolved_edges {
                                 projected_edges(&selections)?
                             } else {
@@ -1314,6 +1313,7 @@ pub(crate) fn project_compact_edge_selections(
                                 })?
                             };
                             ctx.push_vec(&mut replacement_groups, FilletGroup { edges, radius, tangency_weight }, GROUP_OPERATION)?;
+                            storage.commit()?;
                         }
                         *definition = FeatureDefinition::Operation(FeatureOperation::Fillet {
                             groups: replacement_groups
@@ -1357,7 +1357,7 @@ pub(crate) fn project_compact_edge_selections(
 }
 
 #[derive(Debug)]
-struct RadiusSelectionGroup<'a>(RadiusSpec, Vec<&'a FeatureInputEdgeSelection>);
+struct RadiusSelectionGroup<'a, 'ctx>(RadiusSpec, Vec<&'a FeatureInputEdgeSelection>, cadmpeg_core::decode::ScopedReservation<'ctx>);
 
 /// Native edge-endpoint component instance tag.
 const EDGE_ENDPOINT_INSTANCE: u16 = 0x8083;
@@ -1399,7 +1399,8 @@ fn ordered_fillet_dimensions(
     operation: &'static str,
 ) -> Result<Option<(Vec<(usize, PositiveLength)>, bool)>, cadmpeg_core::CodecError> {
     let mut ordered = Vec::new();
-    for name in ctx.admit_iter(parameter_names, operation)? {
+    let mut visited = parameter_names.iter();
+    while let Some(name) = ctx.next_charged(&mut visited, operation)? {
         let Some(parameter) =
             variable_fillet_dimension_index_for_feature(ctx, feature, name.as_str())?.zip(
                 ctx.get_btree_map(&feature.parameters, *name, operation)?
@@ -1422,11 +1423,11 @@ fn ordered_fillet_dimensions(
 }
 
 /// One variable radius profile over the ordered dimensions, applied to every selection.
-fn whole_feature_radius_group<'a>(
-    ctx: &DecodeContext<'_>,
+fn whole_feature_radius_group<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     ordered: Vec<(usize, PositiveLength)>,
     selections: &[&'a FeatureInputEdgeSelection],
-) -> Result<Option<Vec<RadiusSelectionGroup<'a>>>, cadmpeg_core::CodecError> {
+) -> Result<Option<Vec<RadiusSelectionGroup<'a, 'ctx>>>, cadmpeg_core::CodecError> {
     let mut selections = ctx.copy_slice(selections, "SLDPRT variable radius source samples")?;
     ctx.sort_unstable_by(
         &mut selections,
@@ -1453,26 +1454,26 @@ fn whole_feature_radius_group<'a>(
             "SLDPRT variable radius source samples",
         )?;
     }
-    let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)?.ok()
-    else {
+    let (points, radius_storage) = ctx.with_scoped_storage("SLDPRT variable radius law", || cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx))?;
+    let Some(points) = points.ok() else {
         return Ok(None);
     };
     let mut groups = Vec::new();
     ctx.push_vec(
         &mut groups,
-        RadiusSelectionGroup(RadiusSpec::Variable { points }, selections),
+        RadiusSelectionGroup(RadiusSpec::Variable { points }, selections, radius_storage),
         "SLDPRT variable radius source samples",
     )?;
     Ok(Some(groups))
 }
 
-fn variable_fillet_radius_groups<'a>(
-    ctx: &DecodeContext<'_>,
+fn variable_fillet_radius_groups<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     feature_ref: &str,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     selections: &[&'a FeatureInputEdgeSelection],
-) -> Result<Option<Vec<RadiusSelectionGroup<'a>>>, cadmpeg_core::CodecError> {
+) -> Result<Option<Vec<RadiusSelectionGroup<'a, 'ctx>>>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "project SLDPRT variable fillet radii";
     let Some(history) = ctx.find_by(
         histories,
@@ -1515,7 +1516,10 @@ fn variable_fillet_radius_groups<'a>(
     }
     let has_endpoint_reference = ctx.any_by(
         selections,
-        |selection| Ok(!endpoint_signatures(ctx, &selection.references, 1, OPERATION)?.is_empty()),
+        |selection| {
+            let (signatures, _storage) = ctx.with_scoped_storage(OPERATION, || endpoint_signatures(ctx, &selection.references, 1, OPERATION))?;
+            Ok(!signatures.is_empty())
+        },
         OPERATION,
     )?;
 
@@ -1558,7 +1562,8 @@ fn variable_fillet_radius_groups<'a>(
     let mut control_names = HashSet::<String>::new();
     let mut non_vertex_control_names = HashSet::<String>::new();
     let mut non_vertex_control_references = Vec::new();
-    for lane in ctx.admit_iter(lanes, OPERATION)? {
+    let mut visited = lanes.iter();
+    while let Some(lane) = ctx.next_charged(&mut visited, OPERATION)? {
         let names = ObjectNames::new(ctx, lane)?;
         let mut objects = Vec::new();
         for candidate in ctx.admit_iter(&history.features, OPERATION)? {
@@ -1584,15 +1589,13 @@ fn variable_fillet_radius_groups<'a>(
             .get(index + 1)
             .and_then(|(offset, _)| usize::try_from(*offset).ok())
             .unwrap_or(lane.native_payload.len());
-        let Some(controls) =
-            variable_fillet_control_references(ctx, feature, lane, object_start, object_end)?
-        else {
+        let Some(controls) = controls_storage.with_storage(|| variable_fillet_control_references(ctx, feature, lane, object_start, object_end))? else {
             continue;
         };
-        for super::selections::VariableFilletControl(name, references) in
-            ctx.admit_iter(controls, OPERATION)?
-        {
-            match endpoint_signatures(ctx, &references, 2, OPERATION)?.as_slice() {
+        let mut visited = controls.into_iter();
+        while let Some(super::selections::VariableFilletControl(name, references)) = ctx.next_charged(&mut visited, OPERATION)? {
+            let (signatures, _signatures_storage) = ctx.with_scoped_storage(OPERATION, || endpoint_signatures(ctx, &references, 2, OPERATION))?;
+            match signatures.as_slice() {
                 [vertex] => {
                     if ctx.contains_hash_set(&control_names, name.as_str(), OPERATION)? {
                         return Ok(None);
@@ -1709,8 +1712,10 @@ fn variable_fillet_radius_groups<'a>(
         Vec<&FeatureInputEdgeSelection>,
     )>::new();
     let mut unassigned = Vec::new();
-    for &selection in ctx.admit_iter(selections, OPERATION)? {
-        match endpoint_signatures(ctx, &selection.references, 3, OPERATION)?.as_slice() {
+    let mut visited = selections.iter();
+    while let Some(&selection) = ctx.next_charged(&mut visited, OPERATION)? {
+        let (signatures, _signatures_storage) = ctx.with_scoped_storage(OPERATION, || endpoint_signatures(ctx, &selection.references, 3, OPERATION))?;
+        match signatures.as_slice() {
             [first, second] => {
                 let (Some(first_radius), Some(second_radius)) = (
                     ctx.get_btree_map(&vertex_radii, first, OPERATION)?,
@@ -1765,14 +1770,13 @@ fn variable_fillet_radius_groups<'a>(
                 "SLDPRT variable radius source samples",
             )
         })?;
-        let Some(points) =
-            cadmpeg_ir::features::edge_treatments::VariableRadii::new(raw_points, ctx)?.ok()
-        else {
+        let (points, radius_storage) = ctx.with_scoped_storage(OPERATION, || cadmpeg_ir::features::edge_treatments::VariableRadii::new(raw_points, ctx))?;
+        let Some(points) = points.ok() else {
             return Ok(None);
         };
         ctx.push_vec(
             &mut result,
-            RadiusSelectionGroup(RadiusSpec::Variable { points }, selections),
+            RadiusSelectionGroup(RadiusSpec::Variable { points }, selections, radius_storage),
             OPERATION,
         )?;
     }
@@ -2332,8 +2336,8 @@ pub(crate) fn project_compact_surface_selections(
         if matches!(face, FaceSelection::Unresolved | FaceSelection::Native(_)) {
             continue;
         }
-        let face_copy = face.try_clone_for_decode(ctx, ALIAS_OPERATION)?;
         alias_storage.with_storage(|| {
+            let face_copy = face.try_clone_for_decode(ctx, ALIAS_OPERATION)?;
             if let Some(previous) =
                 ctx.get_mut_hash_map(&mut face_aliases, native, ALIAS_OPERATION)?
             {
@@ -2422,9 +2426,10 @@ fn full_round_fillet_selection_triple<'a>(
     selections: &[&'a FeatureInputSurfaceSelection],
 ) -> Result<Option<[&'a FeatureInputSurfaceSelection; 3]>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "group SLDPRT full round fillet selections";
-    let by_lane = surface_selections_by_lane(ctx, selections, OPERATION)?;
+    let (by_lane, _lane_storage) = ctx.with_scoped_storage(OPERATION, || surface_selections_by_lane(ctx, selections, OPERATION))?;
     let mut consensus: Option<[&'a FeatureInputSurfaceSelection; 3]> = None;
-    for mut lane_selections in ctx.admit_iter(by_lane, OPERATION)?.map(|(_, group)| group) {
+    let mut visited = by_lane.into_iter();
+    while let Some((_, mut lane_selections)) = ctx.next_charged(&mut visited, OPERATION)? {
         ctx.sort_unstable_by(
             &mut lane_selections,
             |value| &value.offset,
@@ -2833,9 +2838,10 @@ fn cut_with_surface_selection_pair<'a>(
     cadmpeg_core::CodecError,
 > {
     const OPERATION: &str = "group SLDPRT surface cut selections";
-    let by_lane = surface_selections_by_lane(ctx, selections, OPERATION)?;
+    let (by_lane, _lane_storage) = ctx.with_scoped_storage(OPERATION, || surface_selections_by_lane(ctx, selections, OPERATION))?;
     let mut consensus = None;
-    for mut lane_selections in ctx.admit_iter(by_lane, OPERATION)?.map(|(_, group)| group) {
+    let mut visited = by_lane.into_iter();
+    while let Some((_, mut lane_selections)) = ctx.next_charged(&mut visited, OPERATION)? {
         if lane_selections.len() != 2 {
             return Ok(None);
         }
