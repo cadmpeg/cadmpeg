@@ -104,12 +104,15 @@ pub fn payload_token_offsets(
     let mut position = record.offset;
     let mut offsets = Vec::new();
     while position < end {
+        ctx.charge_work(1, "scan ASM fixture payload token")
+            .map_err(StreamFailure::from_operation)?;
         let token_offset = position;
         let (token, next) = lex(ctx, bytes, position, ref_width)
             .map_err(StreamFailure::from_operation)?
             .map_err(StreamFailure::from)?;
         if bytes[token_offset] == tag && matches!(&token, Lexed::Value(_) | Lexed::Str(_)) {
-            offsets.push(token_offset);
+            ctx.push_vec(&mut offsets, token_offset, "ASM fixture payload offsets")
+                .map_err(StreamFailure::from_operation)?;
         }
         position = next;
         if matches!(&token, Lexed::Terminator) {
