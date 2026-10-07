@@ -63,6 +63,35 @@ fn legacy_stream_boundaries_require_complete_transmit_headers() {
 }
 
 #[test]
+fn legacy_header_search_does_not_charge_unread_trailing_bytes() {
+    let description = b"TRANSMIT FILE";
+    let mut bytes = b"PS".to_vec();
+    bytes.extend_from_slice(&u32::try_from(description.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(description);
+    bytes.resize(bytes.len() + 8192, 0);
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            // One magic window, every description byte plus its end probe,
+            // and the first transmit-marker window.
+            policy.limits.max_work_units =
+                cadmpeg_core::decode::u64_from_index(description.len() + 3)
+        },
+        |ctx| assert_eq!(super::legacy_stream_start(ctx, &bytes, 0).unwrap(), Some(0)),
+    );
+    let error = crate::test_support::resource_refusal_at(
+        &bytes,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan NX legacy stream headers",
+        |ctx| super::legacy_stream_start(ctx, &bytes, 0),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "scan NX legacy stream headers" && limit.additional == 1)
+    );
+}
+
+#[test]
 fn legacy_short_sections_are_bounded_by_complete_transmit_headers() {
     let mut bytes = Vec::new();
     let first_description = b": TRANSMIT FILE (partition)";
@@ -490,28 +519,22 @@ fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
 #[test]
 fn extraction_refuses_inflated_stream_copy_when_retained_budget_is_exhausted() {
     let file = prt_with_partition(&partition_stream());
-
-    crate::test_support::with_decode_context_over(
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
+            .expect("test SPLMSSTR container");
+    let error = crate::test_support::resource_refusal_at(
         &file,
-        |policy| {
-            policy.limits.max_retained_bytes =
-                1 + cadmpeg_test_support::decode::arena_registry_bytes();
-        },
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain NX inflated stream",
         |ctx| {
             let root = cadmpeg_core::decode::View::over_retained(&file);
-
-            let container = crate::test_support::with_decode_context(|ctx| {
-                container::scan_bytes(ctx, file.clone())
-            })
-            .expect("test SPLMSSTR container");
-
-            assert!(matches!(
-                parasolid::extract_streams(ctx, root, &container),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                        && limit.operation == "retain NX inflated stream"
-            ));
+            parasolid::extract_streams(ctx, root, &container)
         },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "retain NX inflated stream")
     );
 }
 
@@ -547,11 +570,14 @@ fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
 
 #[test]
 fn extraction_falls_back_to_unindexed_structural_streams_when_index_has_no_parasolid() {
-    let decoy = zlib_compress(
-        b"PS\0\0 (partition) SCH_DECOY_1_9999 unindexed text without structural records",
-    );
-    let real = zlib_compress(&parasolid_group_partition_stream());
-    let indexed_preview = zlib_compress(b"preview payload");
+    let decoy_payload =
+        b"PS\0\0 (partition) SCH_DECOY_1_9999 unindexed text without structural records";
+    let real_payload = parasolid_group_partition_stream();
+    let preview_payload = b"preview payload";
+    let expanded_bytes = decoy_payload.len() + real_payload.len() + preview_payload.len();
+    let decoy = zlib_compress(decoy_payload);
+    let real = zlib_compress(&real_payload);
+    let indexed_preview = zlib_compress(preview_payload);
     let mut payload = Vec::new();
     for word in [0_u32, 9, 11, 1, 1, 24] {
         payload.extend_from_slice(&word.to_le_bytes());
@@ -570,6 +596,45 @@ fn extraction_falls_back_to_unindexed_structural_streams_when_index_has_no_paras
 
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
     let streams = extract_streams(&file);
+    // Each member is inflated once, including the indexed preview revisited by
+    // the fallback scan. The ceiling is the sum of their expanded byte lengths.
+    crate::test_support::with_decode_context_over(
+        &file,
+        |policy| {
+            policy.limits.max_decompressed_bytes_total =
+                cadmpeg_core::decode::u64_from_index(expanded_bytes)
+        },
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(&file);
+            let container = crate::container::scan_bytes(ctx, &file).unwrap();
+            let admitted = super::extract_streams(ctx, root, &container).unwrap();
+            assert_eq!(admitted.len(), streams.len());
+        },
+    );
+
+    let error = crate::test_support::resource_refusal_at(
+        &file,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "retain NX inflated stream",
+        |ctx| {
+            let mut streams = Vec::new();
+            super::append_all_zlib_streams(
+                ctx,
+                cadmpeg_core::decode::View::over_retained(&file),
+                0,
+                &mut streams,
+                true,
+            )?;
+            Ok(streams)
+        },
+    );
+    // A structural scan copies the kept partition, not the preceding decoy.
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "retain NX inflated stream"
+            && limit.additional == cadmpeg_core::decode::u64_from_index(real_payload.len()))
+    );
 
     assert_eq!(streams.len(), 2);
     assert!(streams.iter().any(|stream| {
@@ -698,14 +763,14 @@ fn numeric_identity_probe_uses_no_payload_storage() {
 #[test]
 fn numeric_value_payload_refuses_retained_storage() {
     let bytes = [0, 0x52, 0, 0, 0, 1, 0, 17, 0, 0, 0, 9];
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         &bytes,
-        |policy| policy.limits.max_retained_bytes = 0,
-        |ctx| {
-            assert!(
-                matches!(crate::parasolid::value_records::entity_value_records_at(ctx, &bytes, [0]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX numeric value payload")
-            );
-        },
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "NX numeric value payload",
+        |ctx| crate::parasolid::value_records::entity_value_records_at(ctx, &bytes, [0]).map(drop),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "NX numeric value payload" && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
     );
 }
 
@@ -818,18 +883,50 @@ fn structural_entity_references_do_not_own_value_records() {
 }
 
 #[test]
-fn attribute_owner_flag_iteration_refusal_propagates() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
+fn fixed_attribute_owner_flags_need_no_decode_admission() {
     for flags in [&[0; 14][..], &[2; 16][..]] {
-        let error = crate::test_support::resource_refusal_at(
+        crate::test_support::with_decode_context_over(
             &[],
-            ResourceDimension::WorkUnits,
-            "NX attribute owner flag validation",
-            |ctx| super::LegalOwnerFlags::from_wire(ctx, flags).map(|result| result.is_ok()),
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                let result = super::LegalOwnerFlags::try_from(flags);
+                assert_eq!(result.is_ok(), flags.len() == 14);
+                assert_eq!(ctx.resource_refusal(), None);
+            },
         );
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "NX attribute owner flag validation"));
     }
+}
+
+#[test]
+fn numeric_validation_stops_at_first_nonfinite_value() {
+    let mut bytes = f64::NAN.to_be_bytes().to_vec();
+    bytes.extend(std::iter::repeat_n(0, 8 * 4095));
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 1,
+        |ctx| {
+            assert!(
+                super::counted_values::CountedValues::<f64>::read_be_lane(ctx, &bytes)
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(ctx.resource_refusal(), None);
+        },
+    );
+}
+
+#[test]
+fn unicode_validation_stops_at_first_unpaired_low_surrogate() {
+    let mut bytes = vec![0xdc, 0];
+    bytes.extend(std::iter::repeat_n(0, 2 * 4095));
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 1,
+        |ctx| {
+            assert!(super::unicode_value::UnicodeLane::new(ctx, &bytes)
+                .unwrap()
+                .is_none());
+            assert_eq!(ctx.resource_refusal(), None);
+        },
+    );
 }

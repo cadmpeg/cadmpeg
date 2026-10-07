@@ -54,13 +54,10 @@ pub(crate) fn entity_value_records<'a, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &'a [u8],
 ) -> Result<EntityValueRecords<'a, 'ctx>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX value records",
-    )?;
     let mut records = EntityValueRecords::new(ctx)?;
     let mut offset = 0;
     while offset < bytes.len() {
+        ctx.charge_work(1, "scan NX value records")?;
         let Some(frame) = value_record_frame_at(ctx, bytes, offset)? else {
             offset += 1;
             continue;
@@ -78,8 +75,8 @@ pub(crate) fn entity_value_records_at<'a, 'ctx>(
     offsets: impl IntoIterator<Item = usize>,
 ) -> Result<EntityValueRecords<'a, 'ctx>, CodecError> {
     let mut records = EntityValueRecords::new(ctx)?;
-    for offset in offsets {
-        ctx.charge_work(1, "read NX owned value record")?;
+    let mut offsets = offsets.into_iter();
+    while let Some(offset) = ctx.next_charged(&mut offsets, "read NX owned value record")? {
         if let Some(frame) = value_record_frame_at(ctx, bytes, offset)? {
             append_value_record(ctx, frame, &mut records)?;
         }
@@ -91,22 +88,16 @@ pub(super) fn value_record_candidates<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<(BTreeMap<u32, Vec<usize>>, ScopedReservation<'ctx>), CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX value identities",
-    )?;
     let mut candidates = BTreeMap::<u32, Vec<usize>>::new();
     let mut reservation = ctx.reserve_scoped(0, "NX value candidate index")?;
     let mut offset = 0;
     while offset < bytes.len() {
+        ctx.charge_work(1, "scan NX value identities")?;
         let Some(frame) = value_record_frame_at(ctx, bytes, offset)? else {
             offset += 1;
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(candidates.len()),
-            "index NX value identities",
-        )?;
+
         ctx.push_scoped_btree_group(
             &mut reservation,
             &mut candidates,
@@ -190,45 +181,44 @@ fn value_record_frame_at<'a>(
     bytes: &'a [u8],
     offset: usize,
 ) -> Result<Option<ValueRecordFrame<'a>>, CodecError> {
-    let value: Option<Result<_, CodecError>> = (|| {
-        let tag = *bytes.get(offset.checked_add(1)?)?;
-        Some(Ok(match tag {
-            0x52 => propagate_resource!(frame_at(bytes, offset, tag, 4, |raw| {
-                Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Integers))
-            }))?,
-            0x53 => propagate_resource!(frame_at(bytes, offset, tag, 8, |raw| {
-                Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Doubles))
-            }))?,
-            0x54 => propagate_resource!(frame_at(bytes, offset, tag, 1, |raw| {
-                let Ok(text) = ctx.validate_utf8(raw, "NX value string UTF-8 validation")? else {
-                    return Ok(None);
-                };
-                Ok(PrintableString::from_wire(ctx, text)?
-                    .ok()
-                    .map(ValuePayload::String))
-            }))?,
-            0x55 => propagate_resource!(frame_at(bytes, offset, tag, 24, |raw| {
-                Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Points))
-            }))?,
-            0x56 => propagate_resource!(frame_at(bytes, offset, tag, 24, |raw| {
-                Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Vectors))
-            }))?,
-            0x57 => propagate_resource!(frame_at(bytes, offset, tag, 24, |raw| {
-                Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Axes))
-            }))?,
-            0x58 => propagate_resource!(frame_at(bytes, offset, tag, 4, |raw| {
-                Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Tags))
-            }))?,
-            0x59 => propagate_resource!(frame_at(bytes, offset, tag, 24, |raw| {
-                Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Directions))
-            }))?,
-            0x62 => propagate_resource!(frame_at(bytes, offset, tag, 2, |raw| {
-                Ok(UnicodeLane::new(ctx, raw)?.map(ValuePayload::Unicode))
-            }))?,
-            _ => return None,
-        }))
-    })();
-    value.transpose()
+    let Some(tag) = offset.checked_add(1).and_then(|at| bytes.get(at)).copied() else {
+        return Ok(None);
+    };
+    match tag {
+        0x52 => frame_at(bytes, offset, tag, 4, |raw| {
+            Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Integers))
+        }),
+        0x53 => frame_at(bytes, offset, tag, 8, |raw| {
+            Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Doubles))
+        }),
+        0x54 => frame_at(bytes, offset, tag, 1, |raw| {
+            let Ok(text) = ctx.validate_utf8(raw, "NX value string UTF-8 validation")? else {
+                return Ok(None);
+            };
+            Ok(PrintableString::from_wire(ctx, text)?
+                .ok()
+                .map(ValuePayload::String))
+        }),
+        0x55 => frame_at(bytes, offset, tag, 24, |raw| {
+            Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Points))
+        }),
+        0x56 => frame_at(bytes, offset, tag, 24, |raw| {
+            Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Vectors))
+        }),
+        0x57 => frame_at(bytes, offset, tag, 24, |raw| {
+            Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Axes))
+        }),
+        0x58 => frame_at(bytes, offset, tag, 4, |raw| {
+            Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Tags))
+        }),
+        0x59 => frame_at(bytes, offset, tag, 24, |raw| {
+            Ok(BorrowedValues::new(ctx, raw)?.map(ValuePayload::Directions))
+        }),
+        0x62 => frame_at(bytes, offset, tag, 2, |raw| {
+            Ok(UnicodeLane::new(ctx, raw)?.map(ValuePayload::Unicode))
+        }),
+        _ => Ok(None),
+    }
 }
 fn frame_at<'a>(
     bytes: &'a [u8],
@@ -237,29 +227,55 @@ fn frame_at<'a>(
     width: usize,
     decode: impl FnOnce(&'a [u8]) -> Result<Option<ValuePayload<'a>>, CodecError>,
 ) -> Result<Option<ValueRecordFrame<'a>>, CodecError> {
-    let parsed: Option<Result<_, CodecError>> = (|| {
-        let mut at = offset.checked_add(2)?;
-        (bytes.get(offset..at) == Some(&[0, tag])).then_some(())?;
-        if bytes.get(at) == Some(&0xff) {
-            at += 1;
+    let Some(mut at) = offset.checked_add(2) else {
+        return Ok(None);
+    };
+    if bytes.get(offset..at) != Some(&[0, tag]) {
+        return Ok(None);
+    }
+    if bytes.get(at) == Some(&0xff) {
+        at += 1;
+    }
+    let count = cadmpeg_core::decode::index_from_u32(match View::u32_be_at(bytes, at) {
+        Some(value) => value,
+        None => return Ok(None),
+    });
+    at += 4;
+    let Some(xmt) = NonNullXmt::try_from(match read_xmt(bytes, &mut at) {
+        Some(value) => value,
+        None => return Ok(None),
+    })
+    .ok() else {
+        return Ok(None);
+    };
+    let Some(mut end) = at.checked_add(match count.checked_mul(width) {
+        Some(value) => value,
+        None => return Ok(None),
+    }) else {
+        return Ok(None);
+    };
+    let Some(payload) = decode(match bytes.get(at..end) {
+        Some(value) => value,
+        None => return Ok(None),
+    })?
+    else {
+        return Ok(None);
+    };
+    if matches!(payload, ValuePayload::String(_)) {
+        if bytes.get(end) != Some(&0) {
+            return Ok(None);
         }
-        let count = cadmpeg_core::decode::index_from_u32(View::u32_be_at(bytes, at)?);
-        at += 4;
-        let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
-        let mut end = at.checked_add(count.checked_mul(width)?)?;
-        let payload = propagate_resource!(decode(bytes.get(at..end)?))?;
-        if matches!(payload, ValuePayload::String(_)) {
-            (bytes.get(end) == Some(&0)).then_some(())?;
-            end = end.checked_add(1)?;
-        }
-        Some(Ok(ValueRecordFrame {
-            offset,
-            end,
-            xmt,
-            payload,
-        }))
-    })();
-    parsed.transpose()
+        let Some(next_end) = end.checked_add(1) else {
+            return Ok(None);
+        };
+        end = next_end;
+    }
+    Ok(Some(ValueRecordFrame {
+        offset,
+        end,
+        xmt,
+        payload,
+    }))
 }
 /// Materialize one value-record frame into its family's list.
 /// Storage and work refusals propagate through the caller context.

@@ -783,22 +783,14 @@ fn external_reference_string_table_is_end_anchored() {
 fn external_reference_paths_refuse_collection_limit() {
     let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
     let container = external_reference_path_container(payload);
-
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         payload,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = container
-                .external_reference_paths(ctx)
-                .expect_err("one path exceeds zero collection items");
-            assert!(matches!(
-                error,
-                CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::CollectionItems
-            ));
-        },
+        ResourceDimension::CollectionItems,
+        "nx external reference paths",
+        |ctx| container.external_reference_paths(ctx),
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "nx external reference paths")
     );
 }
 
@@ -827,22 +819,14 @@ fn external_reference_path_container(payload: &[u8]) -> Container<'_> {
 fn external_reference_paths_refuse_retained_limit() {
     let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
     let container = external_reference_path_container(payload);
-
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         payload,
-        |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
-        |ctx| {
-            let error = container
-                .external_reference_paths(ctx)
-                .expect_err("one path exceeds zero retained bytes");
-            assert!(matches!(
-                error,
-                CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::RetainedBytes
-            ));
-        },
+        ResourceDimension::RetainedBytes,
+        "nx external reference paths",
+        |ctx| container.external_reference_paths(ctx),
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "nx external reference paths")
     );
 }
 
@@ -850,22 +834,14 @@ fn external_reference_paths_refuse_retained_limit() {
 fn external_reference_paths_refuse_work_limit() {
     let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
     let container = external_reference_path_container(payload);
-
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         payload,
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| {
-            let error = container
-                .external_reference_paths(ctx)
-                .expect_err("one path exceeds zero work units");
-            assert!(matches!(
-                error,
-                CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::WorkUnits
-            ));
-        },
+        ResourceDimension::WorkUnits,
+        "project NX external reference paths",
+        |ctx| container.external_reference_paths(ctx),
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "project NX external reference paths")
     );
 }
 
@@ -991,7 +967,7 @@ fn bounded_entry_reads_refuse_directory_work() {
                 }
                 .unwrap_err();
                 assert!(matches!(error, CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "bound NX directory entry"));
+                if limit.dimension == ResourceDimension::WorkUnits && limit.operation == if tail { "bound NX directory tail" } else { "bound NX directory entry" }));
             },
         );
     }
@@ -1045,20 +1021,17 @@ fn external_reference_materialization_refuses_each_string_byte_pass() {
     bytes.extend(1u32.to_le_bytes());
     bytes.extend(1000u16.to_le_bytes());
     bytes.extend(text.as_bytes());
-    for (work_limit, operation) in [
-        (3504, "read NX external reference UTF-8"),
-        (4504, "nx external reference string"),
+    for operation in [
+        "read NX external reference UTF-8",
+        "nx external reference string",
     ] {
-        crate::test_support::with_decode_context_over(
+        let error = crate::test_support::resource_refusal_at(
             &bytes,
-            |policy| policy.limits.max_work_units = work_limit,
-            |ctx| {
-                let error = super::parse_extref_string_table(ctx, &bytes).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
-                );
-            },
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| super::parse_extref_string_table(ctx, &bytes),
         );
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation));
     }
     crate::test_support::with_decode_context_over(
         &bytes,
@@ -1069,5 +1042,21 @@ fn external_reference_materialization_refuses_each_string_byte_pass() {
                 .unwrap();
             assert_eq!(values, [(7, text)]);
         },
+    );
+}
+
+#[test]
+fn cached_section_reader_traversal_refuses_at_its_named_boundary() {
+    let file = crate::test_support::test_prt::prt_with_size_framed_om_section();
+    let container =
+        crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, &file)).unwrap();
+    crate::test_support::with_decode_context(|ctx| {
+        assert!(!container.om_sections(ctx).unwrap().is_empty());
+    });
+    crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "visit NX cached section readers",
+        |ctx| container.om_sections(ctx),
     );
 }

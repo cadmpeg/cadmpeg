@@ -36,45 +36,36 @@ impl<'a> UnicodeLane<'a> {
         ctx: &DecodeContext<'_>,
         bytes: &'a [u8],
     ) -> Result<Option<Self>, CodecError> {
-        let width = std::num::NonZeroUsize::new(2)
-            .ok_or_else(|| CodecError::malformed("Unicode code-unit width must be nonzero"))?;
-        let value = (|| {
-            if bytes.is_empty() || !bytes.len().is_multiple_of(2) {
-                return None;
-            }
-            let mut high_surrogate = false;
-            for bytes in propagate_resource!(ctx
-                .admit_iter(bytes, "validate NX Unicode value lane")
-                .map_err(CodecError::from))
-            .chunks(width)
-            {
-                let unit = View::u16_be_at(bytes, 0)?;
-                if high_surrogate {
-                    (0xdc00..=0xdfff).contains(&unit).then_some(())?;
-                    high_surrogate = false;
-                } else if (0xd800..=0xdbff).contains(&unit) {
-                    high_surrogate = true;
-                } else {
-                    (!(0xdc00..=0xdfff).contains(&unit)).then_some(())?;
+        if bytes.is_empty() || !bytes.len().is_multiple_of(2) {
+            return Ok(None);
+        }
+        let mut high_surrogate = false;
+        let mut units = bytes.chunks_exact(2);
+        while let Some(raw) = ctx.next_charged(&mut units, "validate NX Unicode value lane")? {
+            let Some(unit) = View::u16_be_at(raw, 0) else {
+                return Ok(None);
+            };
+            if high_surrogate {
+                if !(0xdc00..=0xdfff).contains(&unit) {
+                    return Ok(None);
                 }
+                high_surrogate = false;
+            } else if (0xd800..=0xdbff).contains(&unit) {
+                high_surrogate = true;
+            } else if (0xdc00..=0xdfff).contains(&unit) {
+                return Ok(None);
             }
-            (!high_surrogate).then_some(Ok(Self(bytes)))
-        })()
-        .transpose()?;
-        Ok(value)
+        }
+        Ok((!high_surrogate).then_some(Self(bytes)))
     }
 
     pub(super) fn materialize(self, ctx: &DecodeContext<'_>) -> Result<UnicodeValue, CodecError> {
         let count = self.0.len() / 2;
-        let width = std::num::NonZeroUsize::new(2)
-            .ok_or_else(|| CodecError::malformed("Unicode code-unit width must be nonzero"))?;
         // Conversion scratch stays live through UTF-8 construction.
         let (mut code_units, _reservation) =
             ctx.temporary_vec(count, "NX Unicode conversion scratch")?;
-        for bytes in ctx
-            .admit_iter(self.0, "decode NX Unicode code units")?
-            .chunks(width)
-        {
+        let mut units = self.0.chunks_exact(2);
+        while let Some(bytes) = ctx.next_charged(&mut units, "decode NX Unicode code units")? {
             code_units.push(
                 View::u16_be_at(bytes, 0)
                     .ok_or_else(|| CodecError::malformed("invalid admitted NX Unicode lane"))?,

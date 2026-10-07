@@ -285,11 +285,7 @@ fn build_metadata_ir(
     ),
     CodecError,
 > {
-    let unknown_count = ctx
-        .admit_iter(&scan.streams, "nx metadata unknown streams")?
-        .filter(|stream| stream.kind().is_parasolid())
-        .count();
-    let mut unknowns = ctx.vector_storage(unknown_count, "nx metadata unknown streams")?;
+    let mut unknowns = Vec::new();
     let mut ir = CadIr::decoded(source_meta(ctx, scan, dialects)?);
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();
