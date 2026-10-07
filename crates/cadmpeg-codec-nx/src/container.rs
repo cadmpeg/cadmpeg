@@ -509,7 +509,7 @@ impl<'a> Container<'a> {
             FramedSectionCache::Borrowed { sections } => {
                 let mut visits = sections.iter();
                 while let Some((entry_index, section)) =
-                    ctx.next_charged(&mut visits, "visit NX cached section readers")?
+                    ctx.next_charged(&mut visits, "visit NX framed cached section readers")?
                 {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, section.clone()));
@@ -519,7 +519,7 @@ impl<'a> Container<'a> {
             FramedSectionCache::Owned { layouts } => {
                 let mut visits = layouts.iter();
                 while let Some((entry_index, layout)) =
-                    ctx.next_charged(&mut visits, "visit NX owned section readers")?
+                    ctx.next_charged(&mut visits, "visit NX framed owned section readers")?
                 {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, layout.materialize(ctx)?));
@@ -612,7 +612,7 @@ impl<'a> Container<'a> {
             IndexedSectionCache::Borrowed { sections, .. } => {
                 let mut visits = sections.iter();
                 while let Some((entry_index, section)) =
-                    ctx.next_charged(&mut visits, "visit NX cached section readers")?
+                    ctx.next_charged(&mut visits, "visit NX indexed cached section readers")?
                 {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, section.clone()));
@@ -622,7 +622,7 @@ impl<'a> Container<'a> {
             IndexedSectionCache::Owned { layouts } => {
                 let mut visits = layouts.iter();
                 while let Some((entry_index, layout)) =
-                    ctx.next_charged(&mut visits, "visit NX owned section readers")?
+                    ctx.next_charged(&mut visits, "visit NX indexed owned section readers")?
                 {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, layout.materialize(ctx)?));

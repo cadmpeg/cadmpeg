@@ -504,12 +504,10 @@ fn field_names_record_at(
         return Ok(None);
     };
     // Each reference requires at least two source bytes.
-    if !(count
-        <= match bytes.len().checked_sub(at) {
-            Some(value) => value,
-            None => return Ok(None),
-        } / 2)
-    {
+    let Some(remaining) = bytes.len().checked_sub(at) else {
+        return Ok(None);
+    };
+    if count > remaining / 2 {
         return Ok(None);
     }
     let mut probe = at;

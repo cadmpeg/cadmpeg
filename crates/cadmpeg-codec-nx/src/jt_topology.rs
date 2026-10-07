@@ -331,10 +331,9 @@ impl Decoder<'_> {
         if degree == 0 || face_slot >= degree {
             return Ok(None);
         }
-        (match self.set_face_vertex(face, face_slot, vertex) {
-            Some(value) => value,
-            None => return Ok(None),
-        });
+        let Some(()) = self.set_face_vertex(face, face_slot, vertex) else {
+            return Ok(None);
+        };
         let valence = (match self.vertices.get(vertex) {
             Some(value) => value,
             None => return Ok(None),
@@ -361,9 +360,8 @@ impl Decoder<'_> {
                 let adjacent = (shared + self.vertices[neighbor].faces.len() - 1)
                     % self.vertices[neighbor].faces.len();
                 if let Some(adjacent_face) = self.vertices[neighbor].faces[adjacent] {
-                    match self.set_vertex_face(vertex, slot, adjacent_face) {
-                        Some(value) => value,
-                        None => return Ok(None),
+                    let Some(()) = self.set_vertex_face(vertex, slot, adjacent_face) else {
+                        return Ok(None);
                     };
                 }
             }
@@ -385,9 +383,8 @@ impl Decoder<'_> {
             if self.vertices[vertex].faces[slot].is_none() {
                 let adjacent = (shared + 1) % self.vertices[neighbor].faces.len();
                 if let Some(adjacent_face) = self.vertices[neighbor].faces[adjacent] {
-                    match self.set_vertex_face(vertex, slot, adjacent_face) {
-                        Some(value) => value,
-                        None => return Ok(None),
+                    let Some(()) = self.set_vertex_face(vertex, slot, adjacent_face) else {
+                        return Ok(None);
                     };
                 }
             }
@@ -688,21 +685,19 @@ impl Decoder<'_> {
                 return Ok(None);
             };
             let mut visits = 0..self.vertices[seed].faces.len();
-            while let Some(slot) = ctx.next_charged(&mut visits, "NX run range traversal")? {
+            while let Some(slot) =
+                ctx.next_charged(&mut visits, "reconstruct JT seed face slots")?
+            {
                 if self.activate_face(ctx, seed, slot)?.is_none() {
                     return Ok(None);
                 }
             }
             while let Some(face) = self.next_active_face(ctx)? {
-                loop {
-                    let Some(slot) = ctx.position_by(
-                        &*self.faces[face].vertices,
-                        |&v| Ok(v.is_none()),
-                        "scan JT unfilled face slots",
-                    )?
-                    else {
-                        break;
-                    };
+                while let Some(slot) = ctx.position_by(
+                    &*self.faces[face].vertices,
+                    |&v| Ok(v.is_none()),
+                    "scan JT unfilled face slots",
+                )? {
                     let Some(vertex) = self.activate_vertex(ctx, face, slot)? else {
                         return Ok(None);
                     };
