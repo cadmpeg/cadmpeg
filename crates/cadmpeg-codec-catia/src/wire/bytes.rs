@@ -40,14 +40,14 @@ pub(crate) fn finite_f64_lane_charged(
     if !bytes.len().is_multiple_of(8) {
         return Ok(None);
     }
-    let mut values = Vec::new();
+    let mut values = ctx.collection_vec(bytes.len() / 8, operation)?;
     let mut view = View::over_retained(bytes);
     while !view.is_empty() {
         ctx.charge_work(1, operation)?;
         let Some(value) = view.f64_le().and_then(FiniteReal::new) else {
             return Ok(None);
         };
-        ctx.push_vec(&mut values, value, operation)?;
+        values.push(value);
     }
     Ok(Some(values))
 }

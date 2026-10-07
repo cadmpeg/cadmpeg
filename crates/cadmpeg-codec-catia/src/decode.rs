@@ -501,7 +501,7 @@ fn finish_decode(
                     null_object_record_reference_count += 1;
                 }
             }
-            if crate::object_graph::has_repeated_reference_suffix(&record.payload) {
+            if crate::object_graph::has_repeated_reference_suffix(ctx, &record.payload)? {
                 repeated_reference_suffix_count += 1;
             }
             if record.repeated_reference_schema_selection.is_some() {
@@ -950,7 +950,7 @@ fn finish_decode(
         }
 
         if let Some(signature) = record.reference_signature.as_ref() {
-            let (instructions, tokens) = signature.production.instruction_and_token_counts();
+            let (instructions, tokens) = signature.production.instruction_and_token_counts(ctx)?;
             reference_signature_instruction_count += instructions;
             reference_signature_token_count += tokens;
         }

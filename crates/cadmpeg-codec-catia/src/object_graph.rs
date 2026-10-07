@@ -1603,7 +1603,7 @@ struct RepeatedReferenceSuffixView<'a> {
     terminal_reference: u32,
     first_count_offset: usize,
     repeated_count_offset: usize,
-    schema_preamble: Option<ReferenceSchemaPreamble>,
+    preamble_fields: &'a [PayloadField],
 }
 
 fn repeated_reference_suffix_view(
@@ -1677,7 +1677,7 @@ fn repeated_reference_suffix_view(
                 _ => return None,
             };
             Some(RepeatedReferenceSuffixView {
-                schema_preamble: reference_schema_preamble(&fields[..count_index - 1]),
+                preamble_fields: &fields[..count_index - 1],
                 repeated,
                 terminal_reference,
                 first_count_offset: *first_count_offset,
@@ -1688,14 +1688,10 @@ fn repeated_reference_suffix_view(
     matches.next().is_none().then_some(suffix)
 }
 
-pub(crate) fn has_repeated_reference_suffix(payload: &ObjectPayload) -> bool {
-    repeated_reference_suffix_view(payload).is_some()
-}
-
 pub(crate) fn repeated_reference_schema_preamble(
     payload: &ObjectPayload,
 ) -> Option<ReferenceSchemaPreamble> {
-    repeated_reference_suffix_view(payload)?.schema_preamble
+    reference_schema_preamble(repeated_reference_suffix_view(payload)?.preamble_fields)
 }
 
 pub(crate) fn repeated_reference_suffix(
@@ -1703,7 +1699,7 @@ pub(crate) fn repeated_reference_suffix(
 ) -> Option<RepeatedReferenceSuffix> {
     let view = repeated_reference_suffix_view(payload)?;
     Some(RepeatedReferenceSuffix {
-        schema_preamble: view.schema_preamble,
+        schema_preamble: reference_schema_preamble(view.preamble_fields),
         repeated_references: view
             .repeated
             .iter()
@@ -1718,22 +1714,155 @@ pub(crate) fn repeated_reference_suffix(
     })
 }
 
+fn reference_schema_preamble(fields: &[PayloadField]) -> Option<ReferenceSchemaPreamble> {
+    let mut matches = fields
+        .windows(4)
+        .filter_map(reference_schema_preamble_window);
+    let preamble = matches.next()?;
+    matches.next().is_none().then_some(preamble)
+}
+fn repeated_reference_suffix_candidate<'a>(
+    ctx: &DecodeContext<'_>,
+    fields: &'a [PayloadField],
+    count_index: usize,
+    field: &PayloadField,
+) -> Result<Option<RepeatedReferenceSuffixView<'a>>, CodecError> {
+    (|| -> Option<Result<RepeatedReferenceSuffixView<'a>, CodecError>> {
+            let PayloadField::Atom {
+                value: declared_count,
+                offset: first_count_offset,
+            } = field
+            else {
+                return None;
+            };
+            if *declared_count < 2
+                || !matches!(
+                    fields.get(count_index.checked_sub(1)?),
+                    Some(PayloadField::Atom { value: 48, .. })
+                )
+            {
+                return None;
+            }
+            let count = usize::try_from(*declared_count).ok()?;
+            let references_start = count_index.checked_add(1)?;
+            let references_end = references_start.checked_add(count)?;
+            let first = fields.get(references_start..references_end)?;
+            match ctx.all_by(first, |field| Ok(matches!(field, PayloadField::Reference { .. })), "catia_repeated_reference_fields") {
+                Ok(true) => {}, Ok(false) => return None, Err(error) => return Some(Err(error)),
+            }
+            let PayloadField::Atom {
+                value: repeated_count,
+                offset: repeated_count_offset,
+            } = fields.get(references_end)?
+            else {
+                return None;
+            };
+            if repeated_count != declared_count {
+                return None;
+            }
+            let repeated_start = references_end.checked_add(1)?;
+            let repeated_end = repeated_start.checked_add(count.checked_sub(1)?)?;
+            let terminator_start = repeated_end.checked_add(1)?;
+            let repeated = fields.get(repeated_start..repeated_end)?;
+            let same = match ctx.all_by(first[..count - 1].iter().zip(repeated), |(left, right)| Ok(matches!((left, right),
+                (PayloadField::Reference { value: left, .. }, PayloadField::Reference { value: right, .. }) if left == right)), "catia_repeated_reference_copy") {
+                Ok(value) => value, Err(error) => return Some(Err(error)),
+            };
+            if !same
+                || !matches!(
+                    fields.get(repeated_end),
+                    Some(PayloadField::Atom { value: 129, .. })
+                )
+                || !matches!(
+                    fields.get(terminator_start..),
+                    Some([PayloadField::Terminator])
+                )
+            {
+                return None;
+            }
+            let terminal_reference = match first.last()? {
+                PayloadField::Reference { value, .. } => *value,
+                _ => return None,
+            };
+            Some(Ok(RepeatedReferenceSuffixView {
+                preamble_fields: &fields[..count_index - 1],
+                repeated,
+                terminal_reference,
+                first_count_offset: *first_count_offset,
+                repeated_count_offset: *repeated_count_offset,
+            }))
+
+    })().transpose()
+}
+
+fn repeated_reference_suffix_view_charged<'a>(
+    ctx: &DecodeContext<'_>,
+    payload: &'a ObjectPayload,
+) -> Result<Option<RepeatedReferenceSuffixView<'a>>, CodecError> {
+    let fields = &payload.fields;
+    let Some((index, suffix)) = ctx.find_map(
+        fields.iter().enumerate(),
+        |(index, field)| {
+            Ok(
+                repeated_reference_suffix_candidate(ctx, fields, index, field)?
+                    .map(|suffix| (index, suffix)),
+            )
+        },
+        "catia_repeated_reference_candidates",
+    )?
+    else {
+        return Ok(None);
+    };
+    if ctx
+        .find_map(
+            fields[index + 1..].iter().enumerate(),
+            |(after, field)| {
+                repeated_reference_suffix_candidate(ctx, fields, index + 1 + after, field)
+            },
+            "catia_repeated_reference_candidates",
+        )?
+        .is_some()
+    {
+        return Ok(None);
+    }
+    Ok(Some(suffix))
+}
+
+pub(crate) fn has_repeated_reference_suffix(
+    ctx: &DecodeContext<'_>,
+    payload: &ObjectPayload,
+) -> Result<bool, CodecError> {
+    Ok(repeated_reference_suffix_view_charged(ctx, payload)?.is_some())
+}
+
+pub(crate) fn repeated_reference_schema_preamble_charged(
+    ctx: &DecodeContext<'_>,
+    payload: &ObjectPayload,
+) -> Result<Option<ReferenceSchemaPreamble>, CodecError> {
+    let Some(view) = repeated_reference_suffix_view_charged(ctx, payload)? else {
+        return Ok(None);
+    };
+    reference_schema_preamble_charged(ctx, view.preamble_fields)
+}
+
 pub(crate) fn repeated_reference_suffix_charged(
     ctx: &DecodeContext<'_>,
     payload: &ObjectPayload,
 ) -> Result<Option<RepeatedReferenceSuffix>, CodecError> {
-    let Some(view) = repeated_reference_suffix_view(payload) else {
+    let Some(view) = repeated_reference_suffix_view_charged(ctx, payload)? else {
         return Ok(None);
     };
-    let repeated_references = ctx.collect_vec(
-        view.repeated.iter().filter_map(|field| match field {
-            PayloadField::Reference { value, .. } => Some(*value),
-            _ => None,
-        }),
+    let mut repeated_references = ctx.collection_vec(
+        view.repeated.len(),
         "catia_native_repeated_reference_suffix",
     )?;
+    for field in ctx.admit_iter(view.repeated, "catia_native_repeated_reference_suffix")? {
+        if let PayloadField::Reference { value, .. } = field {
+            repeated_references.push(*value);
+        }
+    }
     Ok(Some(RepeatedReferenceSuffix {
-        schema_preamble: view.schema_preamble,
+        schema_preamble: reference_schema_preamble_charged(ctx, view.preamble_fields)?,
         repeated_references,
         terminal_reference: view.terminal_reference,
         first_count_offset: view.first_count_offset,
@@ -1741,36 +1870,55 @@ pub(crate) fn repeated_reference_suffix_charged(
     }))
 }
 
-fn reference_schema_preamble(fields: &[PayloadField]) -> Option<ReferenceSchemaPreamble> {
-    let mut matches = fields.windows(4).filter_map(|fields| match fields {
-        [
-            PayloadField::Blob { bytes, .. },
-            PayloadField::Atom { value: 5, .. },
-            PayloadField::Atom { value: 46, .. },
-            PayloadField::Atom {
-                value: schema_ref,
-                offset,
-            },
-        ] if bytes.len() == 59 => Some(ReferenceSchemaPreamble::BlobThenSchema {
+fn reference_schema_preamble_window(fields: &[PayloadField]) -> Option<ReferenceSchemaPreamble> {
+    match fields {
+        [PayloadField::Blob { bytes, .. }, PayloadField::Atom { value: 5, .. }, PayloadField::Atom { value: 46, .. }, PayloadField::Atom {
+            value: schema_ref,
+            offset,
+        }] if bytes.len() == 59 => Some(ReferenceSchemaPreamble::BlobThenSchema {
             schema_ref: *schema_ref,
             offset: *offset,
         }),
-        [
-            PayloadField::Atom {
-                value: schema_ref,
-                offset,
-            },
-            PayloadField::Atom { value: 34, .. },
-            PayloadField::Blob { bytes, .. },
-            PayloadField::Atom { value: 5, .. },
-        ] if bytes.len() == 59 => Some(ReferenceSchemaPreamble::SchemaThenBlob {
-            schema_ref: *schema_ref,
-            offset: *offset,
-        }),
+        [PayloadField::Atom {
+            value: schema_ref,
+            offset,
+        }, PayloadField::Atom { value: 34, .. }, PayloadField::Blob { bytes, .. }, PayloadField::Atom { value: 5, .. }]
+            if bytes.len() == 59 =>
+        {
+            Some(ReferenceSchemaPreamble::SchemaThenBlob {
+                schema_ref: *schema_ref,
+                offset: *offset,
+            })
+        }
         _ => None,
-    });
-    let preamble = matches.next()?;
-    matches.next().is_none().then_some(preamble)
+    }
+}
+
+fn reference_schema_preamble_charged(
+    ctx: &DecodeContext<'_>,
+    fields: &[PayloadField],
+) -> Result<Option<ReferenceSchemaPreamble>, CodecError> {
+    let Some((index, preamble)) = ctx.find_map(
+        fields.windows(4).enumerate(),
+        |(index, fields)| {
+            Ok(reference_schema_preamble_window(fields).map(|preamble| (index, preamble)))
+        },
+        "catia_reference_schema_preamble",
+    )?
+    else {
+        return Ok(None);
+    };
+    if ctx
+        .find_map(
+            fields[index + 1..].windows(4),
+            |fields| Ok(reference_schema_preamble_window(fields)),
+            "catia_reference_schema_preamble",
+        )?
+        .is_some()
+    {
+        return Ok(None);
+    }
+    Ok(Some(preamble))
 }
 
 fn decode_head(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<HeadToken>, CodecError> {

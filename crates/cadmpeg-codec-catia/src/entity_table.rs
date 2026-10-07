@@ -324,13 +324,15 @@ impl ReferenceSignature {
     }
 
     /// Instruction and token counts without materializing the program.
-    pub(crate) fn instruction_and_token_counts(&self) -> (usize, usize) {
-        let qualifier_count = self
-            .tokens
-            .iter()
+    pub(crate) fn instruction_and_token_counts(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(usize, usize), CodecError> {
+        let qualifier_count = ctx
+            .admit_iter(&self.tokens, "catia_reference_signature_token_counts")?
             .filter(|token| matches!(token, ReferenceSignatureToken::Qualifier(_)))
             .count();
-        (self.tokens.len(), self.tokens.len() + qualifier_count)
+        Ok((self.tokens.len(), self.tokens.len() + qualifier_count))
     }
 }
 
@@ -1873,74 +1875,89 @@ fn one_byte_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
 /// catalog-valid selector or the `7C07` payload end.
 #[must_use]
 pub(crate) fn parse_range_interval(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Option<RangeInterval> {
-    let bytes = payload.get(start..end)?;
-    let (prefix, mut at) = if bytes.first() == Some(&0x80) && bytes.get(5) == Some(&0xe8) {
-        (
-            RangeIntervalPrefix::EscapedWord {
-                word: View::u32_le_at(bytes, 1)?,
-            },
-            5,
-        )
-    } else {
-        let (value, next) = compact_atom(bytes, 0)?;
-        (
-            RangeIntervalPrefix::Compact {
-                value,
-                width: u8::try_from(next).ok()?,
-            },
-            next,
-        )
-    };
-    (bytes.get(at) == Some(&0xe8)).then_some(())?;
-    let (type_atom, next) = compact_atom(bytes, at + 1)?;
-    (type_atom == 3848 && bytes.get(next) == Some(&0x37)).then_some(())?;
-    let body_at = next.checked_add(1)?;
-    let slots = if bytes.get(body_at) == Some(&0xfe) {
-        at = body_at;
-        None
-    } else {
-        let (layout, next) = one_byte_atom(bytes, body_at)?;
-        at = next;
-        match layout {
-            1 => None,
-            3 => {
-                let (value, next) = one_byte_atom(bytes, at)?;
-                (value == 1).then_some(())?;
-                at = next;
-                let mut read_slot = || {
-                    let offset = start + at;
-                    match *bytes.get(at)? {
-                        0xe6 => {
-                            let scalar_end = at.checked_add(9)?;
-                            let bits = View::u64_le_at(bytes, at + 1)?;
-                            f64::from_bits(bits).is_finite().then_some(())?;
-                            at = scalar_end;
-                            Some(RangeIntervalSlot::Binary64 { bits, offset })
+) -> Result<Option<RangeInterval>, CodecError> {
+    (|| -> Option<Result<RangeInterval, CodecError>> {
+        let bytes = payload.get(start..end)?;
+        let (prefix, mut at) = if bytes.first() == Some(&0x80) && bytes.get(5) == Some(&0xe8) {
+            (
+                RangeIntervalPrefix::EscapedWord {
+                    word: View::u32_le_at(bytes, 1)?,
+                },
+                5,
+            )
+        } else {
+            let (value, next) = compact_atom(bytes, 0)?;
+            (
+                RangeIntervalPrefix::Compact {
+                    value,
+                    width: u8::try_from(next).ok()?,
+                },
+                next,
+            )
+        };
+        (bytes.get(at) == Some(&0xe8)).then_some(())?;
+        let (type_atom, next) = compact_atom(bytes, at + 1)?;
+        (type_atom == 3848 && bytes.get(next) == Some(&0x37)).then_some(())?;
+        let body_at = next.checked_add(1)?;
+        let slots = if bytes.get(body_at) == Some(&0xfe) {
+            at = body_at;
+            None
+        } else {
+            let (layout, next) = one_byte_atom(bytes, body_at)?;
+            at = next;
+            match layout {
+                1 => None,
+                3 => {
+                    let (value, next) = one_byte_atom(bytes, at)?;
+                    (value == 1).then_some(())?;
+                    at = next;
+                    let mut read_slot = || {
+                        let offset = start + at;
+                        match *bytes.get(at)? {
+                            0xe6 => {
+                                let scalar_end = at.checked_add(9)?;
+                                let bits = View::u64_le_at(bytes, at + 1)?;
+                                f64::from_bits(bits).is_finite().then_some(())?;
+                                at = scalar_end;
+                                Some(RangeIntervalSlot::Binary64 { bits, offset })
+                            }
+                            0xe8 => {
+                                at += 1;
+                                Some(RangeIntervalSlot::Unset { offset })
+                            }
+                            _ => None,
                         }
-                        0xe8 => {
-                            at += 1;
-                            Some(RangeIntervalSlot::Unset { offset })
-                        }
-                        _ => None,
-                    }
-                };
-                Some([read_slot()?, read_slot()?])
+                    };
+                    Some([read_slot()?, read_slot()?])
+                }
+                _ => return None,
             }
-            _ => return None,
+        };
+        if bytes[at..].is_empty() {
+            return None;
         }
-    };
-    (!bytes[at..].is_empty() && bytes[at..].iter().all(|byte| *byte == 0xfe)).then_some(())?;
-    Some(RangeInterval { prefix, slots })
+        match ctx.all_by(
+            &bytes[at..],
+            |byte| Ok(*byte == 0xfe),
+            "catia_range_interval_terminators",
+        ) {
+            Ok(true) => {}
+            Ok(false) => return None,
+            Err(error) => return Some(Err(error)),
+        }
+        Some(Ok(RangeInterval { prefix, slots }))
+    })()
+    .transpose()
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_definition_schema_selectors, parse_numeric_pair, parse_range_interval, value_packets,
+        parse_definition_schema_selectors, parse_numeric_pair, value_packets,
         DefinitionSchemaSelector, EntityBody, EntityIdentityCandidate, EntityRecord,
         EntityRecordCandidates, EntityRecordLayout, EntityValuePacket, NumericPacketItem,
         NumericPair, NumericPairSlot, PathCount, RangeInterval, RangeIntervalPrefix,
@@ -1981,6 +1998,25 @@ mod tests {
             .expect("synthetic path states fit the service limits")
     }
 
+    fn parse_range_interval(payload: &[u8], start: usize, end: usize) -> Option<RangeInterval> {
+        crate::test_support::with_service_context(|ctx| {
+            super::parse_range_interval(ctx, payload, start, end)
+        })
+        .expect("range interval admission")
+    }
+
+    #[test]
+    fn range_interval_terminator_search_refuses_before_scan() {
+        let bytes = [0x82, 0xe8, 0xe0, 0x07, 0x37, 0x81, 0xfe, 0xfe];
+        let refusal =
+            crate::test_support::with_work_refusal("catia_range_interval_terminators", |ctx| {
+                super::parse_range_interval(ctx, &bytes, 0, bytes.len())
+            });
+        assert!(
+            matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_range_interval_terminators")
+        );
+        assert!(parse_range_interval(&bytes, 0, bytes.len()).is_some());
+    }
     #[test]
     fn entity_table_cumulative_path_storage_refuses_below_input_need() {
         let candidate = |entity_id| EntityRecordCandidates {
@@ -2670,8 +2706,18 @@ mod tests {
                 )
             })
             .count();
+        let refusal = crate::test_support::with_work_refusal(
+            "catia_reference_signature_token_counts",
+            |ctx| signature.instruction_and_token_counts(ctx),
+        );
+        assert!(
+            matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_reference_signature_token_counts")
+        );
         assert_eq!(
-            signature.instruction_and_token_counts(),
+            crate::test_support::with_service_context(
+                |ctx| signature.instruction_and_token_counts(ctx)
+            )
+            .expect("token count admission"),
             (program.len(), program.len() + qualifier_count)
         );
     }
