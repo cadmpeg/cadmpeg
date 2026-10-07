@@ -8,15 +8,23 @@ use std::collections::HashMap;
 fn point(id: &str, offset: u64, feature: Option<&str>) -> SketchInputEntity {
     let mut marker = SketchInputEntity::new(id, "lane", 0, offset, SketchInputKind::Point);
     marker.feature_ref = feature.map(str::to_owned);
-    marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([f64::from(u32::try_from(offset).unwrap()), 0.0]);
+    marker.coordinates_m =
+        cadmpeg_ir::units::FiniteVector::new([f64::from(u32::try_from(offset).unwrap()), 0.0]);
     marker
 }
 
 fn links(marker: &mut SketchInputEntity, targets: &[&str]) {
-    marker.links = SketchInputLinks::new(0, targets.iter().enumerate().map(|(index, target)| SketchInputLink {
-        local_id: u16::try_from(index + 1).unwrap(),
-        entity_ref: (*target).into(),
-    }).collect());
+    marker.links = SketchInputLinks::new(
+        0,
+        targets
+            .iter()
+            .enumerate()
+            .map(|(index, target)| SketchInputLink {
+                local_id: u16::try_from(index + 1).unwrap(),
+                entity_ref: (*target).into(),
+            })
+            .collect(),
+    );
 }
 
 #[test]
@@ -31,11 +39,17 @@ fn curve_marker_index_preserves_reverse_links_and_feature_separation() {
     links(&mut second, &["curve"]);
     links(&mut foreign, &["curve"]);
     let roster = [&foreign, &second, &curve, &first];
-    let by_id = roster.iter().map(|marker| (marker.id(), *marker)).collect::<HashMap<_, _>>();
+    let by_id = roster
+        .iter()
+        .map(|marker| (marker.id(), *marker))
+        .collect::<HashMap<_, _>>();
     let (index, _storage) = CurveMarkers::new(&ctx, &roster).unwrap();
     let indexed = marker_curve_endpoint_markers_in(&ctx, &[], &curve, &by_id, &index).unwrap();
     let plain = marker_curve_endpoint_markers(&ctx, &[], &curve, &by_id, &roster).unwrap();
-    assert_eq!(indexed.iter().map(|marker| marker.id()).collect::<Vec<_>>(), ["first", "second"]);
+    assert_eq!(
+        indexed.iter().map(|marker| marker.id()).collect::<Vec<_>>(),
+        ["first", "second"]
+    );
     assert_eq!(indexed, plain);
 }
 
@@ -49,7 +63,10 @@ fn curve_marker_offset_index_keeps_first_occurrence_at_repeated_offsets() {
     let foreign = point("foreign", 3, Some("other"));
     let roster = [&duplicate, &earlier, &foreign, &first];
     let (index, _storage) = CurveMarkers::new(&ctx, &roster).unwrap();
-    assert!(std::ptr::eq(index.next_after(&ctx, &curve).unwrap().unwrap(), &duplicate));
+    assert!(std::ptr::eq(
+        index.next_after(&ctx, &curve).unwrap().unwrap(),
+        &raw const duplicate
+    ));
     let after = point("after", 5, None);
     assert!(index.next_after(&ctx, &after).unwrap().is_none());
 }
@@ -65,8 +82,55 @@ fn curve_marker_index_storage_is_scoped_and_refuses_before_growth() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let built = CurveMarkers::new(&ctx, &roster).unwrap();
     drop(built);
-    ctx.reserve_scoped(policy.limits.max_materialized_bytes, "released curve index").unwrap();
+    ctx.reserve_scoped(policy.limits.max_materialized_bytes, "released curve index")
+        .unwrap();
     crate::test_support::work_refusal_at("index SLDPRT curve markers", |ctx| {
         CurveMarkers::new(ctx, &roster).map(|_| ())
     });
+}
+
+#[test]
+fn curve_object_index_preserves_zero_identity_and_duplicate_ambiguity() {
+    use crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
+    let mut payload = vec![0; 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+    payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+    payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x44, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[58..60].copy_from_slice(&4u16.to_le_bytes());
+    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[76..84].copy_from_slice(&3u64.to_le_bytes());
+    payload[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut curve = point("curve", 0, Some("feature")).with_test_identity(Some(2), None);
+    curve.reclassify(SketchInputKind::LineOrCircle);
+    curve.coordinates_m = None;
+    let implicit = point("implicit", 1, Some("feature"));
+    let explicit = point("explicit", 2, Some("feature")).with_test_identity(Some(4), None);
+    let foreign = point("foreign", 3, Some("other"));
+    let duplicate = point("duplicate", 4, Some("feature"));
+    for roster in [
+        vec![&foreign, &explicit, &curve, &implicit],
+        vec![&foreign, &explicit, &curve, &implicit, &duplicate],
+    ] {
+        let by_id = roster
+            .iter()
+            .map(|marker| (marker.id(), *marker))
+            .collect::<HashMap<_, _>>();
+        let (index, _storage) = CurveMarkers::new(&ctx, &roster).unwrap();
+        let indexed =
+            marker_curve_endpoint_markers_in(&ctx, &payload, &curve, &by_id, &index).unwrap();
+        let plain = marker_curve_endpoint_markers(&ctx, &payload, &curve, &by_id, &roster).unwrap();
+        assert_eq!(indexed, plain);
+        if roster.len() == 4 {
+            assert_eq!(
+                indexed.iter().map(|marker| marker.id()).collect::<Vec<_>>(),
+                ["implicit", "explicit"]
+            );
+        }
+    }
 }

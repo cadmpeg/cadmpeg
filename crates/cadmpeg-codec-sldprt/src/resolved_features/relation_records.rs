@@ -7,44 +7,34 @@ use crate::history::classify::is_history_metadata_record;
 use crate::layout::feature_input_shifted_scalar_trailer as shifted_trailer;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
-    FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputOperand,
-    FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputRelationInstance,
-    FeatureInputScalar, FeatureInputScalarRole,
+    FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
+    FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
+    FeatureInputScalarRole,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-fn scalar_name_value<'a>(
-    ctx: &DecodeContext<'_>,
-    scalar: &FeatureInputScalar,
-    names: &'a [FeatureInputName],
-) -> Result<Option<&'a str>, CodecError> {
-    for name in ctx.admit_iter(names, "find SLDPRT relation scalar name")? {
-        if ctx.equal(
-            name.id.as_str(),
-            scalar.name.as_str(),
-            "compare SLDPRT relation scalar names",
-        )? {
-            return Ok(Some(name.value.as_str()));
-        }
-    }
-    Ok(None)
-}
-
 fn same_scalar_name(
     ctx: &DecodeContext<'_>,
     first: &FeatureInputScalar,
     second: &FeatureInputScalar,
-    names: &[FeatureInputName],
+    names: &HashMap<&str, &str>,
 ) -> Result<bool, CodecError> {
-    let Some(value) = scalar_name_value(ctx, first, names)? else {
+    const OPERATION: &str = "compare SLDPRT relation scalar names";
+    let Some(value) = ctx
+        .get_hash_map(names, first.name.as_str(), OPERATION)?
+        .copied()
+    else {
         return Ok(false);
     };
-    let Some(candidate) = scalar_name_value(ctx, second, names)? else {
+    let Some(candidate) = ctx
+        .get_hash_map(names, second.name.as_str(), OPERATION)?
+        .copied()
+    else {
         return Ok(false);
     };
-    ctx.equal(value, candidate, "compare SLDPRT relation scalar names")
+    ctx.equal(value, candidate, OPERATION)
 }
 
 /// The offset interval each feature owns, in start order.
@@ -204,7 +194,7 @@ impl<'a, 'i> DeclarationIndex<'a, 'i> {
                 OPERATION,
             )?;
         }
-        let mut ordered = ctx.collect_vec(ctx.admit_iter(scalars, OPERATION)?, OPERATION)?;
+        let mut ordered = ctx.collect_vec(scalars.iter(), OPERATION)?;
         ctx.stable_sort_by(&mut ordered, |scalar| &scalar.offset, Ord::cmp, OPERATION)?;
         Ok(Self {
             intervals,
@@ -431,13 +421,18 @@ fn same_relation_operand_signature(
     if left.len() != right.len() {
         return Ok(false);
     }
-    for (left, right) in ctx
-        .admit_iter(left, operation)?
-        .zip(ctx.admit_iter(right, operation)?)
-    {
-        if left.kind != right.kind || left.entity_index != right.entity_index {
-            return Ok(false);
-        }
+    if !ctx.all_by(
+        left.iter().zip(right.iter()),
+        |(left, right)| {
+            if left.kind != right.kind || left.entity_index != right.entity_index {
+                return Ok(false);
+            }
+
+            Ok(true)
+        },
+        operation,
+    )? {
+        return Ok(false);
     }
     Ok(true)
 }
@@ -469,8 +464,9 @@ pub(super) fn relation_instances(
         }
     }
     let intervals = temporary_storage.with_storage(|| feature_intervals(ctx, histories, lane))?;
-    let declaration_candidates =
-        relation_declaration_candidates_impl(ctx, &lane.classes, &lane.scalars, &intervals, true)?;
+    let declaration_candidates = temporary_storage.with_storage(|| {
+        relation_declaration_candidates_impl(ctx, &lane.classes, &lane.scalars, &intervals, true)
+    })?;
     // The offsets of every relation class, ascending, to find a class between
     // two scalars.
     let mut relation_class_offsets = Vec::new();
@@ -538,6 +534,7 @@ pub(super) fn relation_instances(
             })?;
         }
     }
+    let scalar_names = std::cell::OnceCell::new();
     let mut groups = Vec::<RelationGroup<'_>>::new();
     for (scalar_index, scalar) in ctx
         .admit_iter(&lane.scalars, "group SLDPRT relation scalars")?
@@ -605,36 +602,53 @@ pub(super) fn relation_instances(
                 && scalar.role == FeatureInputScalarRole::Display
                 && scalar.operands.len() == 1;
             if repeated_circle_display {
-                for (_, candidate) in ctx.admit_iter(
-                    &group.scalars,
-                    "validate SLDPRT repeated circle display scalars",
-                )? {
-                    if candidate.role != FeatureInputScalarRole::Display
-                        || candidate.operands.len() != 1
-                        || candidate.operands[0].kind != scalar.operands[0].kind
-                        || candidate.operands[0].entity_index == scalar.operands[0].entity_index
-                        || !same_scalar_name(ctx, candidate, scalar, &lane.names)?
-                    {
-                        repeated_circle_display = false;
-                        break;
+                let (names, _) = match scalar_names.get() {
+                    Some(names) => names,
+                    None => {
+                        const OPERATION: &str = "index SLDPRT relation scalar names";
+                        let built = ctx.with_scoped_storage(OPERATION, || {
+                            let mut names = HashMap::new();
+                            for name in ctx.admit_iter(&lane.names, OPERATION)? {
+                                ctx.entry_hash_map(&mut names, name.id.as_str(), OPERATION)?
+                                    .or_insert(name.value.as_str());
+                            }
+                            Ok::<_, CodecError>(names)
+                        })?;
+                        scalar_names.get_or_init(|| built)
                     }
-                }
+                };
+                repeated_circle_display = ctx.all_by(
+                    &group.scalars,
+                    |(_, candidate)| {
+                        Ok(candidate.role == FeatureInputScalarRole::Display
+                            && candidate.operands.len() == 1
+                            && candidate.operands[0].kind == scalar.operands[0].kind
+                            && candidate.operands[0].entity_index
+                                != scalar.operands[0].entity_index
+                            && same_scalar_name(ctx, candidate, scalar, names)?)
+                    },
+                    "validate SLDPRT repeated circle display scalars",
+                )?;
             }
             if repeated_circle_display {
-                ctx.reserve_vec(
-                    &mut group.scalars,
-                    1,
-                    "collect SLDPRT relation scalar groups",
-                )?;
-                group.scalars.push((scalar_index, scalar));
-            } else if same_scope && same_operands && scalar.role == FeatureInputScalarRole::Driving
-            {
-                if group.scalars.len() == 1 {
+                temporary_storage.with_storage(|| {
                     ctx.reserve_vec(
                         &mut group.scalars,
                         1,
                         "collect SLDPRT relation scalar groups",
-                    )?;
+                    )
+                })?;
+                group.scalars.push((scalar_index, scalar));
+            } else if same_scope && same_operands && scalar.role == FeatureInputScalarRole::Driving
+            {
+                if group.scalars.len() == 1 {
+                    temporary_storage.with_storage(|| {
+                        ctx.reserve_vec(
+                            &mut group.scalars,
+                            1,
+                            "collect SLDPRT relation scalar groups",
+                        )
+                    })?;
                     group.scalars.push((scalar_index, scalar));
                 } else {
                     let next = RelationGroup {
@@ -642,13 +656,17 @@ pub(super) fn relation_instances(
                         family: group.family,
                         class_ref: group.class_ref,
                         operands: &scalar.operands,
-                        scalars: ctx.alloc_filled(
-                            1,
-                            (scalar_index, scalar),
-                            "collect SLDPRT relation scalar groups",
-                        )?,
+                        scalars: temporary_storage.with_storage(|| {
+                            ctx.alloc_filled(
+                                1,
+                                (scalar_index, scalar),
+                                "collect SLDPRT relation scalar groups",
+                            )
+                        })?,
                     };
-                    ctx.reserve_vec(&mut groups, 1, "collect SLDPRT relation groups")?;
+                    temporary_storage.with_storage(|| {
+                        ctx.reserve_vec(&mut groups, 1, "collect SLDPRT relation groups")
+                    })?;
                     groups.push(next);
                 }
             }
@@ -699,24 +717,30 @@ pub(super) fn relation_instances(
                 group.family = *family;
                 group.class_ref = *class_ref;
             }
-            ctx.reserve_vec(
-                &mut group.scalars,
-                1,
-                "collect SLDPRT relation scalar groups",
-            )?;
+            temporary_storage.with_storage(|| {
+                ctx.reserve_vec(
+                    &mut group.scalars,
+                    1,
+                    "collect SLDPRT relation scalar groups",
+                )
+            })?;
             group.scalars.push((scalar_index, scalar));
         } else {
-            ctx.reserve_vec(&mut groups, 1, "collect SLDPRT relation groups")?;
+            temporary_storage.with_storage(|| {
+                ctx.reserve_vec(&mut groups, 1, "collect SLDPRT relation groups")
+            })?;
             groups.push(RelationGroup {
                 feature_ref,
                 family: *family,
                 class_ref,
                 operands: &scalar.operands,
-                scalars: ctx.alloc_filled(
-                    1,
-                    (scalar_index, scalar),
-                    "collect SLDPRT relation scalar groups",
-                )?,
+                scalars: temporary_storage.with_storage(|| {
+                    ctx.alloc_filled(
+                        1,
+                        (scalar_index, scalar),
+                        "collect SLDPRT relation scalar groups",
+                    )
+                })?,
             });
         }
     }
@@ -1015,48 +1039,49 @@ pub(super) fn bind_circle_dimension_centers(
             continue;
         }
         let mut previous_index: Option<usize> = None;
-        let mut contiguous = true;
-        for (index, _) in ctx.admit_iter(candidates, "check SLDPRT circle center scalar window")? {
-            if previous_index.is_some_and(|previous| previous.checked_add(1) != Some(*index)) {
-                contiguous = false;
-                break;
-            }
-            previous_index = Some(*index);
-        }
+        let contiguous = ctx.all_by(
+            candidates,
+            |(index, _)| {
+                if previous_index.is_some_and(|previous| previous.checked_add(1) != Some(*index)) {
+                    return Ok(false);
+                }
+                previous_index = Some(*index);
+                Ok(true)
+            },
+            "check SLDPRT circle center scalar window",
+        )?;
         if !contiguous {
             continue;
         }
         let mut center: Option<(FeatureInputOperandKind, u16, Option<&str>)> = None;
-        let mut centers_match = true;
-        for (_, scalar) in
-            ctx.admit_iter(candidates, "check SLDPRT circle center operand consensus")?
-        {
-            let Some(operand) = scalar.operands.get(1) else {
-                continue;
-            };
-            let candidate = (
-                operand.kind,
-                operand.entity_index,
-                operand.entity_ref.as_deref(),
-            );
-            let same_center = if let Some((kind, entity_index, entity_ref)) = center {
-                let same_ref = match (entity_ref, candidate.2) {
-                    (Some(left), Some(right)) => {
-                        ctx.equal(left, right, "compare SLDPRT circle center references")?
-                    }
-                    (None, None) => true,
-                    _ => false,
+        let centers_match = ctx.all_by(
+            candidates,
+            |(_, scalar)| {
+                let Some(operand) = scalar.operands.get(1) else {
+                    return Ok(true);
                 };
-                kind == candidate.0 && entity_index == candidate.1 && same_ref
-            } else {
-                center = Some(candidate);
-                true
-            };
-            if !same_center {
-                centers_match = false;
-                break;
-            }
-        }
+                let candidate = (
+                    operand.kind,
+                    operand.entity_index,
+                    operand.entity_ref.as_deref(),
+                );
+                let same_center = if let Some((kind, entity_index, entity_ref)) = center {
+                    let same_ref = match (entity_ref, candidate.2) {
+                        (Some(left), Some(right)) => {
+                            ctx.equal(left, right, "compare SLDPRT circle center references")?
+                        }
+                        (None, None) => true,
+                        _ => false,
+                    };
+                    kind == candidate.0 && entity_index == candidate.1 && same_ref
+                } else {
+                    center = Some(candidate);
+                    true
+                };
+                Ok(same_center)
+            },
+            "check SLDPRT circle center operand consensus",
+        )?;
         let Some(center) = center else {
             continue;
         };
@@ -1146,20 +1171,25 @@ fn same_scalar_operands(
     if left.operands.len() != right.operands.len() {
         return Ok(false);
     }
-    for (left, right) in ctx
-        .admit_iter(&left.operands, "compare SLDPRT relation scalar operands")?
-        .zip(ctx.admit_iter(&right.operands, "compare SLDPRT relation scalar operands")?)
-    {
-        let same_ref = match (left.entity_ref.as_deref(), right.entity_ref.as_deref()) {
-            (Some(left), Some(right)) => {
-                ctx.equal(left, right, "compare SLDPRT relation scalar references")?
+    if !ctx.all_by(
+        left.operands.iter().zip(right.operands.iter()),
+        |(left, right)| {
+            let same_ref = match (left.entity_ref.as_deref(), right.entity_ref.as_deref()) {
+                (Some(left), Some(right)) => {
+                    ctx.equal(left, right, "compare SLDPRT relation scalar references")?
+                }
+                (None, None) => true,
+                _ => false,
+            };
+            if left.kind != right.kind || left.entity_index != right.entity_index || !same_ref {
+                return Ok(false);
             }
-            (None, None) => true,
-            _ => false,
-        };
-        if left.kind != right.kind || left.entity_index != right.entity_index || !same_ref {
-            return Ok(false);
-        }
+
+            Ok(true)
+        },
+        "compare SLDPRT relation scalar operands",
+    )? {
+        return Ok(false);
     }
     Ok(true)
 }
@@ -1372,32 +1402,32 @@ pub(super) fn bind_detached_relation_drivers(
             continue;
         }
         let mut first_name = None;
-        let mut names_match = true;
-        for id in ctx.admit_iter(
+        let names_match = ctx.all_by(
             relation.scalar_refs(),
-            "compare SLDPRT detached relation names",
-        )? {
-            let Some(scalar) = ctx.get_hash_map(&scalars, id.as_str(), INDEX)? else {
-                continue;
-            };
-            if scalar.role != FeatureInputScalarRole::Display {
-                continue;
-            }
-            let Some(name) = ctx
-                .get_hash_map(&names, scalar.name.as_str(), INDEX)?
-                .copied()
-            else {
-                continue;
-            };
-            if let Some(first) = first_name {
-                if !ctx.equal(name, first, "compare SLDPRT detached relation names")? {
-                    names_match = false;
-                    break;
+            |id| {
+                let Some(scalar) = ctx.get_hash_map(&scalars, id.as_str(), INDEX)? else {
+                    return Ok(true);
+                };
+                if scalar.role != FeatureInputScalarRole::Display {
+                    return Ok(true);
                 }
-            } else {
-                first_name = Some(name);
-            }
-        }
+                let Some(name) = ctx
+                    .get_hash_map(&names, scalar.name.as_str(), INDEX)?
+                    .copied()
+                else {
+                    return Ok(true);
+                };
+                if let Some(first) = first_name {
+                    if !ctx.equal(name, first, "compare SLDPRT detached relation names")? {
+                        return Ok(false);
+                    }
+                } else {
+                    first_name = Some(name);
+                }
+                Ok(true)
+            },
+            "compare SLDPRT detached relation names",
+        )?;
         let Some(name) = first_name else {
             continue;
         };
@@ -1622,8 +1652,9 @@ fn feature_markers<'a>(
 ) -> Result<FeatureMarkers<'a>, CodecError> {
     const OPERATION: &str = "index SLDPRT relation feature entities";
     // Group the markers in offset and ordinal order so each group is ordered.
-    let mut ordered =
-        ctx.collect_vec(ctx.admit_iter(&lane.sketch_entities, OPERATION)?, OPERATION)?;
+    let (mut ordered, _ordered_storage) = ctx.with_scoped_storage(OPERATION, || {
+        ctx.collect_vec(lane.sketch_entities.iter(), OPERATION)
+    })?;
     ctx.sort_unstable_by_key(
         &mut ordered,
         |value| (value.offset(), value.ordinal()),
@@ -1707,17 +1738,20 @@ fn dynamic_point_candidates<'a>(
         entities.get(address).copied(),
     )?;
     let mut finite_index = 0usize;
-    let mut coordinate_point = None;
-    for entity in ctx.admit_iter(entities, "find SLDPRT coordinate point candidate")? {
-        if !is_finite_point(entity) {
-            continue;
-        }
-        if finite_index == address {
-            coordinate_point = Some(*entity);
-            break;
-        }
-        finite_index += 1;
-    }
+    let coordinate_point = ctx.find_by(
+        entities.iter().copied(),
+        |entity| {
+            if !is_finite_point(entity) {
+                return Ok(false);
+            }
+            let selected = finite_index == address;
+            if !selected {
+                finite_index += 1;
+            }
+            Ok(selected)
+        },
+        "find SLDPRT coordinate point candidate",
+    )?;
     push_point_candidate(ctx, &mut candidates, &mut seen, coordinate_point)?;
     for entity in ctx.admit_iter(entities, "match SLDPRT dynamic point identities")? {
         if entity.object_index() == Some(u32::from(operand.entity_index))
@@ -1743,24 +1777,34 @@ fn dynamic_solver_line<'a>(
     let Some(start) = usize::from(index).checked_mul(2) else {
         return Ok(None);
     };
-    let Some(second_index) = start.checked_add(1) else {
+    let Some(_) = start.checked_add(1) else {
         return Ok(None);
     };
-    let mut first = None;
-    let mut second = None;
     let mut point_index = 0usize;
-    for entity in ctx.admit_iter(entities, "select SLDPRT relation line points")? {
-        if !is_finite_point(entity) {
-            continue;
-        }
-        if point_index == start {
-            first = Some(*entity);
-        } else if point_index == second_index {
-            second = Some(*entity);
-            break;
-        }
-        point_index += 1;
-    }
+    let mut remaining = entities.iter().copied();
+    let first = ctx.find_by(
+        &mut remaining,
+        |entity| {
+            if !is_finite_point(entity) {
+                return Ok(false);
+            }
+            let selected = point_index == start;
+            if !selected {
+                point_index += 1;
+            }
+            Ok(selected)
+        },
+        "select SLDPRT relation line points",
+    )?;
+    let second = if first.is_some() {
+        ctx.find_by(
+            &mut remaining,
+            |entity| Ok(is_finite_point(entity)),
+            "select SLDPRT relation line points",
+        )?
+    } else {
+        None
+    };
     let (Some(first), Some(second)) = (first, second) else {
         return Ok(None);
     };
@@ -1848,21 +1892,22 @@ fn dynamic_curve_reference_is_valid(
     let Some(entity_ref) = entity_ref else {
         return Ok(false);
     };
-    for entity in ctx.admit_iter(entities, "find SLDPRT relation curve reference")? {
-        if ctx.equal(
-            entity.id(),
-            entity_ref,
-            "compare SLDPRT relation curve references",
-        )? && matches!(
-            entity.kind(),
-            crate::records::SketchInputKind::LineOrCircle
-                | crate::records::SketchInputKind::Arc
-                | crate::records::SketchInputKind::Relation(_)
-        ) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    ctx.any_by(
+        entities,
+        |entity| {
+            Ok(ctx.equal(
+                entity.id(),
+                entity_ref,
+                "compare SLDPRT relation curve references",
+            )? && matches!(
+                entity.kind(),
+                crate::records::SketchInputKind::LineOrCircle
+                    | crate::records::SketchInputKind::Arc
+                    | crate::records::SketchInputKind::Relation(_)
+            ))
+        },
+        "find SLDPRT relation curve reference",
+    )
 }
 
 fn dynamic_point_matches<'a>(
@@ -1937,13 +1982,15 @@ fn bind_dynamic_point_relation(
             })?;
         }
     }
-    let mut matches = dynamic_point_matches(
-        ctx,
-        &first_candidates,
-        &second_candidates,
-        target,
-        horizontal,
-    )?;
+    let mut matches = temporary_storage.with_storage(|| {
+        dynamic_point_matches(
+            ctx,
+            &first_candidates,
+            &second_candidates,
+            target,
+            horizontal,
+        )
+    })?;
     if matches.is_empty() {
         let first_fallback = if first.entity_ref.is_none() {
             &coordinate_points
@@ -1955,7 +2002,9 @@ fn bind_dynamic_point_relation(
         } else {
             &second_candidates
         };
-        matches = dynamic_point_matches(ctx, first_fallback, second_fallback, target, horizontal)?;
+        matches = temporary_storage.with_storage(|| {
+            dynamic_point_matches(ctx, first_fallback, second_fallback, target, horizontal)
+        })?;
     }
     if matches.is_empty() {
         let first_relaxed = if first.entity_ref.is_some() {
@@ -1974,13 +2023,15 @@ fn bind_dynamic_point_relation(
         } else {
             None
         };
-        matches = dynamic_point_matches(
-            ctx,
-            first_relaxed.as_deref().unwrap_or(&first_candidates),
-            second_relaxed.as_deref().unwrap_or(&second_candidates),
-            target,
-            horizontal,
-        )?;
+        matches = temporary_storage.with_storage(|| {
+            dynamic_point_matches(
+                ctx,
+                first_relaxed.as_deref().unwrap_or(&first_candidates),
+                second_relaxed.as_deref().unwrap_or(&second_candidates),
+                target,
+                horizontal,
+            )
+        })?;
     }
     if matches.is_empty() {
         let first_relaxed = if first.entity_ref.is_some() {
@@ -1993,7 +2044,9 @@ fn bind_dynamic_point_relation(
         } else {
             &second_candidates
         };
-        matches = dynamic_point_matches(ctx, first_relaxed, second_relaxed, target, horizontal)?;
+        matches = temporary_storage.with_storage(|| {
+            dynamic_point_matches(ctx, first_relaxed, second_relaxed, target, horizontal)
+        })?;
     }
     ctx.sort_unstable_by(
         &mut matches,
