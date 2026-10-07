@@ -2,7 +2,7 @@
 //! Directory display attributes and color definitions.
 
 use super::geometry::ProjectionOutcome;
-use super::{mirror_flag_valid, push_attributed_loss, vertical_text_flag_valid};
+use super::{mirror_flag_valid, push_attributed_loss, vertical_text_flag_valid, PropertyTextIndex};
 
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
@@ -794,6 +794,8 @@ pub(super) fn project(
             channels: BTreeMap::new(),
         });
     }
+    let mut name_texts = PropertyTextIndex::new(ctx)?;
+    let mut body_names = BTreeMap::<u32, Option<&str>>::new();
     for body in ctx.admit_iter(&mut ir.model.bodies, "iges body name traversal")? {
         if body.visible.is_none() {
             body.visible = sequences
@@ -809,7 +811,7 @@ pub(super) fn project(
         else {
             continue;
         };
-        let mut first: Option<&str> = None;
+        let mut first: Option<(u32, &str)> = None;
         let mut conflicting = false;
         let mut properties = groups.properties().iter();
         while let Some(pointer) =
@@ -830,28 +832,52 @@ pub(super) fn project(
             let Some(name) = record.string(2).filter(|name| !name.is_empty()) else {
                 continue;
             };
-            if !ctx.all_by(
-                name,
-                |byte| Ok(byte.is_ascii_graphic() || *byte == b' '),
-                "iges body property name characters",
-            )? {
-                continue;
-            }
-            let Ok(name) = ctx.validate_utf8(name, "iges body property name validation")? else {
+            let name = if let Some(name) = body_names.get(pointer) {
+                *name
+            } else {
+                let name = if ctx.all_by(
+                    name,
+                    |byte| Ok(byte.is_ascii_graphic() || *byte == b' '),
+                    "iges body property name characters",
+                )? {
+                    ctx.validate_utf8(name, "iges body property name validation")?
+                        .ok()
+                } else {
+                    None
+                };
+                scratch.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut body_names,
+                        *pointer,
+                        name,
+                        "iges body property name cache",
+                    )
+                })?;
+                name
+            };
+            let Some(name) = name else {
                 continue;
             };
             match first {
-                Some(first)
-                    if !ctx.equal_bytes(
-                        name.as_bytes(),
-                        first.as_bytes(),
-                        "iges body property name agreement",
-                    )? =>
+                Some((first_sequence, first_name))
+                    if *pointer != first_sequence
+                        && (name.len() != first_name.len()
+                            || name_texts.id(
+                                first_sequence,
+                                first_name.as_bytes(),
+                                ctx,
+                                "iges body property name agreement",
+                            )? != name_texts.id(
+                                *pointer,
+                                name.as_bytes(),
+                                ctx,
+                                "iges body property name agreement",
+                            )?) =>
                 {
                     conflicting = true;
                     break;
                 }
-                None => first = Some(name),
+                None => first = Some((*pointer, name)),
                 Some(_) => {}
             }
         }
@@ -869,7 +895,7 @@ pub(super) fn project(
             }
         } else {
             body.name = match first {
-                Some(name) => Some(ctx.copy_retained_text(name, "iges body property name")?),
+                Some((_, name)) => Some(ctx.copy_retained_text(name, "iges body property name")?),
                 None => None,
             };
         }

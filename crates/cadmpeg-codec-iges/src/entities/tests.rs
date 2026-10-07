@@ -11,6 +11,58 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 #[test]
+fn property_text_index_refusals_precede_comparison_and_storage() {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges property text equality",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut texts = super::PropertyTextIndex::new(&ctx)?;
+            let first = texts.id(1, b"property", &ctx, "iges property text setup")?;
+            let second = texts.id(3, b"property", &ctx, "iges property text equality")?;
+            assert_eq!(first, second);
+            drop(texts);
+            ctx.finish_session()
+        },
+    );
+    for operation in [
+        "iges property text comparison",
+        "iges property text record identities",
+    ] {
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::CollectionItems,
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                    ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap;
+                    }
+                    ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = cap;
+                    }
+                    other => panic!("unexpected property text dimension: {other:?}"),
+                }
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut texts = super::PropertyTextIndex::new(&ctx)?;
+                let first = texts.id(1, b"property", &ctx, "iges property text comparison")?;
+                let second = texts.id(3, b"property", &ctx, "iges property text comparison")?;
+                assert_eq!(first, second);
+                drop(texts);
+                ctx.finish_session()
+            });
+        }
+    }
+}
+
+#[test]
 fn diagnostic_error_text_refuses_before_retained_copy() {
     cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::RetainedBytes,

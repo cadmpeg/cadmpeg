@@ -1477,3 +1477,94 @@ fn invalid_definition_levels_stop_before_the_remaining_count() {
     );
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn repeated_body_name_properties_do_not_rescan_shared_text() {
+    let name = "N".repeat(5_000);
+    let count = 2_000;
+    let pointers = (0..count)
+        .map(|index| if index % 2 == 0 { "3" } else { "5" })
+        .collect::<Vec<_>>()
+        .join(",");
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "OWNER".into(),
+            status: "00000000",
+            parameters: format!("116,0,0,0,0,0,{count},{pointers};"),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME1".into(),
+            status: "00000200",
+            parameters: format!("406,1,{}H{name};", name.len()),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME2".into(),
+            status: "00000200",
+            parameters: format!("406,1,{}H{name};", name.len()),
+        },
+    ]);
+    let (directory, global, assembly) = crate::test_support::with_service_context(&bytes, |ctx| {
+        let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
+        let (global, _) = crate::global::parse(&scan, ctx).unwrap();
+        let (directory, quarantined) =
+            crate::directory::parse(&scan, global.global_table(ctx).unwrap(), ctx).unwrap();
+        assert!(quarantined.is_empty());
+        let assembly =
+            crate::parameter::assemble_with_context(&scan, &directory, &[], &global, ctx).unwrap();
+        assert!(assembly.quarantined.is_empty());
+        assert!(matches!(
+            assembly.trailing_pointer_analysis.get(&1),
+            Some(crate::parameter::TrailingPointerAnalysis::Unambiguous(_))
+        ));
+        (directory, global, assembly)
+    });
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect();
+    let records = assembly
+        .records
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The text records and raw pointer pass fit; a text scan per pointer does not.
+    policy.limits.max_work_units = 1_000_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let global = global.length_context(&ctx).unwrap().unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let id = cadmpeg_ir::ids::BodyId::mint("iges:model:body#D1").unwrap();
+    let mut sequences = super::super::geometry::SourceSequences::default();
+    sequences
+        .record_body(&id, 1, &crate::ids::Stem::directory(1_u32), &ctx)
+        .unwrap();
+    ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        id,
+        kind: cadmpeg_ir::topology::BodyKind::Wire,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    let outcome = super::project(
+        &mut ir,
+        &directory,
+        (&entries, &records),
+        &assembly.trailing_pointer_analysis,
+        &global,
+        &ctx,
+        &sequences,
+    )
+    .unwrap();
+    assert!(outcome.losses.is_empty());
+    assert_eq!(ir.model.bodies[0].name.as_deref(), Some(name.as_str()));
+    ctx.finish_session().unwrap();
+}
