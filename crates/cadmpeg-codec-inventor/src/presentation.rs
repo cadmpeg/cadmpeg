@@ -170,7 +170,7 @@ pub(crate) fn project_bindings(
     inventory: &PresentationInventory<'_>,
     appearances: &[Appearance],
     bodies: &[BodyId],
-    face_keys: &std::collections::HashMap<FaceId, u64>,
+    face_keys: &BTreeMap<FaceId, u64>,
 ) -> Result<PresentationProjection, CodecError> {
     let mut projection = project_default_bindings(ctx, inventory, appearances, bodies)?;
     project_face_bindings(ctx, inventory, face_keys, &mut projection)?;
@@ -392,7 +392,7 @@ fn project_default_bindings(
 fn project_face_bindings(
     ctx: &DecodeContext<'_>,
     inventory: &PresentationInventory<'_>,
-    face_keys: &std::collections::HashMap<FaceId, u64>,
+    face_keys: &BTreeMap<FaceId, u64>,
     projection: &mut PresentationProjection,
 ) -> Result<(), CodecError> {
     let mut key_counts_storage = ctx.reserve_scoped(0, "count Inventor presentation face keys")?;
@@ -414,20 +414,7 @@ fn project_face_bindings(
     let mut appearance_copy_storage =
         ctx.reserve_scoped(0, "Inventor temporary face appearance identities")?;
     let mut appearance_ids = std::collections::HashMap::<(&str, u32), AppearanceId>::new();
-    let mut ordered_storage = ctx.reserve_scoped(0, "order Inventor presentation faces")?;
-    let mut ordered_face_keys = ordered_storage.with_storage(|| {
-        ctx.collect_vec(
-            ctx.admit_iter(face_keys, "visit Inventor ordered face keys")?,
-            "order Inventor presentation faces",
-        )
-    })?;
-    ctx.sort_unstable_by(
-        &mut ordered_face_keys,
-        |value| &value.0,
-        Ord::cmp,
-        "Inventor presentation face keys sort",
-    )?;
-    for &(face_id, key) in ctx.admit_iter(&ordered_face_keys, "visit Inventor ordered faces")? {
+    for (face_id, key) in ctx.admit_iter(face_keys, "visit Inventor ordered faces")? {
         let mut matching_faces_storage = ctx.reserve_scoped(0, "match Inventor graphics face")?;
         let mut matching_faces = Vec::new();
         for face in ctx.admit_iter(
@@ -1548,7 +1535,7 @@ mod tests {
             issues: Vec::new(),
         };
         let face = FaceId::mint("inventor:test:face#1").expect("face id");
-        let face_keys = std::collections::HashMap::from([(face, 42)]);
+        let face_keys = BTreeMap::from([(face, 42)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
@@ -2306,7 +2293,7 @@ mod tests {
     fn projects_face_override_through_native_key_and_style_graph() {
         let inventory = face_override_inventory();
         let face_id = FaceId::mint("inventor:test:face#1").expect("identity grammar");
-        let face_keys = std::collections::HashMap::from([(face_id.clone(), 42)]);
+        let face_keys = BTreeMap::from([(face_id.clone(), 42)]);
 
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
@@ -2341,7 +2328,7 @@ mod tests {
     fn face_binding_projection_refuses_entity_limits_before_creations() {
         let inventory = face_override_inventory();
         let face_id = FaceId::mint("inventor:test:face#1").expect("identity grammar");
-        let face_keys = std::collections::HashMap::from([(face_id, 42)]);
+        let face_keys = BTreeMap::from([(face_id, 42)]);
         let arena = DecodeArena::new();
         for (max_entities, operation) in [
             (0, "project Inventor face appearance"),
@@ -2373,20 +2360,15 @@ mod tests {
     fn face_binding_projection_refuses_work_limit_before_graph_scan() {
         let inventory = face_override_inventory();
         let face_id = FaceId::mint("inventor:test:face#1").expect("identity grammar");
-        let face_keys = std::collections::HashMap::from([(face_id, 42)]);
+        let face_keys = BTreeMap::from([(face_id, 42)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Two bucket traversals, an eight-byte hash key, five iterator/sort visits, and two sort levels precede the scan.
-        let id_len = face_keys
-            .keys()
-            .next()
-            .expect("one face key")
-            .as_str()
-            .len();
-        let pair_bytes = std::mem::size_of::<(&FaceId, &u64)>();
-        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(
-            2 * face_keys.capacity() + 8 + 5 + (pair_bytes + 2 * id_len) * 2 * 8,
-        );
+        // Two face-key traversals, an eight-byte hash key and the key-count table's growth
+        // bound (four buckets, their control bytes, alignment and trailing controls) precede
+        // the scan.
+        let key_count_table = 4 * std::mem::size_of::<(&u64, usize)>() + 15 + 4 + 16;
+        policy.limits.max_work_units =
+            cadmpeg_core::decode::u64_from_index(2 * face_keys.len() + 8 + key_count_table);
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(
