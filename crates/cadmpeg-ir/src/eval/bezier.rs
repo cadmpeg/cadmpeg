@@ -124,7 +124,10 @@ pub(super) fn restrict_homogeneous_bezier<'ctx>(
                 )?;
                 (reservation, values)
             };
-            collapsed.extend(ctx.admit_iter(0..controls.len(), "IR Bezier collapsed control fill")?.map(|_| split.point));
+            collapsed.extend(
+                ctx.admit_iter(0..controls.len(), "IR Bezier collapsed control fill")?
+                    .map(|_| split.point),
+            );
             return Ok(Some(ScopedRows::new(collapsed, storage)));
         }
         let Some(split) = split_homogeneous_bezier(ctx, controls, end)? else {
@@ -253,46 +256,65 @@ mod tests {
             "IR Bezier split reverse",
         ] {
             cadmpeg_test_support::refusal::resource_limit_at(
-                ResourceDimension::WorkUnits, operation, |cap| {
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
                     let mut policy = DecodePolicy::service();
                     policy.limits.max_work_units = cap;
                     let arena = DecodeArena::new();
-                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
                     let result = (|| -> Result<(), cadmpeg_core::decode::ResourceLimit> {
                         let split = split_homogeneous_bezier_midpoint(&ctx, &controls)?
                             .expect("nonempty polygon");
                         let polygons = split.into_polygons(&ctx)?;
                         drop(polygons);
                         Ok(())
-                    })().map_err(CodecError::from);
+                    })()
+                    .map_err(CodecError::from);
                     let Err(CodecError::ResourceLimit(limit)) = &result else {
                         panic!("each named pass needs work");
                     };
                     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
                     assert_eq!(limit.operation, operation);
-                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                    );
                     result
                 },
             );
         }
-        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems] {
+        for dimension in [
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::CollectionItems,
+        ] {
             cadmpeg_test_support::refusal::resource_limit_at(
-                dimension, "IR Bezier split controls", |cap| {
+                dimension,
+                "IR Bezier split controls",
+                |cap| {
                     let mut policy = DecodePolicy::service();
                     match dimension {
-                        ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
-                        ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                        ResourceDimension::MaterializedBytes => {
+                            policy.limits.max_materialized_bytes = cap;
+                        }
+                        ResourceDimension::CollectionItems => {
+                            policy.limits.max_collection_items = cap;
+                        }
                         _ => unreachable!("tested allocation dimensions"),
                     }
                     let arena = DecodeArena::new();
-                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
                     let result = split_homogeneous_bezier_midpoint(&ctx, &controls)
-                        .map(drop).map_err(CodecError::from);
+                        .map(drop)
+                        .map_err(CodecError::from);
                     let Err(CodecError::ResourceLimit(limit)) = &result else {
                         panic!("allocation admission");
                     };
                     assert_eq!(limit.dimension, dimension);
-                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                    );
                     result
                 },
             );
@@ -329,7 +351,11 @@ mod tests {
 
     #[test]
     fn quadratic_split_updates_rows_in_place_and_leaves_the_middle_reverse_row() {
-        let controls = [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0], [2.0, 0.0, 0.0, 1.0]];
+        let controls = [
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 1.0],
+            [2.0, 0.0, 0.0, 1.0],
+        ];
         let run = |cap| {
             let mut policy = DecodePolicy::service();
             // Two copied rows, six boundary copies/blends, one interior blend,
@@ -343,16 +369,33 @@ mod tests {
             let result = (|| -> Result<(), cadmpeg_core::decode::ResourceLimit> {
                 let split = split_homogeneous_bezier_midpoint(&ctx, &controls)?.expect("nonempty");
                 let [left, right] = split.into_polygons(&ctx)?;
-                assert_eq!(&*left, &[[0.0, 0.0, 0.0, 1.0], [0.5, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]]);
-                assert_eq!(&*right, &[[1.0, 0.0, 0.0, 1.0], [1.5, 0.0, 0.0, 1.0], [2.0, 0.0, 0.0, 1.0]]);
+                assert_eq!(
+                    &*left,
+                    &[
+                        [0.0, 0.0, 0.0, 1.0],
+                        [0.5, 0.0, 0.0, 1.0],
+                        [1.0, 0.0, 0.0, 1.0]
+                    ]
+                );
+                assert_eq!(
+                    &*right,
+                    &[
+                        [1.0, 0.0, 0.0, 1.0],
+                        [1.5, 0.0, 0.0, 1.0],
+                        [2.0, 0.0, 0.0, 1.0]
+                    ]
+                );
                 drop(left);
                 drop(right);
                 Ok(())
-            })().map_err(CodecError::from);
+            })()
+            .map_err(CodecError::from);
             match &result {
                 Ok(()) => ctx.finish_session().expect("no retained bytes"),
                 Err(CodecError::ResourceLimit(limit)) => {
-                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                    );
                 }
                 Err(error) => panic!("unexpected split error: {error}"),
             }
@@ -361,7 +404,9 @@ mod tests {
         run(13).expect("exact split work");
         for operation in ["IR Bezier split interior blend", "IR Bezier split reverse"] {
             cadmpeg_test_support::refusal::resource_limit_at(
-                ResourceDimension::WorkUnits, operation, run,
+                ResourceDimension::WorkUnits,
+                operation,
+                run,
             );
         }
     }

@@ -21,9 +21,14 @@ pub(super) fn parameter_near_point(
         return Ok(None);
     }
     let mut best_candidate: Option<FiniteReal> = None;
-    for segment in ctx.admit_iter(0..polyline.point_count() - 1, "IR polyline inversion segment scan")? {
-        let Some((parameter_start, parameter_end)) = polyline.parameter_at(segment)
-            .zip(polyline.parameter_at(segment + 1)) else {
+    for segment in ctx.admit_iter(
+        0..polyline.point_count() - 1,
+        "IR polyline inversion segment scan",
+    )? {
+        let Some((parameter_start, parameter_end)) = polyline
+            .parameter_at(segment)
+            .zip(polyline.parameter_at(segment + 1))
+        else {
             return Ok(None);
         };
         let [parameter_start, parameter_end] = [parameter_start.get(), parameter_end.get()];
@@ -31,7 +36,10 @@ pub(super) fn parameter_near_point(
         if parameter_width == 0.0 {
             continue;
         }
-        let Some((start, end)) = polyline.point_at(segment).zip(polyline.point_at(segment + 1)) else {
+        let Some((start, end)) = polyline
+            .point_at(segment)
+            .zip(polyline.point_at(segment + 1))
+        else {
             return Ok(None);
         };
         let (start, end) = (start.get(), end.get());
@@ -157,8 +165,12 @@ pub(super) fn polyline_tangent(
         if !((t >= start && t <= end) || (t <= start && t >= end)) {
             continue;
         }
-        let [start_x, start_y, start_z] = point(segment).ok_or(EvaluationFailure::NoValue)?.coordinates();
-        let [end_x, end_y, end_z] = point(segment + 1).ok_or(EvaluationFailure::NoValue)?.coordinates();
+        let [start_x, start_y, start_z] = point(segment)
+            .ok_or(EvaluationFailure::NoValue)?
+            .coordinates();
+        let [end_x, end_y, end_z] = point(segment + 1)
+            .ok_or(EvaluationFailure::NoValue)?
+            .coordinates();
         let slope = |value_end, value_start| {
             difference_quotient(value_end, value_start, end, start)
                 .map_err(|failure| failure.map(|_| ()))
@@ -201,9 +213,15 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let admission = EvaluationAdmission::Decode(&ctx);
             let result = if derivative {
-                polyline_tangent(admission, points.len(), |index| points.get(index).copied(), |index| parameters.get(index).copied(), 0.5)
-                    .map(|_| ())
-                    .map_err(|error| error.map(|()| ()))
+                polyline_tangent(
+                    admission,
+                    points.len(),
+                    |index| points.get(index).copied(),
+                    |index| parameters.get(index).copied(),
+                    0.5,
+                )
+                .map(|_| ())
+                .map_err(|error| error.map(|()| ()))
             } else {
                 polyline_point(
                     admission,
@@ -257,7 +275,8 @@ mod tests {
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(2.0, 1.0, 0.0),
             Point3::new(3.0, 1.0, 0.0),
-        ].map(|point| FinitePoint3::new(point).unwrap());
+        ]
+        .map(|point| FinitePoint3::new(point).unwrap());
         let parameters = FiniteReal::array([0.0, 1.0, 2.0, 3.0]).unwrap();
         for sliced in [false, true] {
             let mut policy = DecodePolicy::service();
@@ -270,14 +289,22 @@ mod tests {
             let budget = WorkBudget::new(2);
             let admission = EvaluationAdmission::Decode(&ctx);
             let result = if sliced {
-                admission.within_work_slice(&budget, |admission| polyline_tangent(
-                    admission, points.len(), |index| points.get(index).copied(),
-                    |index| parameters.get(index).copied(), 1.0,
-                ))
+                admission.within_work_slice(&budget, |admission| {
+                    polyline_tangent(
+                        admission,
+                        points.len(),
+                        |index| points.get(index).copied(),
+                        |index| parameters.get(index).copied(),
+                        1.0,
+                    )
+                })
             } else {
                 polyline_tangent(
-                    admission, points.len(), |index| points.get(index).copied(),
-                    |index| parameters.get(index).copied(), 1.0,
+                    admission,
+                    points.len(),
+                    |index| points.get(index).copied(),
+                    |index| parameters.get(index).copied(),
+                    1.0,
                 )
             };
             assert_eq!(result, Err(EvaluationFailure::NoValue));
@@ -295,7 +322,13 @@ mod tests {
         policy.limits.max_work_units = 1;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = polyline_tangent(EvaluationAdmission::Decode(&ctx), points.len(), |index| points.get(index).copied(), |index| parameters.get(index).copied(), 0.5);
+        let result = polyline_tangent(
+            EvaluationAdmission::Decode(&ctx),
+            points.len(),
+            |index| points.get(index).copied(),
+            |index| parameters.get(index).copied(),
+            0.5,
+        );
         let EvaluationFailure::ResourceLimit(first) = result.unwrap_err() else {
             panic!("a tangent examines later segments");
         };
@@ -306,56 +339,71 @@ mod tests {
         );
     }
 
-
-#[test]
-fn polyline_inverse_borrows_sample_rows_without_storage() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
-    use crate::scalar::FiniteReal;
-    for parameterized in [false, true] {
-        let points = [0.0, 1.0, 2.0, 3.0].map(|x| Point3::new(x, 0.0, 0.0));
-        let samples = if parameterized {
-            PolylineSamples::Parameterized {
-                vertices: points.into_iter().zip([6.0, 4.0, 2.0, 0.0])
-                    .map(|(point, parameter)| PolylineVertex { point, parameter })
-                    .collect::<Vec<_>>().try_into().unwrap(),
-            }
-        } else {
-            PolylineSamples::Unparameterized { points: points.to_vec().try_into().unwrap() }
-        };
-        let curve = PolylineCurve::new(samples, 0.0,
-            &cadmpeg_test_support::service_decode_context()).unwrap().unwrap();
-        let expected = FiniteReal::new(if parameterized { 1.0 } else { 2.5 }).unwrap();
-        let run = |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = super::parameter_near_point(
-                &ctx, &curve, Point3::new(2.5, 0.0, 0.0), 0.0, expected,
-            );
-            match &result {
-                Ok(value) => {
-                    assert_eq!(*value, Some(expected));
-                    ctx.finish_session().unwrap();
+    #[test]
+    fn polyline_inverse_borrows_sample_rows_without_storage() {
+        use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+        use crate::scalar::FiniteReal;
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        for parameterized in [false, true] {
+            let points = [0.0, 1.0, 2.0, 3.0].map(|x| Point3::new(x, 0.0, 0.0));
+            let samples = if parameterized {
+                PolylineSamples::Parameterized {
+                    vertices: points
+                        .into_iter()
+                        .zip([6.0, 4.0, 2.0, 0.0])
+                        .map(|(point, parameter)| PolylineVertex { parameter, point })
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
                 }
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                    assert!(matches!(ctx.finish_session(),
+            } else {
+                PolylineSamples::Unparameterized {
+                    points: points.to_vec().try_into().unwrap(),
+                }
+            };
+            let curve = PolylineCurve::new(
+                samples,
+                0.0,
+                &cadmpeg_test_support::service_decode_context(),
+            )
+            .unwrap()
+            .unwrap();
+            let expected = FiniteReal::new(if parameterized { 1.0 } else { 2.5 }).unwrap();
+            let run = |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_collection_items = 0;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = super::parameter_near_point(
+                    &ctx,
+                    &curve,
+                    Point3::new(2.5, 0.0, 0.0),
+                    0.0,
+                    expected,
+                );
+                match &result {
+                    Ok(value) => {
+                        assert_eq!(*value, Some(expected));
+                        ctx.finish_session().unwrap();
+                    }
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                        assert!(matches!(ctx.finish_session(),
                         Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == *limit));
+                    }
+                    Err(error) => panic!("unexpected polyline inversion error: {error}"),
                 }
-                Err(error) => panic!("unexpected polyline inversion error: {error}"),
-            }
-            result
-        };
-        // The best-candidate search visits the three segments exactly once.
-        assert_eq!(run(3).unwrap(), Some(expected));
-        cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, "IR polyline inversion segment scan", run,
-        );
+                result
+            };
+            // The best-candidate search visits the three segments exactly once.
+            assert_eq!(run(3).unwrap(), Some(expected));
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                "IR polyline inversion segment scan",
+                run,
+            );
+        }
     }
-}
-
 }
