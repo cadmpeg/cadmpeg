@@ -63,7 +63,7 @@ impl PreambleState {
             state_words,
             count,
             &entries,
-            |values| Ok::<_, Infallible>(values.iter()),
+            |values| Ok::<_, Infallible>(values.iter().find_map(entry_error)),
         ) {
             Ok(validation) => validation?,
             Err(never) => match never {},
@@ -97,7 +97,13 @@ impl PreambleState {
             state_words,
             count,
             &entries,
-            |values| ctx.admit_iter(values, "NX schema preamble entry validation"),
+            |values| {
+                ctx.find_map(
+                    values,
+                    |entry| Ok(entry_error(entry)),
+                    "NX schema preamble entry validation",
+                )
+            },
         )?;
         Ok(
             validation.map(|(first_reference, linked, form, count)| Self {
@@ -149,14 +155,14 @@ impl PreambleState {
     }
 }
 
-fn validate_preamble<'entries, E, I: Iterator<Item = &'entries (u16, u32)>>(
+fn validate_preamble<E>(
     identity: u16,
     references: [u32; 2],
     state_references: [u32; 3],
     state_words: [u32; 4],
     count: u16,
-    entries: &'entries [(u16, u32)],
-    admit: impl FnOnce(&'entries [(u16, u32)]) -> Result<I, E>,
+    entries: &[(u16, u32)],
+    first_error: impl FnOnce(&[(u16, u32)]) -> Result<Option<&'static str>, E>,
 ) -> Result<Result<(u32, bool, StateForm, NonZeroU16), &'static str>, E> {
     if identity <= 1 {
         return Ok(Err("identity: must exceed one"));
@@ -190,15 +196,20 @@ fn validate_preamble<'entries, E, I: Iterator<Item = &'entries (u16, u32)>>(
     if entries.is_empty() {
         return Ok(Err("entries: require at least one entry"));
     }
-    for (kind, reference) in admit(entries)? {
-        if *reference <= 1 {
-            return Ok(Err("entries.reference: must exceed one"));
-        }
-        if !matches!(*kind, 81 | 82) {
-            return Ok(Err("entries.kind: must be 81 or 82"));
-        }
+    if let Some(error) = first_error(entries)? {
+        return Ok(Err(error));
     }
     Ok(Ok((first_reference, linked, form, count)))
+}
+
+fn entry_error(&(kind, reference): &(u16, u32)) -> Option<&'static str> {
+    if reference <= 1 {
+        Some("entries.reference: must exceed one")
+    } else if !matches!(kind, 81 | 82) {
+        Some("entries.kind: must be 81 or 82")
+    } else {
+        None
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]

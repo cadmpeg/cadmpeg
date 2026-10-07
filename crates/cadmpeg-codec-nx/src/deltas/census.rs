@@ -14,7 +14,7 @@ use super::{
     ReferenceMarkerPacket, ReferenceStatePacket, ReferenceTypeMap, ReferenceTypeMapLimit,
     SchemaReferencePreamble, TaggedReferenceLane, Tombstone, TransmitHeader, Type150StatePacket,
 };
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -83,8 +83,8 @@ impl Census {
         let mut counts = BTreeMap::new();
         for record in ctx.admit_iter(&self.records, "NX deltas full count traversal")? {
             let family = record.family_name();
-            ctx.admit_btree_entry(&counts, &family, "NX deltas full count families")?;
-            *counts.entry(family).or_default() += 1;
+            *ctx.entry_btree_map(&mut counts, family, "NX deltas full count families")?
+                .or_default() += 1;
         }
         Ok(counts)
     }
@@ -97,18 +97,20 @@ impl Census {
         let mut counts = BTreeMap::new();
         for tombstone in ctx.admit_iter(&self.tombstones, "NX deltas tombstone count traversal")? {
             let family = tombstone.kind.name();
-            ctx.admit_btree_entry(&counts, &family, "NX deltas tombstone count families")?;
-            *counts.entry(family).or_default() += 1;
+            *ctx.entry_btree_map(&mut counts, family, "NX deltas tombstone count families")?
+                .or_default() += 1;
         }
         Ok(counts)
     }
 
     /// Return the sorted disjoint union of every admitted event byte span.
-    pub(crate) fn covered_spans(
+    pub(crate) fn covered_spans<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<(usize, usize)>, CodecError> {
-        merged_event_spans(ctx, self, true)
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<(Vec<(usize, usize)>, ScopedReservation<'ctx>), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "NX deltas coverage storage")?;
+        let spans = storage.with_storage(|| merged_event_spans(ctx, self, true))?;
+        Ok((spans, storage))
     }
 }
 
@@ -239,17 +241,13 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             }
             referenced_value_offsets = Some(offsets);
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(
-                referenced_value_offsets.as_ref().map_or(0, BTreeSet::len),
-            ),
-            "resolve NX referenced offset",
-        )?;
-        let value_owned = !is_value_family(kind)
-            || value_boundary
-            || referenced_value_offsets
-                .as_ref()
-                .is_some_and(|offsets| offsets.contains(&offset));
+        let value_owned = if !is_value_family(kind) || value_boundary {
+            true
+        } else if let Some(offsets) = &referenced_value_offsets {
+            ctx.contains_btree_set(offsets, &offset, "resolve NX referenced offset")?
+        } else {
+            false
+        };
         if !value_owned {
             if let Some((parsed_kind, _, byte_len)) =
                 crate::parasolid::value_records::entity_value_record_identity_at(
@@ -342,18 +340,23 @@ fn populate_gap_events(
 ) -> Result<usize, CodecError> {
     let mut admitted_bytes = 0;
     loop {
-        let covered_before = ctx
-            .admit_iter(
-                &merged_event_spans(ctx, census, true)?,
-                "NX deltas covered span traversal",
-            )?
-            .try_fold(0_u64, |total, (start, end)| {
-                total
-                    .checked_add(cadmpeg_core::decode::u64_from_index(end - start))
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("NX deltas covered byte count", u64::MAX, u64::MAX)
-                    })
-            })?;
+        ctx.charge_work(1, "NX gap event pass")?;
+        let covered_before = {
+            let mut storage = ctx.reserve_scoped(0, "NX gap coverage storage")?;
+            let covered = storage.with_storage(|| merged_event_spans(ctx, census, true))?;
+            ctx.admit_iter(&covered, "NX deltas covered span traversal")?
+                .try_fold(0_u64, |total, (start, end)| {
+                    total
+                        .checked_add(cadmpeg_core::decode::u64_from_index(end - start))
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "NX deltas covered byte count",
+                                u64::MAX,
+                                u64::MAX,
+                            )
+                        })
+                })?
+        };
         let covered_before = usize::try_from(covered_before).map_err(|_| {
             ctx.refuse_codec_limit(
                 "NX deltas covered byte count",
@@ -362,74 +365,88 @@ fn populate_gap_events(
             )
         })?;
 
-        let lanes = tagged_reference_lanes(ctx, stream, census)?;
+        let (lanes, lanes_storage) = tagged_reference_lanes(ctx, stream, census)?;
         ctx.extend_vec(
             &mut census.events.tagged_reference_lanes,
             lanes,
             "NX tagged reference lanes",
         )?;
+        drop(lanes_storage);
 
-        let maps = reference_type_maps(ctx, stream, census)?;
+        let (maps, maps_storage) = reference_type_maps(ctx, stream, census)?;
         ctx.extend_vec(
             &mut census.events.reference_type_maps,
             maps,
             "NX reference type maps",
         )?;
+        drop(maps_storage);
 
-        let state_packets = reference_state_packets(ctx, stream, census)?;
+        let (state_packets, state_packets_storage) = reference_state_packets(ctx, stream, census)?;
         ctx.extend_vec(
             &mut census.events.reference_state_packets,
             state_packets,
             "NX reference state packets",
         )?;
+        drop(state_packets_storage);
 
-        let preambles = schema_reference_preambles(ctx, stream, census)?;
+        let (preambles, preambles_storage) = schema_reference_preambles(ctx, stream, census)?;
         ctx.extend_vec(
             &mut census.events.schema_reference_preambles,
             preambles,
             "NX schema reference preambles",
         )?;
+        drop(preambles_storage);
 
-        let declarations = inline_schema_declarations(ctx, stream, census)?;
+        let (declarations, declarations_storage) = inline_schema_declarations(ctx, stream, census)?;
         ctx.extend_vec(
             &mut census.events.inline_schema_declarations,
             declarations,
             "NX inline schema declarations",
         )?;
+        drop(declarations_storage);
 
-        let body_states = inline_body_states(ctx, stream, census)?;
+        let (body_states, body_states_storage) = inline_body_states(ctx, stream, census)?;
         ctx.extend_vec(
             &mut census.events.inline_body_states,
             body_states,
             "NX inline body states",
         )?;
+        drop(body_states_storage);
 
-        let marker_packets = reference_marker_packets(ctx, stream, census)?;
+        let (marker_packets, marker_packets_storage) =
+            reference_marker_packets(ctx, stream, census)?;
         ctx.extend_vec(
             &mut census.events.reference_marker_packets,
             marker_packets,
             "NX reference marker packets",
         )?;
+        drop(marker_packets_storage);
 
-        let type_150_packets = type_150_state_packets(ctx, stream, census)?;
+        let (type_150_packets, type_150_packets_storage) =
+            type_150_state_packets(ctx, stream, census)?;
         ctx.extend_vec(
             &mut census.events.type_150_state_packets,
             type_150_packets,
             "NX type 150 state packets",
         )?;
+        drop(type_150_packets_storage);
 
-        let covered_after = ctx
-            .admit_iter(
-                &merged_event_spans(ctx, census, true)?,
-                "NX deltas covered span traversal",
-            )?
-            .try_fold(0_u64, |total, (start, end)| {
-                total
-                    .checked_add(cadmpeg_core::decode::u64_from_index(end - start))
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("NX deltas covered byte count", u64::MAX, u64::MAX)
-                    })
-            })?;
+        let covered_after = {
+            let mut storage = ctx.reserve_scoped(0, "NX gap coverage storage")?;
+            let covered = storage.with_storage(|| merged_event_spans(ctx, census, true))?;
+            ctx.admit_iter(&covered, "NX deltas covered span traversal")?
+                .try_fold(0_u64, |total, (start, end)| {
+                    total
+                        .checked_add(cadmpeg_core::decode::u64_from_index(end - start))
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "NX deltas covered byte count",
+                                u64::MAX,
+                                u64::MAX,
+                            )
+                        })
+                })?
+        };
         let covered_after = usize::try_from(covered_after).map_err(|_| {
             ctx.refuse_codec_limit(
                 "NX deltas covered byte count",
@@ -501,20 +518,18 @@ fn populate_body_revision_state_tails(
     census: &mut Census,
 ) -> Result<usize, CodecError> {
     let mut byte_len = 0;
+    let mut gap_storage = ctx.reserve_scoped(0, "NX body revision gap storage")?;
+    let gaps = gap_storage.with_storage(|| uncovered_spans(ctx, stream.len(), census, true))?;
     for (start, end) in ctx
-        .admit_iter(
-            &uncovered_spans(ctx, stream.len(), census, true)?,
-            "NX deltas body revision gap traversal",
-        )?
+        .admit_iter(&gaps, "NX deltas body revision gap traversal")?
         .copied()
     {
-        if let Some(index) = ctx
-            .admit_iter(
-                &census.events.body_revisions,
-                "NX deltas body revision prefix traversal",
-            )?
-            .position(|revision| revision.prefix_end == start)
-        {
+        if let Ok(index) = ctx.binary_search_by_key(
+            &census.events.body_revisions,
+            &start,
+            |revision| Ok(revision.prefix_end),
+            "NX deltas body revision prefix lookup",
+        )? {
             census.events.body_revisions[index].end = end;
             byte_len += end - start;
         }

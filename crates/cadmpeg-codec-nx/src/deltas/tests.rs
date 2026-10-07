@@ -1904,7 +1904,10 @@ fn census_accumulates_overlapping_tombstone_and_terminal_trailer_bytes() {
     assert_eq!(census.terminal_null_references.unwrap().offset(), 4);
     assert_eq!(census.bytes_decoded(), 6 + 4);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.covered_spans(ctx)).unwrap(),
+        crate::test_support::with_decode_context(|ctx| census
+            .covered_spans(ctx)
+            .map(|(spans, _storage)| spans))
+        .unwrap(),
         vec![(0, stream.len())]
     );
 }
@@ -1924,7 +1927,10 @@ fn census_accumulator_differs_from_coverage_on_overlapping_events() {
     assert_eq!(record.end, 175);
     assert_eq!((trailer.offset(), trailer.end()), (167, 175));
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.covered_spans(ctx)).unwrap(),
+        crate::test_support::with_decode_context(|ctx| census
+            .covered_spans(ctx)
+            .map(|(spans, _storage)| spans))
+        .unwrap(),
         vec![(67, 175)]
     );
     assert_eq!(census.bytes_decoded(), 78 + 30 + 8);
@@ -1949,10 +1955,15 @@ fn census_accumulator_differs_from_coverage_on_overlapping_events() {
         assert_eq!(record.end, 444);
         assert_eq!((tail.offset(), tail.end()), (371, 435));
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| census.covered_spans(ctx)).unwrap(),
+            crate::test_support::with_decode_context(|ctx| census
+                .covered_spans(ctx)
+                .map(|(spans, _storage)| spans))
+            .unwrap(),
             vec![(67, 444)]
         );
         assert_eq!(census.bytes_decoded(), 236 + 34 + 34 + 73 + 64);
         assert_ne!(census.bytes_decoded(), 444 - 67);
     }
 }
+
+mod resource_budget;
