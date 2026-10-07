@@ -419,8 +419,7 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
         &roster_ctx,
         &payload,
         relation_curve,
-        &relation_markers
-    , &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &relation_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap()); result }
+        &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &relation_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap()); result }
     .unwrap());
 
     let mut point_roster = relation_roster.clone();
@@ -433,8 +432,7 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
         &roster_ctx,
         &payload,
         &point_roster[0],
-        &point_markers
-    , &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &point_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap()); result }
+        &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &point_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap()); result }
     .unwrap());
 }
 

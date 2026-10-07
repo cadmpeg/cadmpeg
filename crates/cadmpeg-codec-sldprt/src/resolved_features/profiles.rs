@@ -1932,8 +1932,7 @@ pub(crate) fn project_marker_backed_sketches(
                             ctx,
                             &lane.native_payload,
                             marker,
-                            &object_markers,
-                         &geometry_index)?
+                            &geometry_index)?
                         || terminal_carriers.carries(ctx, lane, marker)?
                     {
                         continue;
@@ -2391,7 +2390,7 @@ marker,
                                             ctx,
                                             &lane.native_payload,
                                             marker,
-                                            &object_markers,
+                                            &geometry_index,
                                         )?
                                     }
                                 })
@@ -2547,7 +2546,7 @@ marker,
                                             .coordinates_m
                                             .ok_or(MarkerGeometryFailure::Absent)?
                                             .get();
-                                        let roster_center = coordinate_roster_arc_center(ctx, &lane.native_payload, marker, &object_markers, [endpoints[0], endpoints[1]], &geometry_index)?
+                                        let roster_center = coordinate_roster_arc_center(ctx, &lane.native_payload, marker, [endpoints[0], endpoints[1]], &geometry_index)?
                                         .map(|[u, v]| {
                                             Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR)
                                         });
