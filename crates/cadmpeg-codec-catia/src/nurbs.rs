@@ -252,10 +252,10 @@ pub(crate) fn reverse_pcurve_geometry(
             };
             match &mut poles {
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => {
-                    ctx.reverse(points, "catia_reverse_pcurve_pole_order")?
+                    ctx.reverse(points, "catia_reverse_pcurve_pole_order")?;
                 }
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
-                    ctx.reverse(points, "catia_reverse_pcurve_pole_order")?
+                    ctx.reverse(points, "catia_reverse_pcurve_pole_order")?;
                 }
             }
             let (checked, _validation_storage) = ctx.with_scoped_storage(
@@ -411,10 +411,10 @@ pub(crate) fn reverse_nurbs_curve(
     };
     match &mut poles {
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
-            ctx.reverse(points, "catia_reverse_curve_pole_order")?
+            ctx.reverse(points, "catia_reverse_curve_pole_order")?;
         }
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-            ctx.reverse(points, "catia_reverse_curve_pole_order")?
+            ctx.reverse(points, "catia_reverse_curve_pole_order")?;
         }
     }
     let reversed_knots =
@@ -871,7 +871,7 @@ pub(crate) fn quintic_jet_bspline<const N: usize, T>(
         .len()
         .checked_mul(6)
         .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet knots", u64::MAX, u64::MAX))?;
-    let (mut controls, _controls_reservation) =
+    let (mut controls, controls_reservation) =
         ctx.temporary_vec(control_count, "catia quintic jet controls")?;
     let mut output_storage = ctx.reserve_scoped(0, "catia quintic jet output")?;
     let mut full_knots = output_storage
@@ -931,7 +931,7 @@ pub(crate) fn quintic_jet_bspline<const N: usize, T>(
         finite_controls.push(control);
     }
     drop(controls);
-    drop(_controls_reservation);
+    drop(controls_reservation);
     output_storage.commit()?;
     Ok(Some((full_knots, finite_controls)))
 }

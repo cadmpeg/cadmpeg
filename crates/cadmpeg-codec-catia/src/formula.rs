@@ -103,8 +103,8 @@ pub(crate) fn transfer_parameters<'ctx>(
     for program_entity in ctx
         .admit_iter(&native.entity_records, "catia_formula_entity_visits")?
     {
-        if !graph_scope.contains(ctx, program_entity.object_graph.as_str())? { continue; }
         const OPERATION: &str = "catia_relation_program_parameter_index";
+        if !graph_scope.contains(ctx, program_entity.object_graph.as_str())? { continue; }
         let Some(inputs) = program_entity
             .relation_program_instance()
             .and_then(|instance| instance.inputs.as_ref())
