@@ -19,12 +19,7 @@ impl<S: crate::immutable_text::ImmutableText> ParameterName<S> {
         let (index, qualifier_start) = match canonical_parts(
             spelling.as_ref(),
             |text| Ok::<_, Infallible>(text.bytes().take_while(u8::is_ascii_digit).count()),
-            |text| {
-                Ok::<_, Infallible>(
-                    text.bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'),
-                )
-            },
+            |text| Ok::<_, Infallible>(text.bytes().all(is_qualifier_byte)),
             |text| Ok::<_, Infallible>(text.parse::<u32>()),
         ) {
             Ok(parts) => parts,
@@ -52,7 +47,7 @@ impl<S: crate::immutable_text::ImmutableText> ParameterName<S> {
             |text| {
                 ctx.all_by(
                     text.bytes(),
-                    |byte| Ok(byte.is_ascii_alphanumeric() || byte == b'_'),
+                    |byte| Ok(is_qualifier_byte(byte)),
                     "NX parameter qualifier syntax",
                 )
             },
@@ -72,12 +67,7 @@ impl<S: crate::immutable_text::ImmutableText> ParameterName<S, u32> {
         let (index, qualifier_start) = match canonical_parts(
             spelling.as_ref(),
             |text| Ok::<_, Infallible>(text.bytes().take_while(u8::is_ascii_digit).count()),
-            |text| {
-                Ok::<_, Infallible>(
-                    text.bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'),
-                )
-            },
+            |text| Ok::<_, Infallible>(text.bytes().all(is_qualifier_byte)),
             |text| Ok::<_, Infallible>(text.parse::<u32>()),
         ) {
             Ok(parts) => parts?,
@@ -107,7 +97,7 @@ impl<S: crate::immutable_text::ImmutableText> ParameterName<S, u32> {
             |text| {
                 ctx.all_by(
                     text.bytes(),
-                    |byte| Ok(byte.is_ascii_alphanumeric() || byte == b'_'),
+                    |byte| Ok(is_qualifier_byte(byte)),
                     "NX parameter qualifier syntax",
                 )
             },
@@ -142,6 +132,10 @@ impl<S: crate::immutable_text::ImmutableText, I: Copy> ParameterName<S, I> {
     pub(crate) fn into_spelling(self) -> S {
         self.spelling
     }
+}
+
+fn is_qualifier_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
 fn canonical_parts<E>(
