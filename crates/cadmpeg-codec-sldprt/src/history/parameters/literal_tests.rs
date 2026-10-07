@@ -11,6 +11,7 @@ use super::eval::{
 };
 use super::{bare_text_parameter_literal, formatted_text_dimension_literal};
 use cadmpeg_ir::features::{DimensionDisplay, ParameterValue};
+use std::borrow::Cow;
 
 /// A finite test value as the formatter's checked input.
 fn real(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
@@ -266,7 +267,7 @@ fn formatted_text_dimensions_are_strings_only_for_txd_parameters() {
 fn solidworks_sign_function_is_three_way() {
     for (argument, expected) in [(-2, -1), (0, 0), (2, 1)] {
         assert_eq!(
-            eval::ParameterFunction::Sgn.apply(vec![ParameterValue::Integer(argument)]),
+            eval::ParameterFunction::Sgn.apply(vec![Cow::Owned(ParameterValue::Integer(argument))]).map(Cow::into_owned),
             Some(ParameterValue::Integer(expected))
         );
     }
@@ -276,14 +277,14 @@ fn solidworks_sign_function_is_three_way() {
 fn integer_function_preserves_discrete_integer_values() {
     for value in [i64::MIN, -(1_i64 << 53) - 1, (1_i64 << 53) + 1, i64::MAX] {
         assert_eq!(
-            eval::ParameterFunction::Int.apply(vec![ParameterValue::Integer(value)]),
+            eval::ParameterFunction::Int.apply(vec![Cow::Owned(ParameterValue::Integer(value))]).map(Cow::into_owned),
             Some(ParameterValue::Integer(value))
         );
     }
     assert_eq!(
-        eval::ParameterFunction::Int.apply(vec![ParameterValue::Real(
+        eval::ParameterFunction::Int.apply(vec![Cow::Owned(ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(-3.75).unwrap()
-        )]),
+        ))]).map(Cow::into_owned),
         Some(ParameterValue::Integer(-3))
     );
 }
@@ -461,5 +462,54 @@ fn xml_name_rejection_leaves_unvisited_suffix_unpaid() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let name = format!("-{}", "a".repeat(4096));
     assert!(!crate::history::write::xml::valid_xml_name(&ctx, &name).unwrap());
+    assert!(ctx.resource_refusal().is_none());
+}
+
+fn string_operands() -> (
+    std::collections::HashMap<String, Option<cadmpeg_ir::features::ParameterId>>,
+    std::collections::HashMap<cadmpeg_ir::features::ParameterId, ParameterValue>,
+) {
+    let text = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#text").unwrap();
+    let other = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#other").unwrap();
+    (
+        std::collections::HashMap::from([("Text".into(), Some(text.clone())), ("Other".into(), Some(other.clone()))]),
+        std::collections::HashMap::from([(text, ParameterValue::String("a".repeat(4096))), (other, ParameterValue::String("b".repeat(8192)))]),
+    )
+}
+
+#[test]
+fn failed_string_expression_does_not_retain_operands() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (aliases, values) = string_operands();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(ParameterExpressionParser::new_flat(&ctx, "Text + 1", &aliases, &values).parse().unwrap(), None);
+    assert_eq!(ParameterExpressionParser::new_flat(&ctx, "Iif(true,Text,Other) + 1", &aliases, &values).parse().unwrap(), None);
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn string_comparison_retains_only_boolean_result() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (aliases, values) = string_operands();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(ParameterExpressionParser::new_flat(&ctx, "Text = Text", &aliases, &values).parse().unwrap(), Some(ParameterValue::Boolean(true)));
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn conditional_string_retains_only_selected_value() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (aliases, values) = string_operands();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4096;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(ParameterExpressionParser::new_flat(&ctx, "Iif(true,Text,Other)", &aliases, &values).parse().unwrap(), Some(ParameterValue::String("a".repeat(4096))));
     assert!(ctx.resource_refusal().is_none());
 }
