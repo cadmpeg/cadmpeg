@@ -154,8 +154,6 @@ fn native_design_objects_refuse_caller_collection_limit() {
 
 #[test]
 fn parallel_reference_table_refuses_nested_collection_limit() {
-    use std::collections::HashMap;
-
     let list_a = [0x3b, 0x82, 0x81, 0x83, 0x81, 0x84, 0x85, 0xfe];
     let list_b = [0x3b, 0x82, 0x81, 0x84, 0x81, 0x83, 0x86, 0xfe];
     let mut bytes = sequential_entity_backed_object_graph(&[
@@ -182,32 +180,30 @@ fn parallel_reference_table_refuses_nested_collection_limit() {
         .iter()
         .filter(|record| record.owner_entity_id() == Some(owner))
         .collect::<Vec<_>>();
-    let indices = graph
-        .records
-        .iter()
-        .enumerate()
-        .filter_map(|(index, record)| Some((record.entity_id()?, index)))
-        .collect::<HashMap<_, _>>();
-    let terminal = indices
-        .keys()
-        .max()
-        .and_then(|entity_id| entity_id.checked_add(1));
+    let record_index = crate::test_support::with_service_context(|ctx| {
+        super::super::GraphRecordIndex::new(
+            ctx,
+            &mut ctx.reserve_scoped(0, "test record index")?,
+            &graph.records,
+        )
+    })
+    .expect("service profile admits record index");
     let refused = crate::test_support::with_collection_limit(2, |ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices, terminal)
+        super::super::design_parallel_reference_table(ctx, &fields, graph, &record_index)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_design_row_cells")
     );
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices, terminal)
+        super::super::design_parallel_reference_table(ctx, &fields, graph, &record_index)
     });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_design_column_field")
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices, terminal)
+        super::super::design_parallel_reference_table(ctx, &fields, graph, &record_index)
     })
     .expect("service profile admits parallel reference table");
     assert_eq!(admitted, native.design_objects[0].parallel_reference_table);
