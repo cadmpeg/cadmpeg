@@ -1201,14 +1201,15 @@ fn scan_with_record_limit<'a>(
                     .rev()
                     .filter(|table| table_base(table.typecode) == TCODE_PROPERTIES)
                 {
-                    version = ctx
-                        .admit_iter(
-                            table.records.as_slice(),
-                            "Rhino writer version record traversal",
-                        )?
-                        .rev()
-                        .filter(|record| record.typecode == TCODE_WRITER_VERSION)
-                        .find_map(Record::short_value);
+                    version = ctx.find_map(
+                        table.records.iter().rev(),
+                        |record| {
+                            Ok((record.typecode == TCODE_WRITER_VERSION)
+                                .then(|| record.short_value())
+                                .flatten())
+                        },
+                        "Rhino writer version record traversal",
+                    )?;
                     if version.is_some() {
                         break;
                     }

@@ -200,9 +200,11 @@ pub(super) fn decode(
 
     for (id, record) in exchange.entities(ctx, "DATUM_SYSTEM")? {
         let constituents = ctx
-            .admit_iter(&(record.parameters())[..], "STEP decode traversal")?
-            .rev()
-            .find_map(ValueExt::list)
+            .find_map(
+                record.parameters().iter().rev(),
+                |value| Ok(ValueExt::list(value)),
+                "STEP decode traversal",
+            )?
             .unwrap_or_default();
         let mut datum_records = BTreeSet::new();
         let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
@@ -318,20 +320,18 @@ pub(super) fn decode(
         if matches!(kind, DimensionKind::Size) {
             let category = if dimension_name.starts_with("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE") {
                 let mut category = None;
-                'record_parameters: for partial in ctx
-                    .admit_iter(&record.partials[..], "STEP decode traversal")?
-                    .map(|partial| -> Result<Option<_>, CodecError> {
+                if let Some(partial) = ctx.find_map(
+                    &record.partials[..],
+                    |partial| -> Result<Option<_>, CodecError> {
                         Ok((ctx.equal(
                             partial.name.as_str(),
                             dimension_name,
                             "STEP PMI dimension name equality",
                         )?)
                         .then_some(partial))
-                    })
-                    .find_map(Result::transpose)
-                    .transpose()?
-                    .into_iter()
-                {
+                    },
+                    "STEP decode traversal",
+                )? {
                     for value in ctx
                         .admit_iter(
                             partial.parameters.as_slice(),
@@ -349,7 +349,7 @@ pub(super) fn decode(
                             ctx,
                         )? {
                             category = Some(text);
-                            break 'record_parameters;
+                            break;
                         }
                     }
                 }
@@ -431,96 +431,102 @@ pub(super) fn decode(
     for (id, record) in exchange.entities(ctx, "PLUS_MINUS_TOLERANCE")? {
         let refs =
             collect_pmi_references(record.parameters(), ctx, "step_pmi_plus_minus_references")?;
-        let dimension = ctx
-            .admit_iter(&refs[..], "STEP decode traversal")?
-            .find_map(|reference| annotations.get(*reference));
-        let limits = ctx
-            .admit_iter(&refs[..], "STEP decode traversal")?
-            .find_map(|reference| {
-                exchange
+        let dimension = ctx.find_map(
+            &refs[..],
+            |reference| Ok(annotations.get(*reference)),
+            "STEP decode traversal",
+        )?;
+        let limits = ctx.find_map(
+            &refs[..],
+            |reference| {
+                Ok(exchange
                     .records()
                     .get(reference)
-                    .filter(|candidate| candidate.simple_name() == Some("TOLERANCE_VALUE"))
-            });
-        let fit = ctx
-            .admit_iter(&refs[..], "STEP decode traversal")?
-            .find_map(|reference| {
-                let record = exchange.records().get(reference)?;
-                (record.simple_name() == Some("LIMITS_AND_FITS")).then(
-                    || -> Result<_, CodecError> {
-                        Ok((
-                            *reference,
-                            LimitsAndFits {
-                                form_variance: record
-                                    .parameter(0)
-                                    .map(|value| {
-                                        decode_text_charged(
-                                            exchange,
-                                            value,
-                                            &mut losses,
-                                            *reference,
-                                            "limits-and-fits form variance",
-                                            StepLossCode::MetadataStringInvalid,
-                                            ctx,
-                                        )
-                                    })
-                                    .transpose()?
-                                    .flatten()
-                                    .unwrap_or_default(),
-                                zone_variance: record
-                                    .parameter(1)
-                                    .map(|value| {
-                                        decode_text_charged(
-                                            exchange,
-                                            value,
-                                            &mut losses,
-                                            *reference,
-                                            "limits-and-fits zone variance",
-                                            StepLossCode::MetadataStringInvalid,
-                                            ctx,
-                                        )
-                                    })
-                                    .transpose()?
-                                    .flatten()
-                                    .unwrap_or_default(),
-                                grade: record
-                                    .parameter(2)
-                                    .map(|value| {
-                                        decode_text_charged(
-                                            exchange,
-                                            value,
-                                            &mut losses,
-                                            *reference,
-                                            "limits-and-fits grade",
-                                            StepLossCode::MetadataStringInvalid,
-                                            ctx,
-                                        )
-                                    })
-                                    .transpose()?
-                                    .flatten()
-                                    .unwrap_or_default(),
-                                source: record
-                                    .parameter(3)
-                                    .map(|value| {
-                                        decode_text_charged(
-                                            exchange,
-                                            value,
-                                            &mut losses,
-                                            *reference,
-                                            "limits-and-fits source",
-                                            StepLossCode::MetadataStringInvalid,
-                                            ctx,
-                                        )
-                                    })
-                                    .transpose()?
-                                    .flatten()
-                                    .unwrap_or_default(),
-                            },
-                        ))
+                    .filter(|candidate| candidate.simple_name() == Some("TOLERANCE_VALUE")))
+            },
+            "STEP decode traversal",
+        )?;
+        let fit = ctx.find_map(
+            &refs[..],
+            |reference| {
+                let Some(record) = exchange.records().get(reference) else {
+                    return Ok(None);
+                };
+                if record.simple_name() != Some("LIMITS_AND_FITS") {
+                    return Ok(None);
+                }
+                Ok(Some((
+                    *reference,
+                    LimitsAndFits {
+                        form_variance: record
+                            .parameter(0)
+                            .map(|value| {
+                                decode_text_charged(
+                                    exchange,
+                                    value,
+                                    &mut losses,
+                                    *reference,
+                                    "limits-and-fits form variance",
+                                    StepLossCode::MetadataStringInvalid,
+                                    ctx,
+                                )
+                            })
+                            .transpose()?
+                            .flatten()
+                            .unwrap_or_default(),
+                        zone_variance: record
+                            .parameter(1)
+                            .map(|value| {
+                                decode_text_charged(
+                                    exchange,
+                                    value,
+                                    &mut losses,
+                                    *reference,
+                                    "limits-and-fits zone variance",
+                                    StepLossCode::MetadataStringInvalid,
+                                    ctx,
+                                )
+                            })
+                            .transpose()?
+                            .flatten()
+                            .unwrap_or_default(),
+                        grade: record
+                            .parameter(2)
+                            .map(|value| {
+                                decode_text_charged(
+                                    exchange,
+                                    value,
+                                    &mut losses,
+                                    *reference,
+                                    "limits-and-fits grade",
+                                    StepLossCode::MetadataStringInvalid,
+                                    ctx,
+                                )
+                            })
+                            .transpose()?
+                            .flatten()
+                            .unwrap_or_default(),
+                        source: record
+                            .parameter(3)
+                            .map(|value| {
+                                decode_text_charged(
+                                    exchange,
+                                    value,
+                                    &mut losses,
+                                    *reference,
+                                    "limits-and-fits source",
+                                    StepLossCode::MetadataStringInvalid,
+                                    ctx,
+                                )
+                            })
+                            .transpose()?
+                            .flatten()
+                            .unwrap_or_default(),
                     },
-                )
-            })
-            .transpose()?;
+                )))
+            },
+            "STEP decode traversal",
+        )?;
         if let (Some(index), Some(limits)) = (dimension, limits) {
             let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
             let lower = limits
@@ -598,20 +604,21 @@ pub(super) fn decode(
             continue;
         };
         let Some(tolerance) = ctx
-            .admit_iter(&record.partials[..], "STEP decode traversal")?
-            .find_map(|partial| {
-                (partial.name != "GEOMETRIC_TOLERANCE")
-                    .then(|| tolerance_kind(Some(&partial.name)))
-                    .flatten()
-            })
+            .find_map(
+                &record.partials[..],
+                |partial| {
+                    Ok((partial.name != "GEOMETRIC_TOLERANCE")
+                        .then(|| tolerance_kind(Some(&partial.name)))
+                        .flatten())
+                },
+                "STEP decode traversal",
+            )?
             .map_or_else(
                 || {
-                    Ok::<_, CodecError>(
-                        ctx.admit_iter(
-                            &record.partials[..],
-                            "STEP PMI fallback partial traversal",
-                        )?
-                        .find_map(|partial| tolerance_kind(Some(&partial.name))),
+                    ctx.find_map(
+                        &record.partials[..],
+                        |partial| Ok(tolerance_kind(Some(&partial.name))),
+                        "STEP PMI fallback partial traversal",
                     )
                 },
                 |value| Ok(Some(value)),
@@ -1049,12 +1056,9 @@ fn mark_characteristic_representations(
                     let Some(representation) = exchange.records().get(&representation_id) else {
                         continue;
                     };
-                    if !ctx
-                        .admit_iter(
-                            &(representation.partials)[..],
-                            "STEP mark characteristic representations traversal",
-                        )?
-                        .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
+                    if representation
+                        .partial(ctx, "SHAPE_DIMENSION_REPRESENTATION")?
+                        .is_none()
                     {
                         continue;
                     }
@@ -1197,13 +1201,7 @@ fn resolve_geometric_item_usages(
         exchange.records(),
         "STEP resolve geometric item usages traversal",
     )? {
-        let Some(partial) = ctx
-            .admit_iter(
-                &(record.partials)[..],
-                "STEP resolve geometric item usages traversal",
-            )?
-            .find(|partial| partial.name == "GEOMETRIC_ITEM_SPECIFIC_USAGE")
-        else {
+        let Some(partial) = record.partial(ctx, "GEOMETRIC_ITEM_SPECIFIC_USAGE")? else {
             continue;
         };
         let Some(definition) = first_matching(partial.parameters.get(2), ctx, |_| Ok(true))? else {
@@ -1360,18 +1358,17 @@ fn relationship_endpoints(
     record: &RawRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(u64, u64)>, CodecError> {
-    let Some(parameters) = ctx
-        .admit_iter(
-            &(record.partials)[..],
-            "STEP relationship endpoints traversal",
-        )?
-        .find_map(|partial| {
-            matches!(
+    let Some(parameters) = ctx.find_map(
+        &(record.partials)[..],
+        |partial| {
+            Ok(matches!(
                 partial.name.as_str(),
                 "SHAPE_ASPECT_RELATIONSHIP" | "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP"
             )
-            .then_some(partial.parameters.as_slice())
-        })
+            .then_some(partial.parameters.as_slice()))
+        },
+        "STEP relationship endpoints traversal",
+    )?
     else {
         return Ok(None);
     };
@@ -1573,27 +1570,29 @@ fn admit_datum_reference_maps(
         .enumerate()
     {
         let prior = &references[..index];
-        if !ctx
-            .admit_iter(&prior[..], "STEP admit datum reference maps traversal")?
-            .map(|other| -> Result<Option<_>, CodecError> {
-                Ok((ctx.equal(
-                    &other.precedence,
-                    &reference.precedence,
-                    "STEP admit datum reference maps equality",
-                )?)
-                .then_some(()))
-            })
-            .find_map(Result::transpose)
-            .transpose()?
-            .is_some()
+        if ctx
+            .find_map(
+                prior,
+                |other| -> Result<Option<_>, CodecError> {
+                    Ok((ctx.equal(
+                        &other.precedence,
+                        &reference.precedence,
+                        "STEP admit datum reference maps equality",
+                    )?)
+                    .then_some(()))
+                },
+                "STEP admit datum reference maps traversal",
+            )?
+            .is_none()
         {
             ctx.charge_collection_items(1, "step_pmi_datum_compartments")?;
         }
         if let Some(group) = reference.common_group {
-            if !ctx
-                .admit_iter(&prior[..], "STEP admit datum reference maps traversal")?
-                .any(|other| other.common_group == Some(group))
-            {
+            if !ctx.any_by(
+                prior,
+                |other| Ok(other.common_group == Some(group)),
+                "STEP admit datum reference maps traversal",
+            )? {
                 ctx.charge_collection_items(1, "step_pmi_datum_common_groups")?;
             }
         }
@@ -1709,14 +1708,11 @@ fn presentation_annotation_name<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a RawRecord,
 ) -> Result<Option<&'a str>, CodecError> {
-    Ok(ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP presentation annotation name traversal",
-        )?
-        .find_map(|partial| {
-            is_presentation_annotation(&partial.name).then_some(partial.name.as_str())
-        }))
+    ctx.find_map(
+        &record.partials[..],
+        |partial| Ok(is_presentation_annotation(&partial.name).then_some(partial.name.as_str())),
+        "STEP presentation annotation name traversal",
+    )
 }
 
 pub(super) fn is_supported_invisibility_target(
@@ -1738,12 +1734,8 @@ fn hidden_presentation_annotation_ids(
         )?
         .map(|(_, value)| value)
     {
-        let Some(items) = ctx
-            .admit_iter(
-                &(record.partials)[..],
-                "STEP hidden presentation annotation ids traversal",
-            )?
-            .find(|partial| partial.name == "INVISIBILITY")
+        let Some(items) = record
+            .partial(ctx, "INVISIBILITY")?
             .and_then(|partial| partial.parameters.first())
         else {
             continue;
@@ -1766,16 +1758,15 @@ fn collect_typed_placement_candidates(
     candidates: &mut BTreeMap<u64, Transform>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let has_annotation_text = ctx
-        .admit_iter(
-            &(record.partials)[..],
-            "STEP collect typed placement candidates traversal",
-        )?
-        .any(|partial| {
-            partial.name == "ANNOTATION_TEXT"
+    let has_annotation_text = ctx.any_by(
+        &(record.partials)[..],
+        |partial| {
+            Ok(partial.name == "ANNOTATION_TEXT"
                 || partial.name == "ANNOTATION_TEXT_CHARACTER"
-                || partial.name.starts_with("ANNOTATION_TEXT_WITH_")
-        });
+                || partial.name.starts_with("ANNOTATION_TEXT_WITH_"))
+        },
+        "STEP collect typed placement candidates traversal",
+    )?;
     for partial in ctx.admit_iter(
         &(record.partials)[..],
         "STEP collect typed placement candidates traversal",
@@ -2199,16 +2190,15 @@ fn shape_aspect_parameter<'a>(
 }
 
 fn is_measure_record(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<bool, CodecError> {
-    Ok(ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP measure record classification traversal",
-        )?
-        .any(|partial| {
-            partial.name == "MEASURE_REPRESENTATION_ITEM"
+    ctx.any_by(
+        &record.partials[..],
+        |partial| {
+            Ok(partial.name == "MEASURE_REPRESENTATION_ITEM"
                 || partial.name == "MEASURE_WITH_UNIT"
-                || partial.name.ends_with("_MEASURE_WITH_UNIT")
-        }))
+                || partial.name.ends_with("_MEASURE_WITH_UNIT"))
+        },
+        "STEP measure record classification traversal",
+    )
 }
 
 fn is_dimension_name(name: &str) -> bool {
@@ -2349,12 +2339,10 @@ fn characteristic_values(
                         .records()
                         .get(&id)
                         .map(|record| {
-                            Ok::<_, CodecError>(
-                                ctx.admit_iter(
-                                    &record.partials[..],
-                                    "STEP characteristic dimension partial traversal",
-                                )?
-                                .any(|partial| is_dimension_name(&partial.name)),
+                            ctx.any_by(
+                                &record.partials[..],
+                                |partial| Ok(is_dimension_name(&partial.name)),
+                                "STEP characteristic dimension partial traversal",
                             )
                         })
                         .transpose()?
@@ -2750,34 +2738,36 @@ fn measure_inner(
             let quantity = if let Some(quantity) = quantity {
                 quantity
             } else if ctx
-                .admit_iter(&record.partials[..], "STEP PMI length classifier traversal")?
-                .map(|partial| -> Result<Option<()>, CodecError> {
-                    Ok(ctx
-                        .contains_text(
-                            partial.name.as_str(),
-                            "LENGTH",
-                            "STEP PMI record length containment",
-                        )?
-                        .then_some(()))
-                })
-                .find_map(Result::transpose)
-                .transpose()?
+                .find_map(
+                    &record.partials[..],
+                    |partial| -> Result<Option<()>, CodecError> {
+                        Ok(ctx
+                            .contains_text(
+                                partial.name.as_str(),
+                                "LENGTH",
+                                "STEP PMI record length containment",
+                            )?
+                            .then_some(()))
+                    },
+                    "STEP PMI length classifier traversal",
+                )?
                 .is_some()
             {
                 PmiQuantity::Length
             } else if ctx
-                .admit_iter(&record.partials[..], "STEP PMI angle classifier traversal")?
-                .map(|partial| -> Result<Option<()>, CodecError> {
-                    Ok(ctx
-                        .contains_text(
-                            partial.name.as_str(),
-                            "ANGLE",
-                            "STEP PMI record angle containment",
-                        )?
-                        .then_some(()))
-                })
-                .find_map(Result::transpose)
-                .transpose()?
+                .find_map(
+                    &record.partials[..],
+                    |partial| -> Result<Option<()>, CodecError> {
+                        Ok(ctx
+                            .contains_text(
+                                partial.name.as_str(),
+                                "ANGLE",
+                                "STEP PMI record angle containment",
+                            )?
+                            .then_some(()))
+                    },
+                    "STEP PMI angle classifier traversal",
+                )?
                 .is_some()
             {
                 PmiQuantity::Angle
@@ -2796,12 +2786,16 @@ fn measure_inner(
                     .filter_map(Value::reference)
                 {
                     if let Some(record) = exchange.records().get(&candidate) {
-                        if ctx
-                            .admit_iter(&record.partials[..], "STEP PMI unit classifier traversal")?
-                            .any(|partial| {
-                                matches!(partial.name.as_str(), "LENGTH_UNIT" | "PLANE_ANGLE_UNIT")
-                            })
-                        {
+                        if ctx.any_by(
+                            &record.partials[..],
+                            |partial| {
+                                Ok(matches!(
+                                    partial.name.as_str(),
+                                    "LENGTH_UNIT" | "PLANE_ANGLE_UNIT"
+                                ))
+                            },
+                            "STEP PMI unit classifier traversal",
+                        )? {
                             unit = Some(candidate);
                             break 'unit;
                         }

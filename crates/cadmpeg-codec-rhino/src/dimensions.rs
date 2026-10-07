@@ -598,14 +598,11 @@ pub(crate) fn v2_annotation_direct(
     let kind = reader.i32()?;
     let plane_offset = reader.position();
     let raw_plane = plane(ctx, reader)?;
-    if ctx
-        .admit_iter(
-            &(raw_plane.origin)[..],
-            "Rhino v2 annotation direct traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-        .any(|value| value.abs() > V2_REALLY_BIG_NUMBER)
-    {
+    if ctx.any_by(
+        &(raw_plane.origin)[..],
+        |value| Ok(value.abs() > V2_REALLY_BIG_NUMBER),
+        "Rhino v2 annotation direct traversal",
+    )? {
         return Err(FramingError::structural(
             plane_offset,
             "V2 annotation plane origin is outside the source bound",
@@ -627,11 +624,11 @@ pub(crate) fn v2_annotation_direct(
     for _ in 0..point_bytes / 16 {
         let point_offset = reader.position();
         let raw_point = point2(reader)?;
-        if ctx
-            .admit_iter(&raw_point[..], "Rhino v2 annotation direct traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-            .any(|value| value.abs() > V2_REALLY_BIG_NUMBER)
-        {
+        if ctx.any_by(
+            &raw_point[..],
+            |value| Ok(value.abs() > V2_REALLY_BIG_NUMBER),
+            "Rhino v2 annotation direct traversal",
+        )? {
             return Err(FramingError::structural(
                 point_offset,
                 "V2 annotation point is outside the source bound",
@@ -1339,14 +1336,18 @@ pub(crate) fn apply_userdata(
         ..
     } = &mut dimension.definition
     {
-        if let Some(extra) = ctx
-            .admit_iter(userdata, "Rhino dimension extension traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-            .filter_map(UserdataDescriptor::known)
-            .find(|userdata| {
-                userdata.class_uuid == V5_ANGULAR_EXTRA && userdata.item_uuid == V5_ANGULAR_EXTRA
-            })
-        {
+        if let Some(extra) = ctx.find_map(
+            userdata,
+            |raw| {
+                let Some(userdata) = UserdataDescriptor::known(raw) else {
+                    return Ok(None);
+                };
+                Ok((userdata.class_uuid == V5_ANGULAR_EXTRA
+                    && userdata.item_uuid == V5_ANGULAR_EXTRA)
+                    .then_some(userdata))
+            },
+            "Rhino dimension extension traversal",
+        )? {
             let (mut reader, _next, _minor) = anonymous(
                 data,
                 extra.payload_range.start,
@@ -1369,11 +1370,19 @@ pub(crate) fn apply_userdata(
             reader.skip_remaining()?;
         }
     }
-    let Some(extra) = ctx
-        .admit_iter(userdata, "Rhino dimension extension traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .filter_map(UserdataDescriptor::known)
-        .find(|userdata| userdata.class_uuid == V5_DIM_EXTRA && userdata.item_uuid == V5_DIM_EXTRA)
+    let Some(extra) = ctx.find_map(
+        userdata,
+        |raw| {
+            let Some(userdata) = UserdataDescriptor::known(raw) else {
+                return Ok(None);
+            };
+            Ok(
+                (userdata.class_uuid == V5_DIM_EXTRA && userdata.item_uuid == V5_DIM_EXTRA)
+                    .then_some(userdata),
+            )
+        },
+        "Rhino dimension extension traversal",
+    )?
     else {
         return Ok(());
     };

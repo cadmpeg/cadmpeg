@@ -418,8 +418,11 @@ fn reference_values<'a>(
         return Ok(None);
     };
     Ok(ctx
-        .admit_iter(items, "STEP topology reference list validation")?
-        .all(|item| item.reference().is_some())
+        .all_by(
+            items,
+            |item| Ok(item.reference().is_some()),
+            "STEP topology reference list validation",
+        )?
         .then_some(items))
 }
 
@@ -617,14 +620,17 @@ pub(super) fn decode(
         }
     }
     for (model, record) in exchange.entities(ctx, "SHELL_BASED_WIREFRAME_MODEL")? {
-        let scope_root = ctx
-            .admit_iter(
-                named_reference_values(ctx, record, "SHELL_BASED_WIREFRAME_MODEL", 1)?
-                    .unwrap_or_default(),
-                "STEP shell wireframe reference traversal",
-            )?
-            .filter_map(Value::reference)
-            .any(|shell| result.body_by_shell.contains_key(&shell));
+        let scope_root = ctx.any_by(
+            named_reference_values(ctx, record, "SHELL_BASED_WIREFRAME_MODEL", 1)?
+                .unwrap_or_default(),
+            |raw| {
+                let Some(shell) = Value::reference(raw) else {
+                    return Ok(false);
+                };
+                Ok(result.body_by_shell.contains_key(&shell))
+            },
+            "STEP shell wireframe reference traversal",
+        )?;
         let outcome = build_shell_wire(
             model,
             exchange,
@@ -2362,16 +2368,16 @@ fn edge_curve_id_reported(
     let carrier = curve_carrier_record(ctx, curve_step, exchange)?;
     let unresolved_surface_curve = if carrier.is_none() {
         if let Some(record) = curve {
-            ctx.admit_iter(
+            ctx.any_by(
                 &record.partials[..],
+                |partial| {
+                    Ok(matches!(
+                        partial.name.as_str(),
+                        "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
+                    ))
+                },
                 "STEP unresolved edge carrier partial traversal",
             )?
-            .any(|partial| {
-                matches!(
-                    partial.name.as_str(),
-                    "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
-                )
-            })
         } else {
             false
         }
@@ -2403,13 +2409,10 @@ fn oriented_defs(
                 pcurve: record
                     .partial(ctx, "SEAM_EDGE")?
                     .map(|partial| {
-                        Ok::<_, CodecError>(
-                            ctx.admit_iter(
-                                partial.parameters.as_slice(),
-                                "STEP topology reference parameter traversal",
-                            )?
-                            .rev()
-                            .find_map(ValueExt::reference),
+                        ctx.find_map(
+                            partial.parameters.as_slice().iter().rev(),
+                            |value| Ok(ValueExt::reference(value)),
+                            "STEP topology reference parameter traversal",
                         )
                     })
                     .transpose()?
@@ -2437,14 +2440,11 @@ fn subedge_parent(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<
         return Ok(entity_parameter(ctx, record, "SUBEDGE", 3)?.and_then(ValueExt::reference));
     }
     if let Some(partial) = record.partial(ctx, "SUBEDGE")? {
-        if let Some(id) = ctx
-            .admit_iter(
-                partial.parameters.as_slice(),
-                "STEP subedge parent reference traversal",
-            )?
-            .rev()
-            .find_map(ValueExt::reference)
-        {
+        if let Some(id) = ctx.find_map(
+            partial.parameters.as_slice().iter().rev(),
+            |value| Ok(ValueExt::reference(value)),
+            "STEP subedge parent reference traversal",
+        )? {
             return Ok(Some(id));
         }
     }
@@ -2455,14 +2455,11 @@ fn subedge_parent(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<
         )?
         .rev()
     {
-        if let Some(id) = ctx
-            .admit_iter(
-                partial.parameters.as_slice(),
-                "STEP subedge parent reference traversal",
-            )?
-            .rev()
-            .find_map(ValueExt::reference)
-        {
+        if let Some(id) = ctx.find_map(
+            partial.parameters.as_slice().iter().rev(),
+            |value| Ok(ValueExt::reference(value)),
+            "STEP subedge parent reference traversal",
+        )? {
             return Ok(Some(id));
         }
     }
@@ -2479,19 +2476,16 @@ fn named_reference(
     if record.partials.len() == 1 {
         return Ok(entity_parameter(ctx, record, name, simple_index)?.and_then(ValueExt::reference));
     }
-    let Some(partial) = ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP named topology partial traversal",
-        )?
-        .map(|partial| -> Result<Option<_>, CodecError> {
+    let Some(partial) = ctx.find_map(
+        &record.partials[..],
+        |partial| -> Result<Option<_>, CodecError> {
             Ok(
                 (ctx.equal(partial.name.as_str(), name, "STEP named reference equality")?)
                     .then_some(partial),
             )
-        })
-        .find_map(Result::transpose)
-        .transpose()?
+        },
+        "STEP named topology partial traversal",
+    )?
     else {
         return Ok(None);
     };
@@ -2518,12 +2512,11 @@ fn oriented_edge_reference(
     else {
         return Ok(None);
     };
-    Ok(ctx
-        .admit_iter(
-            partial.parameters.as_slice(),
-            "STEP oriented edge reference parameter traversal",
-        )?
-        .find_map(ValueExt::reference))
+    ctx.find_map(
+        partial.parameters.as_slice(),
+        |value| Ok(ValueExt::reference(value)),
+        "STEP oriented edge reference parameter traversal",
+    )
 }
 
 fn oriented_edge_forward(
@@ -2540,12 +2533,11 @@ fn oriented_edge_forward(
     else {
         return Ok(None);
     };
-    Ok(ctx
-        .admit_iter(
-            partial.parameters.as_slice(),
-            "STEP oriented edge forward parameter traversal",
-        )?
-        .find_map(ValueExt::logical))
+    ctx.find_map(
+        partial.parameters.as_slice(),
+        |value| Ok(ValueExt::logical(value)),
+        "STEP oriented edge forward parameter traversal",
+    )
 }
 
 fn named_logical(
@@ -2558,28 +2550,24 @@ fn named_logical(
     if record.partials.len() == 1 {
         return Ok(entity_parameter(ctx, record, name, simple_index)?.and_then(ValueExt::logical));
     }
-    let Some(partial) = ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP named topology partial traversal",
-        )?
-        .map(|partial| -> Result<Option<_>, CodecError> {
+    let Some(partial) = ctx.find_map(
+        &record.partials[..],
+        |partial| -> Result<Option<_>, CodecError> {
             Ok(
                 (ctx.equal(partial.name.as_str(), name, "STEP named logical equality")?)
                     .then_some(partial),
             )
-        })
-        .find_map(Result::transpose)
-        .transpose()?
+        },
+        "STEP named topology partial traversal",
+    )?
     else {
         return Ok(None);
     };
-    Ok(ctx
-        .admit_iter(
-            partial.parameters.as_slice(),
-            "STEP named topology parameter traversal",
-        )?
-        .find_map(ValueExt::logical))
+    ctx.find_map(
+        partial.parameters.as_slice(),
+        |value| Ok(ValueExt::logical(value)),
+        "STEP named topology parameter traversal",
+    )
 }
 
 fn surface_curve_pcurves<'a>(
@@ -2616,9 +2604,11 @@ fn surface_curve_pcurves<'a>(
     }
     let mut items = values.unwrap_or_default();
     if values.is_some()
-        && !ctx
-            .admit_iter(items, "STEP surface curve pcurve reference validation")?
-            .all(|value| value.reference().is_some())
+        && !ctx.all_by(
+            items,
+            |value| Ok(value.reference().is_some()),
+            "STEP surface curve pcurve reference validation",
+        )?
     {
         items = &[];
     }
@@ -2668,12 +2658,11 @@ fn edge_geometry(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u
     let Some(partial) = record.partial(ctx, "EDGE_CURVE")? else {
         return Ok(None);
     };
-    Ok(ctx
-        .admit_iter(
-            partial.parameters.as_slice(),
-            "STEP edge geometry parameter traversal",
-        )?
-        .find_map(ValueExt::reference))
+    ctx.find_map(
+        partial.parameters.as_slice(),
+        |value| Ok(ValueExt::reference(value)),
+        "STEP edge geometry parameter traversal",
+    )
 }
 
 fn edge_same_sense(
@@ -2689,12 +2678,11 @@ fn edge_same_sense(
     let Some(partial) = record.partial(ctx, "EDGE_CURVE")? else {
         return Ok(None);
     };
-    Ok(ctx
-        .admit_iter(
-            partial.parameters.as_slice(),
-            "STEP edge same sense parameter traversal",
-        )?
-        .find_map(ValueExt::logical))
+    ctx.find_map(
+        partial.parameters.as_slice(),
+        |value| Ok(ValueExt::logical(value)),
+        "STEP edge same sense parameter traversal",
+    )
 }
 
 struct Built {
@@ -3572,10 +3560,11 @@ fn build_one(
                     }
                     if points.len() < 3
                         || distinct_points.len() != points.len()
-                        || ctx
-                            .admit_iter(&points[..], "STEP body topology traversal")
-                            .map_err(cadmpeg_core::CodecError::from)?
-                            .any(|point| !point_positions.contains_key(*point))
+                        || ctx.any_by(
+                            &points[..],
+                            |point| Ok(!point_positions.contains_key(*point)),
+                            "STEP body topology traversal",
+                        )?
                     {
                         note_failure(failure, loop_step, CarrierKind::PolyLoopPointCarrier);
                         return Err(BuildError::Absent);
@@ -4906,15 +4895,16 @@ fn associated_pcurves(
     let Some(curve) = exchange.records().get(&curve_step) else {
         return Ok(Vec::new());
     };
-    if !ctx
-        .admit_iter(&curve.partials[..], "STEP associated pcurves traversal")?
-        .any(|partial| {
-            matches!(
+    if !ctx.any_by(
+        &curve.partials[..],
+        |partial| {
+            Ok(matches!(
                 partial.name.as_str(),
                 "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
-            )
-        })
-    {
+            ))
+        },
+        "STEP associated pcurves traversal",
+    )? {
         return Ok(Vec::new());
     }
     let mut associated = Vec::new();
@@ -5006,41 +4996,35 @@ fn select_associated_pcurve(
     let candidate = candidate.try_clone_for_decode(ctx, "step_selected_pcurve_id")?;
     let surface_identity = ids::data(kind!("surface"), surface_step);
     let surface = ctx
-        .admit_iter(
+        .find_map(
             &(ir.model.surfaces)[..],
+            |surface| -> Result<Option<_>, CodecError> {
+                Ok((ctx.equal(
+                    surface.id.as_str(),
+                    surface_identity.as_str(),
+                    "STEP select associated pcurve equality",
+                )?)
+                .then_some(surface))
+            },
             "STEP select associated pcurve traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-        .map(|surface| -> Result<Option<_>, CodecError> {
-            Ok((ctx.equal(
-                surface.id.as_str(),
-                surface_identity.as_str(),
-                "STEP select associated pcurve equality",
-            )?)
-            .then_some(surface))
-        })
-        .find_map(Result::transpose)
-        .transpose()?
+        )?
         .map(|surface| &surface.geometry)
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let surface_id = SurfaceId::from(surface_identity);
     let index = ModelIndex::build(ir, ctx)?;
     let pcurve = ctx
-        .admit_iter(
+        .find_map(
             &(ir.model.pcurves)[..],
+            |pcurve| -> Result<Option<_>, CodecError> {
+                Ok((ctx.equal(
+                    &pcurve.id,
+                    &candidate,
+                    "STEP select associated pcurve equality",
+                )?)
+                .then_some(pcurve))
+            },
             "STEP select associated pcurve traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-        .map(|pcurve| -> Result<Option<_>, CodecError> {
-            Ok((ctx.equal(
-                &pcurve.id,
-                &candidate,
-                "STEP select associated pcurve equality",
-            )?)
-            .then_some(pcurve))
-        })
-        .find_map(Result::transpose)
-        .transpose()?
+        )?
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let geometry = &pcurve.geometry;
     let bound = COINCIDENCE_TOLERANCE.max(ir.tolerances.linear.get());
@@ -5917,42 +5901,40 @@ fn surface_selection_parameter_domains(
 ) -> Result<[Option<[f64; 2]>; 2], CodecError> {
     let _depth = ctx.enter_nested_limit("STEP surface selection domain depth")?;
     let definition = ctx
-        .admit_iter(
+        .find_map(
             &(index.ir().model.procedural_surfaces)[..],
+            |procedural| -> Result<Option<_>, CodecError> {
+                let mut owners = ctx
+                    .admit_iter(
+                        index.ir().model.surfaces.as_slice(),
+                        "STEP procedural surface owner traversal",
+                    )?
+                    .map(|surface| -> Result<Option<_>, CodecError> {
+                        Ok(ctx
+                            .equal(
+                                &surface.geometry.procedural_construction(),
+                                &Some(&procedural.id),
+                                "STEP procedural construction equality",
+                            )?
+                            .then_some(&surface.id))
+                    })
+                    .filter_map(Result::transpose);
+                let owner = owners.next().transpose()?;
+                let owner = if owner.is_some() && owners.next().transpose()?.is_some() {
+                    None
+                } else {
+                    owner
+                };
+                Ok(ctx
+                    .equal(
+                        &owner,
+                        &Some(surface_id),
+                        "STEP procedural surface owner equality",
+                    )?
+                    .then_some(procedural))
+            },
             "STEP surface selection parameter domains traversal",
         )?
-        .map(|procedural| -> Result<Option<_>, CodecError> {
-            let mut owners = ctx
-                .admit_iter(
-                    index.ir().model.surfaces.as_slice(),
-                    "STEP procedural surface owner traversal",
-                )?
-                .map(|surface| -> Result<Option<_>, CodecError> {
-                    Ok(ctx
-                        .equal(
-                            &surface.geometry.procedural_construction(),
-                            &Some(&procedural.id),
-                            "STEP procedural construction equality",
-                        )?
-                        .then_some(&surface.id))
-                })
-                .filter_map(Result::transpose);
-            let owner = owners.next().transpose()?;
-            let owner = if owner.is_some() && owners.next().transpose()?.is_some() {
-                None
-            } else {
-                owner
-            };
-            Ok(ctx
-                .equal(
-                    &owner,
-                    &Some(surface_id),
-                    "STEP procedural surface owner equality",
-                )?
-                .then_some(procedural))
-        })
-        .find_map(Result::transpose)
-        .transpose()?
         .map(cadmpeg_ir::geometry::ProceduralSurface::definition);
     Ok(match definition {
         Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
@@ -6239,21 +6221,7 @@ fn is_face_record(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<bool, C
         "ORIENTED_FACE",
         "SUBFACE",
     ] {
-        if ctx
-            .admit_iter(
-                &record.partials[..],
-                "STEP face classification partial traversal",
-            )?
-            .map(|partial| -> Result<Option<_>, CodecError> {
-                Ok(
-                    (ctx.equal(partial.name.as_str(), name, "STEP is face record equality")?)
-                        .then_some(()),
-                )
-            })
-            .find_map(Result::transpose)
-            .transpose()?
-            .is_some()
-        {
+        if record.partial(ctx, name)?.is_some() {
             return Ok(true);
         }
     }
@@ -6411,16 +6379,8 @@ fn face_name_value<'a>(
             "FACE_SURFACE",
             "FACE",
         ] {
-            value = ctx
-                .admit_iter(&record.partials[..], "STEP face name partial traversal")?
-                .map(|partial| -> Result<Option<_>, CodecError> {
-                    Ok(
-                        (ctx.equal(partial.name.as_str(), name, "STEP face name value equality")?)
-                            .then_some(partial),
-                    )
-                })
-                .find_map(Result::transpose)
-                .transpose()?
+            value = record
+                .partial(ctx, name)?
                 .and_then(|partial| partial.parameters.first());
             if value.is_some() {
                 break;
@@ -6513,14 +6473,16 @@ fn direct_face_surface(
         };
     }
     for partial in ctx.admit_iter(&record.partials[..], "STEP direct face partial traversal")? {
-        if let Some(value) = ctx
-            .admit_iter(
-                partial.parameters.as_slice(),
-                "STEP direct face parameter traversal",
-            )?
-            .filter_map(ValueExt::reference)
-            .find(|reference| !bounds.contains(reference))
-        {
+        if let Some(value) = ctx.find_map(
+            partial.parameters.as_slice(),
+            |raw| {
+                let Some(reference) = ValueExt::reference(raw) else {
+                    return Ok(None);
+                };
+                Ok((!bounds.contains(&reference)).then_some(reference))
+            },
+            "STEP direct face parameter traversal",
+        )? {
             return Ok(Some(value));
         }
     }
@@ -6543,13 +6505,11 @@ fn direct_face_same_sense(
         };
     }
     for partial in ctx.admit_iter(&record.partials[..], "STEP direct face partial traversal")? {
-        if let Some(value) = ctx
-            .admit_iter(
-                partial.parameters.as_slice(),
-                "STEP direct face parameter traversal",
-            )?
-            .find_map(ValueExt::logical)
-        {
+        if let Some(value) = ctx.find_map(
+            partial.parameters.as_slice(),
+            |value| Ok(ValueExt::logical(value)),
+            "STEP direct face parameter traversal",
+        )? {
             return Ok(Some(value));
         }
     }
@@ -6561,13 +6521,11 @@ fn oriented_face_element(
     record: &RawRecord,
 ) -> Result<Option<u64>, CodecError> {
     if let Some(partial) = record.partial(ctx, "ORIENTED_FACE")? {
-        return Ok(ctx
-            .admit_iter(
-                partial.parameters.as_slice(),
-                "STEP oriented face element traversal",
-            )?
-            .rev()
-            .find_map(ValueExt::reference));
+        return ctx.find_map(
+            partial.parameters.as_slice().iter().rev(),
+            |value| Ok(ValueExt::reference(value)),
+            "STEP oriented face element traversal",
+        );
     }
     for partial in ctx
         .admit_iter(
@@ -6576,14 +6534,11 @@ fn oriented_face_element(
         )?
         .rev()
     {
-        if let Some(element) = ctx
-            .admit_iter(
-                partial.parameters.as_slice(),
-                "STEP oriented face fallback element traversal",
-            )?
-            .rev()
-            .find_map(ValueExt::reference)
-        {
+        if let Some(element) = ctx.find_map(
+            partial.parameters.as_slice().iter().rev(),
+            |value| Ok(ValueExt::reference(value)),
+            "STEP oriented face fallback element traversal",
+        )? {
             return Ok(Some(element));
         }
     }
@@ -6595,13 +6550,11 @@ fn oriented_face_orientation(
     record: &RawRecord,
 ) -> Result<Option<bool>, CodecError> {
     if let Some(partial) = record.partial(ctx, "ORIENTED_FACE")? {
-        if let Some(forward) = ctx
-            .admit_iter(
-                partial.parameters.as_slice(),
-                "STEP oriented face orientation parameter traversal",
-            )?
-            .find_map(ValueExt::logical)
-        {
+        if let Some(forward) = ctx.find_map(
+            partial.parameters.as_slice(),
+            |value| Ok(ValueExt::logical(value)),
+            "STEP oriented face orientation parameter traversal",
+        )? {
             return Ok(Some(forward));
         }
     }
@@ -6610,14 +6563,11 @@ fn oriented_face_orientation(
 
 fn subface_parent(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u64>, CodecError> {
     if let Some(partial) = record.partial(ctx, "SUBFACE")? {
-        if let Some(parent) = ctx
-            .admit_iter(
-                partial.parameters.as_slice(),
-                "STEP subface parent traversal",
-            )?
-            .rev()
-            .find_map(ValueExt::reference)
-        {
+        if let Some(parent) = ctx.find_map(
+            partial.parameters.as_slice().iter().rev(),
+            |value| Ok(ValueExt::reference(value)),
+            "STEP subface parent traversal",
+        )? {
             return Ok(Some(parent));
         }
     }
@@ -6628,14 +6578,11 @@ fn subface_parent(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<
         )?
         .rev()
     {
-        if let Some(parent) = ctx
-            .admit_iter(
-                partial.parameters.as_slice(),
-                "STEP subface fallback parent traversal",
-            )?
-            .rev()
-            .find_map(ValueExt::reference)
-        {
+        if let Some(parent) = ctx.find_map(
+            partial.parameters.as_slice().iter().rev(),
+            |value| Ok(ValueExt::reference(value)),
+            "STEP subface fallback parent traversal",
+        )? {
             return Ok(Some(parent));
         }
     }
@@ -6655,21 +6602,8 @@ fn face_bound_attribute_type(
         ("FACE_BOUND", 0),
         ("FACE_OUTER_BOUND", 0),
     ] {
-        if ctx
-            .admit_iter(
-                &record.partials[..],
-                "STEP face bound attribute partial traversal",
-            )?
-            .map(|partial| -> Result<Option<_>, CodecError> {
-                Ok((ctx.equal(
-                    partial.name.as_str(),
-                    name,
-                    "STEP face bound attribute type equality",
-                )?)
-                .then_some(partial))
-            })
-            .find_map(Result::transpose)
-            .transpose()?
+        if record
+            .partial(ctx, name)?
             .is_some_and(|partial| partial.parameters.len() >= minimum_parameters)
         {
             return Ok(Some(name));
@@ -6688,18 +6622,16 @@ fn most_specific<'a>(
 ) -> Result<Option<&'a str>, CodecError> {
     for name in ctx.admit_iter(chain, "STEP topology subtype dispatch traversal")? {
         if ctx
-            .admit_iter(
+            .find_map(
                 &record.partials[..],
+                |partial| -> Result<Option<_>, CodecError> {
+                    Ok(
+                        (ctx.equal(partial.name.as_str(), name, "STEP most specific equality")?)
+                            .then_some(()),
+                    )
+                },
                 "STEP topology subtype partial traversal",
             )?
-            .map(|partial| -> Result<Option<_>, CodecError> {
-                Ok(
-                    (ctx.equal(partial.name.as_str(), name, "STEP most specific equality")?)
-                        .then_some(()),
-                )
-            })
-            .find_map(Result::transpose)
-            .transpose()?
             .is_some()
         {
             return Ok(Some(*name));
@@ -6754,12 +6686,10 @@ fn validate_subset_parent(
         record
             .partial(ctx, subset_type)?
             .map(|partial| {
-                Ok::<_, CodecError>(
-                    ctx.admit_iter(
-                        partial.parameters.as_slice(),
-                        "STEP topology reference parameter traversal",
-                    )?
-                    .find_map(ValueExt::reference),
+                ctx.find_map(
+                    partial.parameters.as_slice(),
+                    |value| Ok(ValueExt::reference(value)),
+                    "STEP topology reference parameter traversal",
                 )
             })
             .transpose()?
@@ -6809,20 +6739,18 @@ fn entity_parameter<'a>(
     index: usize,
 ) -> Result<Option<&'a Value>, CodecError> {
     Ok(ctx
-        .admit_iter(
+        .find_map(
             &record.partials[..],
+            |partial| -> Result<Option<_>, CodecError> {
+                Ok((ctx.equal(
+                    partial.name.as_str(),
+                    name,
+                    "STEP entity parameter equality",
+                )?)
+                .then_some(partial))
+            },
             "STEP topology entity parameter partial traversal",
         )?
-        .map(|partial| -> Result<Option<_>, CodecError> {
-            Ok((ctx.equal(
-                partial.name.as_str(),
-                name,
-                "STEP entity parameter equality",
-            )?)
-            .then_some(partial))
-        })
-        .find_map(Result::transpose)
-        .transpose()?
         .or_else(|| (record.partials.len() == 1).then(|| &record.partials[0]))
         .and_then(|partial| partial.parameters.get(index)))
 }

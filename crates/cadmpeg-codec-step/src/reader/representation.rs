@@ -8,15 +8,16 @@ pub(super) fn parameters<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &'a RawRecord,
 ) -> Result<Option<&'a [Value]>, cadmpeg_core::CodecError> {
-    Ok(ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP representation parameter partial traversal",
-        )?
-        .find_map(|partial| {
-            (is_representation_name(&partial.name) && !partial.parameters.is_empty())
-                .then_some(partial.parameters.as_slice())
-        }))
+    ctx.find_map(
+        &record.partials[..],
+        |partial| {
+            Ok(
+                (is_representation_name(&partial.name) && !partial.parameters.is_empty())
+                    .then_some(partial.parameters.as_slice()),
+            )
+        },
+        "STEP representation parameter partial traversal",
+    )
 }
 
 pub(super) fn items<'a>(
@@ -36,17 +37,16 @@ pub(super) fn item_values<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &'a RawRecord,
 ) -> Result<Option<&'a [Value]>, cadmpeg_core::CodecError> {
-    Ok(ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP representation item partial traversal",
-        )?
-        .find_map(|partial| {
+    ctx.find_map(
+        &record.partials[..],
+        |partial| {
             if !is_representation_name(&partial.name) {
-                return None;
+                return Ok(None);
             }
-            partial.parameters.get(1).and_then(ValueExt::list)
-        }))
+            Ok(partial.parameters.get(1).and_then(ValueExt::list))
+        },
+        "STEP representation item partial traversal",
+    )
 }
 
 pub(super) fn is_representation_name(name: &str) -> bool {

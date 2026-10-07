@@ -694,14 +694,11 @@ impl ValidatedRawBrep {
             };
             let vertices = slot_pair(ctx, trim.vertices, raw.vertices.len(), "trim vertex")?;
             let loop_index = slot(ctx, trim.loop_index, raw.loops.len(), "trim loop")?;
-            if !ctx
-                .admit_iter(
-                    &(raw.loops[loop_index].trims)[..],
-                    "Rhino validate traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
-                .any(|value| position(Some(*value)) == Some(trim_index))
-            {
+            if !ctx.any_by(
+                &(raw.loops[loop_index].trims)[..],
+                |value| Ok(position(Some(*value)) == Some(trim_index)),
+                "Rhino validate traversal",
+            )? {
                 return Err(error(
                     trim.source_range.start,
                     "trim/loop reciprocity mismatch",
@@ -770,11 +767,11 @@ impl ValidatedRawBrep {
             let trims = slots(ctx, &loop_record.trims, raw.trims.len(), "loop trim")?;
             unique(ctx, &loop_record.trims, "loop trim")?;
             let face = slot(ctx, loop_record.face, raw.faces.len(), "loop face")?;
-            if !ctx
-                .admit_iter(&(raw.faces[face].loops)[..], "Rhino validate traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .any(|value| position(Some(*value)) == Some(index))
-            {
+            if !ctx.any_by(
+                &(raw.faces[face].loops)[..],
+                |value| Ok(position(Some(*value)) == Some(index)),
+                "Rhino validate traversal",
+            )? {
                 return Err(error(
                     loop_record.source_range.start,
                     "loop/face reciprocity mismatch",
@@ -1082,17 +1079,20 @@ pub(crate) fn parse(
         (Vec::new(), Vec::new(), None, false)
     };
     if !inline_region_loaded {
-        if let Some(extra) = ctx
-            .admit_iter(&userdata[..], "Rhino parse traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-            .filter_map(UserdataDescriptor::known)
-            .find(|value| {
-                value.class_uuid == V5_BREP_REGION_TOPOLOGY_USERDATA
+        if let Some(extra) = ctx.find_map(
+            userdata,
+            |raw| {
+                let Some(value) = UserdataDescriptor::known(raw) else {
+                    return Ok(None);
+                };
+                Ok((value.class_uuid == V5_BREP_REGION_TOPOLOGY_USERDATA
                     && value.item_uuid == V5_BREP_REGION_TOPOLOGY_USERDATA
                     && (value.application_uuid.is_none()
-                        || value.application_uuid == Some(OPENNURBS4))
-            })
-        {
+                        || value.application_uuid == Some(OPENNURBS4)))
+                .then_some(value))
+            },
+            "Rhino parse traversal",
+        )? {
             match read_region_topology_userdata(
                 ctx,
                 bytes,
@@ -1950,12 +1950,11 @@ fn legacy_vertex(
     point: [f64; 3],
     position: usize,
 ) -> Result<usize, GeometryError> {
-    if let Some((index, _)) = ctx
-        .admit_iter(&vertices[..], "Rhino legacy vertex traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .enumerate()
-        .find(|(_, value)| value.vertex.point.get() == point)
-    {
+    if let Some((index, _)) = ctx.find_by(
+        vertices[..].iter().enumerate(),
+        |(_, value)| Ok(value.vertex.point.get() == point),
+        "Rhino legacy vertex traversal",
+    )? {
         return Ok(index);
     }
     let index = vertices.len();
@@ -2970,12 +2969,11 @@ fn validate_regions(
             }
         }
     }
-    if ctx
-        .admit_iter(&sides[..], "Rhino validate regions traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .enumerate()
-        .any(|(index, side)| side.region.is_some() && !listed_sides.contains(&index))
-    {
+    if ctx.any_by(
+        sides[..].iter().enumerate(),
+        |(index, side)| Ok(side.region.is_some() && !listed_sides.contains(&index)),
+        "Rhino validate regions traversal",
+    )? {
         return Err(error(
             raw.source_range.start,
             "region membership is not reciprocal",
@@ -3140,10 +3138,11 @@ fn positions_drifted<T>(
     values: &[T],
     index: impl Fn(&T) -> i32,
 ) -> Result<bool, CodecError> {
-    Ok(ctx
-        .admit_iter(values, "Rhino Brep positional index traversal")?
-        .enumerate()
-        .any(|(position_in_array, value)| position(Some(index(value))) != Some(position_in_array)))
+    ctx.any_by(
+        values.iter().enumerate(),
+        |(position_in_array, value)| Ok(position(Some(index(value))) != Some(position_in_array)),
+        "Rhino Brep positional index traversal",
+    )
 }
 
 fn validate_edge_incidences(

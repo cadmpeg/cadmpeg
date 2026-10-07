@@ -989,9 +989,14 @@ fn matching_pole_weights(
     Ok(match (start, end) {
         (NurbsPoles3::Polynomial { .. }, NurbsPoles3::Polynomial { .. }) => true,
         (NurbsPoles3::Rational { points: start }, NurbsPoles3::Rational { points: end }) => ctx
-            .admit_iter(start.as_slice(), "Rhino extrusion start pole weights")?
-            .zip(ctx.admit_iter(end.as_slice(), "Rhino extrusion end pole weights")?)
-            .all(|(first, second)| first.weight == second.weight),
+            .all_by(
+                (start.as_slice()).iter().zip((end.as_slice()).iter()),
+                |(first, second)| {
+                    ctx.charge_work(1, "Rhino extrusion end pole weights")?;
+                    Ok(first.weight == second.weight)
+                },
+                "Rhino extrusion start pole weights",
+            )?,
         _ => false,
     })
 }

@@ -29,17 +29,11 @@ pub(crate) fn decode_payload(
         }
         if input.get(at..at + 2) == Some(b"/*") {
             let body = at + 2;
-            if let Some(end) = ctx
-                .admit_iter(
-                    &input[body..payload.end],
-                    "STEP signature comment traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
-                .windows(std::num::NonZeroUsize::new(2).ok_or_else(|| {
-                    ctx.refuse_codec_limit("STEP signature comment window width", 0, 1)
-                })?)
-                .position(|window| window == b"*/")
-            {
+            if let Some(end) = ctx.position_by(
+                input[body..payload.end].windows(2),
+                |window| Ok(window == b"*/"),
+                "STEP signature comment traversal",
+            )? {
                 at = body + end + 2;
                 continue;
             }

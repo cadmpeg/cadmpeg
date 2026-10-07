@@ -226,25 +226,21 @@ pub(crate) fn parse_header(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Head
     }
     let version = &bytes[start_offset + file_header::ARCHIVE_VERSION..header_end];
     let first_digit = ctx
-        .admit_iter(&version[..], "Rhino parse header traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .position(u8::is_ascii_digit)
-        .ok_or(FramingError::InvalidHeader)?;
-    if ctx
-        .admit_iter(
-            &(version[..first_digit])[..],
+        .position_by(
+            version,
+            |value| Ok(u8::is_ascii_digit(value)),
             "Rhino parse header traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-        .any(|byte| *byte != b' ')
-        || ctx
-            .admit_iter(
-                &(version[first_digit..])[..],
-                "Rhino parse header traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
-            .any(|byte| !byte.is_ascii_digit())
-    {
+        )?
+        .ok_or(FramingError::InvalidHeader)?;
+    if ctx.any_by(
+        &(version[..first_digit])[..],
+        |byte| Ok(*byte != b' '),
+        "Rhino parse header traversal",
+    )? || ctx.any_by(
+        &(version[first_digit..])[..],
+        |byte| Ok(!byte.is_ascii_digit()),
+        "Rhino parse header traversal",
+    )? {
         return Err(FramingError::InvalidHeader);
     }
     let text =

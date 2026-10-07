@@ -974,12 +974,19 @@ impl<'a> DecodeContext<'a> {
                         let proxy = self
                             .expand
                             .ctx()
-                            .admit_iter(&object.userdata[..], "Rhino decode geometry traversal")?
-                            .filter_map(UserdataDescriptor::known)
-                            .find(|extra| {
-                                extra.class_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
-                                    && extra.item_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
-                            })
+                            .find_map(
+                                &object.userdata[..],
+                                |raw| {
+                                    let Some(extra) = UserdataDescriptor::known(raw) else {
+                                        return Ok(None);
+                                    };
+                                    Ok((extra.class_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
+                                        && extra.item_uuid
+                                            == crate::subd::SUBD_MESH_PROXY_USERDATA)
+                                        .then_some(extra))
+                                },
+                                "Rhino decode geometry traversal",
+                            )?
                             .cloned();
                         let mut proxy_transferred = false;
                         if let (Some(extra), Some(fingerprint)) = (proxy, mesh.proxy_fingerprint) {
@@ -3439,9 +3446,7 @@ impl<'a> DecodeContext<'a> {
         let binding = self.unit_binding();
         for index in 0..self.scan.history.len() {
             let record = &self.scan.history[index];
-            if !self.expand.ctx().admit_iter(&record.values[..], "Rhino retain unbound history geometry traversal")?.any(|value| {
-                matches!(&value.value, crate::history::Value::Geometries(values) if !values.is_empty())
-            }) {
+            if !self.expand.ctx().any_by(&record.values[..], |value| Ok(matches!(&value.value, crate::history::Value::Geometries(values) if !values.is_empty())), "Rhino retain unbound history geometry traversal")? {
                 continue;
             }
             let range = record.source_range.clone();
@@ -7752,10 +7757,11 @@ fn hatch_plane_transform(
     Transform::affine(rows).map_or_else(
         || {
             let offending = ctx
-                .admit_iter(&rows, "Rhino hatch plane coefficient traversal")?
-                .flat_map(|row| [&row[0], &row[1], &row[2], &row[3]])
-                .copied()
-                .find(|value| !value.is_finite())
+                .find_map(
+                    &rows,
+                    |row| Ok(row.iter().copied().find(|value| !value.is_finite())),
+                    "Rhino hatch plane coefficient traversal",
+                )?
                 .unwrap_or(f64::NAN);
             Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
                 format_args!(
