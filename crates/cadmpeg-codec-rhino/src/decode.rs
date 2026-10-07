@@ -2234,9 +2234,14 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
-    fn is_definition_member(&self, object: &ObjectDescriptor) -> Result<bool, cadmpeg_core::CodecError> {
+    fn is_definition_member(
+        &self,
+        object: &ObjectDescriptor,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         let identity = &object.identity;
-        self.scan.definitions.contains_member(self.expand.ctx(), identity.object_id)
+        self.scan
+            .definitions
+            .contains_member(self.expand.ctx(), identity.object_id)
     }
 
     /// Admit the source-derived object key before composing any typed identity.

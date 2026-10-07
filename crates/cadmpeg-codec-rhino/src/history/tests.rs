@@ -1735,13 +1735,34 @@ fn embedded_mesh_json_preserves_bytes_and_refuses_retained_limit() {
     ));
 }
 
-
 #[test]
 fn history_cursor_walks_preserve_work_refusal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     for (is_uuid_list, bytes) in [
-        (true, anonymous_value(0, &[2_i32.to_le_bytes().as_slice(), id(1).to_wire().as_slice(), id(2).to_wire().as_slice()].concat())),
-        (false, value(2, &[2_i32.to_le_bytes(), 11_i32.to_le_bytes(), 12_i32.to_le_bytes()].concat())),
+        (
+            true,
+            anonymous_value(
+                0,
+                &[
+                    2_i32.to_le_bytes().as_slice(),
+                    id(1).to_wire().as_slice(),
+                    id(2).to_wire().as_slice(),
+                ]
+                .concat(),
+            ),
+        ),
+        (
+            false,
+            value(
+                2,
+                &[
+                    2_i32.to_le_bytes(),
+                    11_i32.to_le_bytes(),
+                    12_i32.to_le_bytes(),
+                ]
+                .concat(),
+            ),
+        ),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(
             ResourceDimension::WorkUnits,
@@ -1756,9 +1777,16 @@ fn history_cursor_walks_preserve_work_refusal() {
                         .map(|_| ())
                         .or_else(|error| Err(super::history_resource_error(&ctx, error)?))
                 } else {
-                    parse_value_with_warnings(&ctx, &bytes, 0, bytes.len(), ArchiveVersion::V8, &mut Diagnostics::new())
-                        .map(|_| ())
-                        .or_else(|error| Err(super::history_resource_error(&ctx, error)?))
+                    parse_value_with_warnings(
+                        &ctx,
+                        &bytes,
+                        0,
+                        bytes.len(),
+                        ArchiveVersion::V8,
+                        &mut Diagnostics::new(),
+                    )
+                    .map(|_| ())
+                    .or_else(|error| Err(super::history_resource_error(&ctx, error)?))
                 }
             },
         );

@@ -480,7 +480,10 @@ fn append_file_reference_diagnostics(
     source_offset: usize,
     tag: &'static str,
 ) -> Result<(), FramingError> {
-    for diagnostic in ctx.admit_iter(&diagnostics[..], "Rhino view diagnostic traversal").map_err(CodecError::from)? {
+    for diagnostic in ctx
+        .admit_iter(&diagnostics[..], "Rhino view diagnostic traversal")
+        .map_err(CodecError::from)?
+    {
         let code = diagnostic
             .code
             .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure);
@@ -1123,7 +1126,10 @@ fn scan_viewport_userdata(
                 }
                 let mut warnings = Diagnostics::new();
                 let parsed = parse_userdata(ctx, data, &child, archive, &mut warnings);
-                for warning in ctx.admit_iter(&warnings[..], "Rhino viewport diagnostic traversal").map_err(CodecError::from)? {
+                for warning in ctx
+                    .admit_iter(&warnings[..], "Rhino viewport diagnostic traversal")
+                    .map_err(CodecError::from)?
+                {
                     let code = warning
                         .code
                         .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure);

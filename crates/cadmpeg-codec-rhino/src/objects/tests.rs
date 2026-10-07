@@ -1531,7 +1531,9 @@ fn object_record_collection_refusal(bytes: &[u8], limit: u64) -> crate::chunks::
     policy.limits.max_collection_items = limit;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .expect("root bytes admitted");
-    let mut workspace = ctx.reserve_scoped(0, "Rhino test object workspace").unwrap();
+    let mut workspace = ctx
+        .reserve_scoped(0, "Rhino test object workspace")
+        .unwrap();
     crate::objects::parse_object_record(
         &ctx,
         &mut workspace,
@@ -1588,7 +1590,9 @@ fn object_class_userdata_refuses_collection_limit() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("root bytes admitted");
-    let mut workspace = ctx.reserve_scoped(0, "Rhino test object workspace").unwrap();
+    let mut workspace = ctx
+        .reserve_scoped(0, "Rhino test object workspace")
+        .unwrap();
     let parsed = crate::objects::parse_object_record(
         &ctx,
         &mut workspace,

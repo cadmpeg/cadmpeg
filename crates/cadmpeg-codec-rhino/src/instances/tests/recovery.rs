@@ -341,8 +341,20 @@ fn nil_definition_identity_is_not_admitted_and_keeps_source_membership() {
                     .unwrap(),
             );
             assert!(scan.definitions.definitions().is_empty());
-            assert!(scan.definitions.contains_member(&cadmpeg_test_support::service_decode_context(), Uuid::from_wire(member)).expect("member lookup admitted"));
-            assert!(!scan.definitions.contains_member(&cadmpeg_test_support::service_decode_context(), Uuid::from_wire(ordinary)).expect("member lookup admitted"));
+            assert!(scan
+                .definitions
+                .contains_member(
+                    &cadmpeg_test_support::service_decode_context(),
+                    Uuid::from_wire(member)
+                )
+                .expect("member lookup admitted"));
+            assert!(!scan
+                .definitions
+                .contains_member(
+                    &cadmpeg_test_support::service_decode_context(),
+                    Uuid::from_wire(ordinary)
+                )
+                .expect("member lookup admitted"));
             let losses: Vec<_> = decoded
                 .report()
                 .losses
@@ -382,29 +394,69 @@ fn alternate_instance_paths_use_scratch_and_copy_only_stored_text() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let archive = ArchiveVersion::V5;
     for relative in [false, true] {
-        let userdata = bytes::class_userdata(archive, crate::instances::IDEF_ALTERNATIVE_PATH_USERDATA.to_wire(), crate::instances::OPENNURBS5_APPLICATION.to_wire(), "  alternate-path  ", relative);
+        let userdata = bytes::class_userdata(
+            archive,
+            crate::instances::IDEF_ALTERNATIVE_PATH_USERDATA.to_wire(),
+            crate::instances::OPENNURBS5_APPLICATION.to_wire(),
+            "  alternate-path  ",
+            relative,
+        );
         let payload = bytes::v5_definition_payload(archive, 6, [7; 16], &[], true);
         let data = bytes::definition_record_with_userdata(archive, &payload, &userdata);
         let chunk = crate::chunks::chunk_at(&data, 0, data.len(), archive, false).unwrap();
         let record = crate::container::Record::long(chunk.typecode, chunk.range(), chunk.body());
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "Rhino instance alternate path", |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
-            crate::instances::parse_definitions(&ctx, &data, std::slice::from_ref(&record), archive, 0x1000_0021)
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes,
+            "Rhino instance alternate path",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+                crate::instances::parse_definitions(
+                    &ctx,
+                    &data,
+                    std::slice::from_ref(&record),
+                    archive,
+                    0x1000_0021,
+                )
+            },
+        );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
         // The raw path is temporary even when its trimmed text fills an output field.
-        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::RetainedBytes, "Rhino instance alternate path", None);
-        let result = crate::instances::parse_definitions(&ctx, &data, std::slice::from_ref(&record), archive, 0x1000_0021).expect("alternate-path recovery");
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::RetainedBytes,
+            "Rhino instance alternate path",
+            None,
+        );
+        let result = crate::instances::parse_definitions(
+            &ctx,
+            &data,
+            std::slice::from_ref(&record),
+            archive,
+            0x1000_0021,
+        )
+        .expect("alternate-path recovery");
         assert_eq!(result.scan.definitions().len(), 1);
         match &result.scan.definitions()[0].link {
-            crate::instances::LinkSource::LegacyFull(path) => { assert!(!relative); assert_eq!(path.as_str(), "/full/source.3dm"); }
-            crate::instances::LinkSource::LegacyRelative { relative_path, full_path } => { assert!(relative); assert_eq!(relative_path.as_str(), "alternate-path"); assert_eq!(full_path.as_ref().map(|path| path.as_str()), Some("/full/source.3dm")); }
+            crate::instances::LinkSource::LegacyFull(path) => {
+                assert!(!relative);
+                assert_eq!(path.as_str(), "/full/source.3dm");
+            }
+            crate::instances::LinkSource::LegacyRelative {
+                relative_path,
+                full_path,
+            } => {
+                assert!(relative);
+                assert_eq!(relative_path.as_str(), "alternate-path");
+                assert_eq!(
+                    full_path.as_ref().map(|path| path.as_str()),
+                    Some("/full/source.3dm")
+                );
+            }
             other => panic!("unexpected link source: {other:?}"),
         }
     }

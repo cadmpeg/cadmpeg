@@ -1359,16 +1359,23 @@ fn first_user_string_records(
     if let Some(index) = ctx.find_map(
         (attributes)[..].iter().enumerate(),
         |(index, value)| -> Result<_, CodecError> {
-            Ok(value.key.eq_ignore_ascii_case("$temp_object$").then_some(index))
+            Ok(value
+                .key
+                .eq_ignore_ascii_case("$temp_object$")
+                .then_some(index))
         },
         "Rhino first user string records traversal",
     )? {
         let mut position = 0;
-        ctx.retain_vec(&mut attributes, |_| {
-            let keep = position != index;
-            position += 1;
-            Ok(keep)
-        }, "Rhino temporary user string removal")?;
+        ctx.retain_vec(
+            &mut attributes,
+            |_| {
+                let keep = position != index;
+                position += 1;
+                Ok(keep)
+            },
+            "Rhino temporary user string removal",
+        )?;
     }
     Ok((geometry, attributes))
 }
@@ -1825,26 +1832,42 @@ fn classify_rdk_material_payload(
             "legacy RDK XML root is not xml",
         ));
     }
-    let render_data = ctx.find_by(root.children(), |node| Ok(node.is_element() && node.tag_name().name() == "render-content-manager-data"), "Rhino RDK render data search")?
+    let render_data = ctx
+        .find_by(
+            root.children(),
+            |node| Ok(node.is_element() && node.tag_name().name() == "render-content-manager-data"),
+            "Rhino RDK render data search",
+        )?
         .ok_or_else(|| {
             FramingError::structural(
                 payload_range.start,
                 "legacy RDK XML has no render-content-manager-data element",
             )
         })?;
-    let material = ctx.find_by(render_data.children(), |node| Ok(node.is_element() && node.tag_name().name() == "material"), "Rhino RDK material search")?
+    let material = ctx
+        .find_by(
+            render_data.children(),
+            |node| Ok(node.is_element() && node.tag_name().name() == "material"),
+            "Rhino RDK material search",
+        )?
         .ok_or_else(|| {
             FramingError::structural(
                 payload_range.start,
                 "legacy RDK XML has no material element",
             )
         })?;
-    let instance_id = ctx.find_map(material.attributes(), |attribute| Ok((attribute.name() == "instance-id").then_some(attribute.value())), "Rhino RDK instance attribute search")?.ok_or_else(|| {
-        FramingError::structural(
-            payload_range.start,
-            "legacy RDK material has no instance-id attribute",
-        )
-    })?;
+    let instance_id = ctx
+        .find_map(
+            material.attributes(),
+            |attribute| Ok((attribute.name() == "instance-id").then_some(attribute.value())),
+            "Rhino RDK instance attribute search",
+        )?
+        .ok_or_else(|| {
+            FramingError::structural(
+                payload_range.start,
+                "legacy RDK material has no instance-id attribute",
+            )
+        })?;
     let instance_id = parse_uuid_text(ctx, instance_id)?.ok_or_else(|| {
         FramingError::structural(
             payload_range.start,
@@ -1861,18 +1884,27 @@ fn legacy_rdk_material_instance_id(
     data: &[u8],
     userdata: &[UserdataDescriptor],
 ) -> Result<Option<Uuid>, CodecError> {
-    ctx.find_map(userdata.iter().rev(), |raw| {
-        let Some(value) = raw.known() else { return Ok(None); };
-        if value.class_uuid != RDK_CLASS || value.item_uuid != RDK_USERDATA
-            || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION)) {
-            return Ok(None);
-        }
-        match parse_legacy_rdk_material_instance_id(ctx, data, value.payload_range.clone()) {
-            Ok(value) => Ok(value),
-            Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
-            Err(_) => Ok(None),
-        }
-    }, "Rhino legacy rdk material instance id traversal")
+    ctx.find_map(
+        userdata.iter().rev(),
+        |raw| {
+            let Some(value) = raw.known() else {
+                return Ok(None);
+            };
+            if value.class_uuid != RDK_CLASS
+                || value.item_uuid != RDK_USERDATA
+                || (value.application_uuid.is_some()
+                    && value.application_uuid != Some(RDK_APPLICATION))
+            {
+                return Ok(None);
+            }
+            match parse_legacy_rdk_material_instance_id(ctx, data, value.payload_range.clone()) {
+                Ok(value) => Ok(value),
+                Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
+                Err(_) => Ok(None),
+            }
+        },
+        "Rhino legacy rdk material instance id traversal",
+    )
 }
 
 fn rdk_material_userdata_requires_opaque(
@@ -1880,18 +1912,27 @@ fn rdk_material_userdata_requires_opaque(
     data: &[u8],
     userdata: &[UserdataDescriptor],
 ) -> Result<bool, CodecError> {
-    ctx.any_by(userdata, |raw| {
-        let Some(value) = raw.known() else { return Ok(false); };
-        if value.class_uuid != RDK_CLASS || value.item_uuid != RDK_USERDATA
-            || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION)) {
-            return Ok(false);
-        }
-        match classify_rdk_material_payload(ctx, data, value.payload_range.clone()) {
-            Ok(RdkMaterialPayload::Compatibility(_)) => Ok(false),
-            Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
-            Ok(RdkMaterialPayload::CallbackOwned) | Err(_) => Ok(true),
-        }
-    }, "Rhino rdk material userdata requires opaque traversal")
+    ctx.any_by(
+        userdata,
+        |raw| {
+            let Some(value) = raw.known() else {
+                return Ok(false);
+            };
+            if value.class_uuid != RDK_CLASS
+                || value.item_uuid != RDK_USERDATA
+                || (value.application_uuid.is_some()
+                    && value.application_uuid != Some(RDK_APPLICATION))
+            {
+                return Ok(false);
+            }
+            match classify_rdk_material_payload(ctx, data, value.payload_range.clone()) {
+                Ok(RdkMaterialPayload::Compatibility(_)) => Ok(false),
+                Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
+                Ok(RdkMaterialPayload::CallbackOwned) | Err(_) => Ok(true),
+            }
+        },
+        "Rhino rdk material userdata requires opaque traversal",
+    )
 }
 
 fn wide_string(
@@ -1988,7 +2029,8 @@ fn parse_light_record_attributes(
     let mut phase = 0_u8;
     let mut record_end_seen = false;
     while offset < record.body().end {
-        ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
+        ctx.charge_work(1, "Rhino presentation cursor traversal")
+            .map_err(FramingError::from)?;
         let item = chunk_at(data, offset, record.body().end, archive, false)?;
         if item.typecode == LIGHT_RECORD_END {
             if !item.short() || item.value()? != 0 {
@@ -2136,7 +2178,10 @@ fn parse_light_record_attributes(
         losses,
     )
     .map_err(FramingError::from)?;
-    for warning in ctx.admit_iter(&warnings[..], "Rhino light diagnostic traversal").map_err(CodecError::from)? {
+    for warning in ctx
+        .admit_iter(&warnings[..], "Rhino light diagnostic traversal")
+        .map_err(CodecError::from)?
+    {
         push_presentation_loss(
             ctx,
             losses,
@@ -2197,7 +2242,13 @@ fn append_file_reference_diagnostics(
     diagnostics: Diagnostics,
     source_offset: usize,
 ) -> Result<(), FramingError> {
-    for diagnostic in ctx.admit_iter(&diagnostics[..], "Rhino file reference diagnostic traversal").map_err(CodecError::from)? {
+    for diagnostic in ctx
+        .admit_iter(
+            &diagnostics[..],
+            "Rhino file reference diagnostic traversal",
+        )
+        .map_err(CodecError::from)?
+    {
         let code = diagnostic.code.unwrap_or(RhinoLossCode::IntegrityFailure);
         ctx.reserve_vec(losses, 1, "Rhino texture file-reference losses")
             .map_err(crate::chunks::FramingError::from)?;
@@ -2393,7 +2444,8 @@ fn texture_array(
         .collection_vec(count, "Rhino material textures")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
-        ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
+        ctx.charge_work(1, "Rhino presentation cursor traversal")
+            .map_err(FramingError::from)?;
         let object = chunk_at(data, values.position(), values.end(), archive, false)?;
         if object.short() {
             return Err(FramingError::structural(
@@ -2884,9 +2936,15 @@ fn disambiguate_group_ids(
     let mut counts = HashMap::<&str, usize>::new();
     let mut workspace = ctx.reserve_scoped(0, "Rhino group identity workspace")?;
     for group in ctx.admit_iter(&groups[..], "Rhino disambiguate group ids traversal")? {
-        let count = workspace.with_storage(|| ctx.entry_hash_map(
-            &mut counts, group.id.as_str(), "Rhino group identity counts",
-        ))?.or_default();
+        let count = workspace
+            .with_storage(|| {
+                ctx.entry_hash_map(
+                    &mut counts,
+                    group.id.as_str(),
+                    "Rhino group identity counts",
+                )
+            })?
+            .or_default();
         *count += 1;
     }
     let mut duplicate_indices = Vec::new();
@@ -2895,7 +2953,11 @@ fn disambiguate_group_ids(
         .admit_iter(&groups[..], "Rhino disambiguate group ids traversal")?
         .enumerate()
     {
-        if ctx.get_hash_map(&counts, group.id.as_str(), "Rhino group identity lookup")?.copied() != Some(1) {
+        if ctx
+            .get_hash_map(&counts, group.id.as_str(), "Rhino group identity lookup")?
+            .copied()
+            != Some(1)
+        {
             index_workspace.with_storage(|| {
                 ctx.reserve_vec(&mut duplicate_indices, 1, "Rhino duplicate group indices")
             })?;
@@ -3028,7 +3090,11 @@ fn push_light(
 ) -> Result<(), CodecError> {
     let source_id = parse_uuid_text(ctx, &light.source_uuid)?
         .ok_or_else(|| CodecError::malformed("light source UUID is invalid"))?;
-    if !source_id.is_nil() && !workspace.with_storage(|| ctx.insert_hash_set(identities, source_id, "Rhino light identity index"))? {
+    if !source_id.is_nil()
+        && !workspace.with_storage(|| {
+            ctx.insert_hash_set(identities, source_id, "Rhino light identity index")
+        })?
+    {
         light.id = ctx.format_retained(
             format_args!("{}-offset-{}", light.id, light.source_offset),
             "Rhino duplicate light ID",
@@ -3055,7 +3121,8 @@ fn segments(
         .collection_vec(bytes / 12, "Rhino linetype segments")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..bytes / 12 {
-        ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
+        ctx.charge_work(1, "Rhino presentation cursor traversal")
+            .map_err(FramingError::from)?;
         let length = read_finite(ctx, reader, "linetype segment length")?;
         values.push(SourceLinetypeSegment {
             length,
@@ -3131,7 +3198,8 @@ fn parse_linetype(
                     .map_err(crate::chunks::FramingError::from)?;
                 let mut invalid = false;
                 for _ in 0..bytes / 16 {
-                    ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
+                    ctx.charge_work(1, "Rhino presentation cursor traversal")
+                        .map_err(FramingError::from)?;
                     let first = reader.f64()?;
                     let second = reader.f64()?;
                     match (FiniteReal::new(first), FiniteReal::new(second)) {
@@ -3165,7 +3233,11 @@ fn parse_linetype(
     let mut segments = ctx
         .collection_vec(values.len(), "Rhino projected linetype segments")
         .map_err(crate::chunks::FramingError::from)?;
-    for segment in ctx.admit_iter(values, "Rhino linetype projection traversal").map_err(CodecError::from).map_err(FramingError::from)? {
+    for segment in ctx
+        .admit_iter(values, "Rhino linetype projection traversal")
+        .map_err(CodecError::from)
+        .map_err(FramingError::from)?
+    {
         let length_millimeters = if always {
             let scale = pattern_document_scale(binding)?;
             scaled_coordinate(segment.length.get(), scale).ok_or_else(|| {
@@ -3250,7 +3322,8 @@ fn hatch_line_fields(
         .collection_vec(bytes / 8, "Rhino hatch line dashes")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..bytes / 8 {
-        ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
+        ctx.charge_work(1, "Rhino presentation cursor traversal")
+            .map_err(FramingError::from)?;
         dashes.push(read_finite(ctx, reader, "hatch dash")?);
     }
     Ok(SourceHatchLine {
@@ -3281,12 +3354,13 @@ impl SourceHatchLine {
         scale: MillimeterScale,
         source_offset: usize,
     ) -> Result<HatchLineRecord, FramingError> {
-        for value in self
-            .base
-            .iter_mut()
-            .chain(self.offset.iter_mut())
-            .chain(ctx.admit_iter(&mut self.dashes[..], "Rhino hatch dash projection traversal").map_err(CodecError::from)?)
-        {
+        for value in self.base.iter_mut().chain(self.offset.iter_mut()).chain(
+            ctx.admit_iter(
+                &mut self.dashes[..],
+                "Rhino hatch dash projection traversal",
+            )
+            .map_err(CodecError::from)?,
+        ) {
             *value = scaled_coordinate(value.get(), scale).ok_or_else(|| {
                 FramingError::structural(source_offset, "scaled hatch line is invalid")
             })?;
@@ -3340,7 +3414,8 @@ fn parse_hatch_pattern(
             .collection_vec(count, "Rhino modern hatch lines")
             .map_err(crate::chunks::FramingError::from)?;
         for _ in 0..count {
-            ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
+            ctx.charge_work(1, "Rhino presentation cursor traversal")
+                .map_err(FramingError::from)?;
             let line = chunk_at(
                 data,
                 line_reader.position(),
@@ -3401,7 +3476,8 @@ fn parse_hatch_pattern(
             .collection_vec(count, "Rhino legacy hatch lines")
             .map_err(crate::chunks::FramingError::from)?;
         for _ in 0..count {
-            ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
+            ctx.charge_work(1, "Rhino presentation cursor traversal")
+                .map_err(FramingError::from)?;
             lines.push(hatch_line_v5(ctx, &mut reader)?);
         }
         let id = if packed & 0x0f >= 2 {
@@ -3428,7 +3504,11 @@ fn parse_hatch_pattern(
         let mut projected = ctx
             .collection_vec(lines.len(), "Rhino projected hatch lines")
             .map_err(crate::chunks::FramingError::from)?;
-        for line in ctx.admit_iter(lines, "Rhino hatch pattern projection traversal").map_err(CodecError::from).map_err(FramingError::from)? {
+        for line in ctx
+            .admit_iter(lines, "Rhino hatch pattern projection traversal")
+            .map_err(CodecError::from)
+            .map_err(FramingError::from)?
+        {
             projected.push(line.into_millimeters(ctx, scale, source_offset)?);
         }
         projected
@@ -3499,7 +3579,7 @@ fn named_child(
     Ok(serde_json::json!({
         "offset": offset,
         "byte_len": chunk.next_offset() - offset,
-        "sha256": hex(ctx, &cadmpeg_ir::hash::sha256(&data[offset..chunk.next_offset()]), "Rhino dimension child SHA-256")?,
+        "sha256": String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(ctx, &data[offset..chunk.next_offset()], "Rhino dimension child SHA-256")?),
     }))
 }
 
@@ -4611,7 +4691,8 @@ fn rendering_attributes(
             ..RenderingAttributesPresentation::default()
         };
         for _ in 0..material_count {
-            ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
+            ctx.charge_work(1, "Rhino presentation cursor traversal")
+                .map_err(FramingError::from)?;
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
             let parsed = (|| {
                 let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
@@ -4646,7 +4727,8 @@ fn rendering_attributes(
                     value.position() - 4,
                 )?;
                 for _ in 0..obsolete_mapping_count {
-                    ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
+                    ctx.charge_work(1, "Rhino presentation cursor traversal")
+                        .map_err(FramingError::from)?;
                     let (_, next_offset) = parse_rendering_mapping_channel(
                         ctx,
                         data,
@@ -4697,7 +4779,8 @@ fn rendering_attributes(
                 .collection_vec(mapping_count, "Rhino projected rendering mappings")
                 .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..mapping_count {
-                ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
+                ctx.charge_work(1, "Rhino presentation cursor traversal")
+                    .map_err(FramingError::from)?;
                 let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
                 let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
                 if value.i32()? != 1 {
@@ -4729,7 +4812,8 @@ fn rendering_attributes(
                     .collection_vec(channel_count, "Rhino projected rendering channels")
                     .map_err(crate::chunks::FramingError::from)?;
                 for _ in 0..channel_count {
-                    ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
+                    ctx.charge_work(1, "Rhino presentation cursor traversal")
+                        .map_err(FramingError::from)?;
                     let (channel, next_offset) = parse_rendering_mapping_channel(
                         ctx,
                         data,
@@ -5104,9 +5188,15 @@ pub(crate) fn install(
     let mut apple_runtime = None;
     for object in ctx.admit_iter(&scan.objects[..], "Rhino install traversal")? {
         if let Some(identity) = object.identity() {
-            let count = object_count_workspace.with_storage(|| ctx.entry_hash_map(
-                &mut object_id_counts, identity.object_id, "Rhino object identity counts",
-            ))?.or_default();
+            let count = object_count_workspace
+                .with_storage(|| {
+                    ctx.entry_hash_map(
+                        &mut object_id_counts,
+                        identity.object_id,
+                        "Rhino object identity counts",
+                    )
+                })?
+                .or_default();
             *count += 1;
         }
     }
@@ -5160,11 +5250,18 @@ pub(crate) fn install(
                             record.range.start
                         ))?;
                     }
-                    let physically_based = if let Some(value) = ctx.find_map(&userdata, |raw| {
-                        Ok(raw.known().filter(|value| value.class_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
-                            && value.item_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
-                            && (value.application_uuid.is_none() || value.application_uuid == Some(OPENNURBS6_APPLICATION))))
-                    }, "Rhino PBR userdata search")? {
+                    let physically_based = if let Some(value) = ctx.find_map(
+                        &userdata,
+                        |raw| {
+                            Ok(raw.known().filter(|value| {
+                                value.class_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
+                                    && value.item_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
+                                    && (value.application_uuid.is_none()
+                                        || value.application_uuid == Some(OPENNURBS6_APPLICATION))
+                            }))
+                        },
+                        "Rhino PBR userdata search",
+                    )? {
                         match parse_physically_based_material(
                             ctx,
                             scan.data,
@@ -5387,7 +5484,16 @@ pub(crate) fn install(
                         scan.archive,
                         V5_DIMSTYLE,
                     ))? {
-                        let extra = ctx.find_map(&userdata, |raw| Ok(raw.known().filter(|value| value.class_uuid == DIMSTYLE_EXTRA && value.item_uuid == DIMSTYLE_EXTRA)), "Rhino dimension style userdata search")?;
+                        let extra = ctx.find_map(
+                            &userdata,
+                            |raw| {
+                                Ok(raw.known().filter(|value| {
+                                    value.class_uuid == DIMSTYLE_EXTRA
+                                        && value.item_uuid == DIMSTYLE_EXTRA
+                                }))
+                            },
+                            "Rhino dimension style userdata search",
+                        )?;
                         let extra = match extra {
                             Some(value) => match parse_v5_dimension_style_extra(
                                 ctx,
@@ -5546,7 +5652,11 @@ pub(crate) fn install(
                                 Some(value) => value,
                                 None => {
                                     let value = match &scan.metadata.properties.application {
-                                        Some(application) => ctx.any_by(application.name.as_bytes().windows(3), |part| Ok(part.eq_ignore_ascii_case(b"mac")), "Rhino font application search")?,
+                                        Some(application) => ctx.any_by(
+                                            application.name.as_bytes().windows(3),
+                                            |part| Ok(part.eq_ignore_ascii_case(b"mac")),
+                                            "Rhino font application search",
+                                        )?,
                                         None => false,
                                     };
                                     apple_runtime = Some(value);
@@ -5600,8 +5710,17 @@ pub(crate) fn install(
         };
         if let Some(attributes) = object.attributes.parsed() {
             for group in ctx.admit_iter(&attributes.groups[..], "Rhino install traversal")? {
-                let unique = ctx.binary_search_by(&group_index_counts, |(index, _)| Ok(index.cmp(group)), "Rhino group membership index lookup")?.ok().is_some_and(|index| group_index_counts[index].1 == 1);
-                if !unique { continue; }
+                let unique = ctx
+                    .binary_search_by(
+                        &group_index_counts,
+                        |(index, _)| Ok(index.cmp(group)),
+                        "Rhino group membership index lookup",
+                    )?
+                    .ok()
+                    .is_some_and(|index| group_index_counts[index].1 == 1);
+                if !unique {
+                    continue;
+                }
                 admit_group_member(
                     ctx,
                     &mut group_member_workspace,
@@ -5678,7 +5797,14 @@ pub(crate) fn install(
             )?;
             object_presentation.push(ObjectPresentationRecord {
                 id: if identity.object_id.is_nil()
-                    || ctx.get_hash_map(&object_id_counts, &identity.object_id, "Rhino object identity lookup")?.copied() != Some(1)
+                    || ctx
+                        .get_hash_map(
+                            &object_id_counts,
+                            &identity.object_id,
+                            "Rhino object identity lookup",
+                        )?
+                        .copied()
+                        != Some(1)
                 {
                     ctx.format_retained(
                         format_args!("rhino:presentation:object#record-{source_order:06}"),
@@ -5700,9 +5826,11 @@ pub(crate) fn install(
     let mut layer_count_workspace = ctx.reserve_scoped(0, "Rhino layer identity workspace")?;
     for layer in ctx.admit_iter(&scan.metadata.layers[..], "Rhino install traversal")? {
         if let Some(id) = layer.id {
-            let count = layer_count_workspace.with_storage(|| ctx.entry_hash_map(
-                &mut layer_id_counts, id, "Rhino layer identity counts",
-            ))?.or_default();
+            let count = layer_count_workspace
+                .with_storage(|| {
+                    ctx.entry_hash_map(&mut layer_id_counts, id, "Rhino layer identity counts")
+                })?
+                .or_default();
             *count += 1;
         }
     }
@@ -5730,15 +5858,25 @@ pub(crate) fn install(
             }
         };
         let mut per_viewport_settings = Vec::new();
-        ctx.extend_from_slice(&mut per_viewport_settings, &layer.per_viewport_settings, "Rhino layer presentation viewport settings")?;
+        ctx.extend_from_slice(
+            &mut per_viewport_settings,
+            &layer.per_viewport_settings,
+            "Rhino layer presentation viewport settings",
+        )?;
         let unique_id = match layer.id {
-            Some(id) if ctx.get_hash_map(&layer_id_counts, &id, "Rhino layer identity lookup")?.copied() == Some(1) => Some(id),
+            Some(id)
+                if ctx
+                    .get_hash_map(&layer_id_counts, &id, "Rhino layer identity lookup")?
+                    .copied()
+                    == Some(1) =>
+            {
+                Some(id)
+            }
             _ => None,
         };
         ctx.reserve_vec(&mut layers, 1, "Rhino layer presentation records")?;
         layers.push(LayerPresentationRecord {
-            id: if let Some(id) = unique_id
-            {
+            id: if let Some(id) = unique_id {
                 ctx.format_retained(
                     format_args!("rhino:presentation:layer#{id}"),
                     "Rhino layer presentation ID",
@@ -5816,11 +5954,13 @@ pub(crate) fn install(
         ))?;
     }
     for group in ctx.admit_iter(&mut groups[..], "Rhino group link traversal")? {
-        group.links = ctx.remove_hash_map(
-            &mut group_members,
-            &group.archive_index,
-            "Rhino group member removal",
-        )?.unwrap_or_default();
+        group.links = ctx
+            .remove_hash_map(
+                &mut group_members,
+                &group.archive_index,
+                "Rhino group member removal",
+            )?
+            .unwrap_or_default();
         ctx.stable_sort_by(
             &mut group.links,
             |value| value,

@@ -1416,7 +1416,6 @@ fn uuid_list_payload<'a>(
     Ok((payload, bytes / 16, chunk.next_offset()))
 }
 
-
 pub(crate) fn skip_uuid_list(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -1774,7 +1773,9 @@ fn resolve_identity(
             ),
             "Rhino identity source ID",
         )?
-    } else if !workspace.with_storage(|| ctx.insert_hash_set(seen_ids, object_id, "Rhino identity seen UUIDs"))? {
+    } else if !workspace
+        .with_storage(|| ctx.insert_hash_set(seen_ids, object_id, "Rhino identity seen UUIDs"))?
+    {
         warnings.push_admitted(ctx, format_args!("duplicate object UUID {object_id}"))?;
         ctx.format_retained(
             format_args!(
@@ -1979,9 +1980,12 @@ pub(crate) fn parse_object_record(
             &mut warnings,
         ) {
             Ok(value) => {
-                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectAttributes>()), "Rhino object attribute box")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectAttributes>()),
+                    "Rhino object attribute box",
+                )?;
                 AttributeState::Parsed(Box::new(value))
-            },
+            }
             Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
             Err(error) => {
                 warnings.push_admitted(
@@ -2025,7 +2029,12 @@ pub(crate) fn parse_object_record(
             &mut warnings,
         )?;
     }
-    workspace.with_storage(|| ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectDescriptor<()>>()), "Rhino framed object box"))?;
+    workspace.with_storage(|| {
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectDescriptor<()>>()),
+            "Rhino framed object box",
+        )
+    })?;
     Ok(ObjectRecord::Framed(Box::new(ObjectDescriptor {
         range: record.range.clone(),
         object_type,
@@ -2077,7 +2086,10 @@ pub(crate) fn resolve_identities(
         workspace.with_storage(|| layers.insert(ctx, layer))?;
     }
     let mut resolved = Vec::new();
-    for (index, object) in ctx.admit_iter(objects, "Rhino resolve identities traversal")?.enumerate() {
+    for (index, object) in ctx
+        .admit_iter(objects, "Rhino resolve identities traversal")?
+        .enumerate()
+    {
         ctx.reserve_vec(&mut resolved, 1, "Rhino resolved object identities")?;
         resolved.push(match object {
             ObjectRecord::Degraded { range, warning } => ObjectRecord::Degraded { range, warning },
@@ -2102,7 +2114,10 @@ pub(crate) fn resolve_identities(
                     )?;
                 }
                 object.warnings.append_admitted(ctx, &mut local_warnings)?;
-                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectDescriptor>()), "Rhino resolved object box")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectDescriptor>()),
+                    "Rhino resolved object box",
+                )?;
                 ObjectRecord::Framed(Box::new(ObjectDescriptor {
                     identity,
                     range: object.range,
@@ -2150,7 +2165,11 @@ impl<'a> LayerLookup<'a> {
         ctx: &DecodeContext<'_>,
         layer: &'a crate::settings::LayerRecord,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        match ctx.entry_hash_map(&mut self.entries, layer.index, "Rhino identity layer lookup")? {
+        match ctx.entry_hash_map(
+            &mut self.entries,
+            layer.index,
+            "Rhino identity layer lookup",
+        )? {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(LayerEntry::Unique(layer));
             }
@@ -2161,12 +2180,18 @@ impl<'a> LayerLookup<'a> {
         Ok(())
     }
 
-    fn resolve(&self, ctx: &DecodeContext<'_>, index: i32) -> Result<LayerMatch<'a>, cadmpeg_core::CodecError> {
-        Ok(match ctx.get_hash_map(&self.entries, &index, "Rhino identity layer query")? {
-            None => LayerMatch::Missing,
-            Some(LayerEntry::Unique(layer)) => LayerMatch::Unique(layer),
-            Some(LayerEntry::Ambiguous) => LayerMatch::Ambiguous,
-        })
+    fn resolve(
+        &self,
+        ctx: &DecodeContext<'_>,
+        index: i32,
+    ) -> Result<LayerMatch<'a>, cadmpeg_core::CodecError> {
+        Ok(
+            match ctx.get_hash_map(&self.entries, &index, "Rhino identity layer query")? {
+                None => LayerMatch::Missing,
+                Some(LayerEntry::Unique(layer)) => LayerMatch::Unique(layer),
+                Some(LayerEntry::Ambiguous) => LayerMatch::Ambiguous,
+            },
+        )
     }
 }
 

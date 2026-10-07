@@ -234,7 +234,9 @@ pub(crate) fn decode(
         .ok_or_else(|| {
             GeometryError::malformed(count_offset, "hatch loop count exceeds remaining window")
         })?;
-    let mut loops = match expand.ctx().collection_vec(loop_bound.get(), "Rhino hatch loops")
+    let mut loops = match expand
+        .ctx()
+        .collection_vec(loop_bound.get(), "Rhino hatch loops")
     {
         Ok(loops) => loops,
         Err(error) => return Err(refused(expand.ctx(), body.position(), &error)?),
@@ -342,7 +344,7 @@ pub(crate) fn apply_userdata(
             Err(error) => {
                 ctx.reserve_vec(&mut errors, 1, "Rhino hatch userdata errors")?;
                 errors.push(error);
-            },
+            }
         }
     }
     for extra in ctx
@@ -358,7 +360,7 @@ pub(crate) fn apply_userdata(
             Err(error) => {
                 ctx.reserve_vec(&mut errors, 1, "Rhino hatch userdata errors")?;
                 errors.push(error);
-            },
+            }
         }
     }
     if let Some(basepoint) = last_basepoint {
@@ -968,13 +970,24 @@ pub(crate) mod tests {
         let payload = gradient_userdata_payload(1, &[]);
         let hatch_payload = version_two_hatch_payload();
         for (dimension, operation) in [
-            (ResourceDimension::CollectionItems, "Rhino gradient color stops"),
-            (ResourceDimension::WorkUnits, "Rhino gradient stop traversal"),
+            (
+                ResourceDimension::CollectionItems,
+                "Rhino gradient color stops",
+            ),
+            (
+                ResourceDimension::WorkUnits,
+                "Rhino gradient stop traversal",
+            ),
         ] {
             cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
                 let mut hatch = crate::decode::with_expand_bytes(&hatch_payload, |expand| {
-                    decode(expand, 0..hatch_payload.len(), MillimeterScale::IDENTITY, ArchiveVersion::V8)
-                        .expect("hatch fixture")
+                    decode(
+                        expand,
+                        0..hatch_payload.len(),
+                        MillimeterScale::IDENTITY,
+                        ArchiveVersion::V8,
+                    )
+                    .expect("hatch fixture")
                 });
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
@@ -984,10 +997,16 @@ pub(crate) mod tests {
                     _ => unreachable!("test dimensions"),
                 }
                 let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)?;
-                apply_userdata(&ctx, &payload, &[gradient_descriptor(&payload)], MillimeterScale::IDENTITY, ArchiveVersion::V8, &mut hatch)
-                    .map(|result| result.expect("valid gradient userdata"))
+                apply_userdata(
+                    &ctx,
+                    &payload,
+                    &[gradient_descriptor(&payload)],
+                    MillimeterScale::IDENTITY,
+                    ArchiveVersion::V8,
+                    &mut hatch,
+                )
+                .map(|result| result.expect("valid gradient userdata"))
             });
         }
     }
-
 }

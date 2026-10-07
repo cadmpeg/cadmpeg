@@ -1118,7 +1118,9 @@ pub(crate) fn utf16_deferred<'a>(
     let error_offset = reader.position();
     let mut view = View::over_retained(bytes);
     let mut characters = char::decode_utf16(std::iter::from_fn(|| view.u16_le()));
-    while let Some(character) = ctx.next_charged(&mut characters, "validate Rhino deferred UTF-16")? {
+    while let Some(character) =
+        ctx.next_charged(&mut characters, "validate Rhino deferred UTF-16")?
+    {
         character.map_err(|_| {
             FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence")
         })?;
@@ -2184,7 +2186,10 @@ fn skip_model_attributes(
     Ok(chunk.range())
 }
 
-fn read_segments(ctx: &DecodeContext<'_>, payload: &mut BoundedReader<'_>) -> Result<(), FramingError> {
+fn read_segments(
+    ctx: &DecodeContext<'_>,
+    payload: &mut BoundedReader<'_>,
+) -> Result<(), FramingError> {
     let count = payload.i32()?;
     let bytes = crate::chunks::checked_count_bytes(
         count,
@@ -2742,8 +2747,10 @@ fn parse_layer(
             }
             if item == 37 {
                 push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
-                let mut description_workspace = ctx.reserve_scoped(0, "Rhino layer description workspace")?;
-                let description = description_workspace.with_storage(|| utf16_retained(ctx, &mut reader, "Rhino layer description"))?;
+                let mut description_workspace =
+                    ctx.reserve_scoped(0, "Rhino layer description workspace")?;
+                let description = description_workspace
+                    .with_storage(|| utf16_retained(ctx, &mut reader, "Rhino layer description"))?;
                 let trim = |character: char| {
                     matches!(
                         u32::from(character),
@@ -2757,11 +2764,27 @@ fn parse_layer(
                             | 0x2066..=0x2069
                     )
                 };
-                layer.description = match ctx.find_map(description.char_indices(), |(index, character)| Ok((!trim(character)).then_some(index)), "Rhino layer description prefix")? {
+                layer.description = match ctx.find_map(
+                    description.char_indices(),
+                    |(index, character)| Ok((!trim(character)).then_some(index)),
+                    "Rhino layer description prefix",
+                )? {
                     None => None,
                     Some(start) => {
-                        let end = ctx.find_map(description[start..].char_indices().rev(), |(index, character)| Ok((!trim(character)).then_some(start + index + character.len_utf8())), "Rhino layer description suffix")?.unwrap_or(start);
-                        Some(ctx.copy_retained_text(&description[start..end], "Rhino layer trimmed description")?)
+                        let end = ctx
+                            .find_map(
+                                description[start..].char_indices().rev(),
+                                |(index, character)| {
+                                    Ok((!trim(character))
+                                        .then_some(start + index + character.len_utf8()))
+                                },
+                                "Rhino layer description suffix",
+                            )?
+                            .unwrap_or(start);
+                        Some(ctx.copy_retained_text(
+                            &description[start..end],
+                            "Rhino layer trimmed description",
+                        )?)
                     }
                 };
                 let _next_item = reader.u8()?;
@@ -3042,9 +3065,11 @@ fn report_layer_parent_references(
     let mut workspace = ctx.reserve_scoped(0, "Rhino layer parent workspace")?;
     for layer in ctx.admit_iter(layers, "Rhino report layer parent references traversal")? {
         if let Some(id) = layer.id.filter(|id| !id.is_nil()) {
-            let count = workspace.with_storage(|| ctx.entry_hash_map(
-                &mut id_counts, id, "Rhino layer parent counts",
-            ))?.or_default();
+            let count = workspace
+                .with_storage(|| {
+                    ctx.entry_hash_map(&mut id_counts, id, "Rhino layer parent counts")
+                })?
+                .or_default();
             *count += 1;
         }
     }
