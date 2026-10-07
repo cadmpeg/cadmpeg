@@ -1088,8 +1088,9 @@ fn parse_flat(
     bytes: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
-    let frames = collect_object_stream_frames(ctx, bytes)?;
-    let records = records_from_frames(ctx, bytes, &frames)?;
+    let mut scratch = ctx.reserve_scoped(0, "catia_b5_parse_frame_scratch")?;
+    let frames = scratch.with_storage(|| collect_object_stream_frames(ctx, bytes))?;
+    let records = scratch.with_storage(|| records_from_frames(ctx, bytes, &frames))?;
     parse_from_records(ctx, bytes, &records, &frames, true, refusal)
 }
 
@@ -1099,7 +1100,8 @@ pub(in crate::families) fn parse_from_frames(
     frames: &[ObjectFrame],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
-    let records = records_from_frames(ctx, bytes, frames)?;
+    let mut scratch = ctx.reserve_scoped(0, "catia_b5_parse_record_scratch")?;
+    let records = scratch.with_storage(|| records_from_frames(ctx, bytes, frames))?;
     parse_from_records(ctx, bytes, &records, frames, true, refusal)
 }
 
@@ -2313,16 +2315,11 @@ fn parse_a8_class21_pcurve(
             Ok(scratch) => scratch,
             Err(error) => return Some(Err(error)),
         };
-        let mut knot_values = Vec::new();
-        if let Err(error) = ctx.reserve_scoped_vec(
-            &mut scratch,
-            &mut knot_values,
-            knot_count,
-            "catia B5 pcurve knot values",
-        ) {
-            return Some(Err(error));
-        }
-        knot_values.extend(distinct_knots.iter().copied().map(FiniteReal::get));
+        let knot_values = match scratch.with_storage(|| ctx.collect_vec(
+            distinct_knots.iter().copied().map(FiniteReal::get), "catia B5 pcurve knot values")) {
+            Ok(values) => values,
+            Err(error) => return Some(Err(error)),
+        };
         match knots_strictly_increasing(&knot_values, |count| {
             ctx.charge_work(count, "IR strict knot order")
         }) {
@@ -2814,7 +2811,7 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
     let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
     let records = scratch.with_storage(|| {
         let mut candidates = HashMap::<u32, Option<B5Record<'_>>>::new();
-        let mut order = Vec::new();
+        let mut order = BTreeMap::new();
         for frame in ctx.admit_iter(frames, "catia_b5_targeted_geometry_frame_scan")? {
             if !is_targeted_geometry_class(frame.family, frame.class) {
                 continue;
@@ -2823,12 +2820,12 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
                 continue;
             };
             if !ctx.contains_key_hash_map(&candidates, &record.object_id, OPERATION)? {
-                ctx.push_vec(&mut order, record.object_id, OPERATION)?;
+                ctx.insert_btree_map(&mut order, record.offset, record.object_id, OPERATION)?;
             }
             index_unique_records(ctx, &mut candidates, record, OPERATION)?;
         }
         let mut records = Vec::new();
-        for object_id in ctx.admit_iter(&order, "catia_b5_targeted_geometry_records")? {
+        for (_, object_id) in ctx.admit_iter(&order, "catia_b5_targeted_geometry_records")? {
             if let Some(record) = ctx
                 .get_hash_map(&candidates, object_id, OPERATION)?
                 .copied()
@@ -2837,12 +2834,6 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
                 ctx.push_vec(&mut records, record, "catia_b5_targeted_geometry_records")?;
             }
         }
-        ctx.stable_sort_by(
-            &mut records,
-            |value| &value.offset,
-            Ord::cmp,
-            "catia_b5_targeted_geometry_sort",
-        )?;
         Ok::<_, CodecError>(records)
     })?;
     parse_from_records(ctx, bytes, &records, frames, false, refusal)
@@ -5381,7 +5372,9 @@ fn parse_extrusion_directrix(
         if record.payload.get(tail + 24) != Some(&0x01) {
             return None;
         }
-        let wrapper = records.get(&wrapper_id)?;
+        let wrapper = match ctx.get_hash_map(records, &wrapper_id, "catia_b5_directrix_record_lookup") {
+            Ok(value) => *value?, Err(error) => return Some(Err(error)),
+        };
         (wrapper.family == 0xb5 && wrapper.class == 0x24 && wrapper.payload.first() == Some(&0x81))
             .then_some(())?;
         let mut wrapper_position = 1;
@@ -5402,10 +5395,14 @@ fn parse_extrusion_directrix(
         {
             return None;
         }
-        let first = records.get(&first_pcurve)?;
+        let first = match ctx.get_hash_map(records, &first_pcurve, "catia_b5_directrix_record_lookup") {
+            Ok(value) => *value?, Err(error) => return Some(Err(error)),
+        };
         let first_surface = pcurve_surface_reference(first)?;
-        let second = object_stream_pcurves.get(&second_pcurve)?;
-        Some((
+        let second = match ctx.get_btree_map(object_stream_pcurves, &second_pcurve, "catia_b5_directrix_pcurve_lookup") {
+            Ok(value) => value?, Err(error) => return Some(Err(error)),
+        };
+        Some(Ok((
             first,
             first_surface,
             first_pcurve,
@@ -5414,8 +5411,8 @@ fn parse_extrusion_directrix(
             second.parameter_range,
             parameter_range,
             cache_fit_tolerance,
-        ))
-    })();
+        )))
+    })().transpose()?;
     let Some((
         first,
         first_surface,
@@ -5471,10 +5468,10 @@ fn parse_surface_curve_directrix(
     let Some((pcurve, start, end, interval)) = parsed else {
         return Ok(None);
     };
-    let (surface, pcurve_range) = if let Some(candidate) = object_stream_pcurves.get(&pcurve) {
+    let (surface, pcurve_range) = if let Some(candidate) = ctx.get_btree_map(object_stream_pcurves, &pcurve, "catia_b5_directrix_pcurve_lookup")? {
         (candidate.surface, candidate.parameter_range)
     } else {
-        let Some(pcurve_record) = records.get(&pcurve) else {
+        let Some(pcurve_record) = ctx.get_hash_map(records, &pcurve, "catia_b5_directrix_record_lookup")? else {
             return Ok(None);
         };
         let Some(surface) = pcurve_surface_reference(pcurve_record) else {
@@ -5525,7 +5522,9 @@ fn parse_offset_curve_directrix(
         let [x, y, z, start, end] = [x, y, z, start, end].map(FiniteReal::get);
         let parameter_range = IncreasingParameterInterval::new([start, end])?;
         position += 48;
-        let source_record = records.get(&source_id)?;
+        let source_record = match ctx.get_hash_map(records, &source_id, "catia_b5_directrix_record_lookup") {
+            Ok(value) => *value?, Err(error) => return Some(Err(error)),
+        };
         if !((source_record.family == 0xb5 && source_record.class == 0x24)
             || (source_record.family == 0xa8 && source_record.class == 0x25))
         {
@@ -5535,14 +5534,14 @@ fn parse_offset_curve_directrix(
         if position != record.payload.len() || distance.get() == 0.0 {
             return None;
         }
-        Some((
+        Some(Ok((
             source_record,
             source_parameter_range,
             distance,
             direction,
             parameter_range,
-        ))
-    })();
+        )))
+    })().transpose()?;
     let Some((source_record, source_parameter_range, distance, direction, parameter_range)) =
         parsed
     else {
@@ -5553,9 +5552,8 @@ fn parse_offset_curve_directrix(
     else {
         return Ok(None);
     };
-    if !ctx
-        .admit_iter(source.supports(), "catia_b5_offset_directrix_support_scan")?
-        .any(|support| {
+    // A directrix exposes at most two supports, each with two endpoints.
+    if !source.supports().iter().any(|support| {
             support
                 .2
                 .into_iter()
@@ -7463,7 +7461,7 @@ fn isolated_geometry_runs(
 ) -> Result<Vec<usize>, CodecError> {
     const OPERATION: &str = "catia_b5_isolated_geometry_candidates";
     let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
-    let isolated = scratch.with_storage(|| {
+    let ordered = scratch.with_storage(|| {
         let referenced = topology_surface_references(ctx, records)?;
         let mut owned_ids = HashSet::new();
         for record in ctx.admit_iter(records, "catia_b5_population_owned_id_scan")? {
@@ -7473,7 +7471,8 @@ fn isolated_geometry_runs(
                 "catia_b5_population_owned_ids",
             )?;
         }
-        let mut isolated = BTreeMap::<u32, Option<usize>>::new();
+        let mut isolated = HashMap::<u32, Option<usize>>::new();
+        let mut ordered = BTreeSet::new();
         for (index, run) in ctx
             .admit_iter(runs, "catia_b5_isolated_candidate_scan")?
             .enumerate()
@@ -7492,7 +7491,7 @@ fn isolated_geometry_runs(
             {
                 continue;
             }
-            match ctx.get_mut_btree_map(&mut isolated, &object_id, OPERATION)? {
+            match ctx.get_mut_hash_map(&mut isolated, &object_id, OPERATION)? {
                 // Equal frame bytes carry equal family and class headers.
                 Some(stored) => {
                     if let Some(previous) = *stored {
@@ -7501,30 +7500,20 @@ fn isolated_geometry_runs(
                             &stream[run.range.clone()],
                             OPERATION,
                         )? {
+                            ctx.remove_btree_set(&mut ordered, &previous, OPERATION)?;
                             *stored = None;
                         }
                     }
                 }
                 None => {
-                    ctx.insert_btree_map(&mut isolated, object_id, Some(index), OPERATION)?;
+                    ctx.insert_hash_map(&mut isolated, object_id, Some(index), OPERATION)?;
+                    ctx.insert_btree_set(&mut ordered, index, OPERATION)?;
                 }
             }
         }
-        Ok::<_, CodecError>(isolated)
+        Ok::<_, CodecError>(ordered)
     })?;
-    let mut isolated = ctx.collect_vec(
-        ctx.admit_iter(&isolated, "catia_b5_isolated_geometry_order")?
-            .filter_map(|(_, index)| *index),
-        "catia_b5_isolated_geometry_order",
-    )?;
-    // Run indices follow stream order within one stream.
-    ctx.sort_unstable_by_key(
-        &mut isolated,
-        |index| *index,
-        Ord::cmp,
-        "catia_b5_isolated_geometry_sort",
-    )?;
-    Ok(isolated)
+    ctx.collect_vec(ordered, "catia_b5_isolated_geometry_order")
 }
 
 /// Build one topology population from its owning run and uniquely referenced
@@ -8034,23 +8023,21 @@ pub(in crate::families) fn edge_face_references_from_frames(
     bytes: &[u8],
     frames: &[ObjectFrame],
 ) -> Result<BTreeMap<u32, Vec<u32>>, CodecError> {
-    let records = records_from_frames(ctx, bytes, frames)?;
+    let mut scratch = ctx.reserve_scoped(0, "catia_b5_edge_face_scratch")?;
+    let records = scratch.with_storage(|| records_from_frames(ctx, bytes, frames))?;
     let mut edge_ids = HashSet::new();
     for record in ctx
         .admit_iter(&records, "catia_b5_edge_face_record_scan")?
         .filter(|record| record.family == 0xb5 && record.class == 0x5e)
     {
-        ctx.insert_hash_set(
-            &mut edge_ids,
-            record.object_id,
-            "catia_b5_edge_face_edge_ids",
-        )?;
+        scratch.with_storage(|| ctx.insert_hash_set(
+            &mut edge_ids, record.object_id, "catia_b5_edge_face_edge_ids"))?;
     }
-    let loops = typed_loop_records_from_records(ctx, &records)?;
+    let loops = scratch.with_storage(|| typed_loop_records_from_records(ctx, &records))?;
     // Faces are visited in ascending id order, so each owner row is built
     // ascending and a repeated owner can only be its last entry.
     let mut owners = BTreeMap::<u32, Vec<u32>>::new();
-    let typed_faces = typed_face_records_from_records(ctx, &records)?;
+    let typed_faces = scratch.with_storage(|| typed_face_records_from_records(ctx, &records))?;
     for (&face, record) in ctx.admit_iter(&typed_faces, "catia_b5_edge_face_typed_face_scan")? {
         for loop_id in ctx
             .admit_iter(&record.references, "catia_b5_edge_face_reference_scan")?

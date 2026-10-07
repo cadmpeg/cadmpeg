@@ -10082,6 +10082,9 @@ impl CatiaNative {
             Some(outer) => container::outer_container_declarations(ctx, bytes, outer)?,
             None => Vec::new(),
         };
+        let outer_container_index = outer_directory.as_ref().map(|outer| {
+            container::outer_container_extent_index(ctx, outer, &outer_container_declarations)
+        }).transpose()?;
         let parsed_finjpl = container::finjpl_segments(ctx, &container::BodyExtent::whole(bytes))?;
         let finjpl_segments = ctx.try_collect_vec(
             parsed_finjpl.into_iter().enumerate().map(
@@ -10163,13 +10166,12 @@ impl CatiaNative {
             )
             .map(|id| ctx.copy_retained_text(id, "catia_native_graph_finjpl"))
             .transpose()?;
-            let outer_container = outer_directory
+            let outer_container = outer_container_index
                 .as_ref()
-                .map(|outer| {
+                .map(|index| {
                     container::outer_container_for_extent(
                         ctx,
-                        outer,
-                        &outer_container_declarations,
+                        index,
                         u64_from_index(graph.pos),
                         u64_from_index(graph.total_len),
                     )
@@ -10370,13 +10372,12 @@ impl CatiaNative {
         let external_references = external_reference_views(ctx, &finjpl_segments)?;
         let mut legacy_entity_runs = legacy_entity_runs(ctx, bytes)?;
         for run in &mut legacy_entity_runs {
-            run.outer_container = outer_directory
+            run.outer_container = outer_container_index
                 .as_ref()
-                .map(|outer| {
+                .map(|index| {
                     container::outer_container_for_extent(
                         ctx,
-                        outer,
-                        &outer_container_declarations,
+                        index,
                         run.byte_offset,
                         run.byte_len,
                     )

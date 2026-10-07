@@ -889,7 +889,7 @@ pub(in crate::families) fn resolved_surface_geometry(
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<SurfaceGeometry>, cadmpeg_core::CodecError> {
-    let Some(surface) = graph.surfaces.get(&surface_id) else {
+    let Some(surface) = ctx.get_btree_map(&graph.surfaces, &surface_id, "catia_b5_resolved_surface_lookup")? else {
         return Ok(None);
     };
     let payload = UnknownId::compose(
@@ -929,7 +929,7 @@ pub(in crate::families) fn resolved_revolution_surface(
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<ResolvedRevolutionSurface>, cadmpeg_core::CodecError> {
-    let Some(surface) = graph.surfaces.get(&surface_id) else {
+    let Some(surface) = ctx.get_btree_map(&graph.surfaces, &surface_id, "catia_b5_resolved_surface_lookup")? else {
         return Ok(None);
     };
     let payload = UnknownId::compose(
@@ -1024,7 +1024,7 @@ pub(in crate::families) fn resolved_surface_carrier_in_graph(
     surface_object_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<ResolvedPcurveSurface>, cadmpeg_core::CodecError> {
-    let Some(surface) = graph.surfaces.get(&surface_object_id) else {
+    let Some(surface) = ctx.get_btree_map(&graph.surfaces, &surface_object_id, "catia_b5_resolved_surface_lookup")? else {
         return Ok(None);
     };
     if let Some(carrier) = resolved_surface_carrier(ctx, surface)? {
@@ -1092,7 +1092,7 @@ pub(in crate::families) fn resolved_surface_procedural_definition(
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<(u32, ProceduralSurfaceDefinition)>, cadmpeg_core::CodecError> {
-    let Some(surface) = graph.surfaces.get(&surface_id) else {
+    let Some(surface) = ctx.get_btree_map(&graph.surfaces, &surface_id, "catia_b5_resolved_surface_lookup")? else {
         return Ok(None);
     };
     let payload = UnknownId::compose(
@@ -1308,7 +1308,9 @@ pub(in crate::families) fn resolved_extrusion_surface(
             Ok(id) => id?,
             Err(error) => return Some(Err(error)),
         };
-        let extrusion = graph.extrusion_surfaces.get(&construction_id)?;
+        let extrusion = match ctx.get_btree_map(&graph.extrusion_surfaces, &construction_id, "catia_b5_resolved_extrusion_lookup") {
+            Ok(value) => value?, Err(error) => return Some(Err(error)),
+        };
         let active = extrusion.parameter_bounds[1];
         let mut resolve_support = |(
             surface_object_id,
@@ -1320,14 +1322,18 @@ pub(in crate::families) fn resolved_extrusion_surface(
             cadmpeg_core::CodecError,
         > {
             (|| -> Option<Result<ResolvedExtrusionSupport, cadmpeg_core::CodecError>> {
-                let source_surface = graph.surfaces.get(&surface_object_id)?;
+                let source_surface = match ctx.get_btree_map(&graph.surfaces, &surface_object_id, "catia_b5_resolved_surface_lookup") {
+                    Ok(value) => value?, Err(error) => return Some(Err(error)),
+                };
                 let surface =
                     match resolved_surface_geometry(ctx, graph, surface_object_id, refusal) {
                         Ok(Some(surface)) => surface,
                         Ok(None) => return None,
                         Err(error) => return Some(Err(error)),
                     };
-                let pcurve = graph.pcurves.get(&pcurve_object_id)?;
+                let pcurve = match ctx.get_btree_map(&graph.pcurves, &pcurve_object_id, "catia_b5_resolved_extrusion_pcurve_lookup") {
+                    Ok(value) => value?, Err(error) => return Some(Err(error)),
+                };
                 let knots = match pcurve_nurbs_knots(ctx, pcurve) {
                     Ok(Some(knots)) => knots,
                     Ok(None) => return None,
@@ -1571,9 +1577,8 @@ fn curve_on_parameter_range(
                     .map(|knot| target[0] + (*knot - source[0]) * target_per_source),
                 "catia_b5_reparameterized_curve_knots",
             )?;
-            let mapped = if ctx
-                .admit_iter(&mapped, "catia_b5_reparameterized_curve_knot_check")?
-                .all(|knot| knot.is_finite())
+            let mapped = if ctx.all_by(&mapped, |knot| Ok(knot.is_finite()),
+                "catia_b5_reparameterized_curve_knot_check")?
             {
                 mapped
             } else {
@@ -1669,7 +1674,7 @@ pub(in crate::families) fn resolved_offset_surface(
     let Some(construction_id) = graph.canonical_surface_id(ctx, surface_id)? else {
         return Ok(None);
     };
-    let Some(offset) = graph.offset_surfaces.get(&construction_id) else {
+    let Some(offset) = ctx.get_btree_map(&graph.offset_surfaces, &construction_id, "catia_b5_resolved_offset_lookup")? else {
         return Ok(None);
     };
     let support = if let Some(geometry) =

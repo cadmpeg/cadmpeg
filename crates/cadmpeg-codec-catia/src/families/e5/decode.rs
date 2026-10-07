@@ -92,10 +92,11 @@ pub(in crate::families) fn try_decode_e5(
         return Ok(None);
     };
     let stream = &scan.data[stream_range];
-    let circles = crate::families::e5::records::e5_circles(ctx, stream)?;
-    let mut surfaces = crate::families::e5::records::e5_surfaces(ctx, stream, refusal)?;
-    let rolling_ball_jets = crate::families::e5::records::e5_rolling_ball_jets(ctx, stream)?;
-    let topology = crate::families::e5::graph::parse_topology(ctx, stream)?;
+    let mut geometry_storage = ctx.reserve_scoped(0, "catia_e5_source_geometry")?;
+    let circles = geometry_storage.with_storage(|| crate::families::e5::records::e5_circles(ctx, stream))?;
+    let mut surfaces = geometry_storage.with_storage(|| crate::families::e5::records::e5_surfaces(ctx, stream, refusal))?;
+    let rolling_ball_jets = geometry_storage.with_storage(|| crate::families::e5::records::e5_rolling_ball_jets(ctx, stream))?;
+    let topology = geometry_storage.with_storage(|| crate::families::e5::graph::parse_topology(ctx, stream))?;
     // Edge records and derived vertex candidates are scratch.
     let mut scratch = ctx.reserve_scoped(0, "catia_e5_decode_scratch")?;
     let vertex_count = if let Some(topology) = topology.as_ref() {
@@ -112,13 +113,13 @@ pub(in crate::families) fn try_decode_e5(
         }
         vertices.len()
     };
-    let roster = crate::families::e5::records::e5_vertices(ctx, &scan.data, vertex_count)?;
+    let roster = geometry_storage.with_storage(|| crate::families::e5::records::e5_vertices(ctx, &scan.data, vertex_count))?;
     let points = if roster.len() == vertex_count {
         roster
     } else if let Some(topology) = topology.as_ref() {
         match scratch.with_storage(|| derive_e5_vertices(ctx, topology, &surfaces, refusal))? {
             Some(derived) => {
-                let mut points = ctx.vector_storage(derived.len(), "catia_e5_derived_points")?;
+                let mut points = geometry_storage.with_storage(|| ctx.vector_storage(derived.len(), "catia_e5_derived_points"))?;
                 for point in ctx
                     .admit_iter(&derived, "catia_e5_derived_vertex_scan")?
                     .copied()
@@ -128,7 +129,7 @@ pub(in crate::families) fn try_decode_e5(
                     let Some(point) = FinitePoint3::new(point) else {
                         return Ok(None);
                     };
-                    ctx.push_vec(&mut points, point, "catia_e5_derived_points")?;
+                    geometry_storage.with_storage(|| ctx.push_vec(&mut points, point, "catia_e5_derived_points"))?;
                 }
                 points
             }
@@ -139,7 +140,7 @@ pub(in crate::families) fn try_decode_e5(
     };
     drop(scratch);
     if let Some(topology) = &topology {
-        append_e5_planes(ctx, stream, topology, &points, &mut surfaces)?;
+        geometry_storage.with_storage(|| append_e5_planes(ctx, stream, topology, &points, &mut surfaces))?;
     }
     if circles.is_empty()
         && surfaces.is_empty()
