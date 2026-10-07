@@ -29,8 +29,15 @@ pub(crate) fn decode_payload(
         }
         if input.get(at..at + 2) == Some(b"/*") {
             let body = at + 2;
-            if let Some(end) = ctx.admit_iter(&input[body..payload.end], "STEP signature comment traversal").map_err(cadmpeg_core::CodecError::from)?.windows(
-                std::num::NonZeroUsize::new(2).ok_or_else(|| ctx.refuse_codec_limit("STEP signature comment window width", 0, 1))?)
+            if let Some(end) = ctx
+                .admit_iter(
+                    &input[body..payload.end],
+                    "STEP signature comment traversal",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
+                .windows(std::num::NonZeroUsize::new(2).ok_or_else(|| {
+                    ctx.refuse_codec_limit("STEP signature comment window width", 0, 1)
+                })?)
                 .position(|window| window == b"*/")
             {
                 at = body + end + 2;
@@ -51,23 +58,30 @@ pub(crate) fn decode_payload(
     let _cms_reservation =
         ctx.reserve_scoped(u64_from_index(estimate), "step_signature_cms_temp")?;
     let mut cms = ctx.alloc_filled(estimate, 0_u8, "step_signature_cms_bytes")?;
-    let decoded =
-        STANDARD
-            .decode_slice(&compact, &mut cms)
-            .or_else(|error| Err(ParseError::Syntax {
-                offset: payload.start,
-                message: ctx.format_retained(format_args!("invalid SIGNATURE Base64 payload: {error}"), "STEP decode_payload text")?,
-            }))?;
+    let decoded = STANDARD.decode_slice(&compact, &mut cms).or_else(|error| {
+        Err(ParseError::Syntax {
+            offset: payload.start,
+            message: ctx.format_retained(
+                format_args!("invalid SIGNATURE Base64 payload: {error}"),
+                "STEP decode_payload text",
+            )?,
+        })
+    })?;
     cms.truncate(decoded);
     // SG-04: this is a structural detached-CMS gate. It does not compute the
     // Part 21 alphabet digest, verify a signer key, or apply caller policy;
     // the codec retains an admitted signature as opaque source data.
     match validate_detached_cms(ctx, &cms) {
         Ok(()) => {}
-        Err(CmsError::Invalid(message)) => return Err(ParseError::Syntax {
-            offset: payload.start,
-            message: ctx.format_retained(format_args!("invalid detached CMS SIGNATURE payload: {message}"), "STEP decode_payload text")?,
-        }),
+        Err(CmsError::Invalid(message)) => {
+            return Err(ParseError::Syntax {
+                offset: payload.start,
+                message: ctx.format_retained(
+                    format_args!("invalid detached CMS SIGNATURE payload: {message}"),
+                    "STEP decode_payload text",
+                )?,
+            })
+        }
         Err(CmsError::Resource(error)) => return Err(ParseError::Resource(error)),
     }
     Ok(cms)
@@ -113,7 +127,9 @@ impl<'a> Ber<'a> {
         self.at += 1;
         if first_length == 0x80 {
             if tag & 0x20 == 0 {
-                return Err(CmsError::Invalid("indefinite length on primitive CMS value"));
+                return Err(CmsError::Invalid(
+                    "indefinite length on primitive CMS value",
+                ));
             }
             let value_start = self.at;
             let value_end = self.indefinite_end(ctx, value_start)?;
@@ -132,12 +148,14 @@ impl<'a> Ber<'a> {
             let end = self.at.checked_add(octets).ok_or("BER length overflow")?;
             let bytes = self.input.get(self.at..end).ok_or("truncated BER length")?;
             self.at = end;
-            ctx.admit_iter(bytes, "STEP BER length octet traversal").map_err(cadmpeg_core::CodecError::from)?.try_fold(0usize, |value, byte| {
-                value
-                    .checked_shl(8)
-                    .and_then(|value| value.checked_add(usize::from(*byte)))
-                    .ok_or("BER length overflow")
-            })?
+            ctx.admit_iter(bytes, "STEP BER length octet traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .try_fold(0usize, |value, byte| {
+                    value
+                        .checked_shl(8)
+                        .and_then(|value| value.checked_add(usize::from(*byte)))
+                        .ok_or("BER length overflow")
+                })?
         };
         let end = self.at.checked_add(length).ok_or("BER value overflow")?;
         let value = self.input.get(self.at..end).ok_or("truncated BER value")?;
@@ -213,7 +231,9 @@ fn validate_algorithm_identifier(ctx: &DecodeContext<'_>, value: &[u8]) -> Resul
     while algorithm.remaining()? > 0 {
         algorithm.take(ctx)?;
         if algorithm.remaining()? > 0 {
-            return Err(CmsError::Invalid("CMS algorithm identifier has multiple parameters"));
+            return Err(CmsError::Invalid(
+                "CMS algorithm identifier has multiple parameters",
+            ));
         }
     }
     Ok(())
@@ -234,7 +254,11 @@ fn validate_octet_string(ctx: &DecodeContext<'_>, tag: u8, value: &[u8]) -> Resu
     }
 }
 
-fn validate_subject_key_identifier(ctx: &DecodeContext<'_>, tag: u8, value: &[u8]) -> Result<(), CmsError> {
+fn validate_subject_key_identifier(
+    ctx: &DecodeContext<'_>,
+    tag: u8,
+    value: &[u8],
+) -> Result<(), CmsError> {
     match tag {
         0x80 => Ok(()),
         0xa0 => {
@@ -261,7 +285,11 @@ fn validate_digest_algorithms(ctx: &DecodeContext<'_>, value: &[u8]) -> Result<(
     Ok(())
 }
 
-fn validate_signer_identifier(ctx: &DecodeContext<'_>, tag: u8, value: &[u8]) -> Result<(), CmsError> {
+fn validate_signer_identifier(
+    ctx: &DecodeContext<'_>,
+    tag: u8,
+    value: &[u8],
+) -> Result<(), CmsError> {
     match tag {
         0x30 => {
             let mut issuer_and_serial = Ber::new(value);

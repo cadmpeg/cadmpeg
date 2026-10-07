@@ -33,7 +33,10 @@ pub(super) fn decode(
     let mut admitted_meshes = u64_from_index(ir.model.tessellations.len());
     let mut coordinate_map_bytes = ctx.reserve_scoped(0, "step_tessellation_coordinate_lists")?;
     let mut coordinates = BTreeMap::new();
-    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for (&id, record) in ctx
+        .admit_iter(exchange.records(), "STEP decode traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if !has_entity(ctx, record, "COORDINATES_LIST")? {
             continue;
         }
@@ -58,11 +61,16 @@ pub(super) fn decode(
     let mut declared_items = BTreeSet::new();
     let mut unresolved_containers = BTreeSet::new();
     let mut body_context_items = BTreeSet::new();
-    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
-        let Some(kind) = entity_kind(ctx, record, &["TESSELLATED_SOLID", "TESSELLATED_SHELL"])? else {
+    for (&id, record) in ctx
+        .admit_iter(exchange.records(), "STEP decode traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
+        let Some(kind) = entity_kind(ctx, record, &["TESSELLATED_SOLID", "TESSELLATED_SHELL"])?
+        else {
             continue;
         };
-        let Some(items) = entity_parameter(ctx, record, kind, 0, 1)?.and_then(ValueExt::list) else {
+        let Some(items) = entity_parameter(ctx, record, kind, 0, 1)?.and_then(ValueExt::list)
+        else {
             push_loss(
                 &mut losses,
                 StepLossCode::DecodeWarning,
@@ -72,7 +80,10 @@ pub(super) fn decode(
             continue;
         };
         let (item_ids, _container_item_bytes) = container_item_ids(items, kind, id, ctx)?;
-        for &item in ctx.admit_iter(&(item_ids)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for &item in ctx
+            .admit_iter(&(item_ids)[..], "STEP decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             ctx.insert_scoped_btree_value(
                 &mut reservations.declared,
                 &mut declared_items,
@@ -134,7 +145,10 @@ pub(super) fn decode(
         product_linked_representations(exchange, ctx)?;
     let (product_representation_items, product_item_bytes) =
         product_representation_items(exchange, &product_representations, ctx)?;
-    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for (&id, record) in ctx
+        .admit_iter(exchange.records(), "STEP decode traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if !is_tessellated_shape_representation(ctx, record)? {
             continue;
         }
@@ -184,7 +198,10 @@ pub(super) fn decode(
     drop(product_representations);
     drop(product_representation_bytes);
     drop(representation_cache);
-    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for (&id, record) in ctx
+        .admit_iter(exchange.records(), "STEP decode traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if !has_entity(ctx, record, "TESSELLATED_ANNOTATION_OCCURRENCE")? {
             continue;
         }
@@ -229,7 +246,8 @@ pub(super) fn decode(
         let Some(record) = exchange.records().get(&id) else {
             continue;
         };
-        let Some(kind) = entity_kind(ctx, record, &["TESSELLATED_SOLID", "TESSELLATED_SHELL"])? else {
+        let Some(kind) = entity_kind(ctx, record, &["TESSELLATED_SOLID", "TESSELLATED_SHELL"])?
+        else {
             continue;
         };
         push_loss(
@@ -272,7 +290,10 @@ pub(super) fn decode(
             )?;
         }
     }
-    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for (&id, record) in ctx
+        .admit_iter(exchange.records(), "STEP decode traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let Some(entity) = TriangulatedEntity::of(ctx, record)? else {
             continue;
         };
@@ -352,9 +373,13 @@ pub(super) fn decode(
             local_triangle_bytes,
             _coordinate_index_bytes,
         ) = if pnindex.is_empty() {
-            if ctx.admit_iter(triangles.as_slice(), "STEP triangle index traversal")?.flat_map(|triangle| [&triangle[0], &triangle[1], &triangle[2]]).any(|index| {
-                *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len()
-            }) {
+            if ctx
+                .admit_iter(triangles.as_slice(), "STEP triangle index traversal")?
+                .flat_map(|triangle| [&triangle[0], &triangle[1], &triangle[2]])
+                .any(|index| {
+                    *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len()
+                })
+            {
                 push_loss(
                     &mut losses,
                     StepLossCode::DecodeWarning,
@@ -366,7 +391,10 @@ pub(super) fn decode(
             let mut coordinate_index_bytes =
                 ctx.reserve_scoped(0, "step_tessellation_coordinate_indices")?;
             let mut coordinate_indices = BTreeSet::new();
-            for &index in ctx.admit_iter(triangles.as_slice(), "STEP triangle index traversal")?.flat_map(|triangle| [&triangle[0], &triangle[1], &triangle[2]]) {
+            for &index in ctx
+                .admit_iter(triangles.as_slice(), "STEP triangle index traversal")?
+                .flat_map(|triangle| [&triangle[0], &triangle[1], &triangle[2]])
+            {
                 if !coordinate_indices.contains(&index) {
                     coordinate_index_bytes.with_storage(|| {
                         ctx.insert_btree_set(
@@ -439,11 +467,19 @@ pub(super) fn decode(
                 Some(coordinate_index_bytes),
             )
         } else {
-            if ctx.admit_iter(&(pnindex)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)?.any(|index| {
-                *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len()
-            }) || ctx.admit_iter(triangles.as_slice(), "STEP triangle index traversal")?.flat_map(|triangle| [&triangle[0], &triangle[1], &triangle[2]]).any(|index| {
-                *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > pnindex.len()
-            }) {
+            if ctx
+                .admit_iter(&(pnindex)[..], "STEP decode traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .any(|index| {
+                    *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len()
+                })
+                || ctx
+                    .admit_iter(triangles.as_slice(), "STEP triangle index traversal")?
+                    .flat_map(|triangle| [&triangle[0], &triangle[1], &triangle[2]])
+                    .any(|index| {
+                        *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > pnindex.len()
+                    })
+            {
                 push_loss(
                     &mut losses,
                     StepLossCode::DecodeWarning,
@@ -497,22 +533,22 @@ pub(super) fn decode(
         drop(triangle_bytes);
         drop(pnindex);
         drop(pnindex_bytes);
-        let (source_normals, _source_normal_bytes) = match inherited_parameter(ctx, record, base_kind, 2)?
-        {
-            None | Some(Value::Omitted) => (Vec::new(), None),
-            Some(value) => match normal_rows(Some(value), ctx)? {
-                Some((normals, bytes)) => (normals, Some(bytes)),
-                None => {
-                    push_loss(
-                        &mut losses,
-                        StepLossCode::DecodeWarning,
-                        format_args!("{kind} #{id} has invalid normal rows; normals omitted"),
-                        ctx,
-                    )?;
-                    (Vec::new(), None)
-                }
-            },
-        };
+        let (source_normals, _source_normal_bytes) =
+            match inherited_parameter(ctx, record, base_kind, 2)? {
+                None | Some(Value::Omitted) => (Vec::new(), None),
+                Some(value) => match normal_rows(Some(value), ctx)? {
+                    Some((normals, bytes)) => (normals, Some(bytes)),
+                    None => {
+                        push_loss(
+                            &mut losses,
+                            StepLossCode::DecodeWarning,
+                            format_args!("{kind} #{id} has invalid normal rows; normals omitted"),
+                            ctx,
+                        )?;
+                        (Vec::new(), None)
+                    }
+                },
+            };
         // AP242 permits an empty normals aggregate; the IR represents both
         // that spelling and an omitted lane as an absent normal lane.
         let mut _replicated_normal_bytes = None;
@@ -587,11 +623,17 @@ pub(super) fn decode(
                                 .map(|vertex| placement.apply_point(vertex.get())),
                         )
                     })?
-                    .map_or_else(|| {
-                        Err(CodecError::malformed(ctx.format_retained(format_args!(
+                    .map_or_else(
+                        || {
+                            Err(CodecError::malformed(ctx.format_retained(
+                                format_args!(
                         "{kind} #{id} placed tessellation vertex contains a non-finite coordinate"
-                    ), "STEP decode text")?)
-                    )}, Ok)?;
+                    ),
+                                "STEP decode text",
+                            )?))
+                        },
+                        Ok,
+                    )?;
                 if let Some(source_normals) = normals.take() {
                     placed_normal_bytes = {
                         ctx.charge_collection_items(
@@ -632,7 +674,16 @@ pub(super) fn decode(
                 .model
                 .surfaces
                 .iter_mut()
-                .map(|surface| -> Result<Option<_>, CodecError> { Ok((ctx.equal(surface.id.as_str(), surface_id.as_str(), "STEP tessellation support surface equality")?).then_some(surface)) }).find_map(Result::transpose).transpose()?
+                .map(|surface| -> Result<Option<_>, CodecError> {
+                    Ok((ctx.equal(
+                        surface.id.as_str(),
+                        surface_id.as_str(),
+                        "STEP tessellation support surface equality",
+                    )?)
+                    .then_some(surface))
+                })
+                .find_map(Result::transpose)
+                .transpose()?
             {
                 if surface.source_object.is_none() {
                     surface.source_object = Some(admitted_source_association(id, ctx)?);
@@ -781,7 +832,10 @@ pub(super) fn decode(
         ctx.insert_btree_set(&mut typed, coordinate_id, "step_tessellation_claims")?;
     }
     if !ir.model.tessellations.is_empty() {
-        for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for (&id, record) in ctx
+            .admit_iter(exchange.records(), "STEP decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             if has_entity(ctx, record, "TESSELLATED_SHAPE_REPRESENTATION")?
                 || has_entity(ctx, record, "TESSELLATED_SOLID")?
                 || has_entity(ctx, record, "TESSELLATED_SHELL")?
@@ -819,7 +873,10 @@ struct AdmittedTriangles<'a> {
     bytes: ScopedReservation<'a>,
 }
 
-fn complex_triangulated_face_surface(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u64>, CodecError> {
+fn complex_triangulated_face_surface(
+    ctx: &DecodeContext<'_>,
+    record: &RawRecord,
+) -> Result<Option<u64>, CodecError> {
     if !has_entity(ctx, record, "COMPLEX_TRIANGULATED_FACE")? {
         return Ok(None);
     }
@@ -913,7 +970,8 @@ impl TessellationItemAssociator<'_, '_, '_> {
             (parent, None) => parent,
             (None, local) => local,
         };
-        if entity_kind(self.ctx, 
+        if entity_kind(
+            self.ctx,
             record,
             &[
                 "TRIANGULATED_FACE",
@@ -954,7 +1012,8 @@ impl TessellationItemAssociator<'_, '_, '_> {
                     &mut self.reservations.placements,
                 )?;
             }
-        } else if let Some(kind) = entity_kind(self.ctx, 
+        } else if let Some(kind) = entity_kind(
+            self.ctx,
             record,
             &[
                 "TESSELLATED_SOLID",
@@ -1032,37 +1091,75 @@ fn distinct_placement_count(
             ctx.refuse_codec_limit("step_tessellation_distinct_placements", u64::MAX, u64::MAX)
         })?;
     ctx.charge_work(work, "step_tessellation_distinct_placements")?;
-    Ok(ctx.admit_iter(&(placements)[..], "STEP distinct placement count traversal").map_err(cadmpeg_core::CodecError::from)?
+    Ok(ctx
+        .admit_iter(&(placements)[..], "STEP distinct placement count traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
         .filter(|(index, placement)| !placements[..*index].contains(placement))
         .count())
 }
 
-fn distinct_placement(ctx: &DecodeContext<'_>, placements: &[Transform]) -> Result<Option<Transform>, CodecError> {
+fn distinct_placement(
+    ctx: &DecodeContext<'_>,
+    placements: &[Transform],
+) -> Result<Option<Transform>, CodecError> {
     let Some(first) = placements.first().copied() else {
         return Ok(None);
     };
-    Ok(ctx.admit_iter(placements, "STEP distinct placement traversal")?
+    Ok(ctx
+        .admit_iter(placements, "STEP distinct placement traversal")?
         .all(|placement| *placement == first)
         .then_some(first))
 }
 
-fn repositioned_placement(ctx: &DecodeContext<'_>, record: &RawRecord, geometry: &GeometryData) -> Result<Option<Transform>, CodecError> {
+fn repositioned_placement(
+    ctx: &DecodeContext<'_>,
+    record: &RawRecord,
+    geometry: &GeometryData,
+) -> Result<Option<Transform>, CodecError> {
     let Some(placement_id) = entity_parameter(ctx, record, "REPOSITIONED_TESSELLATED_ITEM", 0, 1)?
-        .and_then(ValueExt::reference) else {
+        .and_then(ValueExt::reference)
+    else {
         return Ok(None);
     };
-    Ok(geometry.placements.get(&placement_id).copied().and_then(super::geometry::placement_transform))
+    Ok(geometry
+        .placements
+        .get(&placement_id)
+        .copied()
+        .and_then(super::geometry::placement_transform))
 }
 
-fn tessellated_annotation_item(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u64>, CodecError> {
+fn tessellated_annotation_item(
+    ctx: &DecodeContext<'_>,
+    record: &RawRecord,
+) -> Result<Option<u64>, CodecError> {
     for name in ["TESSELLATED_ANNOTATION_OCCURRENCE", "STYLED_ITEM"] {
-        let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP tessellated annotation partial traversal")?
-            .map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP tessellated annotation item equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()? else {
+        let Some(partial) = ctx
+            .admit_iter(
+                &record.partials[..],
+                "STEP tessellated annotation partial traversal",
+            )?
+            .map(|partial| -> Result<Option<_>, CodecError> {
+                Ok((ctx.equal(
+                    partial.name.as_str(),
+                    name,
+                    "STEP tessellated annotation item equality",
+                )?)
+                .then_some(partial))
+            })
+            .find_map(Result::transpose)
+            .transpose()?
+        else {
             continue;
         };
-        if let Some(item) = ctx.admit_iter(partial.parameters.as_slice(), "STEP tessellated annotation reference traversal")?
-            .rev().find_map(ValueExt::reference) {
+        if let Some(item) = ctx
+            .admit_iter(
+                partial.parameters.as_slice(),
+                "STEP tessellated annotation reference traversal",
+            )?
+            .rev()
+            .find_map(ValueExt::reference)
+        {
             return Ok(Some(item));
         }
     }
@@ -1082,7 +1179,10 @@ fn associate_bodies(
         })?;
     }
     let associated = associations.entry(item).or_default();
-    for body in ctx.admit_iter(bodies, "STEP associate bodies traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for body in ctx
+        .admit_iter(bodies, "STEP associate bodies traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if !ctx.contains_btree_set(associated, body, "STEP associated membership")? {
             let copy = bytes.with_storage(|| {
                 body.try_clone_for_decode(ctx, "step_tessellation_item_body_links")
@@ -1148,8 +1248,12 @@ fn product_linked_representations<'a>(
     let mut product_shape_definitions = BTreeSet::new();
     let mut definition_bytes = ctx.reserve_scoped(0, "step_tessellation_product_definitions")?;
     for (id, record) in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
-        if ctx.admit_iter(&(record
-            .partials)[..], "STEP product linked representations traversal").map_err(cadmpeg_core::CodecError::from)?
+        if ctx
+            .admit_iter(
+                &(record.partials)[..],
+                "STEP product linked representations traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
             .any(|partial| partial.name == "PRODUCT_DEFINITION_SHAPE")
         {
             ctx.insert_scoped_btree_value(
@@ -1163,11 +1267,16 @@ fn product_linked_representations<'a>(
     let mut linked = BTreeSet::new();
     let mut linked_bytes = ctx.reserve_scoped(0, "step_tessellation_product_representations")?;
     for (_, record) in exchange.entities(ctx, "SHAPE_DEFINITION_REPRESENTATION")? {
-        let representation = ctx.admit_iter(&record.partials[..], "STEP product linked representation partial traversal")?
+        let representation = ctx
+            .admit_iter(
+                &record.partials[..],
+                "STEP product linked representation partial traversal",
+            )?
             .find(|partial| partial.name == "SHAPE_DEFINITION_REPRESENTATION")
             .and_then(|partial| {
                 let definition = partial.parameters.first().and_then(ValueExt::reference)?;
-                product_shape_definitions.contains(&definition)
+                product_shape_definitions
+                    .contains(&definition)
                     .then(|| partial.parameters.get(1).and_then(ValueExt::reference))?
             });
         if let Some(representation) = representation {
@@ -1184,9 +1293,20 @@ fn product_linked_representations<'a>(
     }
     let mut relationships = BTreeMap::<u64, BTreeSet<u64>>::new();
     let mut relationship_bytes = ctx.reserve_scoped(0, "step_tessellation_relationship_edges")?;
-    for record in ctx.admit_iter(exchange.records(), "STEP product linked representations map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, value)| value) {
-        let Some(shape_relationship) = ctx.admit_iter(&(record
-            .partials)[..], "STEP product linked representations traversal").map_err(cadmpeg_core::CodecError::from)?
+    for record in ctx
+        .admit_iter(
+            exchange.records(),
+            "STEP product linked representations map traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+        .map(|(_, value)| value)
+    {
+        let Some(shape_relationship) = ctx
+            .admit_iter(
+                &(record.partials)[..],
+                "STEP product linked representations traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
             .find(|partial| partial.name == "SHAPE_REPRESENTATION_RELATIONSHIP")
         else {
             continue;
@@ -1199,8 +1319,12 @@ fn product_linked_representations<'a>(
             match (references.next(), references.next()) {
                 (Some(left), Some(right)) => (left, right),
                 _ => {
-                    let Some(base) = ctx.admit_iter(&(record
-                        .partials)[..], "STEP product linked representations traversal").map_err(cadmpeg_core::CodecError::from)?
+                    let Some(base) = ctx
+                        .admit_iter(
+                            &(record.partials)[..],
+                            "STEP product linked representations traversal",
+                        )
+                        .map_err(cadmpeg_core::CodecError::from)?
                         .find(|partial| partial.name == "REPRESENTATION_RELATIONSHIP")
                     else {
                         continue;
@@ -1247,22 +1371,22 @@ fn product_linked_representations<'a>(
     pending.extend(linked.iter().copied());
     while let Some(representation) = pending.pop() {
         if let Some(items) = relationships.get(&representation) {
-        for &related in ctx.admit_iter(items, "STEP optional collection traversal")? {
-            if ctx.insert_scoped_btree_value(
-                &mut linked_bytes,
-                &mut linked,
-                related,
-                "step_tessellation_product_representations",
-            )? {
-                ctx.reserve_scoped_vec(
-                    &mut pending_bytes,
-                    &mut pending,
-                    1,
-                    "step_tessellation_product_pending",
-                )?;
-                pending.push(related);
+            for &related in ctx.admit_iter(items, "STEP optional collection traversal")? {
+                if ctx.insert_scoped_btree_value(
+                    &mut linked_bytes,
+                    &mut linked,
+                    related,
+                    "step_tessellation_product_representations",
+                )? {
+                    ctx.reserve_scoped_vec(
+                        &mut pending_bytes,
+                        &mut pending,
+                        1,
+                        "step_tessellation_product_pending",
+                    )?;
+                    pending.push(related);
+                }
             }
-        }
         }
     }
     Ok((linked, linked_bytes))
@@ -1275,7 +1399,12 @@ fn product_representation_items<'a>(
 ) -> Result<(BTreeSet<u64>, ScopedReservation<'a>), CodecError> {
     let mut items = BTreeSet::new();
     let mut bytes = ctx.reserve_scoped(0, "step_tessellation_product_items")?;
-    for record in ctx.admit_iter(representations, "STEP product representation items traversal").map_err(cadmpeg_core::CodecError::from)?
+    for record in ctx
+        .admit_iter(
+            representations,
+            "STEP product representation items traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .filter_map(|id| exchange.records().get(id))
     {
         if let Some((representation_items, _representation_item_bytes)) =
@@ -1301,7 +1430,12 @@ fn admitted_representation_items<'a>(
     let Some(values) = super::representation::item_values(ctx, record)? else {
         return Ok(None);
     };
-    let count = ctx.admit_iter(&(values)[..], "STEP admitted representation items traversal").map_err(cadmpeg_core::CodecError::from)?
+    let count = ctx
+        .admit_iter(
+            &(values)[..],
+            "STEP admitted representation items traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .filter(|value| value.reference().is_some())
         .count();
     let mut bytes = {
@@ -1328,7 +1462,8 @@ fn linked_bodies<'a>(
     topology: &TopologyData,
     ctx: &'a DecodeContext<'_>,
 ) -> Result<(BTreeSet<BodyId>, ScopedReservation<'a>), CodecError> {
-    let Some(link) = entity_parameter(ctx, record, kind, 1, 1)?.and_then(ValueExt::reference) else {
+    let Some(link) = entity_parameter(ctx, record, kind, 1, 1)?.and_then(ValueExt::reference)
+    else {
         return Ok((
             BTreeSet::new(),
             ctx.reserve_scoped(0, "step_tessellation_linked_bodies")?,
@@ -1429,28 +1564,78 @@ fn has_entity(ctx: &DecodeContext<'_>, record: &RawRecord, name: &str) -> Result
     Ok(entity_kind(ctx, record, &[name])?.is_some())
 }
 
-fn is_tessellated_shape_representation(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<bool, CodecError> {
-    Ok(entity_kind(ctx, record, &[
-        "TESSELLATED_SHAPE_REPRESENTATION",
-        "TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS",
-    ])?.is_some())
+fn is_tessellated_shape_representation(
+    ctx: &DecodeContext<'_>,
+    record: &RawRecord,
+) -> Result<bool, CodecError> {
+    Ok(entity_kind(
+        ctx,
+        record,
+        &[
+            "TESSELLATED_SHAPE_REPRESENTATION",
+            "TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS",
+        ],
+    )?
+    .is_some())
 }
 
-fn entity_kind<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, names: &[&str]) -> Result<Option<&'a str>, CodecError> {
-    for partial in ctx.admit_iter(&record.partials[..], "STEP tessellation entity partial traversal")? {
-        if ctx.admit_iter(names, "STEP tessellation entity name traversal")?.map(|name| -> Result<Option<_>, CodecError> { Ok((ctx.equal::<str>(name, partial.name.as_str(), "STEP entity kind equality")?).then_some(())) }).find_map(Result::transpose).transpose()?.is_some() {
+fn entity_kind<'a>(
+    ctx: &DecodeContext<'_>,
+    record: &'a RawRecord,
+    names: &[&str],
+) -> Result<Option<&'a str>, CodecError> {
+    for partial in ctx.admit_iter(
+        &record.partials[..],
+        "STEP tessellation entity partial traversal",
+    )? {
+        if ctx
+            .admit_iter(names, "STEP tessellation entity name traversal")?
+            .map(|name| -> Result<Option<_>, CodecError> {
+                Ok(
+                    (ctx.equal::<str>(name, partial.name.as_str(), "STEP entity kind equality")?)
+                        .then_some(()),
+                )
+            })
+            .find_map(Result::transpose)
+            .transpose()?
+            .is_some()
+        {
             return Ok(Some(partial.name.as_str()));
         }
     }
     Ok(None)
 }
 
-fn entity_parameter<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, entity: &str, index: usize, simple_offset: usize) -> Result<Option<&'a Value>, CodecError> {
-    let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP tessellation entity parameter traversal")?
-        .map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), entity, "STEP entity parameter equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()? else {
+fn entity_parameter<'a>(
+    ctx: &DecodeContext<'_>,
+    record: &'a RawRecord,
+    entity: &str,
+    index: usize,
+    simple_offset: usize,
+) -> Result<Option<&'a Value>, CodecError> {
+    let Some(partial) = ctx
+        .admit_iter(
+            &record.partials[..],
+            "STEP tessellation entity parameter traversal",
+        )?
+        .map(|partial| -> Result<Option<_>, CodecError> {
+            Ok((ctx.equal(
+                partial.name.as_str(),
+                entity,
+                "STEP entity parameter equality",
+            )?)
+            .then_some(partial))
+        })
+        .find_map(Result::transpose)
+        .transpose()?
+    else {
         return Ok(None);
     };
-    let offset = if record.partials.len() == 1 { simple_offset } else { 0 };
+    let offset = if record.partials.len() == 1 {
+        simple_offset
+    } else {
+        0
+    };
     Ok(partial.parameters.get(index + offset))
 }
 
@@ -1465,15 +1650,17 @@ enum TriangulatedEntity {
 
 impl TriangulatedEntity {
     fn of(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<Self>, CodecError> {
-        Ok(ctx.admit_iter(&record.partials[..], "STEP triangulated entity traversal")?.find_map(|partial| {
-            Some(match partial.name.as_str() {
-                "TRIANGULATED_FACE" => Self::Face,
-                "COMPLEX_TRIANGULATED_FACE" => Self::ComplexFace,
-                "TRIANGULATED_SURFACE_SET" => Self::SurfaceSet,
-                "COMPLEX_TRIANGULATED_SURFACE_SET" => Self::ComplexSurfaceSet,
-                _ => return None,
-            })
-        }))
+        Ok(ctx
+            .admit_iter(&record.partials[..], "STEP triangulated entity traversal")?
+            .find_map(|partial| {
+                Some(match partial.name.as_str() {
+                    "TRIANGULATED_FACE" => Self::Face,
+                    "COMPLEX_TRIANGULATED_FACE" => Self::ComplexFace,
+                    "TRIANGULATED_SURFACE_SET" => Self::SurfaceSet,
+                    "COMPLEX_TRIANGULATED_SURFACE_SET" => Self::ComplexSurfaceSet,
+                    _ => return None,
+                })
+            }))
     }
 
     fn name(self) -> &'static str {
@@ -1500,7 +1687,12 @@ impl TriangulatedEntity {
     }
 }
 
-fn inherited_parameter<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, entity: &str, index: usize) -> Result<Option<&'a Value>, CodecError> {
+fn inherited_parameter<'a>(
+    ctx: &DecodeContext<'_>,
+    record: &'a RawRecord,
+    entity: &str,
+    index: usize,
+) -> Result<Option<&'a Value>, CodecError> {
     if record.partials.len() == 1 {
         Ok(record.parameter(index + 1))
     } else {
@@ -1640,41 +1832,49 @@ fn coordinate_rows<'a>(
     scale: f64,
     ctx: &'a DecodeContext<'_>,
 ) -> Result<Option<(Vec<FinitePoint3>, ScopedReservation<'a>)>, CodecError> {
-    for partial in ctx.admit_iter(&(record
-        .partials)[..], "STEP coordinate rows traversal").map_err(cadmpeg_core::CodecError::from)? {
-        for rows in ctx.admit_iter(partial.parameters.as_slice(), "STEP record parameter traversal")?.filter_map(ValueExt::list) {
-        let mut bytes = {
-            ctx.charge_collection_items(
-                u64_from_index(rows.len()),
-                "step_tessellation_coordinate_rows",
-            )?;
-            ctx.reserve_scoped(0, "step_tessellation_coordinate_rows")
-        }?;
-        let vertices = bytes
-            .with_storage(|| {
-                collect_optional_checked(
-                    ctx,
-                    rows.len(),
+    for partial in ctx
+        .admit_iter(&(record.partials)[..], "STEP coordinate rows traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
+        for rows in ctx
+            .admit_iter(
+                partial.parameters.as_slice(),
+                "STEP record parameter traversal",
+            )?
+            .filter_map(ValueExt::list)
+        {
+            let mut bytes = {
+                ctx.charge_collection_items(
+                    u64_from_index(rows.len()),
                     "step_tessellation_coordinate_rows",
-                    rows.iter().map(|row| {
-                        let values = row.list()?;
-                        if values.len() != 3 {
-                            return None;
-                        }
-                        let point = Point3::new(
-                            values[0].number()? * scale,
-                            values[1].number()? * scale,
-                            values[2].number()? * scale,
-                        );
-                        FinitePoint3::new(point)
-                    }),
-                )
-            })?
-            .filter(|vertices| !vertices.is_empty());
-        if let Some(vertices) = vertices {
-            return Ok(Some((vertices, bytes)));
+                )?;
+                ctx.reserve_scoped(0, "step_tessellation_coordinate_rows")
+            }?;
+            let vertices = bytes
+                .with_storage(|| {
+                    collect_optional_checked(
+                        ctx,
+                        rows.len(),
+                        "step_tessellation_coordinate_rows",
+                        rows.iter().map(|row| {
+                            let values = row.list()?;
+                            if values.len() != 3 {
+                                return None;
+                            }
+                            let point = Point3::new(
+                                values[0].number()? * scale,
+                                values[1].number()? * scale,
+                                values[2].number()? * scale,
+                            );
+                            FinitePoint3::new(point)
+                        }),
+                    )
+                })?
+                .filter(|vertices| !vertices.is_empty());
+            if let Some(vertices) = vertices {
+                return Ok(Some((vertices, bytes)));
+            }
         }
-    }
     }
     Ok(None)
 }
@@ -1725,8 +1925,13 @@ fn complex_triangles<'a>(
     let (strips, _strip_rows_bytes, _strip_indices_bytes) =
         index_rows(strips, kind, id, "strip", ctx)?;
     let (fans, _fan_rows_bytes, _fan_indices_bytes) = index_rows(fans, kind, id, "fan", ctx)?;
-    let triangle_count = ctx.admit_iter(&(strips)[..], "STEP complex triangles traversal").map_err(cadmpeg_core::CodecError::from)?
-        .chain(ctx.admit_iter(fans.as_slice(), "STEP complex triangle fan traversal").map_err(cadmpeg_core::CodecError::from)?)
+    let triangle_count = ctx
+        .admit_iter(&(strips)[..], "STEP complex triangles traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .chain(
+            ctx.admit_iter(fans.as_slice(), "STEP complex triangle fan traversal")
+                .map_err(cadmpeg_core::CodecError::from)?,
+        )
         .try_fold(0usize, |count, row| count.checked_add(row.len() - 2))
         .ok_or_else(|| {
             ctx.refuse_codec_limit("step_complex_triangle_count", u64::MAX - 1, u64::MAX)

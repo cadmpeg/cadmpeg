@@ -252,11 +252,13 @@ mod tests {
         policy.limits.max_work_units = 2;
         with_policy_context(b"", &policy, |_, ctx| {
             let error = first_matching([&Value::Reference(9)], ctx, |_| {
-                Ok(ctx.admit_iter(&[1_u64, 2], "test reference predicate scan")?.any(|value| *value == 9))
-            }).expect_err("predicate scan exceeds remaining work");
+                Ok(ctx
+                    .admit_iter(&[1_u64, 2], "test reference predicate scan")?
+                    .any(|value| *value == 9))
+            })
+            .expect_err("predicate scan exceeds remaining work");
             assert!(matches!(error, CodecError::ResourceLimit(limit)
                 if limit.operation == "test reference predicate scan" && Some(limit) == ctx.resource_refusal()));
         });
     }
-
 }

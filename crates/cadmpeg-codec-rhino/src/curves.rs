@@ -797,7 +797,11 @@ pub(crate) fn exact_nurbs(
             let mut segments = ctx
                 .collection_vec(children.len(), "Rhino exact NURBS segments")
                 .map_err(crate::curves::GeometryError::from)?;
-            for (index, (start, child)) in ctx.admit_iter(&(children)[..], "Rhino exact nurbs traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+            for (index, (start, child)) in ctx
+                .admit_iter(&(children)[..], "Rhino exact nurbs traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .enumerate()
+            {
                 let end = children
                     .get(index + 1)
                     .map_or(*end_parameter, |(next, _)| *next);
@@ -847,7 +851,11 @@ pub(crate) fn remap_nurbs_domain(
     let mut remapped = ctx
         .collection_vec(curve.knots().len(), "Rhino remapped NURBS knots")
         .map_err(crate::curves::GeometryError::from)?;
-    for knot in ctx.admit_iter(&(curve.knots())[..], "Rhino remap nurbs domain traversal").map_err(cadmpeg_core::CodecError::from)?.copied() {
+    for knot in ctx
+        .admit_iter(&(curve.knots())[..], "Rhino remap nurbs domain traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .copied()
+    {
         let fraction = cadmpeg_ir::math::parameter_fraction(knot, source[0], source[1])
             .map(cadmpeg_ir::scalar::FiniteReal::get)
             .ok_or_else(|| error(offset, "curve knot remap overflowed"))?;
@@ -865,9 +873,12 @@ pub(crate) fn remap_nurbs_domain(
                 .ok_or_else(|| error(offset, "curve knot remap overflowed"))?,
         );
     }
-    curve
-        .with_knots(ctx, remapped)?
-        .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino remap_nurbs_domain text")?)))
+    curve.with_knots(ctx, remapped)?.or_else(|error| {
+        Err(GeometryError::malformed(
+            offset,
+            ctx.format_retained(format_args!("{}", error), "Rhino remap_nurbs_domain text")?,
+        ))
+    })
 }
 
 /// Exact joined curve and recoverable join diagnostics.
@@ -928,21 +939,41 @@ fn insert_knot_once(
         .admit_iter(knots.as_slice(), "Rhino knot span search")
         .map_err(CodecError::from)?
         .rposition(|knot| *knot <= value)
-        .map_or_else(|| Err(error(offset, ctx.copy_retained_text(failure, "Rhino knot insertion invariant message")?)), Ok)?;
+        .map_or_else(
+            || {
+                Err(error(
+                    offset,
+                    ctx.copy_retained_text(failure, "Rhino knot insertion invariant message")?,
+                ))
+            },
+            Ok,
+        )?;
     let k = if degree == 0 { k.min(n) } else { k };
-    let multiplicity = ctx.admit_iter(&(knots)[..], "Rhino insert knot once traversal").map_err(cadmpeg_core::CodecError::from)?.filter(|knot| **knot == value).count();
+    let multiplicity = ctx
+        .admit_iter(&(knots)[..], "Rhino insert knot once traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .filter(|knot| **knot == value)
+        .count();
     if multiplicity > degree
         || k < degree
         || k - degree > n
         || k.checked_sub(multiplicity).is_none_or(|tail| tail > n)
     {
-        return Err(error(offset, ctx.copy_retained_text(failure, "Rhino knot insertion invariant message")?));
+        return Err(error(
+            offset,
+            ctx.copy_retained_text(failure, "Rhino knot insertion invariant message")?,
+        ));
     }
     let mut output = ctx.alloc_filled(
-        points
-            .len()
-            .checked_add(1)
-            .map_or_else(|| Err(error(offset, ctx.copy_retained_text(failure, "Rhino knot insertion invariant message")?)), Ok)?,
+        points.len().checked_add(1).map_or_else(
+            || {
+                Err(error(
+                    offset,
+                    ctx.copy_retained_text(failure, "Rhino knot insertion invariant message")?,
+                ))
+            },
+            Ok,
+        )?,
         points[0],
         "Rhino polycurve knot insertion points",
     )?;
@@ -951,7 +982,10 @@ fn insert_knot_once(
     for index in k - degree + 1..=k - multiplicity {
         let denominator = knots[index + degree] - knots[index];
         if denominator <= 0.0 || !denominator.is_finite() {
-            return Err(error(offset, ctx.copy_retained_text(failure, "Rhino knot insertion invariant message")?));
+            return Err(error(
+                offset,
+                ctx.copy_retained_text(failure, "Rhino knot insertion invariant message")?,
+            ));
         }
         let alpha = (value - knots[index]) / denominator;
         output[index] = points[index - 1].blend(points[index], alpha);
@@ -1048,7 +1082,13 @@ fn elevate_to_degree(
     let mut knots = ctx.collection_vec(source_knots.len(), "Rhino polycurve knots")?;
     knots.extend_from_slice(source_knots);
     for endpoint in domain {
-        while ctx.admit_iter(&(knots)[..], "Rhino elevate to degree traversal").map_err(cadmpeg_core::CodecError::from)?.filter(|value| **value == endpoint).count() < degree + 1 {
+        while ctx
+            .admit_iter(&(knots)[..], "Rhino elevate to degree traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .filter(|value| **value == endpoint)
+            .count()
+            < degree + 1
+        {
             insert_knot_once(
                 ctx,
                 &mut knots,
@@ -1061,7 +1101,9 @@ fn elevate_to_degree(
         }
     }
     let mut internal = Vec::new();
-    for knot in ctx.admit_iter(&(knots)[..], "Rhino elevate to degree traversal").map_err(cadmpeg_core::CodecError::from)?
+    for knot in ctx
+        .admit_iter(&(knots)[..], "Rhino elevate to degree traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
         .copied()
         .filter(|knot| *knot > domain[0] && *knot < domain[1])
     {
@@ -1070,7 +1112,13 @@ fn elevate_to_degree(
     }
     internal.dedup();
     for knot in internal {
-        while ctx.admit_iter(&(knots)[..], "Rhino elevate to degree traversal").map_err(cadmpeg_core::CodecError::from)?.filter(|value| **value == knot).count() < degree {
+        while ctx
+            .admit_iter(&(knots)[..], "Rhino elevate to degree traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .filter(|value| **value == knot)
+            .count()
+            < degree
+        {
             insert_knot_once(
                 ctx,
                 &mut knots,
@@ -1098,7 +1146,12 @@ fn elevate_to_degree(
         let mut bezier = ctx.collection_vec(bezier_count, "Rhino polycurve Bezier span")?;
         bezier.extend_from_slice(&points[span - degree..=span]);
         let bezier = elevate_bezier(ctx, bezier, target)?;
-        let disconnected = ctx.admit_iter(&(knots)[..], "Rhino elevate to degree traversal").map_err(cadmpeg_core::CodecError::from)?.filter(|knot| **knot == knots[span]).count() > degree;
+        let disconnected = ctx
+            .admit_iter(&(knots)[..], "Rhino elevate to degree traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .filter(|knot| **knot == knots[span])
+            .count()
+            > degree;
         let skip = usize::from(index > 0 && !disconnected);
         if index > 0 {
             let added = target + usize::from(disconnected);
@@ -1142,7 +1195,12 @@ fn elevate_to_degree(
         rational.then_some(output_weights),
         false,
     )?
-    .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino elevate_to_degree text")?)))
+    .or_else(|error| {
+        Err(GeometryError::malformed(
+            offset,
+            ctx.format_retained(format_args!("{}", error), "Rhino elevate_to_degree text")?,
+        ))
+    })
 }
 
 pub(crate) fn join_nurbs_segments(
@@ -1165,7 +1223,10 @@ pub(crate) fn join_nurbs_segments(
     let mut elevated_segments = ctx
         .collection_vec(segments.len(), "Rhino elevated polycurve segments")
         .map_err(crate::curves::GeometryError::from)?;
-    for segment in ctx.admit_iter(&(segments)[..], "Rhino join nurbs segments traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for segment in ctx
+        .admit_iter(&(segments)[..], "Rhino join nurbs segments traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         elevated_segments.push(elevate_to_degree(ctx, segment, target, offset)?);
     }
     segments = elevated_segments;
@@ -1179,7 +1240,10 @@ pub(crate) fn join_nurbs_segments(
         .ok()
         .and_then(|value| value.checked_add(1))
         .ok_or_else(|| error(offset, "curve degree overflow"))?;
-    for segment in ctx.admit_iter(&(segments)[..], "Rhino join nurbs segments traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for segment in ctx
+        .admit_iter(&(segments)[..], "Rhino join nurbs segments traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let start = segment.knots().get(multiplicity - 1).copied();
         let end = segment
             .knots()
@@ -1189,20 +1253,33 @@ pub(crate) fn join_nurbs_segments(
             .copied();
         if start.is_none()
             || end.is_none()
-            || ctx.admit_iter(&(segment.knots()[..multiplicity])[..], "Rhino join nurbs segments traversal").map_err(cadmpeg_core::CodecError::from)?
+            || ctx
+                .admit_iter(
+                    &(segment.knots()[..multiplicity])[..],
+                    "Rhino join nurbs segments traversal",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
                 .any(|value| Some(*value) != start)
-            || ctx.admit_iter(&(segment.knots()[segment.knots().len() - multiplicity..])[..], "Rhino join nurbs segments traversal").map_err(cadmpeg_core::CodecError::from)?
+            || ctx
+                .admit_iter(
+                    &(segment.knots()[segment.knots().len() - multiplicity..])[..],
+                    "Rhino join nurbs segments traversal",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
                 .any(|value| Some(*value) != end)
         {
             return Err(error(offset, "polycurve segment is not endpoint-clamped"));
         }
     }
-    let rational = ctx.admit_iter(&(segments)[..], "Rhino join nurbs segments traversal").map_err(cadmpeg_core::CodecError::from)?.any(|segment| {
-        matches!(
-            segment.pole_rows(),
-            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
-        )
-    });
+    let rational = ctx
+        .admit_iter(&(segments)[..], "Rhino join nurbs segments traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .any(|segment| {
+            matches!(
+                segment.pole_rows(),
+                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
+            )
+        });
     let mut control_points: Vec<Point3> = Vec::new();
     let mut knots: Vec<f64> = Vec::new();
     let mut weights = rational.then(Vec::new);
@@ -1305,7 +1382,15 @@ pub(crate) fn join_nurbs_segments(
     }
     Ok(NurbsJoin {
         curve: NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)?
-            .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino join_nurbs_segments text")?)))?,
+            .or_else(|error| {
+                Err(GeometryError::malformed(
+                    offset,
+                    ctx.format_retained(
+                        format_args!("{}", error),
+                        "Rhino join_nurbs_segments text",
+                    )?,
+                ))
+            })?,
         warnings,
     })
 }
@@ -1460,7 +1545,8 @@ pub(crate) fn consume_legacy_polycurve_2d(
     Ok(start..reader.position())
 }
 
-fn read_point(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn read_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<FinitePoint3, GeometryError> {
@@ -1579,7 +1665,12 @@ fn read_line(
         false,
     )
     .map_err(GeometryError::from)?
-    .or_else(|error| Err(GeometryError::malformed(reader.position(), ctx.format_retained(format_args!("{}", error), "Rhino read_line text")?)))
+    .or_else(|error| {
+        Err(GeometryError::malformed(
+            reader.position(),
+            ctx.format_retained(format_args!("{}", error), "Rhino read_line text")?,
+        ))
+    })
 }
 
 fn read_polyline(
@@ -1653,10 +1744,20 @@ fn read_polyline(
     knots.extend_from_slice(&parameters[1..point_count - 1]);
     knots.push(parameters[point_count - 1]);
     knots.push(parameters[point_count - 1]);
-    let knots = cadmpeg_ir::geometry::nurbs::KnotVector::from_finite_lanes(ctx, knots)?
-        .or_else(|error| Err(GeometryError::malformed(reader.position(), ctx.format_retained(format_args!("{}", error), "Rhino read_polyline text")?)))?;
-    NurbsCurve::from_checked_lanes(ctx, 1, knots, points, None, false)?
-        .or_else(|error| Err(GeometryError::malformed(reader.position(), ctx.format_retained(format_args!("{}", error), "Rhino read_polyline text")?)))
+    let knots = cadmpeg_ir::geometry::nurbs::KnotVector::from_finite_lanes(ctx, knots)?.or_else(
+        |error| {
+            Err(GeometryError::malformed(
+                reader.position(),
+                ctx.format_retained(format_args!("{}", error), "Rhino read_polyline text")?,
+            ))
+        },
+    )?;
+    NurbsCurve::from_checked_lanes(ctx, 1, knots, points, None, false)?.or_else(|error| {
+        Err(GeometryError::malformed(
+            reader.position(),
+            ctx.format_retained(format_args!("{}", error), "Rhino read_polyline text")?,
+        ))
+    })
 }
 
 fn read_arc(
@@ -1730,7 +1831,8 @@ struct Circle {
     radius: PositiveLength,
 }
 
-fn read_circle(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn read_circle(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<Circle, GeometryError> {
@@ -1888,7 +1990,10 @@ fn read_polycurve_parameters(
     if parameter_count != segment_count + 1 {
         return Err(GeometryError::malformed(
             reader.position(),
-            ctx.format_retained(format_args!("{label} parameter count mismatch"), "Rhino read_polycurve_parameters text")?,
+            ctx.format_retained(
+                format_args!("{label} parameter count mismatch"),
+                "Rhino read_polycurve_parameters text",
+            )?,
         ));
     }
     let mut parameters = ctx
@@ -1896,7 +2001,8 @@ fn read_polycurve_parameters(
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..segment_count {
         let value = reader.f64()?;
-        parameters.push(checked_polycurve_parameter(ctx, 
+        parameters.push(checked_polycurve_parameter(
+            ctx,
             parameters.last().copied(),
             value,
             reader.position(),
@@ -1904,12 +2010,18 @@ fn read_polycurve_parameters(
         )?);
     }
     let value = reader.f64()?;
-    let end_parameter =
-        checked_polycurve_parameter(ctx, parameters.last().copied(), value, reader.position(), label)?;
+    let end_parameter = checked_polycurve_parameter(
+        ctx,
+        parameters.last().copied(),
+        value,
+        reader.position(),
+        label,
+    )?;
     Ok((parameters, end_parameter))
 }
 
-fn checked_polycurve_parameter(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn checked_polycurve_parameter(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     previous: Option<FiniteReal>,
     value: f64,
     offset: usize,
@@ -1917,7 +2029,18 @@ fn checked_polycurve_parameter(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<FiniteReal, GeometryError> {
     FiniteReal::new(value)
         .filter(|value| previous.is_none_or(|previous| value.get() > previous.get()))
-        .map_or_else(|| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{label} parameters are invalid"), "Rhino checked_polycurve_parameter text")?)), Ok)
+        .map_or_else(
+            || {
+                Err(GeometryError::malformed(
+                    offset,
+                    ctx.format_retained(
+                        format_args!("{label} parameters are invalid"),
+                        "Rhino checked_polycurve_parameter text",
+                    )?,
+                ))
+            },
+            Ok,
+        )
 }
 
 fn arc_nurbs(
@@ -2011,7 +2134,12 @@ fn arc_nurbs(
         false,
     )
     .map_err(GeometryError::from)?
-    .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino arc_nurbs text")?)))
+    .or_else(|error| {
+        Err(GeometryError::malformed(
+            offset,
+            ctx.format_retained(format_args!("{}", error), "Rhino arc_nurbs text")?,
+        ))
+    })
 }
 
 fn canonical_circle(circle: &Circle, angle: [f64; 2], domain: [f64; 2], delta: f64) -> bool {
@@ -2041,7 +2169,10 @@ fn circle_point_scaled(circle: &Circle, angle: f64, radial_scale: f64) -> Point3
     )
 }
 
-fn native_point(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>) -> Result<NativePoint3, FramingError> {
+fn native_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+) -> Result<NativePoint3, FramingError> {
     crate::settings::point(ctx, reader)
 }
 
@@ -2083,17 +2214,30 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root");
         let mut knots = vec![0.0, 0.0, 1.0, 1.0];
-        let mut points = vec![super::Homogeneous([0.0, 0.0, 0.0, 1.0]), super::Homogeneous([1.0, 0.0, 0.0, 1.0])];
-        let error = super::insert_knot_once(&ctx, &mut knots, &mut points, 1, 0.5, 0, "knot invariant").expect_err("span scan refuses before mutation");
-        let GeometryError::Codec(CodecError::ResourceLimit(limit)) = error else { panic!("original resource error must escape") };
+        let mut points = vec![
+            super::Homogeneous([0.0, 0.0, 0.0, 1.0]),
+            super::Homogeneous([1.0, 0.0, 0.0, 1.0]),
+        ];
+        let error =
+            super::insert_knot_once(&ctx, &mut knots, &mut points, 1, 0.5, 0, "knot invariant")
+                .expect_err("span scan refuses before mutation");
+        let GeometryError::Codec(CodecError::ResourceLimit(limit)) = error else {
+            panic!("original resource error must escape")
+        };
         assert_eq!(limit.operation, "Rhino knot span search");
-        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
         assert_eq!(knots, [0.0, 0.0, 1.0, 1.0]);
         assert_eq!(points[0].0, [0.0, 0.0, 0.0, 1.0]);
         assert_eq!(points[1].0, [1.0, 0.0, 0.0, 1.0]);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+        );
     }
 
     #[test]
@@ -2909,7 +3053,8 @@ mod tests {
     fn source_circle_keeps_checked_center_and_radius() {
         let arena = cadmpeg_core::decode::DecodeArena::default();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
         let values = [
             1.0_f64, 2.0, 3.0, // plane origin
             1.0, 0.0, 0.0, // x axis
@@ -2926,8 +3071,12 @@ mod tests {
             .flat_map(f64::to_le_bytes)
             .collect::<Vec<_>>();
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("circle reader");
-        let circle = super::read_circle(&ctx, &mut reader, crate::test_support::millimeter_scale(2.0))
-            .expect("valid circle");
+        let circle = super::read_circle(
+            &ctx,
+            &mut reader,
+            crate::test_support::millimeter_scale(2.0),
+        )
+        .expect("valid circle");
         assert_eq!(circle.center.get(), Point3::new(2.0, 4.0, 6.0));
         assert_eq!(circle.radius.get(), 4.0);
 
@@ -3328,7 +3477,8 @@ mod tests {
     fn top_level_polycurve_rejects_equal_adjacent_boundaries() {
         let arena = cadmpeg_core::decode::DecodeArena::default();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
         let previous = FiniteReal::new(1.0);
         assert!(checked_polycurve_parameter(&ctx, previous, 1.0, 8, "polycurve").is_err());
     }
@@ -3337,7 +3487,8 @@ mod tests {
     fn c2_polycurve_rejects_equal_adjacent_boundaries() {
         let arena = cadmpeg_core::decode::DecodeArena::default();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
         let previous = FiniteReal::new(1.0);
         assert!(checked_polycurve_parameter(&ctx, previous, 1.0, 8, "C2 polycurve").is_err());
     }

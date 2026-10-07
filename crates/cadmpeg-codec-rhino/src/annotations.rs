@@ -533,7 +533,8 @@ fn decode_dot(
     })
 }
 
-fn v2_version(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn v2_version(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     offset: usize,
     kind: &str,
@@ -541,13 +542,17 @@ fn v2_version(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     if reader.u8()? >> 4 != 1 {
         return Err(FramingError::structural(
             offset,
-            ctx.format_retained(format_args!("V2 {kind} version is unsupported"), "Rhino v2_version text")?,
+            ctx.format_retained(
+                format_args!("V2 {kind} version is unsupported"),
+                "Rhino v2_version text",
+            )?,
         ));
     }
     Ok(())
 }
 
-fn v2_point(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn v2_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
     offset: usize,
@@ -556,9 +561,18 @@ fn v2_point(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     let raw_point = [reader.f64()?, reader.f64()?, reader.f64()?];
     let mut point = [FiniteReal::ZERO; 3];
     for (target, value) in point.iter_mut().zip(raw_point) {
-        *target = scaled_coordinate(value, scale).map_or_else(|| {
-            Err(FramingError::structural(offset, ctx.format_retained(format_args!("scaled V2 {kind} point is invalid"), "Rhino v2_point text")?)
-        )}, Ok)?;
+        *target = scaled_coordinate(value, scale).map_or_else(
+            || {
+                Err(FramingError::structural(
+                    offset,
+                    ctx.format_retained(
+                        format_args!("scaled V2 {kind} point is invalid"),
+                        "Rhino v2_point text",
+                    )?,
+                ))
+            },
+            Ok,
+        )?;
     }
     Ok(point)
 }
@@ -587,15 +601,28 @@ fn decode_v2_text_dot(
     })
 }
 
-fn decode_v2_annotation_arrow(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn decode_v2_annotation_arrow(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     scale: MillimeterScale,
 ) -> Result<([FiniteReal; 3], [FiniteReal; 3]), FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     v2_version(ctx, &mut reader, range.start, "annotation-arrow")?;
-    let tail = v2_point(ctx, &mut reader, scale, range.start, "annotation-arrow tail")?;
-    let head = v2_point(ctx, &mut reader, scale, range.start, "annotation-arrow head")?;
+    let tail = v2_point(
+        ctx,
+        &mut reader,
+        scale,
+        range.start,
+        "annotation-arrow tail",
+    )?;
+    let head = v2_point(
+        ctx,
+        &mut reader,
+        scale,
+        range.start,
+        "annotation-arrow head",
+    )?;
     reader.skip_remaining()?;
     Ok((tail, head))
 }
@@ -605,7 +632,12 @@ fn source_key(
     identity: &crate::objects::SourceIdentity,
     source_order: usize,
 ) -> Result<String, CodecError> {
-    let Some((_, key)) = ctx.rsplit_once(identity.source_id.as_str(), "#", "Rhino annotation source key reverse split")? else {
+    let Some((_, key)) = ctx.rsplit_once(
+        identity.source_id.as_str(),
+        "#",
+        "Rhino annotation source key reverse split",
+    )?
+    else {
         return ctx.format_retained(
             format_args!("record-{source_order:06}"),
             "Rhino annotation source key",
@@ -678,7 +710,11 @@ pub(crate) fn install(
     let mut annotations = Vec::new();
     let mut dots = Vec::new();
     let mut arrows = Vec::new();
-    for (source_order, object) in ctx.admit_iter(&(scan.objects)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (source_order, object) in ctx
+        .admit_iter(&(scan.objects)[..], "Rhino install traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         let Some(object) = object.framed() else {
             continue;
         };
@@ -707,8 +743,9 @@ pub(crate) fn install(
             class,
             AnnotationClass::Modern { leader: false } | AnnotationClass::Legacy { leader: false }
         ) {
-            if let Some(extra) = ctx.admit_iter(&(object
-                .userdata)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)?
+            if let Some(extra) = ctx
+                .admit_iter(&(object.userdata)[..], "Rhino install traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
                 .filter_map(UserdataDescriptor::known)
                 .find(|userdata| {
                     userdata.class_uuid == V5_TEXT_EXTRA && userdata.item_uuid == V5_TEXT_EXTRA
@@ -1016,7 +1053,8 @@ pub(crate) fn install(
                 });
             }
             AnnotationClass::V2Arrow => {
-                let (tail, head) = match decode_v2_annotation_arrow(ctx, 
+                let (tail, head) = match decode_v2_annotation_arrow(
+                    ctx,
                     scan.data,
                     object.class_data_range.clone(),
                     scale,
@@ -2146,7 +2184,8 @@ mod tests {
     fn v2_annotation_arrow_reads_tail_and_head_and_skips_class_data_suffix() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
         let mut bytes = vec![0x10];
         for value in [[1.0_f64, 2.0, 3.0], [-4.0_f64, 5.0, -6.0]] {
             for coordinate in value {
@@ -2154,7 +2193,8 @@ mod tests {
             }
         }
         bytes.extend([0xa5, 0x5a]);
-        let (tail, head) = decode_v2_annotation_arrow(&ctx, 
+        let (tail, head) = decode_v2_annotation_arrow(
+            &ctx,
             &bytes,
             0..bytes.len(),
             crate::test_support::millimeter_scale(10.0),
@@ -2407,16 +2447,27 @@ mod tests {
     #[test]
     fn annotation_source_key_reverse_split_preserves_refusal() {
         let payload = v2_annotation_payload(7, &[], "text", "default", false);
-        let scan = scan_with_objects(&[object_record_with_payload(ArchiveVersion::V5, 0x20, crate::dimensions::V2_ANNOTATION.to_wire(), &payload)]);
+        let scan = scan_with_objects(&[object_record_with_payload(
+            ArchiveVersion::V5,
+            0x20,
+            crate::dimensions::V2_ANNOTATION.to_wire(),
+            &payload,
+        )]);
         let identity = scan.objects[0].identity().unwrap();
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+                .unwrap();
         let error = super::source_key(&ctx, identity, 0).unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else { panic!("source key must return its resource refusal"); };
-        assert_eq!(refusal.operation, "Rhino annotation source key reverse split");
+        let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+            panic!("source key must return its resource refusal");
+        };
+        assert_eq!(
+            refusal.operation,
+            "Rhino annotation source key reverse split"
+        );
         assert_eq!(ctx.resource_refusal(), Some(refusal));
     }
-
 }

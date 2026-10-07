@@ -790,9 +790,10 @@ fn nonfinite_unit_tolerances_are_refused_at_the_value_first_byte() {
 /// A group refusal names the first byte of the group, not the byte after it.
 #[test]
 fn a_nonfinite_point_component_is_refused_at_the_point_first_byte() {
-        let arena = cadmpeg_core::decode::DecodeArena::default();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let arena = cadmpeg_core::decode::DecodeArena::default();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
     let mut bytes = vec![0xa5, 0xa5, 0xa5];
     let point_offset = bytes.len();
     for value in [1.0_f64, f64::NAN, 3.0] {
@@ -810,9 +811,10 @@ fn a_nonfinite_point_component_is_refused_at_the_point_first_byte() {
 /// nonfinite endpoint at the interval's first byte.
 #[test]
 fn an_interval_holds_its_admitted_finite_endpoints() {
-        let arena = cadmpeg_core::decode::DecodeArena::default();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let arena = cadmpeg_core::decode::DecodeArena::default();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
     let interval_bytes = |values: [f64; 2]| {
         let mut bytes = vec![0xa5];
         for value in values {
@@ -837,9 +839,10 @@ fn an_interval_holds_its_admitted_finite_endpoints() {
 /// admitted, and the plane reader keeps the admitted coordinates of its parts.
 #[test]
 fn point_vector_plane_and_transform_readers_hold_their_admitted_values() {
-        let arena = cadmpeg_core::decode::DecodeArena::default();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let arena = cadmpeg_core::decode::DecodeArena::default();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
     let mut bytes = vec![0xa5];
     for value in [1.0_f64, -2.0, 3.0, 0.0, 1.0, 0.0] {
         bytes.extend(value.to_le_bytes());

@@ -258,13 +258,32 @@ fn inspect_parsed_exchange(
             "step_inspect_entries",
         )?;
     }
-    for (index, section) in ctx.admit_iter(&(exchange.data())[..], "STEP inspect parsed exchange traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (index, section) in ctx
+        .admit_iter(
+            &(exchange.data())[..],
+            "STEP inspect parsed exchange traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         let mut counts = BTreeMap::<&str, usize>::new();
-        for id in ctx.admit_iter(&(section.records)[..], "STEP inspect parsed exchange traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for id in ctx
+            .admit_iter(
+                &(section.records)[..],
+                "STEP inspect parsed exchange traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             if !opaque_offsets.contains(&exchange.records()[id].span.start) {
                 continue;
             }
-            for partial in ctx.admit_iter(&(exchange.records()[id].partials)[..], "STEP inspect parsed exchange traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for partial in ctx
+                .admit_iter(
+                    &(exchange.records()[id].partials)[..],
+                    "STEP inspect parsed exchange traversal",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 let name = partial.name.as_str();
                 ctx.admit_btree_entry(&counts, &name, "step_inspect_unknown_counts")?;
                 match counts.entry(name) {
@@ -342,7 +361,14 @@ fn inspect_parsed_exchange(
             "step_inspect_entries",
         )?;
     }
-    for (index, signature) in ctx.admit_iter(&(exchange.signatures())[..], "STEP inspect parsed exchange traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (index, signature) in ctx
+        .admit_iter(
+            &(exchange.signatures())[..],
+            "STEP inspect parsed exchange traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         ctx.push_vec(
             &mut entries,
             ContainerEntry {
@@ -380,7 +406,10 @@ fn inspect_parsed_exchange(
         )?,
         "step_codec_notes",
     )?;
-    for diagnostic in ctx.admit_iter(diagnostics, "STEP inspect parsed exchange traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for diagnostic in ctx
+        .admit_iter(diagnostics, "STEP inspect parsed exchange traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let note = ctx.format_retained(
             format_args!("{}", diagnostic.message),
             "step_inspect_diagnostic_copy",
@@ -406,8 +435,11 @@ fn starts_with_step_magic(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool,
         }
         if bytes.get(at..at + 2) == Some(b"/*") {
             at += 2;
-            let Some(relative_end) = ctx.admit_iter(&bytes[at..], "STEP leading comment traversal")?
-                .windows(std::num::NonZeroUsize::new(2).ok_or_else(|| ctx.refuse_codec_limit("STEP leading comment window width", 0, 1))?)
+            let Some(relative_end) = ctx
+                .admit_iter(&bytes[at..], "STEP leading comment traversal")?
+                .windows(std::num::NonZeroUsize::new(2).ok_or_else(|| {
+                    ctx.refuse_codec_limit("STEP leading comment window width", 0, 1)
+                })?)
                 .position(|window| window == b"*/")
             else {
                 return Ok(false);
@@ -463,15 +495,34 @@ fn inspect_zip(
         ",",
         "step_inspect_logical_sections",
     )?;
-    let (role_buffer, mut role_storage) = ctx.scoped_vector_storage::<ContainerRole>(archive.entries().len(), "STEP ZIP entry role storage")?;
+    let (role_buffer, mut role_storage) = ctx.scoped_vector_storage::<ContainerRole>(
+        archive.entries().len(),
+        "STEP ZIP entry role storage",
+    )?;
     let mut roles = role_buffer;
     for entry in ctx.admit_iter(archive.entries(), "STEP ZIP role classification visits")? {
         let role = archive::classify_entry(ctx, entry.name.as_str())?;
-        ctx.push_scoped_vec(&mut role_storage, &mut roles, role, "STEP ZIP entry role slots")?;
+        ctx.push_scoped_vec(
+            &mut role_storage,
+            &mut roles,
+            role,
+            "STEP ZIP entry role slots",
+        )?;
     }
     let mut entries = archive.container_entries(ctx, |_| ContainerRole::Ancillary)?;
-    for (index, role) in ctx.admit_iter(roles.as_slice(), "STEP ZIP summary role assignment visits")?.enumerate() {
-        let entry = entries.get_mut(index).map_or_else(|| Err(CodecError::Malformed(ctx.copy_retained_text("ZIP summary entry count differs from archive entry count", "STEP ZIP role assignment invariant")?)), Ok)?;
+    for (index, role) in ctx
+        .admit_iter(roles.as_slice(), "STEP ZIP summary role assignment visits")?
+        .enumerate()
+    {
+        let entry = entries.get_mut(index).map_or_else(
+            || {
+                Err(CodecError::Malformed(ctx.copy_retained_text(
+                    "ZIP summary entry count differs from archive entry count",
+                    "STEP ZIP role assignment invariant",
+                )?))
+            },
+            Ok,
+        )?;
         entry.role = *role;
     }
     drop(roles);
@@ -580,7 +631,8 @@ pub(crate) fn is_part28_xml(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<boo
     let Some((name, attributes)) = xml_root_start_tag(ctx, bytes)? else {
         return Ok(false);
     };
-    let local_name = ctx.admit_iter(name, "STEP XML qualified name traversal")?
+    let local_name = ctx
+        .admit_iter(name, "STEP XML qualified name traversal")?
         .rposition(|byte| *byte == b':')
         .map_or(name, |separator| &name[separator + 1..]);
     if local_name.eq_ignore_ascii_case(b"iso_10303_28")
@@ -607,16 +659,24 @@ const PART28_COMMON_NAMESPACES: [&[u8]; 3] = [
     b"urn:iso.org:standard:10303:part(28):version(2):xmlschema:common",
 ];
 
-fn ascii_starts_with(ctx: &DecodeContext<'_>, value: &[u8], prefix: &[u8]) -> Result<bool, CodecError> {
+fn ascii_starts_with(
+    ctx: &DecodeContext<'_>,
+    value: &[u8],
+    prefix: &[u8],
+) -> Result<bool, CodecError> {
     if value.len() < prefix.len() {
         return Ok(false);
     }
-    Ok(ctx.admit_iter(&value[..prefix.len()], "STEP XML name prefix traversal")?
+    Ok(ctx
+        .admit_iter(&value[..prefix.len()], "STEP XML name prefix traversal")?
         .zip(ctx.admit_iter(prefix, "STEP XML marker prefix traversal")?)
         .all(|(value, prefix)| value.eq_ignore_ascii_case(prefix)))
 }
 
-fn xml_root_start_tag<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<Option<(&'a [u8], &'a [u8])>, CodecError> {
+fn xml_root_start_tag<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<Option<(&'a [u8], &'a [u8])>, CodecError> {
     let mut cursor = if bytes.starts_with(b"\xef\xbb\xbf") {
         3
     } else {
@@ -633,9 +693,13 @@ fn xml_root_start_tag<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<Op
             let Some(tail) = bytes.get(cursor + 2..) else {
                 return Ok(None);
             };
-            let Some(relative_end) = ctx.admit_iter(tail, "STEP XML processing instruction traversal")?
-                .windows(std::num::NonZeroUsize::new(2).ok_or_else(|| ctx.refuse_codec_limit("STEP XML processing instruction window width", 0, 1))?)
-                .position(|window| window == b"?>") else {
+            let Some(relative_end) = ctx
+                .admit_iter(tail, "STEP XML processing instruction traversal")?
+                .windows(std::num::NonZeroUsize::new(2).ok_or_else(|| {
+                    ctx.refuse_codec_limit("STEP XML processing instruction window width", 0, 1)
+                })?)
+                .position(|window| window == b"?>")
+            else {
                 return Ok(None);
             };
             let end = relative_end + cursor + 2;
@@ -646,9 +710,13 @@ fn xml_root_start_tag<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<Op
             let Some(tail) = bytes.get(cursor + 4..) else {
                 return Ok(None);
             };
-            let Some(relative_end) = ctx.admit_iter(tail, "STEP XML comment traversal")?
-                .windows(std::num::NonZeroUsize::new(3).ok_or_else(|| ctx.refuse_codec_limit("STEP XML comment window width", 0, 1))?)
-                .position(|window| window == b"-->") else {
+            let Some(relative_end) =
+                ctx.admit_iter(tail, "STEP XML comment traversal")?
+                    .windows(std::num::NonZeroUsize::new(3).ok_or_else(|| {
+                        ctx.refuse_codec_limit("STEP XML comment window width", 0, 1)
+                    })?)
+                    .position(|window| window == b"-->")
+            else {
                 return Ok(None);
             };
             let end = relative_end + cursor + 4;
@@ -659,8 +727,10 @@ fn xml_root_start_tag<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<Op
             let Some(tail) = bytes.get(cursor + 2..) else {
                 return Ok(None);
             };
-            let Some(relative_end) = ctx.admit_iter(tail, "STEP XML declaration traversal")?
-                .position(|byte| *byte == b'>') else {
+            let Some(relative_end) = ctx
+                .admit_iter(tail, "STEP XML declaration traversal")?
+                .position(|byte| *byte == b'>')
+            else {
                 return Ok(None);
             };
             let end = relative_end + cursor + 2;
@@ -683,7 +753,10 @@ fn xml_root_start_tag<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<Op
     if name_end == cursor + 1 {
         return Ok(None);
     }
-    Ok(Some((&bytes[cursor + 1..name_end], &bytes[name_end..tag_end])))
+    Ok(Some((
+        &bytes[cursor + 1..name_end],
+        &bytes[name_end..tag_end],
+    )))
 }
 
 fn find_xml_tag_end(bytes: &[u8], mut cursor: usize) -> Option<usize> {
@@ -701,11 +774,16 @@ fn find_xml_tag_end(bytes: &[u8], mut cursor: usize) -> Option<usize> {
     None
 }
 
-fn has_namespace_value(ctx: &DecodeContext<'_>, attributes: &[u8], expected: &[u8]) -> Result<bool, CodecError> {
+fn has_namespace_value(
+    ctx: &DecodeContext<'_>,
+    attributes: &[u8],
+    expected: &[u8],
+) -> Result<bool, CodecError> {
     Ok(xml_attribute_value(ctx, attributes, |ctx, name, value| {
         Ok((name == b"xmlns" || name.starts_with(b"xmlns:"))
             && ctx.equal_bytes(value, expected, "STEP XML namespace value equality")?)
-    })?.is_some())
+    })?
+    .is_some())
 }
 
 fn xml_attribute_value<'a>(
@@ -739,7 +817,9 @@ fn xml_attribute_value<'a>(
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
             cursor += 1;
         }
-        let Some(&delimiter) = attributes.get(cursor) else { return Ok(None); };
+        let Some(&delimiter) = attributes.get(cursor) else {
+            return Ok(None);
+        };
         if delimiter != b'\'' && delimiter != b'"' {
             return Ok(None);
         }
@@ -760,12 +840,16 @@ fn xml_attribute_value<'a>(
     Ok(None)
 }
 
-pub(crate) fn is_ap242_bo_model_xml(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
+pub(crate) fn is_ap242_bo_model_xml(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<bool, CodecError> {
     let bytes = &bytes[..bytes.len().min(4096)];
     let Some((name, attributes)) = xml_root_start_tag(ctx, bytes)? else {
         return Ok(false);
     };
-    let local_name = ctx.admit_iter(name, "STEP XML qualified name traversal")?
+    let local_name = ctx
+        .admit_iter(name, "STEP XML qualified name traversal")?
         .rposition(|byte| *byte == b':')
         .map_or(name, |separator| &name[separator + 1..]);
     // BM-03: the published namespace must be bound on the Uos document
@@ -806,7 +890,8 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(attributes, &arena, &policy).unwrap();
-        let error = super::has_namespace_value(&ctx, attributes, b"urn:test:namespace").unwrap_err();
+        let error =
+            super::has_namespace_value(&ctx, attributes, b"urn:test:namespace").unwrap_err();
         let CodecError::ResourceLimit(refusal) = error else {
             panic!("namespace comparison must preserve its resource refusal");
         };
@@ -818,7 +903,6 @@ mod tests {
         assert!(!super::has_namespace_value(&service, attributes, b"urn:test:different").unwrap());
         assert!(!super::has_namespace_value(&service, b" xmlns", b"urn:test:namespace").unwrap());
     }
-
 
     const INSPECTION_TEXT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
 

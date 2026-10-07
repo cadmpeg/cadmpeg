@@ -79,9 +79,17 @@ pub(crate) enum TokenKind {
 pub(crate) struct TokenTag(std::mem::Discriminant<TokenKind>);
 
 impl cadmpeg_core::decode::cost::DecodeCost for TokenTag {
-    const FIXED_BYTES: Option<u64> = Some(u64_from_index(std::mem::size_of::<std::mem::Discriminant<TokenKind>>()));
-    fn decode_cost(&self, _ctx: &DecodeContext<'_>, _operation: &'static str) -> Result<u64, CodecError> {
-        Ok(u64_from_index(std::mem::size_of::<std::mem::Discriminant<TokenKind>>()))
+    const FIXED_BYTES: Option<u64> = Some(u64_from_index(std::mem::size_of::<
+        std::mem::Discriminant<TokenKind>,
+    >()));
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        Ok(u64_from_index(std::mem::size_of::<
+            std::mem::Discriminant<TokenKind>,
+        >()))
     }
 }
 
@@ -145,7 +153,11 @@ impl std::error::Error for LexError {}
 
 impl From<CodecError> for LexError {
     fn from(error: CodecError) -> Self {
-        Self { offset: 0, message: String::new(), resource: Some(error) }
+        Self {
+            offset: 0,
+            message: String::new(),
+            resource: Some(error),
+        }
     }
 }
 
@@ -313,10 +325,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             }
             if let Some(separator_end) = self.print_control_end(start + relative) {
                 if separator_end > end {
-                    return Err(self.error(
-                        start + relative,
-                        "invalid SIGNATURE base64 character",
-                    )?);
+                    return Err(self.error(start + relative, "invalid SIGNATURE base64 character")?);
                 }
                 trailing_separator |= saw_content;
                 relative = separator_end - start;
@@ -336,35 +345,23 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 continue;
             }
             if trailing_separator {
-                return Err(self.error(
-                    start + relative,
-                    "invalid SIGNATURE base64 character",
-                )?);
+                return Err(self.error(start + relative, "invalid SIGNATURE base64 character")?);
             }
             saw_content = true;
             let is_alphabet = byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/');
             if finished || (padding != 0 && is_alphabet) {
-                return Err(self.error(
-                    start + relative,
-                    "invalid SIGNATURE base64 padding",
-                )?);
+                return Err(self.error(start + relative, "invalid SIGNATURE base64 padding")?);
             }
             if is_alphabet {
                 quantum_len += 1;
             } else if byte == b'=' {
                 if quantum_len < 2 || padding == 2 {
-                    return Err(self.error(
-                        start + relative,
-                        "invalid SIGNATURE base64 padding",
-                    )?);
+                    return Err(self.error(start + relative, "invalid SIGNATURE base64 padding")?);
                 }
                 padding += 1;
                 quantum_len += 1;
             } else {
-                return Err(self.error(
-                    start + relative,
-                    "invalid SIGNATURE base64 character",
-                )?);
+                return Err(self.error(start + relative, "invalid SIGNATURE base64 character")?);
             }
             if quantum_len == 4 {
                 finished = padding != 0;
@@ -374,16 +371,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             relative += 1;
         }
         if !saw_content {
-            return Err(self.error(
-                start,
-                "SIGNATURE section has empty base64 content",
-            )?);
+            return Err(self.error(start, "SIGNATURE section has empty base64 content")?);
         }
         if quantum_len != 0 {
-            return Err(self.error(
-                end,
-                "SIGNATURE base64 content has incomplete quantum",
-            )?);
+            return Err(self.error(end, "SIGNATURE base64 content has incomplete quantum")?);
         }
         Ok(())
     }
@@ -531,11 +522,17 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                         break;
                     }
                 }
-                let (_temporary, raw) = self.normalized(digits, self.at, LiteralStorage::Transient)
+                let (_temporary, raw) = self
+                    .normalized(digits, self.at, LiteralStorage::Transient)
                     .map(|(raw, reservation)| (reservation, raw))?;
-                let value = self.budget.parse_text::<u64>(raw.as_str(), "STEP occurrence number parse")?
+                let value = self
+                    .budget
+                    .parse_text::<u64>(raw.as_str(), "STEP occurrence number parse")?
                     .ok()
-                    .map_or_else(|| Err(self.error(start, "instance name is out of range")?), Ok)?;
+                    .map_or_else(
+                        || Err(self.error(start, "instance name is out of range")?),
+                        Ok,
+                    )?;
                 if value == 0 {
                     return Err(self.error(start, "instance name must not be zero")?);
                 }
@@ -598,7 +595,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 _ => break,
             }
         }
-        let (_temporary, mut raw) = self.normalized(start, self.at, LiteralStorage::Transient)
+        let (_temporary, mut raw) = self
+            .normalized(start, self.at, LiteralStorage::Transient)
             .map(|(raw, reservation)| (reservation, raw))?;
         if exponent && raw.ends_with('.') {
             raw.pop();
@@ -612,13 +610,17 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 }
                 index += 1;
             }
-            let parsed = self.budget.parse_text::<f64>(raw.as_str(), "STEP real number parse")?
+            let parsed = self
+                .budget
+                .parse_text::<f64>(raw.as_str(), "STEP real number parse")?
                 .or_else(|_| Err(self.error(start, "invalid real")?))?;
-            FiniteReal::new(parsed)
-                .map(TokenKind::Real)
-                .map_or_else(|| Err(self.error(start, "real exceeds finite binary64 range")?), Ok)
+            FiniteReal::new(parsed).map(TokenKind::Real).map_or_else(
+                || Err(self.error(start, "real exceeds finite binary64 range")?),
+                Ok,
+            )
         } else {
-            self.budget.parse_text::<i64>(raw.as_str(), "STEP integer number parse")?
+            self.budget
+                .parse_text::<i64>(raw.as_str(), "STEP integer number parse")?
                 .map(TokenKind::Integer)
                 .or_else(|_| Err(self.error(start, "invalid integer")?))
         }
@@ -756,17 +758,11 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             }
         }
         let Some((&indicator, digits)) = raw.split_first() else {
-            return Err(self.error(
-                start,
-                "binary literal has no unused-bit indicator",
-            )?);
+            return Err(self.error(start, "binary literal has no unused-bit indicator")?);
         };
         let unused_bits = indicator.nibble();
         if unused_bits > 3 {
-            return Err(self.error(
-                start,
-                "binary unused-bit indicator exceeds three",
-            )?);
+            return Err(self.error(start, "binary unused-bit indicator exceeds three")?);
         }
         if digits.is_empty() && unused_bits != 0 {
             return Err(self.error(start, "empty binary payload has unused bits")?);
@@ -849,7 +845,14 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             .alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
             .map_err(|error| Self::resource_error(start, error))?;
         let mut written = 0usize;
-        for &byte in self.budget.admit_iter(&(self.input[content..self.at])[..], "STEP resource traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for &byte in self
+            .budget
+            .admit_iter(
+                &(self.input[content..self.at])[..],
+                "STEP resource traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             if !byte.is_ascii_control() {
                 value[written] = byte;
                 written += 1;
@@ -880,7 +883,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         end: usize,
         storage: LiteralStorage,
     ) -> Result<(String, Option<ScopedReservation<'_>>), LexError> {
-        let byte_count = self.budget.admit_iter(&(self.input[start..end])[..], "STEP normalized traversal").map_err(cadmpeg_core::CodecError::from)?
+        let byte_count = self
+            .budget
+            .admit_iter(&(self.input[start..end])[..], "STEP normalized traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .filter(|byte| !byte.is_ascii_control())
             .map(|byte| char::from(*byte).len_utf8())
             .sum::<usize>();
@@ -890,24 +896,40 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         };
         let mut reservation = match storage {
             LiteralStorage::Retained => None,
-            LiteralStorage::Transient => Some(self.budget.reserve_scoped(0, operation)
-                .map_err(|error| Self::resource_error(start, error))?),
+            LiteralStorage::Transient => Some(
+                self.budget
+                    .reserve_scoped(0, operation)
+                    .map_err(|error| Self::resource_error(start, error))?,
+            ),
         };
         let mut output = match reservation.as_mut() {
-            None => self.budget.retained_string(byte_count, operation)
+            None => self
+                .budget
+                .retained_string(byte_count, operation)
                 .map_err(|error| Self::resource_error(start, error))?,
             Some(reservation) => {
                 let mut output = String::new();
-                self.budget.reserve_scoped_string(reservation, &mut output, byte_count, operation)
+                self.budget
+                    .reserve_scoped_string(reservation, &mut output, byte_count, operation)
                     .map_err(|error| Self::resource_error(start, error))?;
                 output
             }
         };
-        for &byte in self.budget.admit_iter(&(self.input[start..end])[..], "STEP normalized traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for &byte in self
+            .budget
+            .admit_iter(&(self.input[start..end])[..], "STEP normalized traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             if !byte.is_ascii_control() {
                 match reservation.as_mut() {
-                    Some(reservation) => reservation.with_storage(|| self.budget.push_retained_char(&mut output, char::from(byte), operation))?,
-                    None => self.budget.push_retained_char(&mut output, char::from(byte), operation)?,
+                    Some(reservation) => reservation.with_storage(|| {
+                        self.budget
+                            .push_retained_char(&mut output, char::from(byte), operation)
+                    })?,
+                    None => {
+                        self.budget
+                            .push_retained_char(&mut output, char::from(byte), operation)?
+                    }
                 }
             }
         }
@@ -953,7 +975,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
     fn error(&self, offset: usize, message: &str) -> Result<LexError, CodecError> {
         Ok(LexError {
             offset,
-            message: self.budget.copy_retained_text(message, "STEP lexer error message")?,
+            message: self
+                .budget
+                .copy_retained_text(message, "STEP lexer error message")?,
             resource: None,
         })
     }

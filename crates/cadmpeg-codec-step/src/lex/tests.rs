@@ -472,7 +472,8 @@ fn real_lexeme_preserves_finite_bits() {
 fn lexer_error_message_copy_refusal_reaches_codec_result() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let error = lex_under_policy(b"?", policy, false).expect_err("error message has no retained storage");
+    let error =
+        lex_under_policy(b"?", policy, false).expect_err("error message has no retained storage");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "STEP lexer error message"));
@@ -480,41 +481,71 @@ fn lexer_error_message_copy_refusal_reaches_codec_result() {
 
 #[test]
 fn occurrence_number_parse_preserves_refusal() {
-    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP occurrence number parse", |cap| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"#7", &arena, &policy).unwrap();
-        let result = super::lex_with_context(b"#7", &ctx).map(|_| ()).map_err(super::LexError::into_codec_error);
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "STEP occurrence number parse",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"#7", &arena, &policy)
+                    .unwrap();
+            let result = super::lex_with_context(b"#7", &ctx)
+                .map(|_| ())
+                .map_err(super::LexError::into_codec_error);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }
 
 #[test]
 fn real_number_parse_preserves_refusal() {
-    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP real number parse", |cap| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"2.5", &arena, &policy).unwrap();
-        let result = super::lex_with_context(b"2.5", &ctx).map(|_| ()).map_err(super::LexError::into_codec_error);
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "STEP real number parse",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"2.5", &arena, &policy)
+                    .unwrap();
+            let result = super::lex_with_context(b"2.5", &ctx)
+                .map(|_| ())
+                .map_err(super::LexError::into_codec_error);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }
 
 #[test]
 fn integer_number_parse_preserves_refusal() {
-    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP integer number parse", |cap| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"7", &arena, &policy).unwrap();
-        let result = super::lex_with_context(b"7", &ctx).map(|_| ()).map_err(super::LexError::into_codec_error);
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "STEP integer number parse",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"7", &arena, &policy)
+                    .unwrap();
+            let result = super::lex_with_context(b"7", &ctx)
+                .map(|_| ())
+                .map_err(super::LexError::into_codec_error);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }
 
 #[test]
@@ -523,38 +554,64 @@ fn token_tag_cost_is_exact_and_excludes_payloads() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let first = super::TokenKind::Name(String::from("FIRST")).tag();
     let second = super::TokenKind::Name(String::from("different payload")).tag();
-    let width = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<std::mem::Discriminant<super::TokenKind>>());
+    let width = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+        std::mem::Discriminant<super::TokenKind>,
+    >());
     assert_eq!(<super::TokenTag as DecodeCost>::FIXED_BYTES, Some(width));
-    assert_eq!(first.decode_cost(&ctx, "test token category").unwrap(), width);
-    assert_eq!(second.decode_cost(&ctx, "test token category").unwrap(), width);
+    assert_eq!(
+        first.decode_cost(&ctx, "test token category").unwrap(),
+        width
+    );
+    assert_eq!(
+        second.decode_cost(&ctx, "test token category").unwrap(),
+        width
+    );
     assert_eq!(first, second);
     assert_ne!(first, super::TokenKind::Comma.tag());
 }
 
 #[test]
 fn normalized_retained_character_preserves_refusal() {
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "step_lex_normalized_retained", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"AB", &arena, &policy).unwrap();
-        let lexer = super::Lexer::new(b"AB", &ctx);
-        let result = lexer.normalized(0, 2, super::LiteralStorage::Retained).map(|_| ()).map_err(super::LexError::into_codec_error);
-        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "step_lex_normalized_retained",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"AB", &arena, &policy).unwrap();
+            let lexer = super::Lexer::new(b"AB", &ctx);
+            let result = lexer
+                .normalized(0, 2, super::LiteralStorage::Retained)
+                .map(|_| ())
+                .map_err(super::LexError::into_codec_error);
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }
 
 #[test]
 fn normalized_temp_character_preserves_refusal() {
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "step_lex_normalized_temp", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"AB", &arena, &policy).unwrap();
-        let lexer = super::Lexer::new(b"AB", &ctx);
-        let result = lexer.normalized(0, 2, super::LiteralStorage::Transient).map(|_| ()).map_err(super::LexError::into_codec_error);
-        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "step_lex_normalized_temp",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"AB", &arena, &policy).unwrap();
+            let lexer = super::Lexer::new(b"AB", &ctx);
+            let result = lexer
+                .normalized(0, 2, super::LiteralStorage::Transient)
+                .map(|_| ())
+                .map_err(super::LexError::into_codec_error);
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }

@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use super::reference::{first_matching, references};
-use super::{named_parameter, find_record_value, source_numeric_id, RecordExt, ValueExt};
+use super::{find_record_value, named_parameter, source_numeric_id, RecordExt, ValueExt};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -44,7 +44,10 @@ fn collect_pmi_references(
     operation: &'static str,
 ) -> Result<Vec<u64>, CodecError> {
     let mut ids = Vec::new();
-    for value in ctx.admit_iter(values, "STEP collect pmi references traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for value in ctx
+        .admit_iter(values, "STEP collect pmi references traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         for id in references(value, ctx) {
             let id = id?;
             ctx.push_vec(&mut ids, id, operation)?;
@@ -199,15 +202,20 @@ pub(super) fn decode(
     }
 
     for (id, record) in exchange.entities(ctx, "DATUM_SYSTEM")? {
-        let constituents = ctx.admit_iter(&(record
-            .parameters())[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)?
+        let constituents = ctx
+            .admit_iter(&(record.parameters())[..], "STEP decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .rev()
             .find_map(ValueExt::list)
             .unwrap_or_default();
         let mut datum_records = BTreeSet::new();
         let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
         let mut datum_references = Vec::new();
-        for (index, constituent) in ctx.admit_iter(&(constituents)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+        for (index, constituent) in ctx
+            .admit_iter(&(constituents)[..], "STEP decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .enumerate()
+        {
             let Some(precedence) = u32::try_from(index + 1).ok().and_then(NonZeroU32::new) else {
                 continue;
             };
@@ -233,8 +241,10 @@ pub(super) fn decode(
             Err(error) => {
                 ctx.push_vec(
                     &mut losses,
-                    StepLossCode::PmiDatumSystemInvalid
-                        .note(ctx.format_retained(format_args!("DATUM_SYSTEM #{id} omitted: {error}"), "STEP decode text")?),
+                    StepLossCode::PmiDatumSystemInvalid.note(ctx.format_retained(
+                        format_args!("DATUM_SYSTEM #{id} omitted: {error}"),
+                        "STEP decode text",
+                    )?),
                     "step_pmi_losses",
                 )?;
                 continue;
@@ -289,53 +299,95 @@ pub(super) fn decode(
             continue;
         };
         let mut name = None;
-        'record_parameters: for partial in ctx.admit_iter(&(record
-            .partials)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
-        for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP record parameter traversal")? {
-            if let Some(text) = decode_text_charged(
-                exchange,
-                value,
-                &mut losses,
-                id,
-                "dimension name",
-                StepLossCode::MetadataStringInvalid,
-                ctx,
+        'record_parameters: for partial in ctx
+            .admit_iter(&(record.partials)[..], "STEP decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
+            for value in ctx.admit_iter(
+                partial.parameters.as_slice(),
+                "STEP record parameter traversal",
             )? {
-                name = Some(text);
-                break 'record_parameters;
+                if let Some(text) = decode_text_charged(
+                    exchange,
+                    value,
+                    &mut losses,
+                    id,
+                    "dimension name",
+                    StepLossCode::MetadataStringInvalid,
+                    ctx,
+                )? {
+                    name = Some(text);
+                    break 'record_parameters;
+                }
             }
         }
-    }
         if matches!(kind, DimensionKind::Size) {
             let category = if dimension_name.starts_with("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE") {
                 let mut category = None;
-                'record_parameters: for partial in ctx.admit_iter(&(record
-                    .partials)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)?
-                    .map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), dimension_name, "STEP PMI dimension name equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()?
-                    .into_iter() {
-        for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP record parameter traversal")?.rev() {
-                    if let Some(text) = decode_text_charged(
-                        exchange,
-                        value,
-                        &mut losses,
-                        id,
-                        "dimension category",
-                        StepLossCode::MetadataStringInvalid,
-                        ctx,
-                    )? {
-                        category = Some(text);
-                        break 'record_parameters;
+                'record_parameters: for partial in ctx
+                    .admit_iter(&(record.partials)[..], "STEP decode traversal")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .map(|partial| -> Result<Option<_>, CodecError> {
+                        Ok((ctx.equal(
+                            partial.name.as_str(),
+                            dimension_name,
+                            "STEP PMI dimension name equality",
+                        )?)
+                        .then_some(partial))
+                    })
+                    .find_map(Result::transpose)
+                    .transpose()?
+                    .into_iter()
+                {
+                    for value in ctx
+                        .admit_iter(
+                            partial.parameters.as_slice(),
+                            "STEP record parameter traversal",
+                        )?
+                        .rev()
+                    {
+                        if let Some(text) = decode_text_charged(
+                            exchange,
+                            value,
+                            &mut losses,
+                            id,
+                            "dimension category",
+                            StepLossCode::MetadataStringInvalid,
+                            ctx,
+                        )? {
+                            category = Some(text);
+                            break 'record_parameters;
+                        }
                     }
                 }
-    }
                 category
             } else {
                 None
             };
             let category = category.as_deref().or(name.as_deref());
-            kind = if category.map(|value| ctx.eq_ignore_ascii_case(value, "diameter", "STEP dimension category case equality")).transpose()?.unwrap_or(false) {
+            kind = if category
+                .map(|value| {
+                    ctx.eq_ignore_ascii_case(
+                        value,
+                        "diameter",
+                        "STEP dimension category case equality",
+                    )
+                })
+                .transpose()?
+                .unwrap_or(false)
+            {
                 DimensionKind::Diameter
-            } else if category.map(|value| ctx.eq_ignore_ascii_case(value, "radius", "STEP dimension category case equality")).transpose()?.unwrap_or(false) {
+            } else if category
+                .map(|value| {
+                    ctx.eq_ignore_ascii_case(
+                        value,
+                        "radius",
+                        "STEP dimension category case equality",
+                    )
+                })
+                .transpose()?
+                .unwrap_or(false)
+            {
                 DimensionKind::Radius
             } else {
                 kind
@@ -346,13 +398,25 @@ pub(super) fn decode(
             .map_err(|error| CodecError::malformed(format_args!("dimension #{id}: {error}")))?;
         let mut aspect_targets = Vec::new();
         let mut aspect_ids = BTreeSet::new();
-        for partial in ctx.admit_iter(&record.partials[..], "STEP dimension aspect partial traversal")? {
-            for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP dimension aspect parameter traversal")? {
+        for partial in ctx.admit_iter(
+            &record.partials[..],
+            "STEP dimension aspect partial traversal",
+        )? {
+            for value in ctx.admit_iter(
+                partial.parameters.as_slice(),
+                "STEP dimension aspect parameter traversal",
+            )? {
                 for reference in references(value, ctx) {
                     let id = reference?;
                     if shape_aspects.contains(&id) && !aspect_ids.contains(&id) {
                         ctx.insert_btree_set(&mut aspect_ids, id, "step_pmi_target_ids")?;
-                        ctx.push_vec(&mut aspect_targets, PmiTarget::ShapeAspect { source_id: super::step_source_id(ctx, id)? }, "step_pmi_target_items")?;
+                        ctx.push_vec(
+                            &mut aspect_targets,
+                            PmiTarget::ShapeAspect {
+                                source_id: super::step_source_id(ctx, id)?,
+                            },
+                            "step_pmi_target_items",
+                        )?;
                     }
                 }
             }
@@ -374,15 +438,22 @@ pub(super) fn decode(
     for (id, record) in exchange.entities(ctx, "PLUS_MINUS_TOLERANCE")? {
         let refs =
             collect_pmi_references(record.parameters(), ctx, "step_pmi_plus_minus_references")?;
-        let dimension = ctx.admit_iter(&(refs)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)?
+        let dimension = ctx
+            .admit_iter(&(refs)[..], "STEP decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .find_map(|reference| annotations.get(*reference));
-        let limits = ctx.admit_iter(&(refs)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)?.find_map(|reference| {
-            exchange
-                .records()
-                .get(reference)
-                .filter(|candidate| candidate.simple_name() == Some("TOLERANCE_VALUE"))
-        });
-        let fit = ctx.admit_iter(&(refs)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)?
+        let limits = ctx
+            .admit_iter(&(refs)[..], "STEP decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .find_map(|reference| {
+                exchange
+                    .records()
+                    .get(reference)
+                    .filter(|candidate| candidate.simple_name() == Some("TOLERANCE_VALUE"))
+            });
+        let fit = ctx
+            .admit_iter(&(refs)[..], "STEP decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .find_map(|reference| {
                 let record = exchange.records().get(reference)?;
                 (record.simple_name() == Some("LIMITS_AND_FITS")).then(
@@ -536,21 +607,32 @@ pub(super) fn decode(
         let Some(record) = exchange.records().get(&id) else {
             continue;
         };
-        let Some(tolerance) = ctx.admit_iter(&(record
-            .partials)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)?
+        let Some(tolerance) = ctx
+            .admit_iter(&(record.partials)[..], "STEP decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .find_map(|partial| {
                 (partial.name != "GEOMETRIC_TOLERANCE")
                     .then(|| tolerance_kind(Some(&partial.name)))
                     .flatten()
             })
-            .map_or_else(|| Ok::<_, CodecError>(ctx.admit_iter(&record.partials[..], "STEP PMI fallback partial traversal")?
-                    .find_map(|partial| tolerance_kind(Some(&partial.name)))
-            ), |value| Ok(Some(value)))?
+            .map_or_else(
+                || {
+                    Ok::<_, CodecError>(
+                        ctx.admit_iter(
+                            &record.partials[..],
+                            "STEP PMI fallback partial traversal",
+                        )?
+                        .find_map(|partial| tolerance_kind(Some(&partial.name))),
+                    )
+                },
+                |value| Ok(Some(value)),
+            )?
         else {
             continue;
         };
-        let reference_values = ctx.admit_iter(&(record
-            .partials)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)?
+        let reference_values = ctx
+            .admit_iter(&(record.partials)[..], "STEP decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .find(|partial| partial.name == "GEOMETRIC_TOLERANCE")
             .map_or(record.parameters(), |partial| partial.parameters.as_slice());
         let refs = collect_pmi_references(
@@ -560,17 +642,39 @@ pub(super) fn decode(
         )?;
         let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
         let magnitude = first_measure(
-            ctx.admit_iter(record.partial(ctx, "GEOMETRIC_TOLERANCE")?.map(|partial| partial.parameters.as_slice()).unwrap_or_default(), "STEP tolerance measure parameter traversal")?,
+            ctx.admit_iter(
+                record
+                    .partial(ctx, "GEOMETRIC_TOLERANCE")?
+                    .map(|partial| partial.parameters.as_slice())
+                    .unwrap_or_default(),
+                "STEP tolerance measure parameter traversal",
+            )?,
             exchange,
             &mut measurements,
             ctx,
         )?;
         let magnitude = match magnitude {
             Some(magnitude) => Some(magnitude),
-            None => ctx.admit_iter(&record.partials[..], "STEP tolerance fallback partial traversal")?
+            None => ctx
+                .admit_iter(
+                    &record.partials[..],
+                    "STEP tolerance fallback partial traversal",
+                )?
                 .filter(|partial| partial.name != "GEOMETRIC_TOLERANCE")
-                .map(|partial| first_measure(ctx.admit_iter(partial.parameters.as_slice(), "STEP tolerance fallback parameter traversal")?, exchange, &mut measurements, ctx))
-                .filter_map(Result::transpose).next().transpose()?,
+                .map(|partial| {
+                    first_measure(
+                        ctx.admit_iter(
+                            partial.parameters.as_slice(),
+                            "STEP tolerance fallback parameter traversal",
+                        )?,
+                        exchange,
+                        &mut measurements,
+                        ctx,
+                    )
+                })
+                .filter_map(Result::transpose)
+                .next()
+                .transpose()?,
         };
         let Some(magnitude) = magnitude.and_then(cadmpeg_ir::pmi::PmiMagnitude::new) else {
             let display_name = ctx.join_display_retained(
@@ -589,15 +693,17 @@ pub(super) fn decode(
             )?;
             continue;
         };
-        let defined_unit = ctx.admit_iter(&(record
-            .partials)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)?
+        let defined_unit = ctx
+            .admit_iter(&(record.partials)[..], "STEP decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT")
             .and_then(|partial| partial.parameters.first())
             .map(|value| measure(value, exchange, &mut measurements, ctx))
             .transpose()?
             .flatten();
-        let (defined_area_unit, defined_area_second_unit) = if let Some(partial) = ctx.admit_iter(&(record
-            .partials)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)?
+        let (defined_area_unit, defined_area_second_unit) = if let Some(partial) = ctx
+            .admit_iter(&(record.partials)[..], "STEP decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT")
         {
             let area = partial
@@ -625,16 +731,24 @@ pub(super) fn decode(
         // while GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE carries the datum
         // system as a separate aggregate.
         let datum_system = first_matching(
-            ctx.admit_iter(record.partial(ctx, "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE")?.map(|partial| partial.parameters.as_slice()).unwrap_or_default(), "STEP tolerance datum parameter traversal")?,
+            ctx.admit_iter(
+                record
+                    .partial(ctx, "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE")?
+                    .map(|partial| partial.parameters.as_slice())
+                    .unwrap_or_default(),
+                "STEP tolerance datum parameter traversal",
+            )?,
             ctx,
-            |id| {Ok({
-                annotations.get(id).is_some_and(|index| {
-                    matches!(
-                        ir.model.pmi[index.get()].definition,
-                        PmiDefinition::DatumSystem { .. }
-                    )
+            |id| {
+                Ok({
+                    annotations.get(id).is_some_and(|index| {
+                        matches!(
+                            ir.model.pmi[index.get()].definition,
+                            PmiDefinition::DatumSystem { .. }
+                        )
+                    })
                 })
-            })},
+            },
         )?
         .and_then(|id| {
             annotations
@@ -683,36 +797,50 @@ pub(super) fn decode(
             },
         )?;
         ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
-        for reference in ctx.admit_iter(refs.as_slice(), "STEP tolerance measure reference traversal")?.copied() {
+        for reference in ctx
+            .admit_iter(
+                refs.as_slice(),
+                "STEP tolerance measure reference traversal",
+            )?
+            .copied()
+        {
             if let Some(record) = exchange.records().get(&reference) {
                 if is_measure_record(ctx, record)? {
                     ctx.insert_btree_set(&mut typed, reference, "step_pmi_typed_claims")?;
                 }
             }
         }
-        for partial in ctx.admit_iter(&(record
-            .partials)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
-        for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP record parameter traversal")? {
-            for reference in references(value, ctx) {
-                let reference = reference?;
-                if let Some(record) = exchange.records().get(&reference) {
-                            if is_measure_record(ctx, record)? {
-                    ctx.insert_btree_set(&mut typed, reference, "step_pmi_typed_claims")?;
+        for partial in ctx
+            .admit_iter(&(record.partials)[..], "STEP decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
+            for value in ctx.admit_iter(
+                partial.parameters.as_slice(),
+                "STEP record parameter traversal",
+            )? {
+                for reference in references(value, ctx) {
+                    let reference = reference?;
+                    if let Some(record) = exchange.records().get(&reference) {
+                        if is_measure_record(ctx, record)? {
+                            ctx.insert_btree_set(&mut typed, reference, "step_pmi_typed_claims")?;
+                        }
                     }
                 }
             }
         }
     }
-    }
 
     for (id, record) in exchange.entities(ctx, "DRAUGHTING_MODEL_ITEM_ASSOCIATION")? {
-        let Some(definition) = named_parameter(ctx, record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 2)?
-            .and_then(ValueExt::reference)
+        let Some(definition) =
+            named_parameter(ctx, record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 2)?
+                .and_then(ValueExt::reference)
         else {
             continue;
         };
         if annotations.get(definition).is_some() {
-            if let Some(items) = named_parameter(ctx, record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4)? {
+            if let Some(items) =
+                named_parameter(ctx, record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4)?
+            {
                 for item in references(items, ctx) {
                     let item = item?;
                     ctx.push_btree_group(
@@ -751,21 +879,24 @@ pub(super) fn decode(
         let mut placement_candidates = BTreeMap::new();
         let mut placement_visited = BTreeMap::new();
         for partial in ctx.admit_iter(&record.partials[..], "STEP PMI record partial traversal")? {
-        for parameter in ctx.admit_iter(partial.parameters.as_slice(), "STEP PMI record parameter traversal")? {
-            for reference in references(parameter, ctx) {
-                let reference = reference?;
-                collect_placement_candidates(
-                    reference,
-                    exchange,
-                    geometry,
-                    &mut placement_visited,
-                    &mut placement_candidates,
-                    0,
-                    ctx,
-                )?;
+            for parameter in ctx.admit_iter(
+                partial.parameters.as_slice(),
+                "STEP PMI record parameter traversal",
+            )? {
+                for reference in references(parameter, ctx) {
+                    let reference = reference?;
+                    collect_placement_candidates(
+                        reference,
+                        exchange,
+                        geometry,
+                        &mut placement_visited,
+                        &mut placement_candidates,
+                        0,
+                        ctx,
+                    )?;
+                }
             }
         }
-    }
         let placement = match placement_candidates.len() {
             0 => None,
             1 => placement_candidates.values().next().copied(),
@@ -780,27 +911,30 @@ pub(super) fn decode(
         };
         let mut semantics = Vec::new();
         for partial in ctx.admit_iter(&record.partials[..], "STEP PMI record partial traversal")? {
-        for parameter in ctx.admit_iter(partial.parameters.as_slice(), "STEP PMI record parameter traversal")? {
-            for reference in references(parameter, ctx) {
-                let reference = reference?;
-                if annotations.get(reference).is_some() {
-                    ctx.push_vec(
-                        &mut semantics,
-                        pmi_id(reference),
-                        "step_pmi_presentation_semantics",
-                    )?;
+            for parameter in ctx.admit_iter(
+                partial.parameters.as_slice(),
+                "STEP PMI record parameter traversal",
+            )? {
+                for reference in references(parameter, ctx) {
+                    let reference = reference?;
+                    if annotations.get(reference).is_some() {
+                        ctx.push_vec(
+                            &mut semantics,
+                            pmi_id(reference),
+                            "step_pmi_presentation_semantics",
+                        )?;
+                    }
                 }
             }
         }
-    }
         if let Some(items) = presentation_semantics.get(&id) {
-        for semantic in ctx.admit_iter(items, "STEP optional collection traversal")? {
-            ctx.push_vec(
-                &mut semantics,
-                pmi_id(*semantic),
-                "step_pmi_presentation_semantics",
-            )?;
-        }
+            for semantic in ctx.admit_iter(items, "STEP optional collection traversal")? {
+                ctx.push_vec(
+                    &mut semantics,
+                    pmi_id(*semantic),
+                    "step_pmi_presentation_semantics",
+                )?;
+            }
         }
         annotations.push(
             ctx,
@@ -808,7 +942,10 @@ pub(super) fn decode(
             id,
             AnnotationDraft {
                 name: named_parameter(ctx, record, name, 0)?
-                    .map_or_else(|| named_parameter(ctx, record, "REPRESENTATION_ITEM", 0), |value| Ok(Some(value)))?
+                    .map_or_else(
+                        || named_parameter(ctx, record, "REPRESENTATION_ITEM", 0),
+                        |value| Ok(Some(value)),
+                    )?
                     .or_else(|| record.parameter(0))
                     .map(|value| {
                         decode_text_charged(
@@ -837,8 +974,10 @@ pub(super) fn decode(
         ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
         super::claim_records(ctx, &mut typed, text_records, "step_pmi_typed_claims")?;
     }
-    for entity in exchange.entities_any(ctx, &["DRAUGHTING_MODEL", "ANNOTATION_PLANE", "DRAUGHTING_CALLOUT"])?
-    {
+    for entity in exchange.entities_any(
+        ctx,
+        &["DRAUGHTING_MODEL", "ANNOTATION_PLANE", "DRAUGHTING_CALLOUT"],
+    )? {
         let (id, _) = entity?;
         ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
     }
@@ -861,15 +1000,24 @@ pub(super) fn decode(
     )?;
 
     let mut targeted_aspects = BTreeSet::new();
-    for target in ir.model.pmi.iter().flat_map(|annotation| &annotation.targets) {
+    for target in ir
+        .model
+        .pmi
+        .iter()
+        .flat_map(|annotation| &annotation.targets)
+    {
         let id = match target {
             PmiTarget::ShapeAspect { source_id } => match source_id.as_str().strip_prefix('#') {
-                Some(number) => ctx.parse_text::<u64>(number, "STEP PMI targeted aspect number parse")?.ok(),
+                Some(number) => ctx
+                    .parse_text::<u64>(number, "STEP PMI targeted aspect number parse")?
+                    .ok(),
                 None => None,
             },
             _ => None,
         };
-        if let Some(id) = id { ctx.insert_btree_set(&mut targeted_aspects, id, "step_pmi_targeted_aspects")?; }
+        if let Some(id) = id {
+            ctx.insert_btree_set(&mut targeted_aspects, id, "step_pmi_targeted_aspects")?;
+        }
     }
     for &id in ctx.admit_iter(&targeted_aspects, "step_pmi_typed_claims")? {
         if ctx.contains_btree_set(&shape_aspects, &id, "step_pmi_typed_claims")? {
@@ -902,42 +1050,61 @@ fn mark_characteristic_representations(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     for (id, record) in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
-        let Some(_) = find_record_value(record, ctx, |value| first_matching([value], ctx, |reference| {Ok({
-            annotations.get(reference).is_some()
-        })}))?
+        let Some(_) = find_record_value(record, ctx, |value| {
+            first_matching([value], ctx, |reference| {
+                Ok({ annotations.get(reference).is_some() })
+            })
+        })?
         else {
             continue;
         };
         ctx.insert_btree_set(typed, id, "step_pmi_typed_claims")?;
         for partial in ctx.admit_iter(&record.partials[..], "STEP PMI record partial traversal")? {
-        for parameter in ctx.admit_iter(partial.parameters.as_slice(), "STEP PMI record parameter traversal")? {
-            for representation_id in references(parameter, ctx) {
-                let representation_id = representation_id?;
-                let Some(representation) = exchange.records().get(&representation_id) else {
-                    continue;
-                };
-                if !ctx.admit_iter(&(representation
-                    .partials)[..], "STEP mark characteristic representations traversal").map_err(cadmpeg_core::CodecError::from)?
-                    .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
-                {
-                    continue;
-                }
-                ctx.insert_btree_set(typed, representation_id, "step_pmi_typed_claims")?;
-                for partial in ctx.admit_iter(&representation.partials[..], "STEP PMI record partial traversal")? {
-        for parameter in ctx.admit_iter(partial.parameters.as_slice(), "STEP PMI record parameter traversal")? {
-                    for reference in references(parameter, ctx) {
-                        let reference = reference?;
-                        if let Some(record) = exchange.records().get(&reference) {
-                            if is_measure_record(ctx, record)? {
-                            ctx.insert_btree_set(typed, reference, "step_pmi_typed_claims")?;
+            for parameter in ctx.admit_iter(
+                partial.parameters.as_slice(),
+                "STEP PMI record parameter traversal",
+            )? {
+                for representation_id in references(parameter, ctx) {
+                    let representation_id = representation_id?;
+                    let Some(representation) = exchange.records().get(&representation_id) else {
+                        continue;
+                    };
+                    if !ctx
+                        .admit_iter(
+                            &(representation.partials)[..],
+                            "STEP mark characteristic representations traversal",
+                        )
+                        .map_err(cadmpeg_core::CodecError::from)?
+                        .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
+                    {
+                        continue;
+                    }
+                    ctx.insert_btree_set(typed, representation_id, "step_pmi_typed_claims")?;
+                    for partial in ctx.admit_iter(
+                        &representation.partials[..],
+                        "STEP PMI record partial traversal",
+                    )? {
+                        for parameter in ctx.admit_iter(
+                            partial.parameters.as_slice(),
+                            "STEP PMI record parameter traversal",
+                        )? {
+                            for reference in references(parameter, ctx) {
+                                let reference = reference?;
+                                if let Some(record) = exchange.records().get(&reference) {
+                                    if is_measure_record(ctx, record)? {
+                                        ctx.insert_btree_set(
+                                            typed,
+                                            reference,
+                                            "step_pmi_typed_claims",
+                                        )?;
+                                    }
+                                }
                             }
                         }
                     }
                 }
-    }
             }
         }
-    }
     }
     Ok(())
 }
@@ -983,7 +1150,13 @@ fn resolve_geometric_item_usages(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut aspect_annotations = BTreeMap::<u64, BTreeSet<AnnotationIndex>>::new();
-    for (&annotation_id, record) in ctx.admit_iter(exchange.records(), "STEP resolve geometric item usages traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for (&annotation_id, record) in ctx
+        .admit_iter(
+            exchange.records(),
+            "STEP resolve geometric item usages traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let Some(annotation_index) = annotations.get(annotation_id) else {
             continue;
         };
@@ -997,25 +1170,35 @@ fn resolve_geometric_item_usages(
             )?;
         }
         for partial in ctx.admit_iter(&record.partials[..], "STEP PMI record partial traversal")? {
-        for parameter in ctx.admit_iter(partial.parameters.as_slice(), "STEP PMI record parameter traversal")? {
-            for reference in references(parameter, ctx) {
-                let reference = reference?;
-                if shape_aspects.contains(&reference) {
-                    ctx.insert_btree_group_set(
-                        &mut aspect_annotations,
-                        reference,
-                        annotation_index,
-                        "step_pmi_aspect_annotation_groups",
-                        "step_pmi_aspect_annotation_members",
-                    )?;
+            for parameter in ctx.admit_iter(
+                partial.parameters.as_slice(),
+                "STEP PMI record parameter traversal",
+            )? {
+                for reference in references(parameter, ctx) {
+                    let reference = reference?;
+                    if shape_aspects.contains(&reference) {
+                        ctx.insert_btree_group_set(
+                            &mut aspect_annotations,
+                            reference,
+                            annotation_index,
+                            "step_pmi_aspect_annotation_groups",
+                            "step_pmi_aspect_annotation_members",
+                        )?;
+                    }
                 }
             }
         }
     }
-    }
 
     let mut relationship_aspects = BTreeMap::<u64, BTreeSet<u64>>::new();
-    for record in ctx.admit_iter(exchange.records(), "STEP resolve geometric item usages map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, value)| value) {
+    for record in ctx
+        .admit_iter(
+            exchange.records(),
+            "STEP resolve geometric item usages map traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+        .map(|(_, value)| value)
+    {
         let Some((relating, related)) = relationship_endpoints(record, ctx)? else {
             continue;
         };
@@ -1035,9 +1218,19 @@ fn resolve_geometric_item_usages(
         )?;
     }
 
-    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP resolve geometric item usages traversal").map_err(cadmpeg_core::CodecError::from)? {
-        let Some(partial) = ctx.admit_iter(&(record
-            .partials)[..], "STEP resolve geometric item usages traversal").map_err(cadmpeg_core::CodecError::from)?
+    for (&id, record) in ctx
+        .admit_iter(
+            exchange.records(),
+            "STEP resolve geometric item usages traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
+        let Some(partial) = ctx
+            .admit_iter(
+                &(record.partials)[..],
+                "STEP resolve geometric item usages traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
             .find(|partial| partial.name == "GEOMETRIC_ITEM_SPECIFIC_USAGE")
         else {
             continue;
@@ -1051,25 +1244,25 @@ fn resolve_geometric_item_usages(
         };
         let mut annotation_indices = BTreeSet::new();
         if let Some(items) = aspect_annotations.get(&definition) {
-        for &index in ctx.admit_iter(items, "STEP optional collection traversal")? {
-            ctx.insert_btree_set(
-                &mut annotation_indices,
-                index,
-                "step_pmi_usage_annotation_indices",
-            )?;
-        }
+            for &index in ctx.admit_iter(items, "STEP optional collection traversal")? {
+                ctx.insert_btree_set(
+                    &mut annotation_indices,
+                    index,
+                    "step_pmi_usage_annotation_indices",
+                )?;
+            }
         }
         if let Some(aspects) = relationship_aspects.get(&definition) {
             for aspect in aspects {
                 if let Some(items) = aspect_annotations.get(aspect) {
-        for &index in ctx.admit_iter(items, "STEP optional collection traversal")? {
-                    ctx.insert_btree_set(
-                        &mut annotation_indices,
-                        index,
-                        "step_pmi_usage_annotation_indices",
-                    )?;
+                    for &index in ctx.admit_iter(items, "STEP optional collection traversal")? {
+                        ctx.insert_btree_set(
+                            &mut annotation_indices,
+                            index,
+                            "step_pmi_usage_annotation_indices",
+                        )?;
+                    }
                 }
-        }
             }
         }
         if annotation_indices.is_empty() {
@@ -1081,7 +1274,13 @@ fn resolve_geometric_item_usages(
         }
         for annotation_index in annotation_indices {
             let annotation = &mut ir.model.pmi[annotation_index.get()];
-            for target in ctx.admit_iter(&(targets)[..], "STEP resolve geometric item usages traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for target in ctx
+                .admit_iter(
+                    &(targets)[..],
+                    "STEP resolve geometric item usages traversal",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 push_target(
                     &mut annotation.targets,
                     copy_pmi_target(target, ctx, "step_pmi_geometric_usage_identity")?,
@@ -1110,70 +1309,70 @@ fn topology_targets(
     let mut targets = Vec::new();
     if let Some(items) = topology.body_by_root.get(&id) {
         for body in ctx.admit_iter(items, "STEP optional collection traversal")? {
-        let body = body.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
-        push_target(
-            &mut targets,
-            PmiTarget::Body { body },
-            ctx,
-            "step_pmi_topology_targets",
-        )?;
-    }
+            let body = body.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
+            push_target(
+                &mut targets,
+                PmiTarget::Body { body },
+                ctx,
+                "step_pmi_topology_targets",
+            )?;
         }
+    }
     if let Some(items) = topology.faces_by_source.get(&id) {
         for face in ctx.admit_iter(items, "STEP optional collection traversal")? {
-        let face = face.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
-        push_target(
-            &mut targets,
-            PmiTarget::Face { face },
-            ctx,
-            "step_pmi_topology_targets",
-        )?;
-    }
+            let face = face.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
+            push_target(
+                &mut targets,
+                PmiTarget::Face { face },
+                ctx,
+                "step_pmi_topology_targets",
+            )?;
         }
+    }
     if let Some(items) = topology.edges_by_source.get(&id) {
         for edge in ctx.admit_iter(items, "STEP optional collection traversal")? {
-        let edge = edge.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
-        push_target(
-            &mut targets,
-            PmiTarget::Edge { edge },
-            ctx,
-            "step_pmi_topology_targets",
-        )?;
-    }
+            let edge = edge.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
+            push_target(
+                &mut targets,
+                PmiTarget::Edge { edge },
+                ctx,
+                "step_pmi_topology_targets",
+            )?;
         }
+    }
     if let Some(items) = topology.vertices_by_source.get(&id) {
         for vertex in ctx.admit_iter(items, "STEP optional collection traversal")? {
-        let vertex = vertex.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
-        push_target(
-            &mut targets,
-            PmiTarget::Vertex { vertex },
-            ctx,
-            "step_pmi_topology_targets",
-        )?;
-    }
+            let vertex = vertex.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
+            push_target(
+                &mut targets,
+                PmiTarget::Vertex { vertex },
+                ctx,
+                "step_pmi_topology_targets",
+            )?;
         }
+    }
     if let Some(items) = geometry_sources.points.get(&id) {
         for point in ctx.admit_iter(items, "STEP optional collection traversal")? {
-        let point = point.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
-        push_target(
-            &mut targets,
-            PmiTarget::Point { point },
-            ctx,
-            "step_pmi_topology_targets",
-        )?;
-    }
+            let point = point.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
+            push_target(
+                &mut targets,
+                PmiTarget::Point { point },
+                ctx,
+                "step_pmi_topology_targets",
+            )?;
         }
+    }
     if let Some(items) = geometry_sources.curves.get(&id) {
         for curve in ctx.admit_iter(items, "STEP optional collection traversal")? {
-        let curve = curve.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
-        push_target(
-            &mut targets,
-            PmiTarget::Curve { curve },
-            ctx,
-            "step_pmi_topology_targets",
-        )?;
-    }
+            let curve = curve.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
+            push_target(
+                &mut targets,
+                PmiTarget::Curve { curve },
+                ctx,
+                "step_pmi_topology_targets",
+            )?;
         }
+    }
     Ok(targets)
 }
 
@@ -1193,13 +1392,20 @@ fn relationship_endpoints(
     record: &RawRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(u64, u64)>, CodecError> {
-    let Some(parameters) = ctx.admit_iter(&(record.partials)[..], "STEP relationship endpoints traversal").map_err(cadmpeg_core::CodecError::from)?.find_map(|partial| {
-        matches!(
-            partial.name.as_str(),
-            "SHAPE_ASPECT_RELATIONSHIP" | "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP"
+    let Some(parameters) = ctx
+        .admit_iter(
+            &(record.partials)[..],
+            "STEP relationship endpoints traversal",
         )
-        .then_some(partial.parameters.as_slice())
-    }) else {
+        .map_err(cadmpeg_core::CodecError::from)?
+        .find_map(|partial| {
+            matches!(
+                partial.name.as_str(),
+                "SHAPE_ASPECT_RELATIONSHIP" | "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP"
+            )
+            .then_some(partial.parameters.as_slice())
+        })
+    else {
         return Ok(None);
     };
     let Some(relating) = first_matching(parameters.get(2), ctx, |_| Ok(true))? else {
@@ -1216,7 +1422,10 @@ fn point_sources(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>>, CodecError> {
     let mut points = BTreeMap::new();
-    for point in ctx.admit_iter(&(ir.model.points)[..], "STEP point sources traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for point in ctx
+        .admit_iter(&(ir.model.points)[..], "STEP point sources traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let Some(source) = source_numeric_id(ctx, point.id.as_str(), "point")? else {
             continue;
         };
@@ -1239,7 +1448,10 @@ fn curve_sources(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Vec<cadmpeg_ir::ids::CurveId>>, CodecError> {
     let mut curves = BTreeMap::new();
-    for curve in ctx.admit_iter(&(ir.model.curves)[..], "STEP curve sources traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for curve in ctx
+        .admit_iter(&(ir.model.curves)[..], "STEP curve sources traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let Some(source) = source_numeric_id(ctx, curve.id.as_str(), "curve")? else {
             continue;
         };
@@ -1272,15 +1484,23 @@ fn datum_references_for_compartment(
     let Some(compartment) = exchange.records().get(&compartment_id) else {
         return Ok(Vec::new());
     };
-    if compartment.partial(ctx, "DATUM_REFERENCE_COMPARTMENT")?.is_none()
-        && compartment.partial(ctx, "DATUM_REFERENCE_ELEMENT")?.is_none()
+    if compartment
+        .partial(ctx, "DATUM_REFERENCE_COMPARTMENT")?
+        .is_none()
+        && compartment
+            .partial(ctx, "DATUM_REFERENCE_ELEMENT")?
+            .is_none()
     {
         return Ok(Vec::new());
     }
     ctx.insert_btree_set(typed, compartment_id, "step_pmi_typed_claims")?;
     let mut compartment_modifiers = Vec::new();
-    for modifier in ctx.admit_iter(datum_modifiers(ctx, compartment)?.and_then(ValueExt::list).unwrap_or_default(), "STEP datum modifier traversal")?
-    {
+    for modifier in ctx.admit_iter(
+        datum_modifiers(ctx, compartment)?
+            .and_then(ValueExt::list)
+            .unwrap_or_default(),
+        "STEP datum modifier traversal",
+    )? {
         if let Some(text) = modifier_text(modifier, exchange, typed, measurements, ctx)? {
             ctx.push_vec(
                 &mut compartment_modifiers,
@@ -1296,9 +1516,24 @@ fn datum_references_for_compartment(
             return Ok(output);
         };
         let members = members.list().unwrap_or_default();
-        let common_group = (ctx.admit_iter(&(members)[..], "STEP datum references for compartment traversal").map_err(cadmpeg_core::CodecError::from)?.filter_map(ValueExt::reference).count() >= 2)
+        let common_group = (ctx
+            .admit_iter(
+                &(members)[..],
+                "STEP datum references for compartment traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
+            .filter_map(ValueExt::reference)
+            .count()
+            >= 2)
             .then_some(precedence.get());
-        for element_id in ctx.admit_iter(&(members)[..], "STEP datum references for compartment traversal").map_err(cadmpeg_core::CodecError::from)?.filter_map(ValueExt::reference) {
+        for element_id in ctx
+            .admit_iter(
+                &(members)[..],
+                "STEP datum references for compartment traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
+            .filter_map(ValueExt::reference)
+        {
             let Some(element) = exchange.records().get(&element_id) else {
                 continue;
             };
@@ -1317,8 +1552,12 @@ fn datum_references_for_compartment(
                     .map(|value| ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy")),
                 "step_pmi_datum_modifier_items",
             )?;
-            for modifier in ctx.admit_iter(datum_modifiers(ctx, element)?.and_then(ValueExt::list).unwrap_or_default(), "STEP datum modifier traversal")?
-            {
+            for modifier in ctx.admit_iter(
+                datum_modifiers(ctx, element)?
+                    .and_then(ValueExt::list)
+                    .unwrap_or_default(),
+                "STEP datum modifier traversal",
+            )? {
                 if let Some(text) = modifier_text(modifier, exchange, typed, measurements, ctx)? {
                     ctx.push_vec(&mut modifiers, text, "step_pmi_datum_modifier_items")?;
                 }
@@ -1367,15 +1606,38 @@ fn admit_datum_reference_maps(
     references: &[DatumReference],
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    for (index, reference) in ctx.admit_iter(&(references)[..], "STEP admit datum reference maps traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (index, reference) in ctx
+        .admit_iter(
+            &(references)[..],
+            "STEP admit datum reference maps traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         let prior = &references[..index];
-        if !ctx.admit_iter(&(prior)[..], "STEP admit datum reference maps traversal").map_err(cadmpeg_core::CodecError::from)?
-            .map(|other| -> Result<Option<_>, CodecError> { Ok((ctx.equal(&other.precedence, &reference.precedence, "STEP admit datum reference maps equality")?).then_some(())) }).find_map(Result::transpose).transpose()?.is_some()
+        if !ctx
+            .admit_iter(&(prior)[..], "STEP admit datum reference maps traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .map(|other| -> Result<Option<_>, CodecError> {
+                Ok((ctx.equal(
+                    &other.precedence,
+                    &reference.precedence,
+                    "STEP admit datum reference maps equality",
+                )?)
+                .then_some(()))
+            })
+            .find_map(Result::transpose)
+            .transpose()?
+            .is_some()
         {
             ctx.charge_collection_items(1, "step_pmi_datum_compartments")?;
         }
         if let Some(group) = reference.common_group {
-            if !ctx.admit_iter(&(prior)[..], "STEP admit datum reference maps traversal").map_err(cadmpeg_core::CodecError::from)?.any(|other| other.common_group == Some(group)) {
+            if !ctx
+                .admit_iter(&(prior)[..], "STEP admit datum reference maps traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .any(|other| other.common_group == Some(group))
+            {
                 ctx.charge_collection_items(1, "step_pmi_datum_common_groups")?;
             }
         }
@@ -1383,15 +1645,23 @@ fn admit_datum_reference_maps(
     Ok(())
 }
 
-fn datum_base<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<Option<&'a Value>, CodecError> {
-    Ok(ctx.admit_iter(&record.partials[..], "STEP datum base traversal")?
+fn datum_base<'a>(
+    ctx: &DecodeContext<'_>,
+    record: &'a RawRecord,
+) -> Result<Option<&'a Value>, CodecError> {
+    Ok(ctx
+        .admit_iter(&record.partials[..], "STEP datum base traversal")?
         .find(|partial| partial.name == "GENERAL_DATUM_REFERENCE")
         .and_then(|partial| partial.parameters.first())
         .or_else(|| record.parameter(4)))
 }
 
-fn datum_modifiers<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<Option<&'a Value>, CodecError> {
-    Ok(ctx.admit_iter(&record.partials[..], "STEP datum modifiers traversal")?
+fn datum_modifiers<'a>(
+    ctx: &DecodeContext<'_>,
+    record: &'a RawRecord,
+) -> Result<Option<&'a Value>, CodecError> {
+    Ok(ctx
+        .admit_iter(&record.partials[..], "STEP datum modifiers traversal")?
         .find(|partial| partial.name == "GENERAL_DATUM_REFERENCE")
         .and_then(|partial| partial.parameters.get(1))
         .or_else(|| record.parameter(5)))
@@ -1410,7 +1680,10 @@ fn visit_datum_ids(
     match value {
         Value::Reference(id) => visitor(*id)?,
         Value::List(values) => {
-            for value in ctx.admit_iter(values.as_slice(), "STEP visit datum ids value traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for value in ctx
+                .admit_iter(values.as_slice(), "STEP visit datum ids value traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 visit_datum_ids(value, ctx, visitor)?;
             }
         }
@@ -1438,8 +1711,9 @@ fn modifier_text(
             let Some(record) = exchange.records().get(id) else {
                 return Ok(None);
             };
-            let Some(parameters) = ctx.admit_iter(&(record
-                .partials)[..], "STEP modifier text traversal").map_err(cadmpeg_core::CodecError::from)?
+            let Some(parameters) = ctx
+                .admit_iter(&(record.partials)[..], "STEP modifier text traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
                 .find(|partial| partial.name == "DATUM_REFERENCE_MODIFIER_WITH_VALUE")
             else {
                 return Ok(None);
@@ -1481,13 +1755,24 @@ pub(super) fn is_presentation_annotation(name: &str) -> bool {
         )
 }
 
-fn presentation_annotation_name<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<Option<&'a str>, CodecError> {
-    Ok(ctx.admit_iter(&record.partials[..], "STEP presentation annotation name traversal")?.find_map(|partial| {
-        is_presentation_annotation(&partial.name).then_some(partial.name.as_str())
-    }))
+fn presentation_annotation_name<'a>(
+    ctx: &DecodeContext<'_>,
+    record: &'a RawRecord,
+) -> Result<Option<&'a str>, CodecError> {
+    Ok(ctx
+        .admit_iter(
+            &record.partials[..],
+            "STEP presentation annotation name traversal",
+        )?
+        .find_map(|partial| {
+            is_presentation_annotation(&partial.name).then_some(partial.name.as_str())
+        }))
 }
 
-pub(super) fn is_supported_invisibility_target(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<bool, CodecError> {
+pub(super) fn is_supported_invisibility_target(
+    ctx: &DecodeContext<'_>,
+    record: &RawRecord,
+) -> Result<bool, CodecError> {
     Ok(presentation_annotation_name(ctx, record)?.is_some())
 }
 
@@ -1496,9 +1781,20 @@ fn hidden_presentation_annotation_ids(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u64>, CodecError> {
     let mut hidden = BTreeSet::new();
-    for record in ctx.admit_iter(exchange.records(), "STEP hidden presentation annotation ids map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, value)| value) {
-        let Some(items) = ctx.admit_iter(&(record
-            .partials)[..], "STEP hidden presentation annotation ids traversal").map_err(cadmpeg_core::CodecError::from)?
+    for record in ctx
+        .admit_iter(
+            exchange.records(),
+            "STEP hidden presentation annotation ids map traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+        .map(|(_, value)| value)
+    {
+        let Some(items) = ctx
+            .admit_iter(
+                &(record.partials)[..],
+                "STEP hidden presentation annotation ids traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
             .find(|partial| partial.name == "INVISIBILITY")
             .and_then(|partial| partial.parameters.first())
         else {
@@ -1522,12 +1818,24 @@ fn collect_typed_placement_candidates(
     candidates: &mut BTreeMap<u64, Transform>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let has_annotation_text = ctx.admit_iter(&(record.partials)[..], "STEP collect typed placement candidates traversal").map_err(cadmpeg_core::CodecError::from)?.any(|partial| {
-        partial.name == "ANNOTATION_TEXT"
-            || partial.name == "ANNOTATION_TEXT_CHARACTER"
-            || partial.name.starts_with("ANNOTATION_TEXT_WITH_")
-    });
-    for partial in ctx.admit_iter(&(record.partials)[..], "STEP collect typed placement candidates traversal").map_err(cadmpeg_core::CodecError::from)? {
+    let has_annotation_text = ctx
+        .admit_iter(
+            &(record.partials)[..],
+            "STEP collect typed placement candidates traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+        .any(|partial| {
+            partial.name == "ANNOTATION_TEXT"
+                || partial.name == "ANNOTATION_TEXT_CHARACTER"
+                || partial.name.starts_with("ANNOTATION_TEXT_WITH_")
+        });
+    for partial in ctx
+        .admit_iter(
+            &(record.partials)[..],
+            "STEP collect typed placement candidates traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let is_carrier = match partial.name.as_str() {
             "DEFINED_CHARACTER_GLYPH"
             | "SYMBOL_TARGET"
@@ -1541,8 +1849,12 @@ fn collect_typed_placement_candidates(
         if !is_carrier {
             continue;
         }
-        for reference in ctx.admit_iter(&(partial
-            .parameters)[..], "STEP collect typed placement candidates traversal").map_err(cadmpeg_core::CodecError::from)?
+        for reference in ctx
+            .admit_iter(
+                &(partial.parameters)[..],
+                "STEP collect typed placement candidates traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
             .flat_map(|value| references(value, ctx))
         {
             let reference = reference?;
@@ -1606,9 +1918,10 @@ fn collect_annotation_text(
     let Some(record) = exchange.records().get(&id) else {
         return Ok(());
     };
-    if let Some(value) = named_parameter(ctx, record, "TEXT_LITERAL", 0)?
-        .map_or_else(|| named_parameter(ctx, record, "TEXT_LITERAL_WITH_ASSOCIATED_CURVES", 0), |value| Ok(Some(value)))?
-    {
+    if let Some(value) = named_parameter(ctx, record, "TEXT_LITERAL", 0)?.map_or_else(
+        || named_parameter(ctx, record, "TEXT_LITERAL_WITH_ASSOCIATED_CURVES", 0),
+        |value| Ok(Some(value)),
+    )? {
         if let Some(text) = decode_text_charged(
             exchange,
             value,
@@ -1622,19 +1935,22 @@ fn collect_annotation_text(
         }
     }
     for partial in ctx.admit_iter(&record.partials[..], "STEP PMI record partial traversal")? {
-        for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP PMI record parameter traversal")? {
-        for reference in references(value, ctx) {
-        let reference = reference?;
-        collect_annotation_text(
-            reference,
-            exchange,
-            visited,
-            candidates,
-            losses,
-            depth + 1,
-            ctx,
-        )?;
-    }
+        for value in ctx.admit_iter(
+            partial.parameters.as_slice(),
+            "STEP PMI record parameter traversal",
+        )? {
+            for reference in references(value, ctx) {
+                let reference = reference?;
+                collect_annotation_text(
+                    reference,
+                    exchange,
+                    visited,
+                    candidates,
+                    losses,
+                    depth + 1,
+                    ctx,
+                )?;
+            }
         }
     }
     Ok(())
@@ -1667,19 +1983,22 @@ fn collect_placement_candidates(
         return Ok(());
     };
     for partial in ctx.admit_iter(&record.partials[..], "STEP PMI record partial traversal")? {
-        for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP PMI record parameter traversal")? {
-        for reference in references(value, ctx) {
-        let reference = reference?;
-        collect_placement_candidates(
-            reference,
-            exchange,
-            geometry,
-            visited,
-            candidates,
-            depth + 1,
-            ctx,
-        )?;
-    }
+        for value in ctx.admit_iter(
+            partial.parameters.as_slice(),
+            "STEP PMI record parameter traversal",
+        )? {
+            for reference in references(value, ctx) {
+                let reference = reference?;
+                collect_placement_candidates(
+                    reference,
+                    exchange,
+                    geometry,
+                    visited,
+                    candidates,
+                    depth + 1,
+                    ctx,
+                )?;
+            }
         }
     }
     Ok(())
@@ -1763,7 +2082,11 @@ fn datum_target_form(value: &str, ctx: &DecodeContext<'_>) -> Result<DatumTarget
         Ok(DatumTargetForm::Rectangle)
     } else if ctx.eq_ignore_ascii_case(form, "circle", "STEP datum target form case equality")? {
         Ok(DatumTargetForm::Circle)
-    } else if ctx.eq_ignore_ascii_case(form, "circular curve", "STEP datum target form case equality")? {
+    } else if ctx.eq_ignore_ascii_case(
+        form,
+        "circular curve",
+        "STEP datum target form case equality",
+    )? {
         Ok(DatumTargetForm::CircularCurve)
     } else {
         Ok(DatumTargetForm::Other(ctx.copy_retained_text(
@@ -1773,8 +2096,15 @@ fn datum_target_form(value: &str, ctx: &DecodeContext<'_>) -> Result<DatumTarget
     }
 }
 
-fn datum_target_identification_parameter<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<Option<&'a Value>, CodecError> {
-    Ok(ctx.admit_iter(&record.partials[..], "STEP datum target identification parameter traversal")?
+fn datum_target_identification_parameter<'a>(
+    ctx: &DecodeContext<'_>,
+    record: &'a RawRecord,
+) -> Result<Option<&'a Value>, CodecError> {
+    Ok(ctx
+        .admit_iter(
+            &record.partials[..],
+            "STEP datum target identification parameter traversal",
+        )?
         .find(|partial| partial.name == "DATUM_TARGET")
         .and_then(|partial| partial.parameters.last())
         .or_else(|| record.parameter(4)))
@@ -1917,9 +2247,18 @@ fn is_shape_aspect_name(name: &str) -> bool {
         || SHAPE_ASPECT_SUBTYPE_NAMES.contains(&name)
 }
 
-fn shape_aspect_parameter<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, index: usize) -> Result<Option<&'a Value>, CodecError> {
-    if let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP shape aspect parameter traversal")?
-        .find(|partial| partial.name == "SHAPE_ASPECT") {
+fn shape_aspect_parameter<'a>(
+    ctx: &DecodeContext<'_>,
+    record: &'a RawRecord,
+    index: usize,
+) -> Result<Option<&'a Value>, CodecError> {
+    if let Some(partial) = ctx
+        .admit_iter(
+            &record.partials[..],
+            "STEP shape aspect parameter traversal",
+        )?
+        .find(|partial| partial.name == "SHAPE_ASPECT")
+    {
         Ok(partial.parameters.get(index))
     } else {
         Ok(record.parameter(index))
@@ -1927,11 +2266,16 @@ fn shape_aspect_parameter<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, in
 }
 
 fn is_measure_record(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<bool, CodecError> {
-    Ok(ctx.admit_iter(&record.partials[..], "STEP measure record classification traversal")?.any(|partial| {
-        partial.name == "MEASURE_REPRESENTATION_ITEM"
-            || partial.name == "MEASURE_WITH_UNIT"
-            || partial.name.ends_with("_MEASURE_WITH_UNIT")
-    }))
+    Ok(ctx
+        .admit_iter(
+            &record.partials[..],
+            "STEP measure record classification traversal",
+        )?
+        .any(|partial| {
+            partial.name == "MEASURE_REPRESENTATION_ITEM"
+                || partial.name == "MEASURE_WITH_UNIT"
+                || partial.name.ends_with("_MEASURE_WITH_UNIT")
+        }))
 }
 
 fn is_dimension_name(name: &str) -> bool {
@@ -1981,7 +2325,13 @@ fn dimension_descriptor<'a>(
     record: &'a RawRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(&'a str, DimensionKind)>, CodecError> {
-    for partial in ctx.admit_iter(&(record.partials)[..], "STEP dimension descriptor traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for partial in ctx
+        .admit_iter(
+            &(record.partials)[..],
+            "STEP dimension descriptor traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if let Some(kind) = dimension_kind(partial.name.as_str(), ctx)? {
             return Ok(Some((partial.name.as_str(), kind)));
         }
@@ -2016,11 +2366,18 @@ fn tolerance_modifiers(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<String>, CodecError> {
     let mut modifiers = Vec::new();
-    if let Some(partial) = ctx.admit_iter(&(record
-        .partials)[..], "STEP tolerance modifiers traversal").map_err(cadmpeg_core::CodecError::from)?
+    if let Some(partial) = ctx
+        .admit_iter(&(record.partials)[..], "STEP tolerance modifiers traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
         .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_MODIFIERS")
     {
-        for value in ctx.admit_iter(&(partial.parameters)[..], "STEP tolerance modifiers traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for value in ctx
+            .admit_iter(
+                &(partial.parameters)[..],
+                "STEP tolerance modifiers traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             modifier_values(value, &mut modifiers, ctx)?;
         }
     }
@@ -2040,7 +2397,10 @@ fn modifier_values(
             ctx.push_vec(output, text, "step_pmi_modifier_items")?;
         }
         Value::List(values) => {
-            for value in ctx.admit_iter(values.as_slice(), "STEP modifier values value traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for value in ctx
+                .admit_iter(values.as_slice(), "STEP modifier values value traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 modifier_values(value, output, ctx)?;
             }
         }
@@ -2060,27 +2420,81 @@ fn characteristic_values(
     let mut result = BTreeMap::<u64, PmiValue>::new();
     for (id, record) in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
         let mut measurements = measure_context(geometry, id, losses, graph_limit);
-        let Some(characteristic) = find_record_value(record, ctx, |value| first_matching([value], ctx, |id| {Ok({
-            exchange.records().get(&id).map(|record| Ok::<_, CodecError>(ctx.admit_iter(&record.partials[..], "STEP characteristic dimension partial traversal")?.any(|partial| is_dimension_name(&partial.name)))).transpose()?.unwrap_or(false)
-        })}))?
+        let Some(characteristic) = find_record_value(record, ctx, |value| {
+            first_matching([value], ctx, |id| {
+                Ok({
+                    exchange
+                        .records()
+                        .get(&id)
+                        .map(|record| {
+                            Ok::<_, CodecError>(
+                                ctx.admit_iter(
+                                    &record.partials[..],
+                                    "STEP characteristic dimension partial traversal",
+                                )?
+                                .any(|partial| is_dimension_name(&partial.name)),
+                            )
+                        })
+                        .transpose()?
+                        .unwrap_or(false)
+                })
+            })
+        })?
         else {
             continue;
         };
-        let representation = find_record_value(record, ctx, |value| first_matching([value], ctx, |id| {Ok({
-            exchange.records().get(&id).map(|record| Ok::<_, CodecError>(ctx.admit_iter(&record.partials[..], "STEP characteristic representation partial traversal")?.any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION"))).transpose()?.unwrap_or(false)
-        })}))?;
-        let representation_items = if let Some(record) = representation.and_then(|id| exchange.records().get(&id)) {
-            ctx.admit_iter(&record.partials[..], "STEP characteristic item partial traversal")?.find(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION").and_then(|partial| partial.parameters.get(1)).and_then(ValueExt::list)
-        } else { None };
+        let representation = find_record_value(record, ctx, |value| {
+            first_matching([value], ctx, |id| {
+                Ok({
+                    exchange
+                        .records()
+                        .get(&id)
+                        .map(|record| {
+                            Ok::<_, CodecError>(
+                                ctx.admit_iter(
+                                    &record.partials[..],
+                                    "STEP characteristic representation partial traversal",
+                                )?
+                                .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION"),
+                            )
+                        })
+                        .transpose()?
+                        .unwrap_or(false)
+                })
+            })
+        })?;
+        let representation_items =
+            if let Some(record) = representation.and_then(|id| exchange.records().get(&id)) {
+                ctx.admit_iter(
+                    &record.partials[..],
+                    "STEP characteristic item partial traversal",
+                )?
+                .find(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
+                .and_then(|partial| partial.parameters.get(1))
+                .and_then(ValueExt::list)
+            } else {
+                None
+            };
         let parameters = representation_items
             .map_or(MeasureParameters::Record(record), MeasureParameters::Items);
         let values = characteristic_measure_values(&parameters, exchange, &mut measurements, ctx)?;
         let mut named_count = 0usize;
         let mut named_first = None;
-        for (name, value) in ctx.admit_iter(&(values)[..], "STEP characteristic values traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for (name, value) in ctx
+            .admit_iter(&(values)[..], "STEP characteristic values traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             if name
                 .as_deref()
-                .map(|name| ctx.eq_ignore_ascii_case(name, "nominal value", "STEP characteristic name case equality")).transpose()?.unwrap_or(false)
+                .map(|name| {
+                    ctx.eq_ignore_ascii_case(
+                        name,
+                        "nominal value",
+                        "STEP characteristic name case equality",
+                    )
+                })
+                .transpose()?
+                .unwrap_or(false)
             {
                 named_count += 1;
                 if named_count == 1 {
@@ -2136,11 +2550,16 @@ impl MeasureParameters<'_> {
                 }
             }
             Self::Record(record) => {
-                for partial in ctx.admit_iter(&record.partials[..], "STEP PMI record partial traversal")? {
-        for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP PMI record parameter traversal")? {
-                    visitor(value)?;
+                for partial in
+                    ctx.admit_iter(&record.partials[..], "STEP PMI record partial traversal")?
+                {
+                    for value in ctx.admit_iter(
+                        partial.parameters.as_slice(),
+                        "STEP PMI record parameter traversal",
+                    )? {
+                        visitor(value)?;
+                    }
                 }
-    }
             }
         }
         Ok(())
@@ -2213,8 +2632,17 @@ fn collect_measure_ids(
                 if is_measure_record(ctx, record)? {
                     ctx.insert_btree_set(measure_ids, *id, "step_pmi_measure_ids")?;
                 } else {
-                    for partial in ctx.admit_iter(&(record.partials)[..], "STEP collect measure ids traversal").map_err(cadmpeg_core::CodecError::from)? {
-                        for parameter in ctx.admit_iter(&(partial.parameters)[..], "STEP collect measure ids traversal").map_err(cadmpeg_core::CodecError::from)? {
+                    for partial in ctx
+                        .admit_iter(&(record.partials)[..], "STEP collect measure ids traversal")
+                        .map_err(cadmpeg_core::CodecError::from)?
+                    {
+                        for parameter in ctx
+                            .admit_iter(
+                                &(partial.parameters)[..],
+                                "STEP collect measure ids traversal",
+                            )
+                            .map_err(cadmpeg_core::CodecError::from)?
+                        {
                             collect_measure_ids(
                                 parameter,
                                 exchange,
@@ -2231,7 +2659,13 @@ fn collect_measure_ids(
             active.remove(id);
         }
         Value::List(values) => {
-            for value in ctx.admit_iter(values.as_slice(), "STEP collect measure ids value traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for value in ctx
+                .admit_iter(
+                    values.as_slice(),
+                    "STEP collect measure ids value traversal",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 collect_measure_ids(
                     value,
                     exchange,
@@ -2266,14 +2700,21 @@ fn measure_item_name(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
-    Ok(ctx.admit_iter(&(record
-        .partials)[..], "STEP measure item name traversal").map_err(cadmpeg_core::CodecError::from)?
+    Ok(ctx
+        .admit_iter(&(record.partials)[..], "STEP measure item name traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
         .find(|partial| partial.name == "REPRESENTATION_ITEM")
         .and_then(|partial| partial.parameters.first())
-        .map_or_else(|| Ok::<_, CodecError>(ctx.admit_iter(&record.partials[..], "STEP PMI fallback partial traversal")?
-                .find(|partial| partial.name == "MEASURE_REPRESENTATION_ITEM")
-                .and_then(|partial| partial.parameters.first())
-        ), |value| Ok(Some(value)))?
+        .map_or_else(
+            || {
+                Ok::<_, CodecError>(
+                    ctx.admit_iter(&record.partials[..], "STEP PMI fallback partial traversal")?
+                        .find(|partial| partial.name == "MEASURE_REPRESENTATION_ITEM")
+                        .and_then(|partial| partial.parameters.first()),
+                )
+            },
+            |value| Ok(Some(value)),
+        )?
         .map(|value| {
             decode_text_charged(
                 exchange,
@@ -2343,24 +2784,41 @@ fn measure_inner(
         Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value)
             .and_then(|value| PmiValue::new(value, PmiQuantity::Ratio)),
         Value::Real(value) => PmiValue::new(value.get(), PmiQuantity::Ratio),
-        Value::Typed(name, value) => match value.number() { Some(number) => {
-            PmiValue::new(
-                if ctx.contains_text(name.as_str(), "LENGTH", "STEP PMI typed length containment")? {
+        Value::Typed(name, value) => match value.number() {
+            Some(number) => PmiValue::new(
+                if ctx.contains_text(
+                    name.as_str(),
+                    "LENGTH",
+                    "STEP PMI typed length containment",
+                )? {
                     number * measurements.length_scale
-                } else if ctx.contains_text(name.as_str(), "ANGLE", "STEP PMI typed angle containment")? {
+                } else if ctx.contains_text(
+                    name.as_str(),
+                    "ANGLE",
+                    "STEP PMI typed angle containment",
+                )? {
                     number * measurements.angle_scale
                 } else {
                     number
                 },
-                if ctx.contains_text(name.as_str(), "LENGTH", "STEP PMI typed length containment")? {
+                if ctx.contains_text(
+                    name.as_str(),
+                    "LENGTH",
+                    "STEP PMI typed length containment",
+                )? {
                     PmiQuantity::Length
-                } else if ctx.contains_text(name.as_str(), "ANGLE", "STEP PMI typed angle containment")? {
+                } else if ctx.contains_text(
+                    name.as_str(),
+                    "ANGLE",
+                    "STEP PMI typed angle containment",
+                )? {
                     PmiQuantity::Angle
                 } else {
                     PmiQuantity::Ratio
                 },
-            )
-        }, None => None },
+            ),
+            None => None,
+        },
         Value::Reference(id) => {
             if active.contains(id) {
                 return Ok(None);
@@ -2371,29 +2829,75 @@ fn measure_inner(
                 return Ok(None);
             };
             let mut quantity = None;
-            'record_parameters: for partial in ctx.admit_iter(&(record
-                .partials)[..], "STEP measure inner traversal").map_err(cadmpeg_core::CodecError::from)? {
-        for parameter in ctx.admit_iter(partial.parameters.as_slice(), "STEP record parameter traversal")? {
-                quantity = measure_quantity(parameter, ctx)?;
-                if quantity.is_some() {
-                    break 'record_parameters;
+            'record_parameters: for partial in ctx
+                .admit_iter(&(record.partials)[..], "STEP measure inner traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
+                for parameter in ctx.admit_iter(
+                    partial.parameters.as_slice(),
+                    "STEP record parameter traversal",
+                )? {
+                    quantity = measure_quantity(parameter, ctx)?;
+                    if quantity.is_some() {
+                        break 'record_parameters;
+                    }
                 }
             }
-    }
-            let quantity = if let Some(quantity) = quantity { quantity } else if ctx.admit_iter(&record.partials[..], "STEP PMI length classifier traversal")?
-                .map(|partial| -> Result<Option<()>, CodecError> { Ok(ctx.contains_text(partial.name.as_str(), "LENGTH", "STEP PMI record length containment")?.then_some(())) })
-                .find_map(Result::transpose).transpose()?.is_some() {
+            let quantity = if let Some(quantity) = quantity {
+                quantity
+            } else if ctx
+                .admit_iter(&record.partials[..], "STEP PMI length classifier traversal")?
+                .map(|partial| -> Result<Option<()>, CodecError> {
+                    Ok(ctx
+                        .contains_text(
+                            partial.name.as_str(),
+                            "LENGTH",
+                            "STEP PMI record length containment",
+                        )?
+                        .then_some(()))
+                })
+                .find_map(Result::transpose)
+                .transpose()?
+                .is_some()
+            {
                 PmiQuantity::Length
-            } else if ctx.admit_iter(&record.partials[..], "STEP PMI angle classifier traversal")?
-                .map(|partial| -> Result<Option<()>, CodecError> { Ok(ctx.contains_text(partial.name.as_str(), "ANGLE", "STEP PMI record angle containment")?.then_some(())) })
-                .find_map(Result::transpose).transpose()?.is_some() {
+            } else if ctx
+                .admit_iter(&record.partials[..], "STEP PMI angle classifier traversal")?
+                .map(|partial| -> Result<Option<()>, CodecError> {
+                    Ok(ctx
+                        .contains_text(
+                            partial.name.as_str(),
+                            "ANGLE",
+                            "STEP PMI record angle containment",
+                        )?
+                        .then_some(()))
+                })
+                .find_map(Result::transpose)
+                .transpose()?
+                .is_some()
+            {
                 PmiQuantity::Angle
-            } else { PmiQuantity::Ratio };
+            } else {
+                PmiQuantity::Ratio
+            };
             let mut unit = None;
-            'unit: for partial in ctx.admit_iter(&record.partials[..], "STEP PMI unit partial traversal")? {
-                for candidate in ctx.admit_iter(partial.parameters.as_slice(), "STEP PMI unit reference traversal")?.filter_map(Value::reference) {
+            'unit: for partial in
+                ctx.admit_iter(&record.partials[..], "STEP PMI unit partial traversal")?
+            {
+                for candidate in ctx
+                    .admit_iter(
+                        partial.parameters.as_slice(),
+                        "STEP PMI unit reference traversal",
+                    )?
+                    .filter_map(Value::reference)
+                {
                     if let Some(record) = exchange.records().get(&candidate) {
-                        if ctx.admit_iter(&record.partials[..], "STEP PMI unit classifier traversal")?.any(|partial| matches!(partial.name.as_str(), "LENGTH_UNIT" | "PLANE_ANGLE_UNIT")) {
+                        if ctx
+                            .admit_iter(&record.partials[..], "STEP PMI unit classifier traversal")?
+                            .any(|partial| {
+                                matches!(partial.name.as_str(), "LENGTH_UNIT" | "PLANE_ANGLE_UNIT")
+                            })
+                        {
                             unit = Some(candidate);
                             break 'unit;
                         }
@@ -2442,26 +2946,40 @@ fn measure_inner(
                 PmiQuantity::Ratio => 1.0,
             };
             let mut result = None;
-            'record_parameters: for partial in ctx.admit_iter(&(record
-                .partials)[..], "STEP measure inner traversal").map_err(cadmpeg_core::CodecError::from)? {
-        for parameter in ctx.admit_iter(partial.parameters.as_slice(), "STEP record parameter traversal")? {
-                result = ValueExt::typed_number(parameter)
-                    .and_then(|number| PmiValue::new(number * scale, quantity));
-                if result.is_none() {
-                    result =
-                        measure_inner(parameter, exchange, active, depth + 1, measurements, ctx)?;
-                }
-                if result.is_some() {
-                    break 'record_parameters;
+            'record_parameters: for partial in ctx
+                .admit_iter(&(record.partials)[..], "STEP measure inner traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
+                for parameter in ctx.admit_iter(
+                    partial.parameters.as_slice(),
+                    "STEP record parameter traversal",
+                )? {
+                    result = ValueExt::typed_number(parameter)
+                        .and_then(|number| PmiValue::new(number * scale, quantity));
+                    if result.is_none() {
+                        result = measure_inner(
+                            parameter,
+                            exchange,
+                            active,
+                            depth + 1,
+                            measurements,
+                            ctx,
+                        )?;
+                    }
+                    if result.is_some() {
+                        break 'record_parameters;
+                    }
                 }
             }
-    }
             active.remove(id);
             result
         }
         Value::List(values) => {
             let mut result = None;
-            for value in ctx.admit_iter(values.as_slice(), "STEP measure inner value traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for value in ctx
+                .admit_iter(values.as_slice(), "STEP measure inner value traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 result = measure_inner(value, exchange, active, depth + 1, measurements, ctx)?;
                 if result.is_some() {
                     break;
@@ -2482,9 +3000,17 @@ fn measure_quantity(
         Value::Typed(name, value) => {
             if ctx.contains_text(name.as_str(), "LENGTH", "STEP PMI typed length containment")? {
                 Some(PmiQuantity::Length)
-            } else if ctx.contains_text(name.as_str(), "ANGLE", "STEP PMI typed angle containment")? {
+            } else if ctx.contains_text(
+                name.as_str(),
+                "ANGLE",
+                "STEP PMI typed angle containment",
+            )? {
                 Some(PmiQuantity::Angle)
-            } else if ctx.contains_text(name.as_str(), "RATIO", "STEP PMI typed ratio containment")? {
+            } else if ctx.contains_text(
+                name.as_str(),
+                "RATIO",
+                "STEP PMI typed ratio containment",
+            )? {
                 Some(PmiQuantity::Ratio)
             } else {
                 measure_quantity(value, ctx)?
@@ -2492,7 +3018,10 @@ fn measure_quantity(
         }
         Value::List(values) => {
             let mut quantity = None;
-            for value in ctx.admit_iter(values.as_slice(), "STEP measure quantity value traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for value in ctx
+                .admit_iter(values.as_slice(), "STEP measure quantity value traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 quantity = measure_quantity(value, ctx)?;
                 if quantity.is_some() {
                     break;

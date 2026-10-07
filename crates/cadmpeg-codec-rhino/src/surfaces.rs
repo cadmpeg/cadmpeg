@@ -254,7 +254,8 @@ pub(crate) fn decode(
     Ok(result)
 }
 
-fn read_clipping_plane_surface(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn read_clipping_plane_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
@@ -297,7 +298,8 @@ fn read_clipping_plane_surface(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     })
 }
 
-fn read_clipping_plane(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn read_clipping_plane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -425,8 +427,12 @@ fn read_revolution(
     let to = crate::wire::scaled_point(point(ctx, reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
         .get();
-    let angular_interval =
-        increasing_interval(ctx, interval(ctx, reader)?.0, reader.position(), "revolution angle")?;
+    let angular_interval = increasing_interval(
+        ctx,
+        interval(ctx, reader)?.0,
+        reader.position(),
+        "revolution angle",
+    )?;
     if angular_interval[1] - angular_interval[0] > TAU + EPS_SURFACE_DEGENERATE {
         return Err(error(
             reader.position(),
@@ -434,7 +440,8 @@ fn read_revolution(
         ));
     }
     let parameter_interval = if major >= 2 {
-        increasing_interval(ctx, 
+        increasing_interval(
+            ctx,
             interval(ctx, reader)?.0,
             reader.position(),
             "revolution parameter interval",
@@ -680,8 +687,14 @@ fn revolution_nurbs(
     })?;
     for (theta, angular_weight) in angular {
         let radial_scale = 1.0 / angular_weight;
-        for (profile_point, profile_weight) in
-            ctx.admit_iter(&(profile_points)[..], "Rhino revolution nurbs traversal").map_err(cadmpeg_core::CodecError::from)?.zip(ctx.admit_iter(&(profile_weights)[..], "Rhino revolution nurbs traversal").map_err(cadmpeg_core::CodecError::from)?.copied())
+        for (profile_point, profile_weight) in ctx
+            .admit_iter(&(profile_points)[..], "Rhino revolution nurbs traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .zip(
+                ctx.admit_iter(&(profile_weights)[..], "Rhino revolution nurbs traversal")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .copied(),
+            )
         {
             let relative = Vector3::new(
                 profile_point.x - axis_origin.x,
@@ -716,7 +729,12 @@ fn revolution_nurbs(
         false,
     )
     .map_err(GeometryError::from)?
-    .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino revolution_nurbs text")?)))?;
+    .or_else(|error| {
+        Err(GeometryError::malformed(
+            offset,
+            ctx.format_retained(format_args!("{}", error), "Rhino revolution_nurbs text")?,
+        ))
+    })?;
     if transposed {
         result.transpose_parameter_axes(ctx)?;
     }
@@ -795,9 +813,23 @@ fn sum_nurbs(
     } else {
         None
     };
-    for (first_point, first_weight) in ctx.admit_iter(&(first_points)[..], "Rhino sum nurbs traversal").map_err(cadmpeg_core::CodecError::from)?.zip(ctx.admit_iter(&(first_weights)[..], "Rhino sum nurbs traversal").map_err(cadmpeg_core::CodecError::from)?.copied()) {
-        for (second_point, second_weight) in
-            ctx.admit_iter(&(second_points)[..], "Rhino sum nurbs traversal").map_err(cadmpeg_core::CodecError::from)?.zip(ctx.admit_iter(&(second_weights)[..], "Rhino sum nurbs traversal").map_err(cadmpeg_core::CodecError::from)?.copied())
+    for (first_point, first_weight) in ctx
+        .admit_iter(&(first_points)[..], "Rhino sum nurbs traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .zip(
+            ctx.admit_iter(&(first_weights)[..], "Rhino sum nurbs traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .copied(),
+        )
+    {
+        for (second_point, second_weight) in ctx
+            .admit_iter(&(second_points)[..], "Rhino sum nurbs traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .zip(
+                ctx.admit_iter(&(second_weights)[..], "Rhino sum nurbs traversal")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                    .copied(),
+            )
         {
             let Some(product) = NonZeroReal::new(first_weight * second_weight) else {
                 return Err(error(offset, "sum surface weight is invalid"));
@@ -833,7 +865,12 @@ fn sum_nurbs(
         NurbsSurfaceLanes::new(point_rows, weight_rows),
         false,
     )?
-    .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino sum_nurbs text")?)))
+    .or_else(|error| {
+        Err(GeometryError::malformed(
+            offset,
+            ctx.format_retained(format_args!("{}", error), "Rhino sum_nurbs text")?,
+        ))
+    })
 }
 
 fn admit_sum_product(
@@ -878,7 +915,11 @@ pub(crate) fn extrusion_nurbs(
     offset: usize,
 ) -> Result<NurbsSurface, GeometryError> {
     if start.degree() != end.degree()
-        || !ctx.equal(start.knots().as_slice(), end.knots().as_slice(), "Rhino extrusion knot equality")?
+        || !ctx.equal(
+            start.knots().as_slice(),
+            end.knots().as_slice(),
+            "Rhino extrusion knot equality",
+        )?
         || start.pole_count() != end.pole_count()
         || !matching_pole_weights(ctx, start.pole_rows(), end.pole_rows())?
         || start.periodic() != end.periodic()
@@ -915,7 +956,12 @@ pub(crate) fn extrusion_nurbs(
     let [path_start, path_end] = path_domain.finite_components();
     let path_knots =
         KnotVector::from_finite_lanes(ctx, vec![path_start, path_start, path_end, path_end])?
-            .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino extrusion_nurbs text")?)))?;
+            .or_else(|error| {
+                Err(GeometryError::malformed(
+                    offset,
+                    ctx.format_retained(format_args!("{}", error), "Rhino extrusion_nurbs text")?,
+                ))
+            })?;
     let mut surface = NurbsSurface::new(
         ctx,
         NurbsSurfaceAxis::new(start.degree(), u_knots, start.periodic()),
@@ -923,20 +969,27 @@ pub(crate) fn extrusion_nurbs(
         poles,
         false,
     )?
-    .or_else(|error| Err(GeometryError::malformed(offset, ctx.format_retained(format_args!("{}", error), "Rhino extrusion_nurbs text")?)))?;
+    .or_else(|error| {
+        Err(GeometryError::malformed(
+            offset,
+            ctx.format_retained(format_args!("{}", error), "Rhino extrusion_nurbs text")?,
+        ))
+    })?;
     if transposed {
         surface.transpose_parameter_axes(ctx)?;
     }
     Ok(surface)
 }
 
-fn matching_pole_weights(ctx: &DecodeContext<'_>, 
+fn matching_pole_weights(
+    ctx: &DecodeContext<'_>,
     start: &NurbsPoles3<FinitePoint3>,
     end: &NurbsPoles3<FinitePoint3>,
 ) -> Result<bool, CodecError> {
     Ok(match (start, end) {
         (NurbsPoles3::Polynomial { .. }, NurbsPoles3::Polynomial { .. }) => true,
-        (NurbsPoles3::Rational { points: start }, NurbsPoles3::Rational { points: end }) => ctx.admit_iter(start.as_slice(), "Rhino extrusion start pole weights")?
+        (NurbsPoles3::Rational { points: start }, NurbsPoles3::Rational { points: end }) => ctx
+            .admit_iter(start.as_slice(), "Rhino extrusion start pole weights")?
             .zip(ctx.admit_iter(end.as_slice(), "Rhino extrusion end pole weights")?)
             .all(|(first, second)| first.weight == second.weight),
         _ => false,
@@ -956,7 +1009,16 @@ fn extrusion_rows<T: Copy>(
     ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(items), operation)?;
     let mut rows = Vec::new();
     ctx.reserve_capacity(&mut rows, row_count, operation)?;
-    for (first, second) in ctx.admit_iter(&(start)[..], "Rhino extrusion rows traversal").map_err(cadmpeg_core::CodecError::from)?.copied().zip(ctx.admit_iter(&(end)[..], "Rhino extrusion rows traversal").map_err(cadmpeg_core::CodecError::from)?.copied()) {
+    for (first, second) in ctx
+        .admit_iter(&(start)[..], "Rhino extrusion rows traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .copied()
+        .zip(
+            ctx.admit_iter(&(end)[..], "Rhino extrusion rows traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .copied(),
+        )
+    {
         let mut row = Vec::new();
         ctx.reserve_capacity(&mut row, 2, operation)?;
         row.push(first);
@@ -1052,8 +1114,16 @@ fn read_nurbs_curve_inner(
     let periodic = periodic_knots_checked(ctx, &knots, order, cv_count)?;
     let full_knots = reconstruct_checked_knots(ctx, &knots, order, cv_count)?;
     reader.skip_remaining()?;
-    let poles = NurbsPoles3::from_checked_lanes(ctx, control_points, weights)?
-        .or_else(|error| Err(GeometryError::malformed(reader.position(), ctx.format_retained(format_args!("{}", error), "Rhino read_nurbs_curve_inner text")?)))?;
+    let poles =
+        NurbsPoles3::from_checked_lanes(ctx, control_points, weights)?.or_else(|error| {
+            Err(GeometryError::malformed(
+                reader.position(),
+                ctx.format_retained(
+                    format_args!("{}", error),
+                    "Rhino read_nurbs_curve_inner text",
+                )?,
+            ))
+        })?;
     NurbsCurve::new(
         ctx,
         u32::try_from(order - 1).map_err(|_| error(reader.position(), "NURBS order overflow"))?,
@@ -1061,7 +1131,15 @@ fn read_nurbs_curve_inner(
         poles,
         periodic,
     )?
-    .or_else(|error| Err(GeometryError::malformed(reader.position(), ctx.format_retained(format_args!("{}", error), "Rhino read_nurbs_curve_inner text")?)))
+    .or_else(|error| {
+        Err(GeometryError::malformed(
+            reader.position(),
+            ctx.format_retained(
+                format_args!("{}", error),
+                "Rhino read_nurbs_curve_inner text",
+            )?,
+        ))
+    })
 }
 
 pub(crate) fn read_nurbs_surface(
@@ -1159,8 +1237,16 @@ pub(crate) fn read_nurbs_surface_prefix(
         .as_deref()
         .map(|values| copy_rows(ctx, values, row_len, "Rhino NURBS surface weight grid"))
         .transpose()?;
-    let poles = NurbsPoleGrid::from_checked_lanes(ctx, point_rows, weight_rows)?
-        .or_else(|error| Err(GeometryError::malformed(reader.position(), ctx.format_retained(format_args!("{}", error), "Rhino read_nurbs_surface_prefix text")?)))?;
+    let poles =
+        NurbsPoleGrid::from_checked_lanes(ctx, point_rows, weight_rows)?.or_else(|error| {
+            Err(GeometryError::malformed(
+                reader.position(),
+                ctx.format_retained(
+                    format_args!("{}", error),
+                    "Rhino read_nurbs_surface_prefix text",
+                )?,
+            ))
+        })?;
     NurbsSurface::new(
         ctx,
         NurbsSurfaceAxis::new(
@@ -1178,10 +1264,19 @@ pub(crate) fn read_nurbs_surface_prefix(
         poles,
         false,
     )?
-    .or_else(|error| Err(GeometryError::malformed(reader.position(), ctx.format_retained(format_args!("{}", error), "Rhino read_nurbs_surface_prefix text")?)))
+    .or_else(|error| {
+        Err(GeometryError::malformed(
+            reader.position(),
+            ctx.format_retained(
+                format_args!("{}", error),
+                "Rhino read_nurbs_surface_prefix text",
+            )?,
+        ))
+    })
 }
 
-fn read_plane_surface_with_parameterization(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn read_plane_surface_with_parameterization(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<TypedSurface, GeometryError> {
@@ -1195,12 +1290,32 @@ fn read_plane_surface_with_parameterization(ctx: &cadmpeg_core::decode::DecodeCo
     }
     let native_plane = plane(ctx, reader)?;
     let frame = validate_plane(native_plane, reader.position())?;
-    let domain = increasing_interval(ctx, interval(ctx, reader)?.0, reader.position(), "plane U domain")?;
-    let v_domain = increasing_interval(ctx, interval(ctx, reader)?.0, reader.position(), "plane V domain")?;
+    let domain = increasing_interval(
+        ctx,
+        interval(ctx, reader)?.0,
+        reader.position(),
+        "plane U domain",
+    )?;
+    let v_domain = increasing_interval(
+        ctx,
+        interval(ctx, reader)?.0,
+        reader.position(),
+        "plane V domain",
+    )?;
     let (u_extents, v_extents) = if version & 0x0f == 1 {
         (
-            increasing_interval(ctx, interval(ctx, reader)?.0, reader.position(), "plane U extents")?,
-            increasing_interval(ctx, interval(ctx, reader)?.0, reader.position(), "plane V extents")?,
+            increasing_interval(
+                ctx,
+                interval(ctx, reader)?.0,
+                reader.position(),
+                "plane U extents",
+            )?,
+            increasing_interval(
+                ctx,
+                interval(ctx, reader)?.0,
+                reader.position(),
+                "plane V extents",
+            )?,
         )
     } else {
         (domain, v_domain)
@@ -1492,14 +1607,28 @@ fn validate_stored_domain(
     }
 }
 
-fn checked_positive(ctx: &DecodeContext<'_>, value: i32, offset: usize, label: &str) -> Result<usize, GeometryError> {
+fn checked_positive(
+    ctx: &DecodeContext<'_>,
+    value: i32,
+    offset: usize,
+    label: &str,
+) -> Result<usize, GeometryError> {
     if value < 2 && label.ends_with("order") || value <= 0 {
-        return Err(error(offset, ctx.copy_retained_text(label, "Rhino surface invariant message")?));
+        return Err(error(
+            offset,
+            ctx.copy_retained_text(label, "Rhino surface invariant message")?,
+        ));
     }
-    usize::try_from(value).or_else(|_| Err(error(offset, ctx.copy_retained_text(label, "Rhino surface invariant message")?)))
+    usize::try_from(value).or_else(|_| {
+        Err(error(
+            offset,
+            ctx.copy_retained_text(label, "Rhino surface invariant message")?,
+        ))
+    })
 }
 
-fn increasing_interval(ctx: &DecodeContext<'_>, 
+fn increasing_interval(
+    ctx: &DecodeContext<'_>,
     value: FiniteVector<2>,
     offset: usize,
     label: &str,
@@ -1508,7 +1637,10 @@ fn increasing_interval(ctx: &DecodeContext<'_>,
     if value[0] < value[1] {
         Ok(value)
     } else {
-        Err(error(offset, ctx.copy_retained_text(label, "Rhino surface invariant message")?))
+        Err(error(
+            offset,
+            ctx.copy_retained_text(label, "Rhino surface invariant message")?,
+        ))
     }
 }
 

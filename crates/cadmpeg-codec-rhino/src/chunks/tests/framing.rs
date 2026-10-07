@@ -223,7 +223,9 @@ fn header_magic_scan_charges_each_call_to_the_same_context() {
     let mut policy = DecodePolicy::service();
     let scan_work = u64::try_from(bytes.len()).expect("fixture length fits");
     // Magic scan, three admitted version traversals (8 + 6 + 2), and the two-digit parse.
-    let total_work = scan_work + 2 * cadmpeg_core::decode::u64_from_index(file_header::LEN - file_header::ARCHIVE_VERSION) + 2;
+    let total_work = scan_work
+        + 2 * cadmpeg_core::decode::u64_from_index(file_header::LEN - file_header::ARCHIVE_VERSION)
+        + 2;
     policy.limits.max_work_units = total_work;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
@@ -312,22 +314,38 @@ fn crc16_work_refusal_reaches_checksum_result() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &policy)
-        .expect("one input byte admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"x", &arena, &policy).expect("one input byte admitted");
     let error = crc16(&ctx, 0, b"x").expect_err("CRC scan exceeds zero work");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("CRC scan must preserve its resource refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "Rhino chunk checksum bytes");
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
 }
 
 #[test]
 fn verifies_crc_vectors_and_recoverable_mismatch() {
-    assert_eq!(crc16(&cadmpeg_test_support::service_decode_context(), 0, b"").expect("CRC bytes admitted"), 0);
-    assert_eq!(crc16(&cadmpeg_test_support::service_decode_context(), 1, b"").expect("CRC bytes admitted"), 1);
-    assert_eq!(crc16(&cadmpeg_test_support::service_decode_context(), 0, b"123456789").expect("CRC bytes admitted"), 0xbeef);
+    assert_eq!(
+        crc16(&cadmpeg_test_support::service_decode_context(), 0, b"").expect("CRC bytes admitted"),
+        0
+    );
+    assert_eq!(
+        crc16(&cadmpeg_test_support::service_decode_context(), 1, b"").expect("CRC bytes admitted"),
+        1
+    );
+    assert_eq!(
+        crc16(
+            &cadmpeg_test_support::service_decode_context(),
+            0,
+            b"123456789"
+        )
+        .expect("CRC bytes admitted"),
+        0xbeef
+    );
     assert_eq!(crc32fast::hash(b""), 0);
     assert_eq!(crc32fast::hash(b"123456789"), 0xcbf4_3926);
 
@@ -542,16 +560,24 @@ fn checksum_direct_bytes_refuse_before_hashing() {
 #[test]
 fn archive_version_number_parse_preserves_refusal() {
     let bytes = header("80");
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino archive version number parse", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let result = parse_header(&ctx, &bytes).map(|_| ()).map_err(|error| match error {
-            FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
-            other => panic!("valid header returned {other:?}"),
-        });
-        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "Rhino archive version number parse",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            let result = parse_header(&ctx, &bytes)
+                .map(|_| ())
+                .map_err(|error| match error {
+                    FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
+                    other => panic!("valid header returned {other:?}"),
+                });
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }

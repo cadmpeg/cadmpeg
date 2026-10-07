@@ -13,16 +13,30 @@ fn validation_mesh_body_option_equality_preserves_refusal() {
     let mut ir = CadIr::empty();
     let id = BodyId::try_from("step:data:body#1").unwrap();
     ir.model.bodies.push(Body {
-        id: id.clone(), kind: BodyKind::Sheet, regions: Vec::new(),
-        transform: None, name: None, color: None, visible: None,
+        id: id.clone(),
+        kind: BodyKind::Sheet,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
     });
     let mesh = TessellationMesh::from_list_lanes(
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-        vec![[0, 1, 2]], None,
-    ).unwrap();
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        vec![[0, 1, 2]],
+        None,
+    )
+    .unwrap();
     let mut tessellation = Tessellation::new(
-        TessellationId::try_from("step:tessellation:mesh#2").unwrap(), mesh, Vec::new(),
-    ).unwrap();
+        TessellationId::try_from("step:tessellation:mesh#2").unwrap(),
+        mesh,
+        Vec::new(),
+    )
+    .unwrap();
     tessellation.body = Some(id);
     ir.model.tessellations.push(tessellation);
     let arena = DecodeArena::new();
@@ -41,19 +55,25 @@ fn validation_mesh_body_option_equality_preserves_refusal() {
 #[test]
 fn validation_property_name_case_equality_preserves_refusal() {
     let source = super::VALIDATION_LIMIT_SOURCE;
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
     let setup_arena = DecodeArena::new();
     let setup_policy = DecodePolicy::service();
-    let (setup_ctx, _) = DecodeContext::from_root_bytes(source, &setup_arena, &setup_policy).unwrap();
+    let (setup_ctx, _) =
+        DecodeContext::from_root_bytes(source, &setup_arena, &setup_policy).unwrap();
     let mut setup_ir = CadIr::empty();
     let geometry = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx).unwrap();
     cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "STEP validation property name case equality", |cap| {
+        ResourceDimension::WorkUnits,
+        "STEP validation property name case equality",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
-            let result = super::super::decode(&exchange, &geometry.value, &mut setup_ir.clone(), &ctx).map(|_| ());
+            let result =
+                super::super::decode(&exchange, &geometry.value, &mut setup_ir.clone(), &ctx)
+                    .map(|_| ());
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }

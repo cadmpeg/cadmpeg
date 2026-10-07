@@ -169,7 +169,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         } else {
             cadmpeg_ir::report::decode::DecodeTransfer::full(false)
         });
-        for entry in ctx.admit_iter(exchange.references(), "STEP new borrowed traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for entry in ctx
+            .admit_iter(exchange.references(), "STEP new borrowed traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             ctx.reserve_vec(&mut body.notes, 1, "step_decode_reference_notes")?;
             body.notes.push(ctx.format_retained(
                 format_args!("external reference {} -> {}", entry.name, entry.uri),
@@ -179,7 +182,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         if let Some(loss) = dialect_loss {
             ctx.push_vec(&mut body.losses, loss, "step_decode_loss_notes")?;
         }
-        for diagnostic in ctx.admit_iter(diagnostics, "STEP new traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for diagnostic in ctx
+            .admit_iter(diagnostics, "STEP new traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             let (code, tag) = match diagnostic.kind {
                 crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
                     (StepLossCode::ParseNoncanonicalSyntax, "complex_entity")
@@ -514,7 +520,10 @@ fn decode_exchange_mode(
     let mut opaque_sources = Vec::new();
     let mut source_fidelity = SourceFidelity::default();
     if matches!(mode, DecodeMode::Decode(_)) {
-        for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode exchange mode traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for (&id, record) in ctx
+            .admit_iter(exchange.records(), "STEP decode exchange mode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             if session.typed_records.contains(&id) {
                 continue;
             }
@@ -526,18 +535,45 @@ fn decode_exchange_mode(
         session
             .ctx
             .reserve_vec(&mut opaque_sources, opaque_ids.len(), "step_opaque_sources")?;
-        for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode exchange mode traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for (&id, record) in ctx
+            .admit_iter(exchange.records(), "STEP decode exchange mode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             if session.typed_records.contains(&id) {
                 continue;
             }
             count_unknown_kind(&mut counts, record, session.ctx)?;
             let mut links = BTreeSet::new();
             let mut reference_work = 0;
-            for partial in ctx.admit_iter(&record.partials[..], "STEP opaque reference work partial traversal")? {
-                reference_work = add_work(reference_work, work_sum(ctx.admit_iter(partial.parameters.as_slice(), "STEP opaque reference work parameter traversal")?.map(|value| reference_work_units(value, session.ctx)))?)?;
+            for partial in ctx.admit_iter(
+                &record.partials[..],
+                "STEP opaque reference work partial traversal",
+            )? {
+                reference_work = add_work(
+                    reference_work,
+                    work_sum(
+                        ctx.admit_iter(
+                            partial.parameters.as_slice(),
+                            "STEP opaque reference work parameter traversal",
+                        )?
+                        .map(|value| reference_work_units(value, session.ctx)),
+                    )?,
+                )?;
             }
-            for partial in ctx.admit_iter(&(record.partials)[..], "STEP decode exchange mode traversal").map_err(cadmpeg_core::CodecError::from)? {
-                for value in ctx.admit_iter(&(partial.parameters)[..], "STEP decode exchange mode traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for partial in ctx
+                .admit_iter(
+                    &(record.partials)[..],
+                    "STEP decode exchange mode traversal",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
+                for value in ctx
+                    .admit_iter(
+                        &(partial.parameters)[..],
+                        "STEP decode exchange mode traversal",
+                    )
+                    .map_err(cadmpeg_core::CodecError::from)?
+                {
                     collect_references(value, &mut links, session.ctx)?;
                 }
             }
@@ -554,7 +590,11 @@ fn decode_exchange_mode(
         let mut target_ids = BTreeSet::new();
         for source in ctx.admit_iter(&opaque_sources[..], "STEP decode exchange mode traversal")? {
             for &id in ctx.admit_iter(&source.links, "STEP opaque source target traversal")? {
-                session.ctx.insert_btree_set(&mut target_ids, id, "step_opaque_target_ids_index")?;
+                session.ctx.insert_btree_set(
+                    &mut target_ids,
+                    id,
+                    "step_opaque_target_ids_index",
+                )?;
             }
         }
         source_targets = record_targets(
@@ -563,7 +603,10 @@ fn decode_exchange_mode(
             session.ctx,
         )?;
     } else {
-        for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode exchange mode traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for (&id, record) in ctx
+            .admit_iter(exchange.records(), "STEP decode exchange mode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             if session.typed_records.contains(&id) {
                 continue;
             }
@@ -718,22 +761,48 @@ fn semantic_input_work(exchange: &Exchange, ctx: &DecodeContext<'_>) -> Result<u
     let mut total = u64_from_index(exchange.references().len());
     for (_, record) in ctx.admit_iter(exchange.records(), "STEP semantic work record traversal")? {
         let mut partials = 0;
-        for partial in ctx.admit_iter(&record.partials[..], "STEP semantic work partial traversal")? {
-            let parameters = work_sum(ctx.admit_iter(partial.parameters.as_slice(), "STEP semantic work parameter traversal")?.map(|value| value_work_units(value, ctx)))?;
+        for partial in
+            ctx.admit_iter(&record.partials[..], "STEP semantic work partial traversal")?
+        {
+            let parameters = work_sum(
+                ctx.admit_iter(
+                    partial.parameters.as_slice(),
+                    "STEP semantic work parameter traversal",
+                )?
+                .map(|value| value_work_units(value, ctx)),
+            )?;
             partials = add_work(partials, add_work(1, parameters)?)?;
         }
         total = add_work(total, add_work(1, partials)?)?;
     }
     for record in ctx.admit_iter(exchange.header(), "STEP semantic work header traversal")? {
-        let parameters = work_sum(ctx.admit_iter(record.parameters.as_slice(), "STEP semantic work header parameter traversal")?.map(|value| value_work_units(value, ctx)))?;
+        let parameters = work_sum(
+            ctx.admit_iter(
+                record.parameters.as_slice(),
+                "STEP semantic work header parameter traversal",
+            )?
+            .map(|value| value_work_units(value, ctx)),
+        )?;
         total = add_work(total, add_work(1, parameters)?)?;
     }
     for anchor in ctx.admit_iter(exchange.anchors(), "STEP semantic work anchor traversal")? {
         total = add_work(total, add_work(1, value_work_units(&anchor.value, ctx)?)?)?;
     }
     for section in ctx.admit_iter(exchange.data(), "STEP semantic work data traversal")? {
-        let parameters = work_sum(ctx.admit_iter(section.parameters.as_slice(), "STEP semantic work data parameter traversal")?.map(|value| value_work_units(value, ctx)))?;
-        total = add_work(total, add_work(add_work(1, parameters)?, u64_from_index(section.records.len()))?)?;
+        let parameters = work_sum(
+            ctx.admit_iter(
+                section.parameters.as_slice(),
+                "STEP semantic work data parameter traversal",
+            )?
+            .map(|value| value_work_units(value, ctx)),
+        )?;
+        total = add_work(
+            total,
+            add_work(
+                add_work(1, parameters)?,
+                u64_from_index(section.records.len()),
+            )?,
+        )?;
     }
     Ok(total)
 }
@@ -741,7 +810,13 @@ fn semantic_input_work(exchange: &Exchange, ctx: &DecodeContext<'_>) -> Result<u
 fn value_work_units(value: &Value, ctx: &DecodeContext<'_>) -> Result<u64, CodecError> {
     let _depth = ctx.enter_nested("STEP semantic value nesting")?;
     match value {
-        Value::List(values) => add_work(1, work_sum(ctx.admit_iter(values.as_slice(), "STEP semantic list traversal")?.map(|value| value_work_units(value, ctx)))?),
+        Value::List(values) => add_work(
+            1,
+            work_sum(
+                ctx.admit_iter(values.as_slice(), "STEP semantic list traversal")?
+                    .map(|value| value_work_units(value, ctx)),
+            )?,
+        ),
         Value::Typed(_, value) => add_work(1, value_work_units(value, ctx)?),
         _ => Ok(1),
     }
@@ -751,17 +826,34 @@ fn reference_work_units(value: &Value, ctx: &DecodeContext<'_>) -> Result<u64, C
     let _depth = ctx.enter_nested("STEP reference work value nesting")?;
     match value {
         Value::Reference(_) => Ok(1),
-        Value::List(values) => work_sum(ctx.admit_iter(values.as_slice(), "STEP reference work list traversal")?.map(|value| reference_work_units(value, ctx))),
+        Value::List(values) => work_sum(
+            ctx.admit_iter(values.as_slice(), "STEP reference work list traversal")?
+                .map(|value| reference_work_units(value, ctx)),
+        ),
         Value::Typed(_, value) => reference_work_units(value, ctx),
         _ => Ok(0),
     }
 }
 
 /// Reserve the linear scan used to derive a plane for an implicit face.
-fn implicit_face_plane_work(exchange: &Exchange, ctx: &DecodeContext<'_>) -> Result<u64, CodecError> {
+fn implicit_face_plane_work(
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<u64, CodecError> {
     let mut total = 0;
-    for (_, record) in ctx.admit_iter(exchange.records(), "STEP implicit plane work record traversal")? {
-        if let Some(points) = ctx.admit_iter(&record.partials[..], "STEP implicit plane work partial traversal")?.find(|partial| partial.name == "POLY_LOOP").and_then(|partial| partial.parameters.get(1)).and_then(Value::list) {
+    for (_, record) in ctx.admit_iter(
+        exchange.records(),
+        "STEP implicit plane work record traversal",
+    )? {
+        if let Some(points) = ctx
+            .admit_iter(
+                &record.partials[..],
+                "STEP implicit plane work partial traversal",
+            )?
+            .find(|partial| partial.name == "POLY_LOOP")
+            .and_then(|partial| partial.parameters.get(1))
+            .and_then(Value::list)
+        {
             total = add_work(total, u64_from_index(points.len()))?;
         }
     }
@@ -788,24 +880,54 @@ fn retain_unowned_carriers(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut owned = BTreeSet::new();
-    for coedge in ctx.admit_iter(&(ir.model.coedges)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)? {
-        for use_ in ctx.admit_iter(&(coedge.pcurves)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for coedge in ctx
+        .admit_iter(
+            &(ir.model.coedges)[..],
+            "STEP retain unowned carriers traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
+        for use_ in ctx
+            .admit_iter(
+                &(coedge.pcurves)[..],
+                "STEP retain unowned carriers traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             insert_retained_identity(&mut owned, use_.pcurve.as_str(), ctx)?;
         }
     }
-    for loop_ in ctx.admit_iter(&(ir.model.loops)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for loop_ in ctx
+        .admit_iter(
+            &(ir.model.loops)[..],
+            "STEP retain unowned carriers traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if let Some((_, pcurves)) = loop_.singular_vertex() {
             for pcurve in ctx.admit_iter(pcurves, "STEP singular vertex pcurve traversal")? {
                 insert_retained_identity(&mut owned, pcurve.pcurve.as_str(), ctx)?;
             }
         }
-        for use_ in ctx.admit_iter(loop_.anchored_vertex_uses(), "STEP anchored vertex use traversal")? {
-            for pcurve in ctx.admit_iter(use_.pcurves.as_slice(), "STEP anchored vertex pcurve traversal")? {
+        for use_ in ctx.admit_iter(
+            loop_.anchored_vertex_uses(),
+            "STEP anchored vertex use traversal",
+        )? {
+            for pcurve in ctx.admit_iter(
+                use_.pcurves.as_slice(),
+                "STEP anchored vertex pcurve traversal",
+            )? {
                 insert_retained_identity(&mut owned, pcurve.pcurve.as_str(), ctx)?;
             }
         }
     }
-    for surface in ctx.admit_iter(&(ir.model.procedural_surfaces)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for surface in ctx
+        .admit_iter(
+            &(ir.model.procedural_surfaces)[..],
+            "STEP retain unowned carriers traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
             boundary_pcurves,
             ..
@@ -813,44 +935,68 @@ fn retain_unowned_carriers(
         else {
             continue;
         };
-        for pcurve in ctx.admit_iter(boundary_pcurves.as_slice(), "STEP retain unowned carriers view traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for pcurve in ctx
+            .admit_iter(
+                boundary_pcurves.as_slice(),
+                "STEP retain unowned carriers view traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             insert_retained_identity(&mut owned, pcurve.as_str(), ctx)?;
         }
     }
     let mut unowned_pcurves = BTreeSet::new();
-    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)? {
-        if ctx.admit_iter(&(record
-            .partials)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
+    for (&id, record) in ctx
+        .admit_iter(exchange.records(), "STEP retain unowned carriers traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
+        if ctx
+            .admit_iter(
+                &(record.partials)[..],
+                "STEP retain unowned carriers traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
             .any(|partial| partial.name == "PCURVE")
-            && !ctx.contains_btree_set(&owned, ids::data(kind!("pcurve"), id).as_str(), "STEP owned pcurve identity lookup")?
+            && !ctx.contains_btree_set(
+                &owned,
+                ids::data(kind!("pcurve"), id).as_str(),
+                "STEP owned pcurve identity lookup",
+            )?
         {
             ctx.insert_btree_set(&mut unowned_pcurves, id, "step_unowned_pcurves")?;
         }
     }
     let referenced = referenced_record_ids(exchange, ctx)?;
-    let direct_carriers = ctx.admit_iter(&(ir
-        .model
-        .points
-        )[..], "STEP retain unowned carriers chain traversal")?
+    let direct_carriers = ctx
+        .admit_iter(
+            &(ir.model.points)[..],
+            "STEP retain unowned carriers chain traversal",
+        )?
         .filter(|point| point.source_object.is_none())
         .map(|point| point.id.as_str())
         .chain(
-            ctx.admit_iter(&(ir.model
-                .curves
-                )[..], "STEP retain unowned carriers chain traversal")?
-                .filter(|curve| curve.source_object.is_none())
-                .map(|curve| curve.id.as_str()),
+            ctx.admit_iter(
+                &(ir.model.curves)[..],
+                "STEP retain unowned carriers chain traversal",
+            )?
+            .filter(|curve| curve.source_object.is_none())
+            .map(|curve| curve.id.as_str()),
         )
         .chain(
-            ctx.admit_iter(&(ir.model
-                .surfaces
-                )[..], "STEP retain unowned carriers chain traversal")?
-                .filter(|surface| surface.source_object.is_none())
-                .map(|surface| surface.id.as_str()),
+            ctx.admit_iter(
+                &(ir.model.surfaces)[..],
+                "STEP retain unowned carriers chain traversal",
+            )?
+            .filter(|surface| surface.source_object.is_none())
+            .map(|surface| surface.id.as_str()),
         )
         .map(|identity| step_instance_id(ctx, identity))
         .filter_map(Result::transpose)
-        .map(|id| id.map(|id| (exchange.records().contains_key(&id) && !referenced.contains(&id)).then_some(id)))
+        .map(|id| {
+            id.map(|id| {
+                (exchange.records().contains_key(&id) && !referenced.contains(&id)).then_some(id)
+            })
+        })
         .filter_map(Result::transpose);
     let mut unowned_direct_carriers = BTreeSet::new();
     for id in direct_carriers {
@@ -866,67 +1012,92 @@ fn retain_unowned_carriers(
         return Ok(());
     }
     let mut roots = BTreeSet::new();
-    for identity in ctx.admit_iter(&(ir
-        .model
-        .vertices)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
+    for identity in ctx
+        .admit_iter(
+            &(ir.model.vertices)[..],
+            "STEP retain unowned carriers traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .map(|vertex| Ok(vertex.point.as_str()))
         .chain(
-            ctx.admit_iter(&(ir.model
-                .edges
-                )[..], "STEP retain unowned carriers chain traversal")?
-                .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str)).map(Ok),
-        )
-        .chain(ctx.admit_iter(&(ir.model.faces)[..], "STEP retain unowned carriers chain traversal")?.map(|face| Ok(face.surface.as_str())))
-        .chain(
-            ctx.admit_iter(&(ir.model
-                .coedges
-                )[..], "STEP retain unowned carriers chain traversal")?
-                .filter_map(|coedge| coedge.use_curve.as_ref().map(|use_| use_.curve.as_str())).map(Ok),
+            ctx.admit_iter(
+                &(ir.model.edges)[..],
+                "STEP retain unowned carriers chain traversal",
+            )?
+            .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str))
+            .map(Ok),
         )
         .chain(
-            ctx.admit_iter(&(ir.model
-                .pcurves
-                )[..], "STEP retain unowned carriers chain traversal")?
-                .map(|pcurve| {
-                    ctx.contains_btree_set(&owned, pcurve.id.as_str(), "STEP protected pcurve root lookup")
-                        .map(|owned| owned.then_some(pcurve.id.as_str()))
-                })
-                .filter_map(Result::transpose),
+            ctx.admit_iter(
+                &(ir.model.faces)[..],
+                "STEP retain unowned carriers chain traversal",
+            )?
+            .map(|face| Ok(face.surface.as_str())),
         )
         .chain(
-            ctx.admit_iter(&(ir.model
-                .points
-                )[..], "STEP retain unowned carriers chain traversal")?
-                .filter(|point| point.source_object.is_some())
-                .map(|point| Ok(point.id.as_str())),
+            ctx.admit_iter(
+                &(ir.model.coedges)[..],
+                "STEP retain unowned carriers chain traversal",
+            )?
+            .filter_map(|coedge| coedge.use_curve.as_ref().map(|use_| use_.curve.as_str()))
+            .map(Ok),
         )
         .chain(
-            ctx.admit_iter(&(ir.model
-                .curves
-                )[..], "STEP retain unowned carriers chain traversal")?
-                .filter(|curve| curve.source_object.is_some())
-                .map(|curve| Ok(curve.id.as_str())),
+            ctx.admit_iter(
+                &(ir.model.pcurves)[..],
+                "STEP retain unowned carriers chain traversal",
+            )?
+            .map(|pcurve| {
+                ctx.contains_btree_set(
+                    &owned,
+                    pcurve.id.as_str(),
+                    "STEP protected pcurve root lookup",
+                )
+                .map(|owned| owned.then_some(pcurve.id.as_str()))
+            })
+            .filter_map(Result::transpose),
         )
         .chain(
-            ctx.admit_iter(&(ir.model
-                .surfaces
-                )[..], "STEP retain unowned carriers chain traversal")?
-                .filter(|surface| surface.source_object.is_some())
-                .map(|surface| Ok(surface.id.as_str())),
+            ctx.admit_iter(
+                &(ir.model.points)[..],
+                "STEP retain unowned carriers chain traversal",
+            )?
+            .filter(|point| point.source_object.is_some())
+            .map(|point| Ok(point.id.as_str())),
         )
         .chain(
-            ctx.admit_iter(&(ir.model
-                .procedural_curves
-                )[..], "STEP retain unowned carriers chain traversal")?
-                .map(|curve| Ok(curve.id.as_str())),
+            ctx.admit_iter(
+                &(ir.model.curves)[..],
+                "STEP retain unowned carriers chain traversal",
+            )?
+            .filter(|curve| curve.source_object.is_some())
+            .map(|curve| Ok(curve.id.as_str())),
         )
         .chain(
-            ctx.admit_iter(&(ir.model
-                .procedural_surfaces
-                )[..], "STEP retain unowned carriers chain traversal")?
-                .map(|surface| Ok(surface.id.as_str())),
+            ctx.admit_iter(
+                &(ir.model.surfaces)[..],
+                "STEP retain unowned carriers chain traversal",
+            )?
+            .filter(|surface| surface.source_object.is_some())
+            .map(|surface| Ok(surface.id.as_str())),
         )
-        .map(|identity: Result<&str, CodecError>| identity.and_then(|identity| step_instance_id(ctx, identity)))
+        .chain(
+            ctx.admit_iter(
+                &(ir.model.procedural_curves)[..],
+                "STEP retain unowned carriers chain traversal",
+            )?
+            .map(|curve| Ok(curve.id.as_str())),
+        )
+        .chain(
+            ctx.admit_iter(
+                &(ir.model.procedural_surfaces)[..],
+                "STEP retain unowned carriers chain traversal",
+            )?
+            .map(|surface| Ok(surface.id.as_str())),
+        )
+        .map(|identity: Result<&str, CodecError>| {
+            identity.and_then(|identity| step_instance_id(ctx, identity))
+        })
         .filter_map(Result::transpose)
     {
         ctx.insert_btree_set(&mut roots, identity?, "step_unowned_protected_roots")?;
@@ -937,54 +1108,138 @@ fn retain_unowned_carriers(
     }
     let protected = record_closure(&protected_roots, exchange, ctx)?;
     let removed_closure = record_closure(&unowned_pcurves, exchange, ctx)?;
-    let deleted_pcurves = ctx.admit_iter(&(ir
-        .model
-        .pcurves)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
+    let deleted_pcurves = ctx
+        .admit_iter(
+            &(ir.model.pcurves)[..],
+            "STEP retain unowned carriers traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .map(|pcurve| retains_carrier(ctx, pcurve.id.as_str(), &removed_closure, &protected))
         .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
-            if retained? { Ok(count) } else { count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)) }
+            if retained? {
+                Ok(count)
+            } else {
+                count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)
+                })
+            }
         })?;
-    let deleted_points = ctx.admit_iter(&(ir
-        .model
-        .points)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
+    let deleted_points = ctx
+        .admit_iter(
+            &(ir.model.points)[..],
+            "STEP retain unowned carriers traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .map(|point| retains_carrier(ctx, point.id.as_str(), &removed_closure, &protected))
         .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
-            if retained? { Ok(count) } else { count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)) }
+            if retained? {
+                Ok(count)
+            } else {
+                count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)
+                })
+            }
         })?;
-    let deleted_curves = ctx.admit_iter(&(ir
-        .model
-        .curves)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
+    let deleted_curves = ctx
+        .admit_iter(
+            &(ir.model.curves)[..],
+            "STEP retain unowned carriers traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .map(|curve| retains_carrier(ctx, curve.id.as_str(), &removed_closure, &protected))
         .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
-            if retained? { Ok(count) } else { count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)) }
+            if retained? {
+                Ok(count)
+            } else {
+                count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)
+                })
+            }
         })?;
-    let deleted_surfaces = ctx.admit_iter(&(ir
-        .model
-        .surfaces)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
+    let deleted_surfaces = ctx
+        .admit_iter(
+            &(ir.model.surfaces)[..],
+            "STEP retain unowned carriers traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .map(|surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected))
         .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
-            if retained? { Ok(count) } else { count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)) }
+            if retained? {
+                Ok(count)
+            } else {
+                count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)
+                })
+            }
         })?;
-    let deleted_procedural_curves = ctx.admit_iter(&(ir
-        .model
-        .procedural_curves)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
+    let deleted_procedural_curves = ctx
+        .admit_iter(
+            &(ir.model.procedural_curves)[..],
+            "STEP retain unowned carriers traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .map(|curve| retains_carrier(ctx, curve.id.as_str(), &removed_closure, &protected))
         .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
-            if retained? { Ok(count) } else { count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)) }
+            if retained? {
+                Ok(count)
+            } else {
+                count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)
+                })
+            }
         })?;
-    let deleted_procedural_surfaces = ctx.admit_iter(&(ir
-        .model
-        .procedural_surfaces)[..], "STEP retain unowned carriers traversal").map_err(cadmpeg_core::CodecError::from)?
+    let deleted_procedural_surfaces = ctx
+        .admit_iter(
+            &(ir.model.procedural_surfaces)[..],
+            "STEP retain unowned carriers traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .map(|surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected))
         .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
-            if retained? { Ok(count) } else { count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)) }
+            if retained? {
+                Ok(count)
+            } else {
+                count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)
+                })
+            }
         })?;
-    ctx.retain_vec(&mut ir.model.pcurves, |pcurve| ctx.contains_btree_set(&owned, pcurve.id.as_str(), "STEP owned pcurve identity lookup"), "STEP unowned pcurves retention")?;
-    ctx.retain_vec(&mut ir.model.points, |point| retains_carrier(ctx, point.id.as_str(), &removed_closure, &protected), "STEP unowned points retention")?;
-    ctx.retain_vec(&mut ir.model.curves, |curve| retains_carrier(ctx, curve.id.as_str(), &removed_closure, &protected), "STEP unowned curves retention")?;
-    ctx.retain_vec(&mut ir.model.surfaces, |surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected), "STEP unowned surfaces retention")?;
-    ctx.retain_vec(&mut ir.model.procedural_curves, |curve| retains_carrier(ctx, curve.id.as_str(), &removed_closure, &protected), "STEP unowned procedural_curves retention")?;
-    ctx.retain_vec(&mut ir.model.procedural_surfaces, |surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected), "STEP unowned procedural_surfaces retention")?;
+    ctx.retain_vec(
+        &mut ir.model.pcurves,
+        |pcurve| {
+            ctx.contains_btree_set(
+                &owned,
+                pcurve.id.as_str(),
+                "STEP owned pcurve identity lookup",
+            )
+        },
+        "STEP unowned pcurves retention",
+    )?;
+    ctx.retain_vec(
+        &mut ir.model.points,
+        |point| retains_carrier(ctx, point.id.as_str(), &removed_closure, &protected),
+        "STEP unowned points retention",
+    )?;
+    ctx.retain_vec(
+        &mut ir.model.curves,
+        |curve| retains_carrier(ctx, curve.id.as_str(), &removed_closure, &protected),
+        "STEP unowned curves retention",
+    )?;
+    ctx.retain_vec(
+        &mut ir.model.surfaces,
+        |surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected),
+        "STEP unowned surfaces retention",
+    )?;
+    ctx.retain_vec(
+        &mut ir.model.procedural_curves,
+        |curve| retains_carrier(ctx, curve.id.as_str(), &removed_closure, &protected),
+        "STEP unowned procedural_curves retention",
+    )?;
+    ctx.retain_vec(
+        &mut ir.model.procedural_surfaces,
+        |surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected),
+        "STEP unowned procedural_surfaces retention",
+    )?;
     for id in ctx.admit_iter(&unowned_pcurves, "STEP unowned pcurve claim release")? {
         ctx.remove_hash_set(typed_records, id, "STEP unowned pcurve claim release")?;
     }
@@ -993,7 +1248,9 @@ fn retain_unowned_carriers(
             ctx.remove_hash_set(typed_records, id, "STEP removed carrier claim release")?;
         }
     }
-    let protected_pcurves = ctx.admit_iter(&unowned_pcurves, "STEP protected pcurve traversal").map_err(cadmpeg_core::CodecError::from)?
+    let protected_pcurves = ctx
+        .admit_iter(&unowned_pcurves, "STEP protected pcurve traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
         .filter(|id| protected.contains(id))
         .count();
     let opaque_pcurves = unowned_pcurves.len() - protected_pcurves;
@@ -1072,8 +1329,14 @@ fn retains_carrier(
 
 /// Extract the numeric STEP instance id from a canonical IR identity.
 fn step_instance_id(ctx: &DecodeContext<'_>, identity: &str) -> Result<Option<u64>, CodecError> {
-    let Some((_, number)) = ctx.rsplit_once(identity, "#", "STEP instance identity reverse split")? else { return Ok(None); };
-    Ok(ctx.parse_text::<u64>(number, "STEP instance identity number parse")?.ok())
+    let Some((_, number)) =
+        ctx.rsplit_once(identity, "#", "STEP instance identity reverse split")?
+    else {
+        return Ok(None);
+    };
+    Ok(ctx
+        .parse_text::<u64>(number, "STEP instance identity number parse")?
+        .ok())
 }
 
 fn record_closure(
@@ -1093,12 +1356,17 @@ fn record_closure(
             continue;
         };
         let mut references = BTreeSet::new();
-        for partial in ctx.admit_iter(&(record
-            .partials)[..], "STEP record closure traversal").map_err(cadmpeg_core::CodecError::from)? {
-        for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP record parameter traversal")? {
-            collect_references(value, &mut references, ctx)?;
+        for partial in ctx
+            .admit_iter(&(record.partials)[..], "STEP record closure traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
+            for value in ctx.admit_iter(
+                partial.parameters.as_slice(),
+                "STEP record parameter traversal",
+            )? {
+                collect_references(value, &mut references, ctx)?;
+            }
         }
-    }
         ctx.reserve_vec(
             &mut pending,
             references.len(),
@@ -1114,13 +1382,28 @@ fn referenced_record_ids(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u64>, CodecError> {
     let mut references = BTreeSet::new();
-    for record in ctx.admit_iter(exchange.records(), "STEP referenced record ids map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, value)| value) {
-        for partial in ctx.admit_iter(&(record
-            .partials)[..], "STEP referenced record ids traversal").map_err(cadmpeg_core::CodecError::from)? {
-        for parameter in ctx.admit_iter(partial.parameters.as_slice(), "STEP record parameter traversal")? {
-            collect_references(parameter, &mut references, ctx)?;
+    for record in ctx
+        .admit_iter(
+            exchange.records(),
+            "STEP referenced record ids map traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+        .map(|(_, value)| value)
+    {
+        for partial in ctx
+            .admit_iter(
+                &(record.partials)[..],
+                "STEP referenced record ids traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
+            for parameter in ctx.admit_iter(
+                partial.parameters.as_slice(),
+                "STEP record parameter traversal",
+            )? {
+                collect_references(parameter, &mut references, ctx)?;
+            }
         }
-    }
     }
     Ok(references)
 }
@@ -1146,8 +1429,9 @@ fn opaque_record_id(
     ctx: &DecodeContext<'_>,
 ) -> Result<UnknownId, CodecError> {
     let operation = "step_opaque_kind_name";
-    let len = ctx.admit_iter(&(record
-        .partials)[..], "STEP opaque record id traversal").map_err(cadmpeg_core::CodecError::from)?
+    let len = ctx
+        .admit_iter(&(record.partials)[..], "STEP opaque record id traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
         .try_fold(0usize, |length, (index, partial)| {
             length
@@ -1157,12 +1441,24 @@ fn opaque_record_id(
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     let mut kind = ctx.retained_string(len, operation)?;
 
-    for (index, partial) in ctx.admit_iter(&(record.partials)[..], "STEP opaque record id traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (index, partial) in ctx
+        .admit_iter(&(record.partials)[..], "STEP opaque record id traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         if index > 0 {
             ctx.push_retained_char(&mut kind, '_', "STEP opaque kind separator character")?;
         }
-        for byte in ctx.admit_iter(partial.name.as_bytes(), "STEP opaque record id traversal").map_err(CodecError::from)?.copied() {
-            ctx.push_retained_char(&mut kind, char::from(byte.to_ascii_lowercase()), "STEP opaque kind letter character")?;
+        for byte in ctx
+            .admit_iter(partial.name.as_bytes(), "STEP opaque record id traversal")
+            .map_err(CodecError::from)?
+            .copied()
+        {
+            ctx.push_retained_char(
+                &mut kind,
+                char::from(byte.to_ascii_lowercase()),
+                "STEP opaque kind letter character",
+            )?;
         }
     }
     let derived = crate::ids::IdentityKind::try_new(kind).ok();
@@ -1213,9 +1509,17 @@ fn record_targets(
 }
 
 fn source_record_id(ctx: &DecodeContext<'_>, identity: &str) -> Result<Option<u64>, CodecError> {
-    let Some((_, suffix)) = ctx.rsplit_once(identity, "#", "STEP source record identity reverse split")? else { return Ok(None); };
-    let Some(number) = suffix.split('-').next() else { return Ok(None); };
-    Ok(ctx.parse_text::<u64>(number, "STEP source record identity number parse")?.ok())
+    let Some((_, suffix)) =
+        ctx.rsplit_once(identity, "#", "STEP source record identity reverse split")?
+    else {
+        return Ok(None);
+    };
+    let Some(number) = suffix.split('-').next() else {
+        return Ok(None);
+    };
+    Ok(ctx
+        .parse_text::<u64>(number, "STEP source record identity number parse")?
+        .ok())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1242,7 +1546,10 @@ fn byte_accounting(
 ) -> Result<ByteAccounting, CodecError> {
     let mut classes =
         ctx.alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?;
-    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP byte accounting traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for (&id, record) in ctx
+        .admit_iter(exchange.records(), "STEP byte accounting traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let class = if typed_records.contains(&id) {
             ByteClass::Typed
         } else {
@@ -1255,7 +1562,13 @@ fn byte_accounting(
             format_args!("record #{id}"),
         )?;
     }
-    for signature in ctx.admit_iter(exchange.signatures(), "STEP byte accounting borrowed traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for signature in ctx
+        .admit_iter(
+            exchange.signatures(),
+            "STEP byte accounting borrowed traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         claim_range(
             &mut classes,
             signature,
@@ -1434,7 +1747,10 @@ fn collect_references(
             ctx.insert_btree_set(output, *id, "step_reference_walk_ids")?;
         }
         Value::List(values) => {
-            for value in ctx.admit_iter(values.as_slice(), "STEP collect references value traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for value in ctx
+                .admit_iter(values.as_slice(), "STEP collect references value traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 collect_references(value, output, ctx)?;
             }
         }
@@ -1449,7 +1765,11 @@ trait RecordExt {
     fn simple_name(&self) -> Option<&str>;
     fn parameters(&self) -> &[Value];
     fn parameter(&self, index: usize) -> Option<&Value>;
-    fn partial(&self, ctx: &DecodeContext<'_>, name: &str) -> Result<Option<&crate::parse::PartialRecord>, CodecError>;
+    fn partial(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Option<&crate::parse::PartialRecord>, CodecError>;
 }
 
 impl RecordExt for RawRecord {
@@ -1462,8 +1782,21 @@ impl RecordExt for RawRecord {
     fn parameter(&self, index: usize) -> Option<&Value> {
         self.partials.first().parameters.get(index)
     }
-    fn partial(&self, ctx: &DecodeContext<'_>, name: &str) -> Result<Option<&crate::parse::PartialRecord>, CodecError> {
-        Ok(ctx.admit_iter(&self.partials[..], "STEP partial record search")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP partial equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()?)
+    fn partial(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Option<&crate::parse::PartialRecord>, CodecError> {
+        Ok(ctx
+            .admit_iter(&self.partials[..], "STEP partial record search")?
+            .map(|partial| -> Result<Option<_>, CodecError> {
+                Ok(
+                    (ctx.equal(partial.name.as_str(), name, "STEP partial equality")?)
+                        .then_some(partial),
+                )
+            })
+            .find_map(Result::transpose)
+            .transpose()?)
     }
 }
 
@@ -1529,8 +1862,26 @@ impl ValueExt for Value {
     }
 }
 
-fn named_parameter<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, name: &str, index: usize) -> Result<Option<&'a Value>, CodecError> {
-    Ok(ctx.admit_iter(&record.partials[..], "STEP named attribute partial traversal")?.map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP named parameter equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()?.and_then(|partial| partial.parameters.get(index)))
+fn named_parameter<'a>(
+    ctx: &DecodeContext<'_>,
+    record: &'a RawRecord,
+    name: &str,
+    index: usize,
+) -> Result<Option<&'a Value>, CodecError> {
+    Ok(ctx
+        .admit_iter(
+            &record.partials[..],
+            "STEP named attribute partial traversal",
+        )?
+        .map(|partial| -> Result<Option<_>, CodecError> {
+            Ok(
+                (ctx.equal(partial.name.as_str(), name, "STEP named parameter equality")?)
+                    .then_some(partial),
+            )
+        })
+        .find_map(Result::transpose)
+        .transpose()?
+        .and_then(|partial| partial.parameters.get(index)))
 }
 
 fn find_record_value<T>(
@@ -1539,20 +1890,37 @@ fn find_record_value<T>(
     mut predicate: impl FnMut(&Value) -> Result<Option<T>, CodecError>,
 ) -> Result<Option<T>, CodecError> {
     for partial in ctx.admit_iter(&record.partials[..], "STEP record value partial traversal")? {
-        for value in ctx.admit_iter(partial.parameters.as_slice(), "STEP record value parameter traversal")? {
-            if let Some(found) = predicate(value)? { return Ok(Some(found)); }
+        for value in ctx.admit_iter(
+            partial.parameters.as_slice(),
+            "STEP record value parameter traversal",
+        )? {
+            if let Some(found) = predicate(value)? {
+                return Ok(Some(found));
+            }
         }
     }
     Ok(None)
 }
 
-fn source_numeric_id(ctx: &DecodeContext<'_>, identity: &str, kind: &str) -> Result<Option<u64>, CodecError> {
-    let Some(suffix) = identity.strip_prefix("step:data:")
+fn source_numeric_id(
+    ctx: &DecodeContext<'_>,
+    identity: &str,
+    kind: &str,
+) -> Result<Option<u64>, CodecError> {
+    let Some(suffix) = identity
+        .strip_prefix("step:data:")
         .and_then(|suffix| suffix.strip_prefix(kind))
-        .and_then(|suffix| suffix.strip_prefix('#')) else { return Ok(None); };
+        .and_then(|suffix| suffix.strip_prefix('#'))
+    else {
+        return Ok(None);
+    };
     let suffix = suffix.strip_prefix("poly-point-").unwrap_or(suffix);
-    let Some(number) = suffix.split('-').next() else { return Ok(None); };
-    Ok(ctx.parse_text::<u64>(number, "STEP source numeric identity parse")?.ok())
+    let Some(number) = suffix.split('-').next() else {
+        return Ok(None);
+    };
+    Ok(ctx
+        .parse_text::<u64>(number, "STEP source numeric identity parse")?
+        .ok())
 }
 
 fn inspect_opaque_offsets(
@@ -1561,7 +1929,10 @@ fn inspect_opaque_offsets(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<usize>, CodecError> {
     let mut offsets = BTreeSet::new();
-    for (id, record) in ctx.admit_iter(exchange.records(), "STEP inspect opaque offsets traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for (id, record) in ctx
+        .admit_iter(exchange.records(), "STEP inspect opaque offsets traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if typed_records.contains(id) || offsets.contains(&record.span.start) {
             continue;
         }

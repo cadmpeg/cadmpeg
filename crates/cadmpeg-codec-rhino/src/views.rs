@@ -41,12 +41,17 @@ const VIEW_VIEWPORT_USERDATA: u32 = 0x2000_8d3b;
 const CLASS_USERDATA: u32 = 0x0002_7ffd;
 const VIEWPORT_USERDATA_CHILD_CAP: usize = 1 << 20;
 
-fn codec_error(ctx: &cadmpeg_core::decode::DecodeContext<'_>, error: FramingError) -> Result<CodecError, cadmpeg_core::CodecError> { Ok(
-    match error {
+fn codec_error(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    error: FramingError,
+) -> Result<CodecError, cadmpeg_core::CodecError> {
+    Ok(match error {
         FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
-        other => CodecError::Malformed(ctx.format_retained(format_args!("{}", other), "Rhino codec_error text")?),
-    }
-) }
+        other => CodecError::Malformed(
+            ctx.format_retained(format_args!("{}", other), "Rhino codec_error text")?,
+        ),
+    })
+}
 
 #[derive(Debug, Serialize)]
 struct ViewChild {
@@ -1699,11 +1704,17 @@ pub(crate) fn install(
     let mut cplanes = Vec::new();
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
-    for table in ctx.admit_iter(&(scan.tables)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for table in ctx
+        .admit_iter(&(scan.tables)[..], "Rhino install traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if table.typecode & !0x0000_8000 != SETTINGS {
             continue;
         }
-        for record in ctx.admit_iter(&(table.records)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for record in ctx
+            .admit_iter(&(table.records)[..], "Rhino install traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             if record.typecode == NAMED_CPLANES {
                 let Some(scale) = binding.neutral_scale() else {
                     retain_unbound_view_record(

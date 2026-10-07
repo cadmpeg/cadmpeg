@@ -302,27 +302,42 @@ struct V1DirectRecord {
     payload: V1DirectPayload,
 }
 
-fn malformed(ctx: &cadmpeg_core::decode::DecodeContext<'_>, error: &FramingError) -> Result<CodecError, cadmpeg_core::CodecError> { Ok(
-    match error {
+fn malformed(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    error: &FramingError,
+) -> Result<CodecError, cadmpeg_core::CodecError> {
+    Ok(match error {
         FramingError::Resource(limit) => CodecError::ResourceLimit(*limit),
-        other => CodecError::Malformed(ctx.format_retained(format_args!("{}", other), "Rhino malformed text")?),
-    }
-) }
+        other => CodecError::Malformed(
+            ctx.format_retained(format_args!("{}", other), "Rhino malformed text")?,
+        ),
+    })
+}
 
-fn geometry_error(ctx: &cadmpeg_core::decode::DecodeContext<'_>, error: crate::curves::GeometryError) -> Result<CodecError, cadmpeg_core::CodecError> { Ok(
-    match error {
+fn geometry_error(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    error: crate::curves::GeometryError,
+) -> Result<CodecError, cadmpeg_core::CodecError> {
+    Ok(match error {
         crate::curves::GeometryError::Codec(error) => error,
-        other => CodecError::Malformed(ctx.format_retained(format_args!("{}", other), "Rhino geometry_error text")?),
-    }
-) }
+        other => CodecError::Malformed(
+            ctx.format_retained(format_args!("{}", other), "Rhino geometry_error text")?,
+        ),
+    })
+}
 
-fn v1_f64(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>, label: &str) -> Result<FiniteReal, CodecError> {
+fn v1_f64(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    label: &str,
+) -> Result<FiniteReal, CodecError> {
     let value = reader.f64().or_else(|error| Err(malformed(ctx, &error)?))?;
     FiniteReal::new(value)
         .ok_or_else(|| CodecError::malformed(format_args!("V1 {label} is not finite")))
 }
 
-fn v1_count(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn v1_count(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     label: &str,
     maximum: usize,
@@ -340,7 +355,9 @@ fn v1_string(
     label: &str,
 ) -> Result<V1String, CodecError> {
     let count = v1_count(ctx, reader, label, 1 << 20)?;
-    let source = reader.take(count).or_else(|error| Err(malformed(ctx, &error)?))?;
+    let source = reader
+        .take(count)
+        .or_else(|error| Err(malformed(ctx, &error)?))?;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(count),
         "Rhino V1 source text",
@@ -352,7 +369,10 @@ fn v1_string(
     })
 }
 
-fn v1_plane(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>) -> Result<V1Plane, CodecError> {
+fn v1_plane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+) -> Result<V1Plane, CodecError> {
     let mut values = [FiniteReal::ZERO; 9];
     for value in &mut values {
         *value = v1_f64(ctx, reader, "annotation plane coordinate")?;
@@ -417,7 +437,9 @@ fn v1_annotation(
             } else {
                 None
             };
-            reader.skip_remaining().or_else(|error| Err(malformed(ctx, &error)?))?;
+            reader
+                .skip_remaining()
+                .or_else(|error| Err(malformed(ctx, &error)?))?;
             Ok(V1AnnotationPayload::TextBlock(V1TextBlock {
                 version,
                 type_flag,
@@ -443,7 +465,9 @@ fn v1_annotation(
             let by_object = reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
             let count = v1_count(ctx, &mut reader, "leader point", 1 << 16)?;
             let points = v1_points(ctx, &mut reader, count, "leader point")?;
-            reader.skip_remaining().or_else(|error| Err(malformed(ctx, &error)?))?;
+            reader
+                .skip_remaining()
+                .or_else(|error| Err(malformed(ctx, &error)?))?;
             Ok(V1AnnotationPayload::Leader(V1Leader {
                 version,
                 type_flag,
@@ -464,10 +488,13 @@ fn v1_annotation(
             let points = v1_points(ctx, &mut reader, 11, "linear-dimension point")?;
             let user_text = v1_string(ctx, &mut reader, "linear-dimension user text")?;
             let default_text = v1_string(ctx, &mut reader, "linear-dimension default text")?;
-            let user_positioned_text = reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
+            let user_positioned_text =
+                reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
             let flags = reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
             let by_object = reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
-            reader.skip_remaining().or_else(|error| Err(malformed(ctx, &error)?))?;
+            reader
+                .skip_remaining()
+                .or_else(|error| Err(malformed(ctx, &error)?))?;
             Ok(V1AnnotationPayload::LinearDimension(V1LinearDimension {
                 version,
                 annotation_type,
@@ -497,10 +524,13 @@ fn v1_annotation(
             let points = v1_points(ctx, &mut reader, 5, "angular-dimension point")?;
             let user_text = v1_string(ctx, &mut reader, "angular-dimension user text")?;
             let default_text = v1_string(ctx, &mut reader, "angular-dimension default text")?;
-            let user_positioned_text = reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
+            let user_positioned_text =
+                reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
             let flags = reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
             let by_object = reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
-            reader.skip_remaining().or_else(|error| Err(malformed(ctx, &error)?))?;
+            reader
+                .skip_remaining()
+                .or_else(|error| Err(malformed(ctx, &error)?))?;
             Ok(V1AnnotationPayload::AngularDimension(V1AngularDimension {
                 version,
                 annotation_type,
@@ -527,10 +557,13 @@ fn v1_annotation(
             let points = v1_points(ctx, &mut reader, 5, "radial-dimension point")?;
             let user_text = v1_string(ctx, &mut reader, "radial-dimension user text")?;
             let default_text = v1_string(ctx, &mut reader, "radial-dimension default text")?;
-            let user_positioned_text = reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
+            let user_positioned_text =
+                reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
             let flags = reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
             let by_object = reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
-            reader.skip_remaining().or_else(|error| Err(malformed(ctx, &error)?))?;
+            reader
+                .skip_remaining()
+                .or_else(|error| Err(malformed(ctx, &error)?))?;
             Ok(V1AnnotationPayload::RadialDimension(V1RadialDimension {
                 version,
                 annotation_type,
@@ -625,7 +658,8 @@ fn push_v1_diagnostic(
     Ok(())
 }
 
-fn child_with_type(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn child_with_type(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     typecode: u32,
@@ -719,8 +753,8 @@ fn legacy_spline(
     range: std::ops::Range<usize>,
     scale: MillimeterScale,
 ) -> Result<NurbsCurve, CodecError> {
-    let mut reader =
-        BoundedReader::new(data, range.start, range.end).or_else(|error| Err(malformed(ctx, &error)?))?;
+    let mut reader = BoundedReader::new(data, range.start, range.end)
+        .or_else(|error| Err(malformed(ctx, &error)?))?;
     let dimension = reader.u8().or_else(|error| Err(malformed(ctx, &error)?))?;
     if !matches!(dimension, 2 | 3) {
         return Err(CodecError::Malformed(
@@ -830,7 +864,12 @@ fn legacy_spline(
         weights,
         closed == 2,
     )?
-    .or_else(|error| Err(CodecError::Malformed(ctx.format_retained(format_args!("{}", error), "Rhino legacy_spline text")?)))
+    .or_else(|error| {
+        Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("{}", error),
+            "Rhino legacy_spline text",
+        )?))
+    })
 }
 
 fn legacy_curve_segments(
@@ -893,10 +932,10 @@ fn legacy_curve_segments(
                 "V1 curve segment is not a spline".to_string(),
             ));
         }
-        let spline_stuff = child_with_type(ctx, data, spline.body().clone(), TCODE_LEGACY_SPLSTUFF)?
-            .ok_or_else(|| {
-                CodecError::Malformed("V1 spline has no spline-stuff chunk".to_string())
-            })?;
+        let spline_stuff =
+            child_with_type(ctx, data, spline.body().clone(), TCODE_LEGACY_SPLSTUFF)?.ok_or_else(
+                || CodecError::Malformed("V1 spline has no spline-stuff chunk".to_string()),
+            )?;
         segments.push(legacy_spline(ctx, data, spline_stuff.body(), scale)?);
         reader
             .skip(spline.next_offset() - reader.position())
@@ -919,7 +958,8 @@ fn legacy_curve(
         .or_else(|error| Err(geometry_error(ctx, error)?))
 }
 
-fn nested_chunk(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn nested_chunk(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     typecode: u32,
@@ -944,7 +984,8 @@ fn nested_chunk(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     Ok(chunk)
 }
 
-fn nested_stuff(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn nested_stuff(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     wrapper_type: u32,
@@ -975,7 +1016,11 @@ fn v1_i32_array(
     Ok(values)
 }
 
-fn v1_point3(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>, label: &str) -> Result<[FiniteReal; 3], CodecError> {
+fn v1_point3(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    label: &str,
+) -> Result<[FiniteReal; 3], CodecError> {
     Ok([
         v1_f64(ctx, reader, label)?,
         v1_f64(ctx, reader, label)?,
@@ -983,7 +1028,11 @@ fn v1_point3(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut Bounded
     ])
 }
 
-fn v1_interval(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>, label: &str) -> Result<[FiniteReal; 2], CodecError> {
+fn v1_interval(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    label: &str,
+) -> Result<[FiniteReal; 2], CodecError> {
     Ok([v1_f64(ctx, reader, label)?, v1_f64(ctx, reader, label)?])
 }
 
@@ -992,8 +1041,8 @@ fn v1_nurbs_curve_data(
     data: &[u8],
     range: std::ops::Range<usize>,
 ) -> Result<V1NurbsCurve, CodecError> {
-    let mut reader =
-        BoundedReader::new(data, range.start, range.end).or_else(|error| Err(malformed(ctx, &error)?))?;
+    let mut reader = BoundedReader::new(data, range.start, range.end)
+        .or_else(|error| Err(malformed(ctx, &error)?))?;
     let wire_version = reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
     let version = wire_version & !0x100;
     if version != 100 && version != 101 {
@@ -1077,13 +1126,19 @@ fn v1_nurbs_curve_data(
         }
         control_values.push(values);
     }
-    let read_values = ctx.admit_iter(&(control_values)[..], "Rhino v1 nurbs curve data traversal").map_err(cadmpeg_core::CodecError::from)?.map(Vec::len).sum::<usize>();
+    let read_values = ctx
+        .admit_iter(&(control_values)[..], "Rhino v1 nurbs curve data traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .map(Vec::len)
+        .sum::<usize>();
     if read_values != value_count {
         return Err(CodecError::malformed(format_args!(
             "V1 NURBS curve declares {value_count} control values and carries {read_values}"
         )));
     }
-    reader.skip_remaining().or_else(|error| Err(malformed(ctx, &error)?))?;
+    reader
+        .skip_remaining()
+        .or_else(|error| Err(malformed(ctx, &error)?))?;
     Ok(V1NurbsCurve {
         wire_version,
         version,
@@ -1100,8 +1155,8 @@ fn v1_nurbs_surface_data(
     data: &[u8],
     range: std::ops::Range<usize>,
 ) -> Result<V1NurbsSurface, CodecError> {
-    let mut reader =
-        BoundedReader::new(data, range.start, range.end).or_else(|error| Err(malformed(ctx, &error)?))?;
+    let mut reader = BoundedReader::new(data, range.start, range.end)
+        .or_else(|error| Err(malformed(ctx, &error)?))?;
     let wire_version = reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
     let version = wire_version & !0x100;
     if version != 100 && version != 101 {
@@ -1222,7 +1277,9 @@ fn v1_nurbs_surface_data(
         }
         control_values.push(values);
     }
-    reader.skip_remaining().or_else(|error| Err(malformed(ctx, &error)?))?;
+    reader
+        .skip_remaining()
+        .or_else(|error| Err(malformed(ctx, &error)?))?;
     Ok(V1NurbsSurface {
         wire_version,
         version,
@@ -1422,8 +1479,12 @@ fn v1_nurbs_brep(
         v1_point3(ctx, &mut reader, "Brep bounding box")?,
         v1_point3(ctx, &mut reader, "Brep bounding box")?,
     ];
-    reader.skip_remaining().or_else(|error| Err(malformed(ctx, &error)?))?;
-    outer.skip_remaining().or_else(|error| Err(malformed(ctx, &error)?))?;
+    reader
+        .skip_remaining()
+        .or_else(|error| Err(malformed(ctx, &error)?))?;
+    outer
+        .skip_remaining()
+        .or_else(|error| Err(malformed(ctx, &error)?))?;
     Ok(V1NurbsBrep {
         wire_version,
         curves_2d,
@@ -1631,7 +1692,12 @@ fn legacy_surface(
         ),
         false,
     )?
-    .or_else(|error| Err(CodecError::Malformed(ctx.format_retained(format_args!("{}", error), "Rhino legacy_surface text")?)))
+    .or_else(|error| {
+        Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("{}", error),
+            "Rhino legacy_surface text",
+        )?))
+    })
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1702,16 +1768,28 @@ fn append_legacy_brep(
     suffix: &str,
 ) -> Result<(), CodecError> {
     let mut trim_count = 0_usize;
-for face in ctx.admit_iter(brep.faces.as_slice(), "Rhino append legacy brep traversal")? {
-    for loop_record in ctx.admit_iter(face.loops.as_slice(), "Rhino legacy Brep trim count traversal")? {
-        trim_count = trim_count.checked_add(loop_record.trims.len()).ok_or_else(|| CodecError::NotImplemented("Rhino V1 Brep trim count exceeds address space".to_string()))?;
+    for face in ctx.admit_iter(brep.faces.as_slice(), "Rhino append legacy brep traversal")? {
+        for loop_record in ctx.admit_iter(
+            face.loops.as_slice(),
+            "Rhino legacy Brep trim count traversal",
+        )? {
+            trim_count = trim_count
+                .checked_add(loop_record.trims.len())
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "Rhino V1 Brep trim count exceeds address space".to_string(),
+                    )
+                })?;
+        }
     }
-}
-let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
+    let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
     let mut draft = cadmpeg_ir::draft::ModelDraft::new();
     let model = draft.model_mut();
     let mut suffix_key_storage = ctx.reserve_scoped(0, "Rhino append_legacy_brep text copy")?;
-    let suffix_key = legacy_identity_key(suffix_key_storage.with_storage(|| ctx.copy_retained_text(suffix, "Rhino append_legacy_brep text copy"))?)?;
+    let suffix_key =
+        legacy_identity_key(suffix_key_storage.with_storage(|| {
+            ctx.copy_retained_text(suffix, "Rhino append_legacy_brep text copy")
+        })?)?;
     let body_id = {
         let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
         copied_storage.with_storage(|| {
@@ -1762,9 +1840,14 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
     for _ in 0..brep.faces.len() {
         face_trim_indices.push(Vec::new());
     }
-    for (face_index, face) in ctx.admit_iter(&(brep.faces)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
-        let face_trim_count = ctx.admit_iter(&(face
-            .loops)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?
+    for (face_index, face) in ctx
+        .admit_iter(&(brep.faces)[..], "Rhino append legacy brep traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
+        let face_trim_count = ctx
+            .admit_iter(&(face.loops)[..], "Rhino append legacy brep traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .try_fold(0_usize, |total, loop_record| {
                 total.checked_add(loop_record.trims.len())
             })
@@ -1783,7 +1866,11 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
             )?;
             values
         };
-        for (loop_index, loop_record) in ctx.admit_iter(&(face.loops)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+        for (loop_index, loop_record) in ctx
+            .admit_iter(&(face.loops)[..], "Rhino append legacy brep traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .enumerate()
+        {
             for trim_index in 0..loop_record.trims.len() {
                 let global = trim_paths.len();
                 trim_paths.push((face_index, loop_index, trim_index));
@@ -1816,7 +1903,11 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
             union(parents, left, right);
         }
     };
-    for (face_index, face) in ctx.admit_iter(&(brep.faces)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (face_index, face) in ctx
+        .admit_iter(&(brep.faces)[..], "Rhino append legacy brep traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         let mut seam_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep seams")?;
         let mut seams = {
             let mut values = Vec::new();
@@ -1828,14 +1919,26 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
             )?;
             values
         };
-        for index in ctx.admit_iter(&(face_trim_indices[face_index])[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied() {
+        for index in ctx
+            .admit_iter(
+                &(face_trim_indices[face_index])[..],
+                "Rhino append legacy brep traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
+            .copied()
+        {
             let (_, loop_index, trim_index) = trim_paths[index];
             if face.loops[loop_index].trims[trim_index].mate == Mate::Seam {
                 seams.push(index);
             }
         }
         if face.seam_glue.len() == seams.len() {
-            for (index, mate) in ctx.admit_iter(&(face.seam_glue)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied().enumerate() {
+            for (index, mate) in ctx
+                .admit_iter(&(face.seam_glue)[..], "Rhino append legacy brep traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .copied()
+                .enumerate()
+            {
                 if mate < seams.len() {
                     glue_edges(&mut parents, seams[index], seams[mate]);
                 }
@@ -1852,14 +1955,23 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
         )?;
         values
     };
-    for (index, (face, loop_index, trim)) in ctx.admit_iter(&(trim_paths)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (index, (face, loop_index, trim)) in ctx
+        .admit_iter(&(trim_paths)[..], "Rhino append legacy brep traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         let record = &brep.faces[*face].loops[*loop_index].trims[*trim];
         if record.mate == Mate::Mated {
             mates.push(index);
         }
     }
     if brep.shell_glue.len() == mates.len() {
-        for (index, mate) in ctx.admit_iter(&(brep.shell_glue)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied().enumerate() {
+        for (index, mate) in ctx
+            .admit_iter(&(brep.shell_glue)[..], "Rhino append legacy brep traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .copied()
+            .enumerate()
+        {
             if mate < mates.len() {
                 glue_edges(&mut parents, mates[index], mates[mate]);
             }
@@ -1910,7 +2022,12 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
     )?;
     let mut group_curve = BTreeMap::<usize, NurbsCurve>::new();
     let mut group_tolerance = BTreeMap::<usize, f64>::new();
-    for (index, (face, loop_index, trim)) in ctx.admit_iter(&(trim_paths)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied().enumerate() {
+    for (index, (face, loop_index, trim)) in ctx
+        .admit_iter(&(trim_paths)[..], "Rhino append legacy brep traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .copied()
+        .enumerate()
+    {
         let record = &brep.faces[face].loops[loop_index].trims[trim];
         let root = roots[index];
         if let Some(curve) = &record.curve {
@@ -1930,7 +2047,10 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
         "Rhino V1 Brep grouped endpoints",
     )?;
     let mut group_points = BTreeMap::<usize, [Point3; 2]>::new();
-    for (root, curve) in ctx.admit_iter(&group_curve, "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for (root, curve) in ctx
+        .admit_iter(&group_curve, "Rhino append legacy brep traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let domain = curve_domain(curve)?;
         group_points.insert(
             *root,
@@ -1940,9 +2060,19 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
             ],
         );
     }
-    for (face_index, face) in ctx.admit_iter(&(brep.faces)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
-        for (loop_index, loop_record) in ctx.admit_iter(&(face.loops)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
-            let start = ctx.admit_iter(&(trim_paths)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?
+    for (face_index, face) in ctx
+        .admit_iter(&(brep.faces)[..], "Rhino append legacy brep traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
+        for (loop_index, loop_record) in ctx
+            .admit_iter(&(face.loops)[..], "Rhino append legacy brep traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .enumerate()
+        {
+            let start = ctx
+                .admit_iter(&(trim_paths)[..], "Rhino append legacy brep traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
                 .enumerate()
                 .find_map(|(global, path)| (*path == (face_index, loop_index, 0)).then_some(global))
                 .ok_or_else(|| CodecError::malformed("V1 loop has no indexed trim"))?;
@@ -1958,7 +2088,12 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
                 values
             };
             globals.extend(start..start + loop_record.trims.len());
-            for (position, global) in ctx.admit_iter(&(globals)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied().enumerate() {
+            for (position, global) in ctx
+                .admit_iter(&(globals)[..], "Rhino append legacy brep traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .copied()
+                .enumerate()
+            {
                 let root = roots[global];
                 if group_points.contains_key(&root) {
                     continue;
@@ -1977,7 +2112,10 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
             }
         }
     }
-    for root in ctx.admit_iter(&(group_roots)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for root in ctx
+        .admit_iter(&(group_roots)[..], "Rhino append legacy brep traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if !group_points.contains_key(root) {
             return Err(CodecError::Malformed(
                 "V1 edge group has no model-space endpoint curve".to_string(),
@@ -2004,9 +2142,22 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
         values
     };
     endpoint_parents.extend(0..endpoint_count);
-    for (face_index, face) in ctx.admit_iter(&(brep.faces)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
-        for (loop_index, loop_record) in ctx.admit_iter(&(face.loops)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
-            let start = ctx.admit_iter(&(face_trim_indices[face_index])[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?
+    for (face_index, face) in ctx
+        .admit_iter(&(brep.faces)[..], "Rhino append legacy brep traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
+        for (loop_index, loop_record) in ctx
+            .admit_iter(&(face.loops)[..], "Rhino append legacy brep traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .enumerate()
+        {
+            let start = ctx
+                .admit_iter(
+                    &(face_trim_indices[face_index])[..],
+                    "Rhino append legacy brep traversal",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
                 .position(|global| {
                     let (_, candidate_loop, candidate_trim) = trim_paths[*global];
                     candidate_loop == loop_index && candidate_trim == 0
@@ -2025,7 +2176,12 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
                 values
             };
             globals.extend((0..loop_record.trims.len()).map(|offset| start + offset));
-            for (position, global) in ctx.admit_iter(&(globals)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied().enumerate() {
+            for (position, global) in ctx
+                .admit_iter(&(globals)[..], "Rhino append legacy brep traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .copied()
+                .enumerate()
+            {
                 let next = globals[(position + 1) % globals.len()];
                 let (_, _, trim_index) = trim_paths[global];
                 let (_, _, next_trim_index) = trim_paths[next];
@@ -2043,7 +2199,12 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
             }
         }
     }
-    for (index, root) in ctx.admit_iter(&(roots)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied().enumerate() {
+    for (index, root) in ctx
+        .admit_iter(&(roots)[..], "Rhino append legacy brep traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .copied()
+        .enumerate()
+    {
         let (_, loop_index, trim_index) = trim_paths[index];
         let trim = &brep.faces[trim_paths[index].0].loops[loop_index].trims[trim_index];
         for endpoint in 0..2 {
@@ -2072,7 +2233,10 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
         "Rhino V1 Brep endpoint samples",
     )?;
     let mut class_samples = BTreeMap::<usize, Vec<(Point3, f64)>>::new();
-    for root in ctx.admit_iter(&(group_roots)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for root in ctx
+        .admit_iter(&(group_roots)[..], "Rhino append legacy brep traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let points = group_points[root];
         let tolerance = group_tolerance
             .get(root)
@@ -2095,8 +2259,9 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
     let mut vertex_by_class = BTreeMap::<usize, cadmpeg_ir::ids::VertexId>::new();
     let vertex_count = class_samples.len();
     let face_count = brep.faces.len();
-    let loop_count = ctx.admit_iter(&(brep
-        .faces)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?
+    let loop_count = ctx
+        .admit_iter(&(brep.faces)[..], "Rhino append legacy brep traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
         .try_fold(0_usize, |count, face| count.checked_add(face.loops.len()))
         .ok_or_else(|| {
             CodecError::NotImplemented("Rhino V1 Brep loops exceed address space".to_string())
@@ -2158,11 +2323,17 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
         let index = vertex_by_class.len();
         let point_id = cadmpeg_ir::ids::PointId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
-            legacy_identity_key(ctx.format_retained(format_args!("{suffix}.vertex-{index}"), "Rhino append_legacy_brep text")?)?,
+            legacy_identity_key(ctx.format_retained(
+                format_args!("{suffix}.vertex-{index}"),
+                "Rhino append_legacy_brep text",
+            )?)?,
         );
         let vertex_id = cadmpeg_ir::ids::VertexId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
-            legacy_identity_key(ctx.format_retained(format_args!("{suffix}.slot-{index}"), "Rhino append_legacy_brep text")?)?,
+            legacy_identity_key(ctx.format_retained(
+                format_args!("{suffix}.slot-{index}"),
+                "Rhino append_legacy_brep text",
+            )?)?,
         );
         let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
             .ok_or(Point::NON_FINITE_POSITION)
@@ -2189,7 +2360,10 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
         group_roots.len(),
     )?;
     let mut group_vertices = BTreeMap::new();
-    for root in ctx.admit_iter(&(group_roots)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for root in ctx
+        .admit_iter(&(group_roots)[..], "Rhino append legacy brep traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let start_class = find_root(&mut endpoint_parents, root * 2);
         let end_class = find_root(&mut endpoint_parents, root * 2 + 1);
         let start = vertex_by_class
@@ -2217,11 +2391,19 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
         group_roots.len(),
     )?;
     let mut group_edges = BTreeMap::new();
-    for (edge_index, root) in ctx.admit_iter(&(group_roots)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.copied().enumerate() {
+    for (edge_index, root) in ctx
+        .admit_iter(&(group_roots)[..], "Rhino append legacy brep traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .copied()
+        .enumerate()
+    {
         let curve_id = if let Some(curve) = group_curve.remove(&root) {
             let id = cadmpeg_ir::ids::CurveId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
-                legacy_identity_key(ctx.format_retained(format_args!("{suffix}.edge-{edge_index}"), "Rhino append_legacy_brep text")?)?,
+                legacy_identity_key(ctx.format_retained(
+                    format_args!("{suffix}.edge-{edge_index}"),
+                    "Rhino append_legacy_brep text",
+                )?)?,
             );
             let domain = curve_domain(&curve)?;
             model.curves.push(Curve {
@@ -2235,7 +2417,10 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
         };
         let edge_id = cadmpeg_ir::ids::EdgeId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "edge"),
-            legacy_identity_key(ctx.format_retained(format_args!("{suffix}.slot-{edge_index}"), "Rhino append_legacy_brep text")?)?,
+            legacy_identity_key(ctx.format_retained(
+                format_args!("{suffix}.slot-{edge_index}"),
+                "Rhino append_legacy_brep text",
+            )?)?,
         );
         let vertices = group_vertices
             .get(&root)
@@ -2286,11 +2471,17 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
     for (face_index, face_record) in brep.faces.into_iter().enumerate() {
         let surface_id = cadmpeg_ir::ids::SurfaceId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
-            legacy_identity_key(ctx.format_retained(format_args!("{suffix}.face-{face_index}"), "Rhino append_legacy_brep text")?)?,
+            legacy_identity_key(ctx.format_retained(
+                format_args!("{suffix}.face-{face_index}"),
+                "Rhino append_legacy_brep text",
+            )?)?,
         );
         let face_id = cadmpeg_ir::ids::FaceId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "face"),
-            legacy_identity_key(ctx.format_retained(format_args!("{suffix}.slot-{face_index}"), "Rhino append_legacy_brep text")?)?,
+            legacy_identity_key(ctx.format_retained(
+                format_args!("{suffix}.slot-{face_index}"),
+                "Rhino append_legacy_brep text",
+            )?)?,
         );
         model.surfaces.push(Surface {
             id: surface_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
@@ -2309,7 +2500,10 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
         for (loop_index, loop_record) in face_record.loops.into_iter().enumerate() {
             let loop_id = cadmpeg_ir::ids::LoopId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "loop"),
-                legacy_identity_key(ctx.format_retained(format_args!("{suffix}.face-{face_index}-{loop_index}"), "Rhino append_legacy_brep text")?)?,
+                legacy_identity_key(ctx.format_retained(
+                    format_args!("{suffix}.face-{face_index}-{loop_index}"),
+                    "Rhino append_legacy_brep text",
+                )?)?,
             );
             let mut coedge_ids = ctx.collection_vec::<cadmpeg_ir::ids::CoedgeId>(
                 loop_record.trims.len(),
@@ -2319,9 +2513,10 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
                 let root = roots[global_trim];
                 let pcurve_id = cadmpeg_ir::ids::PcurveId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "pcurve"),
-                    legacy_identity_key(ctx.format_retained(format_args!(
-                        "{suffix}.face-{face_index}-{loop_index}-{trim_index}"
-                    ), "Rhino append_legacy_brep text")?)?,
+                    legacy_identity_key(ctx.format_retained(
+                        format_args!("{suffix}.face-{face_index}-{loop_index}-{trim_index}"),
+                        "Rhino append_legacy_brep text",
+                    )?)?,
                 );
                 let pcurve_domain = curve_domain(&trim.pcurve)?;
                 let pcurve_knots = trim
@@ -2394,9 +2589,10 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
                 });
                 let coedge_id = cadmpeg_ir::ids::CoedgeId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "coedge"),
-                    legacy_identity_key(ctx.format_retained(format_args!(
-                        "{suffix}.face-{face_index}-{loop_index}-{trim_index}"
-                    ), "Rhino append_legacy_brep text")?)?,
+                    legacy_identity_key(ctx.format_retained(
+                        format_args!("{suffix}.face-{face_index}-{loop_index}-{trim_index}"),
+                        "Rhino append_legacy_brep text",
+                    )?)?,
                 );
                 coedges_by_root
                     .entry(root)
@@ -2430,7 +2626,12 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
             }
             let ring = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
                 .map_err(cadmpeg_core::CodecError::from)?
-                .or_else(|error| Err(CodecError::Malformed(ctx.format_retained(format_args!("{}", error), "Rhino append_legacy_brep text")?)))?;
+                .or_else(|error| {
+                    Err(CodecError::Malformed(ctx.format_retained(
+                        format_args!("{}", error),
+                        "Rhino append_legacy_brep text",
+                    )?))
+                })?;
             model.loops.push(Loop {
                 id: loop_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                 face: face_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
@@ -2494,11 +2695,20 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
         model.coedges.len(),
     )?;
     let mut coedge_positions = BTreeMap::new();
-    for (index, coedge) in ctx.admit_iter(&(model.coedges)[..], "Rhino append legacy brep traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (index, coedge) in ctx
+        .admit_iter(&(model.coedges)[..], "Rhino append legacy brep traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         let id = cadmpeg_ir::ids::CoedgeId::try_from(
             ctx.copy_retained_text(coedge.id.as_str(), "Rhino V1 Brep radial position ID")?,
         )
-        .or_else(|error| Err(CodecError::malformed(ctx.format_retained(format_args!("{}", error), "Rhino append_legacy_brep text")?)))?;
+        .or_else(|error| {
+            Err(CodecError::malformed(ctx.format_retained(
+                format_args!("{}", error),
+                "Rhino append_legacy_brep text",
+            )?))
+        })?;
         ctx.insert_btree_map(
             &mut coedge_positions,
             id,
@@ -2506,7 +2716,11 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
             "Rhino V1 Brep radial positions",
         )?;
     }
-    for ring in ctx.admit_iter(&(coedges_by_root), "Rhino append legacy brep map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, value)| value) {
+    for ring in ctx
+        .admit_iter(&(coedges_by_root), "Rhino append legacy brep map traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .map(|(_, value)| value)
+    {
         for index in 0..ring.len() {
             model.coedges[coedge_positions[&ring[index]]].radial_next = ring
                 [(index + 1) % ring.len()]
@@ -2521,7 +2735,12 @@ let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep topology workspace")?;
             Vec::new(),
             Vec::new(),
         )
-        .or_else(|message| Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(format_args!("{}", message), "Rhino append_legacy_brep text")?)))?,
+        .or_else(|message| {
+            Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
+                format_args!("{}", message),
+                "Rhino append_legacy_brep text",
+            )?))
+        })?,
     );
     model.regions.push(Region {
         id: region_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
@@ -2619,7 +2838,9 @@ fn legacy_loop(
             ));
         }
     };
-    reader.skip(32).or_else(|error| Err(malformed(ctx, &error)?))?;
+    reader
+        .skip(32)
+        .or_else(|error| Err(malformed(ctx, &error)?))?;
     if count > reader.remaining() / 8 {
         return Err(CodecError::Malformed(
             "V1 boundary trim count exceeds the remaining bytes".to_string(),
@@ -2670,9 +2891,12 @@ fn legacy_face(
     }
     let boundary_count = usize::try_from(boundary_flags / 2)
         .map_err(|_| CodecError::Malformed("V1 face boundary count overflow".to_string()))?;
-    reader.skip(48).or_else(|error| Err(malformed(ctx, &error)?))?;
-    let glue_count = usize::try_from(reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?)
-        .map_err(|_| CodecError::Malformed("invalid V1 face seam count".to_string()))?;
+    reader
+        .skip(48)
+        .or_else(|error| Err(malformed(ctx, &error)?))?;
+    let glue_count =
+        usize::try_from(reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?)
+            .map_err(|_| CodecError::Malformed("invalid V1 face seam count".to_string()))?;
     if glue_count > reader.remaining() / 2 {
         return Err(CodecError::Malformed(
             "V1 face seam count exceeds the remaining bytes".to_string(),
@@ -2751,9 +2975,12 @@ fn legacy_brep(
         .ok()
         .filter(|count| *count > 0)
         .ok_or_else(|| CodecError::Malformed("invalid V1 shell face count".to_string()))?;
-    reader.skip(48).or_else(|error| Err(malformed(ctx, &error)?))?;
-    let glue_count = usize::try_from(reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?)
-        .map_err(|_| CodecError::Malformed("invalid V1 shell glue count".to_string()))?;
+    reader
+        .skip(48)
+        .or_else(|error| Err(malformed(ctx, &error)?))?;
+    let glue_count =
+        usize::try_from(reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?)
+            .map_err(|_| CodecError::Malformed("invalid V1 shell glue count".to_string()))?;
     if glue_count > reader.remaining() / 2 {
         return Err(CodecError::Malformed(
             "V1 shell glue count exceeds the remaining bytes".to_string(),
@@ -2911,16 +3138,27 @@ fn legacy_mesh(
         crate::mesh::triangulate_faces(ctx, &faces, &vertices, |point| point).or_else(|error| {
             Err(match error {
                 crate::curves::GeometryError::Codec(error) => error,
-                other => CodecError::Malformed(ctx.format_retained(format_args!("{}", other), "Rhino legacy_mesh text")?),
-            }
-        )})?;
+                other => CodecError::Malformed(
+                    ctx.format_retained(format_args!("{}", other), "Rhino legacy_mesh text")?,
+                ),
+            })
+        })?;
     Tessellation::new(
-        cadmpeg_ir::tessellation::TessellationId::mint(id)
-            .or_else(|error| Err(CodecError::Malformed(ctx.format_retained(format_args!("{}", error), "Rhino legacy_mesh text")?)))?,
+        cadmpeg_ir::tessellation::TessellationId::mint(id).or_else(|error| {
+            Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("{}", error),
+                "Rhino legacy_mesh text",
+            )?))
+        })?,
         cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vertices, triangles, normals)?,
         Vec::new(),
     )
-    .or_else(|err| Err(CodecError::Malformed(ctx.format_retained(format_args!("{}", err), "Rhino legacy_mesh text")?)))
+    .or_else(|err| {
+        Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("{}", err),
+            "Rhino legacy_mesh text",
+        )?))
+    })
 }
 
 fn evaluate_nurbs(
@@ -2998,10 +3236,12 @@ fn evaluate_nurbs(
 
 /// Decodes the V1 flat geometry stream.
 pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded, CodecError> {
-    let header = parse_header(ctx, data).or_else(|error| Err(match error {
-        FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
-        other => malformed(ctx, &other)?,
-    }))?;
+    let header = parse_header(ctx, data).or_else(|error| {
+        Err(match error {
+            FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
+            other => malformed(ctx, &other)?,
+        })
+    })?;
     if header.archive_version != ArchiveVersion::V1 {
         return Err(CodecError::Malformed(
             "legacy decoder requires V1".to_string(),
@@ -3072,7 +3312,8 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         CodecError::malformed(format_args!("unsupported V1 unit system {unit}"))
                     })?
             };
-            let linear = reader.f64().or_else(|error| Err(malformed(ctx, &error)?))? * scale.value();
+            let linear =
+                reader.f64().or_else(|error| Err(malformed(ctx, &error)?))? * scale.value();
             ir.tolerances.linear = crate::decode::admitted_tolerance(
                 ctx,
                 cadmpeg_ir::scalar::PositiveLength::new(linear),
@@ -3510,11 +3751,15 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     }
     ir.model.finalize(ctx)?;
     let opaque_count = opaque_records.len();
-    let opaque_bytes = ctx.admit_iter(&(opaque_records)[..], "Rhino decode v1 traversal").map_err(cadmpeg_core::CodecError::from)?
+    let opaque_bytes = ctx
+        .admit_iter(&(opaque_records)[..], "Rhino decode v1 traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
         .filter(|record| record.data().is_some())
         .count();
     let typed_source_count = typed_source_records.len();
-    let typed_source_bytes = ctx.admit_iter(&(typed_source_records)[..], "Rhino decode v1 traversal").map_err(cadmpeg_core::CodecError::from)?
+    let typed_source_bytes = ctx
+        .admit_iter(&(typed_source_records)[..], "Rhino decode v1 traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
         .filter(|record| record.data().is_some())
         .count();
     let mut losses = Vec::new();
@@ -3586,7 +3831,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         coverage.record(ctx, key, count)?;
     }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
-    for _ in ctx.admit_iter(&(opaque_records)[..], "Rhino decode v1 traversal").map_err(cadmpeg_core::CodecError::from)?.chain(&typed_source_records) {
+    for _ in ctx
+        .admit_iter(&(opaque_records)[..], "Rhino decode v1 traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .chain(&typed_source_records)
+    {
         ctx.charge_collection_items(2, "Rhino V1 source fidelity indexes")?;
         ctx.charge_retained(5, "Rhino V1 source fidelity owners")?;
     }
@@ -3615,11 +3864,13 @@ fn v1_nurbs_object<T>(
     range: std::ops::Range<usize>,
     decode: impl FnOnce(&DecodeContext<'_>, &[u8], std::ops::Range<usize>) -> Result<T, CodecError>,
 ) -> Result<T, CodecError> {
-    let mut reader =
-        BoundedReader::new(data, range.start, range.end).or_else(|error| Err(malformed(ctx, &error)?))?;
+    let mut reader = BoundedReader::new(data, range.start, range.end)
+        .or_else(|error| Err(malformed(ctx, &error)?))?;
     let data_chunk = nested_chunk(ctx, data, &mut reader, TCODE_RHINOIO_OBJECT_DATA)?;
     let value = decode(ctx, data, data_chunk.body())?;
-    reader.skip_remaining().or_else(|error| Err(malformed(ctx, &error)?))?;
+    reader
+        .skip_remaining()
+        .or_else(|error| Err(malformed(ctx, &error)?))?;
     Ok(value)
 }
 
@@ -3634,15 +3885,21 @@ mod tests {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         // Six bytes hold the three source bytes and three UTF-8 text bytes.
         policy.limits.max_retained_bytes = 6;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root");
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("text frame");
         let value = super::v1_string(&ctx, &mut reader, "text").expect("two three-byte fields fit");
         assert_eq!(value.text, "abc");
         assert_eq!(value.bytes, b"abc");
-        let refusal = ctx.charge_retained(1, "next text byte").expect_err("six bytes fill the retained limit");
-        assert!(matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+        let refusal = ctx
+            .charge_retained(1, "next text byte")
+            .expect_err("six bytes fill the retained limit");
+        assert!(
+            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.used == 6 && limit.additional == 1));
+                && limit.used == 6 && limit.additional == 1)
+        );
     }
 
     use super::{
@@ -3702,7 +3959,8 @@ mod tests {
     fn v1_f64_holds_the_finite_source_value() {
         let arena = cadmpeg_core::decode::DecodeArena::default();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
         let bytes = 2.5_f64.to_le_bytes();
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
         let value = super::v1_f64(&ctx, &mut reader, "sample").expect("finite source value");
@@ -3850,7 +4108,8 @@ mod tests {
     fn v1_spline_admitted_poles_refuse_collection_limit_before_constructor() {
         let arena = cadmpeg_core::decode::DecodeArena::default();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
         let data = legacy_line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 3);
         let curve =
             chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).expect("V1 curve wrapper");
@@ -3860,9 +4119,10 @@ mod tests {
         let spline_start = curve_stuff.body().start + 1 + 1 + 2 + 6 * 8;
         let spline = chunk_at(&data, spline_start, data.len(), ArchiveVersion::V1, false)
             .expect("V1 spline wrapper");
-        let spline_stuff = super::child_with_type(&ctx, &data, spline.body(), TCODE_LEGACY_SPLSTUFF)
-            .expect("V1 spline child framing")
-            .expect("V1 spline-stuff child");
+        let spline_stuff =
+            super::child_with_type(&ctx, &data, spline.body(), TCODE_LEGACY_SPLSTUFF)
+                .expect("V1 spline child framing")
+                .expect("V1 spline-stuff child");
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 8;
         let limited_arena = cadmpeg_core::decode::DecodeArena::new();
@@ -4131,7 +4391,11 @@ mod tests {
 
     fn legacy_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
         let mut protected = body.to_vec();
-        protected.extend(crate::chunks::crc16(&cadmpeg_test_support::service_decode_context(), 0, body).expect("CRC bytes admitted").to_le_bytes());
+        protected.extend(
+            crate::chunks::crc16(&cadmpeg_test_support::service_decode_context(), 0, body)
+                .expect("CRC bytes admitted")
+                .to_le_bytes(),
+        );
         chunk(typecode, &protected)
     }
 
@@ -5067,7 +5331,12 @@ mod tests {
             let chunk = chunk_at(&source, *offset, source.len(), ArchiveVersion::V1, false)
                 .expect("framed ancestor");
             let body = chunk.body();
-            let checksum = crate::chunks::crc16(&cadmpeg_test_support::service_decode_context(), 0, &source[body.clone()]).expect("CRC bytes admitted");
+            let checksum = crate::chunks::crc16(
+                &cadmpeg_test_support::service_decode_context(),
+                0,
+                &source[body.clone()],
+            )
+            .expect("CRC bytes admitted");
             source[body.end..chunk.next_offset()].copy_from_slice(&checksum.to_le_bytes());
         }
         let comment =

@@ -575,10 +575,22 @@ impl ValidatedRawBrep {
                 "vertex",
                 positions_drifted(ctx, &raw.vertices, |value| value.index)?,
             ),
-            ("edge", positions_drifted(ctx, &raw.edges, |value| value.index)?),
-            ("trim", positions_drifted(ctx, &raw.trims, |value| value.index)?),
-            ("loop", positions_drifted(ctx, &raw.loops, |value| value.index)?),
-            ("face", positions_drifted(ctx, &raw.faces, |value| value.index)?),
+            (
+                "edge",
+                positions_drifted(ctx, &raw.edges, |value| value.index)?,
+            ),
+            (
+                "trim",
+                positions_drifted(ctx, &raw.trims, |value| value.index)?,
+            ),
+            (
+                "loop",
+                positions_drifted(ctx, &raw.loops, |value| value.index)?,
+            ),
+            (
+                "face",
+                positions_drifted(ctx, &raw.faces, |value| value.index)?,
+            ),
             (
                 "region face-side",
                 positions_drifted(ctx, &raw.face_sides, |value| value.index)?,
@@ -612,12 +624,19 @@ impl ValidatedRawBrep {
                 .map_err(crate::curves::GeometryError::from)?,
             face_sides: Vec::new(),
         };
-        for vertex in ctx.admit_iter(&(raw.vertices)[..], "Rhino validate traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for vertex in ctx
+            .admit_iter(&(raw.vertices)[..], "Rhino validate traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             let edges = slots(ctx, &vertex.edges, raw.edges.len(), "vertex edge")?;
             let tolerance = finite_tolerance(ctx, vertex.tolerance, "vertex tolerance")?;
             resolved.vertices.push(ResolvedVertex { edges, tolerance });
         }
-        for (index, edge) in ctx.admit_iter(&(raw.edges)[..], "Rhino validate traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+        for (index, edge) in ctx
+            .admit_iter(&(raw.edges)[..], "Rhino validate traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .enumerate()
+        {
             let Some(curve) = child_slot(&raw.c3, edge.curve, RawBrepBaseType::Curve) else {
                 return Err(error(
                     edge.source_range.start,
@@ -630,7 +649,10 @@ impl ValidatedRawBrep {
             ordered_interval(ctx, edge.proxy_domain, "edge proxy domain")?;
             ordered_interval(ctx, edge.domain, "edge domain")?;
             let tolerance = finite_tolerance(ctx, edge.tolerance, "edge tolerance")?;
-            for trim in ctx.admit_iter(&(trims)[..], "Rhino validate traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for trim in ctx
+                .admit_iter(&(trims)[..], "Rhino validate traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 if position(raw.trims[*trim].edge) != Some(index) {
                     return Err(error(
                         edge.source_range.start,
@@ -645,7 +667,11 @@ impl ValidatedRawBrep {
                 tolerance,
             });
         }
-        for (trim_index, trim) in ctx.admit_iter(&(raw.trims)[..], "Rhino validate traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+        for (trim_index, trim) in ctx
+            .admit_iter(&(raw.trims)[..], "Rhino validate traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .enumerate()
+        {
             let curve = if trim.trim_type == RawTrimKind::PointOnSurface {
                 if trim.curve.is_some() {
                     return Err(error(
@@ -668,8 +694,12 @@ impl ValidatedRawBrep {
             };
             let vertices = slot_pair(ctx, trim.vertices, raw.vertices.len(), "trim vertex")?;
             let loop_index = slot(ctx, trim.loop_index, raw.loops.len(), "trim loop")?;
-            if !ctx.admit_iter(&(raw.loops[loop_index]
-                .trims)[..], "Rhino validate traversal").map_err(cadmpeg_core::CodecError::from)?
+            if !ctx
+                .admit_iter(
+                    &(raw.loops[loop_index].trims)[..],
+                    "Rhino validate traversal",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
                 .any(|value| position(Some(*value)) == Some(trim_index))
             {
                 return Err(error(
@@ -715,8 +745,15 @@ impl ValidatedRawBrep {
             });
         }
         validate_edge_incidences(ctx, raw, &resolved)?;
-        for (index, vertex) in ctx.admit_iter(&(resolved.vertices)[..], "Rhino validate traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
-            for edge in ctx.admit_iter(&(vertex.edges)[..], "Rhino validate traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for (index, vertex) in ctx
+            .admit_iter(&(resolved.vertices)[..], "Rhino validate traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .enumerate()
+        {
+            for edge in ctx
+                .admit_iter(&(vertex.edges)[..], "Rhino validate traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 if !resolved.edges[*edge].vertices.contains(&index) {
                     return Err(error(
                         raw.vertices[index].source_range.start,
@@ -725,12 +762,17 @@ impl ValidatedRawBrep {
                 }
             }
         }
-        for (index, loop_record) in ctx.admit_iter(&(raw.loops)[..], "Rhino validate traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+        for (index, loop_record) in ctx
+            .admit_iter(&(raw.loops)[..], "Rhino validate traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .enumerate()
+        {
             let trims = slots(ctx, &loop_record.trims, raw.trims.len(), "loop trim")?;
             unique(ctx, &loop_record.trims, "loop trim")?;
             let face = slot(ctx, loop_record.face, raw.faces.len(), "loop face")?;
-            if !ctx.admit_iter(&(raw.faces[face]
-                .loops)[..], "Rhino validate traversal").map_err(cadmpeg_core::CodecError::from)?
+            if !ctx
+                .admit_iter(&(raw.faces[face].loops)[..], "Rhino validate traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
                 .any(|value| position(Some(*value)) == Some(index))
             {
                 return Err(error(
@@ -748,7 +790,11 @@ impl ValidatedRawBrep {
             }
             resolved.loops.push(ResolvedLoop { trims, face });
         }
-        for (index, face) in ctx.admit_iter(&(raw.faces)[..], "Rhino validate traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+        for (index, face) in ctx
+            .admit_iter(&(raw.faces)[..], "Rhino validate traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .enumerate()
+        {
             let Some(surface) = child_slot(&raw.surfaces, face.surface, RawBrepBaseType::Surface)
             else {
                 return Err(error(
@@ -766,7 +812,11 @@ impl ValidatedRawBrep {
                     "face first loop is not outer",
                 ));
             }
-            for loop_index in ctx.admit_iter(&(loops)[..], "Rhino validate traversal").map_err(cadmpeg_core::CodecError::from)?.skip(1) {
+            for loop_index in ctx
+                .admit_iter(&(loops)[..], "Rhino validate traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .skip(1)
+            {
                 let loop_type = raw.loops[*loop_index].loop_type;
                 if matches!(loop_type, RawLoopKind::Unknown | RawLoopKind::Outer) {
                     return Err(error(
@@ -775,7 +825,10 @@ impl ValidatedRawBrep {
                     ));
                 }
             }
-            for loop_index in ctx.admit_iter(&(loops)[..], "Rhino validate traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for loop_index in ctx
+                .admit_iter(&(loops)[..], "Rhino validate traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 if resolved.loops[*loop_index].face != index {
                     return Err(error(
                         face.source_range.start,
@@ -845,7 +898,15 @@ fn body_kind(
     let mut closed = !raw.faces.is_empty();
     if closed {
         for edge in 0..resolved.edges.len() {
-            if ctx.admit_iter(resolved.trims.as_slice(), "Rhino body kind trim incidence traversal")?.filter(|trim| trim.edge == Some(edge)).count() != 2 {
+            if ctx
+                .admit_iter(
+                    resolved.trims.as_slice(),
+                    "Rhino body kind trim incidence traversal",
+                )?
+                .filter(|trim| trim.edge == Some(edge))
+                .count()
+                != 2
+            {
                 closed = false;
                 break;
             }
@@ -1021,7 +1082,9 @@ pub(crate) fn parse(
         (Vec::new(), Vec::new(), None, false)
     };
     if !inline_region_loaded {
-        if let Some(extra) = ctx.admit_iter(&(userdata)[..], "Rhino parse traversal").map_err(cadmpeg_core::CodecError::from)?
+        if let Some(extra) = ctx
+            .admit_iter(&(userdata)[..], "Rhino parse traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .filter_map(UserdataDescriptor::known)
             .find(|value| {
                 value.class_uuid == V5_BREP_REGION_TOPOLOGY_USERDATA
@@ -1415,7 +1478,11 @@ fn parse_legacy_major2(
         ctx.collect_indexed_vec(edge_count, "Rhino legacy Brep edge-trim groups", |_| {
             Ok(Vec::<usize>::new())
         })?;
-    for (trim_index, trim) in ctx.admit_iter(&(trims)[..], "Rhino parse legacy major2 traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (trim_index, trim) in ctx
+        .admit_iter(&(trims)[..], "Rhino parse legacy major2 traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         if let Some(edge_index) = position(trim.edge).filter(|index| *index < edge_count) {
             let group = &mut edge_trim_indexes[edge_index];
             ctx.reserve_vec(group, 1, "Rhino legacy Brep edge-trim indexes")?;
@@ -1433,10 +1500,24 @@ fn parse_legacy_major2(
     for (index, parent) in endpoint_parent.iter_mut().enumerate() {
         *parent = index;
     }
-    for loop_record in ctx.admit_iter(&(loops)[..], "Rhino parse legacy major2 traversal").map_err(cadmpeg_core::CodecError::from)? {
-        let Some(head) = loop_record.trims.first() else { continue; };
-        for (index, last) in ctx.admit_iter(loop_record.trims.as_slice(), "Rhino legacy Brep trim ring traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
-            let next = index.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("Rhino legacy Brep trim ring index", 0, 1))?;
+    for loop_record in ctx
+        .admit_iter(&(loops)[..], "Rhino parse legacy major2 traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
+        let Some(head) = loop_record.trims.first() else {
+            continue;
+        };
+        for (index, last) in ctx
+            .admit_iter(
+                loop_record.trims.as_slice(),
+                "Rhino legacy Brep trim ring traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
+            .enumerate()
+        {
+            let next = index
+                .checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("Rhino legacy Brep trim ring index", 0, 1))?;
             let first = loop_record.trims.get(next).unwrap_or(head);
             let last = slot(ctx, *last, trims.len(), "legacy Brep loop trim")?;
             let first = slot(ctx, *first, trims.len(), "legacy Brep loop trim")?;
@@ -1447,7 +1528,11 @@ fn parse_legacy_major2(
             );
         }
     }
-    for (trim_index, trim) in ctx.admit_iter(&(trims)[..], "Rhino parse legacy major2 traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (trim_index, trim) in ctx
+        .admit_iter(&(trims)[..], "Rhino parse legacy major2 traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         if trim.edge.is_none() {
             legacy_union(
                 &mut endpoint_parent,
@@ -1456,11 +1541,21 @@ fn parse_legacy_major2(
             );
         }
     }
-    for trim_indexes in ctx.admit_iter(&(edge_trim_indexes)[..], "Rhino parse legacy major2 traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for trim_indexes in ctx
+        .admit_iter(
+            &(edge_trim_indexes)[..],
+            "Rhino parse legacy major2 traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let Some(first) = trim_indexes.first() else {
             continue;
         };
-        for trim_index in ctx.admit_iter(&(trim_indexes)[..], "Rhino parse legacy major2 traversal").map_err(cadmpeg_core::CodecError::from)?.skip(1) {
+        for trim_index in ctx
+            .admit_iter(&(trim_indexes)[..], "Rhino parse legacy major2 traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .skip(1)
+        {
             for edge_endpoint in 0..2 {
                 legacy_union(
                     &mut endpoint_parent,
@@ -1506,7 +1601,11 @@ fn parse_legacy_major2(
     let mut edges = ctx
         .collection_vec(edge_count, "Rhino legacy Brep edges")
         .map_err(crate::curves::GeometryError::from)?;
-    for (edge_index, curve) in ctx.admit_iter(&(c3_meta)[..], "Rhino parse legacy major2 traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (edge_index, curve) in ctx
+        .admit_iter(&(c3_meta)[..], "Rhino parse legacy major2 traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         let endpoints = if let Some(trim_index) = edge_trim_indexes[edge_index].first() {
             let trim = &trims[*trim_index];
             [
@@ -1528,7 +1627,9 @@ fn parse_legacy_major2(
         let edge_index_i32 = i32::try_from(edge_index)
             .map_err(|_| error(curve.range.start, "legacy Brep edge index overflow"))?;
         let trim_indexes = &edge_trim_indexes[edge_index];
-        let tolerance = ctx.admit_iter(&(trim_indexes)[..], "Rhino parse legacy major2 traversal").map_err(cadmpeg_core::CodecError::from)?
+        let tolerance = ctx
+            .admit_iter(&(trim_indexes)[..], "Rhino parse legacy major2 traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .map(|trim| trims[*trim].legacy_tolerances[1])
             .filter(|value| value.is_finite() && *value >= 0.0)
             .fold(0.0, f64::max);
@@ -1579,7 +1680,10 @@ fn parse_legacy_major2(
                 .map_err(|_| error(reader.position(), "legacy Brep vertex index overflow"))?,
         ];
     }
-    for edge in ctx.admit_iter(&(edges)[..], "Rhino parse legacy major2 traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for edge in ctx
+        .admit_iter(&(edges)[..], "Rhino parse legacy major2 traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         for vertex in edge.vertices {
             let vertex = slot(ctx, vertex, vertices.len(), "legacy Brep edge vertex")?;
             ctx.reserve_vec(
@@ -1590,12 +1694,19 @@ fn parse_legacy_major2(
             vertices[vertex].edges.push(edge.index);
         }
     }
-    for edge in ctx.admit_iter(&(edges)[..], "Rhino parse legacy major2 traversal").map_err(cadmpeg_core::CodecError::from)? {
-        for trim_index in ctx.admit_iter(&(edge.trims)[..], "Rhino parse legacy major2 traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for edge in ctx
+        .admit_iter(&(edges)[..], "Rhino parse legacy major2 traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
+        for trim_index in ctx
+            .admit_iter(&(edge.trims)[..], "Rhino parse legacy major2 traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             let trim_index = slot(ctx, *trim_index, trims.len(), "legacy Brep edge trim")?;
             let loop_index = trims[trim_index].loop_index;
-            let same_loop = ctx.admit_iter(&(edge
-                .trims)[..], "Rhino parse legacy major2 traversal").map_err(cadmpeg_core::CodecError::from)?
+            let same_loop = ctx
+                .admit_iter(&(edge.trims)[..], "Rhino parse legacy major2 traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
                 .filter_map(|other| position(Some(*other)))
                 .filter(|other| trims[*other].loop_index == loop_index)
                 .count();
@@ -1610,7 +1721,10 @@ fn parse_legacy_major2(
     }
     for (vertex_index, vertex) in vertices.iter_mut().enumerate() {
         let mut tolerance: f64 = 0.0;
-        for edge_index in ctx.admit_iter(&(vertex.edges)[..], "Rhino parse legacy major2 traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for edge_index in ctx
+            .admit_iter(&(vertex.edges)[..], "Rhino parse legacy major2 traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             let edge_index = slot(ctx, *edge_index, edges.len(), "legacy Brep vertex edge")?;
             let edge = &edges[edge_index];
             tolerance = tolerance.max(edge.tolerance);
@@ -1836,7 +1950,9 @@ fn legacy_vertex(
     point: [f64; 3],
     position: usize,
 ) -> Result<usize, GeometryError> {
-    if let Some((index, _)) = ctx.admit_iter(&(vertices)[..], "Rhino legacy vertex traversal").map_err(cadmpeg_core::CodecError::from)?
+    if let Some((index, _)) = ctx
+        .admit_iter(&(vertices)[..], "Rhino legacy vertex traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
         .find(|(_, value)| value.vertex.point.get() == point)
     {
@@ -2700,8 +2816,16 @@ fn region_element(
     }
 }
 
-fn validate_rings(ctx: &DecodeContext<'_>, raw: &RawBrep, resolved: &ResolvedBrep) -> Result<(), GeometryError> {
-    for (loop_index, loop_record) in ctx.admit_iter(raw.loops.as_slice(), "Rhino Brep ring loop traversal").map_err(CodecError::from)?.enumerate() {
+fn validate_rings(
+    ctx: &DecodeContext<'_>,
+    raw: &RawBrep,
+    resolved: &ResolvedBrep,
+) -> Result<(), GeometryError> {
+    for (loop_index, loop_record) in ctx
+        .admit_iter(raw.loops.as_slice(), "Rhino Brep ring loop traversal")
+        .map_err(CodecError::from)?
+        .enumerate()
+    {
         let ring = &resolved.loops[loop_index].trims;
         let Some(first_trim) = ring.first() else {
             return Err(error(loop_record.source_range.start, "loop ring is empty"));
@@ -2724,7 +2848,14 @@ fn validate_rings(ctx: &DecodeContext<'_>, raw: &RawBrep, resolved: &ResolvedBre
             }
             continue;
         }
-        for pair in ctx.admit_iter(ring.as_slice(), "Rhino Brep ring adjacency traversal").map_err(CodecError::from)?.windows(std::num::NonZeroUsize::new(2).ok_or_else(|| ctx.refuse_codec_limit("Rhino Brep ring window width", 0, 1))?) {
+        for pair in ctx
+            .admit_iter(ring.as_slice(), "Rhino Brep ring adjacency traversal")
+            .map_err(CodecError::from)?
+            .windows(
+                std::num::NonZeroUsize::new(2)
+                    .ok_or_else(|| ctx.refuse_codec_limit("Rhino Brep ring window width", 0, 1))?,
+            )
+        {
             let left = &resolved.trims[pair[0]];
             let right = &resolved.trims[pair[1]];
             let left_end = left.vertices[1];
@@ -2771,7 +2902,11 @@ fn validate_regions(
     let mut sides = ctx
         .collection_vec(raw.face_sides.len(), "Rhino resolved Brep region sides")
         .map_err(crate::curves::GeometryError::from)?;
-    for (index, side) in ctx.admit_iter(&(raw.face_sides)[..], "Rhino validate regions traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (index, side) in ctx
+        .admit_iter(&(raw.face_sides)[..], "Rhino validate regions traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         let Some(face) = position(Some(side.face)).filter(|face| *face < raw.faces.len()) else {
             return Err(error(
                 side.source_range.start,
@@ -2808,14 +2943,21 @@ fn validate_regions(
         sides.push(ResolvedFaceSide { face, region });
     }
     let mut listed_sides = HashSet::new();
-    for (index, region) in ctx.admit_iter(&(raw.regions)[..], "Rhino validate regions traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (index, region) in ctx
+        .admit_iter(&(raw.regions)[..], "Rhino validate regions traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         if !matches!(region.region_type, 0 | 1) {
             return Err(error(region.source_range.start, "region record is invalid"));
         }
         if region.region_type == 0 {
             infinite += 1;
         }
-        for side in ctx.admit_iter(&(region.sides)[..], "Rhino validate regions traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for side in ctx
+            .admit_iter(&(region.sides)[..], "Rhino validate regions traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             let side = slot(ctx, *side, raw.face_sides.len(), "region side")?;
             if !listed_sides.contains(&side) {
                 ctx.reserve_set(&mut listed_sides, 1, "Rhino Brep listed region sides")?;
@@ -2828,7 +2970,9 @@ fn validate_regions(
             }
         }
     }
-    if ctx.admit_iter(&(sides)[..], "Rhino validate regions traversal").map_err(cadmpeg_core::CodecError::from)?
+    if ctx
+        .admit_iter(&(sides)[..], "Rhino validate regions traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
         .any(|(index, side)| side.region.is_some() && !listed_sides.contains(&index))
     {
@@ -2846,7 +2990,8 @@ fn validate_regions(
     Ok(sides)
 }
 
-fn raw_array_start(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn raw_array_start(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     label: &str,
     minimum_record_bytes: usize,
@@ -2855,7 +3000,10 @@ fn raw_array_start(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     if version >> 4 != 1 {
         return Err(GeometryError::unsupported(
             reader.position() - 1,
-            ctx.format_retained(format_args!("unsupported {label} array version"), "Rhino raw_array_start text")?,
+            ctx.format_retained(
+                format_args!("unsupported {label} array version"),
+                "Rhino raw_array_start text",
+            )?,
         ));
     }
     let count = count(reader, MAX_BREP_ITEMS)?;
@@ -2865,7 +3013,10 @@ fn raw_array_start(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     {
         return Err(error(
             reader.position(),
-            ctx.format_retained(format_args!("{label} count exhausts payload before allocation"), "Rhino raw_array_start text")?,
+            ctx.format_retained(
+                format_args!("{label} count exhausts payload before allocation"),
+                "Rhino raw_array_start text",
+            )?,
         ));
     }
     Ok(count)
@@ -2921,10 +3072,23 @@ fn position(value: Option<i32>) -> Option<usize> {
 }
 
 /// Resolves one stored reference against an array of `len` records.
-fn slot(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: i32, len: usize, label: &str) -> Result<usize, GeometryError> {
+fn slot(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: i32,
+    len: usize,
+    label: &str,
+) -> Result<usize, GeometryError> {
     position(Some(value))
         .filter(|slot| *slot < len)
-        .map_or_else(|| Err(GeometryError::unpositioned(ctx.format_retained(format_args!("{label} reference is out of range"), "Rhino slot text")?)), Ok)
+        .map_or_else(
+            || {
+                Err(GeometryError::unpositioned(ctx.format_retained(
+                    format_args!("{label} reference is out of range"),
+                    "Rhino slot text",
+                )?))
+            },
+            Ok,
+        )
 }
 
 /// Resolves a list of stored references against an array of `len` records.
@@ -2937,15 +3101,26 @@ fn slots(
     let mut result = ctx
         .collection_vec(values.len(), "Rhino resolved Brep references")
         .map_err(crate::curves::GeometryError::from)?;
-    for value in ctx.admit_iter(values, "Rhino slots traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for value in ctx
+        .admit_iter(values, "Rhino slots traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         result.push(slot(ctx, *value, len, label)?);
     }
     Ok(result)
 }
 
 /// Resolves an endpoint pair against an array of `len` records.
-fn slot_pair(ctx: &cadmpeg_core::decode::DecodeContext<'_>, values: [i32; 2], len: usize, label: &str) -> Result<[usize; 2], GeometryError> {
-    Ok([slot(ctx, values[0], len, label)?, slot(ctx, values[1], len, label)?])
+fn slot_pair(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    values: [i32; 2],
+    len: usize,
+    label: &str,
+) -> Result<[usize; 2], GeometryError> {
+    Ok([
+        slot(ctx, values[0], len, label)?,
+        slot(ctx, values[1], len, label)?,
+    ])
 }
 
 /// Resolves one child slot reference, requiring the expected base type.
@@ -2960,15 +3135,37 @@ fn child_slot(array: &RawBrepChildren, index: i32, expected: RawBrepBaseType) ->
 }
 
 /// Reports whether any stored positional index disagrees with the array order.
-fn positions_drifted<T>(ctx: &DecodeContext<'_>, values: &[T], index: impl Fn(&T) -> i32) -> Result<bool, CodecError> {
-    Ok(ctx.admit_iter(values, "Rhino Brep positional index traversal")?
+fn positions_drifted<T>(
+    ctx: &DecodeContext<'_>,
+    values: &[T],
+    index: impl Fn(&T) -> i32,
+) -> Result<bool, CodecError> {
+    Ok(ctx
+        .admit_iter(values, "Rhino Brep positional index traversal")?
         .enumerate()
         .any(|(position_in_array, value)| position(Some(index(value))) != Some(position_in_array)))
 }
 
-fn validate_edge_incidences(ctx: &DecodeContext<'_>, raw: &RawBrep, resolved: &ResolvedBrep) -> Result<(), GeometryError> {
-    for (edge_index, edge) in ctx.admit_iter(resolved.edges.as_slice(), "Rhino Brep edge incidence traversal").map_err(CodecError::from)?.enumerate() {
-        for trim_index in ctx.admit_iter(edge.trims.as_slice(), "Rhino Brep edge trim incidence traversal").map_err(CodecError::from)? {
+fn validate_edge_incidences(
+    ctx: &DecodeContext<'_>,
+    raw: &RawBrep,
+    resolved: &ResolvedBrep,
+) -> Result<(), GeometryError> {
+    for (edge_index, edge) in ctx
+        .admit_iter(
+            resolved.edges.as_slice(),
+            "Rhino Brep edge incidence traversal",
+        )
+        .map_err(CodecError::from)?
+        .enumerate()
+    {
+        for trim_index in ctx
+            .admit_iter(
+                edge.trims.as_slice(),
+                "Rhino Brep edge trim incidence traversal",
+            )
+            .map_err(CodecError::from)?
+        {
             let trim = &resolved.trims[*trim_index];
             if trim.edge.is_some()
                 && !((trim.vertices[0] == edge.vertices[0] && trim.vertices[1] == edge.vertices[1])
@@ -2987,7 +3184,12 @@ fn validate_edge_incidences(ctx: &DecodeContext<'_>, raw: &RawBrep, resolved: &R
             } else {
                 1
             };
-            let count = ctx.admit_iter(resolved.vertices[*vertex].edges.as_slice(), "Rhino Brep vertex incidence traversal").map_err(CodecError::from)?
+            let count = ctx
+                .admit_iter(
+                    resolved.vertices[*vertex].edges.as_slice(),
+                    "Rhino Brep vertex incidence traversal",
+                )
+                .map_err(CodecError::from)?
                 .filter(|value| **value == edge_index)
                 .count();
             if count != expected {
@@ -3007,11 +3209,15 @@ fn validate_edge_incidences(ctx: &DecodeContext<'_>, raw: &RawBrep, resolved: &R
 
 fn unique(ctx: &DecodeContext<'_>, values: &[i32], label: &str) -> Result<(), GeometryError> {
     let mut seen = HashSet::new();
-    for value in ctx.admit_iter(values, "Rhino unique traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for value in ctx
+        .admit_iter(values, "Rhino unique traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if seen.contains(value) {
-            return Err(GeometryError::unpositioned(ctx.format_retained(format_args!(
-                "{label} reference is duplicated"
-            ), "Rhino unique text")?));
+            return Err(GeometryError::unpositioned(ctx.format_retained(
+                format_args!("{label} reference is duplicated"),
+                "Rhino unique text",
+            )?));
         }
         ctx.reserve_set(&mut seen, 1, "Rhino Brep unique references")?;
         seen.insert(*value);
@@ -3020,21 +3226,39 @@ fn unique(ctx: &DecodeContext<'_>, values: &[i32], label: &str) -> Result<(), Ge
 }
 
 /// Refuses a decoded interval that is neither an `ON_UNSET` pair nor ordered.
-fn ordered_interval(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: Interval, label: &str) -> Result<(), GeometryError> {
+fn ordered_interval(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: Interval,
+    label: &str,
+) -> Result<(), GeometryError> {
     let [low, high] = value.0.get();
     let unset = (low == ON_UNSET_VALUE && high == ON_UNSET_VALUE)
         || (low == ON_UNSET_POSITIVE_VALUE && high == ON_UNSET_POSITIVE_VALUE);
     let empty = (low == ON_UNSET_VALUE && high == ON_UNSET_POSITIVE_VALUE)
         || (low == ON_UNSET_POSITIVE_VALUE && high == ON_UNSET_VALUE);
     if !(unset || empty || low < high) {
-        return Err(GeometryError::unpositioned(ctx.format_retained(format_args!("{label} is invalid"), "Rhino ordered_interval text")?));
+        return Err(GeometryError::unpositioned(ctx.format_retained(
+            format_args!("{label} is invalid"),
+            "Rhino ordered_interval text",
+        )?));
     }
     Ok(())
 }
 
-fn finite_tolerance(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: f64, label: &str) -> Result<BrepTolerance, GeometryError> {
-    BrepTolerance::new(value)
-        .map_or_else(|| Err(GeometryError::unpositioned(ctx.format_retained(format_args!("{label} is invalid"), "Rhino finite_tolerance text")?)), Ok)
+fn finite_tolerance(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: f64,
+    label: &str,
+) -> Result<BrepTolerance, GeometryError> {
+    BrepTolerance::new(value).map_or_else(
+        || {
+            Err(GeometryError::unpositioned(ctx.format_retained(
+                format_args!("{label} is invalid"),
+                "Rhino finite_tolerance text",
+            )?))
+        },
+        Ok,
+    )
 }
 
 fn point(reader: &mut BoundedReader<'_>) -> Result<Point3, GeometryError> {
@@ -4356,7 +4580,8 @@ mod tests {
     fn tolerance_accepts_explicit_signed_unset_values() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
         assert!(finite_tolerance(&ctx, ON_UNSET_VALUE, "tolerance").is_ok());
         assert!(finite_tolerance(&ctx, ON_UNSET_POSITIVE_VALUE, "tolerance").is_ok());
         assert!(finite_tolerance(&ctx, -1.0, "tolerance").is_err());
@@ -4368,7 +4593,8 @@ mod tests {
     fn an_interval_or_tolerance_refusal_names_no_byte() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
         let error =
             ordered_interval(&ctx, finite_interval([0.0, 0.0]), "interval").expect_err("ordering");
         assert!(matches!(
@@ -4389,7 +4615,8 @@ mod tests {
     fn interval_accepts_explicit_signed_unset_values() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
         for value in [
             finite_interval([ON_UNSET_VALUE, ON_UNSET_VALUE]),
             finite_interval([ON_UNSET_POSITIVE_VALUE, ON_UNSET_POSITIVE_VALUE]),
@@ -4431,17 +4658,17 @@ mod tests {
     #[test]
     fn procedural_loops_use_one_matching_trim_without_ring_closure() {
         with_test_context(&[], |ctx| {
-        let mut curve_loop = degenerate_trim_raw(RawTrimKind::CurveOnSurface, Some(0));
-        curve_loop.loops[0].loop_type = RawLoopKind::CurveOnSurface;
-        assert!(validate_rings(ctx, &curve_loop, &degenerate_trim_resolved(Some(0))).is_ok());
+            let mut curve_loop = degenerate_trim_raw(RawTrimKind::CurveOnSurface, Some(0));
+            curve_loop.loops[0].loop_type = RawLoopKind::CurveOnSurface;
+            assert!(validate_rings(ctx, &curve_loop, &degenerate_trim_resolved(Some(0))).is_ok());
 
-        let mut point_loop = degenerate_trim_raw(RawTrimKind::PointOnSurface, None);
-        point_loop.loops[0].loop_type = RawLoopKind::PointOnSurface;
-        assert!(validate_rings(ctx, &point_loop, &degenerate_trim_resolved(None)).is_ok());
+            let mut point_loop = degenerate_trim_raw(RawTrimKind::PointOnSurface, None);
+            point_loop.loops[0].loop_type = RawLoopKind::PointOnSurface;
+            assert!(validate_rings(ctx, &point_loop, &degenerate_trim_resolved(None)).is_ok());
 
-        let mut mismatched = degenerate_trim_raw(RawTrimKind::PointOnSurface, None);
-        mismatched.loops[0].loop_type = RawLoopKind::CurveOnSurface;
-        assert!(validate_rings(ctx, &mismatched, &degenerate_trim_resolved(None)).is_err());
+            let mut mismatched = degenerate_trim_raw(RawTrimKind::PointOnSurface, None);
+            mismatched.loops[0].loop_type = RawLoopKind::CurveOnSurface;
+            assert!(validate_rings(ctx, &mismatched, &degenerate_trim_resolved(None)).is_err());
         });
     }
 
@@ -4757,7 +4984,10 @@ mod tests {
         assert_eq!(regions[0].sides, [1]);
         assert_eq!(regions[1].sides, [0]);
         assert_eq!(
-            crate::decode::with_expand_bytes(&[], |expand| warnings.messages(expand.ctx()).expect("diagnostic traversal fits")).collect::<Vec<_>>(),
+            crate::decode::with_expand_bytes(&[], |expand| warnings
+                .messages(expand.ctx())
+                .expect("diagnostic traversal fits"))
+            .collect::<Vec<_>>(),
             ["redundant Brep region positional index mismatch; serialized array order used"]
         );
     }

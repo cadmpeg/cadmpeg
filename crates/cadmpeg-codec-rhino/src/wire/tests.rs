@@ -116,9 +116,20 @@ fn loss_message_retained_bytes_are_charged_once() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     // Seven bytes hold one retained loss message.
     policy.limits.max_retained_bytes = 7;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let note = super::admitted_loss(&ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("warning"), "test loss message").expect("one message fits");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+    let note = super::admitted_loss(
+        &ctx,
+        crate::loss::RhinoLossCode::IntegrityFailure,
+        format_args!("warning"),
+        "test loss message",
+    )
+    .expect("one message fits");
     assert_eq!(note.message, "warning");
-    let error = ctx.charge_retained(1, "test next message byte").expect_err("message fills the retained limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.used == 7 && limit.additional == 1));
+    let error = ctx
+        .charge_retained(1, "test next message byte")
+        .expect_err("message fills the retained limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.used == 7 && limit.additional == 1)
+    );
 }

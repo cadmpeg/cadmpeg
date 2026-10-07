@@ -52,7 +52,11 @@ pub(crate) enum DefinitionKind {
 
 impl cadmpeg_core::decode::cost::DecodeCost for DefinitionKind {
     const FIXED_BYTES: Option<u64> = Some(1);
-    fn decode_cost(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, _operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         Ok(1)
     }
 }
@@ -66,8 +70,16 @@ pub(crate) struct UnitDetail {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for UnitDetail {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.unit, &self.meters_per_unit, &self.custom_name), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.unit, &self.meters_per_unit, &self.custom_name),
+            ctx,
+            operation,
+        )
     }
 }
 
@@ -79,8 +91,19 @@ enum UnitScale {
 
 impl cadmpeg_core::decode::cost::DecodeCost for UnitScale {
     const FIXED_BYTES: Option<u64> = Some(9);
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        match self { Self::Custom(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value), ctx, operation), Self::OtherBits(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value), ctx, operation) }
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Custom(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value), ctx, operation)
+            }
+            Self::OtherBits(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value), ctx, operation)
+            }
+        }
     }
 }
 
@@ -148,8 +171,22 @@ pub(crate) struct ContentHash {
 
 impl cadmpeg_core::decode::cost::DecodeCost for ContentHash {
     const FIXED_BYTES: Option<u64> = Some(64);
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(&self.byte_count, &self.hash_time, &self.content_time, &self.name_sha1, &self.content_sha1), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.byte_count,
+                &self.hash_time,
+                &self.content_time,
+                &self.name_sha1,
+                &self.content_sha1,
+            ),
+            ctx,
+            operation,
+        )
     }
 }
 
@@ -171,8 +208,23 @@ pub(crate) struct FileReference {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for FileReference {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.source_range.start, &self.source_range.end), &self.full_path, &self.relative_path, &self.content_hash, &self.path_status, &self.embedded_file_id), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (&self.source_range.start, &self.source_range.end),
+                &self.full_path,
+                &self.relative_path,
+                &self.content_hash,
+                &self.path_status,
+                &self.embedded_file_id,
+            ),
+            ctx,
+            operation,
+        )
     }
 }
 
@@ -193,12 +245,27 @@ pub(crate) enum LinkSource {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for LinkSource {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::None => Ok(1),
-            Self::LegacyFull(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value), ctx, operation),
-            Self::LegacyRelative { relative_path, full_path } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, relative_path, full_path), ctx, operation),
-            Self::Structured(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value), ctx, operation),
+            Self::LegacyFull(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value), ctx, operation)
+            }
+            Self::LegacyRelative {
+                relative_path,
+                full_path,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(1_u8, relative_path, full_path),
+                ctx,
+                operation,
+            ),
+            Self::Structured(value) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, value), ctx, operation)
+            }
         }
     }
 }
@@ -257,8 +324,37 @@ pub(crate) struct InstanceDefinition {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for InstanceDefinition {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&((&self.source_range.start, &self.source_range.end, &self.id, &self.members, &self.index), (&self.name, &self.description, &self.url, &self.url_tag, &self.kind), (&self.units, &self.linked_depth, &self.linked_appearance, &self.link)), ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    &self.source_range.start,
+                    &self.source_range.end,
+                    &self.id,
+                    &self.members,
+                    &self.index,
+                ),
+                (
+                    &self.name,
+                    &self.description,
+                    &self.url,
+                    &self.url_tag,
+                    &self.kind,
+                ),
+                (
+                    &self.units,
+                    &self.linked_depth,
+                    &self.linked_appearance,
+                    &self.link,
+                ),
+            ),
+            ctx,
+            operation,
+        )
     }
 }
 
@@ -380,7 +476,7 @@ impl DefinitionDiagnostic {
             ),
             "Rhino instance-definition loss text",
         )?;
-            ctx.charge_retained(
+        ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index("INSTANCE_DEFINITION_TABLE".len()),
             "Rhino instance-definition loss tag",
         )?;
@@ -411,9 +507,20 @@ pub(crate) fn hex(
         .checked_mul(2)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     let mut value = ctx.retained_string(byte_len, operation)?;
-    for byte in ctx.admit_iter(bytes, "Rhino hex traversal").map_err(cadmpeg_core::CodecError::from)? {
-        ctx.push_retained_char(&mut value, char::from(DIGITS[usize::from(byte >> 4)]), operation)?;
-        ctx.push_retained_char(&mut value, char::from(DIGITS[usize::from(byte & 0x0f)]), operation)?;
+    for byte in ctx
+        .admit_iter(bytes, "Rhino hex traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
+        ctx.push_retained_char(
+            &mut value,
+            char::from(DIGITS[usize::from(byte >> 4)]),
+            operation,
+        )?;
+        ctx.push_retained_char(
+            &mut value,
+            char::from(DIGITS[usize::from(byte & 0x0f)]),
+            operation,
+        )?;
     }
     Ok(value)
 }
@@ -493,7 +600,10 @@ fn anonymous_versioned<'a>(
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
-            ctx.format_retained(format_args!("{label} is not anonymous"), "Rhino anonymous_versioned text")?,
+            ctx.format_retained(
+                format_args!("{label} is not anonymous"),
+                "Rhino anonymous_versioned text",
+            )?,
         ));
     }
     if verify_container_crc {
@@ -518,7 +628,10 @@ fn anonymous<'a>(
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             payload.position(),
-            ctx.format_retained(format_args!("unsupported {label} version"), "Rhino anonymous text")?,
+            ctx.format_retained(
+                format_args!("unsupported {label} version"),
+                "Rhino anonymous text",
+            )?,
         ));
     }
     Ok((chunk, payload))
@@ -551,8 +664,12 @@ fn unit_detail<'a>(
         ))?;
     }
     payload.skip_remaining()?;
-    UnitDetail::new(unit, meters_per_unit, custom_name)
-        .or_else(|message| Err(FramingError::structural(payload.position(), ctx.copy_retained_text(message, "Rhino instance unit invariant message")?)))
+    UnitDetail::new(unit, meters_per_unit, custom_name).or_else(|message| {
+        Err(FramingError::structural(
+            payload.position(),
+            ctx.copy_retained_text(message, "Rhino instance unit invariant message")?,
+        ))
+    })
 }
 
 fn model_component(
@@ -1222,7 +1339,12 @@ fn apply_idef_alternative_path(
     }
 
     let mut degraded = false;
-    for item in ctx.admit_iter(&(userdata)[..], "Rhino apply idef alternative path traversal").map_err(cadmpeg_core::CodecError::from)?
+    for item in ctx
+        .admit_iter(
+            &(userdata)[..],
+            "Rhino apply idef alternative path traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .filter_map(UserdataDescriptor::known)
         .filter(|item| {
             item.class_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
@@ -1247,8 +1369,12 @@ fn apply_idef_alternative_path(
                 continue;
             }
         };
-        let Some(path) = NonBlankString::for_decode(ctx, ctx.trim_text(path.as_str(), "Rhino instance alternative path trim")?, "validate nonblank text")
-            .map_err(cadmpeg_core::CodecError::from)?
+        let Some(path) = NonBlankString::for_decode(
+            ctx,
+            ctx.trim_text(path.as_str(), "Rhino instance alternative path trim")?,
+            "validate nonblank text",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         else {
             continue;
         };
@@ -1323,7 +1449,11 @@ pub(crate) fn parse_definitions(
     let mut result = DefinitionParse::default();
     let mut seen = HashMap::new();
     let mut opaque_indices = BTreeSet::new();
-    for (source_order, record) in ctx.admit_iter(&(records)[..], "Rhino parse definitions traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (source_order, record) in ctx
+        .admit_iter(&(records)[..], "Rhino parse definitions traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         let mut warnings = Diagnostics::new();
         let parsed = (|| {
             let (class, userdata) = parse_class_wrapper_with_userdata(
@@ -1515,7 +1645,8 @@ pub(crate) fn parse_definitions(
 // relative to the magnitude of the column it compares.
 const EPS_INVERSE_IDENTITY: f64 = 1.0e-6;
 
-pub(crate) fn parse_reference(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+pub(crate) fn parse_reference(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
 ) -> Result<InstanceReference, FramingError> {

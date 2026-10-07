@@ -18,9 +18,9 @@ use crate::loss::StepLossCode;
 use crate::test_support::exchange::{decode_inline, decode_inline_result};
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
+mod case_equality;
 mod collection_limits;
 mod string_limits;
-mod case_equality;
 
 #[test]
 pub(crate) fn decode_transfers_ap242_semantic_pmi() {

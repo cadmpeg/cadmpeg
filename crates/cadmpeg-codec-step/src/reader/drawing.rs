@@ -76,7 +76,10 @@ impl<'a> DrawingParameters<'a> {
     }
 
     fn iter(self, ctx: &DecodeContext<'_>) -> Result<impl Iterator<Item = &'a Value>, CodecError> {
-        Ok(self.inherited_name.into_iter().chain(ctx.admit_iter(self.direct, "STEP drawing inherited parameter traversal")?))
+        Ok(self
+            .inherited_name
+            .into_iter()
+            .chain(ctx.admit_iter(self.direct, "STEP drawing inherited parameter traversal")?))
     }
 }
 
@@ -107,7 +110,10 @@ fn clone_drawing_identities(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<String>, CodecError> {
     let mut copy = BTreeSet::new();
-    for identity in ctx.admit_iter(source, "STEP clone drawing identities traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for identity in ctx
+        .admit_iter(source, "STEP clone drawing identities traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let text = ctx.copy_retained_text(identity, "step_drawing_ambiguous_identity_text")?;
         ctx.insert_btree_set(&mut copy, text, "step_drawing_ambiguous_identity_copy")?;
     }
@@ -123,7 +129,13 @@ fn visit_drawing_references(
     match value {
         Value::Reference(id) => visitor(*id)?,
         Value::List(values) => {
-            for value in ctx.admit_iter(values.as_slice(), "STEP visit drawing references value traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for value in ctx
+                .admit_iter(
+                    values.as_slice(),
+                    "STEP visit drawing references value traversal",
+                )
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 visit_drawing_references(value, ctx, visitor)?;
             }
         }
@@ -156,16 +168,24 @@ pub(super) fn decode(
 ) -> Result<StageOutcome<()>, CodecError> {
     let mut losses = Vec::new();
     let mut candidates = Vec::new();
-    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for (&id, record) in ctx
+        .admit_iter(exchange.records(), "STEP decode traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let Some((name, kind)) = drawing_type(ctx, record)? else {
             continue;
         };
         let parameters = source_parameters(ctx, record, name)?;
         if required_parameter_count(name).is_some_and(|count| parameters.len() < count) {
             ctx.reserve_vec(&mut losses, 1, "step_drawing_losses")?;
-            losses.push(StepLossCode::DrawingRecordTooFewParameters.note(ctx.format_retained(format_args!(
+            losses.push(
+                StepLossCode::DrawingRecordTooFewParameters.note(ctx.format_retained(
+                    format_args!(
                 "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
-            ), "STEP decode text")?));
+            ),
+                    "STEP decode text",
+                )?),
+            );
             continue;
         }
         ctx.reserve_vec(&mut candidates, 1, "step_drawing_candidates")?;
@@ -194,13 +214,21 @@ pub(super) fn decode(
     }
 
     let mut drawing_ids = BTreeSet::new();
-    for candidate in ctx.admit_iter(&(candidates)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for candidate in ctx
+        .admit_iter(&(candidates)[..], "STEP decode traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         ctx.insert_btree_set(&mut drawing_ids, candidate.id, "step_drawing_ids")?;
     }
     let mut hidden_drawing_ids = BTreeSet::new();
-    for record in ctx.admit_iter(exchange.records(), "STEP decode map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, value)| value) {
-        let Some(items) = ctx.admit_iter(&(record
-            .partials)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)?
+    for record in ctx
+        .admit_iter(exchange.records(), "STEP decode map traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .map(|(_, value)| value)
+    {
+        let Some(items) = ctx
+            .admit_iter(&(record.partials)[..], "STEP decode traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .find(|partial| partial.name == "INVISIBILITY")
             .and_then(|partial| partial.parameters.first())
         else {
@@ -216,7 +244,10 @@ pub(super) fn decode(
 
     let mut target_identities =
         record_targets(ir, |record_id| known_typed.contains(&record_id), ctx)?;
-    for candidate in ctx.admit_iter(&(candidates)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for candidate in ctx
+        .admit_iter(&(candidates)[..], "STEP decode traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         ctx.admit_btree_entry(
             &target_identities,
             &candidate.id,
@@ -235,7 +266,10 @@ pub(super) fn decode(
     // DR-01: a drawing association scoped by PRODUCT_DEFINITION_SHAPE targets
     // that shape's one owning product-definition view, not a product-wide
     // identity set.
-    for (&shape_id, product_definition_id) in ctx.admit_iter(product_definition_ids_by_shape, "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for (&shape_id, product_definition_id) in ctx
+        .admit_iter(product_definition_ids_by_shape, "STEP decode traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         ctx.admit_btree_entry(&target_identities, &shape_id, "step_drawing_target_groups")?;
         let targets = target_identities.entry(shape_id).or_default();
         ctx.insert_btree_set(
@@ -257,7 +291,10 @@ pub(super) fn decode(
         ctx,
     )?;
     let mut external_documents = BTreeMap::new();
-    for entry in ctx.admit_iter(exchange.references(), "STEP decode borrowed traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for entry in ctx
+        .admit_iter(exchange.references(), "STEP decode borrowed traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if let ReferenceName::Entity(id) = entry.name {
             ctx.admit_btree_entry(&external_documents, &id, "step_drawing_external_documents")?;
             external_documents.insert(id, entry.uri.as_str());
@@ -361,7 +398,11 @@ pub(super) fn decode(
     )?;
 
     let mut typed_records = BTreeSet::new();
-    for &id in ctx.admit_iter(&(drawings), "STEP decode map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(key, _)| key) {
+    for &id in ctx
+        .admit_iter(&(drawings), "STEP decode map traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .map(|(key, _)| key)
+    {
         ctx.insert_btree_set(&mut typed_records, id, "step_drawing_typed_claims")?;
     }
     for id in ctx.admit_iter(association_ids, "step_drawing_typed_claims")? {
@@ -381,7 +422,10 @@ pub(super) fn decode(
     })
 }
 
-pub(super) fn is_supported_invisibility_target(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<bool, CodecError> {
+pub(super) fn is_supported_invisibility_target(
+    ctx: &DecodeContext<'_>,
+    record: &RawRecord,
+) -> Result<bool, CodecError> {
     let Some((name, _)) = drawing_type(ctx, record)? else {
         return Ok(false);
     };
@@ -397,7 +441,10 @@ fn referenced_target_ids(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u64>, CodecError> {
     let mut ids = BTreeSet::new();
-    for candidate in ctx.admit_iter(candidates, "STEP referenced target ids traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for candidate in ctx
+        .admit_iter(candidates, "STEP referenced target ids traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         for &index in relationship_indices(candidate.name) {
             if let Some(value) = candidate.parameters.get(index) {
                 collect_reference_ids(value, &mut ids, ctx)?;
@@ -410,7 +457,8 @@ fn referenced_target_ids(
             collect_reference_ids(value, &mut ids, ctx)?;
         }
     }
-    for entity in exchange.matching_entity_ids(ctx, |name| DRAWING_ASSOCIATION_TYPES.contains(&name))?
+    for entity in
+        exchange.matching_entity_ids(ctx, |name| DRAWING_ASSOCIATION_TYPES.contains(&name))?
     {
         let association_id = entity?;
         let Some(record) = exchange.records().get(&association_id) else {
@@ -424,11 +472,17 @@ fn referenced_target_ids(
                 collect_reference_ids(value, &mut ids, ctx)?;
             }
         }
-        if ctx.admit_iter(&(record
-            .partials)[..], "STEP referenced target ids traversal").map_err(cadmpeg_core::CodecError::from)?
+        if ctx
+            .admit_iter(
+                &(record.partials)[..],
+                "STEP referenced target ids traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
             .any(|partial| partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")
         {
-            if let Some(placeholder_id) = association_placeholder_reference(ctx, record, parameters)? {
+            if let Some(placeholder_id) =
+                association_placeholder_reference(ctx, record, parameters)?
+            {
                 ctx.insert_btree_set(&mut ids, placeholder_id, "step_drawing_referenced_targets")?;
             }
         }
@@ -456,7 +510,10 @@ fn add_source_typed_targets(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut native_targets = Vec::new();
-    for &id in ctx.admit_iter(referenced_ids, "STEP add source typed targets traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for &id in ctx
+        .admit_iter(referenced_ids, "STEP add source typed targets traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if !known_typed.contains(&id) || target_identities.contains_key(&id) {
             continue;
         }
@@ -522,10 +579,23 @@ fn drawing_entities() -> [(&'static str, &'static crate::ids::IdentityKind); 7] 
     ]
 }
 
-fn drawing_type(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<(&'static str, &'static crate::ids::IdentityKind)>, CodecError> {
+fn drawing_type(
+    ctx: &DecodeContext<'_>,
+    record: &RawRecord,
+) -> Result<Option<(&'static str, &'static crate::ids::IdentityKind)>, CodecError> {
     for (name, kind) in drawing_entities() {
-        if ctx.admit_iter(&record.partials[..], "STEP drawing type partial traversal")?
-            .map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP drawing type equality")?).then_some(())) }).find_map(Result::transpose).transpose()?.is_some() {
+        if ctx
+            .admit_iter(&record.partials[..], "STEP drawing type partial traversal")?
+            .map(|partial| -> Result<Option<_>, CodecError> {
+                Ok(
+                    (ctx.equal(partial.name.as_str(), name, "STEP drawing type equality")?)
+                        .then_some(()),
+                )
+            })
+            .find_map(Result::transpose)
+            .transpose()?
+            .is_some()
+        {
             return Ok(Some((name, kind)));
         }
     }
@@ -554,15 +624,36 @@ fn required_parameter_count(name: &str) -> Option<usize> {
     }
 }
 
-fn source_parameters<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord, name: &str) -> Result<DrawingParameters<'a>, CodecError> {
-    let direct = ctx.admit_iter(&record.partials[..], "STEP drawing source parameter traversal")?
-        .map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP source parameters equality")?).then_some(partial)) }).find_map(Result::transpose).transpose()?
+fn source_parameters<'a>(
+    ctx: &DecodeContext<'_>,
+    record: &'a RawRecord,
+    name: &str,
+) -> Result<DrawingParameters<'a>, CodecError> {
+    let direct = ctx
+        .admit_iter(
+            &record.partials[..],
+            "STEP drawing source parameter traversal",
+        )?
+        .map(|partial| -> Result<Option<_>, CodecError> {
+            Ok((ctx.equal(
+                partial.name.as_str(),
+                name,
+                "STEP source parameters equality",
+            )?)
+            .then_some(partial))
+        })
+        .find_map(Result::transpose)
+        .transpose()?
         .map(|partial| partial.parameters.as_slice());
     if name == "DRAUGHTING_CALLOUT" {
         if let Some(parameters) = direct.filter(|parameters| parameters.len() >= 2) {
             return Ok(DrawingParameters::from_slice(parameters));
         }
-        let inherited_name = ctx.admit_iter(&record.partials[..], "STEP drawing inherited name traversal")?
+        let inherited_name = ctx
+            .admit_iter(
+                &record.partials[..],
+                "STEP drawing inherited name traversal",
+            )?
             .find(|partial| partial.name == "REPRESENTATION_ITEM")
             .and_then(|partial| partial.parameters.first());
         return Ok(DrawingParameters {
@@ -648,15 +739,18 @@ fn add_reference_fields(
                     )?;
                 }
                 TargetResolution::Ambiguous(identities) => {
-                    let (source, _source_storage) = target_context.ctx.format_scoped(format_args!("drawing #{source_id} {name}"), "STEP drawing source label")?;
+                    let (source, _source_storage) = target_context.ctx.format_scoped(
+                        format_args!("drawing #{source_id} {name}"),
+                        "STEP drawing source label",
+                    )?;
                     note_ambiguous_target(
-                    losses,
-                    &source,
-                    role.as_str(),
-                    target_id,
-                    &identities,
-                    target_context.ctx,
-                )?;
+                        losses,
+                        &source,
+                        role.as_str(),
+                        target_id,
+                        &identities,
+                        target_context.ctx,
+                    )?;
                 }
                 TargetResolution::Unresolved => {
                     target_context
@@ -798,7 +892,8 @@ fn add_draughting_model_associations(
     typed: &mut BTreeSet<u64>,
 ) -> Result<(), CodecError> {
     let ctx = target_context.ctx;
-    for entity in exchange.matching_entity_ids(ctx, |name| DRAWING_ASSOCIATION_TYPES.contains(&name))?
+    for entity in
+        exchange.matching_entity_ids(ctx, |name| DRAWING_ASSOCIATION_TYPES.contains(&name))?
     {
         let association_id = entity?;
         let Some(record) = exchange.records().get(&association_id) else {
@@ -898,7 +993,11 @@ fn add_draughting_model_associations(
             complete = false;
         }
 
-        let placeholder_target = if ctx.admit_iter(&record.partials[..], "STEP drawing placeholder type traversal")?
+        let placeholder_target = if ctx
+            .admit_iter(
+                &record.partials[..],
+                "STEP drawing placeholder type traversal",
+            )?
             .any(|partial| partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")
         {
             match association_placeholder_reference(ctx, record, parameters)? {
@@ -965,25 +1064,50 @@ fn add_draughting_model_associations(
     Ok(())
 }
 
-fn association_parameters<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> Result<Option<&'a [Value]>, CodecError> {
+fn association_parameters<'a>(
+    ctx: &DecodeContext<'_>,
+    record: &'a RawRecord,
+) -> Result<Option<&'a [Value]>, CodecError> {
     for name in [
         "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER",
         "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
         "ITEM_IDENTIFIED_REPRESENTATION_USAGE",
     ] {
-        if let Some(partial) = ctx.admit_iter(&record.partials[..], "STEP drawing association parameter traversal")?
-            .map(|partial| -> Result<Option<_>, CodecError> { Ok((ctx.equal(partial.name.as_str(), name, "STEP association parameters equality")? && partial.parameters.len() >= 5).then_some(partial)) }).find_map(Result::transpose).transpose()? {
+        if let Some(partial) = ctx
+            .admit_iter(
+                &record.partials[..],
+                "STEP drawing association parameter traversal",
+            )?
+            .map(|partial| -> Result<Option<_>, CodecError> {
+                Ok((ctx.equal(
+                    partial.name.as_str(),
+                    name,
+                    "STEP association parameters equality",
+                )? && partial.parameters.len() >= 5)
+                    .then_some(partial))
+            })
+            .find_map(Result::transpose)
+            .transpose()?
+        {
             return Ok(Some(partial.parameters.as_slice()));
         }
     }
     Ok(None)
 }
 
-fn association_placeholder_reference(ctx: &DecodeContext<'_>, record: &RawRecord, parameters: &[Value]) -> Result<Option<u64>, CodecError> {
+fn association_placeholder_reference(
+    ctx: &DecodeContext<'_>,
+    record: &RawRecord,
+    parameters: &[Value],
+) -> Result<Option<u64>, CodecError> {
     if let Some(reference) = parameters.get(5).and_then(ValueExt::reference) {
         return Ok(Some(reference));
     }
-    Ok(ctx.admit_iter(&record.partials[..], "STEP drawing association placeholder traversal")?
+    Ok(ctx
+        .admit_iter(
+            &record.partials[..],
+            "STEP drawing association placeholder traversal",
+        )?
         .find(|partial| partial.name == "ANNOTATION_PLACEHOLDER_OCCURRENCE")
         .and_then(|partial| partial.parameters.first())
         .and_then(ValueExt::reference))
@@ -1091,8 +1215,12 @@ fn wrapper_target_resolution(
         let Some(record) = exchange.records().get(&id) else {
             continue;
         };
-        if let Some(plane) = ctx.admit_iter(&(record
-            .partials)[..], "STEP wrapper target resolution traversal").map_err(cadmpeg_core::CodecError::from)?
+        if let Some(plane) = ctx
+            .admit_iter(
+                &(record.partials)[..],
+                "STEP wrapper target resolution traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
             .find(|partial| partial.name == "ANNOTATION_PLANE")
             .and_then(|partial| partial.parameters.get(2))
             .and_then(ValueExt::reference)
@@ -1100,7 +1228,8 @@ fn wrapper_target_resolution(
             ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending")?;
             pending.push((plane, false));
         } else if let Some(representation) = mapped_representation(ctx, record, exchange)?
-            .and_then(|representation| exchange.records().get(&representation)) {
+            .and_then(|representation| exchange.records().get(&representation))
+        {
             if let Some(items) = representation::items(ctx, representation)? {
                 for item in items.rev() {
                     ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending")?;
@@ -1122,17 +1251,27 @@ fn wrapper_target_resolution(
     }
 }
 
-fn mapped_representation(ctx: &DecodeContext<'_>, record: &RawRecord, exchange: &Exchange) -> Result<Option<u64>, CodecError> {
-    let Some(map_id) = ctx.admit_iter(&record.partials[..], "STEP drawing mapped item traversal")?
+fn mapped_representation(
+    ctx: &DecodeContext<'_>,
+    record: &RawRecord,
+    exchange: &Exchange,
+) -> Result<Option<u64>, CodecError> {
+    let Some(map_id) = ctx
+        .admit_iter(&record.partials[..], "STEP drawing mapped item traversal")?
         .find(|partial| partial.name == "MAPPED_ITEM")
         .and_then(|partial| partial.parameters.get(1))
-        .and_then(ValueExt::reference) else {
+        .and_then(ValueExt::reference)
+    else {
         return Ok(None);
     };
     let Some(map) = exchange.records().get(&map_id) else {
         return Ok(None);
     };
-    Ok(ctx.admit_iter(&map.partials[..], "STEP drawing representation map traversal")?
+    Ok(ctx
+        .admit_iter(
+            &map.partials[..],
+            "STEP drawing representation map traversal",
+        )?
         .find(|partial| partial.name == "REPRESENTATION_MAP")
         .and_then(|partial| partial.parameters.get(1))
         .and_then(ValueExt::reference))
@@ -1186,7 +1325,10 @@ fn value_text(
                 format_args!("binary:{}:", value.bit_len()),
                 "step_drawing_value_text",
             )?;
-            for byte in ctx.admit_iter(value.data(), "STEP value text borrowed traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for byte in ctx
+                .admit_iter(value.data(), "STEP value text borrowed traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 ctx.append_formatted_retained(
                     &mut text,
                     format_args!(
@@ -1206,7 +1348,11 @@ fn value_text(
         Value::Derived => ctx.format_retained(format_args!("*"), "step_drawing_value_text")?,
         Value::List(values) => {
             let mut text = ctx.format_retained(format_args!("("), "step_drawing_value_text")?;
-            for (index, value) in ctx.admit_iter(&(values)[..], "STEP value text traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+            for (index, value) in ctx
+                .admit_iter(&(values)[..], "STEP value text traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .enumerate()
+            {
                 let Some(part) = value_text(exchange, value, losses, record_id, field, ctx)? else {
                     return Ok(None);
                 };

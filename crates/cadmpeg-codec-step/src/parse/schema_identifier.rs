@@ -54,12 +54,16 @@ enum AdmittedSchemaState {
 
 impl AdmittedSchemaIdentifier {
     /// Admit one decoded identifier, or reject it.
-    pub(super) fn admit(ctx: &DecodeContext<'_>, identifier: String) -> Result<Option<Self>, CodecError> {
+    pub(super) fn admit(
+        ctx: &DecodeContext<'_>,
+        identifier: String,
+    ) -> Result<Option<Self>, CodecError> {
         let out_of_range = match schema_identifier_form(ctx, &identifier)? {
             SchemaIdentifierForm::Valid => None,
-            SchemaIdentifierForm::ObjectIdentifierOutOfRange { name, component } => {
-                Some((ctx.copy_retained_text(name, "STEP admit text copy")?, ctx.copy_retained_text(component, "STEP admit text copy")?))
-            }
+            SchemaIdentifierForm::ObjectIdentifierOutOfRange { name, component } => Some((
+                ctx.copy_retained_text(name, "STEP admit text copy")?,
+                ctx.copy_retained_text(component, "STEP admit text copy")?,
+            )),
             SchemaIdentifierForm::Invalid => return Ok(None),
         };
         Ok(Some(Self {
@@ -119,7 +123,9 @@ impl AdmittedSchemaIdentifier {
             let ComponentForm::Number(number) = schema_oid_component_form(ctx, component)? else {
                 return Ok(None);
             };
-            let Ok(number) = ctx.parse_text::<u64>(number, "STEP object identifier component number parse")? else {
+            let Ok(number) =
+                ctx.parse_text::<u64>(number, "STEP object identifier component number parse")?
+            else {
                 return Ok(None);
             };
             ctx.push_vec(
@@ -148,9 +154,17 @@ enum SchemaIdentifierForm<'a> {
     Invalid,
 }
 
-fn schema_identifier_form<'a>(ctx: &'a DecodeContext<'_>, identifier: &'a str) -> Result<SchemaIdentifierForm<'a>, CodecError> {
+fn schema_identifier_form<'a>(
+    ctx: &'a DecodeContext<'_>,
+    identifier: &'a str,
+) -> Result<SchemaIdentifierForm<'a>, CodecError> {
     let identifier = ctx.trim_text(identifier, "STEP schema identifier trim")?;
-    if identifier.is_empty() || ctx.admit_iter(identifier, "STEP schema identifier characters")?.count() > 1024 {
+    if identifier.is_empty()
+        || ctx
+            .admit_iter(identifier, "STEP schema identifier characters")?
+            .count()
+            > 1024
+    {
         return Ok(SchemaIdentifierForm::Invalid);
     }
     let Some((name, object_identifier)) = split_schema_identifier(ctx, identifier)? else {
@@ -162,13 +176,15 @@ fn schema_identifier_form<'a>(ctx: &'a DecodeContext<'_>, identifier: &'a str) -
     let Some(object_identifier) = object_identifier else {
         return Ok(SchemaIdentifierForm::Valid);
     };
-    Ok(match schema_object_identifier_form(ctx, object_identifier)? {
-        ObjectIdentifierForm::Valid => SchemaIdentifierForm::Valid,
-        ObjectIdentifierForm::ComponentOutOfRange(component) => {
-            SchemaIdentifierForm::ObjectIdentifierOutOfRange { name, component }
-        }
-        ObjectIdentifierForm::Invalid => SchemaIdentifierForm::Invalid,
-    })
+    Ok(
+        match schema_object_identifier_form(ctx, object_identifier)? {
+            ObjectIdentifierForm::Valid => SchemaIdentifierForm::Valid,
+            ObjectIdentifierForm::ComponentOutOfRange(component) => {
+                SchemaIdentifierForm::ObjectIdentifierOutOfRange { name, component }
+            }
+            ObjectIdentifierForm::Invalid => SchemaIdentifierForm::Invalid,
+        },
+    )
 }
 
 /// Split one schema identifier into its schema name and the text between the
@@ -178,16 +194,29 @@ fn schema_identifier_form<'a>(ctx: &'a DecodeContext<'_>, identifier: &'a str) -
 /// name is ignored. An identifier with no brace is a schema name alone. An
 /// identifier that opens an object identifier and does not close it at the end
 /// of the identifier has no schema name and no object identifier.
-pub(crate) fn split_schema_identifier<'a>(ctx: &DecodeContext<'_>, identifier: &'a str) -> Result<Option<(&'a str, Option<&'a str>)>, CodecError> {
+pub(crate) fn split_schema_identifier<'a>(
+    ctx: &DecodeContext<'_>,
+    identifier: &'a str,
+) -> Result<Option<(&'a str, Option<&'a str>)>, CodecError> {
     let identifier = ctx.trim_text(identifier, "STEP schema identifier trim")?;
-    let Some((name, object_identifier)) = ctx.split_once(identifier, "{", "STEP schema identifier brace split")? else {
+    let Some((name, object_identifier)) =
+        ctx.split_once(identifier, "{", "STEP schema identifier brace split")?
+    else {
         return Ok(Some((identifier, None)));
     };
-    let Some(object_identifier) = object_identifier.strip_suffix('}') else { return Ok(None); };
-    Ok(Some((ctx.trim_end_text(name, "STEP schema identifier name trailing trim")?, Some(object_identifier))))
+    let Some(object_identifier) = object_identifier.strip_suffix('}') else {
+        return Ok(None);
+    };
+    Ok(Some((
+        ctx.trim_end_text(name, "STEP schema identifier name trailing trim")?,
+        Some(object_identifier),
+    )))
 }
 
-pub(super) fn valid_schema_identifier(ctx: &DecodeContext<'_>, identifier: &str) -> Result<bool, CodecError> {
+pub(super) fn valid_schema_identifier(
+    ctx: &DecodeContext<'_>,
+    identifier: &str,
+) -> Result<bool, CodecError> {
     Ok(matches!(
         schema_identifier_form(ctx, identifier)?,
         SchemaIdentifierForm::Valid
@@ -195,7 +224,9 @@ pub(super) fn valid_schema_identifier(ctx: &DecodeContext<'_>, identifier: &str)
 }
 
 fn valid_schema_name(ctx: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
-    let mut bytes = ctx.admit_iter(name.as_bytes(), "STEP schema name bytes")?.copied();
+    let mut bytes = ctx
+        .admit_iter(name.as_bytes(), "STEP schema name bytes")?
+        .copied();
     Ok(bytes.next().is_some_and(|byte| byte.is_ascii_alphabetic())
         && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'))
 }
@@ -216,7 +247,10 @@ enum ObjectIdentifierForm<'a> {
     Invalid,
 }
 
-fn schema_object_identifier_form<'a>(ctx: &'a DecodeContext<'_>, value: &'a str) -> Result<ObjectIdentifierForm<'a>, CodecError> {
+fn schema_object_identifier_form<'a>(
+    ctx: &'a DecodeContext<'_>,
+    value: &'a str,
+) -> Result<ObjectIdentifierForm<'a>, CodecError> {
     let mut components = schema_oid_components(ctx, value)?;
     let Some(first) = components.next().transpose()? else {
         return Ok(ObjectIdentifierForm::Invalid);
@@ -226,7 +260,11 @@ fn schema_object_identifier_form<'a>(ctx: &'a DecodeContext<'_>, value: &'a str)
     };
     let root = schema_oid_root_number(ctx, first)?;
     let mut out_of_range = None;
-    for (index, component) in [Ok(first), Ok(second)].into_iter().chain(components).enumerate() {
+    for (index, component) in [Ok(first), Ok(second)]
+        .into_iter()
+        .chain(components)
+        .enumerate()
+    {
         let component = component?;
         let form = schema_oid_component_form(ctx, component)?;
         if matches!(form, ComponentForm::Invalid) {
@@ -236,19 +274,29 @@ fn schema_object_identifier_form<'a>(ctx: &'a DecodeContext<'_>, value: &'a str)
             out_of_range = out_of_range.or(Some(component));
         }
     }
-    Ok(out_of_range.map_or(ObjectIdentifierForm::Valid, |component| {
-        ObjectIdentifierForm::ComponentOutOfRange(component)
-    }))
+    Ok(
+        out_of_range.map_or(ObjectIdentifierForm::Valid, |component| {
+            ObjectIdentifierForm::ComponentOutOfRange(component)
+        }),
+    )
 }
 
 /// Splits Unicode whitespace after admitting the character traversal.
-fn schema_oid_components<'a>(ctx: &'a DecodeContext<'a>, value: &'a str) -> Result<impl Iterator<Item = Result<&'a str, CodecError>> + 'a, CodecError> {
-    Ok(ctx.admit_iter(value, "STEP schema OID characters")?
+fn schema_oid_components<'a>(
+    ctx: &'a DecodeContext<'a>,
+    value: &'a str,
+) -> Result<impl Iterator<Item = Result<&'a str, CodecError>> + 'a, CodecError> {
+    Ok(ctx
+        .admit_iter(value, "STEP schema OID characters")?
         .chain(std::iter::once(' '))
         .scan((0_usize, None), move |(offset, start), character| {
             let end = *offset;
             let Some(next) = end.checked_add(character.len_utf8()) else {
-                return Some(Err(ctx.refuse_codec_limit("STEP schema OID byte offset", u64::MAX, u64::MAX)));
+                return Some(Err(ctx.refuse_codec_limit(
+                    "STEP schema OID byte offset",
+                    u64::MAX,
+                    u64::MAX,
+                )));
             };
             *offset = next;
             if character.is_whitespace() {
@@ -278,11 +326,16 @@ enum ComponentForm<'a> {
     Invalid,
 }
 
-fn schema_oid_component_form<'a>(ctx: &DecodeContext<'_>, component: &'a str) -> Result<ComponentForm<'a>, CodecError> {
+fn schema_oid_component_form<'a>(
+    ctx: &DecodeContext<'_>,
+    component: &'a str,
+) -> Result<ComponentForm<'a>, CodecError> {
     if valid_schema_oid_name(ctx, component)? {
         return Ok(ComponentForm::Unnumbered);
     }
-    let Some((name, number)) = ctx.split_once(component, "(", "STEP schema object identifier number split")? else {
+    let Some((name, number)) =
+        ctx.split_once(component, "(", "STEP schema object identifier number split")?
+    else {
         return schema_oid_number_form(ctx, component);
     };
     let Some(number) = number.strip_suffix(')') else {
@@ -297,7 +350,10 @@ fn schema_oid_component_form<'a>(ctx: &DecodeContext<'_>, component: &'a str) ->
     schema_oid_number_form(ctx, number)
 }
 
-fn schema_oid_number_form<'a>(ctx: &DecodeContext<'_>, value: &'a str) -> Result<ComponentForm<'a>, CodecError> {
+fn schema_oid_number_form<'a>(
+    ctx: &DecodeContext<'_>,
+    value: &'a str,
+) -> Result<ComponentForm<'a>, CodecError> {
     if valid_schema_oid_number(ctx, value)? {
         return Ok(ComponentForm::Number(value));
     }
@@ -347,12 +403,16 @@ fn valid_schema_oid_second_arc(number: &str) -> bool {
 
 fn valid_schema_oid_number(ctx: &DecodeContext<'_>, value: &str) -> Result<bool, CodecError> {
     Ok(!value.is_empty()
-        && ctx.admit_iter(value.as_bytes(), "STEP schema OID number bytes")?.all(|byte| byte.is_ascii_digit())
+        && ctx
+            .admit_iter(value.as_bytes(), "STEP schema OID number bytes")?
+            .all(|byte| byte.is_ascii_digit())
         && (value == "0" || !value.starts_with('0')))
 }
 
 fn valid_schema_oid_name(ctx: &DecodeContext<'_>, value: &str) -> Result<bool, CodecError> {
-    let mut bytes = ctx.admit_iter(value.as_bytes(), "STEP schema OID name bytes")?.copied();
+    let mut bytes = ctx
+        .admit_iter(value.as_bytes(), "STEP schema OID name bytes")?
+        .copied();
     let Some(first) = bytes.next() else {
         return Ok(false);
     };
@@ -378,7 +438,10 @@ fn valid_schema_oid_name(ctx: &DecodeContext<'_>, value: &str) -> Result<bool, C
 /// ASN.1 identifier for that root. The identifier comparison is exact, so an
 /// identifier that differs in case or in spelling from a registered identifier
 /// gives no root number. Every other component text gives no root number.
-fn schema_oid_root_number(ctx: &DecodeContext<'_>, component: &str) -> Result<Option<u8>, CodecError> {
+fn schema_oid_root_number(
+    ctx: &DecodeContext<'_>,
+    component: &str,
+) -> Result<Option<u8>, CodecError> {
     Ok(match schema_oid_component_form(ctx, component)? {
         ComponentForm::Number("0") => Some(0),
         ComponentForm::Number("1") => Some(1),

@@ -699,109 +699,190 @@ fn pmi_target_reference_filter_propagates_depth_refusal() {
 #[test]
 fn typed_measure_length_containment_preserves_refusal() {
     let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
-    let value = crate::parse::Value::Typed(String::from("LENGTH_MEASURE"), Box::new(crate::parse::Value::Integer(7)));
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP PMI typed length containment", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-        let mut losses = Vec::new();
-        let mut measurements = super::super::MeasureContext { length_scale: 1.0, angle_scale: 1.0, graph_limit: 64, losses: &mut losses };
-        let result = super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());
-        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    let value = crate::parse::Value::Typed(
+        String::from("LENGTH_MEASURE"),
+        Box::new(crate::parse::Value::Integer(7)),
+    );
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP PMI typed length containment",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let mut losses = Vec::new();
+            let mut measurements = super::super::MeasureContext {
+                length_scale: 1.0,
+                angle_scale: 1.0,
+                graph_limit: 64,
+                losses: &mut losses,
+            };
+            let result =
+                super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }
 
 #[test]
 fn typed_measure_angle_containment_preserves_refusal() {
     let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
-    let value = crate::parse::Value::Typed(String::from("ANGLE_MEASURE"), Box::new(crate::parse::Value::Integer(7)));
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP PMI typed angle containment", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-        let mut losses = Vec::new();
-        let mut measurements = super::super::MeasureContext { length_scale: 1.0, angle_scale: 1.0, graph_limit: 64, losses: &mut losses };
-        let result = super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());
-        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    let value = crate::parse::Value::Typed(
+        String::from("ANGLE_MEASURE"),
+        Box::new(crate::parse::Value::Integer(7)),
+    );
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP PMI typed angle containment",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let mut losses = Vec::new();
+            let mut measurements = super::super::MeasureContext {
+                length_scale: 1.0,
+                angle_scale: 1.0,
+                graph_limit: 64,
+                losses: &mut losses,
+            };
+            let result =
+                super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }
 
 #[test]
 fn measure_quantity_length_containment_preserves_refusal() {
-    let value = crate::parse::Value::Typed(String::from("LENGTH_MEASURE"), Box::new(crate::parse::Value::Integer(7)));
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP PMI typed length containment", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-        let result = super::super::measure_quantity(&value, &ctx).map(|_| ());
-        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    let value = crate::parse::Value::Typed(
+        String::from("LENGTH_MEASURE"),
+        Box::new(crate::parse::Value::Integer(7)),
+    );
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP PMI typed length containment",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let result = super::super::measure_quantity(&value, &ctx).map(|_| ());
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }
 
 #[test]
 fn measure_quantity_angle_containment_preserves_refusal() {
-    let value = crate::parse::Value::Typed(String::from("ANGLE_MEASURE"), Box::new(crate::parse::Value::Integer(7)));
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP PMI typed angle containment", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-        let result = super::super::measure_quantity(&value, &ctx).map(|_| ());
-        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    let value = crate::parse::Value::Typed(
+        String::from("ANGLE_MEASURE"),
+        Box::new(crate::parse::Value::Integer(7)),
+    );
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP PMI typed angle containment",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let result = super::super::measure_quantity(&value, &ctx).map(|_| ());
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }
 
 #[test]
 fn measure_quantity_ratio_containment_preserves_refusal() {
-    let value = crate::parse::Value::Typed(String::from("RATIO_MEASURE"), Box::new(crate::parse::Value::Integer(7)));
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP PMI typed ratio containment", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-        let result = super::super::measure_quantity(&value, &ctx).map(|_| ());
-        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    let value = crate::parse::Value::Typed(
+        String::from("RATIO_MEASURE"),
+        Box::new(crate::parse::Value::Integer(7)),
+    );
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP PMI typed ratio containment",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let result = super::super::measure_quantity(&value, &ctx).map(|_| ());
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }
 
 #[test]
 fn record_measure_length_containment_preserves_refusal() {
     let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=LENGTH_MEASURE();ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
     let value = crate::parse::Value::Reference(1);
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP PMI record length containment", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-        let mut losses = Vec::new();
-        let mut measurements = super::super::MeasureContext { length_scale: 1.0, angle_scale: 1.0, graph_limit: 64, losses: &mut losses };
-        let result = super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());
-        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP PMI record length containment",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let mut losses = Vec::new();
+            let mut measurements = super::super::MeasureContext {
+                length_scale: 1.0,
+                angle_scale: 1.0,
+                graph_limit: 64,
+                losses: &mut losses,
+            };
+            let result =
+                super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }
 
 #[test]
 fn record_measure_angle_containment_preserves_refusal() {
     let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ANGLE_MEASURE();ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
     let value = crate::parse::Value::Reference(1);
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP PMI record angle containment", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-        let mut losses = Vec::new();
-        let mut measurements = super::super::MeasureContext { length_scale: 1.0, angle_scale: 1.0, graph_limit: 64, losses: &mut losses };
-        let result = super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());
-        if let Err(CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP PMI record angle containment",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let mut losses = Vec::new();
+            let mut measurements = super::super::MeasureContext {
+                length_scale: 1.0,
+                angle_scale: 1.0,
+                graph_limit: 64,
+                losses: &mut losses,
+            };
+            let result =
+                super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }

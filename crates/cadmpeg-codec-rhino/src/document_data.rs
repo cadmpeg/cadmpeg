@@ -670,7 +670,11 @@ pub(crate) fn install(
         current_dimension_style_index: settings.current_dimstyle,
     }];
     let mut previews = ctx.collection_vec(properties.previews.len(), "Rhino document previews")?;
-    for (index, value) in ctx.admit_iter(&(properties.previews)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (index, value) in ctx
+        .admit_iter(&(properties.previews)[..], "Rhino install traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         previews.push(PreviewRecord {
             id: retained_numbered_id(ctx, "rhino:document:preview#", index, "Rhino preview ID")?,
             source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
@@ -687,7 +691,11 @@ pub(crate) fn install(
         settings.unsupported.len(),
         "Rhino unsupported setting records",
     )?;
-    for (index, value) in ctx.admit_iter(&(settings.unsupported)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (index, value) in ctx
+        .admit_iter(&(settings.unsupported)[..], "Rhino install traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         setting_records.push(SettingRecord {
             id: retained_numbered_id(ctx, "rhino:document:setting#", index, "Rhino setting ID")?,
             source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
@@ -708,11 +716,17 @@ pub(crate) fn install(
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
     let mut render_settings_seen = false;
-    for table in ctx.admit_iter(&(scan.tables)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for table in ctx
+        .admit_iter(&(scan.tables)[..], "Rhino install traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if table.typecode & !0x0000_8000 != SETTINGS_TABLE {
             continue;
         }
-        for record in ctx.admit_iter(&(table.records)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for record in ctx
+            .admit_iter(&(table.records)[..], "Rhino install traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             if matches!(
                 record.typecode,
                 ANNOTATION_SETTINGS | GRID_DEFAULTS | RENDER_SETTINGS
@@ -725,7 +739,10 @@ pub(crate) fn install(
                     binding.label()
                 ), "Rhino unit-binding setting message")?;
                 ctx.reserve_vec(&mut losses, 1, "Rhino document setting losses")?;
-                            losses.push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(ctx.copy_retained_text(&message, "Rhino unit-binding loss message")?));
+                losses
+                    .push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(
+                        ctx.copy_retained_text(&message, "Rhino unit-binding loss message")?,
+                    ));
                 ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque setting records")?;
                 opaque_records.push(OpaqueRecord {
                     table_typecode: table.typecode,

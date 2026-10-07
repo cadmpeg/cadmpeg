@@ -225,17 +225,32 @@ pub(crate) fn parse_header(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Head
         });
     }
     let version = &bytes[start_offset + file_header::ARCHIVE_VERSION..header_end];
-    let first_digit = ctx.admit_iter(&(version)[..], "Rhino parse header traversal").map_err(cadmpeg_core::CodecError::from)?
+    let first_digit = ctx
+        .admit_iter(&(version)[..], "Rhino parse header traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
         .position(u8::is_ascii_digit)
         .ok_or(FramingError::InvalidHeader)?;
-    if ctx.admit_iter(&(version[..first_digit])[..], "Rhino parse header traversal").map_err(cadmpeg_core::CodecError::from)?.any(|byte| *byte != b' ')
-        || ctx.admit_iter(&(version[first_digit..])[..], "Rhino parse header traversal").map_err(cadmpeg_core::CodecError::from)?
+    if ctx
+        .admit_iter(
+            &(version[..first_digit])[..],
+            "Rhino parse header traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+        .any(|byte| *byte != b' ')
+        || ctx
+            .admit_iter(
+                &(version[first_digit..])[..],
+                "Rhino parse header traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
             .any(|byte| !byte.is_ascii_digit())
     {
         return Err(FramingError::InvalidHeader);
     }
-    let text = std::str::from_utf8(&version[first_digit..]).map_err(|_| FramingError::InvalidHeader)?;
-    let value = ctx.parse_text::<u64>(text, "Rhino archive version number parse")?
+    let text =
+        std::str::from_utf8(&version[first_digit..]).map_err(|_| FramingError::InvalidHeader)?;
+    let value = ctx
+        .parse_text::<u64>(text, "Rhino archive version number parse")?
         .map_err(|_| FramingError::InvalidHeader)?;
     if value == 0 {
         return Err(FramingError::InvalidHeader);
@@ -646,7 +661,11 @@ pub(crate) enum ChecksumStatus {
 }
 
 /// Computes the augmented non-reflected V1 CRC-CCITT variant.
-pub(crate) fn crc16(ctx: &DecodeContext<'_>, seed: u16, bytes: &[u8]) -> Result<u16, cadmpeg_core::CodecError> {
+pub(crate) fn crc16(
+    ctx: &DecodeContext<'_>,
+    seed: u16,
+    bytes: &[u8],
+) -> Result<u16, cadmpeg_core::CodecError> {
     let mut crc = seed;
     for byte in ctx.admit_iter(bytes, "Rhino chunk checksum bytes")? {
         let mut table = crc & 0xff00;
@@ -928,7 +947,10 @@ pub(crate) fn checksum_children_through_class_end(
         if reader.position() == reader.end() {
             return Err(FramingError::structural(
                 reader.end(),
-                ctx.format_retained(format_args!("{context} is missing its class end"), "Rhino checksum_children_through_class_end text")?,
+                ctx.format_retained(
+                    format_args!("{context} is missing its class end"),
+                    "Rhino checksum_children_through_class_end text",
+                )?,
             ));
         }
         let start = reader.position();
@@ -950,7 +972,10 @@ pub(crate) fn checksum_children_through_class_end(
             if !child.short() || child.value()? != 0 {
                 return Err(FramingError::structural(
                     start,
-                    ctx.format_retained(format_args!("{context} class end must be a short zero chunk"), "Rhino checksum_children_through_class_end text")?,
+                    ctx.format_retained(
+                        format_args!("{context} class end must be a short zero chunk"),
+                        "Rhino checksum_children_through_class_end text",
+                    )?,
                 ));
             }
             return Ok(children);
@@ -1002,23 +1027,72 @@ pub(crate) fn validate_eof(
 mod direct_range_tests {
     #[test]
     fn core_framing_cause_keeps_the_rendered_error_prefix() {
-        let error = super::FramingError::from(cadmpeg_core::CodecError::Malformed("invalid field".into()));
+        let error =
+            super::FramingError::from(cadmpeg_core::CodecError::Malformed("invalid field".into()));
         let ctx = cadmpeg_test_support::service_decode_context();
-        assert_eq!(ctx.format_retained(format_args!("{error}"), "test framing cause").expect("message fits"), "framing error: malformed container: invalid field");
+        assert_eq!(
+            ctx.format_retained(format_args!("{error}"), "test framing cause")
+                .expect("message fits"),
+            "framing error: malformed container: invalid field"
+        );
     }
 
     impl PartialEq for super::FramingError {
         fn eq(&self, other: &Self) -> bool {
             use super::FramingError;
             match (self, other) {
-                (FramingError::Truncated { offset: a, needed: b }, FramingError::Truncated { offset: c, needed: d }) => a == c && b == d,
-                (FramingError::InvalidHeader, FramingError::InvalidHeader) | (FramingError::MissingEof, FramingError::MissingEof) => true,
-                (FramingError::InvalidLength { offset: a, value: b }, FramingError::InvalidLength { offset: c, value: d }) => a == c && b == d,
-                (FramingError::Structural { offset: a, message: b }, FramingError::Structural { offset: c, message: d }) => a == c && b == d,
-                (FramingError::Unpositioned { message: a }, FramingError::Unpositioned { message: b }) => a == b,
+                (
+                    FramingError::Truncated {
+                        offset: a,
+                        needed: b,
+                    },
+                    FramingError::Truncated {
+                        offset: c,
+                        needed: d,
+                    },
+                ) => a == c && b == d,
+                (FramingError::InvalidHeader, FramingError::InvalidHeader)
+                | (FramingError::MissingEof, FramingError::MissingEof) => true,
+                (
+                    FramingError::InvalidLength {
+                        offset: a,
+                        value: b,
+                    },
+                    FramingError::InvalidLength {
+                        offset: c,
+                        value: d,
+                    },
+                ) => a == c && b == d,
+                (
+                    FramingError::Structural {
+                        offset: a,
+                        message: b,
+                    },
+                    FramingError::Structural {
+                        offset: c,
+                        message: d,
+                    },
+                ) => a == c && b == d,
+                (
+                    FramingError::Unpositioned { message: a },
+                    FramingError::Unpositioned { message: b },
+                ) => a == b,
                 (FramingError::Core(a), FramingError::Core(b)) => a.to_string() == b.to_string(),
-                (FramingError::Overflow { offset: a }, FramingError::Overflow { offset: b }) => a == b,
-                (FramingError::OutOfBounds { offset: a, end: b, bound: c }, FramingError::OutOfBounds { offset: d, end: e, bound: f }) => a == d && b == e && c == f,
+                (FramingError::Overflow { offset: a }, FramingError::Overflow { offset: b }) => {
+                    a == b
+                }
+                (
+                    FramingError::OutOfBounds {
+                        offset: a,
+                        end: b,
+                        bound: c,
+                    },
+                    FramingError::OutOfBounds {
+                        offset: d,
+                        end: e,
+                        bound: f,
+                    },
+                ) => a == d && b == e && c == f,
                 (FramingError::Resource(a), FramingError::Resource(b)) => a == b,
                 _ => false,
             }

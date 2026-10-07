@@ -395,7 +395,11 @@ fn rejected_expansion_discards_every_report_bucket() {
     report.rollback(checkpoint);
 
     assert_eq!(
-        crate::decode::with_expand_bytes(&[], |expand| report.phase_warnings.messages(expand.ctx()).expect("diagnostic traversal fits")).collect::<Vec<_>>(),
+        crate::decode::with_expand_bytes(&[], |expand| report
+            .phase_warnings
+            .messages(expand.ctx())
+            .expect("diagnostic traversal fits"))
+        .collect::<Vec<_>>(),
         ["existing warning"]
     );
     assert_eq!(report.phase_losses.len(), 1);

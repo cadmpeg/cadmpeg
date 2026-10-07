@@ -229,7 +229,9 @@ fn missing_shape_body_text_propagates_scan_refusal() {
         });
         let error = super::super::join_product_texts(values, ctx, "step_missing_shape_body_text")
             .expect_err("body scan exceeds work budget");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "test missing body scan" && Some(limit) == ctx.resource_refusal()));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "test missing body scan" && Some(limit) == ctx.resource_refusal())
+        );
     });
 }

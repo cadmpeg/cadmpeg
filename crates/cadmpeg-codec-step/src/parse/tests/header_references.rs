@@ -41,16 +41,37 @@ fn direct_header_section_lookup_preserves_work_refusal() {
 fn header_section_membership_keeps_validation_results() {
     let names = BTreeSet::from([String::from("section")]);
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(validate_header_data_references(&ctx, &[
-        HeaderDataReferences::FilePopulation(names.clone()),
-        HeaderDataReferences::Section(String::from("section")),
-    ], &names).is_ok());
-    assert!(matches!(validate_header_data_references(&ctx, &[
-        HeaderDataReferences::FilePopulation(BTreeSet::from([String::from("absent")]))
-    ], &names), Err(ValidationError::Invalid("FILE_POPULATION names an unknown DATA section"))));
-    assert!(matches!(validate_header_data_references(&ctx, &[
-        HeaderDataReferences::Section(String::from("absent"))
-    ], &names), Err(ValidationError::Invalid("header section reference names an unknown DATA section"))));
+    assert!(validate_header_data_references(
+        &ctx,
+        &[
+            HeaderDataReferences::FilePopulation(names.clone()),
+            HeaderDataReferences::Section(String::from("section")),
+        ],
+        &names
+    )
+    .is_ok());
+    assert!(matches!(
+        validate_header_data_references(
+            &ctx,
+            &[HeaderDataReferences::FilePopulation(BTreeSet::from([
+                String::from("absent")
+            ]))],
+            &names
+        ),
+        Err(ValidationError::Invalid(
+            "FILE_POPULATION names an unknown DATA section"
+        ))
+    ));
+    assert!(matches!(
+        validate_header_data_references(
+            &ctx,
+            &[HeaderDataReferences::Section(String::from("absent"))],
+            &names
+        ),
+        Err(ValidationError::Invalid(
+            "header section reference names an unknown DATA section"
+        ))
+    ));
 }
 
 #[test]
@@ -61,8 +82,15 @@ fn parser_expected_name_comparison_preserves_work_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let mut parser = crate::parse::Parser {
         lexer: crate::lex::Lexer::new(b"", &ctx),
-        current: Some(crate::lex::Token { kind: crate::lex::TokenKind::Name(String::from("HEADER")), span: 0..6 }),
-        last_end: 0, depth: 0, diagnostics: Vec::new(), omitted_entity_names: None, budget: &ctx,
+        current: Some(crate::lex::Token {
+            kind: crate::lex::TokenKind::Name(String::from("HEADER")),
+            span: 0..6,
+        }),
+        last_end: 0,
+        depth: 0,
+        diagnostics: Vec::new(),
+        omitted_entity_names: None,
+        budget: &ctx,
     };
     let error = parser.name("HEADER").unwrap_err();
     let crate::parse::ParseError::Resource(CodecError::ResourceLimit(refusal)) = error else {
@@ -81,8 +109,15 @@ fn parser_lookahead_name_preserves_equality_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let parser = crate::parse::Parser {
         lexer: crate::lex::Lexer::new(b"", &ctx),
-        current: Some(crate::lex::Token { kind: crate::lex::TokenKind::Name(String::from("HEADER")), span: 0..6 }),
-        last_end: 0, depth: 0, diagnostics: Vec::new(), omitted_entity_names: None, budget: &ctx,
+        current: Some(crate::lex::Token {
+            kind: crate::lex::TokenKind::Name(String::from("HEADER")),
+            span: 0..6,
+        }),
+        last_end: 0,
+        depth: 0,
+        diagnostics: Vec::new(),
+        omitted_entity_names: None,
+        budget: &ctx,
     };
     let error = parser.peek_name("HEADER").unwrap_err();
     let crate::parse::ParseError::Resource(CodecError::ResourceLimit(refusal)) = error else {
@@ -101,11 +136,20 @@ fn parser_punctuation_tag_preserves_equality_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let mut parser = crate::parse::Parser {
         lexer: crate::lex::Lexer::new(b"", &ctx),
-        current: Some(crate::lex::Token { kind: crate::lex::TokenKind::Comma, span: 0..1 }),
-        last_end: 0, depth: 0, diagnostics: Vec::new(), omitted_entity_names: None, budget: &ctx,
+        current: Some(crate::lex::Token {
+            kind: crate::lex::TokenKind::Comma,
+            span: 0..1,
+        }),
+        last_end: 0,
+        depth: 0,
+        diagnostics: Vec::new(),
+        omitted_entity_names: None,
+        budget: &ctx,
     };
     let error = parser.punct(&crate::lex::TokenKind::Comma).unwrap_err();
-    let crate::parse::ParseError::Resource(CodecError::ResourceLimit(refusal)) = error else { panic!("token comparison must preserve the refusal"); };
+    let crate::parse::ParseError::Resource(CodecError::ResourceLimit(refusal)) = error else {
+        panic!("token comparison must preserve the refusal");
+    };
     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
     assert_eq!(refusal.operation, "STEP parser punctuation tag equality");
     assert_eq!(ctx.resource_refusal(), Some(refusal));
@@ -119,11 +163,20 @@ fn parser_lookahead_tag_preserves_equality_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let parser = crate::parse::Parser {
         lexer: crate::lex::Lexer::new(b"", &ctx),
-        current: Some(crate::lex::Token { kind: crate::lex::TokenKind::Comma, span: 0..1 }),
-        last_end: 0, depth: 0, diagnostics: Vec::new(), omitted_entity_names: None, budget: &ctx,
+        current: Some(crate::lex::Token {
+            kind: crate::lex::TokenKind::Comma,
+            span: 0..1,
+        }),
+        last_end: 0,
+        depth: 0,
+        diagnostics: Vec::new(),
+        omitted_entity_names: None,
+        budget: &ctx,
     };
     let error = parser.peek(&crate::lex::TokenKind::Comma).unwrap_err();
-    let crate::parse::ParseError::Resource(CodecError::ResourceLimit(refusal)) = error else { panic!("token comparison must preserve the refusal"); };
+    let crate::parse::ParseError::Resource(CodecError::ResourceLimit(refusal)) = error else {
+        panic!("token comparison must preserve the refusal");
+    };
     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
     assert_eq!(refusal.operation, "STEP parser lookahead tag equality");
     assert_eq!(ctx.resource_refusal(), Some(refusal));
@@ -134,11 +187,22 @@ fn parser_token_tags_preserve_payload_independent_matches_and_empty_lookahead() 
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut parser = crate::parse::Parser {
         lexer: crate::lex::Lexer::new(b"", &ctx),
-        current: Some(crate::lex::Token { kind: crate::lex::TokenKind::Name(String::from("actual")), span: 0..6 }),
-        last_end: 0, depth: 0, diagnostics: Vec::new(), omitted_entity_names: None, budget: &ctx,
+        current: Some(crate::lex::Token {
+            kind: crate::lex::TokenKind::Name(String::from("actual")),
+            span: 0..6,
+        }),
+        last_end: 0,
+        depth: 0,
+        diagnostics: Vec::new(),
+        omitted_entity_names: None,
+        budget: &ctx,
     };
-    assert!(parser.peek(&crate::lex::TokenKind::Name(String::from("expected"))).unwrap());
+    assert!(parser
+        .peek(&crate::lex::TokenKind::Name(String::from("expected")))
+        .unwrap());
     assert!(!parser.peek(&crate::lex::TokenKind::Comma).unwrap());
-    parser.punct(&crate::lex::TokenKind::Name(String::from("expected"))).unwrap();
+    parser
+        .punct(&crate::lex::TokenKind::Name(String::from("expected")))
+        .unwrap();
     assert!(!parser.peek(&crate::lex::TokenKind::Comma).unwrap());
 }

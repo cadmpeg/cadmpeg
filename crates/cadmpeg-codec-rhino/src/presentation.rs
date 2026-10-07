@@ -969,7 +969,13 @@ fn displacement_record(
         displacement.sub_items.len(),
         "Rhino projected displacement sub-items",
     )?;
-    for item in ctx.admit_iter(&(displacement.sub_items)[..], "Rhino displacement record traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for item in ctx
+        .admit_iter(
+            &(displacement.sub_items)[..],
+            "Rhino displacement record traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         sub_items.push(DisplacementSubItemRecord {
             face_index: item.face_index,
             on: item.on,
@@ -1060,7 +1066,13 @@ fn shut_lining_record(
         shut_lining.curves.len(),
         "Rhino projected shut-lining curves",
     )?;
-    for curve in ctx.admit_iter(&(shut_lining.curves)[..], "Rhino shut lining record traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for curve in ctx
+        .admit_iter(
+            &(shut_lining.curves)[..],
+            "Rhino shut lining record traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         curves.push(ShutLiningCurveRecord {
             uuid: curve
                 .uuid
@@ -1302,7 +1314,12 @@ fn first_user_string_records(
     source_offset: usize,
     losses: &mut Vec<LossNote>,
 ) -> Result<(Vec<UserStringRecord>, Vec<UserStringRecord>), CodecError> {
-    let geometry_range = ctx.admit_iter(&(class_userdata)[..], "Rhino first user string records traversal").map_err(cadmpeg_core::CodecError::from)?
+    let geometry_range = ctx
+        .admit_iter(
+            &(class_userdata)[..],
+            "Rhino first user string records traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .filter_map(UserdataDescriptor::known)
         .find(|value| value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
         .map(|value| value.payload_range.clone());
@@ -1315,7 +1332,12 @@ fn first_user_string_records(
         "object user-string userdata",
         losses,
     )?;
-    let attributes_range = ctx.admit_iter(&(attribute_userdata)[..], "Rhino first user string records traversal").map_err(cadmpeg_core::CodecError::from)?
+    let attributes_range = ctx
+        .admit_iter(
+            &(attribute_userdata)[..],
+            "Rhino first user string records traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
         .filter_map(AttributeUserdataDescriptor::known)
         .find(|value| value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
         .map(|value| value.payload_range.clone());
@@ -1328,8 +1350,24 @@ fn first_user_string_records(
         "object-attributes user-string userdata",
         losses,
     )?;
-    if let Some(index) = ctx.admit_iter(&(attributes)[..], "Rhino first user string records traversal").map_err(cadmpeg_core::CodecError::from)?
-        .enumerate().map(|(index, value)| -> Result<_, CodecError> { Ok(ctx.eq_ignore_ascii_case(value.key.as_str(), "$temp_object$", "Rhino temporary user string key case equality")?.then_some(index)) }).find_map(Result::transpose).transpose()?
+    if let Some(index) = ctx
+        .admit_iter(
+            &(attributes)[..],
+            "Rhino first user string records traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+        .map(|(index, value)| -> Result<_, CodecError> {
+            Ok(ctx
+                .eq_ignore_ascii_case(
+                    value.key.as_str(),
+                    "$temp_object$",
+                    "Rhino temporary user string key case equality",
+                )?
+                .then_some(index))
+        })
+        .find_map(Result::transpose)
+        .transpose()?
     {
         attributes.remove(index);
     }
@@ -1391,7 +1429,13 @@ fn object_attributes_presentation(
         attributes.display_materials.len(),
         "Rhino projected display materials",
     )?;
-    for (viewport, material) in ctx.admit_iter(&(attributes.display_materials)[..], "Rhino object attributes presentation traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for (viewport, material) in ctx
+        .admit_iter(
+            &(attributes.display_materials)[..],
+            "Rhino object attributes presentation traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         display_materials.push([
             ctx.format_retained(
                 format_args!("{viewport}"),
@@ -1415,7 +1459,13 @@ fn object_attributes_presentation(
         attributes.clipping_plane_ids.len(),
         "Rhino projected clipping plane UUIDs",
     )?;
-    for id in ctx.admit_iter(&(attributes.clipping_plane_ids)[..], "Rhino object attributes presentation traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for id in ctx
+        .admit_iter(
+            &(attributes.clipping_plane_ids)[..],
+            "Rhino object attributes presentation traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         clipping_plane_uuids.push(ctx.format_retained(
             format_args!("{id}"),
             "Rhino projected clipping plane UUID text",
@@ -1473,7 +1523,8 @@ fn object_attributes_presentation(
     })
 }
 
-fn read_color_f32(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn read_color_f32(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     label: &str,
 ) -> Result<[FiniteBinary32; 4], FramingError> {
@@ -1482,13 +1533,20 @@ fn read_color_f32(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     let [Some(red), Some(green), Some(blue), Some(alpha)] = color.map(FiniteBinary32::new) else {
         return Err(FramingError::structural(
             offset,
-            ctx.format_retained(format_args!("{label} contains a non-finite component"), "Rhino read_color_f32 text")?,
+            ctx.format_retained(
+                format_args!("{label} contains a non-finite component"),
+                "Rhino read_color_f32 text",
+            )?,
         ));
     };
     Ok([red, green, blue, alpha])
 }
 
-fn finite3(ctx: &cadmpeg_core::decode::DecodeContext<'_>, reader: &mut BoundedReader<'_>, label: &str) -> Result<[FiniteReal; 3], FramingError> {
+fn finite3(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    label: &str,
+) -> Result<[FiniteReal; 3], FramingError> {
     let offset = reader.position();
     let value = [reader.f64()?, reader.f64()?, reader.f64()?];
     let [Some(x), Some(y), Some(z)] = value.map(FiniteReal::new) else {
@@ -1595,7 +1653,8 @@ fn component(
     Ok(Component { index, id, name })
 }
 
-fn parse_physically_based_material(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn parse_physically_based_material(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     payload_range: Range<usize>,
     archive: ArchiveVersion,
@@ -1610,8 +1669,10 @@ fn parse_physically_based_material(ctx: &cadmpeg_core::decode::DecodeContext<'_>
     let base_color = read_color_f32(ctx, &mut reader, "base color")?;
     let brdf = reader.i32()?;
     let subsurface = read_finite(ctx, &mut reader, "subsurface")?;
-    let subsurface_scattering_color = read_color_f32(ctx, &mut reader, "subsurface scattering color")?;
-    let subsurface_scattering_radius = read_finite(ctx, &mut reader, "subsurface scattering radius")?;
+    let subsurface_scattering_color =
+        read_color_f32(ctx, &mut reader, "subsurface scattering color")?;
+    let subsurface_scattering_radius =
+        read_finite(ctx, &mut reader, "subsurface scattering radius")?;
     let metallic = read_finite(ctx, &mut reader, "metallic")?;
     let specular = read_finite(ctx, &mut reader, "specular")?;
     let specular_tint = read_finite(ctx, &mut reader, "specular tint")?;
@@ -1658,11 +1719,17 @@ fn parse_physically_based_material(ctx: &cadmpeg_core::decode::DecodeContext<'_>
     })
 }
 
-fn parse_uuid_text(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &str) -> Result<Option<Uuid>, CodecError> {
+fn parse_uuid_text(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &str,
+) -> Result<Option<Uuid>, CodecError> {
     let mut bytes = [0_u8; 16];
     let mut nibble = None;
     let mut index = 0;
-    for byte in ctx.admit_iter(value.as_bytes(), "Rhino UUID text traversal")?.copied() {
+    for byte in ctx
+        .admit_iter(value.as_bytes(), "Rhino UUID text traversal")?
+        .copied()
+    {
         if byte == b'-' {
             continue;
         }
@@ -1751,9 +1818,12 @@ fn classify_rdk_material_payload(
             };
             Err(FramingError::structural(
                 payload_range.start,
-                ctx.format_retained(format_args!("legacy RDK XML is malformed: {error}"), "Rhino classify_rdk_material_payload text")?,
-            )
-        )})?;
+                ctx.format_retained(
+                    format_args!("legacy RDK XML is malformed: {error}"),
+                    "Rhino classify_rdk_material_payload text",
+                )?,
+            ))
+        })?;
     let document = admitted_document.document();
     let root = document.root_element();
     if root.tag_name().name() != "xml" {
@@ -1802,7 +1872,15 @@ fn legacy_rdk_material_instance_id(
     data: &[u8],
     userdata: &[UserdataDescriptor],
 ) -> Result<Option<Uuid>, CodecError> {
-    for value in ctx.admit_iter(&(userdata)[..], "Rhino legacy rdk material instance id traversal").map_err(cadmpeg_core::CodecError::from)?.filter_map(UserdataDescriptor::known).rev() {
+    for value in ctx
+        .admit_iter(
+            &(userdata)[..],
+            "Rhino legacy rdk material instance id traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+        .filter_map(UserdataDescriptor::known)
+        .rev()
+    {
         if value.class_uuid != RDK_CLASS
             || value.item_uuid != RDK_USERDATA
             || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION))
@@ -1823,7 +1901,14 @@ fn rdk_material_userdata_requires_opaque(
     data: &[u8],
     userdata: &[UserdataDescriptor],
 ) -> Result<bool, CodecError> {
-    for value in ctx.admit_iter(&(userdata)[..], "Rhino rdk material userdata requires opaque traversal").map_err(cadmpeg_core::CodecError::from)?.filter_map(UserdataDescriptor::known) {
+    for value in ctx
+        .admit_iter(
+            &(userdata)[..],
+            "Rhino rdk material userdata requires opaque traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+        .filter_map(UserdataDescriptor::known)
+    {
         if value.class_uuid != RDK_CLASS
             || value.item_uuid != RDK_USERDATA
             || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION))
@@ -2007,7 +2092,13 @@ fn parse_light_record_attributes(
         .transpose()?
         .unwrap_or_default();
     let mut userdata_requires_opaque = false;
-    for descriptor in ctx.admit_iter(&(attributes_userdata)[..], "Rhino parse light record attributes traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for descriptor in ctx
+        .admit_iter(
+            &(attributes_userdata)[..],
+            "Rhino parse light record attributes traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let Some(descriptor) = descriptor.known() else {
             userdata_requires_opaque = true;
             break;
@@ -2394,7 +2485,10 @@ fn parse_v2_v3_texture(
     let mode = reader.i32()?;
     let _obsolete_index = reader.i32()?;
     let bump_scale = if matches!(kind, LegacyTextureKind::Bump) {
-        [FiniteReal::ZERO, read_finite(ctx, reader, "legacy bump scale")?]
+        [
+            FiniteReal::ZERO,
+            read_finite(ctx, reader, "legacy bump scale")?,
+        ]
     } else {
         [FiniteReal::ZERO, FiniteReal::ONE]
     };
@@ -2817,7 +2911,10 @@ fn disambiguate_group_ids(
 ) -> Result<usize, CodecError> {
     let mut counts = HashMap::<&str, usize>::new();
     let mut workspace = ctx.reserve_scoped(0, "Rhino group identity workspace")?;
-    for group in ctx.admit_iter(&(groups)[..], "Rhino disambiguate group ids traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for group in ctx
+        .admit_iter(&(groups)[..], "Rhino disambiguate group ids traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if let Some(count) = counts.get_mut(group.id.as_str()) {
             *count += 1;
         } else {
@@ -2827,7 +2924,11 @@ fn disambiguate_group_ids(
         }
     }
     let mut duplicate_indices = Vec::new();
-    for (order, group) in ctx.admit_iter(&(groups)[..], "Rhino disambiguate group ids traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (order, group) in ctx
+        .admit_iter(&(groups)[..], "Rhino disambiguate group ids traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         if counts.get(group.id.as_str()).copied() != Some(1) {
             workspace.with_storage(|| {
                 ctx.reserve_vec(&mut duplicate_indices, 1, "Rhino duplicate group indices")
@@ -3395,15 +3496,25 @@ fn parse_hatch_pattern(
     })
 }
 
-fn scaled_length(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+fn scaled_length(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
     label: &str,
 ) -> Result<FiniteReal, FramingError> {
     let value = read_finite(ctx, reader, label)?.get();
-    scaled_coordinate(value, scale).map_or_else(|| {
-        Err(FramingError::structural(reader.position() - 8, ctx.format_retained(format_args!("scaled {label} is invalid"), "Rhino scaled_length text")?)
-    )}, Ok)
+    scaled_coordinate(value, scale).map_or_else(
+        || {
+            Err(FramingError::structural(
+                reader.position() - 8,
+                ctx.format_retained(
+                    format_args!("scaled {label} is invalid"),
+                    "Rhino scaled_length text",
+                )?,
+            ))
+        },
+        Ok,
+    )
 }
 
 fn named_child(
@@ -3456,7 +3567,13 @@ fn dimension_style_controls(
         let mut bits = ctx
             .collection_vec(count, "Rhino dimension override bits")
             .map_err(crate::chunks::FramingError::from)?;
-        for bit in ctx.admit_iter(reader.take(count)?, "Rhino dimension style controls borrowed traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for bit in ctx
+            .admit_iter(
+                reader.take(count)?,
+                "Rhino dimension style controls borrowed traversal",
+            )
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             bits.push(serde_json::Value::from(*bit));
         }
         values.insert_with(ctx, "field_override_bits", || {
@@ -3465,8 +3582,14 @@ fn dimension_style_controls(
     }
     put!("tolerance_format", reader.u32()?);
     put!("tolerance_resolution", reader.i32()?);
-    put!("tolerance_upper", read_finite(ctx, reader, "upper tolerance")?);
-    put!("tolerance_lower", read_finite(ctx, reader, "lower tolerance")?);
+    put!(
+        "tolerance_upper",
+        read_finite(ctx, reader, "upper tolerance")?
+    );
+    put!(
+        "tolerance_lower",
+        read_finite(ctx, reader, "lower tolerance")?
+    );
     put!(
         "tolerance_height_scale",
         read_finite(ctx, reader, "tolerance height scale")?
@@ -3478,7 +3601,10 @@ fn dimension_style_controls(
     put!("draw_text_mask_legacy", reader.bool()?);
     put!("mask_fill_type_legacy", reader.u32()?);
     put!("mask_color_legacy", reader.array::<4>()?);
-    put!("dimension_scale", read_finite(ctx, reader, "dimension scale")?);
+    put!(
+        "dimension_scale",
+        read_finite(ctx, reader, "dimension scale")?
+    );
     put!("dimension_scale_source", reader.i32()?);
     let source = uuid(reader)?;
     put!(
@@ -3547,7 +3673,10 @@ fn dimension_style_controls(
         read_finite(ctx, reader, "alternate rounding")?
     );
     put!("rounding", read_finite(ctx, reader, "rounding")?);
-    put!("angular_rounding", read_finite(ctx, reader, "angular rounding")?);
+    put!(
+        "angular_rounding",
+        read_finite(ctx, reader, "angular rounding")?
+    );
     put!("alternate_zero_suppression", reader.u32()?);
     put!("obsolete_tolerance_zero_suppression", reader.u32()?);
     put!("zero_suppression", reader.u32()?);
@@ -3644,7 +3773,10 @@ fn dimension_style_controls(
         put!("use_kerning", reader.bool()?);
     }
     if minor >= 11 {
-        put!("line_space_scale", read_finite(ctx, reader, "line-space scale")?);
+        put!(
+            "line_space_scale",
+            read_finite(ctx, reader, "line-space scale")?
+        );
     }
     reader.skip_remaining()?;
     Ok(values)
@@ -3677,7 +3809,13 @@ fn parse_v5_dimension_style_extra(
     let mut valid_fields = ctx
         .collection_vec(byte_count, "Rhino V5 dimension valid fields")
         .map_err(crate::chunks::FramingError::from)?;
-    for value in ctx.admit_iter(reader.take(byte_count)?, "Rhino parse v5 dimension style extra borrowed traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for value in ctx
+        .admit_iter(
+            reader.take(byte_count)?,
+            "Rhino parse v5 dimension style extra borrowed traversal",
+        )
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         valid_fields.push(*value != 0);
     }
     let tolerance_style = reader.i32()?;
@@ -3692,7 +3830,10 @@ fn parse_v5_dimension_style_extra(
         (false, 0, [255, 255, 255, 0])
     };
     let (dimension_scale, dimension_scale_source) = if version.1 >= 2 {
-        (read_finite(ctx, &mut reader, "dimension scale")?, reader.i32()?)
+        (
+            read_finite(ctx, &mut reader, "dimension scale")?,
+            reader.i32()?,
+        )
     } else {
         (FiniteReal::ONE, 0)
     };
@@ -4361,14 +4502,15 @@ fn parse_texture_mapping(
         let mut warnings = Diagnostics::new();
         let (value, userdata) =
             parse_class_wrapper_with_userdata(ctx, data, object.range(), archive, &mut warnings)?;
-        let cache_requires_opaque =
-            ctx.admit_iter(&(userdata)[..], "Rhino parse texture mapping traversal").map_err(cadmpeg_core::CodecError::from)?
-                .filter_map(UserdataDescriptor::known)
-                .any(|value| {
-                    value.class_uuid == MAPPING_CRC_CACHE
-                        && value.item_uuid == MAPPING_CRC_CACHE
-                        && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
-                });
+        let cache_requires_opaque = ctx
+            .admit_iter(&(userdata)[..], "Rhino parse texture mapping traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .filter_map(UserdataDescriptor::known)
+            .any(|value| {
+                value.class_uuid == MAPPING_CRC_CACHE
+                    && value.item_uuid == MAPPING_CRC_CACHE
+                    && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
+            });
         (
             Some(ctx.format_retained(
                 format_args!("{}", value.class_uuid),
@@ -4793,8 +4935,12 @@ fn parse_text_style(
         let face_bytes = reader.take(128)?;
         let windows_logfont_name =
             ctx.utf16le_lossy_text(face_bytes, 64, true, "Rhino legacy font face")?;
-        let named_description =
-            !description.is_empty() && !ctx.eq_ignore_ascii_case(description.as_str(), "Default", "Rhino text style description case equality")?;
+        let named_description = !description.is_empty()
+            && !ctx.eq_ignore_ascii_case(
+                description.as_str(),
+                "Default",
+                "Rhino text style description case equality",
+            )?;
         let postscript_name = if named_description
             && (apple_runtime || writer_version.is_some_and(|version| version > 201_802_230))
         {
@@ -4996,7 +5142,10 @@ pub(crate) fn install(
     let mut object_count_workspace = ctx.reserve_scoped(0, "Rhino object identity workspace")?;
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
-    for object in ctx.admit_iter(&(scan.objects)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for object in ctx
+        .admit_iter(&(scan.objects)[..], "Rhino install traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if let Some(identity) = object.identity() {
             if let Some(count) = object_id_counts.get_mut(&identity.object_id) {
                 *count += 1;
@@ -5009,9 +5158,15 @@ pub(crate) fn install(
             }
         }
     }
-    for table in ctx.admit_iter(&(scan.tables)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for table in ctx
+        .admit_iter(&(scan.tables)[..], "Rhino install traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let table_type = table.typecode & !0x0000_8000;
-        for record in ctx.admit_iter(&(table.records)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for record in ctx
+            .admit_iter(&(table.records)[..], "Rhino install traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             let recognized = matches!(
                 table_type,
                 GROUP_TABLE
@@ -5068,13 +5223,16 @@ pub(crate) fn install(
                                 && (value.application_uuid.is_none()
                                     || value.application_uuid == Some(OPENNURBS6_APPLICATION))
                         }) {
-                        match parse_physically_based_material(ctx, 
+                        match parse_physically_based_material(
+                            ctx,
                             scan.data,
                             value.payload_range.clone(),
                             scan.archive,
                         ) {
                             Ok(material) => Some(material),
-                            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
+                            Err(FramingError::Resource(limit)) => {
+                                return Err(CodecError::ResourceLimit(limit))
+                            }
                             Err(error) => {
                                 material_requires_opaque = true;
                                 push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
@@ -5493,12 +5651,19 @@ pub(crate) fn install(
     }
     let mut group_members = HashMap::<i32, Vec<String>>::new();
     let mut group_member_workspace = group_member_workspace(ctx)?;
-    for (source_order, object) in ctx.admit_iter(&(scan.objects)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+    for (source_order, object) in ctx
+        .admit_iter(&(scan.objects)[..], "Rhino install traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+        .enumerate()
+    {
         let Some(object) = object.framed() else {
             continue;
         };
         if let Some(attributes) = object.attributes.parsed() {
-            for group in ctx.admit_iter(&(attributes.groups)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
+            for group in ctx
+                .admit_iter(&(attributes.groups)[..], "Rhino install traversal")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
                 admit_group_member(
                     ctx,
                     &mut group_member_workspace,
@@ -5595,7 +5760,10 @@ pub(crate) fn install(
     }
     let mut layer_id_counts = HashMap::<Uuid, usize>::new();
     let mut layer_count_workspace = ctx.reserve_scoped(0, "Rhino layer identity workspace")?;
-    for layer in ctx.admit_iter(&(scan.metadata.layers)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for layer in ctx
+        .admit_iter(&(scan.metadata.layers)[..], "Rhino install traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if let Some(id) = layer.id {
             if let Some(count) = layer_id_counts.get_mut(&id) {
                 *count += 1;
@@ -5608,7 +5776,10 @@ pub(crate) fn install(
             }
         }
     }
-    for layer in ctx.admit_iter(&(scan.metadata.layers)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for layer in ctx
+        .admit_iter(&(scan.metadata.layers)[..], "Rhino install traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let rendering = match rendering_attributes(
             ctx,
             scan.data,
@@ -5704,7 +5875,10 @@ pub(crate) fn install(
         |group| group.archive_index,
         "Rhino group index counts",
     )?;
-    for (index, count) in ctx.admit_iter(&(group_index_counts)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for (index, count) in ctx
+        .admit_iter(&(group_index_counts)[..], "Rhino install traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         if *count > 1 {
             push_presentation_loss(
                 ctx,
@@ -5732,8 +5906,12 @@ pub(crate) fn install(
             .ok()
             .and_then(|position| group_index_counts.get(position).map(|(_, count)| *count));
         group.links = if index_count == Some(1) {
-            ctx.remove_hash_map(&mut group_members, &group.archive_index, "Rhino group member removal")?
-                .unwrap_or_default()
+            ctx.remove_hash_map(
+                &mut group_members,
+                &group.archive_index,
+                "Rhino group member removal",
+            )?
+            .unwrap_or_default()
         } else {
             Vec::new()
         };

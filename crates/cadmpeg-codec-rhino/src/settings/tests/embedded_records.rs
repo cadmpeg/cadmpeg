@@ -797,7 +797,10 @@ fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
     let metadata = parse_test_metadata(&[], ArchiveVersion::V5, &[table], &mut warnings);
     assert_eq!(metadata.settings.current_layer, Some(7));
     assert_eq!(
-        crate::decode::with_expand_bytes(&[], |expand| warnings.messages(expand.ctx()).expect("diagnostic traversal fits")).collect::<Vec<_>>(),
+        crate::decode::with_expand_bytes(&[], |expand| warnings
+            .messages(expand.ctx())
+            .expect("diagnostic traversal fits"))
+        .collect::<Vec<_>>(),
         ["duplicate singleton metadata record 0xa0000038; later record wins"]
     );
 }
