@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of application-owned mesh and point payloads.
 
+use cadmpeg_core::decode::tree::AdmittedXml;
 use cadmpeg_core::decode::{BoundedCount, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -27,8 +28,21 @@ pub(crate) fn transfer(
     entries: &[EntryRecord],
     admitted_entities: &mut u64,
 ) -> Result<bool, CodecError> {
+    if !ctx.any_by(
+        properties,
+        |property| {
+            Ok(matches!(
+                property.type_name.as_str(),
+                "Mesh::PropertyMeshKernel" | "Points::PropertyPointKernel"
+            ))
+        },
+        "FreeCAD geometry property search",
+    )? {
+        return Ok(false);
+    }
+    let mut entry_index = None;
     let mut transferred = false;
-    for property in properties {
+    for property in ctx.admit_iter(properties, "FreeCAD geometry properties")? {
         let geometry_kind = match property.type_name.as_str() {
             "Mesh::PropertyMeshKernel" => GeometryKind::Mesh,
             "Points::PropertyPointKernel" => GeometryKind::Points,
@@ -43,10 +57,35 @@ pub(crate) fn transfer(
                 "FreeCAD geometry side-entry error",
             )?));
         }
-        let root_entry = validate_value_root(ctx, property, geometry_kind.value_tag())?;
+        let admitted_document = ctx
+            .parse_xml(property.xml.text(), "FreeCAD XML tree")
+            .or_else(|error| {
+                let CodecError::Malformed(error) = error else {
+                    return Err(error);
+                };
+                Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("invalid geometry property XML {}: {error}", property.id),
+                    "FreeCAD geometry XML error",
+                )?))
+            })?;
+        let (root_entry, _root_storage) =
+            ctx.with_scoped_storage("FreeCAD geometry side-entry lookup", || {
+                validate_value_root(
+                    ctx,
+                    property,
+                    geometry_kind.value_tag(),
+                    Some(admitted_document.document()),
+                )
+            })?;
         let side_entry_matches_root = property.side_entries().len()
             == usize::from(root_entry.is_some())
-            && property.side_entries().first() == root_entry.as_ref();
+            && match (property.side_entries().first(), root_entry.as_ref()) {
+                (Some(side), Some(root)) => {
+                    ctx.equal(side, root, "FreeCAD geometry side-entry equality")?
+                }
+                (None, None) => true,
+                _ => false,
+            };
         if !side_entry_matches_root {
             return Err(CodecError::Malformed(
                 "geometry property has an unowned side-entry reference".into(),
@@ -55,7 +94,20 @@ pub(crate) fn transfer(
         let Some(entry_name) = root_entry else {
             continue;
         };
-        let Some(entry) = entries.iter().find(|entry| entry.name() == entry_name) else {
+        if entry_index.is_none() {
+            entry_index = Some(ctx.collect_scoped_btree_map(
+                entries.iter().map(|entry| (entry.name(), entry)),
+                "FreeCAD geometry entry index",
+            )?);
+        }
+        let entry = entry_index
+            .as_ref()
+            .map(|(index, _storage)| {
+                ctx.get_btree_map(index, entry_name.as_str(), "FreeCAD geometry entry lookup")
+            })
+            .transpose()?
+            .flatten();
+        let Some(entry) = entry else {
             return Err(CodecError::Malformed(ctx.format_retained(
                 format_args!(
                     "geometry property {} references missing side entry {entry_name}",
@@ -65,21 +117,22 @@ pub(crate) fn transfer(
             )?));
         };
         if geometry_kind == GeometryKind::Mesh {
+            drop(admitted_document);
             ctx.reserve_vec(&mut ir.model.tessellations, 1, "FreeCAD mesh tessellations")?;
             ir.model
                 .tessellations
                 .push(parse_mesh(ctx, property, entry.data())?);
             transferred = true;
         } else if geometry_kind == GeometryKind::Points {
-            let points = parse_points(
+            parse_points(
                 ctx,
                 property,
                 entry.data(),
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 admitted_entities,
+                Some(admitted_document),
+                &mut ir.model.points,
             )?;
-            ctx.reserve_vec(&mut ir.model.points, points.len(), "FreeCAD point records")?;
-            ir.model.points.extend(points);
             transferred = true;
         }
     }
@@ -105,40 +158,45 @@ fn validate_value_root(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
     expected_tag: &str,
+    document: Option<&roxmltree::Document<'_>>,
 ) -> Result<Option<String>, CodecError> {
-    let admitted_document = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
-        .or_else(|error| {
-            let CodecError::Malformed(error) = error else {
-                return Err(error);
-            };
-            Err(CodecError::Malformed(ctx.format_retained(
-                format_args!("invalid geometry property XML {}: {error}", property.id),
-                "FreeCAD geometry XML error",
-            )?))
-        })?;
-    let document = admitted_document.document();
-    let mut roots = document
-        .root_element()
-        .children()
-        .filter(|node| node.is_element() && node.has_tag_name(expected_tag));
-    let root = roots.next();
-    let extra = roots.next().is_some();
-    let Some(root) = root.filter(|_| !extra) else {
+    let admitted_document;
+    let document = if let Some(document) = document {
+        document
+    } else {
+        admitted_document = ctx
+            .parse_xml(property.xml.text(), "FreeCAD XML tree")
+            .or_else(|error| {
+                let CodecError::Malformed(error) = error else {
+                    return Err(error);
+                };
+                Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("invalid geometry property XML {}: {error}", property.id),
+                    "FreeCAD geometry XML error",
+                )?))
+            })?;
+        admitted_document.document()
+    };
+    let property_root = ctx.xml_root_element(document, "FreeCAD geometry property root")?;
+    let mut roots = property_root.children();
+    let mut root = None;
+    let mut count = 0;
+    while let Some(node) = ctx.next_charged(&mut roots, "FreeCAD geometry value roots")? {
+        if ctx.xml_has_tag_name(node, expected_tag, "FreeCAD geometry value tag")? {
+            root = Some(node);
+            count += 1;
+        }
+    }
+    let Some(root) = root.filter(|_| count == 1) else {
         return Err(CodecError::Malformed(ctx.format_retained(
             format_args!(
                 "geometry property {} must contain exactly one {expected_tag} value root, found {}",
-                property.id,
-                document
-                    .root_element()
-                    .children()
-                    .filter(|node| node.is_element() && node.has_tag_name(expected_tag))
-                    .count()
+                property.id, count
             ),
             "FreeCAD geometry root error",
         )?));
     };
-    root.attribute("file")
+    ctx.xml_attribute(root, "file", "FreeCAD geometry file attribute")?
         .filter(|value| !value.is_empty())
         .map(|value| ctx.copy_retained_text(value, "FreeCAD geometry side-entry name"))
         .transpose()
@@ -189,7 +247,7 @@ fn parse_mesh(
         ));
     }
     let mut vertices = ctx.collection_vec(point_count, "FreeCAD mesh vertices")?;
-    for _ in 0..point_count {
+    for _ in ctx.admit_iter(0..point_count, "FreeCAD mesh vertex visits")? {
         vertices.push(reader.point3(byte_order, "mesh point")?);
     }
     // Each facet consumes three point indices and three neighbour indices (24 bytes),
@@ -203,7 +261,7 @@ fn parse_mesh(
             CodecError::Malformed("mesh facet count exceeds remaining payload".into())
         })?;
     let mut triangles = ctx.collection_vec(facet_capacity, "FreeCAD mesh facets")?;
-    for _ in 0..facet_count {
+    for _ in ctx.admit_iter(0..facet_count, "FreeCAD mesh facet visits")? {
         let triangle = [
             reader.index(byte_order, point_count, "mesh facet point")?,
             reader.index(byte_order, point_count, "mesh facet point")?,
@@ -247,7 +305,9 @@ fn parse_points(
     bytes: &[u8],
     current_entities: u64,
     admitted_entities: &mut u64,
-) -> Result<Vec<Point>, CodecError> {
+    document: Option<AdmittedXml<'_, '_>>,
+    points: &mut Vec<Point>,
+) -> Result<(), CodecError> {
     let mut reader = Reader::new(bytes);
     let count = reader.count(ByteOrder::Little, "point-cloud point count")?;
     reader
@@ -263,16 +323,19 @@ fn parse_points(
         admitted_entities,
         "FreeCAD point-cloud entities",
     )?;
-    let transform = point_transform(ctx, property)?;
-    let mut points = ctx.collection_vec(count, "FreeCAD point-cloud points")?;
-    for index in 0..count {
+    let transform = point_transform(ctx, property, document.as_ref().map(AdmittedXml::document))?;
+    drop(document);
+    ctx.reserve_vec(points, count, "FreeCAD point-cloud points")?;
+    for index in ctx.admit_iter(0..count, "FreeCAD point-cloud point visits")? {
+        let (ordinal, _ordinal_storage) =
+            ctx.format_scoped(format_args!("{index}"), "FreeCAD point ordinal")?;
         let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
         points.push(Point::new(
             PointId::mint(crate::native::model_id_charged(
                 ctx,
                 "point",
                 &property.id,
-                &index.to_string(),
+                &ordinal,
             )?)
             .map_err(CodecError::malformed)?,
             transform_point(transform, position)?,
@@ -280,38 +343,50 @@ fn parse_points(
         ));
     }
     reader.finish("point-cloud payload")?;
-    Ok(points)
+    Ok(())
 }
 
 fn point_transform(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
+    document: Option<&roxmltree::Document<'_>>,
 ) -> Result<[[FiniteReal; 4]; 4], CodecError> {
-    let admitted_document = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
-        .or_else(|error| {
-            let CodecError::Malformed(error) = error else {
-                return Err(error);
-            };
-            Err(CodecError::Malformed(ctx.format_retained(
-                format_args!("invalid point property XML {}: {error}", property.id),
-                "FreeCAD point XML error",
-            )?))
-        })?;
-    let document = admitted_document.document();
-    let Some(text) = document
-        .root_element()
-        .children()
-        .find(|node| node.is_element() && node.has_tag_name("Points"))
-        .and_then(|node| node.attribute("mtrx"))
-    else {
+    let admitted_document;
+    let document = if let Some(document) = document {
+        document
+    } else {
+        admitted_document = ctx
+            .parse_xml(property.xml.text(), "FreeCAD XML tree")
+            .or_else(|error| {
+                let CodecError::Malformed(error) = error else {
+                    return Err(error);
+                };
+                Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("invalid point property XML {}: {error}", property.id),
+                    "FreeCAD point XML error",
+                )?))
+            })?;
+        admitted_document.document()
+    };
+    let property_root = ctx.xml_root_element(document, "FreeCAD point property root")?;
+    let point_root = ctx.find_by(
+        property_root.children(),
+        |node| ctx.xml_has_tag_name(*node, "Points", "FreeCAD point value tag"),
+        "FreeCAD point value root",
+    )?;
+    let text = point_root
+        .map(|node| ctx.xml_attribute(node, "mtrx", "FreeCAD point matrix attribute"))
+        .transpose()?
+        .flatten();
+    let Some(text) = text else {
         return Ok(identity());
     };
     let mut values = [0.0_f64; 16];
     let mut count = 0_usize;
-    for token in text.split_whitespace() {
-        let value = token
-            .parse::<f64>()
+    let mut tokens = text.split_whitespace();
+    while let Some(token) = ctx.next_charged(&mut tokens, "FreeCAD point matrix token visits")? {
+        let value = ctx
+            .parse_text::<f64>(token, "FreeCAD point matrix scalar")?
             .map_err(|_| CodecError::Malformed("invalid point-cloud transform scalar".into()))?;
         if count < values.len() {
             values[count] = value;
@@ -515,6 +590,162 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn geometry_without_payload_skips_entry_index() {
+        let property = resource_test_property();
+        let entry = crate::test_support::entry_record(
+            "fcstd:native:entry#unused".into(),
+            "unused".into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            vec![1],
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "FreeCAD geometry entry index",
+            None,
+        );
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        assert!(
+            !super::transfer(&ctx, &mut ir, &[property], &[entry], &mut 0).expect("empty geometry")
+        );
+        assert!(ir.model.points.is_empty());
+        assert!(ir.model.tessellations.is_empty());
+    }
+
+    #[test]
+    fn geometry_population_work_refuses_at_caller_limit() {
+        let mut mesh = Vec::new();
+        mesh.extend_from_slice(&0xa0b0_c0d0_u32.to_le_bytes());
+        mesh.extend_from_slice(&0x0001_0000_u32.to_le_bytes());
+        mesh.extend_from_slice(&[0; mesh_hdr::LEN - mesh_hdr::INFORMATION]);
+        mesh.extend_from_slice(&1_u32.to_le_bytes());
+        mesh.extend_from_slice(&1_u32.to_le_bytes());
+        mesh.extend_from_slice(&[0; 12 + 24 + 24]);
+        for operation in ["FreeCAD mesh vertex visits", "FreeCAD mesh facet visits"] {
+            crate::test_support::refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                &mesh,
+                operation,
+                |ctx| parse_mesh(ctx, &resource_test_property(), &mesh),
+            );
+        }
+        let mut points = 1_u32.to_le_bytes().to_vec();
+        points.extend_from_slice(&[0; 12]);
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &points,
+            "FreeCAD point-cloud point visits",
+            |ctx| {
+                parse_points(
+                    ctx,
+                    &resource_test_property(),
+                    &points,
+                    0,
+                    &mut 0,
+                    None,
+                    &mut Vec::new(),
+                )
+            },
+        );
+    }
+
+    #[test]
+    fn geometry_xml_queries_refuse_at_caller_limit() {
+        let mut property = resource_test_property();
+        property.xml = RetainedXml::from_text(r#"<Property><Points file="payload" mtrx="1 0 0 10 0 1 0 20 0 0 1 30 0 0 0 1"/></Property>"#.into(), 0).expect("XML");
+        for operation in [
+            "FreeCAD geometry property root",
+            "FreeCAD geometry value roots",
+            "FreeCAD geometry file attribute",
+        ] {
+            crate::test_support::refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                &[],
+                operation,
+                |ctx| super::validate_value_root(ctx, &property, "Points", None),
+            );
+        }
+        for operation in [
+            "FreeCAD point value root",
+            "FreeCAD point matrix attribute",
+            "FreeCAD point matrix token visits",
+            "FreeCAD point matrix scalar",
+        ] {
+            crate::test_support::refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                &[],
+                operation,
+                |ctx| super::point_transform(ctx, &property, None),
+            );
+        }
+    }
+
+    #[test]
+    fn geometry_reuses_the_admitted_property_xml() {
+        let mut property = resource_test_property();
+        property.xml = RetainedXml::from_text(r#"<Property><Points file="payload" mtrx="1 0 0 10 0 1 0 20 0 0 1 30 0 0 0 1"/></Property>"#.into(), 0).expect("XML");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let admitted = ctx
+            .parse_xml(property.xml.text(), "FreeCAD XML tree")
+            .expect("XML");
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "FreeCAD XML tree",
+            None,
+        );
+        assert_eq!(
+            super::validate_value_root(&ctx, &property, "Points", Some(admitted.document()))
+                .expect("root"),
+            Some("payload".into())
+        );
+        let transform = super::point_transform(&ctx, &property, Some(admitted.document()))
+            .expect("transform without reparsing");
+        assert_eq!(
+            [
+                transform[0][3].get(),
+                transform[1][3].get(),
+                transform[2][3].get()
+            ],
+            [10.0, 20.0, 30.0]
+        );
+    }
+
+    #[test]
+    fn point_records_release_admitted_xml_before_population() {
+        let mut bytes = 256_u32.to_le_bytes().to_vec();
+        bytes.resize(4 + 256 * 12, 0);
+        let property = resource_test_property();
+        let error = crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            &bytes,
+            "FreeCAD point-cloud points",
+            |ctx| {
+                let document = ctx.parse_xml(property.xml.text(), "FreeCAD XML tree")?;
+                ctx.with_scoped_storage("FreeCAD point test records", || {
+                    parse_points(
+                        ctx,
+                        &property,
+                        &bytes,
+                        0,
+                        &mut 0,
+                        Some(document),
+                        &mut Vec::new(),
+                    )
+                })
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.used == 0));
+    }
+
+    #[test]
     fn point_cloud_entities_refuse_before_records_and_are_not_admitted_twice() {
         let mut bytes = 2_u32.to_le_bytes().to_vec();
         bytes.extend_from_slice(&[0; 24]);
@@ -525,19 +756,25 @@ pub(crate) mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
         let mut admitted = 0;
         assert!(
-            matches!(parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut admitted),
+            matches!(parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut admitted, None, &mut Vec::new()),
             Err(CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities && limit.additional == 2)
         );
         assert_eq!(admitted, 0);
         policy.limits.max_entities = 2;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
-        assert_eq!(
-            parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut admitted)
-                .expect("admitted points")
-                .len(),
-            2
-        );
+        let mut points = Vec::new();
+        parse_points(
+            &ctx,
+            &resource_test_property(),
+            &bytes,
+            0,
+            &mut admitted,
+            None,
+            &mut points,
+        )
+        .expect("admitted points");
+        assert_eq!(points.len(), 2);
         ctx.admit_entities(2, &mut admitted, "aggregate")
             .expect("already admitted");
         assert!(matches!(
@@ -617,7 +854,7 @@ pub(crate) mod tests {
         crate::test_support::assert_retained_refusal_at(
             &[],
             "FreeCAD geometry root error",
-            |ctx| super::validate_value_root(ctx, &property, "Points"),
+            |ctx| super::validate_value_root(ctx, &property, "Points", None),
         );
     }
 
@@ -627,7 +864,7 @@ pub(crate) mod tests {
         property.xml =
             RetainedXml::from_text("<Property><Points>".into(), 0).expect("retained XML span");
         crate::test_support::assert_retained_refusal_at(&[], "FreeCAD point XML error", |ctx| {
-            super::point_transform(ctx, &property)
+            super::point_transform(ctx, &property, None)
         });
     }
 
@@ -637,7 +874,7 @@ pub(crate) mod tests {
         property.xml =
             RetainedXml::from_text("<Property><Points>".into(), 0).expect("retained XML span");
         crate::test_support::assert_retained_refusal_at(&[], "FreeCAD geometry XML error", |ctx| {
-            super::validate_value_root(ctx, &property, "Points")
+            super::validate_value_root(ctx, &property, "Points", None)
         });
     }
 
@@ -687,14 +924,9 @@ pub(crate) mod tests {
         mesh.extend_from_slice(&1_u32.to_le_bytes());
         mesh.extend_from_slice(&0_u32.to_le_bytes());
         mesh.extend_from_slice(&[0; 36]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&mesh, &arena, &policy)
-            .expect("root mesh is within the input limit");
-        assert!(matches!(parse_mesh(&ctx, &resource_test_property(), &mesh),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD mesh vertices"));
+        crate::test_support::assert_collection_refusal_at(&mesh, "FreeCAD mesh vertices", |ctx| {
+            parse_mesh(ctx, &resource_test_property(), &mesh)
+        });
     }
 
     #[test]
@@ -704,7 +936,17 @@ pub(crate) mod tests {
         crate::test_support::assert_collection_refusal_at(
             &points,
             "FreeCAD point-cloud points",
-            |ctx| parse_points(ctx, &resource_test_property(), &points, 0, &mut 0),
+            |ctx| {
+                parse_points(
+                    ctx,
+                    &resource_test_property(),
+                    &points,
+                    0,
+                    &mut 0,
+                    None,
+                    &mut Vec::new(),
+                )
+            },
         );
     }
 
@@ -713,7 +955,7 @@ pub(crate) mod tests {
         let bytes = 1_000_000_u32.to_le_bytes();
         crate::test_support::with_service_context(&bytes, |ctx| {
             assert!(
-                matches!(parse_points(ctx, &resource_test_property(), &bytes, 0, &mut 0),
+                matches!(parse_points(ctx, &resource_test_property(), &bytes, 0, &mut 0, None, &mut Vec::new()),
                 Err(CodecError::Malformed(message))
                     if message == "point-cloud count exceeds remaining payload")
             );
@@ -728,7 +970,15 @@ pub(crate) mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
         assert!(matches!(
-            parse_points(&ctx, &resource_test_property(), &bytes, 0, &mut 0),
+            parse_points(
+                &ctx,
+                &resource_test_property(),
+                &bytes,
+                0,
+                &mut 0,
+                None,
+                &mut Vec::new()
+            ),
             Err(CodecError::Malformed(_))
         ));
     }
@@ -740,7 +990,17 @@ pub(crate) mod tests {
         crate::test_support::assert_retained_refusal_at(
             &bytes,
             "FreeCAD point-cloud points",
-            |ctx| parse_points(ctx, &resource_test_property(), &bytes, 0, &mut 0),
+            |ctx| {
+                parse_points(
+                    ctx,
+                    &resource_test_property(),
+                    &bytes,
+                    0,
+                    &mut 0,
+                    None,
+                    &mut Vec::new(),
+                )
+            },
         );
     }
 
@@ -750,32 +1010,18 @@ pub(crate) mod tests {
         let mut points = Vec::new();
         points.extend_from_slice(&1_u32.to_le_bytes());
         points.extend_from_slice(&[0; 12]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            crate::native::model_id("point", &property.id, "0").len(),
-        ) + cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<cadmpeg_ir::topology::Point>(),
-        ) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&points, &arena, &policy)
-            .expect("root points are within the input limit");
-        assert!(matches!(parse_points(&ctx, &property, &points, 0, &mut 0),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD model identity"));
+        crate::test_support::assert_retained_refusal_at(&points, "FreeCAD model identity", |ctx| {
+            parse_points(ctx, &property, &points, 0, &mut 0, None, &mut Vec::new())
+        });
     }
 
     #[test]
     fn geometry_association_refuses_on_retained_limit() {
         let property = resource_test_property();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(property.owner.len()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within the input limit");
-        assert!(
-            matches!(association(&ctx, &property), Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD geometry object identity")
+        crate::test_support::assert_retained_refusal_at(
+            &[],
+            "FreeCAD geometry object identity",
+            |ctx| association(ctx, &property),
         );
     }
 
@@ -800,16 +1046,9 @@ pub(crate) mod tests {
             order: 0,
             xml: RetainedXml::from_text("<Mesh/>".to_owned(), 0).expect("valid XML span"),
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&mesh, &arena, &policy)
-            .expect("root mesh is within the input limit");
-        assert!(matches!(
-            parse_mesh(&ctx, &property, &mesh),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD mesh facets"
-        ));
+        crate::test_support::assert_collection_refusal_at(&mesh, "FreeCAD mesh facets", |ctx| {
+            parse_mesh(ctx, &property, &mesh)
+        });
     }
 
     #[test]
