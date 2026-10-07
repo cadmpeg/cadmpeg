@@ -5,7 +5,6 @@ use crate::ids::{key_word, kind};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
-use std::rc::Rc;
 
 use super::geometry::curve_carrier_record;
 use super::{source_numeric_id, RecordExt, ValueExt};
@@ -1243,7 +1242,7 @@ fn build_wire<'ctx>(
     id: u64,
     exchange: &Exchange,
     vdefs: &BTreeMap<u64, VertexDef>,
-    edefs: &BTreeMap<u64, Rc<EdgeDef>>,
+    edefs: &BTreeMap<u64, EdgeDef>,
     point_positions: &CarrierIndex,
     losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
     ctx: &'ctx DecodeContext<'_>,
@@ -1286,7 +1285,7 @@ fn build_wire<'ctx>(
 #[derive(Clone, Copy)]
 struct WireSources<'a> {
     vdefs: &'a BTreeMap<u64, VertexDef>,
-    edefs: &'a BTreeMap<u64, Rc<EdgeDef>>,
+    edefs: &'a BTreeMap<u64, EdgeDef>,
     point_positions: &'a CarrierIndex,
 }
 
@@ -1497,7 +1496,7 @@ fn build_wire_set<'ctx>(
 fn build_shell_wire<'ctx>(
     id: u64,
     exchange: &Exchange,
-    (vdefs, edefs): (&BTreeMap<u64, VertexDef>, &BTreeMap<u64, Rc<EdgeDef>>),
+    (vdefs, edefs): (&BTreeMap<u64, VertexDef>, &BTreeMap<u64, EdgeDef>),
     point_positions: &CarrierIndex,
     scope_root: bool,
     losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
@@ -2006,6 +2005,7 @@ fn build_geometric_set<'ctx>(
 struct VertexDef {
     point: u64,
 }
+#[derive(Clone, Copy)]
 enum EdgeDef {
     Bare {
         start: u64,
@@ -2105,7 +2105,7 @@ fn vertex_defs(
 fn edge_defs(
     exchange: &Exchange,
     ctx: &DecodeContext<'_>,
-) -> Result<BTreeMap<u64, Rc<EdgeDef>>, CodecError> {
+) -> Result<BTreeMap<u64, EdgeDef>, CodecError> {
     let mut edges = BTreeMap::new();
     let mut cache = BTreeMap::new();
     let mut cache_storage = ctx.reserve_scoped(0, "STEP edge cache storage")?;
@@ -2132,12 +2132,12 @@ fn edge_def_for(
     id: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-    cache: &mut BTreeMap<u64, Option<Rc<EdgeDef>>>,
+    cache: &mut BTreeMap<u64, Option<EdgeDef>>,
     cache_storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<Rc<EdgeDef>>, CodecError> {
+) -> Result<Option<EdgeDef>, CodecError> {
     if let Some(edge) = ctx.get_btree_map(cache, &id, "STEP topology cache lookup")? {
-        return Ok(edge.clone());
+        return Ok(*edge);
     }
     let _depth = ctx.enter_nested("step_edge_definition_recursion")?;
     if ctx.contains_btree_set(active, &id, "STEP topology active membership")? {
@@ -2205,16 +2205,7 @@ fn edge_def_for(
     };
     ctx.remove_btree_set(active, &id, "STEP topology active removal")?;
     drop(active_storage);
-    let result = if let Some(definition) = result {
-        ctx.charge_retained(
-            u64_from_index(std::mem::size_of::<EdgeDef>() + 2 * std::mem::size_of::<usize>()),
-            "step_edge_definition_node",
-        )?;
-        Some(Rc::new(definition))
-    } else {
-        None
-    };
-    cache_storage.with_storage(|| ctx.insert_btree_map(cache, id, result.clone(), "step_edge_definition_cache"))?;
+    cache_storage.with_storage(|| ctx.insert_btree_map(cache, id, result, "step_edge_definition_cache"))?;
     Ok(result)
 }
 
@@ -2823,12 +2814,17 @@ struct BuildSources<'a, 'ctx, 'b> {
     exchange: &'a Exchange,
     ir: &'a CadIr,
     vdefs: &'a BTreeMap<u64, VertexDef>,
-    edefs: &'a BTreeMap<u64, Rc<EdgeDef>>,
+    edefs: &'a BTreeMap<u64, EdgeDef>,
     odefs: &'a BTreeMap<u64, OrientedDef>,
     shell_definitions: &'a BTreeMap<u64, ShellDef>,
     decoded_pcurves: &'a BTreeSet<u64>,
     point_positions: &'a CarrierIndex,
     ctx: &'ctx DecodeContext<'b>,
+}
+
+struct BuildState<'ctx, 'ir> {
+    failure: Option<BuildFailure>,
+    selection_index: Option<PcurveSelectionIndex<'ctx, 'ir>>,
 }
 
 struct BuildRoot<'a> {
@@ -2864,13 +2860,13 @@ fn build<'ctx>(
         outcome.fail(Some(BuildFailure { record_id: id, carrier_kind: CarrierKind::TopologyRootCarrier }))?;
         return Ok(outcome);
     };
+    let mut state = BuildState { failure: None, selection_index: None };
     let solid = root.partial(ctx, "MANIFOLD_SOLID_BREP")?.is_some()
         || root.partial(ctx, "BREP_WITH_VOIDS")?.is_some()
         || root.partial(ctx, "FACETED_BREP")?.is_some();
     if solid {
         let body = BodyId::from(ids::data(kind!("body"), id));
         let region = RegionId::from(ids::data(kind!("region"), id));
-        let mut failure = None;
         let scope_shell_carriers = shell_steps.len() > 1 || scope_root;
         let built = build_one(
             id,
@@ -2887,12 +2883,12 @@ fn build<'ctx>(
                 root: scope_root,
             },
             (&mut *losses, &mut *loss_storage),
-            &mut failure,
+            &mut state,
         );
         let mut outcome = BuildOutcome::new(ctx)?;
         match built {
             Ok(built) => outcome.push(built, ctx)?,
-            Err(BuildError::Absent) => outcome.fail(failure)?,
+            Err(BuildError::Absent) => outcome.fail(state.failure.take())?,
             Err(BuildError::Resource(error)) => return Err(error),
         }
         return Ok(outcome);
@@ -2901,7 +2897,7 @@ fn build<'ctx>(
     let scoped = shell_steps.len() > 1;
     let mut outcome = BuildOutcome::new(ctx)?;
     for shell_reference in ctx.admit_iter(shell_steps, "STEP topology collection traversal")? {
-        let mut failure = None;
+        state.failure = None;
         let shell_step = if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
             shell_reference
         } else {
@@ -2946,10 +2942,10 @@ fn build<'ctx>(
                 root: scope_root,
             },
             (&mut *losses, &mut *loss_storage),
-            &mut failure,
+            &mut state,
         ) {
             Ok(value) => outcome.push(value, ctx)?,
-            Err(BuildError::Absent) => outcome.fail(failure)?,
+            Err(BuildError::Absent) => outcome.fail(state.failure.take())?,
             Err(BuildError::Resource(error)) => return Err(error),
         }
     }
@@ -2971,16 +2967,17 @@ impl From<CodecError> for BuildError {
     }
 }
 
-fn build_one<'ctx>(
+fn build_one<'ctx, 'ir>(
     id: u64,
     root: &RawRecord,
-    sources: BuildSources<'_, 'ctx, '_>,
+    sources: BuildSources<'ir, 'ctx, '_>,
     root_parts: BuildRoot<'_>,
     scope: BuildScope,
     losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
-    failure: &mut Option<BuildFailure>,
+    state: &mut BuildState<'ctx, 'ir>,
 ) -> Result<Built<'ctx>, BuildError> {
     let (losses, loss_storage) = losses;
+    let BuildState { failure, selection_index } = state;
     let BuildSources {
         exchange,
         ir,
@@ -3007,7 +3004,6 @@ fn build_one<'ctx>(
     let solid = root.partial(ctx, "MANIFOLD_SOLID_BREP")?.is_some()
         || root.partial(ctx, "BREP_WITH_VOIDS")?.is_some()
         || root.partial(ctx, "FACETED_BREP")?.is_some();
-    let mut selection_index = None;
     let mut typed = BTreeSet::new();
     built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_brep_typed"))?;
     let mut vertices = Vec::new();
@@ -3041,6 +3037,8 @@ fn build_one<'ctx>(
     let mut used_v = BTreeSet::<(u64, u64)>::new();
     let mut used_e = BTreeSet::<(u64, u64)>::new();
     let mut used_shells = BTreeSet::new();
+    let mut claimed_shell_ancestors = BTreeSet::new();
+    let mut ancestor_storage = ctx.reserve_scoped(0, "STEP shell ancestor scratch")?;
     let mut used_faces = BTreeSet::new();
     let mut radial = BTreeMap::<EdgeId, Vec<usize>>::new();
     let mut poly_edges = BTreeMap::<(u64, EdgeId), (u64, u64)>::new();
@@ -3059,7 +3057,7 @@ fn build_one<'ctx>(
                 (shell_reference, true)
             } else {
                 require_carrier(
-                    built_storage.with_storage(|| shell_def_for(shell_reference, shell_definitions, &mut typed, ctx))?,
+                    built_storage.with_storage(|| shell_def_for(shell_reference, shell_definitions, &mut typed, &mut claimed_shell_ancestors, &mut ancestor_storage, ctx))?,
                     failure,
                     shell_reference,
                     CarrierKind::ShellCarrier,
@@ -3624,7 +3622,7 @@ fn build_one<'ctx>(
                             Vec::new()
                         } else {
                             if selection_index.is_none() && associated.len() == 1 {
-                                selection_index = Some(PcurveSelectionIndex::build(ir, ctx)?);
+                                *selection_index = Some(PcurveSelectionIndex::build(ir, ctx)?);
                             }
                             match select_associated_pcurve(
                                 selection_index.as_ref(),
@@ -4764,7 +4762,7 @@ struct PcurveAssociationSources<'a> {
     candidates: &'a [PcurveId],
 }
 
-/// Lookups shared by the face/edge pcurve selection pass for one body.
+/// Lookups shared by every body built in one topology root walk.
 struct PcurveSelectionIndex<'ctx, 'ir> {
     model: DecodeModelIndex<'ctx, 'ir>,
     owned_procedurals: BTreeMap<&'ir str, &'ir cadmpeg_ir::geometry::ProceduralSurface>,
@@ -5146,7 +5144,7 @@ fn pcurve_declared_parameter_range(mut geometry: &PcurveGeometry, ctx: &DecodeCo
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();
-            { geometry = basis; continue; }
+            geometry = basis; continue;
         }
         PcurveGeometry::Transformed(placed) => { geometry = placed.basis(); continue; },
         PcurveGeometry::Line(_)
@@ -5650,12 +5648,12 @@ fn pcurve_has_angular_parameterization(mut geometry: &PcurveGeometry, ctx: &Deco
         | PcurveGeometry::SphericalGreatCircle(_) => true,
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();
-            { geometry = basis; continue; }
+            geometry = basis; continue;
         }
         PcurveGeometry::Transformed(placed) => { geometry = placed.basis(); continue; },
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let basis = trimmed_pcurve.basis();
-            { geometry = basis; continue; }
+            geometry = basis; continue;
         }
         PcurveGeometry::Line(_)
         | PcurveGeometry::PolarHarmonic(_)
@@ -5686,12 +5684,12 @@ fn pcurve_selection_parameter_domain(mut geometry: &PcurveGeometry, ctx: &Decode
             if parameter_range.endpoints()[0] < parameter_range.endpoints()[1] {
                 Some(parameter_range.endpoints())
             } else {
-                { geometry = basis; continue; }
+                geometry = basis; continue;
             }
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();
-            { geometry = basis; continue; }
+            geometry = basis; continue;
         }
         PcurveGeometry::Transformed(placed) => { geometry = placed.basis(); continue; },
         PcurveGeometry::Line(_)
@@ -5769,7 +5767,7 @@ fn surface_selection_parameter_domains_from_geometry(mut surface: &SolvedSurface
             ]
         }
         SolvedSurfaceGeometry::Transformed(placed) => {
-            { surface = placed.basis(); continue; }
+            surface = placed.basis(); continue;
         }
         SolvedSurfaceGeometry::Plane(_)
         | SolvedSurfaceGeometry::Cylinder(_)
@@ -5815,7 +5813,7 @@ fn curve_selection_parameter_domain_from_geometry(mut geometry: &SolvedCurveGeom
             })
         }
         SolvedCurveGeometry::Transformed(placed) => {
-            { geometry = placed.basis(); continue; }
+            geometry = placed.basis(); continue;
         }
         SolvedCurveGeometry::Line(_)
         | SolvedCurveGeometry::Parabola(_)
@@ -5954,6 +5952,8 @@ fn shell_def_for(
     reference: u64,
     shells: &BTreeMap<u64, ShellDef>,
     typed: &mut BTreeSet<u64>,
+    seen: &mut BTreeSet<u64>,
+    storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(u64, bool)>, CodecError> {
     let Some(definition) = ctx.get_btree_map(shells, &reference, "STEP topology shells lookup")? else {
@@ -5963,6 +5963,9 @@ fn shell_def_for(
     loop {
         ctx.charge_work(1, "STEP shell ancestor traversal")?;
         let Some(parent) = ctx.get_btree_map(shells, &current, "STEP shell ancestor lookup")?.and_then(|shell| shell.parent) else { break; };
+        if !storage.with_storage(|| ctx.insert_btree_set(seen, current, "STEP shell ancestor membership"))? {
+            break;
+        }
         ctx.insert_btree_set(typed, current, "step_shell_definition_claims")?;
         current = parent;
     }

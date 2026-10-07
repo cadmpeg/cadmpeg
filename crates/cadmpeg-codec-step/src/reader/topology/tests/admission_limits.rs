@@ -371,16 +371,6 @@ fn edge_definitions_refuse_collection_limit() {
 }
 
 #[test]
-fn edge_definition_node_refuses_retained_limit() {
-    assert!(
-        matches!(cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "step_edge_definition_node", |cap| Err::<(), CodecError>(edge_definition_refusal(u64::MAX, cap, u64::MAX))),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_edge_definition_node")
-    );
-}
-
-#[test]
 fn edge_definition_recursion_refuses_depth_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DUMMY();#2=DUMMY();#3=SUBEDGE('',#1,#2,#4);#4=EDGE('',#1,#2);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
@@ -438,23 +428,43 @@ fn shell_definitions_refuse_collection_limit() {
 
 #[test]
 fn shell_definition_claims_refuse_collection_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let definition = super::super::ShellDef {
-        base: 1,
-        forward: true,
-        parent: Some(1),
-    };
+    let definition = super::super::ShellDef { base: 1, forward: true, parent: Some(1) };
     let shells = BTreeMap::from([(2, definition), (1, super::super::ShellDef { base: 1, forward: true, parent: None })]);
-    assert!(
-        matches!(super::super::shell_def_for(2, &shells, &mut std::collections::BTreeSet::new(), &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_shell_definition_claims")
-    );
+    // One completed-ancestor cache node precedes the same stage claim node.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "step_shell_definition_claims", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+        let mut seen_storage = ctx.reserve_scoped(0, "test shell ancestor scratch").expect("empty ancestor storage");
+        let mut typed = std::collections::BTreeSet::new();
+        let result = super::super::shell_def_for(2, &shells, &mut typed, &mut std::collections::BTreeSet::new(), &mut seen_storage, &ctx);
+        if let Err(CodecError::ResourceLimit(limit)) = &result { assert_eq!(ctx.resource_refusal(), Some(*limit)); assert!(typed.is_empty()); }
+        result.map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == "step_shell_definition_claims"));
+}
+
+fn shell_ancestor_work(count: u64) -> u64 {
+    let shells = (1..=count).map(|id| (id, super::super::ShellDef { base: 1, forward: true, parent: (id > 1).then_some(id - 1) })).collect();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut storage = ctx.reserve_scoped(0, "test shell ancestor scratch").expect("empty ancestor storage");
+    let mut seen = std::collections::BTreeSet::new();
+    let mut claims = std::collections::BTreeSet::new();
+    for reference in (1..=count).rev() {
+        assert_eq!(super::super::shell_def_for(reference, &shells, &mut claims, &mut seen, &mut storage, &ctx).expect("shell claims"), Some((1, true)));
+    }
+    assert_eq!(claims, (2..=count).collect());
+    let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "measure shell ancestor work").expect_err("work counter probe") else { panic!("work probe resource refusal"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    limit.used
+}
+
+#[test]
+fn shell_ancestor_claims_reuse_completed_walks() {
+    let small = shell_ancestor_work(64);
+    let large = shell_ancestor_work(128);
+    assert!(large < 3 * small, "shell ancestor work grew from {small} to {large}");
 }
 
 #[test]
@@ -717,12 +727,14 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
     let region =
         cadmpeg_ir::ids::RegionId::mint("step:data:region#3").expect("valid region identity");
     let mut loss_storage = ctx.reserve_scoped(0, "test loss slots").expect("empty loss storage");
+    let ir = cadmpeg_ir::CadIr::empty();
+    let mut state = super::super::BuildState { failure: None, selection_index: None };
     super::super::build_one(
         3,
         exchange.records().get(&3).expect("model"),
         super::super::BuildSources {
             exchange: &exchange,
-            ir: &cadmpeg_ir::CadIr::empty(),
+            ir: &ir,
             vdefs: &BTreeMap::new(),
             edefs: &BTreeMap::new(),
             odefs: &BTreeMap::new(),
@@ -742,7 +754,7 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
             root: false,
         },
         (&mut Vec::new(), &mut loss_storage),
-        &mut None,
+        &mut state,
     )
     .err()
     .expect("builder exceeds limit")
