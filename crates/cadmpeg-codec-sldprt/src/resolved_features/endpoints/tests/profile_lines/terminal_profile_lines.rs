@@ -68,7 +68,7 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -88,7 +88,7 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -111,7 +111,7 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -131,7 +131,7 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -145,7 +145,7 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -168,7 +168,7 @@ fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()

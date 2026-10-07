@@ -40,7 +40,7 @@ fn marker_center_indexes_keep_owner_scope_units_and_cached_storage() {
     let center = marker("center", "sketch", Some([0.005, 0.006]));
     let other = marker("other", "another-sketch", Some([0.005, 0.007]));
     let curve = marker("curve", "sketch", None);
-    let geometry = MarkerGeometryIndex::new(&ctx, &[&center, &other, &curve]).unwrap();
+    let geometry = MarkerGeometryIndex::new(&ctx, &[&center, &other, &curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &[]).unwrap()).unwrap();
     let native = geometry.arc_centers(&curve, false, EPS_CENTER_POSITION).unwrap().unwrap();
     let repeated = geometry.arc_centers(&curve, false, EPS_CENTER_POSITION).unwrap().unwrap();
     assert!(std::ptr::eq(native, repeated));
@@ -56,7 +56,10 @@ fn marker_center_indexes_keep_owner_scope_units_and_cached_storage() {
 
 #[test]
 fn owner_rosters_keep_unlocated_ordinals_and_cache_each_subset() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let marker = |id: &str, owner: Option<&str>, offset: u64, kind, coordinates: Option<[f64; 2]>| {
         let mut marker = SketchInputEntity::new(id, "lane", 0, offset, kind);
         marker.feature_ref = owner.map(str::to_owned);
@@ -69,7 +72,7 @@ fn owner_rosters_keep_unlocated_ordinals_and_cache_each_subset() {
     let relation = marker("relation", Some("owner"), 20, SketchInputKind::Relation(crate::records::SketchRelationKind::Coincident), Some([1.0, 2.0]));
     let other = marker("other", Some("other-owner"), 0, SketchInputKind::Point, Some([1.0, 2.0]));
     let unowned = marker("unowned", None, 4, SketchInputKind::Point, Some([5.0, 6.0]));
-    let geometry = MarkerGeometryIndex::new(&ctx, &[&point, &other, &unlocated, &arc, &unowned, &relation]).unwrap();
+    let geometry = MarkerGeometryIndex::new(&ctx, &[&point, &other, &unlocated, &arc, &unowned, &relation], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &[]).unwrap()).unwrap();
     let all = geometry.roster(&arc, MarkerRoster::All).unwrap();
     assert_eq!(all.iter().map(|marker| marker.id()).collect::<Vec<_>>(), ["unlocated", "arc", "relation", "point"]);
     let located = geometry.roster(&arc, MarkerRoster::Located).unwrap();
@@ -84,4 +87,58 @@ fn owner_rosters_keep_unlocated_ordinals_and_cache_each_subset() {
         "index SLDPRT owner marker rosters", None,
     );
     assert_eq!(geometry.roster(&arc, MarkerRoster::Geometry).unwrap().as_ptr(), cached);
+}
+
+#[test]
+fn embedded_rosters_extend_once_and_keep_shorter_prefixes_after_failure() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let marker = |id: &str, offset, coordinates: Option<[f64; 2]>| {
+        let mut marker = SketchInputEntity::new(id, "lane", 0, offset, SketchInputKind::Point);
+        marker.feature_ref = Some("owner".into());
+        marker.coordinates_m = coordinates.and_then(cadmpeg_ir::units::FiniteVector::new);
+        marker
+    };
+    let first = marker("first", 0, Some([0.0, 0.0]));
+    let second = marker("second", 10, Some([1.0, 2.0]));
+    let short = marker("short", 110, None);
+    let long = marker("long", 210, None);
+    let prefixes = MarkerPrefixIndex::new(&ctx, &[]).unwrap();
+    assert!(prefixes.coordinates.set(vec![
+        LegacyCoordinateRecord { offset: 0, coordinates: [0.0, 0.0], code_two_count: 1, embedded_count: 0 },
+        LegacyCoordinateRecord { offset: 100, coordinates: [1.0, 2.0], code_two_count: 1, embedded_count: 1 },
+        LegacyCoordinateRecord { offset: 200, coordinates: [99.0, 99.0], code_two_count: 1, embedded_count: 2 },
+    ]).is_ok());
+    let geometry = MarkerGeometryIndex::new(&ctx, &[&second, &first], prefixes).unwrap();
+    assert_eq!(geometry.embedded_roster(&short).unwrap().unwrap().iter().map(|marker| marker.id()).collect::<Vec<_>>(), ["first", "second"]);
+    assert!(geometry.embedded_roster(&long).unwrap().is_none());
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "resolve SLDPRT embedded coordinate roster", None,
+    );
+    assert!(geometry.embedded_roster(&long).unwrap().is_none());
+    assert_eq!(geometry.embedded_roster(&short).unwrap().unwrap().len(), 2);
+}
+
+#[test]
+fn embedded_coordinate_index_keeps_relative_tolerance_ambiguity() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let marker = |id: &str, offset, coordinates: Option<[f64; 2]>| {
+        let mut marker = SketchInputEntity::new(id, "lane", 0, offset, SketchInputKind::Point);
+        marker.feature_ref = Some("owner".into());
+        marker.coordinates_m = coordinates.and_then(cadmpeg_ir::units::FiniteVector::new);
+        marker
+    };
+    let first = marker("first", 0, Some([1.0e9, 2.0]));
+    let close = marker("close", 10, Some([1.0e9 + 0.5, 2.0]));
+    let curve = marker("curve", 110, None);
+    let prefixes = MarkerPrefixIndex::new(&ctx, &[]).unwrap();
+    assert!(prefixes.coordinates.set(vec![
+        LegacyCoordinateRecord { offset: 0, coordinates: [1.0e9, 2.0], code_two_count: 1, embedded_count: 0 },
+        LegacyCoordinateRecord { offset: 100, coordinates: [1.0e9, 2.0], code_two_count: 1, embedded_count: 1 },
+    ]).is_ok());
+    let geometry = MarkerGeometryIndex::new(&ctx, &[&close, &first], prefixes).unwrap();
+    assert!(geometry.embedded_roster(&curve).unwrap().is_none());
 }

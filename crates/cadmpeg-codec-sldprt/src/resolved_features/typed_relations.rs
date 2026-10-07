@@ -2473,7 +2473,7 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     curve: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     markers: &[&'a SketchInputEntity],
-    geometry: &super::endpoints::geometry_index::MarkerGeometryIndex<'a, '_>,
+    geometry: &super::endpoints::geometry_index::MarkerGeometryIndex<'a, '_, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker curve endpoints";
     if let Some(endpoints) = extended_direct_object_line_endpoints(ctx, payload, curve, markers)? {

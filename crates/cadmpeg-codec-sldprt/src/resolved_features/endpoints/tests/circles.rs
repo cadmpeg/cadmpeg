@@ -68,7 +68,7 @@ fn current_coordinate_circle_uses_its_complete_square_handle_grid() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_circle_radius(&roster_ctx,
 &payload,
 &center,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(1.0)
@@ -79,7 +79,7 @@ fn current_coordinate_circle_uses_its_complete_square_handle_grid() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_circle_radius(&roster_ctx,
 &payload,
 &center,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None
@@ -201,7 +201,7 @@ fn extended_full_circle_uses_center_and_radial_point_roster() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_full_circle(&payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([0.0, 0.0], 4.0))
@@ -210,7 +210,7 @@ fn extended_full_circle_uses_center_and_radial_point_roster() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_full_circle(&payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None
@@ -260,7 +260,7 @@ fn extended_geometry_kind_one_full_circle_uses_explicit_center_index() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_geometry_full_circle(&payload,
 &entities[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([0.0, 0.0], 4.0))
@@ -269,7 +269,7 @@ fn extended_geometry_kind_one_full_circle_uses_explicit_center_index() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_geometry_full_circle(&payload,
 &entities[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None
@@ -279,7 +279,7 @@ fn extended_geometry_kind_one_full_circle_uses_explicit_center_index() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_geometry_full_circle(&payload,
 &entities[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None
@@ -349,14 +349,14 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
         super::compact_profile_full_circle(ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(ctx, &payload).unwrap()).unwrap(),
 )
     });
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::compact_profile_full_circle(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([0.0, 0.0], 3.0))
@@ -370,7 +370,7 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::compact_profile_full_circle(&roster_ctx,
 &payload,
 &current_circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([0.0, 0.0], 3.0))
@@ -385,7 +385,7 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::compact_profile_full_circle(&roster_ctx,
 &payload,
 current_kind_one_circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &current_kind_one_markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &current_kind_one_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([0.0, 0.0], 3.0))
@@ -398,7 +398,7 @@ current_kind_one_circle,
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::equal_index_coordinate_roster_full_circle(&payload,
 &current_circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([0.0, 0.0], 3.0))
@@ -416,7 +416,7 @@ current_kind_one_circle,
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::compact_profile_full_circle(&roster_ctx,
 &payload,
 &conflicting[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None
@@ -471,7 +471,7 @@ fn current_profile_circle_dimension_uses_one_based_radial_roster() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::current_profile_circle_dimension(&payload,
 &entities[2],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([0.0, 0.0], 5.0))
@@ -480,7 +480,7 @@ fn current_profile_circle_dimension_uses_one_based_radial_roster() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::current_profile_circle_dimension(&payload,
 &entities[2],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None
@@ -490,7 +490,7 @@ fn current_profile_circle_dimension_uses_one_based_radial_roster() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::current_profile_circle_dimension(&payload,
 &entities[2],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None
@@ -505,7 +505,7 @@ fn current_profile_circle_dimension_uses_one_based_radial_roster() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::current_profile_circle_dimension(&payload,
 &zero_radius[2],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &zero_markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &zero_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None
@@ -578,7 +578,7 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
     assert_eq!(
         { let ctx = cadmpeg_test_support::service_decode_context();
             let result = super::compact_legacy_profile_full_circle(&ctx, &payload, &entities[4],
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap(),
+                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap(),
                 &crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()); result }
         .unwrap(),
         Some(([0.0, 0.0], 12.0))
@@ -594,7 +594,7 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
     assert_eq!(
         { let ctx = cadmpeg_test_support::service_decode_context();
             let result = super::compact_legacy_profile_full_circle(&ctx, &payload, &entities[4],
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap(),
+                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap(),
                 &crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()); result }
         .unwrap(),
         Some(([0.0, 0.0], 5.5))
@@ -603,7 +603,7 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
     assert_eq!(
         { let ctx = cadmpeg_test_support::service_decode_context();
             let result = super::compact_legacy_profile_full_circle(&ctx, &payload, &entities[4],
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap(),
+                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap(),
                 &crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()); result }
         .unwrap(),
         None
@@ -699,10 +699,10 @@ fn compact_legacy_terminal_diameter_circle_uses_embedded_coordinate_roster() {
         ),
     ];
     let markers = entities.iter().collect::<Vec<_>>();
-    let Some((center, radius)) = { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::compact_legacy_terminal_diameter_circle(&roster_ctx,
+    let Some((center, radius)) = { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::compact_legacy_terminal_diameter_circle(
 &payload,
 &entities[4],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
     .unwrap() else {
         panic!("terminal circle did not resolve");
@@ -712,10 +712,10 @@ fn compact_legacy_terminal_diameter_circle_uses_embedded_coordinate_roster() {
 
     payload[circle_offset + 44..circle_offset + 46].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::compact_legacy_terminal_diameter_circle(&roster_ctx,
+        { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::compact_legacy_terminal_diameter_circle(
 &payload,
 &entities[4],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None
@@ -813,14 +813,14 @@ fn sole_out_of_roster_packed_curve_closes_one_open_profile_chain() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        { let ctx = cadmpeg_test_support::service_decode_context(); let result = super::implicit_profile_chain_closure_endpoints(&ctx, &payload, &entities[5], &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = super::implicit_profile_chain_closure_endpoints(&ctx, &payload, &entities[5], &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()); result }
         .unwrap(),
         Some([[0.0, 0.0], [1.0, 1.0]])
     );
 
     payload[176 + 48..176 + 52].copy_from_slice(&[0, 0, 1, 0]);
     assert_eq!(
-        { let ctx = cadmpeg_test_support::service_decode_context(); let result = super::implicit_profile_chain_closure_endpoints(&ctx, &payload, &entities[5], &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = super::implicit_profile_chain_closure_endpoints(&ctx, &payload, &entities[5], &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()); result }
         .unwrap(),
         None
     );
@@ -869,7 +869,7 @@ fn equal_index_coordinate_roster_carries_center_and_following_radial_point() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = equal_index_coordinate_roster_full_circle(&payload,
 &circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([1.0, 1.0], 2.0))
@@ -878,7 +878,7 @@ fn equal_index_coordinate_roster_carries_center_and_following_radial_point() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = equal_index_coordinate_roster_full_circle(&payload,
 &circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([1.0, 1.0], 2.0))
@@ -890,7 +890,7 @@ fn equal_index_coordinate_roster_carries_center_and_following_radial_point() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = equal_index_coordinate_roster_full_circle(&payload,
 &circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([1.0, 1.0], 2.0))
@@ -938,7 +938,7 @@ fn dimensioned_extended_full_circle_uses_center_and_radial_point_roster() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = equal_index_coordinate_roster_full_circle(&payload,
 &circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([1.0, 1.0], 2.0))
@@ -953,7 +953,7 @@ fn dimensioned_extended_full_circle_uses_center_and_radial_point_roster() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = equal_index_coordinate_roster_full_circle(&tagged,
 &circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &tagged).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([1.0, 1.0], 2.0))
@@ -962,7 +962,7 @@ fn dimensioned_extended_full_circle_uses_center_and_radial_point_roster() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = equal_index_coordinate_roster_full_circle(&tagged,
 &circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &tagged).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([1.0, 1.0], 2.0))
@@ -971,7 +971,7 @@ fn dimensioned_extended_full_circle_uses_center_and_radial_point_roster() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = equal_index_coordinate_roster_full_circle(&tagged,
 &circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &tagged).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None
@@ -980,7 +980,7 @@ fn dimensioned_extended_full_circle_uses_center_and_radial_point_roster() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = equal_index_coordinate_roster_full_circle(&payload,
 &circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None
@@ -1034,7 +1034,7 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::wide_coordinate_roster_full_circle(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([2.0, 3.0], 5.0))
@@ -1048,7 +1048,7 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::wide_coordinate_roster_full_circle(&roster_ctx,
 &payload,
 &extended_circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([2.0, 3.0], 5.0))
@@ -1058,7 +1058,7 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::wide_coordinate_roster_full_circle(&roster_ctx,
 &payload,
 &extended_circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([2.0, 3.0], 5.0))
@@ -1078,7 +1078,7 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::wide_coordinate_roster_full_circle(&roster_ctx,
 &terminal,
 &extended_circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &terminal_markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &terminal_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &terminal).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([2.0, 3.0], 5.0))
@@ -1093,7 +1093,7 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::wide_coordinate_roster_full_circle(&roster_ctx,
 &terminal,
 &extended_circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &direct_markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &direct_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &terminal).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([2.0, 3.0], 5.0))
@@ -1109,7 +1109,7 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::wide_coordinate_roster_full_circle(&roster_ctx,
 &short_terminal,
 &extended_circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &direct_markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &direct_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &short_terminal).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([2.0, 3.0], 5.0))
@@ -1119,7 +1119,7 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::wide_coordinate_roster_full_circle(&roster_ctx,
 &terminal,
 &extended_circle,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &terminal_markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &terminal_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &terminal).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None
@@ -1129,7 +1129,7 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::wide_coordinate_roster_full_circle(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None
@@ -1181,7 +1181,7 @@ fn legacy_profile_radial_circle_requires_one_selected_radial_locus() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::legacy_profile_radial_circle(&payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([0.0, 0.0], 3.0))
@@ -1190,7 +1190,7 @@ fn legacy_profile_radial_circle_requires_one_selected_radial_locus() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::legacy_profile_radial_circle(&payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None
@@ -1202,7 +1202,7 @@ fn legacy_profile_radial_circle_requires_one_selected_radial_locus() {
     assert_eq!(
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::legacy_profile_radial_circle(&payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         Some(([0.0, 0.0], 4.0))
@@ -1256,7 +1256,7 @@ fn extended_coordinate_ellipse_uses_its_complete_corner_grid() {
     assert!({ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::coordinate_ellipse_axes(&roster_ctx,
 &payload,
 &ellipse,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
     .unwrap()
     .is_some_and(|(axis, major, minor)| {
@@ -1269,7 +1269,7 @@ fn extended_coordinate_ellipse_uses_its_complete_corner_grid() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::coordinate_ellipse_axes(&roster_ctx,
 &payload,
 &ellipse,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap(),
         None

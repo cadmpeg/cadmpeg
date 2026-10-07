@@ -2081,6 +2081,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
         }
     }
 
+    let (result, _storage) = ctx.with_scoped_storage("resolve SLDPRT rectangle scratch", || {
     let mut roster = Vec::new();
     ctx.extend_from_slice(
         &mut roster,
@@ -2496,6 +2497,8 @@ pub(super) fn indexed_rectangle_from_line_cycle(
         .then_some(Ok(corners))
     })()
     .transpose()
+    })?;
+    Ok(result)
 }
 
 pub(super) fn compact_legacy_rectangle_line_endpoints(

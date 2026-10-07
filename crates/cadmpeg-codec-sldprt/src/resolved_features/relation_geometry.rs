@@ -1048,7 +1048,7 @@ pub(crate) fn project_relation_point_geometry(
             marker_roster_storage
                 .with_storage(|| ctx.push_vec(&mut marker_roster, marker, operation))?;
         }
-        let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &marker_roster)?;
+        let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &marker_roster, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(ctx, &lane.native_payload)?)?;
         for marker in ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT relation-line markers")? {
             let marker_offset = usize::try_from(marker.offset()).ok();
             let undetailed_arc_line = marker.kind() == SketchInputKind::Arc
@@ -1533,7 +1533,7 @@ pub(crate) fn project_relation_solved_line_geometry(
             &lane.sketch_entities,
             "scan SLDPRT solved-line marker roster",
         )?);
-        let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &marker_roster)?;
+        let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &marker_roster, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(ctx, &lane.native_payload)?)?;
         for relation in ctx.admit_iter(
             &lane.relation_instances,
             "scan SLDPRT solved-line relations",

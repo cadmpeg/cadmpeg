@@ -56,20 +56,20 @@ pub(crate) fn sketches(
             continue;
         }
         let source_stream = source.source_stream();
-        let native_ref = ctx.format_retained(
+        let (native_ref, _reference_storage) = ctx.with_scoped_storage("hold SLDPRT sketch native reference", || ctx.format_retained(
             format_args!(
                 "sldprt:feature-input:resolved-features#{}",
                 source.ordinal()
             ),
             "retain SLDPRT sketch native reference",
-        )?;
+        ))?;
         for (stream_ordinal, stream) in ctx
             .admit_iter(source.ps_streams(), "project SLDPRT section streams")?
             .enumerate()
         {
             let brep =
                 crate::brep::graph::decode(ctx, &stream.payload, &stream.header, source_stream)?;
-            let configuration = configuration(ctx, section)?;
+            let (configuration, _configuration_storage) = ctx.with_scoped_storage("hold SLDPRT sketch configuration", || configuration(ctx, section))?;
             project_brep(
                 ctx,
                 &brep,
