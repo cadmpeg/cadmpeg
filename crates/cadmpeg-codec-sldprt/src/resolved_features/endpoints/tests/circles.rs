@@ -1,5 +1,7 @@
 //! Circle, radial, and ellipse endpoint tests.
 
+use crate::resolved_features::endpoints::geometry_index::{MarkerGeometryIndex, MarkerPrefixIndex};
+
 use super::super::super::relation_loci::same_dimension_length;
 use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
@@ -138,21 +140,27 @@ fn legacy_coordinate_circle_uses_its_trailing_radial_point() {
         Some([0.049, 0.012]),
     );
 
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let markers = [&circle, &radial];
+    let prefixes = MarkerPrefixIndex::new(&ctx, &payload).unwrap();
+    let geometry = MarkerGeometryIndex::new(&ctx, &markers, prefixes).unwrap();
     assert!(legacy_coordinate_circle_radius(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &payload,
         &circle,
-        &[&circle, &radial]
+        &geometry
     )
     .unwrap()
     .is_some_and(|radius| same_dimension_length(radius, 0.012)));
+    drop(geometry);
     payload[158..162].copy_from_slice(&22u32.to_le_bytes());
+    let geometry = MarkerGeometryIndex::new(&ctx, &markers, MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap();
     assert_eq!(
         legacy_coordinate_circle_radius(
-            &cadmpeg_test_support::service_decode_context(),
+            &ctx,
             &payload,
             &circle,
-            &[&circle, &radial]
+            &geometry
         )
         .unwrap(),
         None

@@ -993,8 +993,7 @@ fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
         &roster_ctx,
         &payload,
         &curve,
-        &markers
-    , &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap()); result }
+        &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap()); result }
     .unwrap());
 
     let first_point = marker(
@@ -1014,8 +1013,7 @@ fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
         &roster_ctx,
         &payload,
         &curve,
-        &markers
-    , &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap()); result }
+        &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap()); result }
     .unwrap());
 }
 
@@ -1127,8 +1125,7 @@ true,
         &roster_ctx,
         &payload,
         &curve,
-        &markers
-    , &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap()); result }
+        &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap()); result }
     .unwrap());
 }
 

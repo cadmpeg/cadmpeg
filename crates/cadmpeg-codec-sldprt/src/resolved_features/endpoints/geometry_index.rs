@@ -21,12 +21,15 @@ struct OwnerGeometry<'a, 'ctx> {
     embedded_roster: std::cell::RefCell<EmbeddedRoster<'a>>,
 }
 
-/// Located markers by owner and object index, with point positions in payload order.
+/// Marker sources by object index and located markers by owner, with point positions in payload order.
 pub(in crate::resolved_features) struct MarkerGeometryIndex<'a, 'payload, 'ctx> {
     ctx: &'ctx DecodeContext<'ctx>,
     prefixes: std::rc::Rc<MarkerPrefixIndex<'payload, 'ctx>>,
     roster_storage: std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     owners: HashMap<Option<&'a str>, OwnerGeometry<'a, 'ctx>>,
+    owner_order: Vec<Option<&'a str>>,
+    _owner_order_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    object_sources: std::cell::OnceCell<HashMap<Option<u32>, Vec<&'a SketchInputEntity>>>,
     objects: HashMap<(Option<&'a str>, Option<u32>), Vec<&'a SketchInputEntity>>,
     _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
@@ -67,12 +70,12 @@ impl<'a, 'payload, 'ctx> MarkerGeometryIndex<'a, 'payload, 'ctx> {
                 Ok::<(), CodecError>(())
             })?;
         }
-        for owner in ctx.admit_iter(owner_order, OPERATION)? {
+        for &owner in ctx.admit_iter(&owner_order, OPERATION)? {
             if let Some(group) = ctx.get_mut_hash_map(&mut owners, &owner, OPERATION)? {
                 ctx.sort_unstable_by_key(&mut group.points, |marker| marker.offset(), Ord::cmp, OPERATION)?;
             }
         }
-        Ok(Self { ctx, prefixes, owners, objects, _storage: storage, roster_storage: std::cell::RefCell::new(ctx.reserve_scoped(0, "index SLDPRT owner marker rosters")?) })
+        Ok(Self { ctx, prefixes, owners, objects, owner_order, _owner_order_storage: order_storage, object_sources: std::cell::OnceCell::new(), _storage: storage, roster_storage: std::cell::RefCell::new(ctx.reserve_scoped(0, "index SLDPRT owner marker rosters")?) })
     }
 
     pub(in crate::resolved_features) fn endpoint(
@@ -103,6 +106,30 @@ impl<'a, 'payload, 'ctx> MarkerGeometryIndex<'a, 'payload, 'ctx> {
     ) -> Result<&'query [&'a SketchInputEntity], CodecError> {
         Ok(ctx.get_hash_map(&self.objects, &(curve.feature_ref.as_deref(), index), "lookup SLDPRT curve object markers")?
             .map_or(&[][..], Vec::as_slice))
+    }
+
+    /// All sources, including unlocated records and records of other owners.
+    pub(in crate::resolved_features) fn object_sources(
+        &self, ctx: &DecodeContext<'_>, index: Option<u32>,
+    ) -> Result<&[&'a SketchInputEntity], CodecError> {
+        const OPERATION: &str = "index SLDPRT object marker sources";
+        let sources = match self.object_sources.get() {
+            Some(sources) => sources,
+            None => {
+                let mut sources = HashMap::new();
+                self.roster_storage.borrow_mut().with_storage(|| {
+                    for owner in ctx.admit_iter(&self.owner_order, OPERATION)? {
+                        let Some(group) = ctx.get_hash_map(&self.owners, owner, OPERATION)? else { continue; };
+                        for &marker in ctx.admit_iter(&group.all, OPERATION)? {
+                            ctx.push_hash_group(&mut sources, marker.object_index(), marker, OPERATION, OPERATION)?;
+                        }
+                    }
+                    Ok::<_, CodecError>(())
+                })?;
+                self.object_sources.get_or_init(|| sources)
+            }
+        };
+        Ok(ctx.get_hash_map(sources, &index, "lookup SLDPRT object marker sources")?.map_or(&[], Vec::as_slice))
     }
 
     pub(in crate::resolved_features) fn arc_centers<'query>(

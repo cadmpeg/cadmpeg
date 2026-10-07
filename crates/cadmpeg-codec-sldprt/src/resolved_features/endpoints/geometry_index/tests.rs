@@ -142,3 +142,38 @@ fn embedded_coordinate_index_keeps_relative_tolerance_ambiguity() {
     let geometry = MarkerGeometryIndex::new(&ctx, &[&close, &first], prefixes).unwrap();
     assert!(geometry.embedded_roster(&curve).unwrap().is_none());
 }
+
+
+#[test]
+fn object_sources_include_unlocated_records_and_all_owners_once() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let marker = |id, owner: Option<&str>, index, coordinates: Option<[f64; 2]>| {
+        let mut marker = SketchInputEntity::new(id, "lane", 0, 0, SketchInputKind::Arc)
+            .with_test_identity(Some(index), None);
+        marker.feature_ref = owner.map(str::to_owned);
+        marker.coordinates_m = coordinates.and_then(cadmpeg_ir::units::FiniteVector::new);
+        marker
+    };
+    let unlocated = marker("unlocated", Some("owner"), 7, None);
+    let located = marker("located", Some("owner"), 7, Some([1.0, 2.0]));
+    let other_owner = marker("other", Some("other-owner"), 7, None);
+    let unowned = marker("unowned", None, 7, None);
+    let other_index = marker("other-index", Some("owner"), 8, None);
+    let geometry = MarkerGeometryIndex::new(&ctx,
+        &[&unlocated, &other_owner, &located, &unowned, &other_index],
+        MarkerPrefixIndex::new(&ctx, &[]).unwrap(),
+    ).unwrap();
+    assert!(geometry.object_sources.get().is_none());
+    assert_eq!(geometry.object_markers(&ctx, &unlocated, Some(7)).unwrap().iter()
+        .map(|marker| marker.id()).collect::<Vec<_>>(), ["located"]);
+    let sources = geometry.object_sources(&ctx, Some(7)).unwrap();
+    assert_eq!(sources.iter().map(|marker| marker.id()).collect::<Vec<_>>(),
+        ["unlocated", "located", "other", "unowned"]);
+    let cached = sources.as_ptr();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "index SLDPRT object marker sources", None,
+    );
+    assert_eq!(geometry.object_sources(&ctx, Some(7)).unwrap().as_ptr(), cached);
+    assert!(geometry.object_sources(&ctx, Some(9)).unwrap().is_empty());
+}

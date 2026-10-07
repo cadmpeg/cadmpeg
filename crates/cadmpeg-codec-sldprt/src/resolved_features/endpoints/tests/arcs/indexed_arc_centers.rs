@@ -72,10 +72,10 @@ fn indexed_arcs_use_one_equidistant_center_marker() {
         .chain(std::iter::once(&curve))
         .collect::<Vec<_>>();
     crate::test_support::work_refusal_at("deduplicate SLDPRT endpoint centers", |ctx| {
-        coordinate_roster_arc_center(ctx, &payload, &curve, &markers, [&coordinates[8], &coordinates[10]], &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(ctx, &payload)?)?)
+        coordinate_roster_arc_center(ctx, &payload, &curve, [&coordinates[8], &coordinates[10]], &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(ctx, &payload)?)?)
     });
     assert_eq!(
-        { let ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_arc_center(&ctx, &payload, &curve, &markers, [&coordinates[8], &coordinates[10]], &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()); result }
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_arc_center(&ctx, &payload, &curve, [&coordinates[8], &coordinates[10]], &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()); result }
         .unwrap(),
         Some([0.0, -0.02])
     );
