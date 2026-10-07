@@ -111,28 +111,27 @@ struct FeatureIntervalMatch<'a> {
     end: Option<u64>,
 }
 
-/// The interval that contains `offset`, if one does.
+/// The interval that contains `offset`, if one does. Intervals are in
+/// ascending start order and each ends where the next starts, so the containing
+/// interval is the last one starting at or before `offset`.
 fn feature_at_offset<'a>(
     ctx: &DecodeContext<'_>,
     offset: u64,
     intervals: &'a [(u64, Option<u64>, String)],
 ) -> Result<Option<FeatureIntervalMatch<'a>>, CodecError> {
-    Ok(ctx
-        .admit_iter(intervals, "find SLDPRT feature interval")?
-        .find(|(start, end, _)| offset >= *start && end.is_none_or(|end| offset < end))
+    let after = ctx.partition_point(
+        intervals,
+        |(start, _, _)| Ok(*start <= offset),
+        "find SLDPRT feature interval",
+    )?;
+    Ok(after
+        .checked_sub(1)
+        .and_then(|index| intervals.get(index))
+        .filter(|(_, end, _)| end.is_none_or(|end| offset < end))
         .map(|(_, end, feature)| FeatureIntervalMatch {
             feature_name: feature.as_str(),
             end: *end,
         }))
-}
-
-/// The feature that owns `offset`, if one does.
-fn feature_name_at_offset<'a>(
-    ctx: &DecodeContext<'_>,
-    offset: u64,
-    intervals: &'a [(u64, Option<u64>, String)],
-) -> Result<Option<&'a str>, CodecError> {
-    Ok(feature_at_offset(ctx, offset, intervals)?.map(|interval| interval.feature_name))
 }
 
 /// Bytes a class with no feature interval may carry its relation over.
@@ -157,58 +156,160 @@ enum RelationScope {
     Unstatable,
 }
 
-/// Where the relation's scope ends.
-fn relation_scope_end(
-    ctx: &DecodeContext<'_>,
-    class: &FeatureInputClass,
-    classes: &[FeatureInputClass],
-    intervals: &[(u64, Option<u64>, String)],
-) -> Result<RelationScope, CodecError> {
-    let class_interval = feature_at_offset(ctx, class.offset, intervals)?;
-    let class_feature = class_interval.map(|interval| interval.feature_name);
-    let mut next_class = None;
-    for candidate in ctx.admit_iter(classes, "find SLDPRT relation scope end")? {
-        if candidate.offset <= class.offset || relation_family(&candidate.name).is_none() {
-            continue;
+/// The relation classes and scalars of one lane, ordered for scope searches.
+struct DeclarationIndex<'a, 'i> {
+    intervals: &'i [(u64, Option<u64>, String)],
+    /// The offsets of the relation classes inside each feature interval, ascending.
+    relation_class_offsets: HashMap<&'i str, Vec<u64>>,
+    /// The scalars in offset order; equal offsets keep lane order.
+    scalars: Vec<&'a FeatureInputScalar>,
+}
+
+impl<'a, 'i> DeclarationIndex<'a, 'i> {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        classes: &[FeatureInputClass],
+        scalars: &'a [FeatureInputScalar],
+        intervals: &'i [(u64, Option<u64>, String)],
+    ) -> Result<Self, CodecError> {
+        const OPERATION: &str = "index SLDPRT relation declarations";
+        let mut relation_classes = Vec::new();
+        for class in ctx.admit_iter(classes, OPERATION)? {
+            if relation_family(&class.name).is_none() {
+                continue;
+            }
+            if let Some(interval) = feature_at_offset(ctx, class.offset, intervals)? {
+                ctx.push_vec(
+                    &mut relation_classes,
+                    (class.offset, interval.feature_name),
+                    OPERATION,
+                )?;
+            }
         }
-        let Some(feature) = class_feature else {
-            continue;
-        };
-        let Some(candidate_feature) = feature_name_at_offset(ctx, candidate.offset, intervals)?
-        else {
-            continue;
-        };
-        if ctx.equal(
-            feature,
-            candidate_feature,
-            "compare SLDPRT relation scope feature references",
-        )? {
-            next_class = Some(next_class.map_or(candidate.offset, |current: u64| {
-                current.min(candidate.offset)
-            }));
+        ctx.sort_unstable_by_key(
+            &mut relation_classes,
+            |(offset, _)| *offset,
+            Ord::cmp,
+            OPERATION,
+        )?;
+        // Grouping in offset order leaves each feature's offsets ascending.
+        let mut relation_class_offsets = HashMap::new();
+        for (offset, feature) in ctx.admit_iter(relation_classes, OPERATION)? {
+            ctx.push_hash_group(
+                &mut relation_class_offsets,
+                feature,
+                offset,
+                OPERATION,
+                OPERATION,
+            )?;
         }
+        let mut ordered = ctx.collect_vec(ctx.admit_iter(scalars, OPERATION)?, OPERATION)?;
+        ctx.stable_sort_by(&mut ordered, |scalar| &scalar.offset, Ord::cmp, OPERATION)?;
+        Ok(Self {
+            intervals,
+            relation_class_offsets,
+            scalars: ordered,
+        })
     }
-    // The interval the class sits in states its own end; a class in no
-    // interval carries its relation over the unknown-feature span instead.
-    let (feature_end, unknown_feature_limit) = match class_interval {
-        Some(interval) => (interval.end, None),
-        None => {
-            let Some(limit) = class.offset.checked_add(UNKNOWN_FEATURE_SPAN) else {
-                return Ok(RelationScope::Unstatable);
-            };
-            (None, Some(limit))
+
+    /// Where the relation declared by `class` stops reading scalars.
+    fn scope_end(
+        &self,
+        ctx: &DecodeContext<'_>,
+        class: &FeatureInputClass,
+        class_interval: Option<FeatureIntervalMatch<'_>>,
+    ) -> Result<RelationScope, CodecError> {
+        const OPERATION: &str = "find SLDPRT relation scope end";
+        // The next relation class of the same feature.
+        let mut next_class = None;
+        if let Some(interval) = class_interval {
+            if let Some(offsets) = ctx.get_hash_map(
+                &self.relation_class_offsets,
+                interval.feature_name,
+                OPERATION,
+            )? {
+                let after =
+                    ctx.partition_point(offsets, |offset| Ok(*offset <= class.offset), OPERATION)?;
+                next_class = offsets.get(after).copied();
+            }
         }
-    };
-    Ok(
-        match [next_class, feature_end, unknown_feature_limit]
-            .into_iter()
-            .flatten()
-            .min()
-        {
-            Some(end) => RelationScope::Ends(end),
-            None => RelationScope::Unbounded,
-        },
-    )
+        // The interval the class sits in states its own end; a class in no
+        // interval carries its relation over the unknown-feature span instead.
+        let (feature_end, unknown_feature_limit) = match class_interval {
+            Some(interval) => (interval.end, None),
+            None => {
+                let Some(limit) = class.offset.checked_add(UNKNOWN_FEATURE_SPAN) else {
+                    return Ok(RelationScope::Unstatable);
+                };
+                (None, Some(limit))
+            }
+        };
+        Ok(
+            match [next_class, feature_end, unknown_feature_limit]
+                .into_iter()
+                .flatten()
+                .min()
+            {
+                Some(end) => RelationScope::Ends(end),
+                None => RelationScope::Unbounded,
+            },
+        )
+    }
+
+    /// The first scalar inside the class's scope whose operands fit the family.
+    fn declaration(
+        &self,
+        ctx: &DecodeContext<'_>,
+        class: &FeatureInputClass,
+        allow_dynamic: bool,
+    ) -> Result<Option<(&'a FeatureInputScalar, FeatureInputRelationFamily)>, CodecError> {
+        const OPERATION: &str = "match SLDPRT relation scalar declarations";
+        let Some(family) = relation_family(&class.name) else {
+            return Ok(None);
+        };
+        let class_interval = feature_at_offset(ctx, class.offset, self.intervals)?;
+        let class_feature = class_interval.map(|interval| interval.feature_name);
+        let scope_end = match self.scope_end(ctx, class, class_interval)? {
+            RelationScope::Ends(end) => Some(end),
+            RelationScope::Unbounded => None,
+            RelationScope::Unstatable => return Ok(None),
+        };
+        let first = ctx.partition_point(
+            &self.scalars,
+            |scalar| Ok(scalar.offset <= class.offset),
+            OPERATION,
+        )?;
+        let in_scope = self.scalars.get(first..).unwrap_or_default();
+        let selected = ctx.find_map(
+            in_scope.iter().copied(),
+            |scalar| {
+                if scope_end.is_some_and(|end| scalar.offset >= end) {
+                    // Past the scope: the search ends with no declaration.
+                    return Ok(Some(None));
+                }
+                if let Some(feature) = class_feature {
+                    let Some(scalar_feature) = scalar.feature_ref.as_deref() else {
+                        return Ok(None);
+                    };
+                    if !ctx.equal(
+                        feature,
+                        scalar_feature,
+                        "compare SLDPRT relation declaration feature references",
+                    )? {
+                        return Ok(None);
+                    }
+                }
+                let signature = if allow_dynamic {
+                    relation_signature_for_declaration(family, scalar)
+                } else {
+                    relation_signature(family, &scalar.operands)
+                };
+                Ok(signature.then_some(Some(scalar)))
+            },
+            OPERATION,
+        )?;
+        Ok(selected.flatten().map(|scalar| (scalar, family)))
+    }
 }
 
 #[cfg(test)]
@@ -242,71 +343,21 @@ fn relation_declaration_candidates_impl<'a>(
     )>,
     CodecError,
 > {
+    let (index, _index_storage) = ctx
+        .with_scoped_storage("index SLDPRT relation declarations", || {
+            DeclarationIndex::new(ctx, classes, scalars, intervals)
+        })?;
     let mut candidates = Vec::new();
     for class in ctx.admit_iter(classes, "scan SLDPRT relation declarations")? {
-        if let Some(candidate) =
-            relation_declaration_candidate(ctx, class, classes, scalars, intervals, allow_dynamic)?
-        {
-            ctx.reserve_vec(&mut candidates, 1, "collect SLDPRT relation candidates")?;
-            candidates.push(candidate);
+        if let Some((scalar, family)) = index.declaration(ctx, class, allow_dynamic)? {
+            ctx.push_vec(
+                &mut candidates,
+                (class, scalar, family),
+                "collect SLDPRT relation candidates",
+            )?;
         }
     }
     Ok(candidates)
-}
-
-fn relation_declaration_candidate<'a>(
-    ctx: &DecodeContext<'_>,
-    class: &'a FeatureInputClass,
-    classes: &'a [FeatureInputClass],
-    scalars: &'a [FeatureInputScalar],
-    intervals: &[(u64, Option<u64>, String)],
-    allow_dynamic: bool,
-) -> Result<
-    Option<(
-        &'a FeatureInputClass,
-        &'a FeatureInputScalar,
-        FeatureInputRelationFamily,
-    )>,
-    CodecError,
-> {
-    let Some(family) = relation_family(&class.name) else {
-        return Ok(None);
-    };
-    let class_feature = feature_name_at_offset(ctx, class.offset, intervals)?;
-    let scope_end = match relation_scope_end(ctx, class, classes, intervals)? {
-        RelationScope::Ends(end) => Some(end),
-        RelationScope::Unbounded => None,
-        RelationScope::Unstatable => return Ok(None),
-    };
-    let mut selected = None;
-    for scalar in ctx.admit_iter(scalars, "match SLDPRT relation scalar declarations")? {
-        if scalar.offset <= class.offset || scope_end.is_some_and(|end| scalar.offset >= end) {
-            continue;
-        }
-        if let Some(feature) = class_feature {
-            let Some(scalar_feature) = scalar.feature_ref.as_deref() else {
-                continue;
-            };
-            if !ctx.equal(
-                feature,
-                scalar_feature,
-                "compare SLDPRT relation declaration feature references",
-            )? {
-                continue;
-            }
-        }
-        let signature = if allow_dynamic {
-            relation_signature_for_declaration(family, scalar)
-        } else {
-            relation_signature(family, &scalar.operands)
-        };
-        if signature
-            && selected.is_none_or(|current: &'a FeatureInputScalar| scalar.offset < current.offset)
-        {
-            selected = Some(scalar);
-        }
-    }
-    Ok(selected.map(|scalar| (class, scalar, family)))
 }
 
 pub(super) fn unique_relation_declaration_candidates_charged<'a>(
@@ -419,6 +470,26 @@ pub(super) fn relation_instances(
     let intervals = temporary_storage.with_storage(|| feature_intervals(ctx, histories, lane))?;
     let declaration_candidates =
         relation_declaration_candidates_impl(ctx, &lane.classes, &lane.scalars, &intervals, true)?;
+    // The offsets of every relation class, ascending, to find a class between
+    // two scalars.
+    let mut relation_class_offsets = Vec::new();
+    for class in ctx.admit_iter(&lane.classes, "index SLDPRT relation group boundaries")? {
+        if relation_family(&class.name).is_some() {
+            temporary_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut relation_class_offsets,
+                    class.offset,
+                    "index SLDPRT relation group boundaries",
+                )
+            })?;
+        }
+    }
+    ctx.sort_unstable_by(
+        &mut relation_class_offsets,
+        |offset| offset,
+        Ord::cmp,
+        "index SLDPRT relation group boundaries",
+    )?;
     let mut candidate_counts = HashMap::<&str, usize>::new();
     for (_, scalar, _) in
         ctx.admit_iter(&declaration_candidates, "count SLDPRT relation candidates")?
@@ -510,12 +581,14 @@ pub(super) fn relation_instances(
             )?;
             let same_scope_prefix = same_scope_feature && *last_index + 1 == scalar_index;
             let has_intervening_class = if same_scope_prefix {
-                ctx.admit_iter(&lane.classes, "find SLDPRT relation group boundary")?
-                    .any(|class| {
-                        class.offset > last_scalar.offset
-                            && class.offset < scalar.offset
-                            && relation_family(&class.name).is_some()
-                    })
+                let after = ctx.partition_point(
+                    &relation_class_offsets,
+                    |offset| Ok(*offset <= last_scalar.offset),
+                    "find SLDPRT relation group boundary",
+                )?;
+                relation_class_offsets
+                    .get(after)
+                    .is_some_and(|offset| *offset < scalar.offset)
             } else {
                 false
             };
@@ -698,6 +771,8 @@ pub(super) fn relation_instances(
     // instance. A scalar has one relation-instance owner even if malformed
     // input associates it with more than one class. Non-sketch bindings remain
     // native-only, matching the existing relation-instance scope.
+    // The first scalar with each identity; built when a binding needs it.
+    let mut scalars_by_id: Option<HashMap<&str, &FeatureInputScalar>> = None;
     for binding in ctx.admit_iter(&lane.relation_bindings, "promote SLDPRT relation bindings")? {
         let Some(feature_ref) = binding.feature_ref.as_deref() else {
             continue;
@@ -709,30 +784,20 @@ pub(super) fn relation_instances(
         )? {
             continue;
         }
-        let Some(scalar_index) = ({
-            let predicate = |scalar: &FeatureInputScalar| -> Result<bool, CodecError> {
-                ctx.equal(
-                    scalar.id.as_str(),
+        if scalars_by_id.is_none() {
+            scalars_by_id =
+                Some(temporary_storage.with_storage(|| first_scalars_by_id(ctx, &lane.scalars))?);
+        }
+        let Some(scalar) = (match &scalars_by_id {
+            Some(scalars) => ctx
+                .get_hash_map(
+                    scalars,
                     binding.scalar_ref.as_str(),
                     "find SLDPRT relation binding scalar",
-                )
-            };
-            let mut found = None;
-            for (index, value) in ctx
-                .admit_iter(&lane.scalars, "find SLDPRT relation binding scalar")?
-                .enumerate()
-            {
-                if predicate(value)? {
-                    found = Some(index);
-                    break;
-                }
-            }
-            Ok::<_, CodecError>(found)
-        })?
-        else {
-            continue;
-        };
-        let Some(scalar) = lane.scalars.get(scalar_index) else {
+                )?
+                .copied(),
+            None => None,
+        }) else {
             continue;
         };
         if ctx.contains_hash_set(
@@ -780,8 +845,10 @@ pub(super) fn relation_instances(
         Ord::cmp,
         "sort SLDPRT relation instances",
     )?;
-    for ordinal in ctx.admit_iter(&(0..instances.len()), "number SLDPRT relation instances")? {
-        let relation = &mut instances[ordinal];
+    for (ordinal, relation) in ctx
+        .admit_iter(&mut instances, "number SLDPRT relation instances")?
+        .enumerate()
+    {
         relation.ordinal = u32::try_from(ordinal).map_err(|_| {
             ctx.refuse_codec_limit("number SLDPRT relation instances", u64::MAX - 1, u64::MAX)
         })?;
@@ -792,21 +859,36 @@ pub(super) fn relation_instances(
     Ok(instances)
 }
 
+/// The first scalar of the lane with each identity.
+fn first_scalars_by_id<'a>(
+    ctx: &DecodeContext<'_>,
+    scalars: &'a [FeatureInputScalar],
+) -> Result<HashMap<&'a str, &'a FeatureInputScalar>, CodecError> {
+    const OPERATION: &str = "index SLDPRT relation scalars";
+    let mut index = HashMap::new();
+    for scalar in ctx.admit_iter(scalars, OPERATION)? {
+        ctx.entry_hash_map(&mut index, scalar.id.as_str(), OPERATION)?
+            .or_insert(scalar);
+    }
+    Ok(index)
+}
+
+/// The first position of each scalar identity in the lane.
+fn scalar_positions<'a>(
+    ctx: &DecodeContext<'_>,
+    scalars: &'a [FeatureInputScalar],
+) -> Result<HashMap<&'a str, usize>, CodecError> {
+    const OPERATION: &str = "index SLDPRT relation scalar positions";
+    let mut index = HashMap::new();
+    for (position, scalar) in ctx.admit_iter(scalars, OPERATION)?.enumerate() {
+        ctx.entry_hash_map(&mut index, scalar.id.as_str(), OPERATION)?
+            .or_insert(position);
+    }
+    Ok(index)
+}
+
 fn copy_relation_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(text.len())
-        .checked_mul(4)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "retain SLDPRT relation record identity",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-    ctx.charge_work(copy_work, "retain SLDPRT relation record identity")?;
-    ctx.format_retained(
-        format_args!("{text}"),
-        "retain SLDPRT relation record identity",
-    )
+    ctx.copy_retained_text(text, "retain SLDPRT relation record identity")
 }
 
 fn copy_relation_operands(
@@ -864,11 +946,12 @@ pub(super) fn bind_circle_dimension_centers(
             )
         })?;
     }
-    for relation_index in ctx.admit_iter(
-        &(0..relations.len()),
-        "scan SLDPRT circle-diameter relations",
-    )? {
-        let relation = &mut relations[relation_index];
+    // Built when the first circle relation needs them: each scalar's lane
+    // position, and the two-operand scalars grouped by feature, name and first
+    // operand, in lane order.
+    let mut positions: Option<HashMap<&str, usize>> = None;
+    let mut center_groups: Option<CenterScalarGroups<'_>> = None;
+    for relation in ctx.admit_iter(&mut *relations, "scan SLDPRT circle-diameter relations")? {
         if relation.family != FeatureInputRelationFamily::CircleDiameter
             || relation.operands.len() != 1
         {
@@ -891,80 +974,48 @@ pub(super) fn bind_circle_dimension_centers(
         else {
             continue;
         };
-        let Some(display_index) = ({
-            let predicate = |scalar: &FeatureInputScalar| -> Result<bool, CodecError> {
-                ctx.equal(
-                    scalar.id.as_str(),
+        if positions.is_none() {
+            positions =
+                Some(temporary_storage.with_storage(|| scalar_positions(ctx, &lane.scalars))?);
+        }
+        let Some(display_index) = (match &positions {
+            Some(positions) => ctx
+                .get_hash_map(
+                    positions,
                     display.id.as_str(),
                     "match SLDPRT display scalar",
-                )
-            };
-            let mut found = None;
-            for (index, value) in ctx
-                .admit_iter(&lane.scalars, "match SLDPRT display scalar")?
-                .enumerate()
-            {
-                if predicate(value)? {
-                    found = Some(index);
-                    break;
-                }
-            }
-            Ok::<_, CodecError>(found)
-        })?
-        else {
+                )?
+                .copied(),
+            None => None,
+        }) else {
             continue;
         };
-        let first = &relation.operands[0];
-        let mut candidates = Vec::new();
-        for (index, scalar) in ctx
-            .admit_iter(&lane.scalars, "match SLDPRT circle center scalars")?
-            .enumerate()
-        {
-            let feature_matches = match (
-                scalar.feature_ref.as_deref(),
-                display.feature_ref.as_deref(),
-            ) {
-                (Some(left), Some(right)) => {
-                    ctx.equal(left, right, "compare SLDPRT circle center features")?
-                }
-                (None, None) => true,
-                _ => false,
-            };
-            if !feature_matches {
-                continue;
-            }
-            let Some(name) = ctx.get_hash_map(
-                &names,
-                scalar.name.as_str(),
-                "find SLDPRT circle center scalar name",
-            )?
-            else {
-                continue;
-            };
-            if !ctx.equal(name, display_name, "compare SLDPRT circle center names")? {
-                continue;
-            }
-            if !matches!(scalar.operands.as_slice(), [candidate, _]
-                if candidate.kind == first.kind
-                    && candidate.entity_index == first.entity_index)
-            {
-                continue;
-            }
-            temporary_storage.with_storage(|| {
-                ctx.push_vec(
-                    &mut candidates,
-                    (index, scalar),
-                    "collect SLDPRT circle center scalars",
-                )
-            })?;
+        if center_groups.is_none() {
+            center_groups = Some(
+                temporary_storage
+                    .with_storage(|| center_scalar_groups(ctx, &lane.scalars, &names))?,
+            );
         }
+        let first = &relation.operands[0];
+        let key = (
+            display.feature_ref.as_deref(),
+            *display_name,
+            first.kind,
+            first.entity_index,
+        );
+        let candidates = match &center_groups {
+            Some(groups) => ctx
+                .get_hash_map(groups, &key, "match SLDPRT circle center scalars")?
+                .map_or(&[][..], Vec::as_slice),
+            None => &[][..],
+        };
         let first_center_index = display_index.checked_add(1);
         if candidates.first().map(|candidate| candidate.0) != first_center_index {
             continue;
         }
         let mut previous_index: Option<usize> = None;
         let mut contiguous = true;
-        for (index, _) in ctx.admit_iter(&candidates, "check SLDPRT circle center scalar window")? {
+        for (index, _) in ctx.admit_iter(candidates, "check SLDPRT circle center scalar window")? {
             if previous_index.is_some_and(|previous| previous.checked_add(1) != Some(*index)) {
                 contiguous = false;
                 break;
@@ -977,7 +1028,7 @@ pub(super) fn bind_circle_dimension_centers(
         let mut center: Option<(FeatureInputOperandKind, u16, Option<&str>)> = None;
         let mut centers_match = true;
         for (_, scalar) in
-            ctx.admit_iter(&candidates, "check SLDPRT circle center operand consensus")?
+            ctx.admit_iter(candidates, "check SLDPRT circle center operand consensus")?
         {
             let Some(operand) = scalar.operands.get(1) else {
                 continue;
@@ -1011,35 +1062,28 @@ pub(super) fn bind_circle_dimension_centers(
         if !centers_match {
             continue;
         }
-        let Some((_, source)) = ({
-            let predicate =
-                |(_, scalar): &(usize, &FeatureInputScalar)| -> Result<bool, CodecError> {
-                    let Some(operand) = scalar.operands.get(1) else {
-                        return Ok(false);
-                    };
-                    let same_ref = match (center.2, operand.entity_ref.as_deref()) {
-                        (Some(left), Some(right)) => {
-                            ctx.equal(left, right, "compare SLDPRT circle center references")?
-                        }
-                        (None, None) => true,
-                        _ => false,
-                    };
-                    Ok(operand.kind == center.0 && operand.entity_index == center.1 && same_ref)
+        let Some((_, source)) = ctx.find_by(
+            candidates,
+            |(_, scalar)| {
+                let Some(operand) = scalar.operands.get(1) else {
+                    return Ok(false);
                 };
-            let mut found = None;
-            for value in ctx.admit_iter(&candidates, "find SLDPRT circle center source")? {
-                if predicate(value)? {
-                    found = Some(value);
-                    break;
-                }
-            }
-            Ok::<_, CodecError>(found)
-        })?
+                let same_ref = match (center.2, operand.entity_ref.as_deref()) {
+                    (Some(left), Some(right)) => {
+                        ctx.equal(left, right, "compare SLDPRT circle center references")?
+                    }
+                    (None, None) => true,
+                    _ => false,
+                };
+                Ok(operand.kind == center.0 && operand.entity_index == center.1 && same_ref)
+            },
+            "find SLDPRT circle center source",
+        )?
         else {
             continue;
         };
         relation.operands = copy_relation_operands(ctx, &source.operands)?;
-        for (_, scalar) in ctx.admit_iter(&candidates, "attach SLDPRT circle center scalars")? {
+        for (_, scalar) in ctx.admit_iter(candidates, "attach SLDPRT circle center scalars")? {
             if !ctx.contains(
                 relation.scalar_refs(),
                 &scalar.id,
@@ -1050,6 +1094,47 @@ pub(super) fn bind_circle_dimension_centers(
         }
     }
     Ok(())
+}
+
+/// Two-operand scalars with a named display value, keyed by feature, name
+/// value, and first operand kind and index, each group in lane order with the
+/// scalars' lane positions.
+type CenterScalarGroups<'a> = HashMap<
+    (Option<&'a str>, &'a str, FeatureInputOperandKind, u16),
+    Vec<(usize, &'a FeatureInputScalar)>,
+>;
+
+fn center_scalar_groups<'a>(
+    ctx: &DecodeContext<'_>,
+    scalars: &'a [FeatureInputScalar],
+    names: &HashMap<&'a str, &'a str>,
+) -> Result<CenterScalarGroups<'a>, CodecError> {
+    const OPERATION: &str = "index SLDPRT circle center scalars";
+    let mut groups = HashMap::new();
+    for (index, scalar) in ctx.admit_iter(scalars, OPERATION)?.enumerate() {
+        let [first, _] = scalar.operands.as_slice() else {
+            continue;
+        };
+        let Some(name) = ctx
+            .get_hash_map(names, scalar.name.as_str(), OPERATION)?
+            .copied()
+        else {
+            continue;
+        };
+        ctx.push_hash_group(
+            &mut groups,
+            (
+                scalar.feature_ref.as_deref(),
+                name,
+                first.kind,
+                first.entity_index,
+            ),
+            (index, scalar),
+            OPERATION,
+            OPERATION,
+        )?;
+    }
+    Ok(groups)
 }
 
 fn same_scalar_operands(
@@ -1118,36 +1203,53 @@ pub(super) fn circle_dimension_handle_driver<'a>(
     let Some(first_id) = relation.scalar_refs().first() else {
         return Ok(None);
     };
-    let Some(first) = ({
-        let predicate = |scalar: &&FeatureInputScalar| -> Result<bool, CodecError> {
-            ctx.equal(
-                scalar.id.as_str(),
-                first_id.as_str(),
-                "find SLDPRT relation display scalar",
-            )
-        };
-        let mut found = None;
-        for value in ctx.admit_iter(&scalars, "find SLDPRT relation display scalar")? {
-            if predicate(value)? {
-                found = Some(value);
-                break;
-            }
-        }
-        Ok::<_, CodecError>(found)
-    })?
-    .copied()
-    .filter(|scalar| scalar.role == FeatureInputScalarRole::Display) else {
+    let Some(first) = ctx
+        .find_by(
+            scalars.iter().copied(),
+            |scalar| {
+                ctx.equal(
+                    scalar.id.as_str(),
+                    first_id.as_str(),
+                    "find SLDPRT relation display scalar",
+                )
+            },
+            "find SLDPRT relation display scalar",
+        )?
+        .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
+    else {
         return Ok(None);
     };
     // No following relation class states no upper bound on this relation.
     let mut next_relation_offset = None;
+    let mut handle_offsets = Vec::new();
     for class in ctx.admit_iter(&lane.classes, "find SLDPRT circle relation end")? {
         if class.offset > first.offset && relation_family(&class.name).is_some() {
             next_relation_offset = Some(
                 next_relation_offset.map_or(class.offset, |limit: u64| limit.min(class.offset)),
             );
         }
+        if class.offset > first.offset
+            && ctx.equal(
+                class.name.as_str(),
+                "sgEntHandle",
+                "match SLDPRT circle handle class",
+            )?
+        {
+            temporary_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut handle_offsets,
+                    class.offset,
+                    "collect SLDPRT circle handle classes",
+                )
+            })?;
+        }
     }
+    ctx.sort_unstable_by(
+        &mut handle_offsets,
+        |offset| offset,
+        Ord::cmp,
+        "sort SLDPRT circle handle classes",
+    )?;
     let mut previous = None;
     let mut candidate = None;
     let mut ambiguous = false;
@@ -1156,25 +1258,10 @@ pub(super) fn circle_dimension_handle_driver<'a>(
             previous = Some(*driving);
             continue;
         };
-        let declared_handle = ({
-            let predicate = |class: &FeatureInputClass| -> Result<bool, CodecError> {
-                Ok(class.offset > first.offset
-                    && class.offset < display.offset
-                    && ctx.equal(
-                        class.name.as_str(),
-                        "sgEntHandle",
-                        "match SLDPRT circle handle class",
-                    )?)
-            };
-            let mut found = false;
-            for value in ctx.admit_iter(&lane.classes, "find SLDPRT circle handle class")? {
-                if predicate(value)? {
-                    found = true;
-                    break;
-                }
-            }
-            Ok::<_, CodecError>(found)
-        })?;
+        // A handle class after the first scalar and before the display scalar.
+        let declared_handle = handle_offsets
+            .first()
+            .is_some_and(|offset| *offset < display.offset);
         let same_feature = match (
             display.feature_ref.as_deref(),
             first.feature_ref.as_deref(),
@@ -1439,18 +1526,10 @@ fn is_solver_point_operand(kind: FeatureInputOperandKind) -> bool {
     )
 }
 
-pub(super) fn relation_uses_solver_points(
-    ctx: &DecodeContext<'_>,
-    relation: &FeatureInputRelationInstance,
-) -> Result<bool, CodecError> {
-    if relation.family != FeatureInputRelationFamily::PointPointDistance
-        || relation.operands.len() != 2
-    {
-        return Ok(false);
-    }
-    Ok(ctx
-        .admit_iter(&relation.operands, "check SLDPRT relation solver points")?
-        .all(|operand| is_solver_point_operand(operand.kind)))
+pub(super) fn relation_uses_solver_points(relation: &FeatureInputRelationInstance) -> bool {
+    relation.family == FeatureInputRelationFamily::PointPointDistance
+        && matches!(relation.operands.as_slice(), [first, second]
+            if is_solver_point_operand(first.kind) && is_solver_point_operand(second.kind))
 }
 
 fn relation_signature_for_declaration(
@@ -1520,7 +1599,7 @@ pub(super) fn relation_uses_dynamic_operands(relation: &FeatureInputRelationInst
 fn relation_target_value(
     ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
-    lane: &FeatureInputLane,
+    scalars: &HashMap<&str, &FeatureInputScalar>,
 ) -> Result<Option<cadmpeg_ir::scalar::FiniteReal>, CodecError> {
     let scalar_id = relation
         .parameter_scalar_ref()
@@ -1528,70 +1607,44 @@ fn relation_target_value(
     let Some(scalar_id) = scalar_id else {
         return Ok(None);
     };
-    for scalar in ctx.admit_iter(&lane.scalars, "find SLDPRT relation target scalar")? {
-        if ctx.equal(
-            scalar.id.as_str(),
-            scalar_id,
-            "compare SLDPRT relation target scalar references",
-        )? {
-            return Ok(Some(scalar.value));
-        }
-    }
-    Ok(None)
+    Ok(ctx
+        .get_hash_map(scalars, scalar_id, "find SLDPRT relation target scalar")?
+        .map(|scalar| scalar.value))
 }
 
-fn feature_entities<'a>(
+/// Each feature's markers of one lane, in offset and ordinal order.
+type FeatureMarkers<'a> = HashMap<&'a str, Vec<&'a crate::records::SketchInputEntity>>;
+
+fn feature_markers<'a>(
     ctx: &DecodeContext<'_>,
     lane: &'a FeatureInputLane,
-    feature: &str,
-) -> Result<Vec<&'a crate::records::SketchInputEntity>, CodecError> {
-    let mut entities = Vec::new();
-    for entity in ctx.admit_iter(
-        &lane.sketch_entities,
-        "scan SLDPRT relation feature entities",
-    )? {
-        if let Some(entity_feature) = entity.feature_ref.as_deref() {
-            if ctx.equal(
-                entity_feature,
-                feature,
-                "match SLDPRT relation feature entities",
-            )? {
-                ctx.push_vec(
-                    &mut entities,
-                    entity,
-                    "collect SLDPRT relation feature entities",
-                )?;
-            }
-        }
-    }
+) -> Result<FeatureMarkers<'a>, CodecError> {
+    const OPERATION: &str = "index SLDPRT relation feature entities";
+    // Group the markers in offset and ordinal order so each group is ordered.
+    let mut ordered =
+        ctx.collect_vec(ctx.admit_iter(&lane.sketch_entities, OPERATION)?, OPERATION)?;
     ctx.sort_unstable_by_key(
-        &mut entities,
+        &mut ordered,
         |value| (value.offset(), value.ordinal()),
         Ord::cmp,
         "sort SLDPRT relation feature entities",
     )?;
-    Ok(entities)
+    let mut groups = HashMap::new();
+    for entity in ctx.admit_iter(ordered, OPERATION)? {
+        if let Some(feature) = entity.feature_ref.as_deref() {
+            ctx.push_hash_group(&mut groups, feature, entity, OPERATION, OPERATION)?;
+        }
+    }
+    Ok(groups)
 }
 
-fn is_finite_point(
-    ctx: &DecodeContext<'_>,
-    entity: &crate::records::SketchInputEntity,
-) -> Result<bool, CodecError> {
-    let is_point = matches!(
-        entity.kind(),
-        crate::records::SketchInputKind::Point | crate::records::SketchInputKind::ConstrainedPoint
-    );
-    let Some(coordinates) = entity
-        .coordinates_m
-        .map(cadmpeg_ir::units::FiniteVector::get)
-    else {
-        return Ok(false);
-    };
-    Ok(is_point
-        && ctx
-            .admit_iter(&coordinates, "validate SLDPRT relation point coordinates")?
-            .copied()
-            .all(f64::is_finite))
+fn is_finite_point(entity: &crate::records::SketchInputEntity) -> bool {
+    entity.coordinates_m.is_some()
+        && matches!(
+            entity.kind(),
+            crate::records::SketchInputKind::Point
+                | crate::records::SketchInputKind::ConstrainedPoint
+        )
 }
 
 fn push_point_candidate<'a>(
@@ -1603,7 +1656,7 @@ fn push_point_candidate<'a>(
     let Some(candidate) = candidate else {
         return Ok(());
     };
-    if !is_finite_point(ctx, candidate)? {
+    if !is_finite_point(candidate) {
         return Ok(());
     }
     if ctx.contains_hash_set(seen, candidate.id(), "check SLDPRT relation point identity")? {
@@ -1632,7 +1685,7 @@ fn dynamic_point_candidates<'a>(
                 entity.id(),
                 entity_ref,
                 "compare SLDPRT explicit point references",
-            )? || !is_finite_point(ctx, entity)?
+            )? || !is_finite_point(entity)
             {
                 continue;
             }
@@ -1655,7 +1708,7 @@ fn dynamic_point_candidates<'a>(
     let mut finite_index = 0usize;
     let mut coordinate_point = None;
     for entity in ctx.admit_iter(entities, "find SLDPRT coordinate point candidate")? {
-        if !is_finite_point(ctx, entity)? {
+        if !is_finite_point(entity) {
             continue;
         }
         if finite_index == address {
@@ -1696,7 +1749,7 @@ fn dynamic_solver_line<'a>(
     let mut second = None;
     let mut point_index = 0usize;
     for entity in ctx.admit_iter(entities, "select SLDPRT relation line points")? {
-        if !is_finite_point(ctx, entity)? {
+        if !is_finite_point(entity) {
             continue;
         }
         if point_index == start {
@@ -1780,11 +1833,8 @@ fn clear_relation_operands(
     ctx: &DecodeContext<'_>,
     relation: &mut FeatureInputRelationInstance,
 ) -> Result<(), CodecError> {
-    for operand_index in ctx.admit_iter(
-        &(0..relation.operands.len()),
-        "clear SLDPRT relation operands",
-    )? {
-        relation.operands[operand_index].entity_ref = None;
+    for operand in ctx.admit_iter(&mut relation.operands, "clear SLDPRT relation operands")? {
+        operand.entity_ref = None;
     }
     Ok(())
 }
@@ -1876,7 +1926,7 @@ fn bind_dynamic_point_relation(
         temporary_storage.with_storage(|| dynamic_point_candidates(ctx, entities, second, true))?;
     let mut coordinate_points = Vec::new();
     for entity in ctx.admit_iter(entities, "collect SLDPRT relation coordinate points")? {
-        if is_finite_point(ctx, entity)? {
+        if is_finite_point(entity) {
             temporary_storage.with_storage(|| {
                 ctx.push_vec(
                     &mut coordinate_points,
@@ -2123,11 +2173,10 @@ fn bind_relation_geometry_operands(
     let mut temporary_storage =
         ctx.reserve_scoped(0, "SLDPRT relation_records temporary storage")?;
 
-    for relation_index in ctx.admit_iter(
-        &(0..relations.len()),
-        "scan SLDPRT relation geometry operands",
-    )? {
-        let relation = &mut relations[relation_index];
+    // Built when the first relation needs them.
+    let mut scalars_by_id: Option<HashMap<&str, &FeatureInputScalar>> = None;
+    let mut markers_by_feature: Option<FeatureMarkers<'_>> = None;
+    for relation in ctx.admit_iter(&mut *relations, "scan SLDPRT relation geometry operands")? {
         let dynamic = relation_uses_dynamic_operands(relation);
         let point_operands_unbound = if !dynamic
             && matches!(
@@ -2136,11 +2185,11 @@ fn bind_relation_geometry_operands(
                     | FeatureInputRelationFamily::PointPointHorizontalDistance
                     | FeatureInputRelationFamily::PointPointVerticalDistance
             ) {
-            ctx.admit_iter(
+            ctx.all_by(
                 &relation.operands,
+                |operand| Ok(operand.entity_ref.is_none()),
                 "check SLDPRT unbound point relation operands",
             )?
-            .all(|operand| operand.entity_ref.is_none())
         } else {
             false
         };
@@ -2150,13 +2199,21 @@ fn bind_relation_geometry_operands(
         if relation.family == FeatureInputRelationFamily::CircleDiameter {
             continue;
         }
-        let Some(target) = relation_target_value(ctx, relation, lane)? else {
+        if scalars_by_id.is_none() {
+            scalars_by_id =
+                Some(temporary_storage.with_storage(|| first_scalars_by_id(ctx, &lane.scalars))?);
+        }
+        let target = match &scalars_by_id {
+            Some(scalars) => relation_target_value(ctx, relation, scalars)?,
+            None => None,
+        };
+        let Some(target) = target else {
             if dynamic {
                 clear_relation_operands(ctx, relation)?;
             }
             continue;
         };
-        if relation_uses_solver_points(ctx, relation)? {
+        if relation_uses_solver_points(relation) {
             continue;
         }
         if target.get() < 0.0 {
@@ -2165,26 +2222,38 @@ fn bind_relation_geometry_operands(
             }
             continue;
         }
-        let entities = temporary_storage
-            .with_storage(|| feature_entities(ctx, lane, relation.feature_ref.as_str()))?;
+        if markers_by_feature.is_none() {
+            markers_by_feature =
+                Some(temporary_storage.with_storage(|| feature_markers(ctx, lane))?);
+        }
+        let entities = match &markers_by_feature {
+            Some(markers) => ctx
+                .get_hash_map(
+                    markers,
+                    relation.feature_ref.as_str(),
+                    "match SLDPRT relation feature entities",
+                )?
+                .map_or(&[][..], Vec::as_slice),
+            None => &[][..],
+        };
         match relation.family {
             FeatureInputRelationFamily::PointPointDistance => {
-                bind_dynamic_point_relation(ctx, relation, &entities, target.get(), None)?;
+                bind_dynamic_point_relation(ctx, relation, entities, target.get(), None)?;
             }
             FeatureInputRelationFamily::PointPointHorizontalDistance => {
-                bind_dynamic_point_relation(ctx, relation, &entities, target.get(), Some(true))?;
+                bind_dynamic_point_relation(ctx, relation, entities, target.get(), Some(true))?;
             }
             FeatureInputRelationFamily::PointPointVerticalDistance => {
-                bind_dynamic_point_relation(ctx, relation, &entities, target.get(), Some(false))?;
+                bind_dynamic_point_relation(ctx, relation, entities, target.get(), Some(false))?;
             }
             FeatureInputRelationFamily::PointLineDistance => {
-                bind_dynamic_point_line_relation(ctx, relation, &entities, target.get())?;
+                bind_dynamic_point_line_relation(ctx, relation, entities, target.get())?;
             }
             FeatureInputRelationFamily::LineLineDistance => {
-                bind_dynamic_line_relation(ctx, relation, &entities, target.get(), false)?;
+                bind_dynamic_line_relation(ctx, relation, entities, target.get(), false)?;
             }
             FeatureInputRelationFamily::Angle => {
-                bind_dynamic_line_relation(ctx, relation, &entities, target.get(), true)?;
+                bind_dynamic_line_relation(ctx, relation, entities, target.get(), true)?;
             }
             FeatureInputRelationFamily::CircleDiameter => {}
         }
@@ -2192,149 +2261,77 @@ fn bind_relation_geometry_operands(
     Ok(())
 }
 
-pub(super) fn scalar_role(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    trailer_offset: usize,
-) -> Result<FeatureInputScalarRole, CodecError> {
-    let shifted_layout = shifted_value_only_scalar_trailer(ctx, payload, trailer_offset)?;
-    let fixed_prefix = payload.get(trailer_offset..trailer_offset + 3) == Some(&[0, 0, 0]);
-    let fixed_zero_fields = if fixed_prefix {
-        payload
-            .get(trailer_offset + 7..trailer_offset + 21)
-            .map(|bytes| -> Result<bool, CodecError> {
-                Ok(ctx
-                    .admit_iter(bytes, "validate SLDPRT scalar layout")?
-                    .all(|byte| *byte == 0))
-            })
-            .transpose()?
-            .unwrap_or(false)
-    } else {
-        false
-    };
-    let fixed_layout = fixed_prefix
-        && fixed_zero_fields
+// The scalar trailer layouts are fixed-width records: every check below reads a
+// constant number of bytes, so none takes a decode context.
+
+pub(super) fn scalar_role(payload: &[u8], trailer_offset: usize) -> FeatureInputScalarRole {
+    let shifted_layout = shifted_value_only_scalar_trailer(payload, trailer_offset);
+    let fixed_layout = payload.get(trailer_offset..trailer_offset + 3) == Some(&[0, 0, 0])
+        && payload.get(trailer_offset + 7..trailer_offset + 21) == Some(&[0; 14])
         && payload.get(trailer_offset + 24..trailer_offset + 29) == Some(&[0, 0, 0, 2, 0]);
     let role_offset = if shifted_layout {
         trailer_offset + shifted_trailer::ROLE
-    } else if compact_scalar_layout(ctx, payload, trailer_offset)? {
+    } else if compact_scalar_layout(payload, trailer_offset) {
         trailer_offset + 27
     } else if fixed_layout {
         trailer_offset + 29
-    } else if legacy_scalar_layout(ctx, payload, trailer_offset)? {
+    } else if legacy_scalar_layout(payload, trailer_offset) {
         trailer_offset + 30
     } else {
-        return Ok(FeatureInputScalarRole::Native);
+        return FeatureInputScalarRole::Native;
     };
-    Ok(match payload.get(role_offset) {
+    match payload.get(role_offset) {
         Some(0) => FeatureInputScalarRole::Driving,
         Some(1) => FeatureInputScalarRole::Display,
         _ => FeatureInputScalarRole::Native,
-    })
+    }
 }
 
-pub(super) fn shifted_value_only_scalar_trailer(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    trailer_offset: usize,
-) -> Result<bool, CodecError> {
-    if payload.get(
+pub(super) fn shifted_value_only_scalar_trailer(payload: &[u8], trailer_offset: usize) -> bool {
+    payload.get(
         trailer_offset + shifted_trailer::ZERO_PREFIX..trailer_offset + shifted_trailer::OBJECT_ID,
-    ) != Some(&[0, 0, 0])
-    {
-        return Ok(false);
-    }
-    let Some(zero_object_tail) = payload.get(
-        trailer_offset + shifted_trailer::ZERO_OBJECT_TAIL
-            ..trailer_offset + shifted_trailer::LAYOUT_MARKER,
-    ) else {
-        return Ok(false);
-    };
-    if !ctx
-        .admit_iter(zero_object_tail, "validate SLDPRT shifted scalar trailer")?
-        .all(|byte| *byte == 0)
-        || payload.get(
+    ) == Some(&[0, 0, 0])
+        && payload.get(
+            trailer_offset + shifted_trailer::ZERO_OBJECT_TAIL
+                ..trailer_offset + shifted_trailer::LAYOUT_MARKER,
+        ) == Some(&[0; shifted_trailer::LAYOUT_MARKER - shifted_trailer::ZERO_OBJECT_TAIL])
+        && payload.get(
             trailer_offset + shifted_trailer::LAYOUT_MARKER..trailer_offset + shifted_trailer::ROLE,
-        ) != Some(&[1, 0, 0, 0, 2, 0])
-        || payload
+        ) == Some(&[1, 0, 0, 0, 2, 0])
+        && payload
             .get(trailer_offset + shifted_trailer::ROLE)
-            .is_none_or(|role| *role > 1)
-    {
-        return Ok(false);
-    }
-    let Some(zero_tail) = payload
-        .get(trailer_offset + shifted_trailer::ZERO_TAIL..trailer_offset + shifted_trailer::LEN)
-    else {
-        return Ok(false);
-    };
-    Ok(ctx
-        .admit_iter(zero_tail, "validate SLDPRT shifted scalar trailer")?
-        .all(|byte| *byte == 0))
+            .is_some_and(|role| *role <= 1)
+        && payload
+            .get(trailer_offset + shifted_trailer::ZERO_TAIL..trailer_offset + shifted_trailer::LEN)
+            == Some(&[0; shifted_trailer::LEN - shifted_trailer::ZERO_TAIL])
 }
 
-fn shifted_value_only_scalar_layout(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    trailer_offset: usize,
-) -> Result<bool, CodecError> {
-    if !shifted_value_only_scalar_trailer(ctx, payload, trailer_offset)? {
-        return Ok(false);
-    }
-    Ok(payload
-        .get(trailer_offset + 35..trailer_offset + 47)
-        .is_some_and(|cell| {
-            cell[0..2] != [0, 0]
-                && cell[0..2] != [0xff, 0xff]
-                && cell[4..8] == [0xff; 4]
-                && cell[8..12] == [0; 4]
-        }))
+fn shifted_value_only_scalar_layout(payload: &[u8], trailer_offset: usize) -> bool {
+    shifted_value_only_scalar_trailer(payload, trailer_offset)
+        && payload
+            .get(trailer_offset + 35..trailer_offset + 47)
+            .is_some_and(|cell| {
+                cell[0..2] != [0, 0]
+                    && cell[0..2] != [0xff, 0xff]
+                    && cell[4..8] == [0xff; 4]
+                    && cell[8..12] == [0; 4]
+            })
 }
 
-pub(super) fn compact_scalar_layout(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    trailer_offset: usize,
-) -> Result<bool, CodecError> {
-    if shifted_value_only_scalar_layout(ctx, payload, trailer_offset)?
-        || payload.get(trailer_offset..trailer_offset + 3) != Some(&[0, 0, 0])
-    {
-        return Ok(false);
-    }
-    let Some(first_zero_field) = payload.get(trailer_offset + 7..trailer_offset + 21) else {
-        return Ok(false);
-    };
-    if !ctx
-        .admit_iter(first_zero_field, "validate SLDPRT compact scalar layout")?
-        .all(|byte| *byte == 0)
-        || payload.get(trailer_offset + 21..trailer_offset + 27) != Some(&[1, 0, 0, 0, 2, 0])
-    {
-        return Ok(false);
-    }
-    let Some(second_zero_field) = payload.get(trailer_offset + 28..trailer_offset + 35) else {
-        return Ok(false);
-    };
-    Ok(ctx
-        .admit_iter(second_zero_field, "validate SLDPRT compact scalar layout")?
-        .all(|byte| *byte == 0)
+pub(super) fn compact_scalar_layout(payload: &[u8], trailer_offset: usize) -> bool {
+    !shifted_value_only_scalar_layout(payload, trailer_offset)
+        && payload.get(trailer_offset..trailer_offset + 3) == Some(&[0, 0, 0])
+        && payload.get(trailer_offset + 7..trailer_offset + 21) == Some(&[0; 14])
+        && payload.get(trailer_offset + 21..trailer_offset + 27) == Some(&[1, 0, 0, 0, 2, 0])
+        && payload.get(trailer_offset + 28..trailer_offset + 35) == Some(&[0; 7])
         && payload.get(trailer_offset + 39..trailer_offset + 43) == Some(&[0xff; 4])
-        && payload.get(trailer_offset + 47..trailer_offset + 51) == Some(&[0xff; 4]))
+        && payload.get(trailer_offset + 47..trailer_offset + 51) == Some(&[0xff; 4])
 }
 
-pub(super) fn legacy_scalar_layout(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    trailer_offset: usize,
-) -> Result<bool, CodecError> {
-    if payload.get(trailer_offset..trailer_offset + 3) != Some(&[0, 0, 0]) {
-        return Ok(false);
-    }
-    let Some(zero_field) = payload.get(trailer_offset + 7..trailer_offset + 24) else {
-        return Ok(false);
-    };
-    Ok(ctx
-        .admit_iter(zero_field, "validate SLDPRT legacy scalar layout")?
-        .all(|byte| *byte == 0)
-        && payload.get(trailer_offset + 24..trailer_offset + 30) == Some(&[0x0f, 0, 0, 0, 2, 0]))
+pub(super) fn legacy_scalar_layout(payload: &[u8], trailer_offset: usize) -> bool {
+    payload.get(trailer_offset..trailer_offset + 3) == Some(&[0, 0, 0])
+        && payload.get(trailer_offset + 7..trailer_offset + 24) == Some(&[0; 17])
+        && payload.get(trailer_offset + 24..trailer_offset + 30) == Some(&[0x0f, 0, 0, 0, 2, 0])
 }
 
 #[cfg(test)]

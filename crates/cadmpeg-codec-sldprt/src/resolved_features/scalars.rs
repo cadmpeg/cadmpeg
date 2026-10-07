@@ -29,7 +29,7 @@ pub(crate) fn named_scalars_charged(
         let Some(name_offset) = usize::try_from(name.offset).ok() else {
             continue;
         };
-        let Some(value_offset) = scalar_value_offset(ctx, payload, name_offset)? else {
+        let Some(value_offset) = scalar_value_offset(payload, name_offset)? else {
             continue;
         };
         let Some(value) = View::f64_le_at(payload, value_offset).and_then(FiniteReal::new) else {
@@ -57,7 +57,7 @@ pub(crate) fn named_scalars_charged(
         )?;
         let parent = ctx.copy_retained_text(parent, "retain SLDPRT scalar identity")?;
         let name_id = ctx.copy_retained_text(&name.id, "retain SLDPRT scalar identity")?;
-        let role = scalar_role(ctx, payload, trailer_offset)?;
+        let role = scalar_role(payload, trailer_offset);
         ctx.push_vec(
             &mut scalars,
             FeatureInputScalar {
@@ -83,11 +83,7 @@ pub(crate) fn named_scalars_charged(
 ///
 /// The name length comes from the payload's own length byte, so the offset is a
 /// function of the retained bytes alone and never of a stored name value.
-fn scalar_value_offset(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    name_offset: usize,
-) -> Result<Option<usize>, CodecError> {
+fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Result<Option<usize>, CodecError> {
     let Some((header_offset, value_offset)) = (|| {
         let units = usize::from(*payload.get(name_offset.checked_add(NAME_MARKER.len())?)?);
         let header_offset = name_offset
@@ -110,7 +106,7 @@ fn scalar_value_offset(
         let Some(trailer_offset) = compact_value_offset.checked_add(8) else {
             return Ok(None);
         };
-        if compact_scalar_layout(ctx, payload, trailer_offset)? {
+        if compact_scalar_layout(payload, trailer_offset) {
             return Ok(Some(compact_value_offset));
         }
     }
@@ -128,7 +124,7 @@ fn scalar_value_offset(
     if payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER)
         && payload.get(value_only_offset..shifted_value_offset) == Some(&[0; 4])
         && View::f64_le_at(payload, shifted_value_offset).is_some_and(f64::is_finite)
-        && shifted_value_only_scalar_trailer(ctx, payload, shifted_trailer_offset)?
+        && shifted_value_only_scalar_trailer(payload, shifted_trailer_offset)
     {
         return Ok(Some(shifted_value_offset));
     }
@@ -214,7 +210,7 @@ fn scalar_operands_charged(
         offset,
         kind,
         entity_index,
-    } in operand_cells(ctx, payload, trailer_offset)?
+    } in operand_cells(payload, trailer_offset)?
         .into_iter()
         .flatten()
     {
@@ -247,12 +243,11 @@ struct ScalarOperandCell {
 }
 
 fn operand_cells(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     trailer_offset: usize,
 ) -> Result<[Option<ScalarOperandCell>; 2], CodecError> {
-    let compact = compact_scalar_layout(ctx, payload, trailer_offset)?;
-    let first = if compact || !legacy_scalar_layout(ctx, payload, trailer_offset)? {
+    let compact = compact_scalar_layout(payload, trailer_offset);
+    let first = if compact || !legacy_scalar_layout(payload, trailer_offset) {
         35
     } else {
         36

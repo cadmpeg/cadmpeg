@@ -174,34 +174,14 @@ fn copy_spatial_entity_id(
     ctx: &DecodeContext<'_>,
     id: &SpatialSketchEntityId,
 ) -> Result<SpatialSketchEntityId, cadmpeg_core::CodecError> {
-    let text = ctx.format_retained(
-        format_args!("{}", id.as_str()),
-        "copy SLDPRT spatial entity identity",
-    )?;
-    ctx.charge_work(
-        u64_from_index(text.len()),
-        "validate SLDPRT spatial entity identity",
-    )?;
-    SpatialSketchEntityId::mint(text).map_err(|_| {
-        cadmpeg_core::CodecError::Malformed("SolidWorks spatial entity identity is invalid".into())
-    })
+    id.try_clone_for_decode(ctx, "copy SLDPRT spatial entity identity")
 }
 
 fn copy_spatial_sketch_id(
     ctx: &DecodeContext<'_>,
     id: &cadmpeg_ir::sketches::SpatialSketchId,
 ) -> Result<cadmpeg_ir::sketches::SpatialSketchId, cadmpeg_core::CodecError> {
-    let text = ctx.format_retained(
-        format_args!("{}", id.as_str()),
-        "copy SLDPRT spatial sketch identity",
-    )?;
-    ctx.charge_work(
-        u64_from_index(text.len()),
-        "validate SLDPRT spatial sketch identity",
-    )?;
-    cadmpeg_ir::sketches::SpatialSketchId::mint(text).map_err(|_| {
-        cadmpeg_core::CodecError::Malformed("SolidWorks spatial sketch identity is invalid".into())
-    })
+    id.try_clone_for_decode(ctx, "copy SLDPRT spatial sketch identity")
 }
 
 fn spatial_relation_point_line_entities(
@@ -1441,13 +1421,11 @@ fn indexed_geometry_ref_matches(
     if suffix.is_empty() || (suffix != "0" && suffix.starts_with('0')) {
         return Ok(false);
     }
-    if !ctx
-        .admit_iter(
-            suffix.as_bytes(),
-            "scan SLDPRT indexed geometry reference digits",
-        )?
-        .all(u8::is_ascii_digit)
-    {
+    if !ctx.all_by(
+        suffix.as_bytes(),
+        |digit| Ok(digit.is_ascii_digit()),
+        "scan SLDPRT indexed geometry reference digits",
+    )? {
         return Ok(false);
     }
     Ok(ctx.parse_text::<usize>(suffix, "parse SLDPRT indexed geometry reference")? == Ok(index))
@@ -1997,16 +1975,19 @@ pub(crate) fn project_relation_solved_line_geometry(
                     let Some(&(first_start, first_end)) = filtered.first() else {
                         return Ok(None);
                     };
-                    let orientation_is_ambiguous = ctx
-                        .admit_iter(&filtered, "check SLDPRT solved-line orientation ambiguity")?
-                        .any(|(start, end)| *start == first_end && *end == first_start);
-                    if ctx
-                        .admit_iter(&filtered, "check SLDPRT solved-line orientation agreement")?
-                        .all(|(start, end)| {
-                            (*start == first_start && *end == first_end)
-                                || (*start == first_end && *end == first_start)
-                        })
-                    {
+                    let orientation_is_ambiguous = ctx.any_by(
+                        &filtered,
+                        |(start, end)| Ok(*start == first_end && *end == first_start),
+                        "check SLDPRT solved-line orientation ambiguity",
+                    )?;
+                    if ctx.all_by(
+                        &filtered,
+                        |(start, end)| {
+                            Ok((*start == first_start && *end == first_end)
+                                || (*start == first_end && *end == first_start))
+                        },
+                        "check SLDPRT solved-line orientation agreement",
+                    )? {
                         let representative = if orientation_is_ambiguous {
                             if first_start <= first_end {
                                 (first_start, first_end)
@@ -2650,7 +2631,7 @@ pub(crate) fn project_relation_solved_point_geometry(
                 )?
                 .map(Vec::as_slice),
             )?;
-            if relation_uses_solver_points(ctx, relation)? {
+            if relation_uses_solver_points(relation) {
                 let coordinates_by_index =
                     inferred_point_coordinates_by_index(ctx, lane, relation.feature_ref.as_str())?;
                 let mut resolved_positions = Vec::with_capacity(relation.operands.len());
@@ -3494,16 +3475,8 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
         |marker| marker,
         feature,
         |marker| {
-            let coordinates_are_finite = if let Some(coordinates) = marker.coordinates_m {
-                ctx.admit_iter(
-                    coordinates.as_raw(),
-                    "check finite SLDPRT indexed circle-marker coordinates",
-                )?
-                .copied()
-                .all(f64::is_finite)
-            } else {
-                false
-            };
+            // Stored marker coordinates are finite.
+            let coordinates_are_finite = marker.coordinates_m.is_some();
             Ok(coordinates_are_finite
                 && matches!(
                     marker.kind(),
@@ -3611,17 +3584,7 @@ pub(super) fn declared_entity_handle_point_dimension_center<'a>(
         if !point_dimension_marker_matches_operand(ctx, marker, feature, operand)? {
             continue;
         }
-        let Some(coordinates) = marker.coordinates_m else {
-            return Ok(None);
-        };
-        if !ctx
-            .admit_iter(
-                coordinates.as_raw(),
-                "check finite SLDPRT explicit point-dimension coordinates",
-            )?
-            .copied()
-            .all(f64::is_finite)
-        {
+        if marker.coordinates_m.is_none() {
             return Ok(None);
         }
         return Ok(Some(marker));
@@ -3692,17 +3655,7 @@ pub(super) fn direct_point_dimension_center<'a>(
         let Some(marker) = found else {
             continue;
         };
-        let Some(coordinates) = marker.coordinates_m else {
-            continue;
-        };
-        if !ctx
-            .admit_iter(
-                coordinates.as_raw(),
-                "check finite SLDPRT direct point-dimension coordinates",
-            )?
-            .copied()
-            .all(f64::is_finite)
-        {
+        if marker.coordinates_m.is_none() {
             continue;
         }
         if unique.is_some() {
@@ -4513,17 +4466,7 @@ fn copy_planar_sketch_id(
     ctx: &DecodeContext<'_>,
     id: &cadmpeg_ir::sketches::SketchId,
 ) -> Result<cadmpeg_ir::sketches::SketchId, cadmpeg_core::CodecError> {
-    let text = ctx.format_retained(
-        format_args!("{}", id.as_str()),
-        "copy SLDPRT planar sketch identity",
-    )?;
-    ctx.charge_work(
-        u64_from_index(text.len()),
-        "validate SLDPRT planar sketch identity",
-    )?;
-    cadmpeg_ir::sketches::SketchId::mint(text).map_err(|_| {
-        cadmpeg_core::CodecError::Malformed("SolidWorks planar sketch identity is invalid".into())
-    })
+    id.try_clone_for_decode(ctx, "copy SLDPRT planar sketch identity")
 }
 
 fn charge_relation_parameter_work(
@@ -4544,19 +4487,7 @@ fn copy_relation_parameter_id(
     ctx: &DecodeContext<'_>,
     id: &cadmpeg_ir::features::ParameterId,
 ) -> Result<cadmpeg_ir::features::ParameterId, cadmpeg_core::CodecError> {
-    let text = ctx.format_retained(
-        format_args!("{}", id.as_str()),
-        "copy SLDPRT relation parameter identity",
-    )?;
-    ctx.charge_work(
-        u64_from_index(text.len()),
-        "validate SLDPRT relation parameter identity",
-    )?;
-    cadmpeg_ir::features::ParameterId::mint(text).map_err(|_| {
-        cadmpeg_core::CodecError::Malformed(
-            "SolidWorks relation parameter identity is invalid".into(),
-        )
-    })
+    id.try_clone_for_decode(ctx, "copy SLDPRT relation parameter identity")
 }
 
 fn claim_relation_parameter(
