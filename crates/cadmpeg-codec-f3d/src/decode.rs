@@ -134,6 +134,28 @@ fn container_only_dimension_parameters(
         &native.design_dimension_locus_groups,
         &native.design_dimension_recipe_records,
     )?;
+    if container_only.is_empty() {
+        return Ok(std::collections::HashSet::new());
+    }
+    // Dimension parameters by stream and record index; a repeated key is
+    // ambiguous and binds nothing.
+    let (dimension_parameters, _dimension_parameters_storage) = ctx.unique_index(
+        ctx.admit_iter(&native.design_parameters, "index F3D dimension parameters")?
+            .filter(|parameter| {
+                parameter.kind() == crate::records::parameters::DesignParameterKind::Dimension
+            })
+            .map(|parameter| {
+                (
+                    (
+                        crate::ids::native_stream(&parameter.id)
+                            .unwrap_or(crate::ids::DEFAULT_STREAM),
+                        parameter.record_index,
+                    ),
+                    parameter,
+                )
+            }),
+        "index F3D dimension parameters",
+    )?;
     let mut parameters_by_id = std::collections::HashSet::new();
     for owner in ctx.admit_iter(
         &native.design_parameter_owners,
@@ -147,39 +169,20 @@ fn container_only_dimension_parameters(
         )? {
             continue;
         }
-        let mut matches_parameter = |parameter: &crate::records::parameters::DesignParameter| {
-            Ok(ctx.equal(
-                crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM),
-                stream,
-                "compare F3D dimension parameter streams",
-            )? && parameter.record_index == owner.parameter_record_index()
-                && parameter.kind() == crate::records::parameters::DesignParameterKind::Dimension)
-        };
-        let Some(parameter_index) = ctx.position_by(
-            &native.design_parameters,
-            &mut matches_parameter,
+        let Some(Some(parameter)) = ctx.get_hash_map(
+            &dimension_parameters,
+            &(stream, owner.parameter_record_index()),
             "find F3D container-only dimension parameter",
         )?
         else {
             continue;
         };
-        if ctx
-            .position_by(
-                &native.design_parameters[parameter_index + 1..],
-                &mut matches_parameter,
-                "find additional F3D container-only dimension parameter",
-            )?
-            .is_none()
-        {
-            let parameter = &native.design_parameters[parameter_index];
-            let id = crate::ids::neutral_parameter_id_charged(ctx, parameter)?;
-            ctx.insert_hash_set(
-                &mut parameters_by_id,
-                id,
-                "collect F3D container-only dimension parameters",
-            )
-            .map(|_| ())?;
-        }
+        let id = crate::ids::neutral_parameter_id_charged(ctx, parameter)?;
+        ctx.insert_hash_set(
+            &mut parameters_by_id,
+            id,
+            "collect F3D container-only dimension parameters",
+        )?;
     }
     Ok(parameters_by_id)
 }
@@ -294,6 +297,24 @@ fn unresolved_dimension_companion_count(
             record.companion_record_index,
         ))?;
     }
+    // The first companion carrying each identity, built once.
+    let mut companions_storage = ctx.reserve_scoped(0, "index F3D dimension companions")?;
+    let mut companions_by_id = HashMap::new();
+    for companion in ctx.admit_iter(
+        &native.design_parameter_companions,
+        "index F3D dimension companions",
+    )? {
+        companions_storage.with_storage(|| {
+            if let std::collections::hash_map::Entry::Vacant(entry) = ctx.entry_hash_map(
+                &mut companions_by_id,
+                companion.id(),
+                "index F3D dimension companions",
+            )? {
+                entry.insert(companion);
+            }
+            Ok::<(), CodecError>(())
+        })?;
+    }
     for constraint in ctx.admit_iter(
         &ir.model.sketch_constraints,
         "scan F3D ir model sketch constraints",
@@ -303,15 +324,9 @@ fn unresolved_dimension_companion_count(
             cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { .. }
         ) {
             if let Some(native_ref) = &constraint.native_ref {
-                if let Some(companion) = ctx.find_by(
-                    &native.design_parameter_companions,
-                    |companion| {
-                        ctx.equal(
-                            companion.id(),
-                            native_ref.as_str(),
-                            "compare F3D dimension companion identity",
-                        )
-                    },
+                if let Some(companion) = ctx.get_hash_map(
+                    &companions_by_id,
+                    native_ref.as_str(),
                     "find F3D dimension companion",
                 )? {
                     insert_typed((
@@ -1498,6 +1513,46 @@ fn design_projection_gaps(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => None,
     };
+    // Owners, by stream and record index, whose scope record exists in the
+    // same stream; a parameter's owner resolves when it names one of them.
+    let mut scope_keys_storage = ctx.reserve_scoped(0, "index F3D parameter owner scopes")?;
+    let mut scope_keys = std::collections::HashSet::new();
+    for scope in ctx.admit_iter(
+        &native.design_parameter_scopes,
+        "index F3D parameter owner scopes",
+    )? {
+        if let Some(stream) = crate::ids::native_stream(&scope.id) {
+            scope_keys_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut scope_keys,
+                    (stream, scope.record_index),
+                    "index F3D parameter owner scopes",
+                )
+            })?;
+        }
+    }
+    let mut resolved_owners = std::collections::HashSet::new();
+    for owner in ctx.admit_iter(
+        &native.design_parameter_owners,
+        "index F3D resolved parameter owners",
+    )? {
+        let Some(stream) = crate::ids::native_stream(owner.id()) else {
+            continue;
+        };
+        if ctx.contains_hash_set(
+            &scope_keys,
+            &(stream, owner.scope_record_index()),
+            "find F3D parameter owner scope",
+        )? {
+            scope_keys_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut resolved_owners,
+                    (stream, owner.record_index()),
+                    "index F3D resolved parameter owners",
+                )
+            })?;
+        }
+    }
     let mut gaps = DesignProjectionGaps {
         unresolved_body_bindings: ctx.admit_iter(&native.design_body_bindings, "scan F3D projection design_body_bindings")?
             .try_fold(0usize, |count, binding| { let selected = binding.body.is_none(); count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
@@ -1530,14 +1585,7 @@ fn design_projection_gaps(
                 let Some(stream) = crate::ids::native_stream(&parameter.id) else {
                     return count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX));
                 };
-                !ctx.any_by(native.design_parameter_owners.as_slice(), |owner| { Ok(
-                    ctx.equal(&crate::ids::native_stream(owner.id()), &Some(stream), "compare F3D parameter owner streams")?
-                        && owner.record_index() == owner_record_index
-                        && ctx.any_by(native.design_parameter_scopes.as_slice(), |scope| { Ok(
-                            ctx.equal(&crate::ids::native_stream(&scope.id), &Some(stream), "compare F3D parameter scope streams")?
-                                && scope.record_index == owner.scope_record_index())
-                        }, "find F3D parameter owner scope")?)
-                }, "find F3D parameter owner")?
+                !ctx.contains_hash_set(&resolved_owners, &(stream, owner_record_index), "find F3D parameter owner")?
             }; count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
         untyped_parameter_units: crate::design::feature_project::untyped_parameter_unit_count(
             &native.design_parameters,
@@ -3805,7 +3853,7 @@ fn decode_scanned_document<'a>(
                 Some(keys) => part.body_selectors_for(ctx, keys)?,
                 None => part.body_selectors(ctx)?,
             };
-            for body in &mut part.asm.bodies {
+            for body in ctx.admit_iter(&mut part.asm.bodies, "apply F3D body visibility")? {
                 if let Some(visibility) = ctx
                     .get_btree_map(&body_selectors, &body.id, "find F3D body selector")?
                     .map(|selector| {
@@ -3941,21 +3989,37 @@ fn extend_unique_assets(
     assets: &mut Vec<cadmpeg_ir::assets::Asset>,
     incoming: Vec<cadmpeg_ir::assets::Asset>,
 ) -> Result<(), CodecError> {
-    for asset in incoming {
+    if incoming.is_empty() {
+        return Ok(());
+    }
+    // Positions of the assets already present, by identity, built once.
+    let mut positions_storage = ctx.reserve_scoped(0, "index F3D embedded asset identities")?;
+    let mut positions = std::collections::HashMap::new();
+    for (position, asset) in ctx
+        .admit_iter(assets.as_slice(), "index F3D embedded asset identities")?
+        .enumerate()
+    {
+        positions_storage.with_storage(|| {
+            let id =
+                ctx.copy_retained_text(asset.id.as_str(), "index F3D embedded asset identities")?;
+            ctx.insert_hash_map(
+                &mut positions,
+                id,
+                position,
+                "index F3D embedded asset identities",
+            )
+        })?;
+    }
+    for asset in ctx.admit_iter(incoming, "append F3D unique assets")? {
         let existing = ctx
-            .position_by(
-                assets.as_slice(),
-                |existing| {
-                    ctx.equal(
-                        &existing.id,
-                        &asset.id,
-                        "compare F3D embedded asset identities",
-                    )
-                },
+            .get_hash_map(
+                &positions,
+                asset.id.as_str(),
                 "find F3D embedded asset identity",
             )?
-            .map(|index| &assets[index]);
+            .and_then(|position| assets.get(*position));
         match existing {
+            // The payload comparison is a gap: `Asset` has no `DecodeCost`.
             Some(existing) if existing != &asset => {
                 return Err(CodecError::malformed(format_args!(
                     "F3D embedded asset {} has conflicting projections",
@@ -3963,7 +4027,21 @@ fn extend_unique_assets(
                 )));
             }
             Some(_) => {}
-            None => ctx.push_vec(assets, asset, "append F3D unique assets")?,
+            None => {
+                positions_storage.with_storage(|| {
+                    let id = ctx.copy_retained_text(
+                        asset.id.as_str(),
+                        "index F3D embedded asset identities",
+                    )?;
+                    ctx.insert_hash_map(
+                        &mut positions,
+                        id,
+                        assets.len(),
+                        "index F3D embedded asset identities",
+                    )
+                })?;
+                ctx.push_vec(assets, asset, "append F3D unique assets")?;
+            }
         }
     }
     Ok(())
@@ -4503,28 +4581,34 @@ fn bind_mesh_feature_definitions(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     projection: &MeshProjection,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for feature in features {
+    // The first scope carrying each identity, built once.
+    let mut scopes_storage = ctx.reserve_scoped(0, "index F3D mesh feature scopes")?;
+    let mut scopes_by_id = std::collections::HashMap::new();
+    for scope in ctx.admit_iter(scopes, "index F3D mesh feature scopes")? {
+        scopes_storage.with_storage(|| {
+            if let std::collections::hash_map::Entry::Vacant(entry) = ctx.entry_hash_map(
+                &mut scopes_by_id,
+                scope.id.as_str(),
+                "index F3D mesh feature scopes",
+            )? {
+                entry.insert(scope);
+            }
+            Ok::<(), CodecError>(())
+        })?;
+    }
+    for feature in ctx.admit_iter(features, "bind F3D mesh feature definitions")? {
         if feature.source_tag.as_deref() != Some("Base Mesh Feature") {
             continue;
         }
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
         };
-        let Some(scope_index) = ctx.position_by(
-            scopes,
-            |scope| {
-                ctx.equal(
-                    scope.id.as_str(),
-                    native_ref,
-                    "compare F3D mesh feature scope identities",
-                )
-            },
-            "find F3D mesh feature scope",
-        )?
+        let Some(scope) = ctx
+            .get_hash_map(&scopes_by_id, native_ref, "find F3D mesh feature scope")?
+            .copied()
         else {
             continue;
         };
-        let scope = &scopes[scope_index];
         let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
         let Some(tessellations) =
             mesh_feature_tessellations(ctx, projection, stream, scope.record_index)?
@@ -4746,9 +4830,11 @@ fn report_xref_placement_failures(
         &table.placement_failures,
         "scan F3D table placement failures",
     )? {
-        let Some(reference_index) = ctx.position_by(
+        // References are stored in ordinal order.
+        let Ok(reference_index) = ctx.binary_search_by_key(
             &table.references,
-            |reference| Ok(reference.ordinal == *ordinal),
+            ordinal,
+            |reference| Ok(reference.ordinal),
             "find F3D failed placement reference",
         )?
         else {
@@ -4784,9 +4870,11 @@ fn report_xref_placement_overrides(
     )? {
         let ordinal = override_.ordinal;
         let count = override_.count;
-        let Some(reference_index) = ctx.position_by(
+        // References are stored in ordinal order.
+        let Ok(reference_index) = ctx.binary_search_by_key(
             &table.references,
-            |reference| Ok(reference.ordinal == ordinal),
+            &ordinal,
+            |reference| Ok(reference.ordinal),
             "find F3D superseded placement reference",
         )?
         else {
@@ -7452,7 +7540,7 @@ fn apply_appearance_base_colors(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Resu
     }
     drop(colors);
     drop(colors_storage);
-    for body in &mut ir.model.bodies {
+    for body in ctx.admit_iter(&mut ir.model.bodies, "apply F3D body appearance colors")? {
         if body.color.is_none() {
             body.color = ctx
                 .get_hash_map(&body_colors, &body.id, "find F3D body appearance color")?
@@ -7460,7 +7548,7 @@ fn apply_appearance_base_colors(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Resu
                 .flatten();
         }
     }
-    for face in &mut ir.model.faces {
+    for face in ctx.admit_iter(&mut ir.model.faces, "apply F3D face appearance colors")? {
         if face.color.is_none() {
             face.color = ctx
                 .get_hash_map(&face_colors, &face.id, "find F3D face appearance color")?

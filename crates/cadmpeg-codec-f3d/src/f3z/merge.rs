@@ -47,11 +47,15 @@ pub(super) fn make_sibling_ordinals_unique(
     ctx: &DecodeContext<'_>,
     occurrences: &mut [cadmpeg_ir::products::Occurrence],
 ) -> Result<(), CodecError> {
-    use std::collections::{HashMap, HashSet};
-
+    // Per parent: the ordinals taken so far and the smallest ordinal that may
+    // still be free. Ordinals are only added, so the smallest free ordinal
+    // never decreases and each parent's cursor moves forward over its set once.
     let mut used_storage = ctx.reserve_scoped(0, "index F3Z sibling ordinals")?;
-    let mut used = HashMap::<Option<cadmpeg_ir::ids::OccurrenceId>, HashSet<u32>>::new();
-    for occurrence in occurrences {
+    let mut used = std::collections::HashMap::<
+        Option<cadmpeg_ir::ids::OccurrenceId>,
+        (std::collections::HashSet<u32>, u32),
+    >::new();
+    for occurrence in ctx.admit_iter(occurrences, "index F3Z sibling ordinals")? {
         used_storage.with_storage(|| {
             let parent = match &occurrence.parent {
                 cadmpeg_ir::products::OccurrenceParent::Root {} => None,
@@ -59,23 +63,22 @@ pub(super) fn make_sibling_ordinals_unique(
                     Some(occurrence.try_clone_for_decode(ctx, "copy F3Z sibling parent")?)
                 }
             };
-            let siblings = ctx
+            let (siblings, next_free) = ctx
                 .entry_hash_map(&mut used, parent, "index F3Z sibling parents")?
                 .or_default();
-            let ordinal = if siblings.contains(&occurrence.ordinal) {
-                let mut free = None;
-                for candidate in 0..=u32::MAX {
-                    ctx.charge_work(1, "find F3Z sibling ordinal")?;
-                    if !siblings.contains(&candidate) {
-                        free = Some(candidate);
-                        break;
-                    }
+            let ordinal = if ctx.contains_hash_set(
+                siblings,
+                &occurrence.ordinal,
+                "find F3Z sibling ordinal",
+            )? {
+                while ctx.contains_hash_set(siblings, next_free, "find F3Z sibling ordinal")? {
+                    *next_free = next_free.checked_add(1).ok_or_else(|| {
+                        CodecError::malformed(
+                            "F3Z sibling occurrence population exhausts the u32 ordinal space",
+                        )
+                    })?;
                 }
-                free.ok_or_else(|| {
-                    CodecError::malformed(
-                        "F3Z sibling occurrence population exhausts the u32 ordinal space",
-                    )
-                })?
+                *next_free
             } else {
                 occurrence.ordinal
             };
