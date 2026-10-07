@@ -38,20 +38,21 @@ fn admit_analytic<T>(
     }
 }
 
-fn point(ir: &CadIr, sequence: u32, ctx: &DecodeContext<'_>) -> Result<Option<Point3>, CodecError> {
+fn point(
+    points: &BTreeMap<&str, Point3>,
+    sequence: u32,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Point3>, CodecError> {
     let mut storage = [0_u8; 64];
     let Some(id) = crate::ids::directory_lookup_key("iges:model:point#D", sequence, &mut storage, ctx)? else {
         return Ok(None);
     };
-    Ok(ir.model
-        .points
-        .iter()
-        .find(|point| point.id.as_str() == id)
-        .map(|point| point.position().get()))
+    Ok(ctx.get_btree_map(points, id, "iges analytic location lookup")?.copied())
 }
 
 #[derive(Debug)]
 enum DirectionError {
+    Decode(CodecError),
     MissingEntry(u32),
     WrongTypeForm {
         sequence: u32,
@@ -68,6 +69,7 @@ enum DirectionError {
 impl fmt::Display for DirectionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Decode(error) => error.fmt(formatter),
             Self::MissingEntry(sequence) => {
                 write!(formatter, "points to missing Directory entry D{sequence}")
             }
@@ -134,12 +136,12 @@ impl fmt::Display for AnalyticDirectionError {
 
 fn direction(
     sequence: u32,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    entries: &[DirectoryEntry],
+    records: &[ParameterRecord],
+    ctx: &DecodeContext<'_>,
 ) -> Result<UnitVector3, DirectionError> {
-    let entry = entries
-        .get(&sequence)
-        .copied()
+    let entry = crate::directory::entry_by_sequence(entries, sequence, ctx)
+        .map_err(DirectionError::Decode)?
         .ok_or(DirectionError::MissingEntry(sequence))?;
     if entry.entity_type != 123 || entry.form != 0 {
         return Err(DirectionError::WrongTypeForm {
@@ -154,9 +156,8 @@ fn direction(
     if entry.transform != 0 {
         return Err(DirectionError::Transformed(sequence));
     }
-    let record = records
-        .get(&sequence)
-        .copied()
+    let record = crate::parameter::record_by_sequence(records, sequence, ctx)
+        .map_err(DirectionError::Decode)?
         .ok_or(DirectionError::MissingParameters(sequence))?;
     let components = [record.number(1), record.number(2), record.number(3)];
     let [Some(x_component), Some(y_component), Some(z_component)] = components else {
@@ -171,11 +172,12 @@ fn required_direction(
     record: &ParameterRecord,
     index: usize,
     role: &'static str,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    entries: &[DirectoryEntry],
+    records: &[ParameterRecord],
+    ctx: &DecodeContext<'_>,
 ) -> Result<UnitVector3, AnalyticDirectionError> {
     let sequence = pointer(record, index).ok_or(AnalyticDirectionError::MissingPointer(role))?;
-    direction(sequence, entries, records)
+    direction(sequence, entries, records, ctx)
         .map_err(|reason| AnalyticDirectionError::Pointed { role, reason })
 }
 
@@ -184,10 +186,11 @@ fn transformed_direction(
     index: usize,
     role: &'static str,
     transform: Transform,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    entries: &[DirectoryEntry],
+    records: &[ParameterRecord],
+    ctx: &DecodeContext<'_>,
 ) -> Result<UnitVector3, AnalyticDirectionError> {
-    let direction = required_direction(record, index, role, entries, records)?;
+    let direction = required_direction(record, index, role, entries, records, ctx)?;
     transform
         .apply_vector(*direction.as_raw())
         .and_then(UnitVector3::normalized_nonzero)
@@ -200,13 +203,22 @@ fn form_reference_direction(
     index: usize,
     role: &'static str,
     transform: Transform,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    sources: (&[DirectoryEntry], &[ParameterRecord]),
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<UnitVector3>, AnalyticDirectionError> {
     if form == 0 {
         Ok(None)
     } else {
-        transformed_direction(record, index, role, transform, entries, records).map(Some)
+        transformed_direction(record, index, role, transform, sources.0, sources.1, ctx).map(Some)
+    }
+}
+
+impl AnalyticDirectionError {
+    fn non_resource(self) -> Result<Self, CodecError> {
+        match self {
+            Self::Pointed { reason: DirectionError::Decode(error), .. } => Err(error),
+            message => Ok(message),
+        }
     }
 }
 
@@ -292,6 +304,8 @@ pub(super) fn project(
         }
         Ok::<_, CodecError>((records, entries))
     })?;
+    let mut point_storage = ctx.reserve_scoped(0, "iges analytic point index")?;
+    let mut point_index = None;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -308,7 +322,8 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let transform = match surface_transform(entry, &entries, &records, global, ctx) {
+        let mut placement_storage = ctx.reserve_scoped(0, "iges analytic placement scratch")?;
+        let transform = match placement_storage.with_storage(|| surface_transform(entry, &entries, &records, global, ctx)) {
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
@@ -318,7 +333,24 @@ pub(super) fn project(
         };
         let location_index = pointer(record, 1);
         let location = match location_index {
-            Some(sequence) => point(ir, sequence, ctx)?,
+            Some(sequence) => {
+                if point_index.is_none() {
+                    point_index = Some(point_storage.with_storage(|| {
+                        let mut points = BTreeMap::new();
+                        for point in ctx.admit_iter(&ir.model.points, "iges analytic point index traversal")? {
+                            // Location lookup uses the first occurrence of an identity.
+                            if !ctx.contains_key_btree_map(&points, point.id.as_str(), "iges analytic point index lookup")? {
+                                ctx.insert_btree_map(&mut points, point.id.as_str(), point.position().get(), "iges analytic point index nodes")?;
+                            }
+                        }
+                        Ok::<_, CodecError>(points)
+                    })?);
+                }
+                match &point_index {
+                    Some(points) => point(points, sequence, ctx)?,
+                    None => None,
+                }
+            },
             None => None,
         };
         let Some(location) = location else {
@@ -346,11 +378,13 @@ pub(super) fn project(
                     2,
                     "plane normal",
                     transform,
-                    &entries,
-                    &records,
+                    directory,
+                    parameters,
+                    ctx,
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
+                        let message = message.non_resource()?;
                         push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
@@ -361,11 +395,12 @@ pub(super) fn project(
                     3,
                     "plane reference direction",
                     transform,
-                    &entries,
-                    &records,
+                    (directory, parameters),
+                    ctx,
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
+                        let message = message.non_resource()?;
                         push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
@@ -393,11 +428,13 @@ pub(super) fn project(
                     2,
                     "cylinder axis",
                     transform,
-                    &entries,
-                    &records,
+                    directory,
+                    parameters,
+                    ctx,
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
+                        let message = message.non_resource()?;
                         push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
@@ -417,11 +454,12 @@ pub(super) fn project(
                     4,
                     "cylinder reference direction",
                     transform,
-                    &entries,
-                    &records,
+                    (directory, parameters),
+                    ctx,
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
+                        let message = message.non_resource()?;
                         push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
@@ -460,11 +498,13 @@ pub(super) fn project(
                     2,
                     "cone axis",
                     transform,
-                    &entries,
-                    &records,
+                    directory,
+                    parameters,
+                    ctx,
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
+                        let message = message.non_resource()?;
                         push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
@@ -498,11 +538,12 @@ pub(super) fn project(
                     5,
                     "cone reference direction",
                     transform,
-                    &entries,
-                    &records,
+                    (directory, parameters),
+                    ctx,
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
+                        let message = message.non_resource()?;
                         push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
@@ -555,7 +596,7 @@ pub(super) fn project(
                     continue;
                 };
                 let axis = if entry.form == 1 {
-                    transformed_direction(record, 3, "sphere axis", transform, &entries, &records)
+                    transformed_direction(record, 3, "sphere axis", transform, directory, parameters, ctx)
                 } else {
                     transform
                         .apply_vector(Vector3::new(0.0, 0.0, 1.0))
@@ -565,6 +606,7 @@ pub(super) fn project(
                 let axis = match axis {
                     Ok(axis) => axis,
                     Err(message) => {
+                        let message = message.non_resource()?;
                         push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
@@ -575,11 +617,12 @@ pub(super) fn project(
                     4,
                     "sphere reference direction",
                     transform,
-                    &entries,
-                    &records,
+                    (directory, parameters),
+                    ctx,
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
+                        let message = message.non_resource()?;
                         push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
@@ -611,11 +654,13 @@ pub(super) fn project(
                     2,
                     "torus axis",
                     transform,
-                    &entries,
-                    &records,
+                    directory,
+                    parameters,
+                    ctx,
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
+                        let message = message.non_resource()?;
                         push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
@@ -646,11 +691,12 @@ pub(super) fn project(
                     5,
                     "torus reference direction",
                     transform,
-                    &entries,
-                    &records,
+                    (directory, parameters),
+                    ctx,
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
+                        let message = message.non_resource()?;
                         push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
