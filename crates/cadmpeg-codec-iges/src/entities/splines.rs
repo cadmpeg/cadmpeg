@@ -263,14 +263,18 @@ pub(super) fn project(
         let mut records = BTreeMap::new();
         for record in ctx.admit_iter(parameters, "iges splines parameter index traversal")? {
             ctx.insert_btree_map(
-                &mut records, record.directory_sequence, record,
+                &mut records,
+                record.directory_sequence,
+                record,
                 "iges splines parameter index",
             )?;
         }
         let mut entries = BTreeMap::new();
         for entry in ctx.admit_iter(directory, "iges splines directory index traversal")? {
             ctx.insert_btree_map(
-                &mut entries, entry.sequence, entry,
+                &mut entries,
+                entry.sequence,
+                entry,
                 "iges splines directory index",
             )?;
         }
@@ -280,12 +284,14 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
 
-    for entry in ctx.admit_iter(directory, "iges splines directory pass")?
+    for entry in ctx
+        .admit_iter(directory, "iges splines directory pass")?
         .filter(|entry| entry.entity_type == 112 && entry.form == 0)
     {
         let factor = global.length_factor_mm();
         let mut scratch = ctx.reserve_scoped(0, "iges spline numeric scratch")?;
-        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
+        else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -357,10 +363,13 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(breakpoints) = scratch.with_storage(|| ctx.collect_options(
-            (5..5 + breakpoint_count).map(|index| record.number(index).and_then(FiniteReal::new)),
-            "iges spline curve breakpoints",
-        ))?
+        let Some(breakpoints) = scratch.with_storage(|| {
+            ctx.collect_options(
+                (5..5 + breakpoint_count)
+                    .map(|index| record.number(index).and_then(FiniteReal::new)),
+                "iges spline curve breakpoints",
+            )
+        })?
         else {
             super::push_entity_loss(
                 ctx,
@@ -370,8 +379,11 @@ pub(super) fn project(
             )?;
             continue;
         };
-        if ctx.any_by(breakpoints.windows(2), |pair| Ok(pair[0].get() >= pair[1].get()), "iges spline curve breakpoint order")?
-        {
+        if ctx.any_by(
+            breakpoints.windows(2),
+            |pair| Ok(pair[0].get() >= pair[1].get()),
+            "iges spline curve breakpoint order",
+        )? {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -390,11 +402,13 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(coefficients) = scratch.with_storage(|| ctx.collect_options(
-            (coefficient_start..coefficient_start + coefficient_count)
-                .map(|index| record.number(index).and_then(FiniteReal::new)),
-            "iges spline curve coefficients",
-        ))?
+        let Some(coefficients) = scratch.with_storage(|| {
+            ctx.collect_options(
+                (coefficient_start..coefficient_start + coefficient_count)
+                    .map(|index| record.number(index).and_then(FiniteReal::new)),
+                "iges spline curve coefficients",
+            )
+        })?
         else {
             super::push_entity_loss(
                 ctx,
@@ -405,15 +419,17 @@ pub(super) fn project(
             continue;
         };
         let mut placement_storage = ctx.reserve_scoped(0, "iges splines placement scratch")?;
-        let transform = match placement_storage.with_storage(|| resolve_transform(
-            entry.transform,
-            &entries,
-            &records,
-            factor,
-            global.real_precision(),
-            &mut BTreeSet::new(),
-            ctx,
-        )) {
+        let transform = match placement_storage.with_storage(|| {
+            resolve_transform(
+                entry.transform,
+                &entries,
+                &records,
+                factor,
+                global.real_precision(),
+                &mut BTreeSet::new(),
+                ctx,
+            )
+        }) {
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
@@ -430,7 +446,9 @@ pub(super) fn project(
         let mut previous_terminal_tangent = None;
         let mut previous_terminal_curvature = None;
         let mut segments = coefficients.chunks_exact(12).enumerate();
-        while let Some((segment, admitted_values)) = ctx.next_charged(&mut segments, "iges spline curve segments")? {
+        while let Some((segment, admitted_values)) =
+            ctx.next_charged(&mut segments, "iges spline curve segments")?
+        {
             let values: [f64; 12] = std::array::from_fn(|index| admitted_values[index].get());
             let width = breakpoints[segment + 1].get() - breakpoints[segment].get();
             let width_interval = declared_interval(
@@ -588,16 +606,20 @@ pub(super) fn project(
                 }
             }
             let bezier: [Option<FinitePoint3>; 4] = std::array::from_fn(|index| {
-                transform.apply_point(Point3::new(x[index] * factor, y[index] * factor, z[index] * factor))
+                transform.apply_point(Point3::new(
+                    x[index] * factor,
+                    y[index] * factor,
+                    z[index] * factor,
+                ))
             });
-            let [Some(a), Some(b), Some(c), Some(d)] = bezier else {
+            let [Some(start), Some(first_control), Some(second_control), Some(end)] = bezier else {
                 continuous = false;
                 break;
             };
             if control_points.is_empty() {
-                control_points.extend([a, b, c, d]);
+                control_points.extend([start, first_control, second_control, end]);
             } else {
-                control_points.extend([b, c, d]);
+                control_points.extend([first_control, second_control, end]);
             }
             previous_terminal_point = Some(end_point);
         }
@@ -614,12 +636,21 @@ pub(super) fn project(
             continue;
         }
         let tail_start = coefficient_start + coefficient_count;
-        let tail: [Option<FiniteReal>; 12] = std::array::from_fn(|offset| record.number(tail_start + offset).and_then(FiniteReal::new));
-        let [Some(a), Some(b), Some(c), Some(d), Some(e), Some(f), Some(g), Some(h), Some(i), Some(j), Some(k), Some(l)] = tail else {
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("terminal derivative block is missing"))?;
+        let tail: [Option<FiniteReal>; 12] = std::array::from_fn(|offset| {
+            record.number(tail_start + offset).and_then(FiniteReal::new)
+        });
+        let [Some(x0), Some(x1), Some(x2), Some(x3), Some(y0), Some(y1), Some(y2), Some(y3), Some(z0), Some(z1), Some(z2), Some(z3)] =
+            tail
+        else {
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("terminal derivative block is missing"),
+            )?;
             continue;
         };
-        let tail = [a, b, c, d, e, f, g, h, i, j, k, l];
+        let tail = [x0, x1, x2, x3, y0, y1, y2, y3, z0, z1, z2, z3];
         // GE-03: §4.14 calls this block redundant. CADIR keeps the
         // coefficient-defined carrier when a present block disagrees.
         let last_values: [f64; 12] =
@@ -662,7 +693,10 @@ pub(super) fn project(
         }
         let mut knots = ctx.collection_vec(segment_count * 3 + 5, "iges spline curve knots")?;
         knots.extend([breakpoints[0].get(); 4]);
-        for breakpoint in ctx.admit_iter(&breakpoints[1..segment_count], "iges spline curve interior knots")? {
+        for breakpoint in ctx.admit_iter(
+            &breakpoints[1..segment_count],
+            "iges spline curve interior knots",
+        )? {
             knots.extend([breakpoint.get(); 3]);
         }
         knots.extend([breakpoints[segment_count].get(); 4]);
@@ -712,12 +746,14 @@ pub(super) fn project(
         )?;
     }
 
-    for entry in ctx.admit_iter(directory, "iges splines directory pass")?
+    for entry in ctx
+        .admit_iter(directory, "iges splines directory pass")?
         .filter(|entry| entry.entity_type == 114 && entry.form == 0)
     {
         let factor = global.length_factor_mm();
         let mut scratch = ctx.reserve_scoped(0, "iges spline numeric scratch")?;
-        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
+        else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -846,10 +882,13 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(u_breakpoints) = scratch.with_storage(|| ctx.collect_options(
-            (5..5 + u_breakpoint_count).map(|index| record.number(index).and_then(FiniteReal::new)),
-            "iges spline surface u breakpoints",
-        ))?
+        let Some(u_breakpoints) = scratch.with_storage(|| {
+            ctx.collect_options(
+                (5..5 + u_breakpoint_count)
+                    .map(|index| record.number(index).and_then(FiniteReal::new)),
+                "iges spline surface u breakpoints",
+            )
+        })?
         else {
             super::push_entity_loss(
                 ctx,
@@ -860,11 +899,13 @@ pub(super) fn project(
             continue;
         };
         let v_breakpoint_start = 5 + u_breakpoint_count;
-        let Some(v_breakpoints) = scratch.with_storage(|| ctx.collect_options(
-            (v_breakpoint_start..v_breakpoint_start + v_breakpoint_count)
-                .map(|index| record.number(index).and_then(FiniteReal::new)),
-            "iges spline surface v breakpoints",
-        ))?
+        let Some(v_breakpoints) = scratch.with_storage(|| {
+            ctx.collect_options(
+                (v_breakpoint_start..v_breakpoint_start + v_breakpoint_count)
+                    .map(|index| record.number(index).and_then(FiniteReal::new)),
+                "iges spline surface v breakpoints",
+            )
+        })?
         else {
             super::push_entity_loss(
                 ctx,
@@ -874,9 +915,15 @@ pub(super) fn project(
             )?;
             continue;
         };
-        if ctx.any_by(u_breakpoints.windows(2), |pair| Ok(pair[0].get() >= pair[1].get()), "iges spline surface u breakpoint order")?
-            || ctx.any_by(v_breakpoints.windows(2), |pair| Ok(pair[0].get() >= pair[1].get()), "iges spline surface v breakpoint order")?
-        {
+        if ctx.any_by(
+            u_breakpoints.windows(2),
+            |pair| Ok(pair[0].get() >= pair[1].get()),
+            "iges spline surface u breakpoint order",
+        )? || ctx.any_by(
+            v_breakpoints.windows(2),
+            |pair| Ok(pair[0].get() >= pair[1].get()),
+            "iges spline surface v breakpoint order",
+        )? {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -886,15 +933,17 @@ pub(super) fn project(
             continue;
         }
         let mut placement_storage = ctx.reserve_scoped(0, "iges splines placement scratch")?;
-        let transform = match placement_storage.with_storage(|| resolve_transform(
-            entry.transform,
-            &entries,
-            &records,
-            factor,
-            global.real_precision(),
-            &mut BTreeSet::new(),
-            ctx,
-        )) {
+        let transform = match placement_storage.with_storage(|| {
+            resolve_transform(
+                entry.transform,
+                &entries,
+                &records,
+                factor,
+                global.real_precision(),
+                &mut BTreeSet::new(),
+                ctx,
+            )
+        }) {
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
@@ -945,12 +994,18 @@ pub(super) fn project(
             )?;
             continue;
         }
-        let mut grid = scratch.with_storage(|| ctx.alloc_filled(pole_count, None, "iges spline surface control grid"))?;
+        let mut grid = scratch.with_storage(|| {
+            ctx.alloc_filled(pole_count, None, "iges spline surface control grid")
+        })?;
         let mut valid = true;
         let mut u_patches = 0..u_segments;
-        'patches: while let Some(u_patch) = ctx.next_charged(&mut u_patches, "iges spline surface u patches")? {
+        'patches: while let Some(u_patch) =
+            ctx.next_charged(&mut u_patches, "iges spline surface u patches")?
+        {
             let mut v_patches = 0..v_segments;
-            while let Some(v_patch) = ctx.next_charged(&mut v_patches, "iges spline surface v patches")? {
+            while let Some(v_patch) =
+                ctx.next_charged(&mut v_patches, "iges spline surface v patches")?
+            {
                 let Some(block_index) = u_patch
                     .checked_mul(block_columns)
                     .and_then(|value| value.checked_add(v_patch))
@@ -967,7 +1022,10 @@ pub(super) fn project(
                 };
                 let mut values = [0.0; 48];
                 for (offset, value) in values.iter_mut().enumerate() {
-                    let Some(number) = record.number(block_start + offset).and_then(FiniteReal::new) else {
+                    let Some(number) = record
+                        .number(block_start + offset)
+                        .and_then(FiniteReal::new)
+                    else {
                         valid = false;
                         break 'patches;
                     };
@@ -1016,7 +1074,11 @@ pub(super) fn project(
             )?;
             continue;
         }
-        if ctx.any_by(&grid, |point| Ok(point.is_none()), "iges spline surface completed controls")? {
+        if ctx.any_by(
+            &grid,
+            |point| Ok(point.is_none()),
+            "iges spline surface completed controls",
+        )? {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -1024,16 +1086,22 @@ pub(super) fn project(
                 format_args!("{}", "spline-surface patch grid is incomplete"),
             )?;
             continue;
-        };
+        }
         let mut u_knots = ctx.collection_vec(u_segments * 3 + 5, "iges spline surface u knots")?;
         u_knots.extend([u_breakpoints[0].get(); 4]);
-        for breakpoint in ctx.admit_iter(&u_breakpoints[1..u_segments], "iges spline surface interior u knots")? {
+        for breakpoint in ctx.admit_iter(
+            &u_breakpoints[1..u_segments],
+            "iges spline surface interior u knots",
+        )? {
             u_knots.extend([breakpoint.get(); 3]);
         }
         u_knots.extend([u_breakpoints[u_segments].get(); 4]);
         let mut v_knots = ctx.collection_vec(v_segments * 3 + 5, "iges spline surface v knots")?;
         v_knots.extend([v_breakpoints[0].get(); 4]);
-        for breakpoint in ctx.admit_iter(&v_breakpoints[1..v_segments], "iges spline surface interior v knots")? {
+        for breakpoint in ctx.admit_iter(
+            &v_breakpoints[1..v_segments],
+            "iges spline surface interior v knots",
+        )? {
             v_knots.extend([breakpoint.get(); 3]);
         }
         v_knots.extend([v_breakpoints[v_segments].get(); 4]);
@@ -1050,7 +1118,9 @@ pub(super) fn project(
         for u_index in ctx.admit_iter(0..u_count, "iges spline surface pole row traversal")? {
             let mut row = ctx.collection_vec(v_count, "iges spline surface pole row controls")?;
             for v_index in ctx.admit_iter(0..v_count, "iges spline surface pole traversal")? {
-                let point = grid[u_index * v_count + v_index].ok_or_else(|| CodecError::malformed("spline-surface patch grid is incomplete"))?;
+                let point = grid[u_index * v_count + v_index].ok_or_else(|| {
+                    CodecError::malformed("spline-surface patch grid is incomplete")
+                })?;
                 row.push(point);
             }
             rows.push(row);

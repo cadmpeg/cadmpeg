@@ -23,7 +23,14 @@ fn assert_spline_collection_refusal(bytes: &[u8], operation: &str) {
     cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
-        IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            )
             .map_err(|failure| match failure {
                 DecodeFailure::Codec(error) => error,
                 other => panic!("unexpected decode failure: {other:?}"),
@@ -34,13 +41,29 @@ fn assert_spline_collection_refusal(bytes: &[u8], operation: &str) {
 #[test]
 fn spline_identity_copies_refuse_retained_byte_limit() {
     let bytes = parametric_spline_curve_file();
-    IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "iges splines identity copy", |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-            .map_err(|failure| match failure { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
-    });
+    IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges splines identity copy",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map_err(|failure| match failure {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
 }
 
 #[test]
@@ -510,12 +533,18 @@ fn splines_directory_pass_refuses_before_traversal() {
         |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
-            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions {
-                policy, ..DecodeOptions::default()
-            }).map_err(|failure| match failure {
-                DecodeFailure::Codec(error) => error,
-                other => panic!("unexpected decode failure: {other:?}"),
-            })
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map_err(|failure| match failure {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
         },
     );
 }
@@ -523,25 +552,73 @@ fn splines_directory_pass_refuses_before_traversal() {
 #[test]
 fn spline_projection_refuses_variable_work_and_scratch() {
     for (bytes, dimension, operation) in [
-        (parametric_spline_curve_file(), ResourceDimension::WorkUnits, "iges spline curve segments"),
-        (parametric_spline_curve_file(), ResourceDimension::WorkUnits, "iges spline curve breakpoint order"),
-        (parametric_spline_curve_file(), ResourceDimension::MaterializedBytes, "iges spline curve breakpoints"),
-        (parametric_spline_curve_file(), ResourceDimension::MaterializedBytes, "iges spline curve coefficients"),
-        (parametric_spline_surface_file(), ResourceDimension::WorkUnits, "iges spline surface u patches"),
-        (parametric_spline_surface_file(), ResourceDimension::WorkUnits, "iges spline surface v patches"),
-        (parametric_spline_surface_file(), ResourceDimension::WorkUnits, "iges spline surface pole traversal"),
-        (parametric_spline_surface_file(), ResourceDimension::MaterializedBytes, "iges spline surface control grid"),
+        (
+            parametric_spline_curve_file(),
+            ResourceDimension::WorkUnits,
+            "iges spline curve segments",
+        ),
+        (
+            parametric_spline_curve_file(),
+            ResourceDimension::WorkUnits,
+            "iges spline curve breakpoint order",
+        ),
+        (
+            parametric_spline_curve_file(),
+            ResourceDimension::MaterializedBytes,
+            "iges spline curve breakpoints",
+        ),
+        (
+            parametric_spline_curve_file(),
+            ResourceDimension::MaterializedBytes,
+            "iges spline curve coefficients",
+        ),
+        (
+            parametric_spline_surface_file(),
+            ResourceDimension::WorkUnits,
+            "iges spline surface u patches",
+        ),
+        (
+            parametric_spline_surface_file(),
+            ResourceDimension::WorkUnits,
+            "iges spline surface v patches",
+        ),
+        (
+            parametric_spline_surface_file(),
+            ResourceDimension::WorkUnits,
+            "iges spline surface pole traversal",
+        ),
+        (
+            parametric_spline_surface_file(),
+            ResourceDimension::MaterializedBytes,
+            "iges spline surface control grid",
+        ),
     ] {
         // Isolate projection storage from the scanner's earlier materialization peak.
         let projection_inputs = (dimension == ResourceDimension::MaterializedBytes).then(|| {
-            let decoded = IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+            let decoded = IgesCodec
+                .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+                .unwrap();
             crate::test_support::with_service_context(&bytes, |ctx| {
                 let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
                 let (global, _) = crate::global::parse(&scan, ctx).unwrap();
-                let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(ctx).unwrap(), ctx).unwrap();
+                let (directory, quarantined) =
+                    crate::directory::parse(&scan, global.global_table(ctx).unwrap(), ctx).unwrap();
                 assert!(quarantined.is_empty());
-                let parameters = crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, ctx).unwrap().records;
-                (decoded.ir().clone(), directory, parameters, global.length_context(ctx).unwrap().unwrap())
+                let parameters = crate::parameter::assemble_with_context(
+                    &scan,
+                    &directory,
+                    &quarantined,
+                    &global,
+                    ctx,
+                )
+                .unwrap()
+                .records;
+                (
+                    decoded.ir().clone(),
+                    directory,
+                    parameters,
+                    global.length_context(ctx).unwrap().unwrap(),
+                )
             })
         });
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
@@ -554,12 +631,30 @@ fn spline_projection_refuses_variable_work_and_scratch() {
             if let Some((source, directory, parameters, global)) = &projection_inputs {
                 let mut ir = source.clone();
                 crate::test_support::with_policy_context(&[], &policy, |ctx| {
-                    super::project(&mut ir, directory, parameters, global, ctx, &mut super::super::geometry::SourceSequences::default()).map(|_| ())
+                    super::project(
+                        &mut ir,
+                        directory,
+                        parameters,
+                        global,
+                        ctx,
+                        &mut super::super::geometry::SourceSequences::default(),
+                    )
+                    .map(|_| ())
                 })
             } else {
-                IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
+                IgesCodec
+                    .decode(
+                        &mut Cursor::new(&bytes),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
                     .map(|_| ())
-                    .map_err(|failure| match failure { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
+                    .map_err(|failure| match failure {
+                        DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected decode failure: {other:?}"),
+                    })
             }
         });
     }
