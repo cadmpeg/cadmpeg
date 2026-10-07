@@ -488,9 +488,7 @@ impl<'a, 'ctx> SpatialLaneIndex<'a, 'ctx> {
             return Ok(points);
         };
         let payload = &self.lane.native_payload;
-        for marker in ctx
-            .admit_iter(markers, "scan SLDPRT spatial sketch markers")?
-        {
+        for marker in ctx.admit_iter(markers, "scan SLDPRT spatial sketch markers")? {
             let Ok(offset) = usize::try_from(marker.offset()) else {
                 continue;
             };
@@ -1509,8 +1507,10 @@ pub(super) fn relation_bindings_scoped(
     let lane_key = ctx
         .rsplit_once(parent, "#", "split SLDPRT relation parent")?
         .map_or(parent, |(_, key)| key);
-    let candidates =
-        unique_relation_declaration_candidates_charged(ctx, classes, scalars, intervals)?;
+    let (candidates, _candidates_storage) = ctx
+        .with_scoped_storage("SLDPRT relation binding candidates", || {
+            unique_relation_declaration_candidates_charged(ctx, classes, scalars, intervals)
+        })?;
     let mut bindings = Vec::new();
     for &(class, scalar, family) in
         ctx.admit_iter(&candidates, "project SLDPRT relation binding candidates")?
@@ -3727,7 +3727,7 @@ fn reverse_incidence_curve_index(payload: &[u8], curve: &SketchInputEntity) -> O
         && marker_native_code(payload, offset) == Some(1)
         && marker_profile_curve_role(payload, offset) == Some(1)
         && compact_indexed_curve_endpoint_indices(payload, offset).is_some())
-        .then_some(curve_index)
+    .then_some(curve_index)
 }
 
 /// The distinct endpoint offsets by feature, curve index and selector.
@@ -3745,8 +3745,12 @@ impl<'a> ReverseIncidenceIndex<'a> {
         const OPERATION: &str = "index SLDPRT reverse incidence endpoints";
         ctx.with_scoped_storage(OPERATION, || {
             let mut selectors_storage = ctx.reserve_scoped(0, OPERATION)?;
-            let mut selectors = BTreeMap::<(Option<&str>, u16, u16), ReverseIncidenceOffsets>::new();
-            let mut index = Self { by_curve: HashMap::new(), invalid_features: std::collections::BTreeSet::new() };
+            let mut selectors =
+                BTreeMap::<(Option<&str>, u16, u16), ReverseIncidenceOffsets>::new();
+            let mut index = Self {
+                by_curve: HashMap::new(),
+                invalid_features: std::collections::BTreeSet::new(),
+            };
             for &marker in ctx.admit_iter(markers, OPERATION)? {
                 let feature = marker.feature_ref.as_deref();
                 let Ok(offset) = usize::try_from(marker.offset()) else {
@@ -3758,19 +3762,33 @@ impl<'a> ReverseIncidenceIndex<'a> {
                 };
                 for (selector, curve) in links {
                     selectors_storage.with_storage(|| {
-                        match ctx.entry_btree_map(&mut selectors, (feature, curve, selector), OPERATION)? {
-                            std::collections::btree_map::Entry::Occupied(mut entry) => entry.get_mut().include_offset(marker.offset()),
-                            std::collections::btree_map::Entry::Vacant(entry) => { entry.insert(ReverseIncidenceOffsets::One(marker.offset())); }
+                        match ctx.entry_btree_map(
+                            &mut selectors,
+                            (feature, curve, selector),
+                            OPERATION,
+                        )? {
+                            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                                entry.get_mut().include_offset(marker.offset());
+                            }
+                            std::collections::btree_map::Entry::Vacant(entry) => {
+                                entry.insert(ReverseIncidenceOffsets::One(marker.offset()));
+                            }
                         }
                         Ok::<_, CodecError>(())
                     })?;
                 }
             }
             for ((feature, curve, _), offsets) in ctx.admit_iter(selectors, OPERATION)? {
-                let ReverseIncidenceOffsets::Pair(pair) = offsets else { continue; };
+                let ReverseIncidenceOffsets::Pair(pair) = offsets else {
+                    continue;
+                };
                 match ctx.entry_hash_map(&mut index.by_curve, (feature, curve), OPERATION)? {
-                    std::collections::hash_map::Entry::Occupied(mut entry) => { entry.insert(None); }
-                    std::collections::hash_map::Entry::Vacant(entry) => { entry.insert(Some(pair)); }
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
+                        entry.insert(None);
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(Some(pair));
+                    }
                 }
             }
             Ok(index)
@@ -3792,8 +3810,10 @@ pub(super) fn current_reverse_incidence_endpoint_offsets_in(
     if ctx.contains_btree_set(&index.invalid_features, &feature, OPERATION)? {
         return Ok(None);
     }
-    Ok(ctx.get_hash_map(&index.by_curve, &(feature, curve_index), OPERATION)?
-        .and_then(Option::as_ref).copied())
+    Ok(ctx
+        .get_hash_map(&index.by_curve, &(feature, curve_index), OPERATION)?
+        .and_then(Option::as_ref)
+        .copied())
 }
 
 fn linked_profile_vertex(payload: &[u8], offset: usize) -> bool {
