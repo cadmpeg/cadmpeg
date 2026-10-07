@@ -42,13 +42,19 @@ use crate::parasolid::StreamHeader;
 use crate::records::ObjectId;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
+/// A configuration membership identity held as temporary storage until selected.
+struct ConfigurationBodyIdentity<'ctx> {
+    id: cadmpeg_ir::ids::BodyId,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
 struct DecodedBrep<'ctx> {
     /// Representative stream whose header is common to every merged site.
     /// This can be present for an unresolved merge without selecting a site.
     metadata_header: Option<StreamHeader>,
     _workspace: cadmpeg_core::decode::ScopedReservation<'ctx>,
     brep: Brep,
-    configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
+    configuration_bodies: Vec<(usize, Vec<ConfigurationBodyIdentity<'ctx>>)>,
 }
 
 struct EvaluatedFeatureState<'a> {
@@ -2954,17 +2960,25 @@ fn try_decode_brep<'ctx>(
     )))
 }
 
-fn copy_body_ids(
-    ctx: &DecodeContext<'_>,
+fn copy_body_ids<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bodies: &[cadmpeg_ir::topology::Body],
     workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
+) -> Result<Vec<ConfigurationBodyIdentity<'ctx>>, CodecError> {
     let mut ids = Vec::new();
     workspace
         .with_storage(|| ctx.reserve_capacity(&mut ids, bodies.len(), "collect SLDPRT body IDs"))?;
     for body in ctx.admit_iter(bodies, "scan SLDPRT copy_body_ids values")? {
-        let id = body.id.try_clone_for_decode(ctx, "retain SLDPRT body ID")?;
-        workspace.with_storage(|| ctx.push_vec(&mut ids, id, "collect SLDPRT body IDs"))?;
+        let (id, storage) = ctx.with_scoped_storage("retain SLDPRT body ID", || {
+            body.id.try_clone_for_decode(ctx, "retain SLDPRT body ID")
+        })?;
+        workspace.with_storage(|| {
+            ctx.push_vec(
+                &mut ids,
+                ConfigurationBodyIdentity { id, storage },
+                "collect SLDPRT body IDs",
+            )
+        })?;
     }
     Ok(ids)
 }
@@ -5902,7 +5916,7 @@ fn stamp_feature_baseline(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(),
 fn assign_configuration_bodies(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
+    configuration_bodies: Vec<(usize, Vec<ConfigurationBodyIdentity<'_>>)>,
 ) -> Result<(), CodecError> {
     const MERGE: &str = "merge SLDPRT configuration bodies";
     let mut workspace = ctx.reserve_scoped(0, "SLDPRT configuration partition lookup workspace")?;
@@ -5913,7 +5927,7 @@ fn assign_configuration_bodies(
         let Ok(index) = u32::try_from(index) else {
             continue;
         };
-        for body in ctx.admit_iter(bodies, MERGE)? {
+        for ConfigurationBodyIdentity { id: body, storage } in ctx.admit_iter(bodies, MERGE)? {
             if !workspace.with_storage(|| {
                 ctx.insert_btree_set(
                     &mut seen,
@@ -5923,6 +5937,7 @@ fn assign_configuration_bodies(
             })? {
                 continue;
             }
+            storage.commit()?;
             if let Some(bodies) = ctx.get_mut_btree_map(
                 &mut partition_map,
                 &index,
