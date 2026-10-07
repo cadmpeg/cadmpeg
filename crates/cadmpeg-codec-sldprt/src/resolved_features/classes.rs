@@ -10,7 +10,7 @@ use crate::records::{
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use std::borrow::Borrow;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::records::ObjectId;
 
@@ -35,11 +35,7 @@ fn idless_legacy_startup_shape(
         if record.input_class.is_some()
             || record.source_id.is_some()
             || record.tree_parent.is_some()
-            || !ctx.eq_ignore_ascii_case(
-                &record.xml_tag,
-                "Feature",
-                "check SLDPRT idless startup tag",
-            )?
+            || !record.xml_tag.eq_ignore_ascii_case("Feature")
             || !record.properties.is_empty()
         {
             return Ok(false);
@@ -422,16 +418,26 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
                 continue;
             }
             for feature in ctx.admit_iter(features, "bind SLDPRT cosmetic thread group")? {
-                let id = temporary.with_storage(|| copy_class_text(ctx, &feature.id))?;
-                temporary.with_storage(|| {
-                    ctx.push_btree_group(
-                        &mut cosmetic_thread_classes,
-                        id,
-                        *class,
-                        "bind SLDPRT history classes",
-                        "bind SLDPRT history classes",
-                    )
-                })?;
+                if let Some(classes) = ctx.get_mut_btree_map(
+                    &mut cosmetic_thread_classes,
+                    feature.id.as_str(),
+                    "bind SLDPRT history classes",
+                )? {
+                    temporary.with_storage(|| {
+                        ctx.push_vec(classes, *class, "bind SLDPRT history classes")
+                    })?;
+                } else {
+                    let id = temporary.with_storage(|| copy_class_text(ctx, &feature.id))?;
+                    temporary.with_storage(|| {
+                        ctx.push_btree_group(
+                            &mut cosmetic_thread_classes,
+                            id,
+                            *class,
+                            "bind SLDPRT history classes",
+                            "bind SLDPRT history classes",
+                        )
+                    })?;
+                }
             }
         }
     }
@@ -543,32 +549,42 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
     drop(native_startups);
     drop(temporary);
     let mut temporary = ctx.reserve_scoped(0, "SLDPRT classes by type workspace")?;
-    let mut classes_by_type = BTreeMap::<String, Vec<String>>::new();
+    let mut classes_by_type = BTreeMap::<String, BTreeSet<String>>::new();
     for history in ctx.admit_iter(&*histories, "scan SLDPRT class-by-type histories")? {
         for feature in ctx.admit_iter(&history.features, "scan SLDPRT class-by-type features")? {
-            if let Some(class) = &feature.input_class {
+            let Some(class) = &feature.input_class else {
+                continue;
+            };
+            if !ctx.contains_key_btree_map(
+                &classes_by_type,
+                feature.kind.as_str(),
+                "bind SLDPRT history classes",
+            )? {
                 let kind = temporary.with_storage(|| copy_class_text(ctx, &feature.kind))?;
-                let class = temporary.with_storage(|| copy_class_text(ctx, class))?;
                 temporary.with_storage(|| {
-                    ctx.push_btree_group(
+                    ctx.insert_btree_map(
                         &mut classes_by_type,
                         kind,
-                        class,
-                        "bind SLDPRT history classes",
+                        BTreeSet::new(),
                         "bind SLDPRT history classes",
                     )
                 })?;
             }
+            let Some(classes) = ctx.get_mut_btree_map(
+                &mut classes_by_type,
+                feature.kind.as_str(),
+                "bind SLDPRT history classes",
+            )?
+            else {
+                continue;
+            };
+            if !ctx.contains_btree_set(classes, class.as_str(), "bind SLDPRT history classes")? {
+                let class = temporary.with_storage(|| copy_class_text(ctx, class))?;
+                temporary.with_storage(|| {
+                    ctx.insert_btree_set(classes, class, "bind SLDPRT history classes")
+                })?;
+            }
         }
-    }
-    for (_, classes) in ctx.admit_iter(&mut classes_by_type, "sort SLDPRT bound classes")? {
-        ctx.stable_sort_by(
-            classes,
-            |value| value,
-            Ord::cmp,
-            "sort SLDPRT bound classes",
-        )?;
-        ctx.dedup_vec(classes, "deduplicate SLDPRT classes by type")?;
     }
     for history in ctx.admit_iter(&mut *histories, "bind SLDPRT class-by-type features")? {
         for feature in
@@ -582,7 +598,10 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
                 &feature.kind,
                 "find SLDPRT class by feature type",
             )? {
-                let [class] = classes.as_slice() else {
+                if classes.len() != 1 {
+                    continue;
+                }
+                let Some(class) = classes.first() else {
                     continue;
                 };
                 feature.input_class = Some(copy_class_text(ctx, class)?);
@@ -594,7 +613,7 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
     drop(temporary);
     let mut temporary = ctx.reserve_scoped(0, "SLDPRT token class workspace")?;
     let token_names = TokenNames::new(ctx, &mut temporary, lanes)?;
-    let mut classes_by_token = BTreeMap::<(&str, u16), Vec<String>>::new();
+    let mut classes_by_token = BTreeMap::<(&str, u16), BTreeSet<String>>::new();
     let mut unique = unique_names.iter();
     for history in ctx.admit_iter(&*histories, "scan SLDPRT token-binding histories")? {
         for feature in ctx.admit_iter(&history.features, "scan SLDPRT token-binding features")? {
@@ -606,27 +625,27 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
                 continue;
             };
             for &key in ctx.admit_iter(names, "bind SLDPRT token classes")? {
-                let class = temporary.with_storage(|| copy_class_text(ctx, class))?;
-                temporary.with_storage(|| {
-                    ctx.push_btree_group(
-                        &mut classes_by_token,
-                        key,
-                        class,
-                        "bind SLDPRT history classes",
-                        "bind SLDPRT history classes",
-                    )
-                })?;
+                let classes = temporary
+                    .with_storage(|| {
+                        ctx.entry_btree_map(
+                            &mut classes_by_token,
+                            key,
+                            "bind SLDPRT history classes",
+                        )
+                    })?
+                    .or_default();
+                if !ctx.contains_btree_set(
+                    classes,
+                    class.as_str(),
+                    "bind SLDPRT history classes",
+                )? {
+                    let class = temporary.with_storage(|| copy_class_text(ctx, class))?;
+                    temporary.with_storage(|| {
+                        ctx.insert_btree_set(classes, class, "bind SLDPRT history classes")
+                    })?;
+                }
             }
         }
-    }
-    for (_, classes) in ctx.admit_iter(&mut classes_by_token, "sort SLDPRT bound classes")? {
-        ctx.stable_sort_by(
-            classes,
-            |value| value,
-            Ord::cmp,
-            "sort SLDPRT bound classes",
-        )?;
-        ctx.dedup_vec(classes, "deduplicate SLDPRT token classes")?;
     }
     let mut unique = unique_names.iter();
     for history in ctx.admit_iter(&mut *histories, "bind SLDPRT token classes")? {
@@ -645,7 +664,10 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
                 if let Some(classes) =
                     ctx.get_btree_map(&classes_by_token, key, "find SLDPRT fallback token class")?
                 {
-                    if let [class] = classes.as_slice() {
+                    if classes.len() == 1 {
+                        let Some(class) = classes.first() else {
+                            continue;
+                        };
                         candidate_storage.with_storage(|| {
                             ctx.push_vec(
                                 &mut candidates,
@@ -753,11 +775,7 @@ fn legacy_repeated_hole_wizard_classes<'lanes, L: Borrow<FeatureInputLane>>(
                         native_object_class(class) == NativeClassKind::ProfileFeature
                     })
                 })
-                && ctx.eq_ignore_ascii_case(
-                    &operation.xml_tag,
-                    "Feature",
-                    "check SLDPRT legacy hole operation tag",
-                )?
+                && operation.xml_tag.eq_ignore_ascii_case("Feature")
             {
                 lookup_storage.with_storage(|| {
                     ctx.insert_hash_set(
@@ -852,10 +870,23 @@ fn legacy_repeated_hole_wizard_classes<'lanes, L: Borrow<FeatureInputLane>>(
                 continue;
             }
             for feature in ctx.admit_iter(features, "bind SLDPRT legacy hole group")? {
-                let id = temporary.with_storage(|| copy_class_text(ctx, &feature.id))?;
-                temporary.with_storage(|| {
-                    ctx.insert_hash_map(&mut bindings, id, *class, "bind SLDPRT history classes")
-                })?;
+                if let Some(binding) = ctx.get_mut_hash_map(
+                    &mut bindings,
+                    feature.id.as_str(),
+                    "bind SLDPRT history classes",
+                )? {
+                    *binding = *class;
+                } else {
+                    let id = temporary.with_storage(|| copy_class_text(ctx, &feature.id))?;
+                    temporary.with_storage(|| {
+                        ctx.insert_hash_map(
+                            &mut bindings,
+                            id,
+                            *class,
+                            "bind SLDPRT history classes",
+                        )
+                    })?;
+                }
             }
         }
     }
@@ -873,11 +904,7 @@ fn classless_dimension_schema_class(
     if feature.parameters.is_empty()
         || feature.parameters.len() > 2
         || feature.content.len() != feature.parameters.len()
-        || !ctx.eq_ignore_ascii_case(
-            &feature.xml_tag,
-            "Feature",
-            "check SLDPRT dimension schema tag",
-        )?
+        || !feature.xml_tag.eq_ignore_ascii_case("Feature")
     {
         return Ok(None);
     }
@@ -954,11 +981,7 @@ fn cosmetic_thread_parameter_shape(
             |name| Ok(name.as_str() == "D1" || name.as_str() == "D2"),
             "scan SLDPRT cosmetic thread parameters",
         )?
-        || !ctx.eq_ignore_ascii_case(
-            &feature.xml_tag,
-            "Feature",
-            "check SLDPRT cosmetic thread tag",
-        )?
+        || !feature.xml_tag.eq_ignore_ascii_case("Feature")
     {
         return Ok(false);
     }
@@ -1014,6 +1037,26 @@ mod idless_history_binding_tests {
             text: None,
             content: Vec::new(),
         }
+    }
+
+    #[test]
+    fn dimension_schema_rejects_a_long_tag_without_text_work() {
+        let mut record = feature(0, "thread");
+        record
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D1"), "1mm".into());
+        record.content.push(FeatureContent::Dimension("D1".into()));
+        record.xml_tag = "x".repeat(4096);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(
+            classless_dimension_schema_class(&ctx, &record).unwrap(),
+            None
+        );
+        assert!(ctx.resource_refusal().is_none());
     }
 
     #[test]
@@ -1399,8 +1442,33 @@ mod idless_history_binding_tests {
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut temporary = ctx.reserve_scoped(0, "test workspace").unwrap();
         let lanes = [lane];
-        let bindings =
-            legacy_repeated_hole_wizard_classes(&ctx, &mut temporary, &[history], &lanes).unwrap();
+        let bindings = legacy_repeated_hole_wizard_classes(
+            &ctx,
+            &mut temporary,
+            std::slice::from_ref(&history),
+            &lanes,
+        )
+        .unwrap();
+        assert_eq!(bindings.get("feature-10").copied(), Some("moHoleWzd_c"));
+        assert_eq!(bindings.get("feature-20").copied(), Some("moHoleWzd_c"));
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 4096;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut temporary = ctx
+            .reserve_scoped(0, "test duplicate hole bindings")
+            .unwrap();
+        let repeated = std::iter::repeat_n(&lanes[0], 512).collect::<Vec<_>>();
+        let bindings = legacy_repeated_hole_wizard_classes(
+            &ctx,
+            &mut temporary,
+            std::slice::from_ref(&history),
+            &repeated,
+        )
+        .unwrap();
+        assert_eq!(bindings.len(), 2);
         assert_eq!(bindings.get("feature-10").copied(), Some("moHoleWzd_c"));
         assert_eq!(bindings.get("feature-20").copied(), Some("moHoleWzd_c"));
     }

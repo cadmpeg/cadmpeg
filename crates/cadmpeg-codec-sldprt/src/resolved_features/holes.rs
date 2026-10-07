@@ -2342,17 +2342,29 @@ pub(crate) fn project_hole_position_sketches(
         let Some(native) = &feature.native_ref else {
             continue;
         };
-        model_sketch_features_storage.with_storage(|| {
-            let native_key = ctx.copy_retained_text(native, OPERATION)?;
-            let feature_id = feature.id.try_clone_for_decode(ctx, OPERATION)?;
-            let sketch_id = sketch.try_clone_for_decode(ctx, OPERATION)?;
-            ctx.insert_hash_map(
-                &mut model_sketch_features,
-                native_key,
-                (feature_id, sketch_id),
-                "resolve SLDPRT holes keys",
-            )
+        let (binding, binding_storage) = ctx.with_scoped_storage(OPERATION, || {
+            Ok::<_, CodecError>((
+                feature.id.try_clone_for_decode(ctx, OPERATION)?,
+                sketch.try_clone_for_decode(ctx, OPERATION)?,
+            ))
         })?;
+        if let Some(indexed) = ctx.get_mut_hash_map(
+            &mut model_sketch_features,
+            native.as_str(),
+            "resolve SLDPRT holes keys",
+        )? {
+            *indexed = (binding, binding_storage);
+        } else {
+            model_sketch_features_storage.with_storage(|| {
+                let native_key = ctx.copy_retained_text(native, OPERATION)?;
+                ctx.insert_hash_map(
+                    &mut model_sketch_features,
+                    native_key,
+                    (binding, binding_storage),
+                    "resolve SLDPRT holes keys",
+                )
+            })?;
+        }
     }
     let mut lookup_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut first_sketch = HashMap::new();
@@ -2429,7 +2441,7 @@ pub(crate) fn project_hole_position_sketches(
                                 |id| {
                                     Ok(ctx
                                         .get_hash_map(&model_sketch_features, id, OPERATION)?
-                                        .map(|(_, sketch)| sketch))
+                                        .map(|((_, sketch), _)| sketch))
                                 },
                                 sketch_entities,
                             )?,
@@ -2437,7 +2449,7 @@ pub(crate) fn project_hole_position_sketches(
                     let Some(position_feature) = position_feature else {
                         break 'feature_edit;
                     };
-                    let Some((position_dependency, sketch_id)) = ctx.get_hash_map(
+                    let Some(((position_dependency, sketch_id), _)) = ctx.get_hash_map(
                         &model_sketch_features,
                         position_feature.id.as_str(),
                         "resolve SLDPRT holes keys",
@@ -2965,10 +2977,16 @@ pub(crate) fn project_spatial_hole_position_sketches(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(_) })
         ) {
             if let Some(native) = feature.native_ref.as_deref() {
-                lookup_storage.with_storage(|| {
-                    let native = ctx.copy_retained_text(native, INDEX_OPERATION)?;
-                    ctx.insert_hash_map(&mut position_sketches, native, index, INDEX_OPERATION)
-                })?;
+                if let Some(indexed) =
+                    ctx.get_mut_hash_map(&mut position_sketches, native, INDEX_OPERATION)?
+                {
+                    *indexed = index;
+                } else {
+                    lookup_storage.with_storage(|| {
+                        let native = ctx.copy_retained_text(native, INDEX_OPERATION)?;
+                        ctx.insert_hash_map(&mut position_sketches, native, index, INDEX_OPERATION)
+                    })?;
+                }
             }
         }
     }
@@ -4877,11 +4895,9 @@ pub(crate) fn project_hole_axes(
             continue;
         };
         model_sketches_storage.with_storage(|| {
-            let native = ctx.copy_retained_text(native, INDEX_OPERATION)?;
-            let sketch = sketch.try_clone_for_decode(ctx, INDEX_OPERATION)?;
             ctx.insert_hash_map(
                 &mut model_sketches,
-                native,
+                native.as_str(),
                 sketch,
                 "resolve SLDPRT holes keys",
             )
@@ -4900,7 +4916,10 @@ pub(crate) fn project_hole_axes(
                 ctx,
                 hole,
                 &records,
-                |id| ctx.get_hash_map(&model_sketches, id, INDEX_OPERATION),
+                |id| {
+                    ctx.get_hash_map(&model_sketches, id, INDEX_OPERATION)
+                        .map(|sketch| sketch.copied())
+                },
                 sketch_entities,
             )?,
         };
@@ -4917,6 +4936,8 @@ pub(crate) fn project_hole_axes(
             )
         })?;
     }
+    drop(model_sketches);
+    drop(model_sketches_storage);
     let mut position_features = HashSet::new();
     let mut source_items = hole_positions.values();
     while let Some(position) = ctx.next_charged(&mut source_items, INDEX_OPERATION)? {
