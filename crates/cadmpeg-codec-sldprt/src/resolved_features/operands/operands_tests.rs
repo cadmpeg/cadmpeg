@@ -1052,3 +1052,35 @@ fn scalar_operands_select_the_only_second_operand_alternative() {
     assert_eq!(resolved[0].map(SketchInputEntity::id), Some("first"));
     assert_eq!(resolved[1].map(SketchInputEntity::id), Some("second"));
 }
+
+#[test]
+fn operand_candidate_index_preserves_duplicates_and_refuses_before_lookup() {
+    let point = |id: &str, offset, object_index| {
+        SketchInputEntity::new(id, "lane", 0, offset, SketchInputKind::Point)
+            .with_test_identity(Some(object_index), Some(object_index))
+    };
+    let mut first = point("first", 20, 7);
+    first.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0., 0.]);
+    let mut second = point("second", 10, 7);
+    second.coordinates_m = cadmpeg_ir::units::FiniteVector::new([1., 0.]);
+    let mut third = point("third", 30, 8);
+    third.coordinates_m = cadmpeg_ir::units::FiniteVector::new([2., 0.]);
+    let mut fourth = point("fourth", 40, 7);
+    fourth.coordinates_m = cadmpeg_ir::units::FiniteVector::new([3., 0.]);
+    let markers = [first, second, third, fourth];
+    let entities = markers.iter().collect::<Vec<_>>();
+    let operands = [
+        FeatureInputOperand { offset: 0, reference_ref: "first-ref".into(), kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C), entity_index: 7, entity_ref: None },
+        FeatureInputOperand { offset: 1, reference_ref: "second-ref".into(), kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD), entity_index: 0, entity_ref: None },
+        FeatureInputOperand { offset: 2, reference_ref: "third-ref".into(), kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C), entity_index: 8, entity_ref: None },
+    ];
+    let solve = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        resolve_scalar_operand_markers(ctx, &entities, &operands)
+    };
+    let resolved = solve(&cadmpeg_test_support::service_decode_context()).unwrap();
+    assert_eq!(resolved.iter().map(|entity| entity.map(SketchInputEntity::id)).collect::<Vec<_>>(),
+        [None, Some("second"), Some("third")]);
+    for operation in ["index SLDPRT scalar operand candidates", "find indexed SLDPRT operand candidates"] {
+        crate::test_support::work_refusal_at(operation, solve);
+    }
+}
