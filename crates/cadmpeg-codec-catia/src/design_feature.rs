@@ -37,6 +37,7 @@ pub(crate) struct DesignFeatureTransfer {
 }
 
 impl DesignFeatureTransfer {
+    #[cfg(test)]
     pub(crate) fn consumed_records(&self) -> impl Iterator<Item = &String> {
         self.principal_plane_records
             .union(&self.sketch_owner_records)
@@ -45,6 +46,28 @@ impl DesignFeatureTransfer {
             .chain(self.native_operation_definition_value_records.iter())
             .chain(self.native_operation_definition_chain_value_records.iter())
             .chain(self.native_operation_range_records.iter())
+    }
+
+    /// Tests whether any design-feature transfer consumed an object record.
+    pub(crate) fn consumes(
+        &self,
+        ctx: &DecodeContext<'_>,
+        record: &str,
+    ) -> Result<bool, CodecError> {
+        const OPERATION: &str = "catia_design_feature_consumed_records";
+        ctx.any_by(
+            [
+                &self.principal_plane_records,
+                &self.sketch_owner_records,
+                &self.reference_plane_records,
+                &self.native_operation_records,
+                &self.native_operation_definition_value_records,
+                &self.native_operation_definition_chain_value_records,
+                &self.native_operation_range_records,
+            ],
+            |records| ctx.contains_hash_set(records, record, OPERATION),
+            OPERATION,
+        )
     }
 
     /// Bind parameters to a transferred feature only through their exact
