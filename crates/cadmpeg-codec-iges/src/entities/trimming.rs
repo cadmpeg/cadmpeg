@@ -1373,45 +1373,25 @@ fn insert_homogeneous_pcurve_knot(
     degree: usize,
     knots: &mut Vec<f64>,
     controls: &mut Vec<[f64; 4]>,
-    knot: f64,
+    insertion: (f64, usize, usize),
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<()>, CodecError> {
-    let count = controls.len();
-    let Some(span) = knots
-        .windows(2)
-        .position(|pair| pair[0] <= knot && knot < pair[1])
-    else {
+    let (knot, span, multiplicity) = insertion;
+    let Some((left_end, tail_start)) = span.checked_sub(degree).zip(span.checked_sub(multiplicity)) else {
         return Ok(None);
     };
-    let multiplicity = knots.iter().filter(|candidate| **candidate == knot).count();
-    if multiplicity >= degree {
-        return Ok(Some(()));
-    }
-    let Some((left_end, tail_start, inserted_count)) = span
-        .checked_sub(degree)
-        .zip(span.checked_sub(multiplicity))
-        .zip(count.checked_add(1))
-        .map(|((left_end, tail_start), count)| (left_end, tail_start, count))
-    else {
-        return Ok(None);
-    };
-    let mut inserted = ctx.collection_vec(inserted_count, "iges pcurve inserted controls")?;
-    inserted.extend(std::iter::repeat_with(|| [0.0; 4]).take(inserted_count));
-    inserted[..=left_end].copy_from_slice(&controls[..=left_end]);
-    inserted[tail_start + 1..].copy_from_slice(&controls[tail_start..]);
-    for index in left_end + 1..=tail_start {
+    ctx.insert_vec(controls, tail_start + 1, controls[tail_start], "iges pcurve inserted controls")?;
+    for index in ctx.admit_iter(left_end + 1..=tail_start, "iges pcurve knot interpolation")?.rev() {
         let denominator = knots[index + degree] - knots[index];
         if !denominator.is_finite() || denominator <= 0.0 {
             return Ok(None);
         }
         let alpha = (knot - knots[index]) / denominator;
-        inserted[index] = std::array::from_fn(|axis| {
+        controls[index] = std::array::from_fn(|axis| {
             alpha * controls[index][axis] + (1.0 - alpha) * controls[index - 1][axis]
         });
     }
-    ctx.reserve_vec(knots, 1, "iges pcurve inserted knots")?;
-    knots.insert(span + 1, knot);
-    *controls = inserted;
+    ctx.insert_vec(knots, span + 1, knot, "iges pcurve inserted knots")?;
     Ok(Some(()))
 }
 
@@ -1431,8 +1411,8 @@ fn homogeneous_pcurve_spans(
     if degree == 0
         || degree >= controls.len()
         || knots.len() != expected_knots
-        || knots.iter().any(|knot| !knot.is_finite())
-        || knots.windows(2).any(|pair| pair[0] > pair[1])
+        || ctx.any_by(knots, |knot| Ok(!knot.is_finite()), "iges pcurve finite knots")?
+        || ctx.any_by(knots.windows(2), |pair| Ok(pair[0] > pair[1]), "iges pcurve knot order")?
     {
         return Ok(None);
     }
@@ -1447,45 +1427,32 @@ fn homogeneous_pcurve_spans(
     if domain[0] >= domain[1] {
         return Ok(None);
     }
-    let mut copied_knots = ctx.collection_vec(knots.len(), "iges pcurve knot copy")?;
-    copied_knots.extend_from_slice(knots);
-    let Some(internal_slice) = copied_knots.get(degree + 1..controls.len()) else {
-        return Ok(None);
-    };
-    let mut internal = ctx.collection_vec(internal_slice.len(), "iges pcurve internal knots")?;
-    internal.extend(
-        internal_slice
-            .iter()
-            .copied()
-            .filter(|knot| domain[0] < *knot && *knot < domain[1]),
-    );
-    ctx.stable_sort_by(
-        &mut internal,
-        |value| value,
-        f64::total_cmp,
-        "iges pcurve internal knots sort",
-    )?;
-    internal.dedup();
-    for knot in internal {
-        loop {
-            ctx.charge_work(1, "iges pcurve internal knot multiplicity")?;
-            if copied_knots
-                .iter()
-                .filter(|candidate| **candidate == knot)
-                .count()
-                >= degree
-            {
-                break;
-            }
-            if insert_homogeneous_pcurve_knot(degree, &mut copied_knots, &mut controls, knot, ctx)?
-                .is_none()
-            {
-                return Ok(None);
+    let (mut copied_knots, mut knot_storage) = ctx.copy_temporary_slice(knots, "iges pcurve knot copy")?;
+    let mut previous = knots[0];
+    let mut multiplicity = 0;
+    let mut inserted = 0;
+    for (index, &knot) in ctx.admit_iter(knots, "iges pcurve knot runs")?.enumerate() {
+        if knot == previous {
+            multiplicity += 1;
+            continue;
+        }
+        if domain[0] < previous && previous < domain[1] {
+            let mut span = index - 1 + inserted;
+            for count in ctx.admit_iter(multiplicity..degree, "iges pcurve knot insertions")? {
+                if knot_storage.with_storage(|| insert_homogeneous_pcurve_knot(
+                    degree, &mut copied_knots, &mut controls, (previous, span, count), ctx,
+                ))?.is_none() {
+                    return Ok(None);
+                }
+                span += 1;
+                inserted += 1;
             }
         }
+        previous = knot;
+        multiplicity = 1;
     }
-    let mut spans = ctx.collection_vec(controls.len(), "iges pcurve span descriptors")?;
-    for span in degree..controls.len() {
+    let mut spans = Vec::new();
+    for span in ctx.admit_iter(degree..controls.len(), "iges pcurve span traversal")? {
         let Some((start, end)) = copied_knots
             .get(span)
             .copied()
@@ -1502,9 +1469,8 @@ fn homogeneous_pcurve_spans(
         let Some(span_controls) = controls.get(start_index..=span) else {
             return Ok(None);
         };
-        let mut copied_controls =
-            ctx.collection_vec(span_controls.len(), "iges pcurve span controls")?;
-        copied_controls.extend_from_slice(span_controls);
+        let copied_controls = ctx.copy_slice(span_controls, "iges pcurve span controls")?;
+        ctx.reserve_vec(&mut spans, 1, "iges pcurve span descriptors")?;
         spans.push(HomogeneousPcurveSpan {
             domain: [start, end],
             controls: copied_controls,
