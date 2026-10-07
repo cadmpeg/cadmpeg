@@ -277,7 +277,7 @@ fn checked_geometry_construction_releases_raw_pairing_and_keeps_only_final_stora
         policy.limits.max_work_units = if surface { 41 } else { 16 };
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         if surface {
-            let mut refusal_policy = policy.clone();
+            let mut refusal_policy = policy;
             refusal_policy.limits.max_work_units = u64::MAX;
             cadmpeg_test_support::refusal::resource_limit_at(
                 ResourceDimension::WorkUnits,
@@ -286,7 +286,7 @@ fn checked_geometry_construction_releases_raw_pairing_and_keeps_only_final_stora
                     crate::geometry::tests::budget::with_policy(
                         ResourceDimension::WorkUnits,
                         cap,
-                        refusal_policy.clone(),
+                        refusal_policy,
                         |ctx| {
                             NurbsSurface::from_checked_lanes(
                                 ctx,

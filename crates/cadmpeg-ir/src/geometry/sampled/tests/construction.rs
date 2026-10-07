@@ -74,7 +74,7 @@ fn polygonal_construction_moves_typed_storage_and_admits_raw_conversion_once() {
             crate::geometry::tests::budget::with_policy(
                 ResourceDimension::WorkUnits,
                 cap,
-                policy.clone(),
+                policy,
                 |ctx| PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0.5, ctx),
             )
         },
@@ -176,11 +176,7 @@ fn polygonal_validation_charges_only_visited_triangles() {
         ResourceDimension::WorkUnits,
         "IR sampled construction refusal",
         |cap| {
-            crate::geometry::tests::budget::with_limit(
-                ResourceDimension::WorkUnits,
-                cap,
-                &construct,
-            )
+            crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, construct)
         },
     );
     assert!(matches!(refusal, CodecError::ResourceLimit(limit) if limit.used == 1));
