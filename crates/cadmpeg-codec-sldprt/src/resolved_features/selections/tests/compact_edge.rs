@@ -25,13 +25,13 @@ use crate::resolved_features::selections::compact_surface_selection_at;
 use crate::resolved_features::selections::component_profile_source_at;
 use crate::resolved_features::selections::component_reference_curve_path_at;
 use crate::resolved_features::selections::coordinate_marker_local_links;
-use crate::resolved_features::selections::fillet_edge_roster_end;
 use crate::resolved_features::selections::is_component_vector_selector;
 use crate::resolved_features::selections::marker_local_links;
 use crate::resolved_features::selections::operation_surface_selection_candidates;
 use crate::resolved_features::selections::surface_reference_matches_at;
 use crate::resolved_features::selections::unique_marker_candidate;
 use crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER;
+use crate::resolved_features::selections::{fillet_dimension_classes, fillet_edge_roster_end};
 use std::collections::BTreeMap;
 
 #[test]
@@ -951,12 +951,13 @@ fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
     )
     .unwrap();
 
+    let classes = fillet_dimension_classes(&ctx, &lane).unwrap();
     assert_eq!(
-        fillet_edge_roster_end(&ctx, &lane, 0, 80).unwrap(),
+        fillet_edge_roster_end(&ctx, &lane, &classes, 0, 80).unwrap(),
         Some(direct_record)
     );
     assert_eq!(
-        fillet_edge_roster_end(&ctx, &lane, 80, 144).unwrap(),
+        fillet_edge_roster_end(&ctx, &lane, &classes, 80, 144).unwrap(),
         Some(repeated_record)
     );
 }

@@ -224,17 +224,12 @@ fn slot_cycle_refuses_collection_limit() {
 
 #[test]
 fn slot_cycle_refuses_work_limit() {
-    let (payload, inputs, mut entities) = slot_cycle_fixture();
+    let (payload, inputs, entities) = slot_cycle_fixture();
     let markers = inputs.iter().collect::<Vec<_>>();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let error =
-        resolve_slot_marker_arcs(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "sort SLDPRT slot curves"));
+    crate::test_support::work_refusal_at("sort SLDPRT slot curves", |ctx| {
+        let mut entities = entities.clone();
+        resolve_slot_marker_arcs(ctx, &payload, &markers, &mut entities, 1.0e-9)
+    });
 }
 
 #[test]

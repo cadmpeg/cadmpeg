@@ -29,6 +29,7 @@ use crate::resolved_features::selections::mirror_pattern_component_path_at;
 use crate::resolved_features::selections::operation_surface_selection_candidates;
 use crate::resolved_features::selections::planar_surface_selection_candidates;
 use crate::resolved_features::selections::surface_reference_matches_at;
+use crate::resolved_features::selections::ClassObjects;
 use crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER;
 use std::collections::BTreeMap;
 
@@ -546,9 +547,14 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
 
     crate::test_support::work_refusal_at(
         "deduplicate SLDPRT full round fillet class bodies",
-        |ctx| fillet_face_selection_candidates(ctx, &lane, 0, 700),
+        |ctx| {
+            let faces = ClassObjects::new(ctx, &lane, "moCompFace_c")?;
+            fillet_face_selection_candidates(ctx, &lane, &faces, 0, 700)
+        },
     );
-    let candidates = fillet_face_selection_candidates(&candidates_ctx, &lane, 0, 700).unwrap();
+    let faces = ClassObjects::new(&candidates_ctx, &lane, "moCompFace_c").unwrap();
+    let candidates =
+        fillet_face_selection_candidates(&candidates_ctx, &lane, &faces, 0, 700).unwrap();
     assert_eq!(candidates.len(), 3);
     assert_eq!(
         candidates
@@ -568,11 +574,15 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
 
     let mut incomplete = lane.clone();
     incomplete.native_payload.truncate(403);
-    assert!(
-        fillet_face_selection_candidates(&candidates_ctx, &incomplete, 0, 403)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(fillet_face_selection_candidates(
+        &candidates_ctx,
+        &incomplete,
+        &ClassObjects::new(&candidates_ctx, &incomplete, "moCompFace_c").unwrap(),
+        0,
+        403
+    )
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
@@ -1227,6 +1237,8 @@ fn face_reference_plane_owns_its_counted_surface_path() {
     let candidates = face_reference_plane_selection_candidates(
         &candidates_ctx,
         &lane,
+        &ClassObjects::new(&candidates_ctx, &lane, "moCompFace_c").unwrap(),
+        &ClassObjects::new(&candidates_ctx, &lane, "moFaceRefPlnData_c").unwrap(),
         0,
         lane.native_payload.len(),
     )
@@ -1342,6 +1354,8 @@ fn face_reference_plane_accepts_a_component_face_path() {
     let candidates = face_reference_plane_selection_candidates(
         &candidates_ctx,
         &lane,
+        &ClassObjects::new(&candidates_ctx, &lane, "moCompFace_c").unwrap(),
+        &ClassObjects::new(&candidates_ctx, &lane, "moFaceRefPlnData_c").unwrap(),
         0,
         lane.native_payload.len(),
     )

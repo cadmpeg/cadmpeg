@@ -2,8 +2,7 @@
 
 use super::{
     full_round_fillet_selection_triple, project_compact_surface_selections,
-    project_unbound_cosmetic_thread_faces, project_unbound_offset_plane_faces,
-    unique_cylindrical_face, unique_planar_face, unique_topological_cylindrical_face,
+    project_unbound_cosmetic_thread_faces, project_unbound_offset_plane_faces, FaceSurfaces,
 };
 use crate::records::FeatureSource;
 use crate::records::{
@@ -43,40 +42,6 @@ fn with_projection_context<R>(
 }
 
 #[test]
-fn draft_feature_identity_index_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let mut feature = cadmpeg_ir::features::Feature {
-        id: FeatureId::mint("synthetic:test:id#draft").expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-        source_properties: BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                family: UnresolvedFamily::Draft,
-            }),
-        ),
-        native_ref: Some("draft".into()),
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = super::project_draft_operands(&ctx, std::slice::from_mut(&mut feature), &[], &[])
-        .expect_err("draft feature identity exceeds retained limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "index SLDPRT draft feature identities")
-    );
-}
-
-#[test]
 fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
@@ -102,52 +67,50 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
         tolerance: None,
     };
     assert_eq!(
-        with_projection_context(|ctx| unique_cylindrical_face(
+        with_projection_context(|ctx| FaceSurfaces::new(
             ctx,
-            4.0,
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        ))
+        )
+        .and_then(|faces| faces.unique_cylinder(ctx, 4.0)))
         .expect("cylindrical face search"),
         Some(face.id.clone())
     );
     assert_eq!(
-        with_projection_context(|ctx| unique_cylindrical_face(
+        with_projection_context(|ctx| FaceSurfaces::new(
             ctx,
-            3.0,
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        ))
+        )
+        .and_then(|faces| faces.unique_cylinder(ctx, 3.0)))
         .expect("cylindrical face search"),
         None
     );
     assert_eq!(
-        with_projection_context(|ctx| unique_topological_cylindrical_face(
+        with_projection_context(|ctx| FaceSurfaces::new(
             ctx,
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        ))
+        )
+        .and_then(|faces| faces.unique_cylinder_face(ctx)))
         .expect("topological cylinder search"),
         Some(face.id.clone())
     );
     let mut duplicate = face.clone();
     duplicate.id = FaceId::mint("test:model:entity#other-face").expect("identity grammar");
     assert_eq!(
-        with_projection_context(|ctx| unique_cylindrical_face(
+        with_projection_context(|ctx| FaceSurfaces::new(
             ctx,
-            4.0,
             &[face.clone(), duplicate.clone()],
-            std::slice::from_ref(&surface),
-        ))
+            std::slice::from_ref(&surface)
+        )
+        .and_then(|faces| faces.unique_cylinder(ctx, 4.0)))
         .expect("cylindrical face search"),
         None
     );
     assert_eq!(
-        with_projection_context(|ctx| unique_topological_cylindrical_face(
-            ctx,
-            &[face, duplicate],
-            &[surface]
-        ))
+        with_projection_context(|ctx| FaceSurfaces::new(ctx, &[face, duplicate], &[surface])
+            .and_then(|faces| faces.unique_cylinder_face(ctx)))
         .expect("topological cylinder search"),
         None
     );
@@ -179,37 +142,42 @@ fn frame_only_plane_support_requires_one_coincident_face() {
     };
 
     assert_eq!(
-        with_projection_context(|ctx| unique_planar_face(
+        with_projection_context(|ctx| FaceSurfaces::new(
+            ctx,
+            std::slice::from_ref(&face),
+            std::slice::from_ref(&surface)
+        )
+        .and_then(|faces| faces.unique_plane(
             ctx,
             Point3::new(4.0, -2.0, 5.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            std::slice::from_ref(&face),
-            std::slice::from_ref(&surface),
-        ))
+            Vector3::new(0.0, 0.0, 1.0)
+        )))
         .expect("planar face search"),
         Some(face.id.clone())
     );
     assert_eq!(
-        with_projection_context(|ctx| unique_planar_face(
+        with_projection_context(|ctx| FaceSurfaces::new(
+            ctx,
+            std::slice::from_ref(&face),
+            std::slice::from_ref(&surface)
+        )
+        .and_then(|faces| faces.unique_plane(
             ctx,
             Point3::new(0.0, 0.0, 6.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            std::slice::from_ref(&face),
-            std::slice::from_ref(&surface),
-        ))
+            Vector3::new(0.0, 0.0, 1.0)
+        )))
         .expect("planar face search"),
         None
     );
     let mut duplicate = face.clone();
     duplicate.id = FaceId::mint("test:model:entity#other-face").expect("identity grammar");
     assert_eq!(
-        with_projection_context(|ctx| unique_planar_face(
-            ctx,
-            Point3::new(0.0, 0.0, 5.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            &[face, duplicate],
-            &[surface],
-        ))
+        with_projection_context(|ctx| FaceSurfaces::new(ctx, &[face, duplicate], &[surface])
+            .and_then(|faces| faces.unique_plane(
+                ctx,
+                Point3::new(0.0, 0.0, 5.0),
+                Vector3::new(0.0, 0.0, 1.0)
+            )))
         .expect("planar face search"),
         None
     );

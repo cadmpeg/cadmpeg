@@ -1097,10 +1097,10 @@ fn compact_line_profile_reports_collection_limit() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
     let error = complete_ordered_compact_line_profile(&ctx, &lines, lines.len())
-        .expect_err("three usage slots exceed the collection limit");
+        .expect_err("the endpoint index of three lines exceeds the collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "SLDPRT compact line profile usage"));
+            && limit.operation == "scan SLDPRT compact line profile adjacency"));
 }
 
 fn linked_semicircle_fixture() -> (Vec<u8>, [SketchInputEntity; 2], Vec<SketchEntity>) {

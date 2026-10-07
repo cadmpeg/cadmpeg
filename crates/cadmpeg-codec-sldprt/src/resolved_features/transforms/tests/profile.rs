@@ -269,11 +269,15 @@ fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
         producer_feature_refs: producer.into_iter().map(str::to_string).collect(),
         terminal_feature_ref: producer.map(str::to_string),
     };
-    let retained = input_owned_edge_selections(vec![
-        selection(0, Some("input")),
-        selection(1, None),
-        selection(2, Some("input")),
-    ]);
+    let retained = input_owned_edge_selections(
+        &cadmpeg_test_support::service_decode_context(),
+        vec![
+            selection(0, Some("input")),
+            selection(1, None),
+            selection(2, Some("input")),
+        ],
+    )
+    .unwrap();
     assert_eq!(
         retained
             .iter()
@@ -282,7 +286,11 @@ fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
         vec![0, 2]
     );
 
-    let retained = input_owned_edge_selections(vec![selection(3, None), selection(4, None)]);
+    let retained = input_owned_edge_selections(
+        &cadmpeg_test_support::service_decode_context(),
+        vec![selection(3, None), selection(4, None)],
+    )
+    .unwrap();
     assert_eq!(retained.len(), 2);
 }
 
@@ -806,13 +814,34 @@ fn marker_circle_fit_requires_one_circle_through_every_endpoint() {
         Point2::new(0.0, -2.0),
     ];
     assert_eq!(
-        fitted_marker_circle(&points, 1.0e-8),
+        fitted_marker_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &points,
+            1.0e-8
+        )
+        .unwrap(),
         Some((Point2::new(0.0, 0.0), 2.0))
     );
     let mut inconsistent = points;
     inconsistent[3] = Point2::new(0.0, -3.0);
-    assert_eq!(fitted_marker_circle(&inconsistent, 1.0e-8), None);
-    assert_eq!(fitted_marker_circle(&points[..2], 1.0e-8), None);
+    assert_eq!(
+        fitted_marker_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &inconsistent,
+            1.0e-8
+        )
+        .unwrap(),
+        None
+    );
+    assert_eq!(
+        fitted_marker_circle(
+            &cadmpeg_test_support::service_decode_context(),
+            &points[..2],
+            1.0e-8
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]

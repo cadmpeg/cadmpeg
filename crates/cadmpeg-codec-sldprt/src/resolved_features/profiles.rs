@@ -9,10 +9,10 @@ use super::curves::{
     compact_line_chain_addresses, compact_line_region_addresses,
     complete_ordered_compact_line_profile, current_compact_rectangle_line_endpoints,
     current_wide_rectangle_line_endpoints, indexed_rectangle_from_line_cycle,
-    lane_sketch_plane_frames, legacy_extended_rectangle_diagonal_endpoint,
-    legacy_extended_rectangle_line_endpoints, ordered_rectangle_corners,
-    resolve_connected_marker_arcs, resolve_slot_marker_arcs, resolve_two_center_semicircle_profile,
-    tangent_bounded_curve, unique_dimensioned_rectangle_markers,
+    legacy_extended_rectangle_diagonal_endpoint, legacy_extended_rectangle_line_endpoints,
+    ordered_rectangle_corners, resolve_connected_marker_arcs, resolve_slot_marker_arcs,
+    resolve_two_center_semicircle_profile, tangent_bounded_curve,
+    unique_dimensioned_rectangle_markers, LaneFrameIndex,
 };
 use super::endpoints::{
     auxiliary_profile_record, compact_legacy_code_one_line_endpoint_indices,
@@ -80,6 +80,18 @@ pub(crate) struct SketchArenas<'a> {
     pub(crate) sketch_entities: &'a mut Vec<SketchEntity>,
     pub(crate) sketch_constraints: &'a mut Vec<SketchConstraint>,
     pub(crate) annotations: &'a mut Annotations,
+}
+
+/// Formats an identity and admits it under the identity grammar, charging the grammar's scan
+/// of the formatted text. Text the grammar rejects yields `None`.
+pub(super) fn mint_formatted<T: TryFrom<String>>(
+    ctx: &DecodeContext<'_>,
+    args: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<Option<T>, CodecError> {
+    let text = ctx.format_retained(args, operation)?;
+    ctx.charge_work(u64_from_index(text.len()), operation)?;
+    Ok(T::try_from(text).ok())
 }
 
 /// Native feature records of every history, keyed by record identity.
@@ -153,7 +165,7 @@ fn first_model_feature(
 
 /// Every sketch identity, copied once so the sketch arena stays growable while new
 /// identities are tested against it.
-fn index_sketch_ids<'ctx>(
+pub(super) fn index_sketch_ids<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     sketches: &[Sketch],
     operation: &'static str,
@@ -192,7 +204,7 @@ fn push_indexed_sketch(
 }
 
 /// Values grouped by the feature identity that owns them, in source order.
-fn group_by_owner<'a, 'ctx, T>(
+pub(super) fn group_by_owner<'a, 'ctx, T>(
     ctx: &'ctx DecodeContext<'_>,
     values: &'a [T],
     owner: impl Fn(&'a T) -> Option<&'a str>,
@@ -211,7 +223,7 @@ fn group_by_owner<'a, 'ctx, T>(
 }
 
 /// The members `owner` has in a grouping; empty when it owns none.
-fn owned_members<'groups, K: std::borrow::Borrow<str> + Eq + std::hash::Hash, T>(
+pub(super) fn owned_members<'groups, K: std::borrow::Borrow<str> + Eq + std::hash::Hash, T>(
     ctx: &DecodeContext<'_>,
     groups: &'groups HashMap<K, Vec<T>>,
     owner: &str,
@@ -223,7 +235,7 @@ fn owned_members<'groups, K: std::borrow::Borrow<str> + Eq + std::hash::Hash, T>
 }
 
 /// The position of the first value with each key.
-fn first_positions<'a, 'ctx, T>(
+pub(super) fn first_positions<'a, 'ctx, T>(
     ctx: &'ctx DecodeContext<'_>,
     values: &'a [T],
     key: impl Fn(&'a T) -> &'a str,
@@ -242,7 +254,7 @@ fn first_positions<'a, 'ctx, T>(
 }
 
 /// The ascending offsets of the lane classes named `name`.
-fn class_offsets<'ctx>(
+pub(super) fn class_offsets<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     lane: &FeatureInputLane,
     name: &'static str,
@@ -726,10 +738,13 @@ pub(crate) fn project_compact_sketch_profiles(
         model_features_by_native(ctx, features, &native_features, OPERATION)?;
     let (mut sketch_positions, mut sketch_positions_storage) =
         index_sketch_ids(ctx, sketches, OPERATION)?;
+    let mut lane_frames_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let lane_frames =
+        lane_frames_storage.with_storage(|| LaneFrameIndex::new(ctx, features, histories))?;
     for lane in ctx.admit_iter(lanes, "scan SLDPRT profiles records")? {
         let mut plane_frames_storage = ctx.reserve_scoped(0, OPERATION)?;
-        let plane_frames = plane_frames_storage
-            .with_storage(|| lane_sketch_plane_frames(ctx, features, histories, lane))?;
+        let plane_frames =
+            plane_frames_storage.with_storage(|| lane_frames.lane_frames(ctx, histories, lane))?;
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         let (markers_by_owner, _markers_by_owner_storage) = group_by_owner(
             ctx,
@@ -1707,13 +1722,16 @@ pub(crate) fn project_marker_backed_sketches(
     )?;
     let (mut sketch_positions, mut sketch_positions_storage) =
         index_sketch_ids(ctx, sketches, "compare SLDPRT profile sketch identities")?;
+    let mut lane_frames_storage = ctx.reserve_scoped(0, "resolve SLDPRT feature frames")?;
+    let lane_frames =
+        lane_frames_storage.with_storage(|| LaneFrameIndex::new(ctx, features, histories))?;
     // Compact sketches that a marker sketch replaces; removed together once every lane is read.
     let mut replaced_storage = ctx.reserve_scoped(0, "remove prior SLDPRT marker sketches")?;
     let mut replaced = HashSet::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT profiles records")? {
         let mut plane_frames_storage = ctx.reserve_scoped(0, "resolve SLDPRT feature frames")?;
-        let plane_frames = plane_frames_storage
-            .with_storage(|| lane_sketch_plane_frames(ctx, features, histories, lane))?;
+        let plane_frames =
+            plane_frames_storage.with_storage(|| lane_frames.lane_frames(ctx, histories, lane))?;
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         let mut markers_by_id_storage = ctx.reserve_scoped(0, "index SLDPRT profile markers")?;
         let mut markers_by_id = HashMap::new();

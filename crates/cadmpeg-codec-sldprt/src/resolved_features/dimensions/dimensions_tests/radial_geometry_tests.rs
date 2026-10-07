@@ -45,7 +45,9 @@ fn arc_dimension_center_requires_one_matching_radial_witness() {
     };
 
     assert!(matches!(
-        dimensioned_arc_native_geometry(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&lane), &center, 3.0).unwrap(),
+        dimensioned_arc_native_geometry(
+        &cadmpeg_test_support::service_decode_context(),
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&lane)).unwrap(), &center, 3.0).unwrap(),
         Some(DimensionedCurveNative::Circle { center: [u, v] })
             if [u, v] == [0.1, 0.2]
     ));
@@ -59,7 +61,11 @@ fn arc_dimension_center_requires_one_matching_radial_witness() {
     ));
     assert!(dimensioned_arc_native_geometry(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&ambiguous_lane),
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&ambiguous_lane)
+        )
+        .unwrap(),
         &ambiguous_lane.sketch_entities[0],
         3.0
     )
@@ -129,7 +135,11 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
 
     let Some(DimensionedCurveNative::Arc(arc)) = dimensioned_arc_native_geometry(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&lane),
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&lane),
+        )
+        .unwrap(),
         &center,
         3.0,
     )
@@ -149,7 +159,11 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
     };
     assert!(dimensioned_arc_native_geometry(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&invalid_lane),
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&invalid_lane)
+        )
+        .unwrap(),
         &invalid_lane.sketch_entities[0],
         3.0
     )
