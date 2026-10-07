@@ -600,6 +600,40 @@ mod tests {
     }
 
     #[test]
+    fn joint_identity_work_matches_admitted_inputs_and_stops_after_invalid_id() {
+        let object = "fcstd:native:object#Joint";
+        for (id, valid) in [("fcstd:native:joint#Joint", true), ("invalid", false)] {
+            crate::test_support::with_service_context(&[], |ctx| {
+                let result = JointRecord::try_new(
+                    ctx,
+                    id.into(),
+                    object.into(),
+                    JointBody::Grounded {
+                        reference: None,
+                        placement: super::FiniteFrame::default(),
+                    },
+                    BTreeMap::new(),
+                );
+                if valid {
+                    assert!(result.is_ok());
+                } else {
+                    assert!(matches!(
+                        result,
+                        Err(cadmpeg_core::CodecError::Malformed(_))
+                    ));
+                }
+                let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                    ctx.charge_work(u64::MAX, "probe").unwrap_err()
+                else {
+                    panic!("work refusal");
+                };
+                let expected = id.len() + if valid { object.len() } else { 0 };
+                assert_eq!(limit.used, cadmpeg_core::decode::u64_from_index(expected));
+            });
+        }
+    }
+
+    #[test]
     fn checked_joint_parameter_map_refuses_at_caller_limit() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
