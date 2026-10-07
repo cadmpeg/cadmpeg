@@ -17,6 +17,7 @@ use crate::{diff, CadIr};
 
 mod append;
 mod feature_parents;
+mod procedural;
 mod unknowns;
 
 #[test]
