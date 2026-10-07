@@ -919,7 +919,7 @@ fn dimensioned_circle_comparison_releases_each_candidate_signature() {
         },
         translation: (0, 0),
     };
-    let candidates = [identity; 512];
+    let candidates = vec![identity; 512];
     let circles = [(
         (10_i64, 20_i64),
         crate::resolved_features::grid::GridCoordinate::Cell(5),
@@ -946,10 +946,13 @@ fn failed_dimensioned_circle_transform_does_not_visit_remaining_circles() {
         },
         translation: (0, 0),
     };
-    let mut circles = [(
-        (10_i64, 20_i64),
-        crate::resolved_features::grid::GridCoordinate::Cell(5),
-    ); 4096];
+    let mut circles = vec![
+        (
+            (10_i64, 20_i64),
+            crate::resolved_features::grid::GridCoordinate::Cell(5),
+        );
+        4096
+    ];
     circles[0].0 = (i64::MIN, 0);
     assert_eq!(
         dimensioned_circle_transform(&ctx, &[transform], &circles).unwrap(),

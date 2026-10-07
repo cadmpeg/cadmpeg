@@ -13,7 +13,6 @@ fn hole_child_tokens_preserve_unicode_and_empty_parts() {
         ("α,", vec!["α", ""]),
     ] {
         let tokens = hole_child_tokens(&ctx, text)
-            .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         assert_eq!(tokens, expected);
@@ -30,8 +29,8 @@ fn hole_child_tokens_refuse_on_first_text_visit() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = hole_child_tokens(&ctx, "α,β")?.next().unwrap();
-            result
+            let mut children = hole_child_tokens(&ctx, "α,β");
+            children.next().unwrap()
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)

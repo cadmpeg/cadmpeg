@@ -427,7 +427,7 @@ pub(crate) fn enrich_history_reference_planes(
                 "D1",
                 "parse SLDPRT plane distance parameter",
             )?
-            .and_then(|value| crate::history::literals::parse_dimension_length_mm(value));
+            .and_then(crate::history::literals::parse_dimension_length_mm);
             let offset_frames = match offset_frames {
                 Some(distance) => offset_reference_plane_frame_pair(ctx, bytes, distance)?,
                 None => None,
@@ -818,7 +818,7 @@ pub(crate) fn enrich_history_reference_planes(
             "D1",
             "parse SLDPRT plane distance parameter",
         )?
-        .and_then(|value| crate::history::literals::parse_dimension_length_mm(value)) else {
+        .and_then(crate::history::literals::parse_dimension_length_mm) else {
             continue;
         };
         if let Some(source) = select_reference_plane_frame_source(
@@ -866,7 +866,7 @@ pub(crate) fn enrich_history_reference_planes(
                     "D1",
                     "parse SLDPRT plane distance parameter",
                 )?
-                .and_then(|value| crate::history::literals::parse_dimension_length_mm(value))
+                .and_then(crate::history::literals::parse_dimension_length_mm)
                 {
                     let compatible = |source: &String| -> Result<bool, CodecError> {
                         ctx.any_by(
@@ -1425,17 +1425,13 @@ fn coordinate_system_ordinal_axes(
     origin_end: usize,
     origin: Point3,
 ) -> Option<(Vector3, Vector3)> {
-    let Some(tail) = record.get(origin_end..) else {
-        return None;
-    };
+    let tail = record.get(origin_end..)?;
     if !matches!(tail.len(), 37 | 39)
         || tail.get(ordinal_tail::ZERO_BEFORE_ORIGIN_Z..ordinal_tail::ORIGIN_Z) != Some(&[0; 23])
     {
         return None;
     }
-    let Some(ordinal_bytes) = tail.get(ordinal_tail::LEN..) else {
-        return None;
-    };
+    let ordinal_bytes = tail.get(ordinal_tail::LEN..)?;
     if ordinal_bytes.chunks(2).any(|token| token == [0, 0]) {
         return None;
     }
@@ -1449,9 +1445,7 @@ fn coordinate_system_ordinal_axes(
     if ordinals[0] == ordinals[1] || ordinals.iter().any(|ordinal| !(1..=3).contains(ordinal)) {
         return None;
     }
-    let Some(repeated_z) = finite_f64(tail, ordinal_tail::ORIGIN_Z) else {
-        return None;
-    };
+    let repeated_z = finite_f64(tail, ordinal_tail::ORIGIN_Z)?;
     let repeated_z = repeated_z * 1000.0;
     if (repeated_z + 0.0).to_bits() != (origin.z + 0.0).to_bits() {
         return None;
@@ -2478,6 +2472,7 @@ fn sketch_block_identity_normalization_origin(
     start: usize,
     end: usize,
 ) -> Result<Option<Point3>, CodecError> {
+    const OPERATION: &str = "scan SLDPRT sketch block identity placement";
     const CLASS: &[u8] = b"sgBlock";
     const NATIVE_TO_IR: f64 = 1000.0;
 
@@ -2495,7 +2490,6 @@ fn sketch_block_identity_normalization_origin(
             && record.get(CLASS_MARKER.len() + 2..) == Some(CLASS))
         .then_some(start + relative + record_len))
     };
-    const OPERATION: &str = "scan SLDPRT sketch block identity placement";
     let Some(body) = ctx.find_map(&mut records, matches, OPERATION)? else {
         return Ok(None);
     };
@@ -2992,87 +2986,81 @@ fn complete_reference_axis_triad(
     if missing_count != 1 {
         return None;
     }
-    let Some(missing) = missing else {
-        return None;
-    };
+    let missing = missing?;
     let [Some((_, (first_origin, first_direction))), Some((_, (second_origin, second_direction)))] =
         &present
     else {
         return None;
     };
-    let completed = (|| {
-        let normalize = |direction: Vector3| {
-            let length = direction.norm();
-            (length.is_finite()
-                && length > EPS_REFERENCE_GEOMETRY_COMPLETE_REFERENCE_AXIS_TRIAD_E12)
-                .then(|| {
-                    Vector3::new(
-                        direction.x / length,
-                        direction.y / length,
-                        direction.z / length,
-                    )
-                })
-        };
-        let first_direction = normalize(*first_direction)?;
-        let second_direction = normalize(*second_direction)?;
-        if first_direction.dot(second_direction).abs() > ANGULAR_TOLERANCE {
-            return None;
-        }
-        let displacement = Vector3::new(
-            second_origin.x - first_origin.x,
-            second_origin.y - first_origin.y,
-            second_origin.z - first_origin.z,
-        );
-        let first_along = displacement.dot(first_direction);
-        let first_point = Point3::new(
-            first_origin.x + first_direction.x * first_along,
-            first_origin.y + first_direction.y * first_along,
-            first_origin.z + first_direction.z * first_along,
-        );
-        let second_along = displacement.dot(second_direction);
-        let second_point = Point3::new(
-            second_origin.x - second_direction.x * second_along,
-            second_origin.y - second_direction.y * second_along,
-            second_origin.z - second_direction.z * second_along,
-        );
-        let separation = Vector3::new(
-            first_point.x - second_point.x,
-            first_point.y - second_point.y,
-            first_point.z - second_point.z,
-        );
-        let scale = [
-            first_point.x,
-            first_point.y,
-            first_point.z,
-            second_point.x,
-            second_point.y,
-            second_point.z,
-        ]
-        .into_iter()
-        .map(f64::abs)
-        .fold(1.0_f64, f64::max);
-        if separation.norm() > POSITION_TOLERANCE_MM * scale {
-            return None;
-        }
-        let origin = Point3::new(
-            (first_point.x + second_point.x) * 0.5,
-            (first_point.y + second_point.y) * 0.5,
-            (first_point.z + second_point.z) * 0.5,
-        );
-        let directions = frames.map(|frame| frame.and_then(|(_, direction)| normalize(direction)));
-        let direction = match missing {
-            0 => directions[2]?.cross(directions[1]?),
-            1 => directions[0]?.cross(directions[2]?),
-            2 => directions[1]?.cross(directions[0]?),
-            _ => return None,
-        };
-        Some(ReferenceAxisCompletion {
-            axis_index: missing,
-            origin,
-            direction: normalize(direction)?,
-        })
-    })();
-    completed
+    let normalize = |direction: Vector3| {
+        let length = direction.norm();
+        (length.is_finite() && length > EPS_REFERENCE_GEOMETRY_COMPLETE_REFERENCE_AXIS_TRIAD_E12)
+            .then(|| {
+                Vector3::new(
+                    direction.x / length,
+                    direction.y / length,
+                    direction.z / length,
+                )
+            })
+    };
+    let first_direction = normalize(*first_direction)?;
+    let second_direction = normalize(*second_direction)?;
+    if first_direction.dot(second_direction).abs() > ANGULAR_TOLERANCE {
+        return None;
+    }
+    let displacement = Vector3::new(
+        second_origin.x - first_origin.x,
+        second_origin.y - first_origin.y,
+        second_origin.z - first_origin.z,
+    );
+    let first_along = displacement.dot(first_direction);
+    let first_point = Point3::new(
+        first_origin.x + first_direction.x * first_along,
+        first_origin.y + first_direction.y * first_along,
+        first_origin.z + first_direction.z * first_along,
+    );
+    let second_along = displacement.dot(second_direction);
+    let second_point = Point3::new(
+        second_origin.x - second_direction.x * second_along,
+        second_origin.y - second_direction.y * second_along,
+        second_origin.z - second_direction.z * second_along,
+    );
+    let separation = Vector3::new(
+        first_point.x - second_point.x,
+        first_point.y - second_point.y,
+        first_point.z - second_point.z,
+    );
+    let scale = [
+        first_point.x,
+        first_point.y,
+        first_point.z,
+        second_point.x,
+        second_point.y,
+        second_point.z,
+    ]
+    .into_iter()
+    .map(f64::abs)
+    .fold(1.0_f64, f64::max);
+    if separation.norm() > POSITION_TOLERANCE_MM * scale {
+        return None;
+    }
+    let origin = Point3::new(
+        (first_point.x + second_point.x) * 0.5,
+        (first_point.y + second_point.y) * 0.5,
+        (first_point.z + second_point.z) * 0.5,
+    );
+    let directions = frames.map(|frame| frame.and_then(|(_, direction)| normalize(direction)));
+    let direction = match missing {
+        0 => directions[2]?.cross(directions[1]?),
+        1 => directions[0]?.cross(directions[2]?),
+        2 => directions[1]?.cross(directions[0]?),
+        _ => return None,
+    };
+    Some(ReferenceAxisCompletion {
+        axis_index: missing,
+        origin,
+        direction: normalize(direction)?,
+    })
 }
 
 fn explicit_reference_axis_frame(
@@ -3141,7 +3129,7 @@ fn explicit_reference_axis_frame(
         ))
     };
     let mut unique = None;
-    let mut source_items = payload.windows(88).into_iter();
+    let mut source_items = payload.windows(88);
     while let Some(bytes) = ctx.next_charged(
         &mut source_items,
         "scan SLDPRT explicit reference axis windows",
@@ -3319,7 +3307,7 @@ fn plane_intersection_axis_sources(
     const TERMINATOR: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let mut sources = [0; 2];
     let mut source_count = 0;
-    let mut source_items = payload.windows(RECORD_LEN).into_iter();
+    let mut source_items = payload.windows(RECORD_LEN);
     while let Some(bytes) = ctx.next_charged(
         &mut source_items,
         "scan SLDPRT plane intersection axis records",
@@ -4063,7 +4051,7 @@ fn constraint_midplane_frame(
         .map_err(|_| CodecError::malformed("SLDPRT midplane constraint class name is too long"))?
         .to_le_bytes();
     let mut unique = None;
-    let mut source_items = payload.windows(record_len).enumerate().into_iter();
+    let mut source_items = payload.windows(record_len).enumerate();
     while let Some((offset, bytes)) =
         ctx.next_charged(&mut source_items, "scan SLDPRT midplane constraints")?
     {
