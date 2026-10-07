@@ -28,22 +28,10 @@ use crate::entity_table;
 use crate::families;
 use crate::formula;
 use crate::loss::CatiaLossCode;
-use crate::native::schema_configuration_chain::CatiaSchemaConfigurationRowChain;
 use crate::native::{CatiaNative, CatiaObjectGraph};
 use crate::pmi;
 use crate::resource;
 use crate::sketch;
-
-fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usize) {
-    (
-        native.schema_configuration_row_chains.len(),
-        native
-            .schema_configuration_row_chains
-            .iter()
-            .map(|chain| chain.links().len())
-            .sum(),
-    )
-}
 
 /// Decodes a `.CATPart` reader into an IR document and decode report.
 ///
@@ -161,38 +149,32 @@ impl IncomingEntityIncidenceCounts {
     fn total(&self) -> usize {
         self.payload + self.storage
     }
-}
 
-fn incoming_entity_incidence_counts<'a>(
-    incidences: impl Iterator<
-        Item = (
-            &'a [crate::native::CatiaEntityIncomingReference],
-            &'a [crate::native::CatiaEntityIncomingStorageReference],
-        ),
-    >,
-) -> IncomingEntityIncidenceCounts {
-    let mut counts = IncomingEntityIncidenceCounts::default();
-    for (payload_references, storage_references) in incidences {
+    fn add(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        payload_references: &[crate::native::CatiaEntityIncomingReference],
+        storage_references: &[crate::native::CatiaEntityIncomingStorageReference],
+    ) -> Result<(), CodecError> {
         let payload_count = payload_references.len();
         let storage_count = storage_references.len();
         let total = payload_count + storage_count;
-        counts.payload += payload_count;
-        counts.storage += storage_count;
-        counts.classified += payload_references
-            .iter()
+        self.payload += payload_count;
+        self.storage += storage_count;
+        self.classified += ctx
+            .admit_iter(payload_references, "catia_census_incoming_payload")?
             .filter_map(|reference| reference.source_entity.as_ref())
             .chain(
-                storage_references
-                    .iter()
+                ctx.admit_iter(storage_references, "catia_census_incoming_storage")?
                     .filter_map(|reference| reference.source_entity.as_ref()),
             )
             .filter(|entity| entity.class_name().is_some())
             .count();
-        counts.zero += usize::from(total == 0);
-        counts.one += usize::from(total == 1);
-        counts.multiple += usize::from(total > 1);
+        self.zero += usize::from(total == 0);
+        self.one += usize::from(total == 1);
+        self.multiple += usize::from(total > 1);
+        Ok(())
     }
-    counts
 }
 
 // Keep the single classified match explicit beside the independently built decode artifacts.
@@ -244,7 +226,7 @@ fn finish_decode(
             "catia_route_fallthrough_loss",
         )?;
     }
-    for note in refusal.take_notes() {
+    for note in ctx.admit_iter(refusal.take_notes(), "catia_lane_refusal_notes")? {
         ctx.push_vec(&mut report.losses, note, "catia_lane_refusal_loss")?;
     }
     ctx.admit_entities(
@@ -260,7 +242,7 @@ fn finish_decode(
         refusal,
     )?;
     // Drain lane refusals from a successful native decode before transfers run.
-    for note in refusal.take_notes() {
+    for note in ctx.admit_iter(refusal.take_notes(), "catia_lane_refusal_notes")? {
         ctx.push_vec(&mut report.losses, note, "catia_lane_refusal_loss")?;
     }
     let modeling_graph_scope = modeling_graph_scope(
@@ -274,7 +256,15 @@ fn finish_decode(
         let mut seen = HashSet::new();
         let mut seen_storage = ctx.reserve_scoped(0, "catia_modeling_object_records")?;
         for graph in ctx.admit_iter(&native.object_graphs, "catia_modeling_object_graphs")? {
-            if !modeling_graph_scope.contains(graph.id.as_str()) {
+            if !match &modeling_graph_scope {
+                ModelingGraphScope::Unscoped => true,
+                ModelingGraphScope::Unresolved => false,
+                ModelingGraphScope::Scoped(part) => ctx.equal_bytes(
+                    part.as_bytes(),
+                    graph.id.as_bytes(),
+                    "catia_census_graph_scope",
+                )?,
+            } {
                 continue;
             }
             for record in ctx.admit_iter(&graph.records, "catia_modeling_object_records")? {
@@ -341,434 +331,608 @@ fn finish_decode(
             .then_some(scan.main_data_stream.as_deref().or(scan.brep.as_deref()))
             .flatten(),
     )?;
-    let object_record_count: usize = native
-        .object_graphs
-        .iter()
-        .map(|graph| graph.records.len())
-        .sum();
-    let modeling_scope_is_unresolved =
-        matches!(modeling_graph_scope, ModelingGraphScope::Unresolved);
-    let unscoped_object_graphs = || {
-        native
-            .object_graphs
-            .iter()
-            .filter(|graph| !modeling_graph_scope.contains(graph.id.as_str()))
-    };
-    let retained_unscoped_object_graph_count = match modeling_graph_scope {
-        ModelingGraphScope::Unscoped => 0,
-        _ => unscoped_object_graphs().count(),
-    };
-    let retained_unscoped_object_record_count = match modeling_graph_scope {
-        ModelingGraphScope::Unscoped => 0,
-        _ => unscoped_object_graphs()
-            .map(|graph| graph.records.len())
-            .sum(),
-    };
-    let resolved_storage_record_count = native
-        .object_graphs
-        .iter()
-        .flat_map(|graph| &graph.records)
-        .filter(|record| record.storage_record().is_some())
-        .count();
-    let unresolved_storage_record_count = native
-        .object_graphs
-        .iter()
-        .flat_map(|graph| &graph.records)
-        .filter(|record| {
-            record
+
+    let mut owned_definition_value_ids = HashSet::new();
+    let mut object_records_by_id = std::collections::HashMap::new();
+    let mut structurally_owned_records = HashSet::new();
+    let mut structurally_owned_definition_chain_value_ids = HashSet::new();
+    let mut schema_configuration_entities = HashSet::new();
+    let mut formula_referenced_relation_expressions = HashSet::new();
+    let mut program_referenced_relation_expressions = HashSet::new();
+    let mut typed_relation_expression_entities = HashSet::new();
+    let mut distinct_relation_program_input_entities = HashSet::new();
+    // Gather cross-entity identities before the census resolves references against them.
+
+    let mut relation_expression_count = 0usize;
+    let mut placeholder_state_relation_expression_count = 0usize;
+    let mut parser_version_relation_expression_count = 0usize;
+    let mut boolean_parser_version_relation_expression_count = 0usize;
+    let mut opened_boolean_parser_version_relation_expression_count = 0usize;
+    let mut typed_relation_expression_count = 0usize;
+    for record in ctx.admit_iter(&native.entity_records, "catia_census_entity_ids")? {
+        if record.schema_configuration_record().is_some() {
+            ctx.insert_hash_set(
+                &mut schema_configuration_entities,
+                record.id.as_str(),
+                "catia_schema_configuration_entities",
+            )?;
+        }
+        if let Some(formula) = record.formula_relation() {
+            if let Some(entity) = formula.expression_entity.reference.entity() {
+                ctx.insert_hash_set(
+                    &mut formula_referenced_relation_expressions,
+                    entity,
+                    "catia_formula_relation_expressions",
+                )?;
+            }
+        }
+        if let Some(instance) = record.relation_program_instance() {
+            if let Some(entity) = instance.relation_expression.as_deref() {
+                ctx.insert_hash_set(
+                    &mut program_referenced_relation_expressions,
+                    entity,
+                    "catia_program_relation_expressions",
+                )?;
+            }
+            if let Some(inputs) = &instance.inputs {
+                for input in ctx.admit_iter(inputs, "catia_distinct_program_inputs")? {
+                    if let Some(entity) = input.entity.entity() {
+                        ctx.insert_hash_set(
+                            &mut distinct_relation_program_input_entities,
+                            entity,
+                            "catia_distinct_program_inputs",
+                        )?;
+                    }
+                }
+            }
+        }
+        if let Some(expression) = record.relation_expression() {
+            relation_expression_count += 1;
+            match expression.framing {
+                crate::native::CatiaRelationExpressionFraming::PlaceholderState { .. } => {
+                    placeholder_state_relation_expression_count += 1;
+                }
+                crate::native::CatiaRelationExpressionFraming::ParserVersion { .. } => {
+                    parser_version_relation_expression_count += 1;
+                }
+                crate::native::CatiaRelationExpressionFraming::BooleanParserVersion { .. } => {
+                    boolean_parser_version_relation_expression_count += 1;
+                }
+                crate::native::CatiaRelationExpressionFraming::OpenedBooleanParserVersion {
+                    ..
+                } => opened_boolean_parser_version_relation_expression_count += 1,
+            }
+            if expression.signature_charged(ctx)?.is_some() {
+                typed_relation_expression_count += 1;
+                ctx.insert_hash_set(
+                    &mut typed_relation_expression_entities,
+                    record.id.as_str(),
+                    "catia_typed_relation_expressions",
+                )?;
+            }
+        }
+    }
+    let distinct_relation_program_input_entity_count =
+        distinct_relation_program_input_entities.len();
+    let instanced_relation_expression_count = program_referenced_relation_expressions.len();
+    let mut native_operation_feature_ids = HashSet::new();
+    for feature in
+        ctx.admit_iter(&ir.model.features, "catia_census_features")?
+            .filter(|feature| {
+                feature.source_tag.as_deref().is_some_and(|name| {
+                    design_feature::NativeOperationClass::try_from(name).is_ok()
+                })
+            })
+    {
+        if !ctx.contains_hash_set(
+            &native_operation_feature_ids,
+            &feature.id,
+            "catia_census_lookup",
+        )? {
+            let id = feature
+                .id
+                .try_clone_for_decode(ctx, "catia_native_operation_feature_id")?;
+            ctx.insert_hash_set(
+                &mut native_operation_feature_ids,
+                id,
+                "catia_native_operation_feature_ids",
+            )?;
+        }
+    }
+
+    let complete_schema_configuration_row_chain_count =
+        native.schema_configuration_row_chains.len();
+    let mut unassigned_owner_slot_count = 0usize;
+    let mut retained_unscoped_object_graph_count = 0usize;
+    let mut retained_unscoped_object_record_count = 0usize;
+    let mut object_record_count = 0usize;
+    let mut resolved_storage_record_count = 0usize;
+    let mut unresolved_storage_record_count = 0usize;
+    let mut object_record_reference_count = 0usize;
+    let mut resolved_object_record_reference_count = 0usize;
+    let mut null_object_record_reference_count = 0usize;
+    let mut repeated_reference_suffix_count = 0usize;
+    let mut repeated_reference_schema_selection_count = 0usize;
+    for graph in ctx.admit_iter(&native.object_graphs, "catia_census_object_graphs")? {
+        let in_scope = match &modeling_graph_scope {
+            ModelingGraphScope::Unscoped => true,
+            ModelingGraphScope::Unresolved => false,
+            ModelingGraphScope::Scoped(part) => ctx.equal_bytes(
+                part.as_bytes(),
+                graph.id.as_bytes(),
+                "catia_census_graph_scope",
+            )?,
+        };
+        if !in_scope {
+            retained_unscoped_object_graph_count += 1;
+            retained_unscoped_object_record_count += graph.records.len();
+        }
+
+        object_record_count += graph.records.len();
+        for record in ctx.admit_iter(&graph.records, "catia_census_child")? {
+            let previous = ctx.insert_hash_map(
+                &mut object_records_by_id,
+                record.id.as_str(),
+                record,
+                "catia_object_records_by_id",
+            )?;
+            // Only the final record for each id contributes to the owner count.
+            if let Some(previous) = previous {
+                unassigned_owner_slot_count -= usize::from(previous.has_unassigned_owner());
+            }
+            unassigned_owner_slot_count += usize::from(record.has_unassigned_owner());
+
+            if record.storage_record().is_some() {
+                resolved_storage_record_count += 1;
+            }
+            if record
                 .storage_ref()
                 .is_some_and(|storage_ref| storage_ref != 0)
                 && record.storage_record().is_none()
-        })
-        .count();
-    let object_record_reference_count = native
-        .object_graphs
-        .iter()
-        .flat_map(|graph| &graph.records)
-        .map(|record| record.references.len())
-        .sum::<usize>();
-    let resolved_object_record_reference_count = native
-        .object_graphs
-        .iter()
-        .flat_map(|graph| &graph.records)
-        .flat_map(|record| &record.references)
-        .filter(|reference| reference.target().is_some())
-        .count();
-    let null_object_record_reference_count = native
-        .object_graphs
-        .iter()
-        .flat_map(|graph| &graph.records)
-        .flat_map(|record| &record.references)
-        .filter(|reference| reference.is_null())
-        .count();
-    let unresolved_object_record_reference_count = object_record_reference_count
-        - resolved_object_record_reference_count
-        - null_object_record_reference_count;
-    let repeated_reference_suffix_count = native
-        .object_graphs
-        .iter()
-        .flat_map(|graph| &graph.records)
-        .filter(|record| crate::object_graph::has_repeated_reference_suffix(&record.payload))
-        .count();
-    let repeated_reference_schema_selection_count = native
-        .object_graphs
-        .iter()
-        .flat_map(|graph| &graph.records)
-        .filter(|record| record.repeated_reference_schema_selection.is_some())
-        .count();
-    let design_field_count = native
-        .design_objects
-        .iter()
-        .map(|object| object.fields.len())
-        .sum();
-    let classified_design_object_count = native
-        .design_objects
-        .iter()
-        .filter(|object| object.owner_class.is_some() || !object.field_classes.is_empty())
-        .count();
-    let design_object_relation_count = native
-        .design_objects
-        .iter()
-        .map(|object| object.relations.len())
-        .sum();
-    let design_parallel_reference_table_count = native
-        .design_objects
-        .iter()
-        .filter(|object| object.parallel_reference_table.is_some())
-        .count();
-    let design_parallel_reference_row_count = native
-        .design_objects
-        .iter()
-        .filter_map(|object| object.parallel_reference_table.as_ref())
-        .map(|table| table.rows().len())
-        .sum();
-    let design_parallel_reference_column_count = native
-        .design_objects
-        .iter()
-        .filter_map(|object| object.parallel_reference_table.as_ref())
-        .map(|table| table.columns().len())
-        .sum();
-    let design_parallel_reference_cell_count = native
-        .design_objects
-        .iter()
-        .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
-        .map(|row| row.cells.len())
-        .sum();
-    let design_parallel_reference_resolved_cell_count = native
-        .design_objects
-        .iter()
-        .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
-        .flat_map(|row| &row.cells)
-        .filter(|cell| cell.field().is_some())
-        .count();
-    let design_parallel_reference_null_cell_count = native
-        .design_objects
-        .iter()
-        .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
-        .flat_map(|row| &row.cells)
-        .filter(|cell| cell.is_null())
-        .count();
-    let design_parallel_reference_classified_cell_count = native
-        .design_objects
-        .iter()
-        .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
-        .flat_map(|row| &row.cells)
-        .filter(|cell| cell.field_class().is_some())
-        .count();
-    let design_parallel_reference_classified_column_count = native
-        .design_objects
-        .iter()
-        .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(super::native::CatiaDesignParallelReferenceTable::columns)
-        .filter(|column| column.field_class.is_some())
-        .count();
-    let design_parallel_reference_unclassified_column_count =
-        design_parallel_reference_column_count - design_parallel_reference_classified_column_count;
-    let design_parallel_reference_unresolved_cell_count = design_parallel_reference_cell_count
-        - design_parallel_reference_resolved_cell_count
-        - design_parallel_reference_null_cell_count;
-    let design_parallel_reference_unclassified_cell_count =
-        design_parallel_reference_cell_count - design_parallel_reference_classified_cell_count;
-    let design_parallel_reference_matched_row_count = native
-        .design_objects
-        .iter()
-        .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(super::native::CatiaDesignParallelReferenceTable::rows)
-        .filter(|row| row.matching_design_object.is_some())
-        .count();
-    let design_parallel_reference_unmatched_row_count =
-        design_parallel_reference_row_count - design_parallel_reference_matched_row_count;
-    let design_unowned_field_relation_count = native
-        .design_objects
-        .iter()
-        .flat_map(|object| &object.relations)
-        .filter(|relation| relation.target_design_object.is_none())
-        .count();
-    let design_same_object_relation_count = native
-        .design_objects
-        .iter()
-        .map(|object| {
-            object
-                .relations
-                .iter()
-                .filter(|relation| {
-                    relation.target_design_object.as_deref() == Some(object.id.as_str())
-                })
-                .count()
-        })
-        .sum();
-    let design_reflexive_field_relation_count = native
-        .design_objects
-        .iter()
-        .flat_map(|object| &object.relations)
-        .filter(|relation| relation.source_field == relation.target_field)
-        .count();
-    let design_object_owner_link_count = native
-        .design_objects
-        .iter()
-        .filter(|object| object.owner_design_object.is_some())
-        .count();
-    let legacy_entity_identity_count = native
-        .legacy_entity_runs
-        .iter()
-        .map(|run| run.identities.len())
-        .sum();
-    let legacy_schema_program_count = native
-        .legacy_entity_runs
-        .iter()
-        .filter(|run| run.schema_program.is_some())
-        .count();
-    let legacy_vendor_footer_schema_program_count = native
-        .legacy_entity_runs
-        .iter()
-        .filter_map(|run| run.schema_program.as_ref())
-        .filter(|program| {
-            program.boundary == crate::native::CatiaLegacySchemaProgramBoundary::VendorFooter
-        })
-        .count();
-    let legacy_directory_bound_schema_program_count = native
-        .legacy_entity_runs
-        .iter()
-        .filter_map(|run| run.schema_program.as_ref())
-        .filter(|program| {
-            program.boundary == crate::native::CatiaLegacySchemaProgramBoundary::StreamDirectory
-        })
-        .count();
-    let legacy_schema_identifier_count = native
-        .legacy_entity_runs
-        .iter()
-        .filter_map(|run| run.schema_program.as_ref())
-        .map(|program| program.identifiers.len())
-        .sum();
-    let legacy_evaluated_value_name_count = native
-        .legacy_entity_runs
-        .iter()
-        .map(|run| {
-            let evaluation_name_bound = |entity_id, value_offset| {
-                run.role_selectors.iter().any(|role| {
-                    role.entity_id == entity_id
-                        && role.field_code == Some(0x17c4)
-                        && role.end_offset().and_then(|offset| offset.checked_add(6))
-                            == Some(value_offset)
-                })
-            };
-            run.scalar_values
-                .iter()
-                .filter(|value| {
-                    value.name.is_some()
-                        && evaluation_name_bound(value.entity_id, value.byte_offset)
-                })
-                .count()
-                + run
-                    .string_values
-                    .iter()
-                    .filter(|value| {
-                        value.name.is_some()
-                            && evaluation_name_bound(value.entity_id, value.byte_offset)
-                    })
-                    .count()
-                + run
-                    .integer_values
-                    .iter()
-                    .filter(|value| {
-                        value.name.is_some()
-                            && evaluation_name_bound(value.entity_id, value.byte_offset)
-                    })
-                    .count()
-        })
-        .sum();
-    let (
-        legacy_identity_lead_81_count,
-        legacy_identity_lead_82_count,
-        legacy_identity_lead_e5_count,
-        legacy_identity_lead_fd_count,
-    ) = native
-        .legacy_entity_runs
-        .iter()
-        .flat_map(|run| &run.identities)
-        .fold(
-            (0, 0, 0, 0),
-            |(lead_81, lead_82, lead_e5, lead_fd), identity| match identity.lead {
+            {
+                unresolved_storage_record_count += 1;
+            }
+            object_record_reference_count += record.references.len();
+            for reference in ctx.admit_iter(&record.references, "catia_census_child")? {
+                if reference.target().is_some() {
+                    resolved_object_record_reference_count += 1;
+                }
+                if reference.is_null() {
+                    null_object_record_reference_count += 1;
+                }
+            }
+            if crate::object_graph::has_repeated_reference_suffix(&record.payload) {
+                repeated_reference_suffix_count += 1;
+            }
+            if record.repeated_reference_schema_selection.is_some() {
+                repeated_reference_schema_selection_count += 1;
+            }
+        }
+    }
+    let mut transferred_feature_parent_count = 0usize;
+    let mut counted_feature_objects = HashSet::new();
+    let mut design_field_count = 0usize;
+    let mut classified_design_object_count = 0usize;
+    let mut design_object_relation_count = 0usize;
+    let mut design_parallel_reference_table_count = 0usize;
+    let mut design_parallel_reference_row_count = 0usize;
+    let mut design_parallel_reference_column_count = 0usize;
+    let mut design_parallel_reference_cell_count = 0usize;
+    let mut design_parallel_reference_resolved_cell_count = 0usize;
+    let mut design_parallel_reference_null_cell_count = 0usize;
+    let mut design_parallel_reference_classified_cell_count = 0usize;
+    let mut design_parallel_reference_classified_column_count = 0usize;
+    let mut design_parallel_reference_matched_row_count = 0usize;
+    let mut design_unowned_field_relation_count = 0usize;
+    let mut design_same_object_relation_count = 0usize;
+    let mut design_reflexive_field_relation_count = 0usize;
+    let mut design_object_owner_link_count = 0usize;
+    let mut owned_definition_value_count = 0usize;
+    let mut unresolved_design_owner_count = 0usize;
+    let mut structurally_owned_definition_chain_value_count = 0usize;
+    for object in ctx.admit_iter(&native.design_objects, "catia_census_design_objects")? {
+        if let Some(feature) = ctx.get_hash_map(
+            &design_feature_transfer.feature_ids,
+            object.id.as_str(),
+            "catia_census_feature_parent",
+        )? {
+            // Transfer keys are design-object ids; each key contributes once.
+            if ctx.insert_hash_set(
+                &mut counted_feature_objects,
+                object.id.as_str(),
+                "catia_census_feature_parent",
+            )? {
+                transferred_feature_parent_count +=
+                    usize::from(ir.model.feature_regeneration_parent(feature).is_some());
+            }
+        }
+
+        for id in ctx.admit_iter(
+            &object.definition_values,
+            "catia_owned_definition_value_ids",
+        )? {
+            ctx.insert_hash_set(
+                &mut owned_definition_value_ids,
+                id.as_str(),
+                "catia_owned_definition_value_ids",
+            )?;
+        }
+        if object.owner_record.is_some() {
+            for id in ctx.admit_iter(&object.fields, "catia_structurally_owned_records")? {
+                ctx.insert_hash_set(
+                    &mut structurally_owned_records,
+                    id.as_str(),
+                    "catia_structurally_owned_records",
+                )?;
+            }
+            for id in ctx.admit_iter(
+                &object.definition_chain_values,
+                "catia_owned_definition_chain_values",
+            )? {
+                ctx.insert_hash_set(
+                    &mut structurally_owned_definition_chain_value_ids,
+                    id.as_str(),
+                    "catia_owned_definition_chain_values",
+                )?;
+            }
+        }
+
+        design_field_count += object.fields.len();
+        if object.owner_class.is_some() || !object.field_classes.is_empty() {
+            classified_design_object_count += 1;
+        }
+        design_object_relation_count += object.relations.len();
+        if object.parallel_reference_table.is_some() {
+            design_parallel_reference_table_count += 1;
+        }
+        if let Some(table) = object.parallel_reference_table.as_ref() {
+            design_parallel_reference_row_count += table.rows().len();
+            design_parallel_reference_column_count += table.columns().len();
+            for row in ctx.admit_iter(table.rows(), "catia_census_child")? {
+                design_parallel_reference_cell_count += row.cells.len();
+                for cell in ctx.admit_iter(&row.cells, "catia_census_child")? {
+                    if cell.field().is_some() {
+                        design_parallel_reference_resolved_cell_count += 1;
+                    }
+                    if cell.is_null() {
+                        design_parallel_reference_null_cell_count += 1;
+                    }
+                    if cell.field_class().is_some() {
+                        design_parallel_reference_classified_cell_count += 1;
+                    }
+                }
+                if row.matching_design_object.is_some() {
+                    design_parallel_reference_matched_row_count += 1;
+                }
+            }
+            for column in ctx.admit_iter(table.columns(), "catia_census_child")? {
+                if column.field_class.is_some() {
+                    design_parallel_reference_classified_column_count += 1;
+                }
+            }
+        }
+        for relation in ctx.admit_iter(&object.relations, "catia_census_child")? {
+            if let Some(target) = relation.target_design_object.as_deref() {
+                design_same_object_relation_count += usize::from(ctx.equal_bytes(
+                    target.as_bytes(),
+                    object.id.as_bytes(),
+                    "catia_census_relation_object",
+                )?);
+            }
+            if relation.target_design_object.is_none() {
+                design_unowned_field_relation_count += 1;
+            }
+            if ctx.equal_bytes(
+                relation.source_field.as_bytes(),
+                relation.target_field.as_bytes(),
+                "catia_census_relation_field",
+            )? {
+                design_reflexive_field_relation_count += 1;
+            }
+        }
+        if object.owner_design_object.is_some() {
+            design_object_owner_link_count += 1;
+        }
+        owned_definition_value_count += object.definition_values.len();
+        if object.owner_record.is_none() {
+            unresolved_design_owner_count += 1;
+        }
+        if object.owner_record.is_some() {
+            structurally_owned_definition_chain_value_count += object.definition_chain_values.len();
+        }
+    }
+    let mut legacy_identity_lead_81_count = 0usize;
+    let mut legacy_identity_lead_82_count = 0usize;
+    let mut legacy_identity_lead_e5_count = 0usize;
+    let mut legacy_identity_lead_fd_count = 0usize;
+    let mut legacy_entity_identity_count = 0usize;
+    let mut legacy_schema_program_count = 0usize;
+    let mut legacy_vendor_footer_schema_program_count = 0usize;
+    let mut legacy_directory_bound_schema_program_count = 0usize;
+    let mut legacy_schema_identifier_count = 0usize;
+    let mut legacy_evaluated_value_name_count = 0usize;
+    let mut legacy_text_field_count = 0usize;
+    let mut legacy_e3_role_tail_text_field_count = 0usize;
+    let mut legacy_role_selector_count = 0usize;
+    let mut legacy_selected_role_count = 0usize;
+    let mut legacy_role_field_binding_count = 0usize;
+    let mut legacy_role_text_field_count = 0usize;
+    let mut legacy_schema_field_count = 0usize;
+    let mut legacy_relation_count = 0usize;
+    let mut legacy_parameter_relation_count = 0usize;
+    let mut legacy_synchronous_state_count = 0usize;
+    let mut legacy_synchronous_relation_count = 0usize;
+    let mut legacy_type_descriptor_count = 0usize;
+    let mut legacy_literal_type_descriptor_count = 0usize;
+    let mut legacy_scalar_value_count = 0usize;
+    let mut legacy_named_scalar_value_count = 0usize;
+    let mut legacy_string_value_count = 0usize;
+    let mut legacy_named_string_value_count = 0usize;
+    let mut legacy_integer_value_count = 0usize;
+    let mut legacy_named_integer_value_count = 0usize;
+    for run in ctx.admit_iter(
+        &native.legacy_entity_runs,
+        "catia_census_legacy_entity_runs",
+    )? {
+        for identity in ctx.admit_iter(&run.identities, "catia_census_identities")? {
+            match identity.lead {
                 crate::legacy_entity::CatiaLegacyIdentityLead::Lead81 => {
-                    (lead_81 + 1, lead_82, lead_e5, lead_fd)
+                    legacy_identity_lead_81_count += 1;
                 }
                 crate::legacy_entity::CatiaLegacyIdentityLead::Lead82 => {
-                    (lead_81, lead_82 + 1, lead_e5, lead_fd)
+                    legacy_identity_lead_82_count += 1;
                 }
                 crate::legacy_entity::CatiaLegacyIdentityLead::LeadE5 => {
-                    (lead_81, lead_82, lead_e5 + 1, lead_fd)
+                    legacy_identity_lead_e5_count += 1;
                 }
                 crate::legacy_entity::CatiaLegacyIdentityLead::LeadFd => {
-                    (lead_81, lead_82, lead_e5, lead_fd + 1)
+                    legacy_identity_lead_fd_count += 1;
                 }
-            },
-        );
-    let legacy_text_field_count = native
-        .legacy_entity_runs
-        .iter()
-        .map(|run| run.text_fields.len())
-        .sum();
-    let legacy_e3_role_tail_text_field_count = native
-        .legacy_entity_runs
-        .iter()
-        .flat_map(|run| &run.text_fields)
-        .filter(|field| {
-            field.encoding == crate::native::CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
-        })
-        .count();
-    let legacy_role_selector_count = native
-        .legacy_entity_runs
-        .iter()
-        .map(|run| run.role_selectors.len())
-        .sum();
-    let legacy_selected_role_count = native
-        .legacy_entity_runs
-        .iter()
-        .flat_map(|run| &run.role_selectors)
-        .filter(|role| {
-            matches!(
+            }
+        }
+        legacy_entity_identity_count += run.identities.len();
+        if run.schema_program.is_some() {
+            legacy_schema_program_count += 1;
+        }
+        if let Some(program) = run.schema_program.as_ref() {
+            if program.boundary == crate::native::CatiaLegacySchemaProgramBoundary::VendorFooter {
+                legacy_vendor_footer_schema_program_count += 1;
+            }
+            if program.boundary == crate::native::CatiaLegacySchemaProgramBoundary::StreamDirectory
+            {
+                legacy_directory_bound_schema_program_count += 1;
+            }
+            legacy_schema_identifier_count += program.identifiers.len();
+        }
+        legacy_text_field_count += run.text_fields.len();
+        for field in ctx.admit_iter(&run.text_fields, "catia_census_child")? {
+            if field.encoding == crate::native::CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
+            {
+                legacy_e3_role_tail_text_field_count += 1;
+            }
+            if field.role.is_some() {
+                legacy_role_text_field_count += 1;
+            }
+        }
+        legacy_role_selector_count += run.role_selectors.len();
+        for role in ctx.admit_iter(&run.role_selectors, "catia_census_child")? {
+            if matches!(
                 &role.name,
                 crate::legacy_entity::LegacyRoleName::Selector(_)
-            )
-        })
-        .count();
-    let legacy_role_field_binding_count = native
-        .legacy_entity_runs
-        .iter()
-        .flat_map(|run| &run.role_selectors)
-        .filter(|role| role.field_code.is_some())
-        .count();
-    let legacy_role_text_field_count = native
-        .legacy_entity_runs
-        .iter()
-        .flat_map(|run| &run.text_fields)
-        .filter(|field| field.role.is_some())
-        .count();
-    let legacy_schema_field_count = native
-        .legacy_entity_runs
-        .iter()
-        .map(|run| run.schema_fields.len())
-        .sum();
-    let legacy_relation_count = native
-        .legacy_entity_runs
-        .iter()
-        .map(|run| run.relations.len())
-        .sum();
-    let legacy_parameter_relation_count = native
-        .legacy_entity_runs
-        .iter()
-        .flat_map(|run| &run.relations)
-        .filter(|relation| relation.parameter_entity_id.is_some())
-        .count();
-    let legacy_synchronous_state_count = native
-        .legacy_entity_runs
-        .iter()
-        .map(|run| run.synchronous_states.len())
-        .sum();
-    let legacy_synchronous_relation_count = native
-        .legacy_entity_runs
-        .iter()
-        .flat_map(|run| &run.synchronous_states)
-        .filter(|state| state.synchronous)
-        .count();
-    let legacy_asynchronous_relation_count =
-        legacy_synchronous_state_count - legacy_synchronous_relation_count;
-    let legacy_type_descriptor_count = native
-        .legacy_entity_runs
-        .iter()
-        .map(|run| run.type_descriptors.len())
-        .sum();
-    let legacy_literal_type_descriptor_count = native
-        .legacy_entity_runs
-        .iter()
-        .flat_map(|run| &run.type_descriptors)
-        .filter(|descriptor| {
-            matches!(
+            ) {
+                legacy_selected_role_count += 1;
+            }
+            if role.field_code.is_some() {
+                legacy_role_field_binding_count += 1;
+            }
+        }
+        legacy_schema_field_count += run.schema_fields.len();
+        legacy_relation_count += run.relations.len();
+        for relation in ctx.admit_iter(&run.relations, "catia_census_child")? {
+            if relation.parameter_entity_id.is_some() {
+                legacy_parameter_relation_count += 1;
+            }
+        }
+        legacy_synchronous_state_count += run.synchronous_states.len();
+        for state in ctx.admit_iter(&run.synchronous_states, "catia_census_child")? {
+            if state.synchronous {
+                legacy_synchronous_relation_count += 1;
+            }
+        }
+        legacy_type_descriptor_count += run.type_descriptors.len();
+        for descriptor in ctx.admit_iter(&run.type_descriptors, "catia_census_child")? {
+            if matches!(
                 &descriptor.value,
                 crate::native::CatiaLegacyTypeValue::Name { .. }
-            )
-        })
-        .count();
-    let legacy_scalar_value_count = native
-        .legacy_entity_runs
-        .iter()
-        .map(|run| run.scalar_values.len())
-        .sum();
-    let legacy_named_scalar_value_count = native
-        .legacy_entity_runs
-        .iter()
-        .flat_map(|run| &run.scalar_values)
-        .filter(|value| value.name.is_some())
-        .count();
-    let legacy_string_value_count = native
-        .legacy_entity_runs
-        .iter()
-        .map(|run| run.string_values.len())
-        .sum();
-    let legacy_named_string_value_count = native
-        .legacy_entity_runs
-        .iter()
-        .flat_map(|run| &run.string_values)
-        .filter(|value| value.name.is_some())
-        .count();
-    let legacy_integer_value_count = native
-        .legacy_entity_runs
-        .iter()
-        .map(|run| run.integer_values.len())
-        .sum();
-    let legacy_named_integer_value_count = native
-        .legacy_entity_runs
-        .iter()
-        .flat_map(|run| &run.integer_values)
-        .filter(|value| value.name.is_some())
-        .count();
-    let definition_schema_selection_count = native
-        .entity_records
-        .iter()
-        .map(|record| record.definition_schema_selections.len())
-        .sum();
+            ) {
+                legacy_literal_type_descriptor_count += 1;
+            }
+        }
+        legacy_scalar_value_count += run.scalar_values.len();
+        for value in ctx.admit_iter(&run.scalar_values, "catia_census_child")? {
+            if value.name.is_some() {
+                legacy_named_scalar_value_count += 1;
+                legacy_evaluated_value_name_count += usize::from(ctx.any_by(
+                    &run.role_selectors,
+                    |role| {
+                        Ok(role.entity_id == value.entity_id
+                            && role.field_code == Some(0x17c4)
+                            && role.end_offset().and_then(|offset| offset.checked_add(6))
+                                == Some(value.byte_offset))
+                    },
+                    "catia_census_evaluation_name",
+                )?);
+            }
+        }
+        legacy_string_value_count += run.string_values.len();
+        for value in ctx.admit_iter(&run.string_values, "catia_census_child")? {
+            if value.name.is_some() {
+                legacy_named_string_value_count += 1;
+                legacy_evaluated_value_name_count += usize::from(ctx.any_by(
+                    &run.role_selectors,
+                    |role| {
+                        Ok(role.entity_id == value.entity_id
+                            && role.field_code == Some(0x17c4)
+                            && role.end_offset().and_then(|offset| offset.checked_add(6))
+                                == Some(value.byte_offset))
+                    },
+                    "catia_census_evaluation_name",
+                )?);
+            }
+        }
+        legacy_integer_value_count += run.integer_values.len();
+        for value in ctx.admit_iter(&run.integer_values, "catia_census_child")? {
+            if value.name.is_some() {
+                legacy_named_integer_value_count += 1;
+                legacy_evaluated_value_name_count += usize::from(ctx.any_by(
+                    &run.role_selectors,
+                    |role| {
+                        Ok(role.entity_id == value.entity_id
+                            && role.field_code == Some(0x17c4)
+                            && role.end_offset().and_then(|offset| offset.checked_add(6))
+                                == Some(value.byte_offset))
+                    },
+                    "catia_census_evaluation_name",
+                )?);
+            }
+        }
+    }
     let mut entity_value_field_count = 0usize;
-    let entity_value_schema_selection_count = native
-        .entity_records
-        .iter()
-        .map(|record| record.value_schema_selections.len())
-        .sum();
+
     let mut compact_entity_value_packet_count = 0;
     let mut numeric_entity_value_packet_count = 0;
     let mut layout_entity_value_packet_count = 0;
     let mut e9_scalar_entity_value_packet_count = 0;
-    for record in &native.entity_records {
+    let mut referenced_relation_expression_count = 0usize;
+    let mut reference_signature_instruction_count = 0usize;
+    let mut reference_signature_token_count = 0usize;
+    let mut resolved_reference_signature_entity_count = 0usize;
+    let mut null_reference_signature_entity_count = 0usize;
+    let mut unresolved_reference_signature_entity_count = 0usize;
+    let mut classified_reference_signature_entity_count = 0usize;
+    let mut range_interval_count = 0usize;
+    let mut range_interval_no_slot_count = 0usize;
+    let mut range_interval_nominal_count = 0usize;
+    let mut range_interval_finite_slot_count = 0usize;
+    let mut range_interval_unset_slot_count = 0usize;
+    let mut constraint_range_count = 0usize;
+    let mut dimension_constraint_range_count = 0usize;
+    let mut complex_constraint_range_count = 0usize;
+    let mut evaluated_constraint_range_count = 0usize;
+    let mut unset_constraint_range_count = 0usize;
+    let mut definition_chain_value_count = 0usize;
+    let mut definition_chain_evaluation_count = 0usize;
+    let mut evaluated_definition_chain_count = 0usize;
+    let mut unset_definition_chain_count = 0usize;
+    let mut definition_chain_atom_count = 0usize;
+    let mut definition_chain_control_count = 0usize;
+    let mut definition_chain_separator_count = 0usize;
+    let mut definition_chain_schema_selector_count = 0usize;
+    let mut lead12_relation_program_instance_count = 0usize;
+    let mut lead54_relation_program_instance_count = 0usize;
+    let mut escaped_word_entity_suffix_count = 0usize;
+    let mut token_8149_entity_suffix_count = 0usize;
+    let mut fixed_fe_f6_entity_suffix_count = 0usize;
+    let mut paged_atom_state_01_entity_suffix_count = 0usize;
+    let mut control_e8_entity_suffix_value_count = 0usize;
+    let mut control_e9_entity_suffix_value_count = 0usize;
+    let mut schema_selected_atom_entity_suffix_value_count = 0usize;
+    let mut schema_selected_evaluation_entity_suffix_value_count = 0usize;
+    let mut schema_selected_control_entity_suffix_value_count = 0usize;
+    let mut schema_selected_separator_entity_suffix_value_count = 0usize;
+    let mut schema_selected_schema_entity_suffix_value_count = 0usize;
+    let mut definition_schema_selection_count = 0usize;
+    let mut entity_value_schema_selection_count = 0usize;
+    let mut numeric_entity_value_pair_count = 0usize;
+    let mut reference_signature_count = 0usize;
+    let mut reference_signature_prefix_atom_2_count = 0usize;
+    let mut parameter_value_count = 0usize;
+    let mut unresolved_dimension_quantity_count = 0usize;
+    let mut definition_value_count = 0usize;
+    let mut unowned_definition_value_count = 0usize;
+    let mut formula_relation_count = 0usize;
+    let mut relation_program_instance_count = 0usize;
+    let mut relation_program_output_count = 0usize;
+    let mut resolved_relation_program_output_count = 0usize;
+    let mut null_relation_program_output_count = 0usize;
+    let mut relation_program_reference_incidence_count = 0usize;
+    let mut resolved_relation_program_reference_incidence_count = 0usize;
+    let mut null_relation_program_reference_incidence_count = 0usize;
+    let mut classified_relation_program_reference_incidence_count = 0usize;
+    let mut resolved_lead54_relation_program_trailing_entity_count = 0usize;
+    let mut null_lead54_relation_program_trailing_entity_count = 0usize;
+    let mut resolved_lead12_relation_program_context_entity_count = 0usize;
+    let mut null_lead12_relation_program_context_entity_count = 0usize;
+    let mut classified_lead12_relation_program_context_entity_count = 0usize;
+    let mut lead12_relation_program_paramout_context_entity_count = 0usize;
+    let mut resolved_relation_program_instance_count = 0usize;
+    let mut null_relation_program_instance_count = 0usize;
+    let mut resolved_relation_program_repeated_reference_count = 0usize;
+    let mut null_relation_program_repeated_reference_count = 0usize;
+    let mut classified_relation_program_entity_count = 0usize;
+    let mut classified_relation_program_repeated_entity_count = 0usize;
+    let mut relation_expression_instance_count = 0usize;
+    let mut typed_relation_program_instance_count = 0usize;
+    let mut resolved_relation_program_input_instance_count = 0usize;
+    let mut resolved_relation_program_input_count = 0usize;
+    let mut relation_program_parameter_dependency_count = 0usize;
+    let mut resolved_relation_program_parameter_dependency_count = 0usize;
+    let mut ambiguous_relation_program_parameter_dependency_count = 0usize;
+    let mut schema_configuration_record_count = 0usize;
+    let mut resolved_schema_configuration_reference_count = 0usize;
+    let mut null_schema_configuration_reference_count = 0usize;
+    let mut classified_schema_configuration_entity_reference_count = 0usize;
+    let mut schema_configuration_row_link_count = 0usize;
+    let mut resolved_schema_configuration_row_class_count = 0usize;
+    let mut null_schema_configuration_row_class_count = 0usize;
+    let mut resolved_schema_configuration_row_successor_count = 0usize;
+    let mut null_schema_configuration_row_successor_count = 0usize;
+    let mut resolved_formula_output_count = 0usize;
+    let mut null_formula_output_count = 0usize;
+    let mut classified_formula_output_entity_count = 0usize;
+    let mut classified_formula_expression_entity_count = 0usize;
+    let mut formula_parameter_dependency_count = 0usize;
+    let mut formula_parameter_dependency_candidate_count = 0usize;
+    let mut classified_formula_parameter_dependency_candidate_count = 0usize;
+    let mut resolved_formula_parameter_dependency_count = 0usize;
+    let mut ambiguous_formula_parameter_dependency_count = 0usize;
+    let mut scalar_entity_suffix_value_count = 0usize;
+    let mut unset_entity_suffix_value_count = 0usize;
+    let mut separator_entity_suffix_value_count = 0usize;
+    let mut atom_entity_suffix_value_count = 0usize;
+    let mut schema_selected_entity_suffix_value_count = 0usize;
+    let mut wide_prefix_entity_suffix_value_count = 0usize;
+    let mut unowned_definition_chain_value_count = 0usize;
+    let mut unassigned_definition_chain_value_count = 0usize;
+    let mut structurally_owned_definition_chain_evaluation_count = 0usize;
+    let mut unowned_definition_chain_evaluation_count = 0usize;
+    let mut unassigned_definition_chain_evaluation_count = 0usize;
+    let mut constraint_range_incidences = IncomingEntityIncidenceCounts::default();
+    let mut range_interval_incidences = IncomingEntityIncidenceCounts::default();
+    for record in ctx.admit_iter(&native.entity_records, "catia_census_entity_records")? {
+        const OPERATION: &str = "catia_referenced_relation_expressions";
+        if record.relation_expression().is_some()
+            && (ctx.contains_hash_set(
+                &formula_referenced_relation_expressions,
+                record.id.as_str(),
+                OPERATION,
+            )? || ctx.contains_hash_set(
+                &program_referenced_relation_expressions,
+                record.id.as_str(),
+                OPERATION,
+            )?)
+        {
+            referenced_relation_expression_count += 1;
+        }
+
         let fields = record.value_fields_charged(ctx)?;
         entity_value_field_count = entity_value_field_count
             .checked_add(fields.len())
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("catia_entity_value_field_count", u64::MAX, u64::MAX)
             })?;
-        for packet in record.value_packets(ctx, &fields)? {
+        let packets = record.value_packets(ctx, &fields)?;
+        for packet in ctx.admit_iter(packets, "catia_census_value_packets")? {
             match packet {
                 entity_table::EntityValuePacket::Compact { .. } => {
                     compact_entity_value_packet_count += 1;
@@ -784,221 +948,166 @@ fn finish_decode(
                 }
             }
         }
-    }
-    let numeric_entity_value_pair_count = native
-        .entity_records
-        .iter()
-        .filter(|record| record.numeric_pair().is_some())
-        .count();
-    let reference_signature_count = native
-        .entity_records
-        .iter()
-        .filter(|record| record.reference_signature.is_some())
-        .count();
-    let reference_signature_prefix_atom_2_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.reference_signature.as_ref())
-        .filter(|signature| {
-            signature.production.prefix() == entity_table::ReferenceSignaturePrefix::Atom2
-        })
-        .count();
-    let reference_signature_prefix_atom_35_count =
-        reference_signature_count - reference_signature_prefix_atom_2_count;
-    let reference_signature_cohort_count = native.reference_signature_cohorts.len();
-    let multi_member_reference_signature_cohort_count = native
-        .reference_signature_cohorts
-        .iter()
-        .filter(|cohort| cohort.members.len() > 1)
-        .count();
-    let reference_signature_cohort_member_count = native
-        .reference_signature_cohorts
-        .iter()
-        .map(|cohort| cohort.members.len())
-        .sum();
-    let schema_selected_reference_signature_cohort_count = native
-        .reference_signature_cohorts
-        .iter()
-        .filter(|cohort| cohort.schema_selection.is_some())
-        .count();
-    let (reference_signature_instruction_count, reference_signature_token_count) = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.reference_signature.as_ref())
-        .fold((0_usize, 0_usize), |(instructions, tokens), signature| {
-            let (instruction_count, token_count) =
-                signature.production.instruction_and_token_counts();
-            (instructions + instruction_count, tokens + token_count)
-        });
-    let (
-        resolved_reference_signature_entity_count,
-        null_reference_signature_entity_count,
-        unresolved_reference_signature_entity_count,
-        classified_reference_signature_entity_count,
-    ) = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.reference_signature.as_ref())
-        .flat_map(|signature| [&signature.first_entity, &signature.second_entity])
-        .fold(
-            (0_usize, 0_usize, 0_usize, 0_usize),
-            |(resolved, null, unresolved, classified), reference| {
-                let classified = classified + usize::from(reference.class_name().is_some());
+
+        if let Some(signature) = record.reference_signature.as_ref() {
+            let (instructions, tokens) = signature.production.instruction_and_token_counts();
+            reference_signature_instruction_count += instructions;
+            reference_signature_token_count += tokens;
+        }
+        if let Some(signature) = record.reference_signature.as_ref() {
+            for reference in [&signature.first_entity, &signature.second_entity] {
+                classified_reference_signature_entity_count +=
+                    usize::from(reference.class_name().is_some());
                 if reference.is_null() {
-                    (resolved, null + 1, unresolved, classified)
+                    null_reference_signature_entity_count += 1;
                 } else if reference.entity().is_some() {
-                    (resolved + 1, null, unresolved, classified)
+                    resolved_reference_signature_entity_count += 1;
                 } else {
-                    (resolved, null, unresolved + 1, classified)
+                    unresolved_reference_signature_entity_count += 1;
                 }
-            },
-        );
-    let consolidated_edge_run_count = native.consolidated_edge_runs.len();
-    let consolidated_edge_run_support_binding_count = native
-        .consolidated_edge_runs
-        .iter()
-        .flat_map(|run| &run.support_bindings)
-        .filter(|binding| binding.is_some())
-        .count();
-    let (
-        unresolved_consolidated_edge_run_count,
-        partially_resolved_consolidated_edge_run_count,
-        fully_resolved_consolidated_edge_run_count,
-    ) = native.consolidated_edge_runs.iter().fold(
-        (0_usize, 0_usize, 0_usize),
-        |(unresolved, partial, full), run| match &run.support_bindings {
-            [None, None] => (unresolved + 1, partial, full),
-            [Some(_), None] | [None, Some(_)] => (unresolved, partial + 1, full),
-            [Some(_), Some(_)] => (unresolved, partial, full + 1),
-        },
-    );
-    let consolidated_edge_run_shared_locus_count = native
-        .consolidated_edge_runs
-        .iter()
-        .filter(|run| run.shared_loci.is_some())
-        .count();
-    let consolidated_edge_run_endpoint_locus_count = native
-        .consolidated_edge_runs
-        .iter()
-        .filter(|run| run.endpoint_loci.is_some())
-        .count();
-    let (
-        relation_expression_count,
-        placeholder_state_relation_expression_count,
-        parser_version_relation_expression_count,
-        boolean_parser_version_relation_expression_count,
-        opened_boolean_parser_version_relation_expression_count,
-        typed_relation_expression_count,
-    ) = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_expression())
-        .try_fold(
-            (0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
-            |(total, placeholder, parser, boolean, opened, typed), expression| {
-                let (placeholder, parser, boolean, opened) = match expression.framing {
-                    crate::native::CatiaRelationExpressionFraming::PlaceholderState { .. } => {
-                        (placeholder + 1, parser, boolean, opened)
+            }
+        }
+
+        if let Some(range) = record.range_interval.as_ref() {
+            range_interval_incidences.add(
+                ctx,
+                &range.incoming_references,
+                &range.incoming_storage_references,
+            )?;
+            range_interval_count += 1;
+            range_interval_nominal_count += usize::from(range.nominal.is_some());
+            if let Some(slots) = &range.interval.slots {
+                for slot in slots {
+                    match slot {
+                        crate::entity_table::RangeIntervalSlot::Binary64 { .. } => {
+                            range_interval_finite_slot_count += 1;
+                        }
+                        crate::entity_table::RangeIntervalSlot::Unset { .. } => {
+                            range_interval_unset_slot_count += 1;
+                        }
                     }
-                    crate::native::CatiaRelationExpressionFraming::ParserVersion { .. } => {
-                        (placeholder, parser + 1, boolean, opened)
+                }
+            } else {
+                range_interval_no_slot_count += 1;
+            }
+        }
+        if let Some(range) = record.constraint_range() {
+            constraint_range_incidences.add(
+                ctx,
+                &range.incoming_references,
+                &range.incoming_storage_references,
+            )?;
+            constraint_range_count += 1;
+            match range.framing {
+                crate::native::CatiaConstraintRangeFraming::DimensionB8
+                | crate::native::CatiaConstraintRangeFraming::DimensionC1
+                | crate::native::CatiaConstraintRangeFraming::DimensionDC
+                | crate::native::CatiaConstraintRangeFraming::DimensionDF => {
+                    dimension_constraint_range_count += 1;
+                }
+                crate::native::CatiaConstraintRangeFraming::ComplexC9 => {
+                    complex_constraint_range_count += 1;
+                }
+            }
+            match range.evaluation {
+                crate::native::CatiaEntityEvaluation::Scalar { .. } => {
+                    evaluated_constraint_range_count += 1;
+                }
+                crate::native::CatiaEntityEvaluation::Unset => unset_constraint_range_count += 1,
+            }
+        }
+        if let Some(value) = record.definition_chain_value() {
+            use crate::native::{CatiaEntityEvaluation, CatiaEntitySuffixSchemaValue as Selected};
+            definition_chain_value_count += 1;
+            match &value.value {
+                Selected::Evaluation { evaluation, .. } => {
+                    definition_chain_evaluation_count += 1;
+                    match evaluation {
+                        CatiaEntityEvaluation::Scalar { .. } => {
+                            evaluated_definition_chain_count += 1;
+                        }
+                        CatiaEntityEvaluation::Unset => unset_definition_chain_count += 1,
                     }
-                    crate::native::CatiaRelationExpressionFraming::BooleanParserVersion {
-                        ..
-                    } => (placeholder, parser, boolean + 1, opened),
-                    crate::native::CatiaRelationExpressionFraming::OpenedBooleanParserVersion {
-                        ..
-                    } => (placeholder, parser, boolean, opened + 1),
-                };
-                Ok::<_, CodecError>((
-                    total + 1,
-                    placeholder,
-                    parser,
-                    boolean,
-                    opened,
-                    typed + usize::from(expression.signature_charged(ctx)?.is_some()),
-                ))
-            },
-        )?;
-    let parameter_value_count = native
-        .entity_records
-        .iter()
-        .filter(|record| record.parameter_value().is_some())
-        .count();
-    let (
-        range_interval_count,
-        range_interval_no_slot_count,
-        range_interval_nominal_count,
-        range_interval_finite_slot_count,
-        range_interval_unset_slot_count,
-    ) = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.range_interval.as_ref())
-        .fold(
-            (0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
-            |(total, no_slot, nominal, finite, unset), range| {
-                let nominal = nominal + usize::from(range.nominal.is_some());
-                let Some(slots) = &range.interval.slots else {
-                    return (total + 1, no_slot + 1, nominal, finite, unset);
-                };
-                let (finite_slots, unset_slots) =
-                    slots
-                        .iter()
-                        .fold((0_usize, 0_usize), |(finite, unset), slot| match slot {
-                            crate::entity_table::RangeIntervalSlot::Binary64 { .. } => {
-                                (finite + 1, unset)
-                            }
-                            crate::entity_table::RangeIntervalSlot::Unset { .. } => {
-                                (finite, unset + 1)
-                            }
-                        });
-                (
-                    total + 1,
-                    no_slot,
-                    nominal,
-                    finite + finite_slots,
-                    unset + unset_slots,
-                )
-            },
-        );
-    let (
-        constraint_range_count,
-        dimension_constraint_range_count,
-        complex_constraint_range_count,
-        evaluated_constraint_range_count,
-        unset_constraint_range_count,
-    ) = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.constraint_range())
-        .fold(
-            (0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
-            |(total, dimensions, complex, evaluated, unset), range| {
-                let (dimensions, complex) = match range.framing {
-                    crate::native::CatiaConstraintRangeFraming::DimensionB8
-                    | crate::native::CatiaConstraintRangeFraming::DimensionC1
-                    | crate::native::CatiaConstraintRangeFraming::DimensionDC
-                    | crate::native::CatiaConstraintRangeFraming::DimensionDF => {
-                        (dimensions + 1, complex)
-                    }
-                    crate::native::CatiaConstraintRangeFraming::ComplexC9 => {
-                        (dimensions, complex + 1)
-                    }
-                };
-                let (evaluated, unset) = match range.evaluation {
-                    crate::native::CatiaEntityEvaluation::Scalar { .. } => (evaluated + 1, unset),
-                    crate::native::CatiaEntityEvaluation::Unset => (evaluated, unset + 1),
-                };
-                (total + 1, dimensions, complex, evaluated, unset)
-            },
-        );
-    let unresolved_dimension_quantity_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.constraint_range())
-        .filter(|range| {
-            matches!(
+                }
+                Selected::Atom { .. } => definition_chain_atom_count += 1,
+                Selected::ControlE8 => definition_chain_control_count += 1,
+                Selected::Separator37 => definition_chain_separator_count += 1,
+                Selected::SchemaSelector { .. } => definition_chain_schema_selector_count += 1,
+            }
+        }
+        if let Some(instance) = record.relation_program_instance() {
+            match instance.framing {
+                crate::native::CatiaRelationProgramInstanceFraming::Lead12 { .. } => {
+                    lead12_relation_program_instance_count += 1;
+                }
+                crate::native::CatiaRelationProgramInstanceFraming::Lead54 { .. } => {
+                    lead54_relation_program_instance_count += 1;
+                }
+            }
+        }
+        match record.suffix_framing() {
+            Some(crate::native::CatiaEntitySuffixFraming::EscapedWord(_)) => {
+                escaped_word_entity_suffix_count += 1;
+            }
+            Some(crate::native::CatiaEntitySuffixFraming::Token8149) => {
+                token_8149_entity_suffix_count += 1;
+            }
+            Some(crate::native::CatiaEntitySuffixFraming::FixedFeF6 { .. }) => {
+                fixed_fe_f6_entity_suffix_count += 1;
+            }
+            Some(crate::native::CatiaEntitySuffixFraming::PagedAtomState01 { .. }) => {
+                paged_atom_state_01_entity_suffix_count += 1;
+            }
+            None => {}
+        }
+        match record.suffix_value().map(|value| &value.payload) {
+            Some(crate::native::CatiaEntitySuffixPayload::ControlE8) => {
+                control_e8_entity_suffix_value_count += 1;
+            }
+            Some(crate::native::CatiaEntitySuffixPayload::ControlE9) => {
+                control_e9_entity_suffix_value_count += 1;
+            }
+            _ => {}
+        }
+        if let Some(crate::native::CatiaEntitySuffixPayload::SchemaSelected { value, .. }) =
+            record.suffix_value().map(|suffix| &suffix.payload)
+        {
+            match value {
+                crate::native::CatiaEntitySuffixSelectedValue::Atom { .. } => {
+                    schema_selected_atom_entity_suffix_value_count += 1;
+                }
+                crate::native::CatiaEntitySuffixSelectedValue::Evaluation { .. } => {
+                    schema_selected_evaluation_entity_suffix_value_count += 1;
+                }
+                crate::native::CatiaEntitySuffixSelectedValue::ControlE8 => {
+                    schema_selected_control_entity_suffix_value_count += 1;
+                }
+                crate::native::CatiaEntitySuffixSelectedValue::Separator37 => {
+                    schema_selected_separator_entity_suffix_value_count += 1;
+                }
+                crate::native::CatiaEntitySuffixSelectedValue::SchemaSelector { .. } => {
+                    schema_selected_schema_entity_suffix_value_count += 1;
+                }
+            }
+        }
+        definition_schema_selection_count += record.definition_schema_selections.len();
+        entity_value_schema_selection_count += record.value_schema_selections.len();
+        if record.numeric_pair().is_some() {
+            numeric_entity_value_pair_count += 1;
+        }
+        if record.reference_signature.is_some() {
+            reference_signature_count += 1;
+        }
+        if let Some(signature) = record.reference_signature.as_ref() {
+            if signature.production.prefix() == entity_table::ReferenceSignaturePrefix::Atom2 {
+                reference_signature_prefix_atom_2_count += 1;
+            }
+        }
+        if record.parameter_value().is_some() {
+            parameter_value_count += 1;
+        }
+        if let Some(range) = record.constraint_range() {
+            if matches!(
                 range.framing,
                 crate::native::CatiaConstraintRangeFraming::DimensionB8
                     | crate::native::CatiaConstraintRangeFraming::DimensionC1
@@ -1009,21 +1118,562 @@ fn finish_decode(
                     f64::from_bits(bits).is_finite()
                 }
                 crate::native::CatiaEntityEvaluation::Unset => false,
+            } {
+                unresolved_dimension_quantity_count += 1;
             }
-        })
-        .count();
-    let constraint_range_incidences = incoming_entity_incidence_counts(
-        native
-            .entity_records
-            .iter()
-            .filter_map(|record| record.constraint_range())
-            .map(|range| {
-                (
-                    range.incoming_references.as_slice(),
-                    range.incoming_storage_references.as_slice(),
-                )
-            }),
-    );
+        }
+        if record.definition_value().is_some() {
+            definition_value_count += 1;
+        }
+        if record.definition_value().is_some()
+            && !ctx.contains_hash_set(
+                &owned_definition_value_ids,
+                record.id.as_str(),
+                "catia_census_lookup",
+            )?
+        {
+            unowned_definition_value_count += 1;
+        }
+        if record.formula_relation().is_some() {
+            formula_relation_count += 1;
+        }
+        if record.relation_program_instance().is_some() {
+            relation_program_instance_count += 1;
+        }
+        if let Some(instance) = record.relation_program_instance() {
+            if instance.output_entity().is_some() {
+                relation_program_output_count += 1;
+            }
+            if let Some(output) = instance.output_entity() {
+                if output.entity().is_some() {
+                    resolved_relation_program_output_count += 1;
+                }
+                if output.is_null() {
+                    null_relation_program_output_count += 1;
+                }
+            }
+            relation_program_reference_incidence_count += instance.reference_incidences.len();
+            for incidence in ctx.admit_iter(&instance.reference_incidences, "catia_census_child")? {
+                if incidence.reference.entity().is_some() {
+                    resolved_relation_program_reference_incidence_count += 1;
+                }
+                if incidence.reference.is_null() {
+                    null_relation_program_reference_incidence_count += 1;
+                }
+                if incidence.reference.class_name().is_some() {
+                    classified_relation_program_reference_incidence_count += 1;
+                }
+            }
+            if let Some(trailing) = instance.lead54_trailing_entity() {
+                if trailing.entity().is_some() {
+                    resolved_lead54_relation_program_trailing_entity_count += 1;
+                }
+                if trailing.is_null() {
+                    null_lead54_relation_program_trailing_entity_count += 1;
+                }
+            }
+            if let Some(context) = instance.lead12_context_entity() {
+                if context.entity().is_some() {
+                    resolved_lead12_relation_program_context_entity_count += 1;
+                }
+                if context.is_null() {
+                    null_lead12_relation_program_context_entity_count += 1;
+                }
+                if context.class_name().is_some() {
+                    classified_lead12_relation_program_context_entity_count += 1;
+                }
+                if match context.class_name() {
+                    Some(name) => {
+                        ctx.equal_bytes(name.as_bytes(), b"paramout", "catia_census_context_class")?
+                    }
+                    None => false,
+                } {
+                    lead12_relation_program_paramout_context_entity_count += 1;
+                }
+            }
+            if instance.program_entity.entity().is_some() {
+                resolved_relation_program_instance_count += 1;
+            }
+            if instance.program_entity.is_null() {
+                null_relation_program_instance_count += 1;
+            }
+            if instance.repeated_entity.entity().is_some() {
+                resolved_relation_program_repeated_reference_count += 1;
+            }
+            if instance.repeated_entity.is_null() {
+                null_relation_program_repeated_reference_count += 1;
+            }
+            if instance.program_entity.class_name().is_some() {
+                classified_relation_program_entity_count += 1;
+            }
+            if instance.repeated_entity.class_name().is_some() {
+                classified_relation_program_repeated_entity_count += 1;
+            }
+            if instance.relation_expression.is_some() {
+                relation_expression_instance_count += 1;
+            }
+            if let Some(entity) = instance.relation_expression.as_deref() {
+                if ctx.contains_hash_set(
+                    &typed_relation_expression_entities,
+                    entity,
+                    "catia_census_lookup",
+                )? {
+                    typed_relation_program_instance_count += 1;
+                }
+            }
+            if instance.inputs.is_some() {
+                resolved_relation_program_input_instance_count += 1;
+            }
+            if let Some(link) = instance.inputs.as_ref() {
+                resolved_relation_program_input_count += link.len();
+            }
+            relation_program_parameter_dependency_count += instance.parameter_dependencies.len();
+            for dependency in
+                ctx.admit_iter(&instance.parameter_dependencies, "catia_census_child")?
+            {
+                if dependency.candidates.len() == 1 {
+                    resolved_relation_program_parameter_dependency_count += 1;
+                }
+                if dependency.candidates.len() > 1 {
+                    ambiguous_relation_program_parameter_dependency_count += 1;
+                }
+            }
+        }
+        if record.schema_configuration_record().is_some() {
+            schema_configuration_record_count += 1;
+        }
+        if let Some(configuration) = record.schema_configuration_record() {
+            if configuration.entity_reference.reference.entity().is_some() {
+                resolved_schema_configuration_reference_count += 1;
+            }
+            if configuration.entity_reference.reference.is_null() {
+                null_schema_configuration_reference_count += 1;
+            }
+            if configuration
+                .entity_reference
+                .reference
+                .class_name()
+                .is_some()
+            {
+                classified_schema_configuration_entity_reference_count += 1;
+            }
+        }
+        if record.schema_configuration_row_link().is_some() {
+            schema_configuration_row_link_count += 1;
+        }
+        if let Some(link) = record.schema_configuration_row_link() {
+            if link.class_reference.entity().is_some() {
+                resolved_schema_configuration_row_class_count += 1;
+            }
+            if link.class_reference.is_null() {
+                null_schema_configuration_row_class_count += 1;
+            }
+            if link.successor.entity().is_some() {
+                resolved_schema_configuration_row_successor_count += 1;
+            }
+            if link.successor.is_null() {
+                null_schema_configuration_row_successor_count += 1;
+            }
+        }
+        if let Some(formula) = record.formula_relation() {
+            if formula.output_entity.reference.entity().is_some() {
+                resolved_formula_output_count += 1;
+            }
+            if formula.output_entity.reference.is_null() {
+                null_formula_output_count += 1;
+            }
+            if formula.output_entity.reference.class_name().is_some() {
+                classified_formula_output_entity_count += 1;
+            }
+            if formula.expression_entity.reference.class_name().is_some() {
+                classified_formula_expression_entity_count += 1;
+            }
+            formula_parameter_dependency_count += formula.parameter_dependencies.len();
+            for dependency in
+                ctx.admit_iter(&formula.parameter_dependencies, "catia_census_child")?
+            {
+                formula_parameter_dependency_candidate_count += dependency.candidates.len();
+                for candidate in ctx.admit_iter(&dependency.candidates, "catia_census_child")? {
+                    if candidate.class_name().is_some() {
+                        classified_formula_parameter_dependency_candidate_count += 1;
+                    }
+                }
+                if dependency.candidates.len() == 1 {
+                    resolved_formula_parameter_dependency_count += 1;
+                }
+                if dependency.candidates.len() > 1 {
+                    ambiguous_formula_parameter_dependency_count += 1;
+                }
+            }
+        }
+        if record.suffix_value().is_some_and(|value| {
+            matches!(
+                value.payload,
+                crate::native::CatiaEntitySuffixPayload::Evaluation {
+                    evaluation: crate::native::CatiaEntityEvaluation::Scalar { .. },
+                    ..
+                }
+            )
+        }) {
+            scalar_entity_suffix_value_count += 1;
+        }
+        if record.suffix_value().is_some_and(|value| {
+            matches!(
+                value.payload,
+                crate::native::CatiaEntitySuffixPayload::Evaluation {
+                    evaluation: crate::native::CatiaEntityEvaluation::Unset,
+                    ..
+                }
+            )
+        }) {
+            unset_entity_suffix_value_count += 1;
+        }
+        if record.suffix_value().is_some_and(|value| {
+            matches!(
+                value.payload,
+                crate::native::CatiaEntitySuffixPayload::Separator37
+            )
+        }) {
+            separator_entity_suffix_value_count += 1;
+        }
+        if record.suffix_value().is_some_and(|value| {
+            matches!(
+                value.payload,
+                crate::native::CatiaEntitySuffixPayload::Atom { .. }
+            )
+        }) {
+            atom_entity_suffix_value_count += 1;
+        }
+        if record.suffix_schema_selection.is_some() {
+            schema_selected_entity_suffix_value_count += 1;
+        }
+        if record.suffix_value().as_ref().is_some_and(|value| {
+            value.prefix_atom_widths[0] > 1
+                || value.prefix_atom_widths[1] > 1
+                || value.prefix_atom_widths[2] > 1
+        }) {
+            wide_prefix_entity_suffix_value_count += 1;
+        }
+        if let Some(value) = record.definition_chain_value() {
+            unowned_definition_chain_value_count += usize::from(!ctx.contains_hash_set(
+                &structurally_owned_definition_chain_value_ids,
+                record.id.as_str(),
+                "catia_census_lookup",
+            )?);
+            let unassigned = ctx
+                .get_hash_map(
+                    &object_records_by_id,
+                    record.object_record.as_str(),
+                    "catia_census_lookup",
+                )?
+                .is_some_and(|record| record.has_unassigned_owner());
+            unassigned_definition_chain_value_count += usize::from(unassigned);
+            if matches!(
+                &value.value,
+                crate::native::CatiaEntitySuffixSchemaValue::Evaluation { .. }
+            ) {
+                let owned = ctx.contains_hash_set(
+                    &structurally_owned_records,
+                    record.object_record.as_str(),
+                    "catia_census_lookup",
+                )?;
+                structurally_owned_definition_chain_evaluation_count += usize::from(owned);
+                unowned_definition_chain_evaluation_count += usize::from(!owned);
+                unassigned_definition_chain_evaluation_count += usize::from(unassigned);
+            }
+        }
+    }
+    let mut multi_member_reference_signature_cohort_count = 0usize;
+    let mut reference_signature_cohort_member_count = 0usize;
+    let mut schema_selected_reference_signature_cohort_count = 0usize;
+    for cohort in ctx.admit_iter(
+        &native.reference_signature_cohorts,
+        "catia_census_reference_signature_cohorts",
+    )? {
+        if cohort.members.len() > 1 {
+            multi_member_reference_signature_cohort_count += 1;
+        }
+        reference_signature_cohort_member_count += cohort.members.len();
+        if cohort.schema_selection.is_some() {
+            schema_selected_reference_signature_cohort_count += 1;
+        }
+    }
+    let mut unresolved_consolidated_edge_run_count = 0usize;
+    let mut partially_resolved_consolidated_edge_run_count = 0usize;
+    let mut fully_resolved_consolidated_edge_run_count = 0usize;
+    let mut consolidated_edge_run_support_binding_count = 0usize;
+    let mut consolidated_edge_run_shared_locus_count = 0usize;
+    let mut consolidated_edge_run_endpoint_locus_count = 0usize;
+    for run in ctx.admit_iter(
+        &native.consolidated_edge_runs,
+        "catia_census_consolidated_edge_runs",
+    )? {
+        match &run.support_bindings {
+            [None, None] => unresolved_consolidated_edge_run_count += 1,
+            [Some(_), None] | [None, Some(_)] => {
+                partially_resolved_consolidated_edge_run_count += 1;
+            }
+            [Some(_), Some(_)] => fully_resolved_consolidated_edge_run_count += 1,
+        }
+        for binding in &run.support_bindings {
+            if binding.is_some() {
+                consolidated_edge_run_support_binding_count += 1;
+            }
+        }
+        if run.shared_loci.is_some() {
+            consolidated_edge_run_shared_locus_count += 1;
+        }
+        if run.endpoint_loci.is_some() {
+            consolidated_edge_run_endpoint_locus_count += 1;
+        }
+    }
+    let mut ordered_schema_configuration_row_link_count = 0usize;
+    let mut resolved_schema_configuration_row_chain_terminal_count = 0usize;
+    let mut null_schema_configuration_row_chain_terminal_count = 0usize;
+    let mut classified_schema_configuration_row_chain_terminal_count = 0usize;
+    let mut schema_configuration_row_intervening_entity_count = 0usize;
+    let mut schema_configuration_row_source_interval_chain_count = 0usize;
+    let mut schema_configuration_row_intervening_schema_configuration_count = 0usize;
+    for chain in ctx.admit_iter(
+        &native.schema_configuration_row_chains,
+        "catia_census_schema_configuration_row_chains",
+    )? {
+        ordered_schema_configuration_row_link_count += chain.links().len();
+        if chain.terminal.entity().is_some() {
+            resolved_schema_configuration_row_chain_terminal_count += 1;
+        }
+        if chain.terminal.is_null() {
+            null_schema_configuration_row_chain_terminal_count += 1;
+        }
+        if chain.terminal.class_name().is_some() {
+            classified_schema_configuration_row_chain_terminal_count += 1;
+        }
+        let mut complete_source_intervals = true;
+        for link in ctx.admit_iter(chain.links(), "catia_census_row_links")? {
+            let Some(references) = &link.intervening_entities else {
+                complete_source_intervals = false;
+                continue;
+            };
+            for reference in ctx.admit_iter(references, "catia_census_intervening_entities")? {
+                schema_configuration_row_intervening_entity_count += 1;
+                if let Some(entity) = reference.entity() {
+                    schema_configuration_row_intervening_schema_configuration_count +=
+                        usize::from(ctx.contains_hash_set(
+                            &schema_configuration_entities,
+                            entity,
+                            "catia_census_lookup",
+                        )?);
+                }
+            }
+        }
+        schema_configuration_row_source_interval_chain_count +=
+            usize::from(complete_source_intervals);
+    }
+    let mut value_field_count = 0usize;
+    let mut value_selection_count = 0usize;
+    for block in ctx.admit_iter(&native.value_blocks, "catia_census_value_blocks")? {
+        value_field_count = value_field_count
+            .checked_add(crate::value_block::tokenize_charged(ctx, &block.payload)?.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("catia_value_field_count", u64::MAX, u64::MAX))?;
+
+        value_selection_count += block.schema_selections.len();
+    }
+    let mut transferred_line_profile_count = 0usize;
+    for curve in ctx.admit_iter(&ir.model.curves, "catia_census_curves")? {
+        if ctx.starts_with(
+            curve.id.as_str(),
+            "catia:consolidated:line-profile-curve#",
+            "catia_census_id_prefix",
+        )? {
+            transferred_line_profile_count += 1;
+        }
+    }
+    let mut transferred_native_sketch_entity_count = 0usize;
+    for entity in ctx.admit_iter(&ir.model.sketch_entities, "catia_census_sketch_entities")? {
+        if matches!(
+            entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
+        ) {
+            transferred_native_sketch_entity_count += 1;
+        }
+    }
+    let mut transferred_native_operation_parameter_count = 0usize;
+    for parameter in ctx.admit_iter(&ir.model.parameters, "catia_census_parameters")? {
+        if match parameter.owner.as_ref() {
+            Some(owner) => {
+                ctx.contains_hash_set(&native_operation_feature_ids, owner, "catia_census_lookup")?
+            }
+            None => false,
+        } {
+            transferred_native_operation_parameter_count += 1;
+        }
+    }
+    let mut decoded_consolidated_cone_face_parameter_point_count = 0usize;
+    for face in ctx.admit_iter(
+        &native.consolidated_cone_faces,
+        "catia_census_consolidated_cone_faces",
+    )? {
+        decoded_consolidated_cone_face_parameter_point_count += face.parameter_points.len();
+    }
+    let mut transferred_consolidated_revolution_count = 0usize;
+    for surface in ctx.admit_iter(
+        &ir.model.procedural_surfaces,
+        "catia_census_procedural_surfaces",
+    )? {
+        if ctx.starts_with(
+            surface.id.as_str(),
+            "catia:consolidated:surface-revolution#",
+            "catia_census_id_prefix",
+        )? {
+            transferred_consolidated_revolution_count += 1;
+        }
+    }
+    let mut decoded_zero_entity_edge_stride_allocation_count = 0usize;
+    let mut decoded_zero_entity_edge_stride_topology_ref_count = 0usize;
+    let mut decoded_zero_entity_edge_stride_surface_support_ref_count = 0usize;
+    for stride in ctx.admit_iter(
+        &native.zero_entity_edge_strides,
+        "catia_census_zero_entity_edge_strides",
+    )? {
+        decoded_zero_entity_edge_stride_allocation_count += stride.allocations.len();
+        decoded_zero_entity_edge_stride_topology_ref_count += stride.topology_refs.len();
+        decoded_zero_entity_edge_stride_surface_support_ref_count +=
+            stride.surface_support_refs.len();
+    }
+    let mut decoded_zero_entity_face_bound_support_run_count = 0usize;
+    let mut decoded_zero_entity_face_terminal_control_03_count = 0usize;
+    let mut decoded_zero_entity_face_terminal_control_05_count = 0usize;
+    let mut decoded_zero_entity_loop_terminal_count = 0usize;
+    let mut decoded_zero_entity_loop_record_count = 0usize;
+    let mut decoded_zero_entity_loop_class_41_count = 0usize;
+    let mut decoded_zero_entity_loop_class_50_count = 0usize;
+    let mut decoded_zero_entity_loop_class_c1_count = 0usize;
+    let mut decoded_zero_entity_forward_loop_member_count = 0usize;
+    let mut decoded_zero_entity_reversed_loop_member_count = 0usize;
+    let mut decoded_zero_entity_oriented_loop_member_count = 0usize;
+    let mut decoded_zero_entity_oriented_model_endpoint_pair_count = 0usize;
+    let mut decoded_zero_entity_bound_support_member_count = 0usize;
+    let mut decoded_zero_entity_bound_typed_loop_reference_count = 0usize;
+    let mut decoded_zero_entity_support_occurrence_count = 0usize;
+    let mut decoded_zero_entity_support_pcurve_count = 0usize;
+    let mut decoded_zero_entity_support_model_curve_count = 0usize;
+    let mut decoded_zero_entity_support_model_construction_count = 0usize;
+    let mut decoded_zero_entity_uv_endpoint_pair_count = 0usize;
+    let mut decoded_zero_entity_model_endpoint_pair_count = 0usize;
+    let mut decoded_zero_entity_model_midpoint_count = 0usize;
+    for run in ctx.admit_iter(
+        &native.zero_entity_support_runs,
+        "catia_census_zero_entity_support_runs",
+    )? {
+        if run.face.is_some() {
+            decoded_zero_entity_face_bound_support_run_count += 1;
+        }
+        if let Some(face) = run.face.as_ref() {
+            if face.terminal_control == 0x03 {
+                decoded_zero_entity_face_terminal_control_03_count += 1;
+            }
+            if face.terminal_control == 0x05 {
+                decoded_zero_entity_face_terminal_control_05_count += 1;
+            }
+            decoded_zero_entity_loop_terminal_count += face.loop_terminals.len();
+            decoded_zero_entity_loop_record_count += face.loops.len();
+            for loop_record in ctx.admit_iter(&face.loops, "catia_census_child")? {
+                if loop_record.loop_class == 0x41 {
+                    decoded_zero_entity_loop_class_41_count += 1;
+                }
+                if loop_record.loop_class == 0x50 {
+                    decoded_zero_entity_loop_class_50_count += 1;
+                }
+                if loop_record.loop_class == 0xc1 {
+                    decoded_zero_entity_loop_class_c1_count += 1;
+                }
+                for sense in ctx.admit_iter(&loop_record.forward_senses, "catia_census_child")? {
+                    if *sense {
+                        decoded_zero_entity_forward_loop_member_count += 1;
+                    }
+                    if !*sense {
+                        decoded_zero_entity_reversed_loop_member_count += 1;
+                    }
+                }
+                decoded_zero_entity_oriented_loop_member_count += loop_record.forward_senses.len();
+                decoded_zero_entity_oriented_model_endpoint_pair_count +=
+                    loop_record.oriented_model_endpoints.len();
+                decoded_zero_entity_bound_support_member_count +=
+                    loop_record.support_record_ordinals.len();
+                decoded_zero_entity_bound_typed_loop_reference_count +=
+                    loop_record.typed_records.len();
+            }
+        }
+        decoded_zero_entity_support_occurrence_count += run.supports.len();
+        for support in ctx.admit_iter(&run.supports, "catia_census_child")? {
+            if support.pcurve.is_some() {
+                decoded_zero_entity_support_pcurve_count += 1;
+            }
+            if support.model_curve.is_some() {
+                decoded_zero_entity_support_model_curve_count += 1;
+            }
+            if support.model_curve_construction.is_some() {
+                decoded_zero_entity_support_model_construction_count += 1;
+            }
+            if support.uv_endpoints.is_some() {
+                decoded_zero_entity_uv_endpoint_pair_count += 1;
+            }
+            if support.model_endpoints.is_some() {
+                decoded_zero_entity_model_endpoint_pair_count += 1;
+            }
+            if support.model_midpoint.is_some() {
+                decoded_zero_entity_model_midpoint_count += 1;
+            }
+        }
+    }
+    let mut decoded_zero_entity_oriented_use_count = 0usize;
+    let mut decoded_zero_entity_oriented_use_allocation_count = 0usize;
+    for pair in ctx.admit_iter(
+        &native.zero_entity_oriented_use_pairs,
+        "catia_census_zero_entity_oriented_use_pairs",
+    )? {
+        decoded_zero_entity_oriented_use_count += pair.uses.len();
+        for use_record in &pair.uses {
+            decoded_zero_entity_oriented_use_allocation_count += use_record.allocations.len();
+        }
+    }
+    let mut decoded_zero_entity_vertex_incidence_allocation_count = 0usize;
+    let mut decoded_zero_entity_vertex_owner_binding_count = 0usize;
+    for incidence in ctx.admit_iter(
+        &native.zero_entity_vertex_incidences,
+        "catia_census_zero_entity_vertex_incidences",
+    )? {
+        decoded_zero_entity_vertex_incidence_allocation_count += incidence.allocations.len();
+        if incidence.vertex_record.is_some() {
+            decoded_zero_entity_vertex_owner_binding_count += 1;
+        }
+    }
+    let modeling_scope_is_unresolved =
+        matches!(modeling_graph_scope, ModelingGraphScope::Unresolved);
+    let unresolved_object_record_reference_count = object_record_reference_count
+        - resolved_object_record_reference_count
+        - null_object_record_reference_count;
+
+    let design_parallel_reference_unclassified_column_count =
+        design_parallel_reference_column_count - design_parallel_reference_classified_column_count;
+    let design_parallel_reference_unresolved_cell_count = design_parallel_reference_cell_count
+        - design_parallel_reference_resolved_cell_count
+        - design_parallel_reference_null_cell_count;
+    let design_parallel_reference_unclassified_cell_count =
+        design_parallel_reference_cell_count - design_parallel_reference_classified_cell_count;
+
+    let design_parallel_reference_unmatched_row_count =
+        design_parallel_reference_row_count - design_parallel_reference_matched_row_count;
+
+    let legacy_asynchronous_relation_count =
+        legacy_synchronous_state_count - legacy_synchronous_relation_count;
+
+    let reference_signature_prefix_atom_35_count =
+        reference_signature_count - reference_signature_prefix_atom_2_count;
+    let reference_signature_cohort_count = native.reference_signature_cohorts.len();
+
+    let consolidated_edge_run_count = native.consolidated_edge_runs.len();
+
     let constraint_range_incoming_reference_count = constraint_range_incidences.total();
     let IncomingEntityIncidenceCounts {
         payload: constraint_range_incoming_payload_reference_count,
@@ -1033,18 +1683,6 @@ fn finish_decode(
         one: uniquely_referenced_constraint_range_count,
         multiple: multiply_referenced_constraint_range_count,
     } = constraint_range_incidences;
-    let range_interval_incidences = incoming_entity_incidence_counts(
-        native
-            .entity_records
-            .iter()
-            .filter_map(|record| record.range_interval.as_ref())
-            .map(|range| {
-                (
-                    range.incoming_references.as_slice(),
-                    range.incoming_storage_references.as_slice(),
-                )
-            }),
-    );
     let range_interval_incoming_reference_count = range_interval_incidences.total();
     let IncomingEntityIncidenceCounts {
         payload: range_interval_incoming_payload_reference_count,
@@ -1054,838 +1692,79 @@ fn finish_decode(
         one: uniquely_referenced_range_interval_count,
         multiple: multiply_referenced_range_interval_count,
     } = range_interval_incidences;
-    let definition_value_count = native
-        .entity_records
-        .iter()
-        .filter(|record| record.definition_value().is_some())
-        .count();
-    let owned_definition_value_count = native
-        .design_objects
-        .iter()
-        .map(|object| object.definition_values.len())
-        .sum::<usize>();
-    let owned_definition_value_ids = ctx.collect_hash_set(
-        native
-            .design_objects
-            .iter()
-            .flat_map(|object| object.definition_values.iter().map(String::as_str)),
-        "catia_owned_definition_value_ids",
-    )?;
-    let unowned_definition_value_count = native
-        .entity_records
-        .iter()
-        .filter(|record| {
-            record.definition_value().is_some()
-                && !owned_definition_value_ids.contains(record.id.as_str())
-        })
-        .count();
-    let (
-        definition_chain_value_count,
-        definition_chain_evaluation_count,
-        evaluated_definition_chain_count,
-        unset_definition_chain_count,
-        definition_chain_atom_count,
-        definition_chain_control_count,
-        definition_chain_separator_count,
-        definition_chain_schema_selector_count,
-    ) = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.definition_chain_value())
-        .fold(
-            (
-                0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize,
-            ),
-            |(total, evaluations, evaluated, unset, atoms, controls, separators, schemas),
-             value| {
-                use crate::native::{
-                    CatiaEntityEvaluation, CatiaEntitySuffixSchemaValue as Selected,
-                };
-                match &value.value {
-                    Selected::Evaluation {
-                        evaluation: CatiaEntityEvaluation::Scalar { .. },
-                        ..
-                    } => (
-                        total + 1,
-                        evaluations + 1,
-                        evaluated + 1,
-                        unset,
-                        atoms,
-                        controls,
-                        separators,
-                        schemas,
-                    ),
-                    Selected::Evaluation {
-                        evaluation: CatiaEntityEvaluation::Unset,
-                        ..
-                    } => (
-                        total + 1,
-                        evaluations + 1,
-                        evaluated,
-                        unset + 1,
-                        atoms,
-                        controls,
-                        separators,
-                        schemas,
-                    ),
-                    Selected::Atom { .. } => (
-                        total + 1,
-                        evaluations,
-                        evaluated,
-                        unset,
-                        atoms + 1,
-                        controls,
-                        separators,
-                        schemas,
-                    ),
-                    Selected::ControlE8 => (
-                        total + 1,
-                        evaluations,
-                        evaluated,
-                        unset,
-                        atoms,
-                        controls + 1,
-                        separators,
-                        schemas,
-                    ),
-                    Selected::Separator37 => (
-                        total + 1,
-                        evaluations,
-                        evaluated,
-                        unset,
-                        atoms,
-                        controls,
-                        separators + 1,
-                        schemas,
-                    ),
-                    Selected::SchemaSelector { .. } => (
-                        total + 1,
-                        evaluations,
-                        evaluated,
-                        unset,
-                        atoms,
-                        controls,
-                        separators,
-                        schemas + 1,
-                    ),
-                }
-            },
-        );
-    let formula_relation_count = native
-        .entity_records
-        .iter()
-        .filter(|record| record.formula_relation().is_some())
-        .count();
-    let relation_program_instance_count = native
-        .entity_records
-        .iter()
-        .filter(|record| record.relation_program_instance().is_some())
-        .count();
-    let relation_program_output_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter(|instance| instance.output_entity().is_some())
-        .count();
-    let resolved_relation_program_output_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.output_entity())
-        .filter(|output| output.entity().is_some())
-        .count();
-    let null_relation_program_output_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.output_entity())
-        .filter(|output| output.is_null())
-        .count();
+
     let unresolved_relation_program_output_count = relation_program_output_count
         - resolved_relation_program_output_count
         - null_relation_program_output_count;
-    let relation_program_reference_incidence_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .map(|instance| instance.reference_incidences.len())
-        .sum::<usize>();
-    let resolved_relation_program_reference_incidence_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .flat_map(|instance| &instance.reference_incidences)
-        .filter(|incidence| incidence.reference.entity().is_some())
-        .count();
-    let null_relation_program_reference_incidence_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .flat_map(|instance| &instance.reference_incidences)
-        .filter(|incidence| incidence.reference.is_null())
-        .count();
+
     let unresolved_relation_program_reference_incidence_count =
         relation_program_reference_incidence_count
             - resolved_relation_program_reference_incidence_count
             - null_relation_program_reference_incidence_count;
-    let classified_relation_program_reference_incidence_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .flat_map(|instance| &instance.reference_incidences)
-        .filter(|incidence| incidence.reference.class_name().is_some())
-        .count();
-    let (lead12_relation_program_instance_count, lead54_relation_program_instance_count) = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .fold((0, 0), |(lead12, lead54), instance| {
-            match instance.framing {
-                crate::native::CatiaRelationProgramInstanceFraming::Lead12 { .. } => {
-                    (lead12 + 1, lead54)
-                }
-                crate::native::CatiaRelationProgramInstanceFraming::Lead54 { .. } => {
-                    (lead12, lead54 + 1)
-                }
-            }
-        });
-    let resolved_lead54_relation_program_trailing_entity_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.lead54_trailing_entity())
-        .filter(|trailing| trailing.entity().is_some())
-        .count();
-    let null_lead54_relation_program_trailing_entity_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.lead54_trailing_entity())
-        .filter(|trailing| trailing.is_null())
-        .count();
+
     let unresolved_lead54_relation_program_trailing_entity_count =
         lead54_relation_program_instance_count
             - resolved_lead54_relation_program_trailing_entity_count
             - null_lead54_relation_program_trailing_entity_count;
-    let resolved_lead12_relation_program_context_entity_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.lead12_context_entity())
-        .filter(|context| context.entity().is_some())
-        .count();
-    let null_lead12_relation_program_context_entity_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.lead12_context_entity())
-        .filter(|context| context.is_null())
-        .count();
+
     let unresolved_lead12_relation_program_context_entity_count =
         lead12_relation_program_instance_count
             - resolved_lead12_relation_program_context_entity_count
             - null_lead12_relation_program_context_entity_count;
-    let classified_lead12_relation_program_context_entity_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.lead12_context_entity())
-        .filter(|context| context.class_name().is_some())
-        .count();
-    let lead12_relation_program_paramout_context_entity_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.lead12_context_entity())
-        .filter(|context| context.class_name() == Some("paramout"))
-        .count();
+
     let other_lead12_relation_program_context_class_count =
         classified_lead12_relation_program_context_entity_count
             - lead12_relation_program_paramout_context_entity_count;
     let unclassified_lead12_relation_program_context_entity_count =
         lead12_relation_program_instance_count
             - classified_lead12_relation_program_context_entity_count;
-    let resolved_relation_program_instance_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter(|instance| instance.program_entity.entity().is_some())
-        .count();
-    let null_relation_program_instance_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter(|instance| instance.program_entity.is_null())
-        .count();
+
     let unresolved_relation_program_instance_count = relation_program_instance_count
         - resolved_relation_program_instance_count
         - null_relation_program_instance_count;
-    let resolved_relation_program_repeated_reference_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter(|instance| instance.repeated_entity.entity().is_some())
-        .count();
-    let null_relation_program_repeated_reference_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter(|instance| instance.repeated_entity.is_null())
-        .count();
+
     let unresolved_relation_program_repeated_reference_count = relation_program_instance_count
         - resolved_relation_program_repeated_reference_count
         - null_relation_program_repeated_reference_count;
-    let classified_relation_program_entity_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter(|instance| instance.program_entity.class_name().is_some())
-        .count();
-    let classified_relation_program_repeated_entity_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter(|instance| instance.repeated_entity.class_name().is_some())
-        .count();
-    let relation_expression_instance_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter(|instance| instance.relation_expression.is_some())
-        .count();
-    let mut typed_relation_expression_entities = std::collections::HashSet::new();
-    for entity in &native.entity_records {
-        let Some(expression) = entity.relation_expression() else {
-            continue;
-        };
-        if expression.signature_charged(ctx)?.is_some() {
-            ctx.insert_hash_set(
-                &mut typed_relation_expression_entities,
-                entity.id.as_str(),
-                "catia_typed_relation_expressions",
-            )?;
-        }
-    }
-    let typed_relation_program_instance_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.relation_expression.as_deref())
-        .filter(|entity| typed_relation_expression_entities.contains(entity))
-        .count();
-    let resolved_relation_program_input_instance_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter(|instance| instance.inputs.is_some())
-        .count();
+
     let unresolved_relation_program_input_instance_count =
         typed_relation_program_instance_count - resolved_relation_program_input_instance_count;
-    let resolved_relation_program_input_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .filter_map(|instance| instance.inputs.as_ref())
-        .map(Vec::len)
-        .sum::<usize>();
-    let distinct_relation_program_input_entity_count = ctx
-        .collect_hash_set(
-            native
-                .entity_records
-                .iter()
-                .filter_map(|record| record.relation_program_instance())
-                .filter_map(|instance| instance.inputs.as_ref())
-                .flatten()
-                .filter_map(|input| input.entity.entity()),
-            "catia_distinct_program_inputs",
-        )?
-        .len();
-    let instanced_relation_expression_count = ctx
-        .collect_hash_set(
-            native
-                .entity_records
-                .iter()
-                .filter_map(|record| record.relation_program_instance())
-                .filter_map(|instance| instance.relation_expression.as_deref()),
-            "catia_instanced_relation_expressions",
-        )?
-        .len();
-    let relation_program_parameter_dependency_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .map(|instance| instance.parameter_dependencies.len())
-        .sum::<usize>();
-    let resolved_relation_program_parameter_dependency_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .flat_map(|instance| &instance.parameter_dependencies)
-        .filter(|dependency| dependency.candidates.len() == 1)
-        .count();
-    let ambiguous_relation_program_parameter_dependency_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.relation_program_instance())
-        .flat_map(|instance| &instance.parameter_dependencies)
-        .filter(|dependency| dependency.candidates.len() > 1)
-        .count();
+
     let unresolved_relation_program_parameter_dependency_count =
         relation_program_parameter_dependency_count
             - resolved_relation_program_parameter_dependency_count;
     let other_relation_program_instance_count =
         resolved_relation_program_instance_count - relation_expression_instance_count;
-    let schema_configuration_record_count = native
-        .entity_records
-        .iter()
-        .filter(|record| record.schema_configuration_record().is_some())
-        .count();
-    let resolved_schema_configuration_reference_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.schema_configuration_record())
-        .filter(|record| record.entity_reference.reference.entity().is_some())
-        .count();
-    let null_schema_configuration_reference_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.schema_configuration_record())
-        .filter(|record| record.entity_reference.reference.is_null())
-        .count();
+
     let unresolved_schema_configuration_reference_count = schema_configuration_record_count
         - resolved_schema_configuration_reference_count
         - null_schema_configuration_reference_count;
-    let classified_schema_configuration_entity_reference_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.schema_configuration_record())
-        .filter(|record| record.entity_reference.reference.class_name().is_some())
-        .count();
-    let schema_configuration_row_link_count = native
-        .entity_records
-        .iter()
-        .filter(|record| record.schema_configuration_row_link().is_some())
-        .count();
-    let resolved_schema_configuration_row_class_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.schema_configuration_row_link())
-        .filter(|link| link.class_reference.entity().is_some())
-        .count();
-    let null_schema_configuration_row_class_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.schema_configuration_row_link())
-        .filter(|link| link.class_reference.is_null())
-        .count();
-    let resolved_schema_configuration_row_successor_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.schema_configuration_row_link())
-        .filter(|link| link.successor.entity().is_some())
-        .count();
-    let null_schema_configuration_row_successor_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.schema_configuration_row_link())
-        .filter(|link| link.successor.is_null())
-        .count();
-    let (
-        complete_schema_configuration_row_chain_count,
-        ordered_schema_configuration_row_link_count,
-    ) = schema_configuration_row_chain_coverage(&native);
+
     let unordered_schema_configuration_row_link_count =
         schema_configuration_row_link_count - ordered_schema_configuration_row_link_count;
-    let resolved_schema_configuration_row_chain_terminal_count = native
-        .schema_configuration_row_chains
-        .iter()
-        .filter(|chain| chain.terminal.entity().is_some())
-        .count();
-    let null_schema_configuration_row_chain_terminal_count = native
-        .schema_configuration_row_chains
-        .iter()
-        .filter(|chain| chain.terminal.is_null())
-        .count();
+
     let unresolved_schema_configuration_row_chain_terminal_count =
         complete_schema_configuration_row_chain_count
             - resolved_schema_configuration_row_chain_terminal_count
             - null_schema_configuration_row_chain_terminal_count;
-    let classified_schema_configuration_row_chain_terminal_count = native
-        .schema_configuration_row_chains
-        .iter()
-        .filter(|chain| chain.terminal.class_name().is_some())
-        .count();
-    let schema_configuration_row_intervening_entity_count = native
-        .schema_configuration_row_chains
-        .iter()
-        .flat_map(CatiaSchemaConfigurationRowChain::links)
-        .filter_map(|link| link.intervening_entities.as_ref())
-        .flatten()
-        .count();
-    let schema_configuration_row_source_interval_chain_count = native
-        .schema_configuration_row_chains
-        .iter()
-        .filter(|chain| {
-            chain
-                .links()
-                .iter()
-                .all(|link| link.intervening_entities.is_some())
-        })
-        .count();
-    let schema_configuration_entities = ctx.collect_hash_set(
-        native
-            .entity_records
-            .iter()
-            .filter(|entity| entity.schema_configuration_record().is_some())
-            .map(|entity| entity.id.as_str()),
-        "catia_schema_configuration_entities",
-    )?;
-    let schema_configuration_row_intervening_schema_configuration_count = native
-        .schema_configuration_row_chains
-        .iter()
-        .flat_map(CatiaSchemaConfigurationRowChain::links)
-        .filter_map(|link| link.intervening_entities.as_ref())
-        .flatten()
-        .filter_map(|reference| reference.entity())
-        .filter(|entity| schema_configuration_entities.contains(entity))
-        .count();
-    let formula_referenced_relation_expressions = ctx.collect_hash_set(
-        native
-            .entity_records
-            .iter()
-            .filter_map(|record| record.formula_relation())
-            .filter_map(|formula| formula.expression_entity.reference.entity()),
-        "catia_formula_relation_expressions",
-    )?;
-    let program_referenced_relation_expressions = ctx.collect_hash_set(
-        native
-            .entity_records
-            .iter()
-            .filter_map(|record| record.relation_program_instance())
-            .filter_map(|instance| instance.relation_expression.as_deref()),
-        "catia_program_relation_expressions",
-    )?;
+
     let formula_referenced_relation_expression_count =
         formula_referenced_relation_expressions.len();
     let program_referenced_relation_expression_count =
         program_referenced_relation_expressions.len();
-    let mut referenced_relation_expression_count = 0usize;
-    for record in ctx.admit_iter(
-        &native.entity_records,
-        "catia_referenced_relation_expressions",
-    )? {
-        const OPERATION: &str = "catia_referenced_relation_expressions";
-        if record.relation_expression().is_some()
-            && (ctx.contains_hash_set(
-                &formula_referenced_relation_expressions,
-                record.id.as_str(),
-                OPERATION,
-            )? || ctx.contains_hash_set(
-                &program_referenced_relation_expressions,
-                record.id.as_str(),
-                OPERATION,
-            )?)
-        {
-            referenced_relation_expression_count += 1;
-        }
-    }
+
     let unreferenced_relation_expression_count =
         relation_expression_count - referenced_relation_expression_count;
-    let resolved_formula_output_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.formula_relation())
-        .filter(|formula| formula.output_entity.reference.entity().is_some())
-        .count();
-    let null_formula_output_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.formula_relation())
-        .filter(|formula| formula.output_entity.reference.is_null())
-        .count();
-    let classified_formula_output_entity_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.formula_relation())
-        .filter(|formula| formula.output_entity.reference.class_name().is_some())
-        .count();
-    let classified_formula_expression_entity_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.formula_relation())
-        .filter(|formula| formula.expression_entity.reference.class_name().is_some())
-        .count();
+
     let unresolved_formula_output_count =
         formula_relation_count - resolved_formula_output_count - null_formula_output_count;
-    let formula_parameter_dependency_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.formula_relation())
-        .map(|formula| formula.parameter_dependencies.len())
-        .sum();
-    let formula_parameter_dependency_candidate_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.formula_relation())
-        .flat_map(|formula| &formula.parameter_dependencies)
-        .map(|dependency| dependency.candidates.len())
-        .sum();
-    let classified_formula_parameter_dependency_candidate_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.formula_relation())
-        .flat_map(|formula| &formula.parameter_dependencies)
-        .flat_map(|dependency| &dependency.candidates)
-        .filter(|candidate| candidate.class_name().is_some())
-        .count();
-    let resolved_formula_parameter_dependency_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.formula_relation())
-        .flat_map(|formula| &formula.parameter_dependencies)
-        .filter(|dependency| dependency.candidates.len() == 1)
-        .count();
-    let ambiguous_formula_parameter_dependency_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.formula_relation())
-        .flat_map(|formula| &formula.parameter_dependencies)
-        .filter(|dependency| dependency.candidates.len() > 1)
-        .count();
+
     let unresolved_formula_parameter_dependency_count =
         formula_parameter_dependency_count - resolved_formula_parameter_dependency_count;
-    let (
-        escaped_word_entity_suffix_count,
-        token_8149_entity_suffix_count,
-        fixed_fe_f6_entity_suffix_count,
-        paged_atom_state_01_entity_suffix_count,
-    ) = native.entity_records.iter().fold(
-        (0, 0, 0, 0),
-        |(escaped, token, fixed, paged), record| match record.suffix_framing() {
-            Some(crate::native::CatiaEntitySuffixFraming::EscapedWord(_)) => {
-                (escaped + 1, token, fixed, paged)
-            }
-            Some(crate::native::CatiaEntitySuffixFraming::Token8149) => {
-                (escaped, token + 1, fixed, paged)
-            }
-            Some(crate::native::CatiaEntitySuffixFraming::FixedFeF6 { .. }) => {
-                (escaped, token, fixed + 1, paged)
-            }
-            Some(crate::native::CatiaEntitySuffixFraming::PagedAtomState01 { .. }) => {
-                (escaped, token, fixed, paged + 1)
-            }
-            None => (escaped, token, fixed, paged),
-        },
-    );
-    let scalar_entity_suffix_value_count = native
-        .entity_records
-        .iter()
-        .filter(|record| {
-            record.suffix_value().is_some_and(|value| {
-                matches!(
-                    value.payload,
-                    crate::native::CatiaEntitySuffixPayload::Evaluation {
-                        evaluation: crate::native::CatiaEntityEvaluation::Scalar { .. },
-                        ..
-                    }
-                )
-            })
-        })
-        .count();
-    let unset_entity_suffix_value_count = native
-        .entity_records
-        .iter()
-        .filter(|record| {
-            record.suffix_value().is_some_and(|value| {
-                matches!(
-                    value.payload,
-                    crate::native::CatiaEntitySuffixPayload::Evaluation {
-                        evaluation: crate::native::CatiaEntityEvaluation::Unset,
-                        ..
-                    }
-                )
-            })
-        })
-        .count();
-    let (control_e8_entity_suffix_value_count, control_e9_entity_suffix_value_count) = native
-        .entity_records
-        .iter()
-        .fold((0, 0), |(e8, e9), record| {
-            match record.suffix_value().map(|value| &value.payload) {
-                Some(crate::native::CatiaEntitySuffixPayload::ControlE8) => (e8 + 1, e9),
-                Some(crate::native::CatiaEntitySuffixPayload::ControlE9) => (e8, e9 + 1),
-                _ => (e8, e9),
-            }
-        });
+
     let control_entity_suffix_value_count =
         control_e8_entity_suffix_value_count + control_e9_entity_suffix_value_count;
-    let separator_entity_suffix_value_count = native
-        .entity_records
-        .iter()
-        .filter(|record| {
-            record.suffix_value().is_some_and(|value| {
-                matches!(
-                    value.payload,
-                    crate::native::CatiaEntitySuffixPayload::Separator37
-                )
-            })
-        })
-        .count();
-    let atom_entity_suffix_value_count = native
-        .entity_records
-        .iter()
-        .filter(|record| {
-            record.suffix_value().is_some_and(|value| {
-                matches!(
-                    value.payload,
-                    crate::native::CatiaEntitySuffixPayload::Atom { .. }
-                )
-            })
-        })
-        .count();
-    let (
-        schema_selected_atom_entity_suffix_value_count,
-        schema_selected_evaluation_entity_suffix_value_count,
-        schema_selected_control_entity_suffix_value_count,
-        schema_selected_separator_entity_suffix_value_count,
-        schema_selected_schema_entity_suffix_value_count,
-    ) = native.entity_records.iter().fold(
-        (0, 0, 0, 0, 0),
-        |(atoms, evaluations, controls, separators, schemas), record| {
-            let Some(crate::native::CatiaEntitySuffixPayload::SchemaSelected { value, .. }) =
-                record.suffix_value().map(|suffix| &suffix.payload)
-            else {
-                return (atoms, evaluations, controls, separators, schemas);
-            };
-            match value {
-                crate::native::CatiaEntitySuffixSelectedValue::Atom { .. } => {
-                    (atoms + 1, evaluations, controls, separators, schemas)
-                }
-                crate::native::CatiaEntitySuffixSelectedValue::Evaluation { .. } => {
-                    (atoms, evaluations + 1, controls, separators, schemas)
-                }
-                crate::native::CatiaEntitySuffixSelectedValue::ControlE8 => {
-                    (atoms, evaluations, controls + 1, separators, schemas)
-                }
-                crate::native::CatiaEntitySuffixSelectedValue::Separator37 => {
-                    (atoms, evaluations, controls, separators + 1, schemas)
-                }
-                crate::native::CatiaEntitySuffixSelectedValue::SchemaSelector { .. } => {
-                    (atoms, evaluations, controls, separators, schemas + 1)
-                }
-            }
-        },
-    );
-    let schema_selected_entity_suffix_value_count = native
-        .entity_records
-        .iter()
-        .filter(|record| record.suffix_schema_selection.is_some())
-        .count();
-    let wide_prefix_entity_suffix_value_count = native
-        .entity_records
-        .iter()
-        .filter(|record| {
-            record
-                .suffix_value()
-                .as_ref()
-                .is_some_and(|value| value.prefix_atom_widths.iter().any(|width| *width > 1))
-        })
-        .count();
-    let unresolved_design_owner_count = native
-        .design_objects
-        .iter()
-        .filter(|object| object.owner_record.is_none())
-        .count();
-    let object_records_by_id = ctx.collect_hash_map(
-        native
-            .object_graphs
-            .iter()
-            .flat_map(|graph| &graph.records)
-            .map(|record| (record.id.as_str(), record)),
-        "catia_object_records_by_id",
-    )?;
-    let unassigned_owner_slot_count = object_records_by_id
-        .values()
-        .filter(|record| record.has_unassigned_owner())
-        .count();
-    let structurally_owned_records = ctx.collect_string_set(
-        native
-            .design_objects
-            .iter()
-            .filter(|object| object.owner_record.is_some())
-            .flat_map(|object| object.fields.iter().map(String::as_str)),
-        "catia_structurally_owned_records",
-    )?;
-    let structurally_owned_definition_chain_value_count = native
-        .design_objects
-        .iter()
-        .filter(|object| object.owner_record.is_some())
-        .map(|object| object.definition_chain_values.len())
-        .sum::<usize>();
-    let structurally_owned_definition_chain_value_ids = ctx.collect_hash_set(
-        native
-            .design_objects
-            .iter()
-            .filter(|object| object.owner_record.is_some())
-            .flat_map(|object| object.definition_chain_values.iter().map(String::as_str)),
-        "catia_owned_definition_chain_values",
-    )?;
-    let unowned_definition_chain_value_count = native
-        .entity_records
-        .iter()
-        .filter(|record| {
-            record.definition_chain_value().is_some()
-                && !structurally_owned_definition_chain_value_ids.contains(record.id.as_str())
-        })
-        .count();
-    let unassigned_definition_chain_value_count = native
-        .entity_records
-        .iter()
-        .filter(|record| {
-            record.definition_chain_value().is_some()
-                && object_records_by_id
-                    .get(record.object_record.as_str())
-                    .is_some_and(|record| record.has_unassigned_owner())
-        })
-        .count();
-    let structurally_owned_definition_chain_evaluation_count = native
-        .entity_records
-        .iter()
-        .filter(|record| {
-            record.definition_chain_value().is_some_and(|value| {
-                matches!(
-                    &value.value,
-                    crate::native::CatiaEntitySuffixSchemaValue::Evaluation { .. }
-                )
-            }) && structurally_owned_records.contains(&record.object_record)
-        })
-        .count();
-    let unowned_definition_chain_evaluation_count = native
-        .entity_records
-        .iter()
-        .filter(|record| {
-            record.definition_chain_value().is_some_and(|value| {
-                matches!(
-                    &value.value,
-                    crate::native::CatiaEntitySuffixSchemaValue::Evaluation { .. }
-                )
-            }) && !structurally_owned_records.contains(&record.object_record)
-        })
-        .count();
-    let unassigned_definition_chain_evaluation_count = native
-        .entity_records
-        .iter()
-        .filter(|record| {
-            record.definition_chain_value().is_some_and(|value| {
-                matches!(
-                    &value.value,
-                    crate::native::CatiaEntitySuffixSchemaValue::Evaluation { .. }
-                )
-            }) && object_records_by_id
-                .get(record.object_record.as_str())
-                .is_some_and(|record| record.has_unassigned_owner())
-        })
-        .count();
+
     // One pass over the owned records counts the formula and principal-plane
     // records among them and collects those some transfer consumed.
     let mut transferred_storage = ctx.reserve_scoped(0, "catia_transferred_design_records")?;
@@ -1958,84 +1837,29 @@ fn finish_decode(
     }
     let mut unresolved_design_object_count = 0usize;
     for object in ctx.admit_iter(&native.design_objects, "catia_unresolved_design_objects")? {
-        if modeling_graph_scope.contains(object.parent.as_str())
-            && ctx.any_by(
-                &object.fields,
-                |field| {
-                    Ok(!ctx.contains_hash_set(
-                        &transferred_design_records,
-                        field.as_str(),
-                        "catia_unresolved_design_objects",
-                    )?)
-                },
-                "catia_unresolved_design_objects",
-            )?
-        {
+        if match &modeling_graph_scope {
+            ModelingGraphScope::Unscoped => true,
+            ModelingGraphScope::Unresolved => false,
+            ModelingGraphScope::Scoped(part) => ctx.equal_bytes(
+                part.as_bytes(),
+                object.parent.as_bytes(),
+                "catia_census_graph_scope",
+            )?,
+        } && ctx.any_by(
+            &object.fields,
+            |field| {
+                Ok(!ctx.contains_hash_set(
+                    &transferred_design_records,
+                    field.as_str(),
+                    "catia_unresolved_design_objects",
+                )?)
+            },
+            "catia_unresolved_design_objects",
+        )? {
             unresolved_design_object_count += 1;
         }
     }
-    let mut value_field_count = 0usize;
-    for block in &native.value_blocks {
-        value_field_count = value_field_count
-            .checked_add(crate::value_block::tokenize_charged(ctx, &block.payload)?.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("catia_value_field_count", u64::MAX, u64::MAX))?;
-    }
-    let value_selection_count = native
-        .value_blocks
-        .iter()
-        .map(|block| block.schema_selections.len())
-        .sum();
-    let transferred_line_profile_count = ir
-        .model
-        .curves
-        .iter()
-        .filter(|curve| {
-            curve
-                .id
-                .as_str()
-                .starts_with("catia:consolidated:line-profile-curve#")
-        })
-        .count();
-    let transferred_native_sketch_entity_count = ir
-        .model
-        .sketch_entities
-        .iter()
-        .filter(|entity| {
-            matches!(
-                entity.geometry.definition(),
-                cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
-            )
-        })
-        .count();
-    let mut native_operation_feature_ids = HashSet::new();
-    for feature in ir.model.features.iter().filter(|feature| {
-        feature
-            .source_tag
-            .as_deref()
-            .is_some_and(|name| design_feature::NativeOperationClass::try_from(name).is_ok())
-    }) {
-        if !native_operation_feature_ids.contains(&feature.id) {
-            let id = feature
-                .id
-                .try_clone_for_decode(ctx, "catia_native_operation_feature_id")?;
-            ctx.insert_hash_set(
-                &mut native_operation_feature_ids,
-                id,
-                "catia_native_operation_feature_ids",
-            )?;
-        }
-    }
-    let transferred_native_operation_parameter_count = ir
-        .model
-        .parameters
-        .iter()
-        .filter(|parameter| {
-            parameter
-                .owner
-                .as_ref()
-                .is_some_and(|owner| native_operation_feature_ids.contains(owner))
-        })
-        .count();
+
     for (key, count) in [
         (
             crate::coverage::DECODED_APPEARANCE_PACKET_COUNT,
@@ -2067,11 +1891,7 @@ fn finish_decode(
         ),
         (
             crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT,
-            native
-                .consolidated_cone_faces
-                .iter()
-                .map(|face| face.parameter_points.len())
-                .sum(),
+            decoded_consolidated_cone_face_parameter_point_count,
         ),
         (
             crate::coverage::DECODED_CONSOLIDATED_CONE_COUNT,
@@ -2143,16 +1963,7 @@ fn finish_decode(
         ),
         (
             crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT,
-            ir.model
-                .procedural_surfaces
-                .iter()
-                .filter(|surface| {
-                    surface
-                        .id
-                        .as_str()
-                        .starts_with("catia:consolidated:surface-revolution#")
-                })
-                .count(),
+            transferred_consolidated_revolution_count,
         ),
         (
             crate::coverage::DECODED_CONSOLIDATED_SPHERE_COUNT,
@@ -2168,163 +1979,71 @@ fn finish_decode(
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT,
-            native
-                .zero_entity_edge_strides
-                .iter()
-                .map(|stride| stride.allocations.len())
-                .sum(),
+            decoded_zero_entity_edge_stride_allocation_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT,
-            native
-                .zero_entity_edge_strides
-                .iter()
-                .map(|stride| stride.topology_refs.len())
-                .sum(),
+            decoded_zero_entity_edge_stride_topology_ref_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT,
-            native
-                .zero_entity_edge_strides
-                .iter()
-                .map(|stride| stride.surface_support_refs.len())
-                .sum(),
+            decoded_zero_entity_edge_stride_surface_support_ref_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_FACE_BOUND_SUPPORT_RUN_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .filter(|run| run.face.is_some())
-                .count(),
+            decoded_zero_entity_face_bound_support_run_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_03_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .filter_map(|run| run.face.as_ref())
-                .filter(|face| face.terminal_control == 0x03)
-                .count(),
+            decoded_zero_entity_face_terminal_control_03_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_05_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .filter_map(|run| run.face.as_ref())
-                .filter(|face| face.terminal_control == 0x05)
-                .count(),
+            decoded_zero_entity_face_terminal_control_05_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_LOOP_TERMINAL_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .filter_map(|run| run.face.as_ref())
-                .map(|face| face.loop_terminals.len())
-                .sum(),
+            decoded_zero_entity_loop_terminal_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_LOOP_RECORD_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .filter_map(|run| run.face.as_ref())
-                .map(|face| face.loops.len())
-                .sum(),
+            decoded_zero_entity_loop_record_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_41_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .filter_map(|run| run.face.as_ref())
-                .flat_map(|face| &face.loops)
-                .filter(|loop_| loop_.loop_class == 0x41)
-                .count(),
+            decoded_zero_entity_loop_class_41_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_50_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .filter_map(|run| run.face.as_ref())
-                .flat_map(|face| &face.loops)
-                .filter(|loop_| loop_.loop_class == 0x50)
-                .count(),
+            decoded_zero_entity_loop_class_50_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_C1_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .filter_map(|run| run.face.as_ref())
-                .flat_map(|face| &face.loops)
-                .filter(|loop_| loop_.loop_class == 0xc1)
-                .count(),
+            decoded_zero_entity_loop_class_c1_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_FORWARD_LOOP_MEMBER_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .filter_map(|run| run.face.as_ref())
-                .flat_map(|face| &face.loops)
-                .flat_map(|loop_| &loop_.forward_senses)
-                .filter(|sense| **sense)
-                .count(),
+            decoded_zero_entity_forward_loop_member_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_REVERSED_LOOP_MEMBER_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .filter_map(|run| run.face.as_ref())
-                .flat_map(|face| &face.loops)
-                .flat_map(|loop_| &loop_.forward_senses)
-                .filter(|sense| !**sense)
-                .count(),
+            decoded_zero_entity_reversed_loop_member_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_LOOP_MEMBER_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .filter_map(|run| run.face.as_ref())
-                .flat_map(|face| &face.loops)
-                .map(|loop_record| loop_record.forward_senses.len())
-                .sum(),
+            decoded_zero_entity_oriented_loop_member_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_MODEL_ENDPOINT_PAIR_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .filter_map(|run| run.face.as_ref())
-                .flat_map(|face| &face.loops)
-                .map(|loop_record| loop_record.oriented_model_endpoints.len())
-                .sum(),
+            decoded_zero_entity_oriented_model_endpoint_pair_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_BOUND_SUPPORT_MEMBER_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .filter_map(|run| run.face.as_ref())
-                .flat_map(|face| &face.loops)
-                .map(|loop_record| loop_record.support_record_ordinals.len())
-                .sum(),
+            decoded_zero_entity_bound_support_member_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_BOUND_TYPED_LOOP_REFERENCE_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .filter_map(|run| run.face.as_ref())
-                .flat_map(|face| &face.loops)
-                .map(|loop_record| loop_record.typed_records.len())
-                .sum(),
+            decoded_zero_entity_bound_typed_loop_reference_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_PAIR_COUNT,
@@ -2332,20 +2051,11 @@ fn finish_decode(
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_COUNT,
-            native
-                .zero_entity_oriented_use_pairs
-                .iter()
-                .map(|pair| pair.uses.len())
-                .sum(),
+            decoded_zero_entity_oriented_use_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_ALLOCATION_COUNT,
-            native
-                .zero_entity_oriented_use_pairs
-                .iter()
-                .flat_map(|pair| &pair.uses)
-                .map(|use_| use_.allocations.len())
-                .sum(),
+            decoded_zero_entity_oriented_use_allocation_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_ENDPOINT_PAIR_CANDIDATE_COUNT,
@@ -2365,65 +2075,31 @@ fn finish_decode(
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_OCCURRENCE_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .map(|run| run.supports.len())
-                .sum(),
+            decoded_zero_entity_support_occurrence_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_PCURVE_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .flat_map(|run| &run.supports)
-                .filter(|support| support.pcurve.is_some())
-                .count(),
+            decoded_zero_entity_support_pcurve_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CURVE_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .flat_map(|run| &run.supports)
-                .filter(|support| support.model_curve.is_some())
-                .count(),
+            decoded_zero_entity_support_model_curve_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CONSTRUCTION_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .flat_map(|run| &run.supports)
-                .filter(|support| support.model_curve_construction.is_some())
-                .count(),
+            decoded_zero_entity_support_model_construction_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_UV_ENDPOINT_PAIR_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .flat_map(|run| &run.supports)
-                .filter(|support| support.uv_endpoints.is_some())
-                .count(),
+            decoded_zero_entity_uv_endpoint_pair_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_MODEL_ENDPOINT_PAIR_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .flat_map(|run| &run.supports)
-                .filter(|support| support.model_endpoints.is_some())
-                .count(),
+            decoded_zero_entity_model_endpoint_pair_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_MODEL_MIDPOINT_COUNT,
-            native
-                .zero_entity_support_runs
-                .iter()
-                .flat_map(|run| &run.supports)
-                .filter(|support| support.model_midpoint.is_some())
-                .count(),
+            decoded_zero_entity_model_midpoint_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_COUNT,
@@ -2431,19 +2107,11 @@ fn finish_decode(
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_ALLOCATION_COUNT,
-            native
-                .zero_entity_vertex_incidences
-                .iter()
-                .map(|incidence| incidence.allocations.len())
-                .sum(),
+            decoded_zero_entity_vertex_incidence_allocation_count,
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_VERTEX_OWNER_BINDING_COUNT,
-            native
-                .zero_entity_vertex_incidences
-                .iter()
-                .filter(|incidence| incidence.vertex_record.is_some())
-                .count(),
+            decoded_zero_entity_vertex_owner_binding_count,
         ),
         (
             crate::coverage::DECODED_OBJECT_GRAPH_COUNT,
@@ -3437,9 +3105,7 @@ fn finish_decode(
         (crate::coverage::TRANSFERRED_FEATURE_COUNT, ir.model.features.len()),
         (
             crate::coverage::TRANSFERRED_FEATURE_PARENT_COUNT,
-            design_feature_transfer.feature_ids.values().filter(|feature_id| {
-                ir.model.feature_regeneration_parent(feature_id).is_some()
-            }).count(),
+            transferred_feature_parent_count,
         ),
         (
             crate::coverage::TRANSFERRED_PARAMETER_COUNT,
@@ -3546,97 +3212,6 @@ fn finish_decode(
         || !native.zero_entity_oriented_use_pairs.is_empty()
         || !native.zero_entity_vertex_incidences.is_empty()
     {
-        let support_count = native
-            .zero_entity_support_runs
-            .iter()
-            .map(|run| run.supports.len())
-            .sum::<usize>();
-        let endpoint_count = native
-            .zero_entity_support_runs
-            .iter()
-            .flat_map(|run| &run.supports)
-            .filter(|support| support.uv_endpoints.is_some())
-            .count();
-        let support_pcurve_count = native
-            .zero_entity_support_runs
-            .iter()
-            .flat_map(|run| &run.supports)
-            .filter(|support| support.pcurve.is_some())
-            .count();
-        let support_model_curve_count = native
-            .zero_entity_support_runs
-            .iter()
-            .flat_map(|run| &run.supports)
-            .filter(|support| support.model_curve.is_some())
-            .count();
-        let support_model_construction_count = native
-            .zero_entity_support_runs
-            .iter()
-            .flat_map(|run| &run.supports)
-            .filter(|support| support.model_curve_construction.is_some())
-            .count();
-        let model_endpoint_count = native
-            .zero_entity_support_runs
-            .iter()
-            .flat_map(|run| &run.supports)
-            .filter(|support| support.model_endpoints.is_some())
-            .count();
-        let model_midpoint_count = native
-            .zero_entity_support_runs
-            .iter()
-            .flat_map(|run| &run.supports)
-            .filter(|support| support.model_midpoint.is_some())
-            .count();
-        let face_count = native
-            .zero_entity_support_runs
-            .iter()
-            .filter(|run| run.face.is_some())
-            .count();
-        let loop_terminal_count = native
-            .zero_entity_support_runs
-            .iter()
-            .filter_map(|run| run.face.as_ref())
-            .map(|face| face.loop_terminals.len())
-            .sum::<usize>();
-        let loop_record_count = native
-            .zero_entity_support_runs
-            .iter()
-            .filter_map(|run| run.face.as_ref())
-            .map(|face| face.loops.len())
-            .sum::<usize>();
-        let oriented_loop_member_count = native
-            .zero_entity_support_runs
-            .iter()
-            .filter_map(|run| run.face.as_ref())
-            .flat_map(|face| &face.loops)
-            .map(|loop_record| loop_record.forward_senses.len())
-            .sum::<usize>();
-        let oriented_model_endpoint_count = native
-            .zero_entity_support_runs
-            .iter()
-            .filter_map(|run| run.face.as_ref())
-            .flat_map(|face| &face.loops)
-            .map(|loop_record| loop_record.oriented_model_endpoints.len())
-            .sum::<usize>();
-        let bound_support_member_count = native
-            .zero_entity_support_runs
-            .iter()
-            .filter_map(|run| run.face.as_ref())
-            .flat_map(|face| &face.loops)
-            .map(|loop_record| loop_record.support_record_ordinals.len())
-            .sum::<usize>();
-        let bound_typed_loop_reference_count = native
-            .zero_entity_support_runs
-            .iter()
-            .filter_map(|run| run.face.as_ref())
-            .flat_map(|face| &face.loops)
-            .map(|loop_record| loop_record.typed_records.len())
-            .sum::<usize>();
-        let vertex_owner_binding_count = native
-            .zero_entity_vertex_incidences
-            .iter()
-            .filter(|incidence| incidence.vertex_record.is_some())
-            .count();
         let ownership_face_count = native
             .zero_entity_ownership_roots
             .first()
@@ -3646,21 +3221,21 @@ fn finish_decode(
             &mut report.losses,
             CatiaLossCode::TopologyZeroEntitySupportsRetained,
             format_args!(
-                "{} zero-entity surface-support run(s) retain {support_count} face-local \
-                 occurrence(s), including {support_pcurve_count} complete parameter-space \
-                 curve(s), {support_model_curve_count} with exact model-space carriers, \
-                 {support_model_construction_count} with exact procedural model-space carriers, \
-                 {endpoint_count} with exact UV endpoint pairs, and \
-                 {model_endpoint_count} lifted model-space endpoint pairs with \
-                 {model_midpoint_count} bounded-curve midpoint witnesses; \
-                 {face_count} run(s) bind the complete face roster with {loop_terminal_count} \
-                 ordered loop terminal(s), {loop_record_count} loop record(s), and \
-                 {oriented_loop_member_count} stored member sense(s), including \
-                 {oriented_model_endpoint_count} sense-oriented model-space endpoint pair(s), \
-                 {bound_support_member_count} member(s) bound to face-local support records and \
-                 {bound_typed_loop_reference_count} typed reference(s) bound to global records; {} \
+                "{} zero-entity surface-support run(s) retain {decoded_zero_entity_support_occurrence_count} face-local \
+                 occurrence(s), including {decoded_zero_entity_support_pcurve_count} complete parameter-space \
+                 curve(s), {decoded_zero_entity_support_model_curve_count} with exact model-space carriers, \
+                 {decoded_zero_entity_support_model_construction_count} with exact procedural model-space carriers, \
+                 {decoded_zero_entity_uv_endpoint_pair_count} with exact UV endpoint pairs, and \
+                 {decoded_zero_entity_model_endpoint_pair_count} lifted model-space endpoint pairs with \
+                 {decoded_zero_entity_model_midpoint_count} bounded-curve midpoint witnesses; \
+                 {decoded_zero_entity_face_bound_support_run_count} run(s) bind the complete face roster with {decoded_zero_entity_loop_terminal_count} \
+                 ordered loop terminal(s), {decoded_zero_entity_loop_record_count} loop record(s), and \
+                 {decoded_zero_entity_oriented_loop_member_count} stored member sense(s), including \
+                 {decoded_zero_entity_oriented_model_endpoint_pair_count} sense-oriented model-space endpoint pair(s), \
+                 {decoded_zero_entity_bound_support_member_count} member(s) bound to face-local support records and \
+                 {decoded_zero_entity_bound_typed_loop_reference_count} typed reference(s) bound to global records; {} \
                  edge-stride allocation tuple(s) remain separate, and \
-                 {vertex_owner_binding_count} of {} vertex-incidence record(s) bind their \
+                 {decoded_zero_entity_vertex_owner_binding_count} of {} vertex-incidence record(s) bind their \
                  adjacent vertex owner; {} ownership root(s) bind {ownership_face_count} face \
                  allocation(s) through a shell and body; {} radial occurrence endpoint-pair \
                  candidate(s) and {} \
@@ -3803,18 +3378,29 @@ fn modeling_graph_scope(
     if !has_outer_declarations {
         return Ok(ModelingGraphScope::Unscoped);
     }
-    let mut part_graphs = graphs.iter().filter(|graph| {
-        graph
-            .outer_container
-            .as_ref()
-            .is_some_and(|container| container.class_name == "CATPrtCont")
-    });
-    Ok(match (part_graphs.next(), part_graphs.next()) {
-        (Some(graph), None) => ModelingGraphScope::Scoped(
-            ctx.copy_retained_text(&graph.id, "catia_modeling_scope_graph")?,
+    let mut remaining = graphs.iter();
+    let is_part = |graph: &&CatiaObjectGraph| match &graph.outer_container {
+        Some(container) => ctx.equal_bytes(
+            container.class_name.as_bytes(),
+            b"CATPrtCont",
+            "catia_modeling_scope_class",
         ),
-        _ => ModelingGraphScope::Unresolved,
-    })
+        None => Ok(false),
+    };
+    let first = ctx.find_by(&mut remaining, is_part, "catia_modeling_scope_search")?;
+    let Some(graph) = first else {
+        return Ok(ModelingGraphScope::Unresolved);
+    };
+    if ctx
+        .find_by(&mut remaining, is_part, "catia_modeling_scope_search")?
+        .is_some()
+    {
+        return Ok(ModelingGraphScope::Unresolved);
+    }
+    Ok(ModelingGraphScope::Scoped(ctx.copy_retained_text(
+        &graph.id,
+        "catia_modeling_scope_graph",
+    )?))
 }
 
 /// The single site that finishes a decode and charges dialect admission loss.
