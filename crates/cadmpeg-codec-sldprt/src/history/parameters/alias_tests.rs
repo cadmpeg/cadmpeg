@@ -678,25 +678,21 @@ fn parameter_aliases_refuse_scoped_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
-/// Evaluation value states are scratch: their copies count against the scoped limit.
+/// Read-only validation borrows stated values instead of copying their text.
 #[test]
-fn parameter_value_states_refuse_scoped_limit() {
+fn parameter_value_states_borrow_stated_values() {
     let parameters = scratch_parameters();
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (aliases, _storage) = ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "retain SLDPRT parameter value text",
-        |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_materialized_bytes = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            let (aliases, _storage) =
-                ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new())?;
-            parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).map(|_| ())
-        },
+        "retain SLDPRT parameter value text", None,
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    assert_eq!(parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).unwrap(), 0);
+    assert!(ctx.resource_refusal().is_none());
 }
 
 #[test]
