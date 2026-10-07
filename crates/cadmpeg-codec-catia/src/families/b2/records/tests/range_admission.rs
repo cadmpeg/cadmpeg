@@ -6,8 +6,8 @@ use crate::test_support::test_b2::b2_adjacent_face_counted_owner_stream;
 use crate::wire::records::consolidated_records;
 
 #[test]
-fn b2_counted_owner_reference_range_refuses_work() {
-    const OPERATION: &str = "catia_b2_counted_owner_reference_scan";
+fn b2_counted_owner_reference_lane_refuses_work() {
+    const OPERATION: &str = "catia_b2_counted_owner_references";
     let bytes = b2_adjacent_face_counted_owner_stream();
     let records = consolidated_records(&bytes);
     let owners = crate::test_support::with_service_context(|ctx| {

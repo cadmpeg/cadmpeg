@@ -413,24 +413,21 @@ fn a5_nurbs_curve_parser_accepts_frame_bounded_knot_count() {
     assert_eq!(curves[0].geometry.knots().len(), 24_585);
 }
 
-#[test]
-fn a5_nurbs_distinct_knots_refuse_collection_limit_before_materialization() {
-    assert_a5_nurbs_collection_refusal(2, "catia_a5_nurbs_distinct_knots");
-}
-
+// The fixture stores three distinct knots, so nine control points and fifteen
+// expanded knots (six, three and six copies) precede the curve slot.
 #[test]
 fn a5_nurbs_control_points_refuse_collection_limit_before_materialization() {
-    assert_a5_nurbs_collection_refusal(11, "catia_a5_nurbs_control_points");
+    assert_a5_nurbs_collection_refusal(8, "catia_a5_nurbs_control_points");
 }
 
 #[test]
 fn a5_nurbs_expanded_knots_refuse_collection_limit_before_materialization() {
-    assert_a5_nurbs_collection_refusal(26, "catia_a5_nurbs_expanded_knots");
+    assert_a5_nurbs_collection_refusal(14, "catia_a5_nurbs_expanded_knots");
 }
 
 #[test]
 fn a5_nurbs_curve_collection_refuses_before_retention() {
-    assert_a5_nurbs_collection_refusal(27, "catia_a5_nurbs_curves");
+    assert_a5_nurbs_collection_refusal(24, "catia_a5_nurbs_curves");
 }
 
 fn assert_a5_nurbs_collection_refusal(limit: u64, operation: &'static str) {
