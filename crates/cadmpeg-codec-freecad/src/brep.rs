@@ -3230,6 +3230,11 @@ fn parse_binary_prefix(
                 )
             })
             .transpose()?;
+        // Construction checks every triangle's indices once more.
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(triangles.len()),
+            "FreeCAD triangulation index check",
+        )?;
         triangulations.push(
             TextTriangulation::from_admitted_parts(deflection, nodes, uv_nodes, triangles, normals)
                 .map_err(CodecError::Malformed)?,
@@ -4949,6 +4954,11 @@ fn parse_triangulations(
         } else {
             None
         };
+        // Construction checks every triangle's indices once more.
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(triangles.len()),
+            "FreeCAD triangulation index check",
+        )?;
         triangulations.push(
             TextTriangulation::from_admitted_parts(deflection, nodes, uv_nodes, triangles, normals)
                 .map_err(CodecError::Malformed)?,
@@ -6247,6 +6257,11 @@ fn clamped_bezier_knots(
         )
     })?;
     let mut knots = ctx.collection_vec(count, "FreeCAD Bezier knots")?;
+    // A binary degree is any u16, so filling the slots is input-sized work.
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(count),
+        "FreeCAD Bezier knots",
+    )?;
     knots.extend(std::iter::repeat_with(|| FiniteReal::ZERO).take(half));
     knots.extend(std::iter::repeat_with(|| FiniteReal::ONE).take(half));
     Ok(knots)

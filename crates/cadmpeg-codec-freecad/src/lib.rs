@@ -1358,7 +1358,13 @@ impl CodecBackend for FcstdCodec {
             {
                 ir.model
                     .add_procedural_curve(ctx, &owner, procedural)?
-                    .map_err(|error| CodecError::malformed(error.to_string()))?;
+                    .map_err(|error| {
+                        resource::malformed_charged(
+                            ctx,
+                            format_args!("{error}"),
+                            "FCStd procedural curve diagnostic",
+                        )
+                    })?;
             }
             ir.model.surfaces = surface_transfer.surfaces;
             for (owner, procedural) in
@@ -1366,7 +1372,13 @@ impl CodecBackend for FcstdCodec {
             {
                 ir.model
                     .add_procedural_surface(ctx, &owner, procedural)?
-                    .map_err(|error| CodecError::malformed(error.to_string()))?;
+                    .map_err(|error| {
+                        resource::malformed_charged(
+                            ctx,
+                            format_args!("{error}"),
+                            "FCStd procedural surface diagnostic",
+                        )
+                    })?;
             }
             geometry_transferred |= application_geometry::transfer(
                 ctx,

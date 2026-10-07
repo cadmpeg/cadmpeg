@@ -276,14 +276,22 @@ fn parse_mesh(
             ":mesh",
             "FreeCAD mesh identity",
         )?)
-        .map_err(|error| CodecError::malformed(error.to_string()))?,
+        .map_err(|error| {
+            crate::resource::malformed_charged(
+                ctx,
+                format_args!("{error}"),
+                "FreeCAD mesh diagnostic",
+            )
+        })?,
         cadmpeg_ir::tessellation::TessellationMesh::List {
             vertices,
             triangles,
         },
         Vec::new(),
     )
-    .map_err(|err| CodecError::Malformed(err.to_string()))?
+    .map_err(|error| {
+        crate::resource::malformed_charged(ctx, format_args!("{error}"), "FreeCAD mesh diagnostic")
+    })?
     .with_source_object(Some(association(ctx, property)?)))
 }
 
