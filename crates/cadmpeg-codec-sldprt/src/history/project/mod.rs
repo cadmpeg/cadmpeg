@@ -367,7 +367,7 @@ fn project_history<'c>(
         let is_metadata = index.is_metadata(ctx, feature)?;
         ctx.push_scoped_vec(&mut scratch, &mut metadata, is_metadata, OPERATION)?;
     }
-    let source_bindings = unique_source_bindings(ctx, history, &metadata)?;
+    let source_bindings = scratch.with_storage(|| unique_source_bindings(ctx, history, &metadata))?;
     let mut source_keys = Vec::new();
     let mut native_by_source = HashMap::new();
     for (source, binding) in ctx.admit_iter(&source_bindings, OPERATION)? {
@@ -397,7 +397,7 @@ fn project_history<'c>(
         })?;
     }
     let mut by_native = HashMap::new();
-    let mut features_by_source = BTreeMap::new();
+    let source_features = self::solid::SourceFeatures::new(ctx, &history.features)?;
     for ((feature, neutral), is_metadata) in ctx
         .admit_iter(&history.features, OPERATION)?
         .zip(&neutral_ids)
@@ -407,9 +407,6 @@ fn project_history<'c>(
             ctx.insert_hash_map(&mut by_source, feature.id.as_str(), neutral, OPERATION)?;
             if !*is_metadata {
                 ctx.insert_hash_map(&mut by_native, feature.id.as_str(), neutral, OPERATION)?;
-            }
-            if let Some(source) = feature.source_id {
-                ctx.insert_btree_map(&mut features_by_source, source, feature, OPERATION)?;
             }
             Ok::<_, CodecError>(())
         })?;
@@ -485,7 +482,7 @@ fn project_history<'c>(
                     feature,
                     &by_source,
                     &native_by_source,
-                    &features_by_source,
+                    &source_features,
                     &records,
                     &index,
                 )?,
@@ -1658,7 +1655,7 @@ fn project_definition(
     feature: &Feature,
     by_source: &NeutralByKey<'_, '_>,
     native_by_source: &HashMap<String, &str>,
-    features_by_source: &BTreeMap<FeatureSource, &Feature>,
+    source_features: &self::solid::SourceFeatures<'_, '_>,
     records: &self::solid::RecordsById<'_>,
     index: &HistoryIndex<'_, '_>,
 ) -> Result<FeatureDefinition, CodecError> {
@@ -1783,7 +1780,7 @@ fn project_definition(
             .map_or_else(|| native_definition(ctx, feature), Ok);
     }
     Ok(if class == Some(FeatureClass::Extrude) {
-        project_extrude(ctx, feature, native_by_source, features_by_source)?
+        project_extrude(ctx, feature, native_by_source, source_features)?
             .map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Fillet) {
         project_fillet(ctx, feature)?
@@ -1830,7 +1827,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Scale) {
         project_scale(ctx, feature)?
     } else if class == Some(FeatureClass::Hole) {
-        project_hole(ctx, feature, features_by_source, records)?
+        project_hole(ctx, feature, &source_features.records, records)?
             .map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Revolve) {
         project_revolve(ctx, feature, native_by_source)?
