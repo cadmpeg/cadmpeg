@@ -394,3 +394,35 @@ fn historical_treatment_carrier_face_scan_refuses_work() {
         cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
 }
+
+#[test]
+fn incomplete_body_closure_releases_owner_prefix_storage() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let topology = crate::history_records::AsmHistoricalTopology {
+        bodies: vec![1],
+        ..Default::default()
+    };
+    let operation = "measure F3D incomplete closure storage";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| {
+            let closures = crate::history::topology::body_closures(ctx, &topology)?;
+            assert!(crate::history::topology::closures_intersecting(
+                ctx,
+                &closures,
+                &std::collections::BTreeSet::from([1]),
+            )?
+            .is_none());
+            let result = ctx.reserve_scoped(u64::MAX, operation).map(|_| ());
+            drop(closures);
+            result
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == 0
+    ));
+}

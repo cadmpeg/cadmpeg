@@ -2,8 +2,6 @@
 //! History resource-budget unit tests.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::decode::u64_from_index;
-
 use crate::history::test_support::{decode_with_limits, one_delta_state, one_state_history};
 
 fn one_board_state() -> Vec<u8> {
@@ -24,36 +22,6 @@ fn one_board_state() -> Vec<u8> {
     }
     bytes.push(0x11);
     bytes
-}
-
-fn history_id_lengths() -> (u64, u64, u64, u64) {
-    let history = crate::test_support::with_decode_context(|ctx| {
-        crate::ids::native_scoped_id(ctx, "history", "asm-history", format_args!("{:010}", 0))
-            .expect("test F3D native identity")
-    });
-    let state = crate::test_support::with_decode_context(|ctx| {
-        crate::ids::native_scoped_id(ctx, "history", "asm-delta-state", format_args!("{:010}", 0))
-            .expect("test F3D native identity")
-    });
-    let board = crate::test_support::with_decode_context(|ctx| {
-        crate::ids::native_scoped_id(ctx, "history", "asm-bulletin-board", "0000000000:000000")
-            .expect("test F3D native identity")
-    });
-    let change = crate::test_support::with_decode_context(|ctx| {
-        crate::ids::native_scoped_id(
-            ctx,
-            "history",
-            "asm-entity-change",
-            "0000000000:000000:000000",
-        )
-        .expect("test F3D native identity")
-    });
-    (
-        u64_from_index(history.len()),
-        u64_from_index(state.len()),
-        u64_from_index(board.len()),
-        u64_from_index(change.len()),
-    )
 }
 
 fn history_record_with_limits(
@@ -902,13 +870,24 @@ fn opaque_history_error_refuses_retained_limit() {
 #[test]
 fn history_board_id_refuses_retained_limit() {
     let bytes = one_board_state();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (history, state, _, _) = history_id_lengths();
-    policy.limits.max_retained_bytes = history + state;
-    let error = decode_with_limits(&bytes, &policy);
+    let operation = "retain F3D native record ID";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        operation,
+        1,
+        |ctx| {
+            crate::history::decode(
+                ctx,
+                &bytes,
+                "history",
+                cadmpeg_asm::kernel_header::RefWidth::Four,
+                &ctx.policy().limits,
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D native record ID")
+        if limit.operation == operation)
     );
 }
 
@@ -928,11 +907,11 @@ fn history_change_vector_refuses_collection_limit() {
 fn history_change_id_refuses_retained_limit() {
     let bytes = one_board_state();
     let operation = "retain F3D native record ID";
-    // The history, state and board identities precede the change identity.
+    // The state and board identities precede the change identity.
     let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         operation,
-        3,
+        2,
         |ctx| {
             crate::history::decode(
                 ctx,
@@ -954,13 +933,13 @@ fn history_change_parent_refuses_retained_limit() {
     let bytes = one_board_state();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
 
-    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+    policy.limits.max_materialized_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "copy F3D ASM change parent",
         |cap| {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
 
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             Err::<(), cadmpeg_core::CodecError>(decode_with_limits(&bytes, &policy))
         },
     ) {
@@ -1022,13 +1001,13 @@ fn history_board_parent_refuses_retained_limit() {
     let bytes = one_board_state();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
 
-    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+    policy.limits.max_materialized_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "copy F3D ASM board parent",
         |cap| {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
 
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             Err::<(), cadmpeg_core::CodecError>(decode_with_limits(&bytes, &policy))
         },
     ) {
@@ -1300,4 +1279,45 @@ fn history_version_state_vector_refuses_retained_limit() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
+}
+
+#[test]
+fn incomplete_transition_batch_releases_accepted_delta_storage() {
+    let mut history = one_state_history();
+    history.states[0].topology_cache = crate::history_records::AsmTopologyCache::Complete(
+        crate::history_records::AsmHistoricalTopology {
+            bodies: vec![1],
+            ..Default::default()
+        },
+    );
+    let mut absent = one_state_history().states.remove(0);
+    absent.node_index = 1;
+    history.states.push(absent);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    crate::history::archive::bind_historical_transitions(&ctx, &mut history.states).unwrap();
+    assert!(history
+        .states
+        .iter()
+        .all(|state| state.transition.is_none()));
+}
+
+#[test]
+fn empty_transition_delta_needs_no_work_or_collection_admission() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let versions = std::collections::BTreeMap::new();
+    let delta =
+        crate::history::archive::entity_delta(&ctx, &[], &[], (&versions, &versions)).unwrap();
+    assert_eq!(
+        delta,
+        crate::history_records::AsmHistoricalEntityDelta::default()
+    );
 }

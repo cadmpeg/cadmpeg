@@ -54,28 +54,17 @@ fn history_graph_index_refuses_collection_limit() {
 }
 
 #[test]
-fn history_id_refuses_retained_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let error = decode_with_limits(&[], &policy);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D native record ID")
-    );
-}
-
-#[test]
 fn history_state_id_refuses_retained_limit() {
     let bytes = one_delta_state();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
 
-    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+    policy.limits.max_materialized_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "retain F3D native record ID",
         |cap| {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
 
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             Err::<(), cadmpeg_core::CodecError>(decode_with_limits(&bytes, &policy))
         },
     ) {
@@ -106,13 +95,13 @@ fn history_parent_copy_refuses_retained_limit() {
     let bytes = one_delta_state();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
 
-    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+    policy.limits.max_materialized_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "copy F3D ASM history parent",
         |cap| {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
 
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             Err::<(), cadmpeg_core::CodecError>(decode_with_limits(&bytes, &policy))
         },
     ) {

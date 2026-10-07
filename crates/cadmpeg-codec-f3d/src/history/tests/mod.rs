@@ -20,6 +20,7 @@ mod path_selection_limits;
 mod planes;
 mod recipe_projection;
 mod recipes;
+mod resource_staging;
 mod selections;
 mod state_pairs;
 mod surface_stitch;

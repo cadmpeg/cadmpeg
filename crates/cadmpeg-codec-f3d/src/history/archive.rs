@@ -430,6 +430,15 @@ pub(super) fn bind_complete_record_tables(
     let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
         return Ok(());
     };
+    // An archive and an insert-only chain state their active count before
+    // the active stream needs framing.
+    let (active_count, insert_only) = match archived_active_record_count(ctx, states)? {
+        Some(count) => (count, false),
+        None => match insert_only_active_record_count(ctx, states)? {
+            Some(count) => (count, true),
+            None => return Ok(()),
+        },
+    };
     let active_limit =
         cadmpeg_asm::asm_header::solved_record_limit(ctx, bytes)?.unwrap_or(bytes.len());
     let (framed, _framed_storage) =
@@ -453,15 +462,9 @@ pub(super) fn bind_complete_record_tables(
         }
         Err(_) => return Ok(()),
     };
-    // An archived history has revision IDs and an insert-only one has none,
-    // so at most one of the two counts exists.
-    let active_count = match archived_active_record_count(ctx, states)? {
-        Some(count) => count,
-        None => match insert_only_active_record_count(ctx, states)? {
-            Some(count) if framed.len() == count => count,
-            _ => return Ok(()),
-        },
-    };
+    if insert_only && framed.len() != active_count {
+        return Ok(());
+    }
     let Some(active_records) = framed.get(..active_count) else {
         return Ok(());
     };
@@ -868,6 +871,7 @@ fn bind_historical_transitions(
     }
 
     let mut transitions_storage = ctx.reserve_scoped(0, "collect F3D historical transitions")?;
+    let mut output_storage = ctx.reserve_scoped(0, "retain F3D historical transitions")?;
     let mut transitions = Vec::new();
     let mut history_source = IntoIterator::into_iter(&*states);
     while let Some(state) = ctx.next_charged(&mut history_source, "scan F3D states")? {
@@ -882,7 +886,9 @@ fn bind_historical_transitions(
             }
             None => None,
         };
-        let Some(transition) = historical_transition(ctx, state, previous)? else {
+        let Some(transition) =
+            output_storage.with_storage(|| historical_transition(ctx, state, previous))?
+        else {
             return Ok(());
         };
         transitions_storage.with_storage(|| {
@@ -893,6 +899,7 @@ fn bind_historical_transitions(
             )
         })?;
     }
+    output_storage.commit()?;
     for (state, transition) in ctx
         .admit_iter(&mut *states, "bind F3D historical transitions")?
         .zip(transitions)
@@ -1028,8 +1035,12 @@ fn entity_delta(
     let mut updated = Vec::new();
     let (mut current_index, mut previous_index) = (0, 0);
     loop {
+        let endpoints = (current.get(current_index), previous.get(previous_index));
+        if matches!(endpoints, (None, None)) {
+            break;
+        }
         ctx.charge_work(1, "merge F3D transition entities")?;
-        let (target, entity) = match (current.get(current_index), previous.get(previous_index)) {
+        let (target, entity) = match endpoints {
             (None, None) => break,
             (Some(&entity), None) => {
                 current_index += 1;
@@ -1169,86 +1180,95 @@ pub(super) fn decode_bulletin_boards(
     state_id: &str,
     width: RefWidth,
 ) -> Result<Option<(Vec<AsmBulletinBoard>, usize)>, cadmpeg_core::CodecError> {
-    if bytes.get(position) == Some(&0x11) {
-        return Ok(Some((Vec::new(), position)));
-    }
-    let mut boards = Vec::new();
-    loop {
-        ctx.charge_work(1, "read F3D ASM bulletin board entry")?;
-        let board_offset = position;
-        let Some(present) = take_int(bytes, &mut position, 0x04, width) else {
-            return Ok(None);
-        };
-        if present == 0 {
-            break;
-        }
-        let Some(owner_ref) = take_int(bytes, &mut position, 0x0c, width) else {
-            return Ok(None);
-        };
-        let Some(number) = take_int(bytes, &mut position, 0x04, width) else {
-            return Ok(None);
-        };
-        let board_id = crate::ids::native_scoped_id(
-            ctx,
-            stream,
-            "asm-bulletin-board",
-            format_args!("{state_offset:010}:{:06}", boards.len()),
-        )?;
-        let mut changes = Vec::new();
-        loop {
-            ctx.charge_work(1, "read F3D ASM entity change entry")?;
-            let change_offset = position;
-            let Some(present) = take_int(bytes, &mut position, 0x04, width) else {
-                return Ok(None);
-            };
-            if present == 0 {
-                break;
+    let (output, storage) = ctx.with_scoped_storage(
+        "retain F3D ASM bulletin boards",
+        || -> Result<_, cadmpeg_core::CodecError> {
+            if bytes.get(position) == Some(&0x11) {
+                return Ok(Some((Vec::new(), position)));
             }
-            let Some(old) = take_int(bytes, &mut position, 0x0c, width) else {
-                return Ok(None);
-            };
-            let Some(new) = take_int(bytes, &mut position, 0x0c, width) else {
-                return Ok(None);
-            };
-            let kind = match (old >= 0, new >= 0) {
-                (false, true) => AsmEntityChangeKind::Insert { new },
-                (true, false) => AsmEntityChangeKind::Delete { old },
-                (true, true) => AsmEntityChangeKind::Update { old, new },
-                (false, false) => return Ok(None),
-            };
+            let mut boards = Vec::new();
+            loop {
+                ctx.charge_work(1, "read F3D ASM bulletin board entry")?;
+                let board_offset = position;
+                let Some(present) = take_int(bytes, &mut position, 0x04, width) else {
+                    return Ok(None);
+                };
+                if present == 0 {
+                    break;
+                }
+                let Some(owner_ref) = take_int(bytes, &mut position, 0x0c, width) else {
+                    return Ok(None);
+                };
+                let Some(number) = take_int(bytes, &mut position, 0x04, width) else {
+                    return Ok(None);
+                };
+                let board_id = crate::ids::native_scoped_id(
+                    ctx,
+                    stream,
+                    "asm-bulletin-board",
+                    format_args!("{state_offset:010}:{:06}", boards.len()),
+                )?;
+                let mut changes = Vec::new();
+                loop {
+                    ctx.charge_work(1, "read F3D ASM entity change entry")?;
+                    let change_offset = position;
+                    let Some(present) = take_int(bytes, &mut position, 0x04, width) else {
+                        return Ok(None);
+                    };
+                    if present == 0 {
+                        break;
+                    }
+                    let Some(old) = take_int(bytes, &mut position, 0x0c, width) else {
+                        return Ok(None);
+                    };
+                    let Some(new) = take_int(bytes, &mut position, 0x0c, width) else {
+                        return Ok(None);
+                    };
+                    let kind = match (old >= 0, new >= 0) {
+                        (false, true) => AsmEntityChangeKind::Insert { new },
+                        (true, false) => AsmEntityChangeKind::Delete { old },
+                        (true, true) => AsmEntityChangeKind::Update { old, new },
+                        (false, false) => return Ok(None),
+                    };
 
-            ctx.reserve_vec(&mut changes, 1, "admit F3D ASM entity change")?;
-            let change_id = crate::ids::native_scoped_id(
-                ctx,
-                stream,
-                "asm-entity-change",
-                format_args!(
-                    "{state_offset:010}:{:06}:{:06}",
-                    boards.len(),
-                    changes.len()
-                ),
-            )?;
-            let parent = ctx.copy_retained_text(&board_id, "copy F3D ASM change parent")?;
-            changes.push(AsmEntityChange {
-                id: change_id,
-                parent,
-                byte_offset: u64_from_index(change_offset),
-                kind,
-            });
-        }
+                    ctx.reserve_vec(&mut changes, 1, "admit F3D ASM entity change")?;
+                    let change_id = crate::ids::native_scoped_id(
+                        ctx,
+                        stream,
+                        "asm-entity-change",
+                        format_args!(
+                            "{state_offset:010}:{:06}:{:06}",
+                            boards.len(),
+                            changes.len()
+                        ),
+                    )?;
+                    let parent = ctx.copy_retained_text(&board_id, "copy F3D ASM change parent")?;
+                    changes.push(AsmEntityChange {
+                        id: change_id,
+                        parent,
+                        byte_offset: u64_from_index(change_offset),
+                        kind,
+                    });
+                }
 
-        ctx.reserve_vec(&mut boards, 1, "admit F3D ASM bulletin board")?;
-        let parent = ctx.copy_retained_text(state_id, "copy F3D ASM board parent")?;
-        boards.push(AsmBulletinBoard {
-            id: board_id,
-            parent,
-            byte_offset: u64_from_index(board_offset),
-            owner_ref,
-            number,
-            changes,
-        });
+                ctx.reserve_vec(&mut boards, 1, "admit F3D ASM bulletin board")?;
+                let parent = ctx.copy_retained_text(state_id, "copy F3D ASM board parent")?;
+                boards.push(AsmBulletinBoard {
+                    id: board_id,
+                    parent,
+                    byte_offset: u64_from_index(board_offset),
+                    owner_ref,
+                    number,
+                    changes,
+                });
+            }
+            Ok(Some((boards, position)))
+        },
+    )?;
+    if output.is_some() {
+        storage.commit()?;
     }
-    Ok(Some((boards, position)))
+    Ok(output)
 }
 
 pub(super) fn decode_history_records(

@@ -1735,9 +1735,11 @@ pub(super) fn affected_body_refs(
             .with_scoped_storage("index F3D changed topology members", || {
                 changed_family_refs(ctx, &transition.topology, true)
             })?;
-        let Some(previous_affected) = affected_storage
-            .with_storage(|| bodies_intersecting(ctx, previous_topology, &deleted))?
-        else {
+        let (previous_affected, _previous_affected_storage) = ctx
+            .with_scoped_storage("collect F3D previous affected history bodies", || {
+                bodies_intersecting(ctx, previous_topology, &deleted)
+            })?;
+        let Some(previous_affected) = previous_affected else {
             return Ok(None);
         };
         for body in ctx.admit_iter(
@@ -2041,10 +2043,13 @@ fn bodies_intersecting(
 }
 
 /// The bodies whose closure holds each entity of one topology, for repeated
-/// intersection queries. `None` when some body closure has a missing link.
-pub(super) struct BodyClosures<'ctx> {
-    owners: Option<HashMap<i64, Vec<i64>>>,
-    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+/// intersection queries. An incomplete closure holds no owner index.
+pub(super) enum BodyClosures<'ctx> {
+    Incomplete,
+    Complete {
+        owners: HashMap<i64, Vec<i64>>,
+        _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    },
 }
 
 pub(super) fn body_closures<'ctx>(
@@ -2066,10 +2071,14 @@ pub(super) fn body_closures<'ctx>(
             decode.push_hash_group(&mut owners, entity, body, operation, operation)
         })
     })?;
-    Ok(BodyClosures {
-        owners: complete.then_some(owners),
-        _storage: storage,
-    })
+    if complete {
+        Ok(BodyClosures::Complete {
+            owners,
+            _storage: storage,
+        })
+    } else {
+        Ok(BodyClosures::Incomplete)
+    }
 }
 
 /// Returns the bodies whose closure meets `changed`, or `None` when a closure
@@ -2079,7 +2088,7 @@ pub(super) fn closures_intersecting(
     closures: &BodyClosures<'_>,
     changed: &BTreeSet<i64>,
 ) -> Result<Option<BTreeSet<i64>>, cadmpeg_core::CodecError> {
-    let Some(owners) = &closures.owners else {
+    let BodyClosures::Complete { owners, .. } = closures else {
         return Ok(None);
     };
     let mut affected = BTreeSet::new();

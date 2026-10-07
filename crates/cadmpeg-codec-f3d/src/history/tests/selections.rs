@@ -639,7 +639,13 @@ fn combine_recipe_tool_index_refuses_collection_limit() {
 fn combine_historical_rows_refuse_collection_limit() {
     let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#combine").unwrap();
     let result = with_combine_collection_limit(0, |ctx| {
-        crate::history::combine_historical_rows(ctx, &feature, 1, vec![2], vec!["native".into()])
+        crate::history::combine_historical_rows(
+            ctx,
+            &feature,
+            1,
+            vec![2],
+            vec!["native".into()].into_iter().map(Ok),
+        )
     });
     assert!(matches!(
         result,
@@ -1226,3 +1232,93 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
 mod combine_external_limits;
 mod extrude_profile;
 mod grouped_reference_face_candidate;
+
+#[test]
+fn missing_external_combine_tool_releases_identity_prefix() {
+    let mut scope = combine_external_scope();
+    scope.combine_operation_mut().unwrap().tools.additional[0].external_identity = None;
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(crate::history::combine_external_local_tools(&ctx, &scope)
+        .unwrap()
+        .is_none());
+}
+
+fn unproved_combine_tool_work(feature_id: &cadmpeg_ir::features::FeatureId, state_id: &str) -> u64 {
+    let scope = combine_external_scope();
+    let feature = crate::history::test_support::base_feature();
+    let mut history = crate::history::test_support::one_state_history();
+    history.states[0].id = state_id.to_owned();
+    let inputs = crate::history::FeatureBodySelectionInputs {
+        scopes: &[],
+        groups: &[],
+        body_recipe_operands: &[],
+        construction_recipes: &[],
+        persistent_design_links: &[],
+        histories: &[],
+        bodies: &[],
+        regions: &[],
+        shells: &[],
+    };
+    let operation = "measure rejected F3D Combine work";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let index = crate::history::BodySelectionIndex::new(&inputs);
+            let tools = crate::history::combine_history_tools(
+                ctx,
+                crate::history::CombineHistoryTools {
+                    feature_id,
+                    scope: &scope,
+                    state: &history.states[0],
+                    previous_state_id: 1,
+                    target_body: 2,
+                    dependencies: &feature.dependencies,
+                    pattern_bodies: &Default::default(),
+                },
+                &index,
+            )?;
+            assert!(tools.is_none());
+            ctx.charge_work(1, operation)
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected a work measurement refusal");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
+    limit.used
+}
+
+#[test]
+fn unproved_combine_tools_skip_output_identity_encoding() {
+    let short = crate::history::test_support::base_feature().id;
+    let long =
+        cadmpeg_ir::features::FeatureId::mint(format!("test:model:feature#{}", "a".repeat(4096)))
+            .unwrap();
+    assert_eq!(
+        unproved_combine_tool_work(&short, "state"),
+        unproved_combine_tool_work(&long, "state")
+    );
+}
+
+#[test]
+fn unproved_combine_tools_skip_source_identity_scan() {
+    let feature_id = crate::history::test_support::base_feature().id;
+    let short = "f3d:asset/Breps.BlobParts/BREP.x.smbh:asm-delta-state#1";
+    let long = format!(
+        "f3d:asset/Breps.BlobParts/BREP.{}.smbh:asm-delta-state#1",
+        "x".repeat(4096)
+    );
+    assert_eq!(
+        unproved_combine_tool_work(&feature_id, short),
+        unproved_combine_tool_work(&feature_id, &long)
+    );
+}

@@ -75,12 +75,12 @@ fn input_fixture() -> (
 
 fn project(
     max_items: u64,
-    max_retained_bytes: u64,
+    max_materialized_bytes: u64,
 ) -> Result<Vec<cadmpeg_ir::features::FeatureInputTopology>, cadmpeg_core::CodecError> {
     let (feature, scope, history) = input_fixture();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained_bytes;
+    policy.limits.max_materialized_bytes = max_materialized_bytes;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     super::super::project_feature_input_topologies(
@@ -160,7 +160,7 @@ fn input_topologies_refuse_collection_limit() {
 #[test]
 fn input_identity_refuses_retained_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "retain F3D history input identity",
         |cap| project(u64::MAX, cap).map(|_| ()),
     );
@@ -187,4 +187,29 @@ fn input_projection_preserves_member_order() {
         projected[0].vertices.as_slice()[0].as_str(),
         "f3d:history-input:vertex#5:input:4:4"
     );
+}
+
+#[test]
+fn duplicate_input_faces_release_preceding_body_projection() {
+    let (feature, scope, mut history) = input_fixture();
+    history.states[0].topology_cache = crate::history_records::AsmTopologyCache::Complete(
+        crate::history_records::AsmHistoricalTopology {
+            bodies: vec![1],
+            faces: vec![2, 2],
+            ..Default::default()
+        },
+    );
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let projected = crate::history::project_feature_input_topologies(
+        &ctx,
+        &[feature],
+        &[scope],
+        &[history],
+        &[],
+    )
+    .unwrap();
+    assert!(projected.is_empty());
 }
