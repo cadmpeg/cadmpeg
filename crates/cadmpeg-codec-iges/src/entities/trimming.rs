@@ -1116,7 +1116,7 @@ fn linear_pcurve_points(
 
 fn append_path<T: Copy + PartialEq>(
     target: &mut Vec<T>,
-    path: Vec<T>,
+    path: &[T],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let Some(first) = path.first().copied() else {
@@ -1189,7 +1189,7 @@ fn linear_boundary_model_points(
         if item.segment.sense == Sense::Reversed {
             ctx.reverse(&mut curve_points, "iges model ring reversal")?;
         }
-        if !append_path(&mut points, curve_points, ctx)? {
+        if !append_path(&mut points, &curve_points, ctx)? {
             return Ok(None);
         }
     }
@@ -1281,7 +1281,7 @@ fn linear_boundary_geometry(
                 let Some(points) = linear_pcurve_points(geometry, *range, ctx)? else {
                     return Ok(None);
                 };
-                if !append_path(&mut parameter_points, points, ctx)? {
+                if !append_path(&mut parameter_points, &points, ctx)? {
                     return Ok(None);
                 }
             }
@@ -1613,15 +1613,18 @@ fn homogeneous_pcurve_spans(
             continue;
         }
         if domain[0] < previous && previous < domain[1] {
-            let mut span = index - 1 + inserted;
-            for count in ctx.admit_iter(multiplicity..degree, "iges pcurve knot insertions")? {
+            let span = index - 1 + inserted;
+            for (offset, count) in ctx
+                .admit_iter(multiplicity..degree, "iges pcurve knot insertions")?
+                .enumerate()
+            {
                 if knot_storage
                     .with_storage(|| {
                         insert_homogeneous_pcurve_knot(
                             degree,
                             &mut copied_knots,
                             &mut controls,
-                            (previous, span, count),
+                            (previous, span + offset, count),
                             ctx,
                         )
                     })?
@@ -1629,7 +1632,6 @@ fn homogeneous_pcurve_spans(
                 {
                     return Ok(None);
                 }
-                span += 1;
                 inserted += 1;
             }
         }
