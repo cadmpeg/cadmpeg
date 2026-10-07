@@ -1435,5 +1435,3 @@ fn nx_construction_dependency_requires_a_preceding_projected_operation() {
         );
     });
 }
-
-mod topology_attributes;

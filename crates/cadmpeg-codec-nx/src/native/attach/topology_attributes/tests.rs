@@ -1,15 +1,15 @@
-use crate::native::attach::attach_parasolid_topology_numeric_attributes;
-use crate::native::attach::attach_parasolid_topology_string_attributes;
-use crate::native::attach::attach_parasolid_topology_structured_attributes;
-use crate::native::attach::insert_sole;
-use crate::native::attach::parasolid_topology_attribute_class_names;
-use crate::native::attach::parasolid_topology_attribute_targets;
-use crate::native::attach::topology_attribute_name;
-use crate::native::attach::ParasolidAttributeNameIndex;
-use crate::native::attach::ParasolidNumericAttributeSources;
-use crate::native::attach::ParasolidStringAttributeSources;
-use crate::native::attach::ParasolidStructuredAttributeSources;
-use crate::native::attach::ParasolidTopologyAttributeIndex;
+use super::attach_parasolid_topology_numeric_attributes;
+use super::attach_parasolid_topology_string_attributes;
+use super::attach_parasolid_topology_structured_attributes;
+use super::insert_sole;
+use super::parasolid_topology_attribute_class_names;
+use super::parasolid_topology_attribute_targets;
+use super::topology_attribute_name;
+use super::ParasolidAttributeNameIndex;
+use super::ParasolidNumericAttributeSources;
+use super::ParasolidStringAttributeSources;
+use super::ParasolidStructuredAttributeSources;
+use super::ParasolidTopologyAttributeIndex;
 use std::collections::BTreeMap;
 
 use crate::native::parasolid::topology_attribute_kind::TopologyAttributeKind;
