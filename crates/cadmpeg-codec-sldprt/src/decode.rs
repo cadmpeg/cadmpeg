@@ -440,19 +440,6 @@ fn insert_charged_set<'a, T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost 
     Ok(())
 }
 
-fn charged_hash_map<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
-    ctx: &DecodeContext<'_>,
-    entries: impl IntoIterator<Item = (K, V)>,
-    operation: &'static str,
-) -> Result<HashMap<K, V>, CodecError> {
-    let mut map = HashMap::new();
-    for (key, value) in entries {
-        ctx.charge_work(1, operation)?;
-        ctx.insert_hash_map(&mut map, key, value, operation)?;
-    }
-    Ok(map)
-}
-
 fn has_incoherent_refs<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     references: &[T],
@@ -2296,13 +2283,8 @@ fn unprojected_sketch_relation_records(
         &native.feature_input_lanes,
         "scan SLDPRT unprojected_sketch_relation_records values",
     )? {
-        let markers_by_id = charged_hash_map(
-            ctx,
-            lane.sketch_entities
-                .iter()
-                .map(|marker| (marker.id(), marker)),
-            "index SLDPRT sketch relation markers",
-        )?;
+        let lane_markers =
+            crate::resolved_features::typed_relations::RelationMarkers::of_lane(ctx, lane)?;
         let instances = ctx
             .admit_iter(
                 &lane.relation_instances[..],
@@ -2370,10 +2352,10 @@ fn unprojected_sketch_relation_records(
                     "test SLDPRT hashed identity",
                 )?,
                 None => false,
-            } && crate::resolved_features::typed_relations::marker_owns_constraint(
+            } && crate::resolved_features::typed_relations::marker_owns_constraint_in(
                 ctx,
                 marker,
-                &markers_by_id,
+                &lane_markers,
             )? && !ctx.contains_hash_set(
                 &(projected),
                 marker.id(),
@@ -2397,13 +2379,8 @@ fn multiply_projected_sketch_relation_records(
         &native.feature_input_lanes,
         "scan SLDPRT multiply_projected_sketch_relation_records values",
     )? {
-        let markers_by_id = charged_hash_map(
-            ctx,
-            lane.sketch_entities
-                .iter()
-                .map(|marker| (marker.id(), marker)),
-            "index SLDPRT sketch relation markers",
-        )?;
+        let markers =
+            crate::resolved_features::typed_relations::RelationMarkers::of_lane(ctx, lane)?;
         for relation in ctx.admit_iter(
             &lane.relation_instances,
             "scan SLDPRT multiply_projected_sketch_relation_records values",
@@ -2419,10 +2396,8 @@ fn multiply_projected_sketch_relation_records(
             &lane.sketch_entities,
             "scan SLDPRT multiply_projected_sketch_relation_records values",
         )? {
-            if crate::resolved_features::typed_relations::marker_owns_constraint(
-                ctx,
-                marker,
-                &markers_by_id,
+            if crate::resolved_features::typed_relations::marker_owns_constraint_in(
+                ctx, marker, &markers,
             )? {
                 insert_charged_set(
                     ctx,
