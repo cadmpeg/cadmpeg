@@ -161,24 +161,23 @@ pub(crate) fn decode_kernel_carrier(
         })
     }),
     )?;
-    let (stream, stream_storage) = ctx.format_scoped(
+    let stream = (!records.is_empty()).then(|| ctx.format_scoped(
         format_args!(
             "RSeStorage/B{}:record:{}",
             carrier.segment_token, carrier.record_ordinal
         ),
         "format Inventor kernel carrier stream name",
-    )?;
+    )).transpose()?;
     let brep = decode_with_header(
         ctx,
         &records,
         bytes,
         Some(&header.metadata),
-        &stream,
+        stream.as_ref().map_or("", |(name, _)| name.as_str()),
         cadmpeg_asm::asm_format!("inventor"),
         DecodePurpose::Model,
     )?;
     drop(stream);
-    drop(stream_storage);
     drop(records);
     drop(records_storage);
     Ok(DecodedKernelCarrier {
@@ -836,7 +835,7 @@ mod tests {
     }
 
     #[test]
-    fn decoded_kernel_stream_name_refuses_scoped_limit_before_format() {
+    fn empty_kernel_stream_leaves_retained_budget_for_owned_header() {
         let bytes = carrier_fixture(&empty_asm_fixture(), 23);
         let arena = DecodeArena::new();
         let (service, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
@@ -844,13 +843,35 @@ mod tests {
         let carrier = parse_carrier(&service, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23)
             .expect("carrier parses");
         let mut policy = DecodePolicy::service();
-        // Empty framing uses no slots. The name uses 12 prefix + 5 token + 8 separator + 1 ordinal = 26 bytes.
-        policy.limits.max_materialized_bytes = 26 - 1;
+        // Family (8) + version (8) + date (10) need 26 bytes; the 25-byte limit
+        // refuses the date after the first 8 + 8 = 16 bytes are copied.
+        policy.limits.max_retained_bytes = 8 + 8 + 10 - 1;
         let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
         assert!(matches!(decode_test_carrier(&limited, &carrier),
             Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::MaterializedBytes
-                    && limit.operation == "format Inventor kernel carrier stream name"));
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "copy Inventor decoded kernel header"
+                    && limit.used == 8 + 8 && limit.additional == 10));
+        assert!(decode_test_carrier(&service, &carrier).is_ok());
+    }
+
+    #[test]
+    fn empty_kernel_skips_stream_name_formatting() {
+        let bytes = carrier_fixture(&empty_asm_fixture(), 23);
+        let arena = DecodeArena::new();
+        let (service, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("service context");
+        let carrier = parse_carrier(&service, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23)
+            .expect("carrier parses");
+        let mut policy = DecodePolicy::service();
+        // Empty framing and absent annotations need zero temporary stream bytes.
+        policy.limits.max_materialized_bytes = 0;
+        let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        let decoded = decode_test_carrier(&limited, &carrier).expect("empty framing needs no stream name");
+        assert!(decoded.brep.annotation_records.is_empty());
+        assert!(matches!(limited.reserve_scoped(u64::MAX, "probe"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == 0));
         assert!(decode_test_carrier(&service, &carrier).is_ok());
     }
 

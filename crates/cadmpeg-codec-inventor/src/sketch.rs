@@ -1087,6 +1087,16 @@ pub(crate) fn project(
     inventory: &SketchInventory,
     parameters: &[DesignParameter],
 ) -> Result<SketchProjection, CodecError> {
+    if inventory.sketches.is_empty() {
+        return Ok(SketchProjection {
+            sketches: Vec::new(),
+            entities: Vec::new(),
+            constraints: Vec::new(),
+            unresolved_sketches: 0,
+            unresolved_entities: inventory.entities.len(),
+            unresolved_constraints: inventory.constraints.len(),
+        });
+    }
     let (raw_sketches, _raw_sketches_storage) = ctx.unique_index(
         inventory.sketches.iter().map(|record| {
             (
@@ -1159,6 +1169,7 @@ pub(crate) fn project(
     )?;
     let mut parameter_index_storage = ctx.reserve_scoped(0, "index Inventor sketch parameter")?;
     let mut parameter_index = HashMap::new();
+    if !inventory.constraints.is_empty() {
     for parameter in ctx.admit_iter(parameters, "visit Inventor sketch items")? {
         if let Some(native) = &parameter.native_ref {
             parameter_index_storage.with_storage(|| {
@@ -1170,6 +1181,7 @@ pub(crate) fn project(
                 )
             })?;
         }
+    }
     }
 
     // Which records each sketch lists, keyed by the sketch's identity and the
@@ -2915,8 +2927,151 @@ mod tests {
         }
     }
 
+    fn empty_projectable_inventory() -> SketchInventory {
+        let mut transform = parse(
+            &{
+                let mut bytes = content(0);
+                bytes.extend_from_slice(&0x8421_u16.to_le_bytes());
+                bytes.extend_from_slice(&0x7bde_u16.to_le_bytes());
+                bytes
+            },
+            |ctx, source| parse_transform(ctx, source, 22).expect("transform"),
+        );
+        transform.header.source_index = 0;
+        let direction = parse(
+            &{
+                let mut bytes = content(1);
+                bytes.extend_from_slice(&0_u32.to_le_bytes());
+                bytes.extend_from_slice(&0.0_f64.to_le_bytes());
+                bytes.extend_from_slice(&0.0_f64.to_le_bytes());
+                bytes.extend_from_slice(&0.0_f64.to_le_bytes());
+                bytes.extend_from_slice(&1.0_f64.to_le_bytes());
+                bytes
+            },
+            |ctx, source| parse_direction(ctx, source, 22).expect("direction"),
+        );
+        let mut sketch_bytes = content(2);
+        sketch_bytes.extend_from_slice(&0_i32.to_le_bytes());
+        sketch_bytes.extend_from_slice(&0_u32.to_le_bytes());
+        sketch_bytes.extend(list(8, &[]));
+        sketch_bytes.extend_from_slice(&1_u32.to_le_bytes());
+        sketch_bytes.extend_from_slice(&2_u32.to_le_bytes());
+        sketch_bytes.extend_from_slice(&[0; 8]);
+        sketch_bytes.extend(list(2, &[]));
+        let sketch = parse(&sketch_bytes, |ctx, source| {
+            parse_sketch(ctx, source, 22).expect("sketch")
+        });
+        SketchInventory {
+            sketches: vec![Located::new(
+                sketch,
+                fixture_record_type_id(SKETCH_TYPE),
+                cadmpeg_ir::identity_key!("segment")
+                    .try_clone_for_decode(
+                        &cadmpeg_test_support::service_decode_context(),
+                        "Inventor located fixture token",
+                    )
+                    .expect("service fixture token"),
+                2,
+            )],
+            entities: Vec::new(),
+            transforms: vec![Located::new(
+                transform,
+                fixture_record_type_id(TRANSFORM_TYPE),
+                cadmpeg_ir::identity_key!("segment")
+                    .try_clone_for_decode(
+                        &cadmpeg_test_support::service_decode_context(),
+                        "Inventor located fixture token",
+                    )
+                    .expect("service fixture token"),
+                0,
+            )],
+            directions: vec![Located::new(
+                direction,
+                fixture_record_type_id(DIRECTION_TYPE),
+                cadmpeg_ir::identity_key!("segment")
+                    .try_clone_for_decode(
+                        &cadmpeg_test_support::service_decode_context(),
+                        "Inventor located fixture token",
+                    )
+                    .expect("service fixture token"),
+                1,
+            )],
+            constraints: Vec::new(),
+            issues: Vec::new(),
+        }
+    }
+
     #[test]
     fn sketch_parameter_index_borrows_unselected_values() {
+        let parameters = [cadmpeg_ir::features::DesignParameter {
+            id: cadmpeg_ir::features::ParameterId::mint("inventor:design:parameter#segment-0").expect("parameter id"),
+            owner: None,
+            ordinal: 0,
+            name: "p".into(),
+            expression: String::new(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: Some("inventor:pmdc:parameter#segment-0".into()),
+        }];
+        let mut inventory = empty_projectable_inventory();
+        let mut bytes = constraint_header(3, 0);
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.push(0);
+        let constraint = parse(&bytes, |ctx, source| {
+            parse_constraint(ctx, SketchConstraintTag::Horizontal, source, 22).expect("constraint")
+        });
+        inventory.constraints.push(Located::new(constraint, fixture_record_type_id(HORIZONTAL_TYPE), cadmpeg_ir::identity_key!("segment"), 3));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        // The index borrows text and IDs. The first retained copy is the output sketch ID.
+        assert!(matches!(project(&ctx, &inventory, &parameters),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.used == 0
+                    && limit.operation == "retain projected Inventor sketch_id identity"));
+    }
+
+    #[test]
+    fn sketch_projection_without_constraints_skips_parameter_index() {
+        let parameters = [cadmpeg_ir::features::DesignParameter {
+            id: cadmpeg_ir::features::ParameterId::mint("inventor:design:parameter#segment-0").expect("parameter id"),
+            owner: None,
+            ordinal: 0,
+            name: "p".into(),
+            expression: String::new(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: Some("inventor:pmdc:parameter#segment-0".into()),
+        }];
+        let inventory = empty_projectable_inventory();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let mut slots = Vec::new();
+        for parameters in [&[][..], &parameters[..]] {
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            let projection = project(&ctx, &inventory, parameters).expect("empty sketch");
+            assert_eq!(projection.sketches.len(), 1);
+            assert!(projection.entities.is_empty());
+            assert!(projection.constraints.is_empty());
+            // No constraints read the parameter index; unused parameters add zero entries.
+            match ctx.charge_collection_items(policy.limits.max_collection_items + 1, "probe") {
+                Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems => slots.push(limit.used),
+                other => panic!("expected collection probe refusal, got {other:?}"),
+            }
+        }
+        assert_eq!(slots[0], slots[1]);
+    }
+
+    #[test]
+    fn sketch_projection_without_sketches_skips_parameter_index() {
         let parameters = [cadmpeg_ir::features::DesignParameter {
             id: cadmpeg_ir::features::ParameterId::mint("inventor:design:parameter#segment-0").expect("parameter id"),
             owner: None,
@@ -2982,7 +3137,7 @@ mod tests {
     }
 
     #[test]
-    fn sketch_projection_refuses_collection_limit_before_entity_index() {
+    fn sketch_projection_without_sketches_needs_no_entity_index() {
         let point = parse(&point_bytes(0, 1, [0.0, 0.0]), |ctx, source| {
             parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point record")
         });
@@ -3009,12 +3164,15 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            project(&ctx, &inventory, &[]),
+        let projection = project(&ctx, &inventory, &[]).expect("orphan entities need no index");
+        assert_eq!(projection.unresolved_entities, 1);
+        assert!(projection.sketches.is_empty());
+        assert!(projection.entities.is_empty());
+        assert!(projection.constraints.is_empty());
+        // One orphan entity yields zero output and index entries.
+        assert!(matches!(ctx.charge_collection_items(1, "probe"),
             Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "index Inventor sketch entities"
-        ));
+                if limit.dimension == ResourceDimension::CollectionItems && limit.used == 0));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("service projection context");
         assert_eq!(
