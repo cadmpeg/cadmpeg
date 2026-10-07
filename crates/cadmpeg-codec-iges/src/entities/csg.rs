@@ -11,10 +11,10 @@ use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::CadIr;
 use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::Edge;
+use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 fn vector_or(record: &ParameterRecord, start: usize, default: Vector3) -> Option<Vector3> {
@@ -38,10 +38,16 @@ fn profile_closed(
     let mut result = None;
     let mut edges = edges.iter();
     while let Some(edge) = ctx.next_charged(&mut edges, "iges solid profile edges")? {
-        let Some(start) = point(&edge.start)? else { return Ok(None) };
-        let Some(end) = point(&edge.end)? else { return Ok(None) };
+        let Some(start) = point(&edge.start)? else {
+            return Ok(None);
+        };
+        let Some(end) = point(&edge.end)? else {
+            return Ok(None);
+        };
         let closed = cadmpeg_ir::math::Point3::distance(start, end) <= tolerance;
-        if result.is_some_and(|previous| previous != closed) { return Ok(None) }
+        if result.is_some_and(|previous| previous != closed) {
+            return Ok(None);
+        }
         result = Some(closed);
     }
     Ok(result)
@@ -71,7 +77,13 @@ fn boolean_tree_is_valid(
         return Ok(*valid);
     }
     let mut path_storage = ctx.reserve_scoped(0, "iges Boolean path frame")?;
-    if !path_storage.with_storage(|| ctx.insert_btree_set(&mut validation.path, sequence, "iges boolean validation path"))? {
+    if !path_storage.with_storage(|| {
+        ctx.insert_btree_set(
+            &mut validation.path,
+            sequence,
+            "iges boolean validation path",
+        )
+    })? {
         return Ok(false);
     }
     let Some(entry) = entries.get(&sequence) else {
@@ -116,7 +128,14 @@ fn boolean_tree_is_valid(
     }
     let valid = operands_valid && has_direct_brep == (entry.form == 1);
     validation.path.remove(&sequence);
-    validation.storage.with_storage(|| ctx.insert_btree_map(&mut validation.memo, sequence, valid, "iges boolean validity memo"))?;
+    validation.storage.with_storage(|| {
+        ctx.insert_btree_map(
+            &mut validation.memo,
+            sequence,
+            valid,
+            "iges boolean validity memo",
+        )
+    })?;
     Ok(valid)
 }
 
@@ -131,9 +150,12 @@ pub(super) fn project(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
-    for entry in ctx.admit_iter(directory, "iges csg directory traversal")?.filter(|entry| {
-        matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) && entry.form == 0
-    }) {
+    for entry in ctx
+        .admit_iter(directory, "iges csg directory traversal")?
+        .filter(|entry| {
+            matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) && entry.form == 0
+        })
+    {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_entity_loss(
                 ctx,
@@ -308,10 +330,13 @@ pub(super) fn project(
 
     let mut profile_index = None;
     let mut profile_edges = None;
-    for entry in ctx.admit_iter(directory, "iges csg directory traversal")?.filter(|entry| {
-        (entry.entity_type == 162 && matches!(entry.form, 0 | 1))
-            || (entry.entity_type == 164 && entry.form == 0)
-    }) {
+    for entry in ctx
+        .admit_iter(directory, "iges csg directory traversal")?
+        .filter(|entry| {
+            (entry.entity_type == 162 && matches!(entry.form, 0 | 1))
+                || (entry.entity_type == 164 && entry.form == 0)
+        })
+    {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_entity_loss(
                 ctx,
@@ -332,15 +357,25 @@ pub(super) fn project(
             continue;
         };
         let mut profile_storage = [0_u8; 64];
-        let profile_id =
-            crate::ids::directory_lookup_key("iges:model:curve#D", profile, &mut profile_storage, ctx)?;
+        let profile_id = crate::ids::directory_lookup_key(
+            "iges:model:curve#D",
+            profile,
+            &mut profile_storage,
+            ctx,
+        )?;
         let profile = match profile_id {
             Some(profile_id) => {
                 let index = match &mut profile_index {
                     Some(index) => index,
-                    slot @ None => slot.insert(ModelIndex::new_model_only(ir, ctx).map_err(CodecError::from)?),
+                    slot @ None => {
+                        slot.insert(ModelIndex::new_model_only(ir, ctx).map_err(CodecError::from)?)
+                    }
                 };
-                if index.curves(profile_id, ctx)?.is_some() { Some((profile_id, index)) } else { None }
+                if index.curves(profile_id, ctx)?.is_some() {
+                    Some((profile_id, index))
+                } else {
+                    None
+                }
             }
             None => None,
         };
@@ -396,13 +431,20 @@ pub(super) fn project(
         }
         let groups = match &mut profile_edges {
             Some(groups) => groups,
-            slot @ None => slot.insert(ctx.collect_scoped_btree_groups(
-                ctx.admit_iter(&ir.model.edges, "iges solid profile edge indexing")?.filter_map(|edge| edge.curve().map(|curve| (curve.as_str(), edge))),
-                "iges solid profile edge groups",
-            )?),
+            slot @ None => slot.insert(
+                ctx.collect_scoped_btree_groups(
+                    ctx.admit_iter(&ir.model.edges, "iges solid profile edge indexing")?
+                        .filter_map(|edge| edge.curve().map(|curve| (curve.as_str(), edge))),
+                    "iges solid profile edge groups",
+                )?,
+            ),
         };
-        let edges = ctx.get_btree_map(&groups.0, &profile_id, "iges solid profile edge lookup")?.map(Vec::as_slice).unwrap_or(&[]);
-        let Some(closed) = profile_closed(index, edges, global.minimum_resolution_mm(), ctx)? else {
+        let edges = ctx
+            .get_btree_map(&groups.0, &profile_id, "iges solid profile edge lookup")?
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let Some(closed) = profile_closed(index, edges, global.minimum_resolution_mm(), ctx)?
+        else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -448,7 +490,8 @@ pub(super) fn project(
 
     let mut boolean_storage = ctx.reserve_scoped(0, "iges Boolean scratch")?;
     let mut boolean_definitions = BTreeMap::new();
-    for entry in ctx.admit_iter(directory, "iges csg directory traversal")?
+    for entry in ctx
+        .admit_iter(directory, "iges csg directory traversal")?
         .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -469,7 +512,8 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut terms = boolean_storage.with_storage(|| ctx.collection_vec(count, "iges Boolean postfix terms"))?;
+        let mut terms = boolean_storage
+            .with_storage(|| ctx.collection_vec(count, "iges Boolean postfix terms"))?;
         let mut terms_valid = true;
         let mut indices = 0..count;
         while let Some(index) = ctx.next_charged(&mut indices, "iges Boolean postfix parsing")? {
@@ -501,17 +545,23 @@ pub(super) fn project(
             continue;
         }
         let mut depth = 0_usize;
-        let valid_stack = ctx.all_by(&terms, |term| Ok(match term {
-            BooleanTerm::Operand(_) => {
-                depth += 1;
-                true
-            }
-            BooleanTerm::Operation if depth >= 2 => {
-                depth -= 1;
-                true
-            }
-            BooleanTerm::Operation => false,
-        }), "iges Boolean postfix stack")?;
+        let valid_stack = ctx.all_by(
+            &terms,
+            |term| {
+                Ok(match term {
+                    BooleanTerm::Operand(_) => {
+                        depth += 1;
+                        true
+                    }
+                    BooleanTerm::Operation if depth >= 2 => {
+                        depth -= 1;
+                        true
+                    }
+                    BooleanTerm::Operation => false,
+                })
+            },
+            "iges Boolean postfix stack",
+        )?;
         if !valid_stack || depth != 1 {
             super::push_entity_loss(
                 ctx,
@@ -521,15 +571,23 @@ pub(super) fn project(
             )?;
             continue;
         }
-        boolean_storage.with_storage(|| ctx.insert_btree_map(
-            &mut boolean_definitions,
-            entry.sequence,
-            terms,
-            "iges Boolean definition nodes",
-        ))?;
+        boolean_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut boolean_definitions,
+                entry.sequence,
+                terms,
+                "iges Boolean definition nodes",
+            )
+        })?;
     }
-    let mut validation = BooleanValidation { path: BTreeSet::new(), memo: BTreeMap::new(), storage: ctx.reserve_scoped(0, "iges Boolean validation scratch")? };
-    for (sequence, _) in ctx.admit_iter(&boolean_definitions, "iges Boolean definition validation")? {
+    let mut validation = BooleanValidation {
+        path: BTreeSet::new(),
+        memo: BTreeMap::new(),
+        storage: ctx.reserve_scoped(0, "iges Boolean validation scratch")?,
+    };
+    for (sequence, _) in
+        ctx.admit_iter(&boolean_definitions, "iges Boolean definition validation")?
+    {
         let entry = entries[sequence];
         let operands_valid = boolean_tree_is_valid(
             *sequence,
@@ -572,7 +630,8 @@ pub(super) fn project(
         ctx.insert_btree_set(&mut decoded, *sequence, "iges csg decoded sequences")?;
     }
 
-    for entry in ctx.admit_iter(directory, "iges csg directory traversal")?
+    for entry in ctx
+        .admit_iter(directory, "iges csg directory traversal")?
         .filter(|entry| entry.entity_type == 182 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {

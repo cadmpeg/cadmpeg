@@ -186,7 +186,11 @@ fn type406_form24_accepts_only_predefined_functional_level_identifiers() {
         "wire-bond_17",
     ] {
         assert!(
-            crate::test_support::with_service_context(&[], |ctx| functional_level_identifier_valid(value.as_bytes(), ctx)).unwrap(),
+            crate::test_support::with_service_context(
+                &[],
+                |ctx| functional_level_identifier_valid(value.as_bytes(), ctx)
+            )
+            .unwrap(),
             "{value}"
         );
     }
@@ -201,7 +205,10 @@ fn type406_form24_accepts_only_predefined_functional_level_identifiers() {
         "",
     ] {
         assert!(
-            !crate::test_support::with_service_context(&[], |ctx| functional_level_identifier_valid(value.as_bytes(), ctx)).unwrap(),
+            !crate::test_support::with_service_context(&[], |ctx| {
+                functional_level_identifier_valid(value.as_bytes(), ctx)
+            })
+            .unwrap(),
             "{value}"
         );
     }
@@ -245,13 +252,22 @@ fn single_target_cycle_refuses_path_and_tree_nodes_before_storage() {
         "iges structure cycle path",
         "iges structure visited cycle nodes",
     ] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            crate::entities::structure::single_target_cycle(1, &targets, &mut std::collections::BTreeSet::new(), &ctx)
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                crate::entities::structure::single_target_cycle(
+                    1,
+                    &targets,
+                    &mut std::collections::BTreeSet::new(),
+                    &ctx,
+                )
+            },
+        );
     }
 }
 
@@ -1494,29 +1510,45 @@ fn legacy_single_parent_face_refuses_nested_topology_storage() {
     ] {
         assert_structure_refusal(&bytes, operation, ResourceDimension::CollectionItems);
     }
-    let decoded = IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
-let scan = crate::test_support::scan(&bytes).unwrap();
-let (directory, quarantined) = crate::test_support::with_service_context(&bytes, |ctx| {
-    crate::directory::parse(&scan, crate::global::GlobalTable::V5_0, ctx)
-}).unwrap();
-assert!(quarantined.is_empty());
-let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect::<BTreeMap<_, _>>();
-cadmpeg_test_support::refusal::resource_limit_at(
-    ResourceDimension::MaterializedBytes,
-    "iges plane boundary active curve ID",
-    |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = cap;
-        crate::test_support::with_policy_context(&bytes, &policy, |ctx| {
-            let index = cadmpeg_ir::index::ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
-            let plane = super::plane_carrier(&index, 1, ctx)?.expect("fixture parent plane");
-            let mut proofs = super::PlaneBoundaryProofs { proven: BTreeMap::new(), storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")? };
-            super::plane_boundary_edge(&index, plane, 5, &entries, 0.001, ctx, &mut proofs)
-                .map(|_| ())
-                .map_err(|error| error.message().expect_err("expected active identity resource refusal"))
-        })
-    },
-);
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let scan = crate::test_support::scan(&bytes).unwrap();
+    let (directory, quarantined) = crate::test_support::with_service_context(&bytes, |ctx| {
+        crate::directory::parse(&scan, crate::global::GlobalTable::V5_0, ctx)
+    })
+    .unwrap();
+    assert!(quarantined.is_empty());
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect::<BTreeMap<_, _>>();
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "iges plane boundary active curve ID",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            crate::test_support::with_policy_context(&bytes, &policy, |ctx| {
+                let index = cadmpeg_ir::index::ModelIndex::build(
+                    decoded.ir(),
+                    cadmpeg_ir::index::StandardIndex,
+                );
+                let plane = super::plane_carrier(&index, 1, ctx)?.expect("fixture parent plane");
+                let mut proofs = super::PlaneBoundaryProofs {
+                    proven: BTreeMap::new(),
+                    storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")?,
+                };
+                super::plane_boundary_edge(&index, plane, 5, &entries, 0.001, ctx, &mut proofs)
+                    .map(|_| ())
+                    .map_err(|error| {
+                        error
+                            .message()
+                            .expect_err("expected active identity resource refusal")
+                    })
+            })
+        },
+    );
 }
 
 #[test]
@@ -1613,7 +1645,14 @@ fn assert_structure_refusal(bytes: &[u8], operation: &str, dimension: ResourceDi
             ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
             _ => panic!("unsupported refusal dimension"),
         }
-        IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            )
             .map_err(|error| match error {
                 cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
                 other => panic!("unexpected decode refusal: {other:?}"),

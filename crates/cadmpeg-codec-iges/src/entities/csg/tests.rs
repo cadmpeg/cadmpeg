@@ -32,8 +32,18 @@ fn assert_csg_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimensio
             ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
             _ => panic!("unsupported test dimension"),
         }
-        IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-            .map_err(|error| match error { DecodeFailure::Codec(error) => error, other => panic!("{other:?}") })
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            )
+            .map_err(|error| match error {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("{other:?}"),
+            })
     });
 }
 
@@ -139,10 +149,20 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
         },
     ]);
 
-    assert_eq!(crate::test_support::with_service_context(&[], |ctx| {
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, ctx).map_err(CodecError::from)?;
-        super::profile_closed(&index, &ir.model.edges.iter().collect::<Vec<_>>(), EPS_PROFILE_CLOSURE, ctx)
-    }).unwrap(), None);
+    assert_eq!(
+        crate::test_support::with_service_context(&[], |ctx| {
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, ctx)
+                .map_err(CodecError::from)?;
+            super::profile_closed(
+                &index,
+                &ir.model.edges.iter().collect::<Vec<_>>(),
+                EPS_PROFILE_CLOSURE,
+                ctx,
+            )
+        })
+        .unwrap(),
+        None
+    );
 }
 
 #[test]

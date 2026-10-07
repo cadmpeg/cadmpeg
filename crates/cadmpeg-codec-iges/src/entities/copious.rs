@@ -125,14 +125,18 @@ fn has_forbidden_form_63_duplicate(
     let mut cells = HashMap::new();
     let cell_size = resolution * 0.5;
     let mut input = points.iter().copied().enumerate();
-    while let Some((index, point)) = ctx.next_charged(&mut input, "iges copious duplicate points")? {
+    while let Some((index, point)) =
+        ctx.next_charged(&mut input, "iges copious duplicate points")?
+    {
         if cell_size <= 0.0 {
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
-            storage.with_storage(|| ctx.admit_hash_map_entry(
-                exact_points,
-                &exact_key(point),
-                "iges copious exact-point index",
-            ))?;
+            storage.with_storage(|| {
+                ctx.admit_hash_map_entry(
+                    exact_points,
+                    &exact_key(point),
+                    "iges copious exact-point index",
+                )
+            })?;
             if let Some(previous) = exact_points.insert(exact_key(point), index) {
                 if !allowed_endpoint_pair(previous, index) {
                     return Ok(true);
@@ -150,11 +154,13 @@ fn has_forbidden_form_63_duplicate(
             .map(|((x, y), z)| (x, y, z))
         else {
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
-            storage.with_storage(|| ctx.admit_hash_map_entry(
-                exact_points,
-                &exact_key(point),
-                "iges copious exact-point index",
-            ))?;
+            storage.with_storage(|| {
+                ctx.admit_hash_map_entry(
+                    exact_points,
+                    &exact_key(point),
+                    "iges copious exact-point index",
+                )
+            })?;
             if let Some(previous) = exact_points.insert(exact_key(point), index) {
                 if !allowed_endpoint_pair(previous, index) {
                     return Ok(true);
@@ -184,7 +190,9 @@ fn has_forbidden_form_63_duplicate(
                 }
             }
         }
-        storage.with_storage(|| ctx.admit_hash_map_entry(&mut cells, &(x, y, z), "iges copious proximity cells"))?;
+        storage.with_storage(|| {
+            ctx.admit_hash_map_entry(&mut cells, &(x, y, z), "iges copious proximity cells")
+        })?;
         cells.entry((x, y, z)).or_insert((index, point));
     }
     Ok(false)
@@ -195,11 +203,12 @@ fn has_form_63_self_intersection(
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "iges copious planar scratch")?;
-    let planar_points =
-        storage.with_storage(|| ctx.collect_indexed_vec(points.len(), "iges copious planar points", |index| {
+    let planar_points = storage.with_storage(|| {
+        ctx.collect_indexed_vec(points.len(), "iges copious planar points", |index| {
             let point = points[index];
             Ok([point.x, point.y])
-        }))?;
+        })
+    })?;
     super::geometry::planar_polyline_has_self_intersection(&planar_points, ctx)
 }
 
@@ -217,7 +226,8 @@ pub(super) fn project(
     let mut wire_edges = Vec::new();
     let mut free_vertices = Vec::new();
 
-    for entry in ctx.admit_iter(directory, "iges copious directory traversal")?
+    for entry in ctx
+        .admit_iter(directory, "iges copious directory traversal")?
         .filter(|entry| entry.entity_type == 106 && expected_interpretation(entry.form).is_some())
     {
         if !presentation_use_flag_valid(entry.form, entry.status.use_flag(global.global_table())) {
@@ -394,7 +404,8 @@ pub(super) fn project(
             continue;
         };
         let projects_as_points = matches!(entry.form, 1..=3)
-            || (matches!(entry.form, 11..=13) && tuple_count == 1
+            || (matches!(entry.form, 11..=13)
+                && tuple_count == 1
                 && matches!(global.global_table(), GlobalTable::V4_0));
         let mut tuple_storage = ctx.reserve_scoped(0, "iges copious tuple scratch")?;
         let mut definition_points = Vec::new();
@@ -412,25 +423,51 @@ pub(super) fn project(
                 };
                 *value = number;
             }
-            if !tuples_valid { break }
-            if !positions_valid { continue }
+            if !tuples_valid {
+                break;
+            }
+            if !positions_valid {
+                continue;
+            }
             let z = common_z.unwrap_or(tuple[2]);
-            let point = Point3::new(tuple[0].get() * factor, tuple[1].get() * factor, z.get() * factor);
+            let point = Point3::new(
+                tuple[0].get() * factor,
+                tuple[1].get() * factor,
+                z.get() * factor,
+            );
             let Some(position) = transform.apply_point(point) else {
                 positions_valid = false;
                 continue;
             };
             if entry.form == 63 {
-                tuple_storage.with_storage(|| ctx.push_vec(&mut definition_points, point, "iges copious definition points"))?;
+                tuple_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut definition_points,
+                        point,
+                        "iges copious definition points",
+                    )
+                })?;
             }
-            position_storage.with_storage(|| ctx.push_vec(&mut positions, position, "iges copious positioned points"))?;
+            position_storage.with_storage(|| {
+                ctx.push_vec(&mut positions, position, "iges copious positioned points")
+            })?;
         }
         if !tuples_valid {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("tuple array is truncated or non-finite"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("tuple array is truncated or non-finite"),
+            )?;
             continue;
         }
         if !positions_valid {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("placement produces non-finite copious points"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("placement produces non-finite copious points"),
+            )?;
             continue;
         }
         if presentation_form(entry.form) {
@@ -447,7 +484,10 @@ pub(super) fn project(
             continue;
         }
         if projects_as_points {
-            for (index, position) in ctx.admit_iter(positions, "iges copious point projection")?.enumerate() {
+            for (index, position) in ctx
+                .admit_iter(positions, "iges copious point projection")?
+                .enumerate()
+            {
                 let point = crate::ids::point_admitted(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
                     ctx,
@@ -487,37 +527,40 @@ pub(super) fn project(
         }
         let resolution = global.minimum_resolution_mm();
         if entry.form == 63 {
-        let points =
-            tuple_storage.with_storage(|| ctx.collect_indexed_vec(positions.len(), "iges copious path points", |index| {
-                Ok(positions[index].get())
-            }))?;
-        if !points_coincident(points[0], points[points.len() - 1], resolution) {
-            push_copious_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!("simple closed path endpoints disagree beyond the minimum resolution"),
-            )?;
-            continue;
-        }
-        if has_forbidden_form_63_duplicate(&points, resolution, ctx)? {
-            let reason = if points.len() == 2 {
-                "simple closed path has no non-zero segment"
-            } else {
-                "simple closed path has coincident non-endpoint points"
-            };
-            push_copious_loss(ctx, &mut losses, entry, format_args!("{reason}"))?;
-            continue;
-        }
-        if has_form_63_self_intersection(&definition_points, ctx)? {
-            push_copious_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!("simple closed path intersects itself away from shared endpoints"),
-            )?;
-            continue;
-        }
+            let points = tuple_storage.with_storage(|| {
+                ctx.collect_indexed_vec(positions.len(), "iges copious path points", |index| {
+                    Ok(positions[index].get())
+                })
+            })?;
+            if !points_coincident(points[0], points[points.len() - 1], resolution) {
+                push_copious_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!(
+                        "simple closed path endpoints disagree beyond the minimum resolution"
+                    ),
+                )?;
+                continue;
+            }
+            if has_forbidden_form_63_duplicate(&points, resolution, ctx)? {
+                let reason = if points.len() == 2 {
+                    "simple closed path has no non-zero segment"
+                } else {
+                    "simple closed path has coincident non-endpoint points"
+                };
+                push_copious_loss(ctx, &mut losses, entry, format_args!("{reason}"))?;
+                continue;
+            }
+            if has_form_63_self_intersection(&definition_points, ctx)? {
+                push_copious_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("simple closed path intersects itself away from shared endpoints"),
+                )?;
+                continue;
+            }
         }
         let topology_tolerance = if entry.form == 63 && resolution > 0.0 {
             let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(resolution) else {
