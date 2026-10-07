@@ -30,12 +30,16 @@ impl<S: crate::immutable_text::ImmutableText> PayloadText<S> {
         mut next: impl FnMut(&mut std::str::Chars<'_>) -> Result<Option<char>, E>,
     ) -> Result<Result<(), &'static str>, E> {
         if text.is_empty() {
-            return Ok(Err("value: must be nonempty text without control characters"));
+            return Ok(Err(
+                "value: must be nonempty text without control characters",
+            ));
         }
         let mut chars = text.chars();
         while let Some(ch) = next(&mut chars)? {
             if ch.is_control() {
-                return Ok(Err("value: must be nonempty text without control characters"));
+                return Ok(Err(
+                    "value: must be nonempty text without control characters",
+                ));
             }
         }
         Ok(Ok(()))

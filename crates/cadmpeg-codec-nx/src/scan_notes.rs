@@ -71,32 +71,22 @@ pub(super) fn summarize(
             ),
         )?;
     }
-    let framed_om_sections = c.om_sections(ctx)?;
+    let mut framed_storage = ctx.reserve_scoped(0, "NX scan-note framed sections")?;
+    let framed_om_sections = framed_storage.with_storage(|| c.om_sections(ctx))?;
     if !framed_om_sections.is_empty() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(framed_om_sections.len()),
-            "count NX OM declarations",
-        )?;
-        let declarations = framed_om_sections
-            .iter()
-            .map(|(_, section)| section.types.len())
-            .try_fold(0usize, |sum, next| {
-                sum.checked_add(next).ok_or_else(|| {
-                    ctx.refuse_codec_limit("count NX OM sections", u64::MAX, u64::MAX)
-                })
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(framed_om_sections.len()),
-            "count NX OM fields",
-        )?;
-        let fields = framed_om_sections
-            .iter()
-            .map(|(_, section)| section.fields.len())
-            .try_fold(0usize, |sum, next| {
-                sum.checked_add(next).ok_or_else(|| {
-                    ctx.refuse_codec_limit("count NX OM sections", u64::MAX, u64::MAX)
-                })
-            })?;
+        let (mut declarations, mut fields) = (0usize, 0usize);
+        for (_, section) in
+            ctx.admit_iter(&framed_om_sections, "count NX OM declarations and fields")?
+        {
+            declarations = declarations
+                .checked_add(section.types.len())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("count NX OM declarations", u64::MAX, u64::MAX)
+                })?;
+            fields = fields
+                .checked_add(section.fields.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("count NX OM fields", u64::MAX, u64::MAX))?;
+        }
         push_note(
             ctx,
             &mut notes,
@@ -108,38 +98,30 @@ pub(super) fn summarize(
             ),
         )?;
     }
-    let om_sections = c.indexed_om_sections(ctx)?;
+    drop(framed_om_sections);
+    drop(framed_storage);
+    let mut indexed_storage = ctx.reserve_scoped(0, "NX scan-note indexed sections")?;
+    let om_sections = indexed_storage.with_storage(|| c.indexed_om_sections(ctx))?;
     if !om_sections.is_empty() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(om_sections.len()),
-            "count NX indexed entities",
-        )?;
-        let entities = om_sections
-            .iter()
-            .filter_map(|(_, section)| section.as_fixed())
-            .map(<[crate::om::FixedEntityRecord<'_>]>::len)
-            .try_fold(0usize, |sum, next| {
-                sum.checked_add(next).ok_or_else(|| {
-                    ctx.refuse_codec_limit("count NX OM sections", u64::MAX, u64::MAX)
-                })
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(om_sections.len()),
-            "count NX offset blocks",
-        )?;
-        let blocks = om_sections
-            .iter()
-            .filter_map(|(_, section)| section.as_offset_only())
-            .map(|(_control, _, records)| {
-                records.len().checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("count NX offset blocks", u64::MAX, u64::MAX)
-                })
-            })
-            .try_fold(0usize, |sum, next| {
-                sum.checked_add(next?).ok_or_else(|| {
-                    ctx.refuse_codec_limit("count NX OM sections", u64::MAX, u64::MAX)
-                })
-            })?;
+        let (mut entities, mut blocks) = (0usize, 0usize);
+        for (_, section) in
+            ctx.admit_iter(&om_sections, "count NX indexed entities and offset blocks")?
+        {
+            if let Some(records) = section.as_fixed() {
+                entities = entities.checked_add(records.len()).ok_or_else(|| {
+                    ctx.refuse_codec_limit("count NX indexed entities", u64::MAX, u64::MAX)
+                })?;
+            }
+            if let Some((_control, _, records)) = section.as_offset_only() {
+                blocks = records
+                    .len()
+                    .checked_add(1)
+                    .and_then(|count| blocks.checked_add(count))
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("count NX offset blocks", u64::MAX, u64::MAX)
+                    })?;
+            }
+        }
         if blocks == 0 {
             push_note(
                 ctx,
@@ -163,6 +145,8 @@ pub(super) fn summarize(
             )?;
         }
     }
+    drop(om_sections);
+    drop(indexed_storage);
     if !scan.has_parasolid(ctx)? && c.has_external_references(ctx)? {
         push_note(
             ctx,
@@ -212,7 +196,44 @@ fn push_note(
             cadmpeg_core::decode::u64_from_index(MAX_SCAN_NOTE_BYTES + 1),
         )
     })?;
-    ctx.reserve_vec(notes, 1, "nx scan notes")?;
-    notes.push(ctx.format_retained(args, "nx scan note text")?);
+    let text = std::str::from_utf8(&measured.bytes[..measured.len])
+        .map_err(|_| CodecError::malformed("NX scan note contains invalid UTF-8"))?;
+    let note = ctx.copy_retained_text(text, "nx scan note text")?;
+    ctx.push_vec(notes, note, "nx scan notes")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::push_note;
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn scan_note_retention_refuses_at_the_text_copy() {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::RetainedBytes,
+            "nx scan note text",
+            |ctx| {
+                let mut notes = Vec::new();
+                push_note(ctx, &mut notes, format_args!("count {}", 42))?;
+                Ok(notes)
+            },
+        );
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "nx scan note text")
+        );
+    }
+
+    #[test]
+    fn scan_note_keeps_the_measured_utf8_text() {
+        let notes = crate::test_support::with_decode_context(|ctx| {
+            let mut notes = Vec::new();
+            push_note(ctx, &mut notes, format_args!("count {} μ", 42))?;
+            Ok::<_, CodecError>(notes)
+        })
+        .unwrap();
+        assert_eq!(notes, ["count 42 μ"]);
+    }
 }

@@ -138,7 +138,9 @@ mod tests {
             &[],
             |policy| policy.limits.max_work_units = 1,
             |ctx| {
-                assert!(PrintableString::from_wire(ctx, text.as_str()).unwrap().is_err());
+                assert!(PrintableString::from_wire(ctx, text.as_str())
+                    .unwrap()
+                    .is_err());
                 assert!(PrintableString::from_text(text.as_str()).is_err());
             },
         );
