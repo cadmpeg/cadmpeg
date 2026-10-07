@@ -8,8 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{
         CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference,
-        FaceSelection, FeatureDefinition, FeatureId, FeatureOperation, PathRef, PlanarProfileRef,
-        WrapMode,
+        FaceSelection, FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef, WrapMode,
     },
     scalar::Angle,
 };
@@ -56,7 +55,7 @@ pub(super) fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition
 pub(in crate::history) fn project_offset_plane(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    by_source: &HashMap<String, FeatureId>,
+    by_source: &super::NeutralByKey<'_, '_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some(distance) = feature
         .parameters

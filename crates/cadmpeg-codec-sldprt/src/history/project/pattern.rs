@@ -74,7 +74,7 @@ pub(in crate::history) fn pattern_form(feature: &Feature) -> Option<NativePatter
 pub(super) fn project_pattern(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    by_source: &HashMap<String, FeatureId>,
+    by_source: &super::NeutralByKey<'_, '_>,
     native_by_source: &HashMap<String, &str>,
 ) -> Result<FeatureDefinition, CodecError> {
     const OPERATION: &str = "project SLDPRT pattern seeds";
@@ -220,10 +220,8 @@ mod tests {
             cadmpeg_core::nonblank_literal!("Seeds"),
             "source".to_owned(),
         );
-        let by_source = HashMap::from([(
-            "source".to_owned(),
-            FeatureId::mint("synthetic:test:id#seed").unwrap(),
-        )]);
+        let seed = FeatureId::mint("synthetic:test:id#seed").unwrap();
+        let by_source = HashMap::from([("source", &seed)]);
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let arena = DecodeArena::new();

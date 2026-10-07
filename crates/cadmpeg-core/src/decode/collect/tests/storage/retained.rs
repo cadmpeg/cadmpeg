@@ -5,13 +5,13 @@ use crate::decode::DecodeContext;
 use crate::CodecError;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-// Growth admits the map storage for twice the new length; the old table,
-// bounded the same way, stays live while the new one is filled.
+// Growth holds the map storage for twice the new length while the table
+// grows, then retains the storage of its real capacity.
 storage_case!(
     collect_hash_map_storage,
     99,
-    303,
-    peak = (99 + 99, 303 + 303),
+    167,
+    peak = (99, 99 + 303),
     |ctx: &DecodeContext<'_>, count| {
         ctx.collect_hash_map(
             (0..count).map(|value| (u64::try_from(value).expect("small key"), 0u64)),
@@ -19,13 +19,12 @@ storage_case!(
         )
     }
 );
-// One 163-byte map growth and its live old-table bound peak above every
-// member vector growth.
+// The group growth peak includes the old four-member vector allocation.
 storage_case!(
     push_hash_group_storage,
     171,
     227,
-    peak = (163 + 163, 163 + 163),
+    peak = (171, 227 + 32),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashMap::<u64, Vec<u64>>::new();
         for _ in 0..count {
@@ -176,13 +175,13 @@ storage_case!(
         ctx.collect_retained_texts(std::iter::repeat_n("x", count), "copied text storage")
     }
 );
-// The second growth admits 431 bytes of buckets in all and keeps a 431-byte
-// old-table bound live, with three copied keys, before the fourth copy.
+// The second growth holds a 431-byte bound beside the first 131-byte table and
+// three copied keys before the fourth copy.
 storage_case!(
     insert_string_set_storage,
     132,
-    436,
-    peak = (131 + 131, 434 + 431),
+    236,
+    peak = (132, 134 + 431),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashSet::new();
         for value in &["a", "b", "c", "d", "e"][..count] {
@@ -191,13 +190,13 @@ storage_case!(
         Ok(values)
     }
 );
-// The second growth admits 431 bytes of buckets in all and keeps a 431-byte
-// old-table bound live, with three copied keys, before the fourth copy.
+// The second growth holds a 431-byte bound beside the first 131-byte table and
+// three copied keys before the fourth copy.
 storage_case!(
     collect_string_set_storage,
     132,
-    436,
-    peak = (131 + 131, 434 + 431),
+    236,
+    peak = (132, 134 + 431),
     |ctx: &DecodeContext<'_>, count| {
         ctx.collect_string_set(
             ["a", "b", "c", "d", "e"][..count].iter().copied(),

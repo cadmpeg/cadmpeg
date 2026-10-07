@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Length, angle, vector, and parameter-literal parse/format helpers.
+//!
+//! The grammars take no decode context: the writer and wire validation share
+//! them. A decode caller admits each parse with [`admit_literal`] or
+//! [`named_literal`] immediately before it.
 
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{
@@ -15,6 +19,34 @@ const EPS_LITERALS_VALID_PLANE_FRAME_E9: f64 = 1.0e-9;
 const EPS_LITERALS_PARSE_LENGTH_MM_E6: f64 = 1.0e-6;
 const EPS_LITERALS_PARSE_LENGTH_MM_E7: f64 = 1.0e-7;
 const EPS_LITERALS_FORMAT_F64_LITERAL_E6: f64 = 1.0e-6;
+
+/// Admits a reading of `text` by the grammars in this module, one work unit per
+/// input byte. Each grammar reads every input byte a bounded number of times:
+/// trims, tests of fixed unit suffixes and display modifiers, and numeric
+/// parses. A caller that runs a fixed number of grammars over the same text
+/// admits it once.
+pub(crate) fn admit_literal(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    text: &str,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), operation)
+}
+
+/// Looks up a named value with charged key comparisons and admits one literal
+/// parse of it. The caller parses the returned text once.
+pub(crate) fn named_literal<'v>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    values: &'v std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    name: &str,
+    operation: &'static str,
+) -> Result<Option<&'v str>, cadmpeg_core::CodecError> {
+    let Some(value) = ctx.get_btree_map(values, name, operation)? else {
+        return Ok(None);
+    };
+    admit_literal(ctx, value, operation)?;
+    Ok(Some(value))
+}
 
 pub(super) fn valid_plane_frame(normal: Vector3, u_axis: Vector3) -> bool {
     let normal_length = normal.norm();
@@ -219,122 +251,84 @@ pub(super) fn parse_bool(value: &str) -> Option<bool> {
     }
 }
 
-pub(super) fn parse_parameter_literal(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    expression: &str,
-) -> Result<Option<ParameterValue>, cadmpeg_core::CodecError> {
-    if dimension_display(ctx, expression)?.is_some() {
-        return Ok(parse_dimension_display_length(ctx, expression)?.map(ParameterValue::Length));
+pub(super) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
+    if dimension_display(expression).is_some() {
+        return parse_dimension_display_length(expression).map(ParameterValue::Length);
     }
     let expression = expression.trim();
     if expression.eq_ignore_ascii_case("true") {
-        return Ok(Some(ParameterValue::Boolean(true)));
+        return Some(ParameterValue::Boolean(true));
     }
     if expression.eq_ignore_ascii_case("false") {
-        return Ok(Some(ParameterValue::Boolean(false)));
+        return Some(ParameterValue::Boolean(false));
     }
     if let Some(value) = parse_length_mm(expression) {
-        return Ok(Some(ParameterValue::Length(value)));
+        return Some(ParameterValue::Length(value));
     }
     if let Some(value) = parse_angle_rad(expression) {
-        return Ok(Some(ParameterValue::Angle(value)));
+        return Some(ParameterValue::Angle(value));
     }
-    if let Ok(value) = expression.trim().parse::<i64>() {
-        return Ok(Some(ParameterValue::Integer(value)));
+    if let Ok(value) = expression.parse::<i64>() {
+        return Some(ParameterValue::Integer(value));
     }
-    Ok(expression
-        .trim()
+    expression
         .parse::<f64>()
         .ok()
         .and_then(cadmpeg_ir::scalar::FiniteReal::new)
-        .map(ParameterValue::Real))
+        .map(ParameterValue::Real)
 }
 
-pub(super) fn dimension_display(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    expression: &str,
-) -> Result<Option<DimensionDisplay>, cadmpeg_core::CodecError> {
-    let expression = strip_dimension_count(ctx, expression.trim())?;
-    Ok(
-        if strip_diameter_modifier(expression).is_some()
-            || (expression.starts_with(['⌀', 'Ø']) && parse_length_mm(expression).is_some())
-        {
-            Some(DimensionDisplay::Diameter)
-        } else if strip_radius_modifier(expression).is_some()
-            || (expression.starts_with(['R', 'r']) && parse_length_mm(expression).is_some())
-        {
-            Some(DimensionDisplay::Radius)
-        } else {
-            None
-        },
-    )
+pub(super) fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
+    let expression = strip_dimension_count(expression.trim());
+    if strip_diameter_modifier(expression).is_some()
+        || (expression.starts_with(['⌀', 'Ø']) && parse_length_mm(expression).is_some())
+    {
+        Some(DimensionDisplay::Diameter)
+    } else if strip_radius_modifier(expression).is_some()
+        || (expression.starts_with(['R', 'r']) && parse_length_mm(expression).is_some())
+    {
+        Some(DimensionDisplay::Radius)
+    } else {
+        None
+    }
 }
 
-pub(crate) fn parse_dimension_display_length(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    expression: &str,
-) -> Result<Option<Length>, cadmpeg_core::CodecError> {
-    let expression = strip_dimension_count(ctx, expression.trim())?;
+pub(crate) fn parse_dimension_display_length(expression: &str) -> Option<Length> {
+    let expression = strip_dimension_count(expression.trim());
     let value = strip_diameter_modifier(expression)
         .or_else(|| strip_radius_modifier(expression))
         .unwrap_or(expression)
         .trim();
-    let parsed = match parse_dimension_length_mm(value) {
-        Some(length) => Some(length),
-        None => strip_dimension_fit(ctx, value)?.and_then(parse_dimension_length_mm),
-    };
-    Ok(parsed.or_else(|| parse_length_mm(expression)))
+    parse_dimension_length_mm(value)
+        .or_else(|| strip_dimension_fit(value).and_then(parse_dimension_length_mm))
+        .or_else(|| parse_length_mm(expression))
 }
 
-fn strip_dimension_count<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    expression: &'a str,
-) -> Result<&'a str, cadmpeg_core::CodecError> {
-    let digit_count = ctx
-        .admit_iter(expression.as_bytes(), "scan SLDPRT dimension count digits")?
-        .copied()
-        .take_while(u8::is_ascii_digit)
-        .count();
+/// Removes a leading positive `<count>X` instance count.
+fn strip_dimension_count(expression: &str) -> &str {
+    let digit_count = expression.bytes().take_while(u8::is_ascii_digit).count();
     let (count, rest) = expression.split_at(digit_count);
-    Ok(
-        if !count.is_empty()
-            && count.parse::<u64>().is_ok_and(|count| count > 0)
-            && rest.starts_with(['X', 'x'])
-        {
-            rest[1..].trim_start()
-        } else {
-            expression
-        },
-    )
+    if !count.is_empty()
+        && count.parse::<u64>().is_ok_and(|count| count > 0)
+        && rest.starts_with(['X', 'x'])
+    {
+        rest[1..].trim_start()
+    } else {
+        expression
+    }
 }
 
-fn strip_dimension_fit<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: &'a str,
-) -> Result<Option<&'a str>, cadmpeg_core::CodecError> {
-    let Some(fit_start) = ctx
-        .admit_iter(value.as_bytes(), "scan SLDPRT dimension fit position")?
-        .position(u8::is_ascii_alphabetic)
-    else {
-        return Ok(None);
-    };
+/// The nominal value of a toleranced fit such as `15mmH7`.
+fn strip_dimension_fit(value: &str) -> Option<&str> {
+    let fit_start = value.bytes().position(|byte| byte.is_ascii_alphabetic())?;
     let (nominal, fit) = value.split_at(fit_start);
-    let Some(grade_start) = ctx
-        .admit_iter(fit.as_bytes(), "scan SLDPRT dimension fit grade")?
-        .position(u8::is_ascii_digit)
-    else {
-        return Ok(None);
-    };
+    let grade_start = fit.bytes().position(|byte| byte.is_ascii_digit())?;
     let (position, grade) = fit.split_at(grade_start);
-    Ok((!nominal.is_empty()
+    (!nominal.is_empty()
         && !position.is_empty()
-        && ctx
-            .admit_iter(position.as_bytes(), "scan SLDPRT dimension fit letters")?
-            .all(|byte| byte.is_ascii_alphabetic())
-        && ctx
-            .admit_iter(grade.as_bytes(), "scan SLDPRT dimension fit digits")?
-            .all(|byte| byte.is_ascii_digit()))
-    .then_some(nominal))
+        && position.bytes().all(|byte| byte.is_ascii_alphabetic())
+        && grade.bytes().all(|byte| byte.is_ascii_digit()))
+    .then_some(nominal)
 }
 
 pub(crate) fn strip_diameter_modifier(expression: &str) -> Option<&str> {
@@ -352,11 +346,10 @@ fn strip_radius_modifier(expression: &str) -> Option<&str> {
 }
 
 pub(super) fn parse_neutral_parameter_literal(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &cadmpeg_ir::features::Feature,
     name: &str,
     expression: &str,
-) -> Result<Option<ParameterValue>, cadmpeg_core::CodecError> {
+) -> Option<ParameterValue> {
     let positional_length = match name {
         "D1" => matches!(
             feature.evaluation.definition(),
@@ -387,11 +380,11 @@ pub(super) fn parse_neutral_parameter_literal(
         _ => false,
     };
     if positional_length {
-        return Ok(parse_positive_dimension_length_mm(expression)
+        return parse_positive_dimension_length_mm(expression)
             .map(Length::from)
-            .map(ParameterValue::Length));
+            .map(ParameterValue::Length);
     }
-    Ok(parse_parameter_literal(ctx, expression)?)
+    parse_parameter_literal(expression)
 }
 
 pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
