@@ -143,38 +143,56 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         for values in [[1.0, f64::NAN], [f64::INFINITY, 2.0]] {
             assert_eq!(super::AttributeValue::vector(values), None);
-            assert_eq!(super::AttributeValue::vector_for_decode(&ctx, values).unwrap(), None);
+            assert_eq!(
+                super::AttributeValue::vector_for_decode(&ctx, values).unwrap(),
+                None
+            );
         }
         ctx.finish_session().unwrap();
         let ctx = cadmpeg_test_support::service_decode_context();
         for values in [vec![], vec![1.0, -2.0, 0.0]] {
-            assert_eq!(super::AttributeValue::vector_for_decode(&ctx, values.clone()).unwrap(),
-                super::AttributeValue::vector(values));
+            assert_eq!(
+                super::AttributeValue::vector_for_decode(&ctx, values.clone()).unwrap(),
+                super::AttributeValue::vector(values)
+            );
         }
     }
 
     #[test]
     fn attribute_vector_decode_refuses_each_resource_dimension() {
-        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::CollectionItems,
-            ResourceDimension::MaterializedBytes, ResourceDimension::RetainedBytes] {
-            cadmpeg_test_support::refusal::resource_limit_at(dimension,
-                "IR attribute vector components", |cap| {
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::CollectionItems,
+            ResourceDimension::MaterializedBytes,
+            ResourceDimension::RetainedBytes,
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                dimension,
+                "IR attribute vector components",
+                |cap| {
                     let arena = DecodeArena::new();
                     let mut policy = DecodePolicy::service();
                     match dimension {
                         ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-                        ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-                        ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                        ResourceDimension::CollectionItems => {
+                            policy.limits.max_collection_items = cap;
+                        }
+                        ResourceDimension::MaterializedBytes => {
+                            policy.limits.max_materialized_bytes = cap;
+                        }
                         ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
                         _ => unreachable!(),
                     }
                     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                     let result = super::AttributeValue::vector_for_decode(&ctx, [1.0, 2.0]);
                     if let Err(CodecError::ResourceLimit(limit)) = &result {
-                        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                        assert!(
+                            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                        );
                     }
                     result
-                });
+                },
+            );
         }
     }
 
