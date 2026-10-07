@@ -23,7 +23,7 @@ use crate::history::literals::{
     format_length_number, format_parameter_value, parse_angle_rad, parse_dimension_display_length,
     parse_parameter_literal, parse_positive_dimension_length_mm,
 };
-use crate::history::project::pattern::{pattern_form, NativePatternClass};
+use crate::history::project::pattern::{native_pattern_form, NativePatternClass};
 use crate::history::project::{
     copy_projected_feature_id, copy_projected_feature_properties, copy_projected_feature_text,
     neutral_feature_id_charged, neutral_parameter_id, projected_parameter_names,
@@ -425,7 +425,7 @@ pub(super) fn native_parameter_is_length(
             None => true,
         },
         "D3" if matches!(
-            pattern_form(feature),
+            native_pattern_form(ctx, feature)?,
             Some(NativePatternClass::Linear | NativePatternClass::CurveDriven)
         ) =>
         {

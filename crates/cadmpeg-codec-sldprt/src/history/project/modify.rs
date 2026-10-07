@@ -21,7 +21,7 @@ use crate::history::literals::{
 };
 use std::collections::BTreeMap;
 
-use super::{parameter_literal, property_literal, property_text, property_value};
+use super::{either_parameter, parameter_literal, property_literal, property_text, property_value};
 
 /// The parameters of a variable-radius fillet: `RadiusN` radii with their
 /// `PositionN` fractions along the edge.
@@ -224,19 +224,6 @@ fn property_bool(
     name: &str,
 ) -> Result<Option<bool>, CodecError> {
     Ok(property_value(ctx, feature, name)?.and_then(parse_bool))
-}
-
-/// The first of two named parameters present, admitted for one literal reading.
-fn either_parameter<'f>(
-    ctx: &DecodeContext<'_>,
-    feature: &'f Feature,
-    name: &str,
-    fallback: &str,
-) -> Result<Option<&'f str>, CodecError> {
-    match parameter_literal(ctx, feature, name)? {
-        Some(value) => Ok(Some(value)),
-        None => parameter_literal(ctx, feature, fallback),
-    }
 }
 
 pub(super) fn project_shell(

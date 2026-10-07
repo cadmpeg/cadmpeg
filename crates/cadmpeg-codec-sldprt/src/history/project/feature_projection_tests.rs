@@ -65,6 +65,17 @@ fn plane_in(
     index.principal_plane(&ctx, feature).unwrap()
 }
 
+fn records_by_id(features: &[Feature]) -> HashMap<&str, Option<&Feature>> {
+    let mut records = HashMap::new();
+    for feature in features {
+        records
+            .entry(feature.id.as_str())
+            .and_modify(|record| *record = None)
+            .or_insert(Some(feature));
+    }
+    records
+}
+
 fn definition_of(feature: &Feature) -> FeatureDefinition {
     let ctx = cadmpeg_test_support::service_decode_context();
     let features = std::slice::from_ref(feature);
@@ -75,7 +86,7 @@ fn definition_of(feature: &Feature) -> FeatureDefinition {
         &HashMap::new(),
         &HashMap::new(),
         &BTreeMap::new(),
-        features,
+        &records_by_id(features),
         &index,
     )
     .unwrap()
@@ -661,7 +672,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         &cadmpeg_test_support::service_decode_context(),
         &native_owned,
         &BTreeMap::new(),
-        &[native_owned.clone(), native_profile],
+        &records_by_id(&[native_owned.clone(), native_profile]),
     )
     .expect("resource budget")
     .unwrap();
@@ -696,7 +707,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         &cadmpeg_test_support::service_decode_context(),
         &canonical,
         &BTreeMap::new(),
-        std::slice::from_ref(&canonical),
+        &records_by_id(std::slice::from_ref(&canonical)),
     )
     .expect("resource budget")
     .unwrap();
