@@ -89,8 +89,7 @@ fn parser_token_tags_preserve_payload_independent_matches_and_empty_lookahead() 
         omitted_entity_names: None,
         budget: &ctx,
     };
-    assert!(parser
-        .peek(&crate::lex::TokenKind::Name(String::from("expected"))));
+    assert!(parser.peek(&crate::lex::TokenKind::Name(String::from("expected"))));
     assert!(!parser.peek(&crate::lex::TokenKind::Comma));
     parser
         .punct(&crate::lex::TokenKind::Name(String::from("expected")))

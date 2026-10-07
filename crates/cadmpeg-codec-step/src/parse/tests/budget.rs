@@ -167,7 +167,9 @@ fn validation_refuses(
         match run(&exchange, &ctx) {
             Ok(()) => Ok(()),
             Err(super::super::ValidationError::Resource(error)) => Err(error),
-            Err(super::super::ValidationError::Invalid(message)) => panic!("valid header failed validation: {message}"),
+            Err(super::super::ValidationError::Invalid(message)) => {
+                panic!("valid header failed validation: {message}")
+            }
         }
     });
 }

@@ -101,7 +101,9 @@ fn binary_packed_bytes_refuse_collection_limit() {
     assert!(lex_under_policy(input, service, false).is_ok());
     // Two packed bytes; scanning hexadecimal digits allocates no collection slots.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "step_binary_packed_bytes", |cap| {
+        ResourceDimension::CollectionItems,
+        "step_binary_packed_bytes",
+        |cap| {
             let mut limited = service;
             limited.limits.max_collection_items = cap;
             lex_under_policy(input, limited, false)
@@ -139,7 +141,9 @@ fn binary_lexeme_charges_packed_bytes_before_retention() {
     assert!(lex_under_policy(input, service, false).is_ok());
     // Two retained packed bytes; the hexadecimal digits have no retained storage.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes, "step_binary_lexeme_retained", |cap| {
+        ResourceDimension::RetainedBytes,
+        "step_binary_lexeme_retained",
+        |cap| {
             let mut limited = service;
             limited.limits.max_retained_bytes = cap;
             lex_under_policy(input, limited, false)
@@ -186,7 +190,9 @@ fn transient_binary_lexeme_reserves_packed_bytes_without_retention() {
     assert!(lex_under_policy(input, service, true).is_ok());
     // Two live packed bytes; no digit reservation or duplicate slot storage.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes, "step_binary_packed_temp", |cap| {
+        ResourceDimension::MaterializedBytes,
+        "step_binary_packed_temp",
+        |cap| {
             let mut limited = service;
             limited.limits.max_materialized_bytes = cap;
             lex_under_policy(input, limited, true)
@@ -600,16 +606,26 @@ fn normalized_temp_character_preserves_refusal() {
 #[test]
 fn lexer_cursor_and_control_lookahead_preserve_refusal() {
     for (input, operation) in [
-        (b" /* comment */ NAME".as_slice(), "STEP lexer cursor traversal"),
-        (b"/* comment */NAME".as_slice(), "STEP lexer comment traversal"),
+        (
+            b" /* comment */ NAME".as_slice(),
+            "STEP lexer cursor traversal",
+        ),
+        (
+            b"/* comment */NAME".as_slice(),
+            "STEP lexer comment traversal",
+        ),
         (b"\\\x01N\\".as_slice(), "STEP lexer control lookahead"),
         (b"<name>".as_slice(), "STEP resource UTF-8 validation"),
     ] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            lex_under_policy(input, policy, false)
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                lex_under_policy(input, policy, false)
+            },
+        );
     }
 }
 
@@ -619,7 +635,12 @@ fn transient_token_storage_stays_live_until_the_next_token() {
         let mut lexer = super::Lexer::new(input, ctx);
         lexer.set_transient_literals();
         let token = lexer.next_token().unwrap().unwrap();
-        let CodecError::ResourceLimit(limit) = ctx.reserve_scoped(u64::MAX, "live token probe").unwrap_err() else { panic!("probe must refuse"); };
+        let CodecError::ResourceLimit(limit) = ctx
+            .reserve_scoped(u64::MAX, "live token probe")
+            .unwrap_err()
+        else {
+            panic!("probe must refuse");
+        };
         assert_eq!(limit.used, 2);
         assert!(matches!(token.kind, super::TokenKind::Binary(_)));
     });
@@ -630,11 +651,19 @@ fn control_run_lookahead_is_linear_and_preserves_resource_error_offset() {
     fn work(source: &[u8]) -> u64 {
         crate::test_support::with_service_context(source, |input, ctx| {
             super::lex_with_context(input, ctx).expect("control run input lexes");
-            let CodecError::ResourceLimit(refusal) = ctx.charge_work(u64::MAX, "test completed lexer work").expect_err("work probe refuses") else { panic!("work refusal required"); };
+            let CodecError::ResourceLimit(refusal) = ctx
+                .charge_work(u64::MAX, "test completed lexer work")
+                .expect_err("work probe refuses")
+            else {
+                panic!("work refusal required");
+            };
             refusal.used
         })
     }
-    for (prefix, suffix) in [(b"<a".as_slice(), b"b>".as_slice()), (b"SIGNATURE;AAAA".as_slice(), b"ENDSEC;".as_slice())] {
+    for (prefix, suffix) in [
+        (b"<a".as_slice(), b"b>".as_slice()),
+        (b"SIGNATURE;AAAA".as_slice(), b"ENDSEC;".as_slice()),
+    ] {
         let short = [prefix, &[0; 16], suffix].concat();
         let long = [prefix, &[0; 128], suffix].concat();
         // One cursor visit and one normalized-byte/signature validation visit per control;
@@ -642,7 +671,11 @@ fn control_run_lookahead_is_linear_and_preserves_resource_error_offset() {
         assert_eq!(work(&long) - work(&short), 2 * (128 - 16));
     }
     let invalid = [b"<a".as_slice(), &[0; 16], b"\\N\\>".as_slice()].concat();
-    let error = crate::test_support::with_service_context(&invalid, super::lex_with_context).expect_err("print directives are forbidden in resources");
+    let error = crate::test_support::with_service_context(&invalid, super::lex_with_context)
+        .expect_err("print directives are forbidden in resources");
     assert_eq!(error.offset, 2);
-    assert_eq!(error.message, "print control directive is not allowed in a resource");
+    assert_eq!(
+        error.message,
+        "print control directive is not allowed in a resource"
+    );
 }

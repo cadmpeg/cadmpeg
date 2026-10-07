@@ -206,7 +206,11 @@ pub(crate) struct Lexer<'a, 'ctx, 'arena> {
 
 const MAX_STORED_STRING_OCTETS: usize = 32_769;
 
-pub(crate) fn print_control_end(ctx: &DecodeContext<'_>, input: &[u8], at: usize) -> Result<Option<usize>, CodecError> {
+pub(crate) fn print_control_end(
+    ctx: &DecodeContext<'_>,
+    input: &[u8],
+    at: usize,
+) -> Result<Option<usize>, CodecError> {
     if let Some(end) = match_exact_ignoring_controls(ctx, input, at, b"\\N\\")? {
         return Ok(Some(end));
     }
@@ -242,7 +246,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
     pub(crate) fn next_token(&mut self) -> Result<Option<Token>, LexError> {
         self.transient_storage = None;
         if matches!(self.literal_storage, LiteralStorage::Transient) {
-            let mut storage = self.budget.reserve_scoped(0, "STEP transient token storage")?;
+            let mut storage = self
+                .budget
+                .reserve_scoped(0, "STEP transient token storage")?;
             let token = storage.with_storage(|| self.next_token_inner());
             self.transient_storage = Some(storage);
             token
@@ -276,7 +282,12 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             if self.input.get(at..at + 2) == Some(b"/*") {
                 let comment_start = at;
                 at += 2;
-                let Some(end) = self.budget.position_by(self.input[at..].windows(2), |w| Ok(w == b"*/"), "STEP lexer comment traversal")? else {
+                let Some(end) = self.budget.position_by(
+                    self.input[at..].windows(2),
+                    |w| Ok(w == b"*/"),
+                    "STEP lexer comment traversal",
+                )?
+                else {
                     return Err(self.error(comment_start, "unterminated comment")?);
                 };
                 at += end + 2;
@@ -296,11 +307,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 boundary_allowed = true;
                 continue;
             }
-            if self
-                .input
-                .get(at)
-                .is_some_and(|byte| byte.is_ascii_control() || *byte == b' ')
-            {
+            if self.input.get(at) == Some(&b' ') {
                 at += 1;
                 boundary_allowed = true;
                 continue;
@@ -360,7 +367,11 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             if self.input.get(start + relative..start + relative + 2) == Some(b"/*") {
                 let comment_start = start + relative;
                 let comment_body = comment_start + 2;
-                let Some(comment_end) = self.budget.position_by(self.input[comment_body..end].windows(2), |window| Ok(window == b"*/"), "STEP lexer comment traversal")?
+                let Some(comment_end) = self.budget.position_by(
+                    self.input[comment_body..end].windows(2),
+                    |window| Ok(window == b"*/"),
+                    "STEP lexer comment traversal",
+                )?
                 else {
                     return Err(self.error(comment_start, "unterminated comment")?);
                 };
@@ -429,7 +440,12 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             }
             let start = self.at;
             self.at += 2;
-            let Some(end) = self.budget.position_by(self.input[self.at..].windows(2), |w| Ok(w == b"*/"), "STEP lexer comment traversal")? else {
+            let Some(end) = self.budget.position_by(
+                self.input[self.at..].windows(2),
+                |w| Ok(w == b"*/"),
+                "STEP lexer comment traversal",
+            )?
+            else {
                 return Err(self.error(start, "unterminated comment")?);
             };
             self.at += end + 2;
@@ -499,7 +515,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             self.at += 1;
         }
         let (mut name, _) = self.normalized(start, self.at, LiteralStorage::Retained)?;
-        self.budget.make_ascii_uppercase(&mut name, "STEP lexer name uppercase")?;
+        self.budget
+            .make_ascii_uppercase(&mut name, "STEP lexer name uppercase")?;
         Ok(name)
     }
 
@@ -584,7 +601,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 }
                 let (mut name, _) =
                     self.normalized(name_start, self.at, LiteralStorage::Retained)?;
-                self.budget.make_ascii_uppercase(&mut name, "STEP lexer name uppercase")?;
+                self.budget
+                    .make_ascii_uppercase(&mut name, "STEP lexer name uppercase")?;
                 match prefix {
                     OccurrencePrefix::Entity => Ok(TokenKind::ConstantEntity(name)),
                     OccurrencePrefix::Value => Ok(TokenKind::ConstantValue(name)),
@@ -629,7 +647,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         }
         let (_temporary, mut raw) = self
             .normalized_chars(start, self.at, LiteralStorage::Transient, |byte| {
-                char::from(match byte { b'D' | b'd' => b'E', byte => byte.to_ascii_uppercase() })
+                char::from(match byte {
+                    b'D' | b'd' => b'E',
+                    byte => byte.to_ascii_uppercase(),
+                })
             })
             .map(|(raw, reservation)| (reservation, raw))?;
         if exponent && raw.ends_with('.') {
@@ -670,7 +691,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             return Err(self.error(start, "unterminated enumeration")?);
         }
         let (mut name, _) = self.normalized(name_start, self.at, LiteralStorage::Retained)?;
-        self.budget.make_ascii_uppercase(&mut name, "STEP lexer name uppercase")?;
+        self.budget
+            .make_ascii_uppercase(&mut name, "STEP lexer name uppercase")?;
         self.at += 1;
         Ok(TokenKind::Enumeration(name))
     }
@@ -746,12 +768,19 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             } else if byte.is_ascii_control() {
                 self.at += 1;
             } else if byte == b'\\' {
-                let Some(after_print_control) = self.print_control_end(self.at)? else { break; };
+                let Some(after_print_control) = self.print_control_end(self.at)? else {
+                    break;
+                };
                 if !self.allow_print_controls {
-                    return Err(self.error(self.at, "print control directive is not allowed in this section")?);
+                    return Err(self.error(
+                        self.at,
+                        "print control directive is not allowed in this section",
+                    )?);
                 }
                 self.at = after_print_control;
-            } else { break; }
+            } else {
+                break;
+            }
         }
         if self.input.get(self.at) != Some(&b'"') {
             return Err(self.error(start, "invalid binary literal")?);
@@ -766,7 +795,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         if payload_digits == 0 && unused_bits != 0 {
             return Err(self.error(start, "empty binary payload has unused bits")?);
         }
-        if unused_bits != 0 && last_digit.is_some_and(|digit| digit & ((1 << unused_bits) - 1) != 0) {
+        if unused_bits != 0 && last_digit.is_some_and(|digit| digit & ((1 << unused_bits) - 1) != 0)
+        {
             return Err(self.error(start, "unused binary bits are not zero")?);
         }
         let operation = match self.literal_storage {
@@ -775,7 +805,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         };
         let packed_len = payload_digits.div_ceil(2);
         let mut data = self.budget.vector_storage(packed_len, operation)?;
-        self.budget.charge_collection_items(u64_from_index(packed_len), "step_binary_packed_bytes")?;
+        self.budget
+            .charge_collection_items(u64_from_index(packed_len), "step_binary_packed_bytes")?;
         let mut cursor = content;
         let mut skip_indicator = true;
         let mut high = None;
@@ -809,7 +840,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         self.at += 1;
         Ok(TokenKind::Binary(BinaryValue {
             unused_bits,
-            data: self.budget.into_boxed_slice(data, "STEP binary boxed storage")?,
+            data: self
+                .budget
+                .into_boxed_slice(data, "STEP binary boxed storage")?,
         }))
     }
 
@@ -827,7 +860,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 let controls_start = self.at;
                 self.skip_ignored()?;
                 if self.print_control_end(self.at)?.is_some() {
-                    return Err(self.error(controls_start, "print control directive is not allowed in a resource")?);
+                    return Err(self.error(
+                        controls_start,
+                        "print control directive is not allowed in a resource",
+                    )?);
                 }
                 continue;
             }
@@ -837,17 +873,18 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                     "print control directive is not allowed in a resource",
                 )?);
             }
-            if !byte.is_ascii_control() {
-                value_len += 1;
-            }
+            value_len += 1;
             self.at += 1;
         }
         if self.input.get(self.at) != Some(&b'>') {
             return Err(self.error(start, "unterminated resource token")?);
         }
-        let (mut value, _temporary) = self.budget.with_scoped_storage("step_uri_lexeme_temp", || {
-            self.budget.alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
-        })?;
+        let (mut value, _temporary) =
+            self.budget
+                .with_scoped_storage("step_uri_lexeme_temp", || {
+                    self.budget
+                        .alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
+                })?;
         let mut written = 0usize;
         for &byte in self
             .budget
@@ -862,9 +899,13 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 written += 1;
             }
         }
-        let text = self.budget.validate_utf8(&value, "STEP resource UTF-8 validation")?
+        let text = self
+            .budget
+            .validate_utf8(&value, "STEP resource UTF-8 validation")?
             .or_else(|_| Err(self.error(content, "resource token is not UTF-8")?))?;
-        let value = self.budget.copy_retained_text(text, "step_uri_lexeme_retained")?;
+        let value = self
+            .budget
+            .copy_retained_text(text, "step_uri_lexeme_retained")?;
         self.at += 1;
         Ok(TokenKind::Resource(value))
     }
@@ -894,16 +935,29 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         self.normalized_chars(start, end, storage, char::from)
     }
 
-    fn normalized_chars(&self, start: usize, end: usize, storage: LiteralStorage,
+    fn normalized_chars(
+        &self,
+        start: usize,
+        end: usize,
+        storage: LiteralStorage,
         convert: impl Fn(u8) -> char,
     ) -> Result<(String, Option<ScopedReservation<'_>>), LexError> {
-        let chars = self.budget.admit_iter(&self.input[start..end], "STEP normalized traversal")
+        let chars = self
+            .budget
+            .admit_iter(&self.input[start..end], "STEP normalized traversal")
             .map_err(CodecError::from)?
-            .filter(|byte| !byte.is_ascii_control()).map(|byte| convert(*byte));
+            .filter(|byte| !byte.is_ascii_control())
+            .map(|byte| convert(*byte));
         match storage {
-            LiteralStorage::Retained => Ok((self.budget.collect_text(chars, "step_lex_normalized_retained")?, None)),
+            LiteralStorage::Retained => Ok((
+                self.budget
+                    .collect_text(chars, "step_lex_normalized_retained")?,
+                None,
+            )),
             LiteralStorage::Transient => {
-                let (text, storage) = self.budget.collect_scoped_text(chars, "step_lex_normalized_temp")?;
+                let (text, storage) = self
+                    .budget
+                    .collect_scoped_text(chars, "step_lex_normalized_temp")?;
                 Ok((text, Some(storage)))
             }
         }
@@ -924,11 +978,19 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         print_control_end(self.budget, self.input, at)
     }
 
-    fn match_exact_ignoring_controls(&self, at: usize, expected: &[u8]) -> Result<Option<usize>, CodecError> {
+    fn match_exact_ignoring_controls(
+        &self,
+        at: usize,
+        expected: &[u8],
+    ) -> Result<Option<usize>, CodecError> {
         match_exact_ignoring_controls(self.budget, self.input, at, expected)
     }
 
-    fn match_ignoring_controls(&self, mut at: usize, expected: &[u8]) -> Result<Option<usize>, CodecError> {
+    fn match_ignoring_controls(
+        &self,
+        mut at: usize,
+        expected: &[u8],
+    ) -> Result<Option<usize>, CodecError> {
         for &byte in expected {
             while self.input.get(at).is_some_and(u8::is_ascii_control) {
                 self.budget.charge_work(1, "STEP lexer cursor traversal")?;
@@ -990,7 +1052,12 @@ impl HexDigit {
     }
 }
 
-fn match_exact_ignoring_controls(ctx: &DecodeContext<'_>, input: &[u8], mut at: usize, expected: &[u8]) -> Result<Option<usize>, CodecError> {
+fn match_exact_ignoring_controls(
+    ctx: &DecodeContext<'_>,
+    input: &[u8],
+    mut at: usize,
+    expected: &[u8],
+) -> Result<Option<usize>, CodecError> {
     for &byte in expected {
         while input.get(at).is_some_and(u8::is_ascii_control) {
             ctx.charge_work(1, "STEP lexer control lookahead")?;

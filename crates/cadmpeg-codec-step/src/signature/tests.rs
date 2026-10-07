@@ -460,23 +460,35 @@ fn parser_rejects_invalid_signature_base64() {
 #[test]
 fn ber_cursor_and_nested_values_preserve_resource_refusal() {
     for (dimension, operation) in [
-        (cadmpeg_core::decode::ResourceDimension::WorkUnits, "STEP signature cursor traversal"),
-        (cadmpeg_core::decode::ResourceDimension::RecursionDepth, "STEP BER nesting"),
+        (
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "STEP signature cursor traversal",
+        ),
+        (
+            cadmpeg_core::decode::ResourceDimension::RecursionDepth,
+            "STEP BER nesting",
+        ),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             match dimension {
-                cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-                cadmpeg_core::decode::ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
+                    policy.limits.max_recursion_depth = cap
+                }
                 _ => unreachable!(),
             }
             crate::test_support::with_policy_context(BER_CMS_INDEFINITE, &policy, |input, ctx| {
                 match super::validate_detached_cms(ctx, input) {
                     Ok(()) => Ok(()),
                     Err(super::CmsError::Resource(error)) => {
-                        if let cadmpeg_core::CodecError::ResourceLimit(refusal) = &error { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
+                        if let cadmpeg_core::CodecError::ResourceLimit(refusal) = &error {
+                            assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+                        }
                         Err(error)
-                    },
+                    }
                     other => panic!("valid BER must not fail syntax: {other:?}"),
                 }
             })

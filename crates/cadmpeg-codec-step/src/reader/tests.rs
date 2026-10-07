@@ -249,7 +249,8 @@ fn byte_accounting_claims_controls_inside_print_directives() {
 
     crate::test_support::with_service_context(input, |input, ctx| {
         claim_trivia(input, 1..input.len(), &mut classes, ctx)
-    }).expect("print directive fits the trivia range");
+    })
+    .expect("print directive fits the trivia range");
 
     assert!(classes[1..6]
         .iter()

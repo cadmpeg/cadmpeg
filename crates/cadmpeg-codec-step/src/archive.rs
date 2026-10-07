@@ -4,7 +4,6 @@
 use cadmpeg_core::container::ContainerRole;
 use std::collections::BTreeMap;
 
-
 use cadmpeg_container::{ArchiveSnapshot, ZipCompression};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -100,17 +99,19 @@ fn resolve_uri<'a>(
         .transpose()?
         .unwrap_or(false)
     {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
-            "invalid STEP ZIP URI fragment {uri:?}"
-        ), "STEP ZIP error text")?));
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("invalid STEP ZIP URI fragment {uri:?}"),
+            "STEP ZIP error text",
+        )?));
     }
     let (path, query) = ctx
         .split_once(uri, "?", "STEP ZIP URI query split")?
         .map_or((uri, None), |(path, query)| (path, Some(query)));
     if path.starts_with('/') {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
-            "STEP ZIP URI escapes the archive root: {uri:?}"
-        ), "STEP ZIP error text")?));
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("STEP ZIP URI escapes the archive root: {uri:?}"),
+            "STEP ZIP error text",
+        )?));
     }
     let mut components = Vec::new();
     let mut component_bytes = ctx.reserve_scoped(0, "step_zip_uri_components_temp")?;
@@ -118,9 +119,12 @@ fn resolve_uri<'a>(
         ctx.rsplit_once(base_member, "/", "STEP ZIP base member reverse split")?
     {
         let mut start = 0;
-        for end in ctx.admit_iter(directory.as_bytes(), "STEP ZIP base directory traversal")?
-            .enumerate().filter_map(|(index, byte)| (*byte == b'/').then_some(index))
-            .chain(std::iter::once(directory.len())) {
+        for end in ctx
+            .admit_iter(directory.as_bytes(), "STEP ZIP base directory traversal")?
+            .enumerate()
+            .filter_map(|(index, byte)| (*byte == b'/').then_some(index))
+            .chain(std::iter::once(directory.len()))
+        {
             let component = &directory[start..end];
             start = end + 1;
             ctx.push_scoped_vec(
@@ -142,22 +146,29 @@ fn resolve_uri<'a>(
     let mut start = 0;
     while start <= path.len() {
         ctx.charge_work(1, "STEP ZIP URI component traversal")?;
-        let end = ctx.position_by(&path.as_bytes()[start..], |byte| Ok(*byte == b'/'), "STEP ZIP URI delimiter search")?
+        let end = ctx
+            .position_by(
+                &path.as_bytes()[start..],
+                |byte| Ok(*byte == b'/'),
+                "STEP ZIP URI delimiter search",
+            )?
             .map_or(path.len(), |relative| start + relative);
         let component = &path[start..end];
         start = end + 1;
         match component {
             "" => {
-                return Err(CodecError::Malformed(ctx.format_retained(format_args!(
-                    "invalid empty path component in STEP ZIP URI {uri:?}"
-                ), "STEP ZIP error text")?));
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("invalid empty path component in STEP ZIP URI {uri:?}"),
+                    "STEP ZIP error text",
+                )?));
             }
             "." => {}
             ".." => {
                 if components.pop().is_none() {
-                    return Err(CodecError::Malformed(ctx.format_retained(format_args!(
-                        "STEP ZIP URI escapes the archive root: {uri:?}"
-                    ), "STEP ZIP error text")?));
+                    return Err(CodecError::Malformed(ctx.format_retained(
+                        format_args!("STEP ZIP URI escapes the archive root: {uri:?}"),
+                        "STEP ZIP error text",
+                    )?));
                 }
             }
             component => ctx.push_scoped_vec(
@@ -169,9 +180,10 @@ fn resolve_uri<'a>(
         }
     }
     if components.is_empty() {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
-            "STEP ZIP URI resolves to no member: {uri:?}"
-        ), "STEP ZIP error text")?));
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("STEP ZIP URI resolves to no member: {uri:?}"),
+            "STEP ZIP error text",
+        )?));
     }
     let member_len = ctx
         .admit_iter(&components[..], "STEP resolve uri traversal")?
@@ -192,7 +204,8 @@ fn resolve_uri<'a>(
                 ctx.push_retained_char(&mut member, '/', "STEP ZIP member separator character")
             })?;
         }
-        member_bytes.with_storage(|| ctx.append_retained(&mut member, component, "step_zip_uri_member"))?;
+        member_bytes
+            .with_storage(|| ctx.append_retained(&mut member, component, "step_zip_uri_member"))?;
     }
     Ok(ReferenceTarget::Internal {
         member,
@@ -221,7 +234,14 @@ pub(crate) fn root_reference_notes(
         if !indexed && reference.uri.starts_with('#') && reference.uri.len() > 1 {
             for anchor in ctx.admit_iter(exchange.anchors(), "STEP ZIP anchor index traversal")? {
                 if let crate::parse::Value::Resource(target) = &anchor.value {
-                    binding_storage.with_storage(|| ctx.insert_btree_map(&mut bindings, anchor.name.as_str(), target.as_str(), "STEP ZIP anchor index entries"))?;
+                    binding_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut bindings,
+                            anchor.name.as_str(),
+                            target.as_str(),
+                            "STEP ZIP anchor index entries",
+                        )
+                    })?;
                 }
             }
             indexed = true;
@@ -235,9 +255,12 @@ pub(crate) fn root_reference_notes(
                 fragment,
             } => {
                 if archive.entry(ctx, &member)?.is_none() {
-                    return Err(CodecError::Malformed(ctx.format_retained(format_args!(
-                        "STEP ZIP resource {uri:?} for {name} has no archive member {member:?}"
-                    ), "STEP ZIP error text")?));
+                    return Err(CodecError::Malformed(ctx.format_retained(
+                        format_args!(
+                            "STEP ZIP resource {uri:?} for {name} has no archive member {member:?}"
+                        ),
+                        "STEP ZIP error text",
+                    )?));
                 }
                 push_reference_note(
                     ctx,
@@ -270,7 +293,10 @@ fn push_reference_note(
         crate::parse::ReferenceName::Entity(id) => ('#', id),
         crate::parse::ReferenceName::Value(id) => ('@', id),
     };
-    let mut note = ctx.format_retained(format_args!("{prefix}{marker}{id} -> {target}"), "step_zip_reference_note")?;
+    let mut note = ctx.format_retained(
+        format_args!("{prefix}{marker}{id} -> {target}"),
+        "step_zip_reference_note",
+    )?;
     if let Some(query) = query {
         ctx.push_retained_char(&mut note, '?', "STEP ZIP reference query character")?;
         ctx.append_retained(&mut note, query, "step_zip_reference_note")?;
@@ -291,11 +317,19 @@ fn forwarded_reference_uri<'a>(
     let Some(fragment) = uri.strip_prefix('#') else {
         return Ok(uri);
     };
-    Ok(ctx.get_btree_map(bindings, fragment, "step_zip_anchor_lookup")?.copied().unwrap_or(uri))
+    Ok(ctx
+        .get_btree_map(bindings, fragment, "step_zip_anchor_lookup")?
+        .copied()
+        .unwrap_or(uri))
 }
 
 fn has_uri_scheme(ctx: &DecodeContext<'_>, uri: &str) -> Result<bool, CodecError> {
-    let Some(colon) = ctx.position_by(uri.as_bytes(), |byte| Ok(*byte == b':'), "STEP URI scheme colon search")? else {
+    let Some(colon) = ctx.position_by(
+        uri.as_bytes(),
+        |byte| Ok(*byte == b':'),
+        "STEP URI scheme colon search",
+    )?
+    else {
         return Ok(false);
     };
     let scheme = &uri[..colon];
@@ -313,36 +347,66 @@ pub(crate) fn classify_entry(
     ctx: &DecodeContext<'_>,
     name: &str,
 ) -> Result<ContainerRole, CodecError> {
-    if name == ROOT_NAME { return Ok(ContainerRole::RootExchange); }
-    if name.ends_with('/') { return Ok(ContainerRole::Directory); }
-    let Some(delimiter) = ctx.rposition_by(name.as_bytes(), |byte| Ok(matches!(byte, b'.' | b'/')), "STEP ZIP extension component search")? else { return Ok(ContainerRole::Ancillary); };
-    if name.as_bytes()[delimiter] == b'/' || delimiter == 0 || name.as_bytes()[delimiter - 1] == b'/' {
+    if name == ROOT_NAME {
+        return Ok(ContainerRole::RootExchange);
+    }
+    if name.ends_with('/') {
+        return Ok(ContainerRole::Directory);
+    }
+    let Some(delimiter) = ctx.rposition_by(
+        name.as_bytes(),
+        |byte| Ok(matches!(byte, b'.' | b'/')),
+        "STEP ZIP extension component search",
+    )?
+    else {
+        return Ok(ContainerRole::Ancillary);
+    };
+    if name.as_bytes()[delimiter] == b'/'
+        || delimiter == 0
+        || name.as_bytes()[delimiter - 1] == b'/'
+    {
         return Ok(ContainerRole::Ancillary);
     }
     let extension = &name[delimiter + 1..];
-    Ok(if extension.eq_ignore_ascii_case("p21") || extension.eq_ignore_ascii_case("step") || extension.eq_ignore_ascii_case("stp") {
-        ContainerRole::SubsidiaryExchange
-    } else if extension.eq_ignore_ascii_case("zip") {
-        ContainerRole::NestedArchive
-    } else { ContainerRole::Ancillary })
+    Ok(
+        if extension.eq_ignore_ascii_case("p21")
+            || extension.eq_ignore_ascii_case("step")
+            || extension.eq_ignore_ascii_case("stp")
+        {
+            ContainerRole::SubsidiaryExchange
+        } else if extension.eq_ignore_ascii_case("zip") {
+            ContainerRole::NestedArchive
+        } else {
+            ContainerRole::Ancillary
+        },
+    )
 }
 
 fn validate_entry_name(ctx: &DecodeContext<'_>, name: &str) -> Result<(), CodecError> {
     let mut start = 0;
-    let unsafe_name = name.is_empty() || name.starts_with('/') || ctx.any_by(
-        name.as_bytes().iter().enumerate(),
-        |(end, byte)| {
-            if matches!(byte, b'\\' | 0) { return Ok(true); }
-            if *byte != b'/' { return Ok(false); }
-            let component = &name[start..end];
-            start = end + 1;
-            Ok(matches!(component, "" | "." | ".."))
-        }, "STEP ZIP entry path validation",
-    )? || matches!(&name[start..], "." | "..");
+    let unsafe_name = name.is_empty()
+        || name.starts_with('/')
+        || ctx.any_by(
+            name.as_bytes().iter().enumerate(),
+            |(end, byte)| {
+                if matches!(byte, b'\\' | 0) {
+                    return Ok(true);
+                }
+                if *byte != b'/' {
+                    return Ok(false);
+                }
+                let component = &name[start..end];
+                start = end + 1;
+                Ok(matches!(component, "" | "." | ".."))
+            },
+            "STEP ZIP entry path validation",
+        )?
+        || matches!(&name[start..], "." | "..");
     if unsafe_name {
-        return Err(CodecError::Malformed(ctx.format_retained(format_args!(
-            "unsafe STEP ZIP entry path {name:?}"
-        ), "STEP ZIP error text")?));
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("unsafe STEP ZIP entry path {name:?}"),
+            "STEP ZIP error text",
+        )?));
     }
     Ok(())
 }
