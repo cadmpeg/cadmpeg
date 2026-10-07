@@ -355,7 +355,16 @@ impl AsmEditSet {
                 record.index
             )));
         }
-        Self::patch_bytes_at(bytes, offset, 2, value.as_bytes())
+        let start = offset.checked_add(2).ok_or_else(|| {
+            CodecError::Malformed("native byte payload offset overflows".into())
+        })?;
+        let end = start.checked_add(value.len()).ok_or_else(|| {
+            CodecError::Malformed("native byte payload offset overflows".into())
+        })?;
+        let target = bytes.get_mut(start..end).ok_or_else(|| {
+            CodecError::Malformed("native byte payload is truncated".into())
+        })?;
+        ctx.copy_into(target, value.as_bytes(), "ASM ASCII edit payload")
     }
 
     /// Replace one packed true-color integer without changing its carrier.
@@ -431,8 +440,8 @@ impl AsmEditSet {
             }
         };
         let width = current.len();
-        let value = packed.to_string();
-        if value.len() > width {
+        let digit_count = packed.checked_ilog10().map_or(1, |digits| digits + 1);
+        if u64::from(digit_count) > cadmpeg_core::decode::u64_from_index(width) {
             return Err(CodecError::NotImplemented(format!(
                 "{} record {} decimal-color edit exceeds its encoded text width",
                 record.head(),
@@ -2263,6 +2272,30 @@ mod tests {
     }
 
     #[test]
+    fn ascii_edit_payload_refuses_before_writing() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let original = b"\x0d\x01x\x07\x05surf1\x11";
+        let records = crate::test_support::sab::frame(
+            original, 0, original.len(), RefWidth::Eight,
+        ).unwrap();
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, "ASM ASCII edit payload", |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let mut bytes = original.to_vec();
+                let result = edits.patch_ascii_field(&ctx, &mut bytes, &records[0], 0, "surf2");
+                assert_eq!(bytes, original);
+                result
+            },
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+        assert_eq!(limit.operation, "ASM ASCII edit payload");
+    }
+
+    #[test]
     fn truecolor_field_patch_rejects_truncated_payloads() {
         for (tag, width, payload_width) in [
             (0x17, RefWidth::Eight, 8),
@@ -2335,6 +2368,93 @@ mod tests {
                 &u64::from(u32::MAX).to_le_bytes()[..payload_width]
             );
             assert_eq!(bytes.last(), Some(&0x11));
+        }
+    }
+
+    #[test]
+    fn decimal_color_edit_preserves_width_at_unsigned_digit_boundaries() {
+        for (packed, width, expected) in [
+            (0, 10, Some("0000000000")),
+            (9, 1, Some("9")),
+            (10, 1, None),
+            (10, 2, Some("10")),
+            (u32::MAX, 10, Some("4294967295")),
+            (u32::MAX, 9, None),
+        ] {
+            let mut bytes = vec![0x0d, 1, b'x', 0x07, u8::try_from(width).unwrap()];
+            bytes.extend(std::iter::repeat_n(b'0', width));
+            bytes.push(0x11);
+            let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
+            let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
+            let before = bytes.clone();
+            let result = edits.patch_decimal_rgb_field(
+                &cadmpeg_test_support::service_decode_context(), &mut bytes, &records[0], 0, packed,
+            );
+            if let Some(expected) = expected {
+                result.unwrap();
+                assert_eq!(&bytes[5..5 + width], expected.as_bytes());
+                assert_eq!(&bytes[..5], &before[..5]);
+                assert_eq!(bytes.last(), Some(&0x11));
+            } else {
+                assert!(matches!(result, Err(cadmpeg_core::CodecError::NotImplemented(_))));
+                assert_eq!(bytes, before);
+            }
+        }
+    }
+
+    #[test]
+    fn surface_edit_writes_every_column_in_native_order() {
+        use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
+        use cadmpeg_ir::math::Point3;
+        fn integer(bytes: &mut Vec<u8>, tag: u8, value: i64, width: RefWidth) {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..width.bytes()]);
+        }
+        fn double(bytes: &mut Vec<u8>, value: f64) {
+            bytes.push(0x06);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for width in [RefWidth::Four, RefWidth::Eight] {
+            for rational in [false, true] {
+                let mut bytes = b"\x0d\x06spline".to_vec();
+                bytes.extend_from_slice(if rational { b"\x0d\x05nurbs" } else { b"\x0d\x04nubs" });
+                for _ in 0..2 { integer(&mut bytes, 0x04, 1, width); }
+                for _ in 0..4 { integer(&mut bytes, 0x15, 0, width); }
+                for _ in 0..2 { integer(&mut bytes, 0x04, 2, width); }
+                for _ in 0..2 {
+                    for knot in [0.0, 1.0] {
+                        double(&mut bytes, knot);
+                        integer(&mut bytes, 0x04, 1, width);
+                    }
+                }
+                for point in [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]] {
+                    for value in point { double(&mut bytes, value); }
+                    if rational { double(&mut bytes, 1.0); }
+                }
+                bytes.push(0x11);
+                let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
+                let edits = AsmEditSet::from_framed(records.clone(), width, 1.0);
+                let ctx = cadmpeg_test_support::service_decode_context();
+                let rows = [
+                    [[5.0, 11.0, 17.0], [7.0, 13.0, 19.0]],
+                    [[23.0, 29.0, 31.0], [37.0, 41.0, 43.0]],
+                ].map(|row| row.map(|[x, y, z]| Point3::new(
+                    x * crate::nurbs::reader::LEN_TO_MM,
+                    y * crate::nurbs::reader::LEN_TO_MM,
+                    z * crate::nurbs::reader::LEN_TO_MM,
+                )).to_vec()).to_vec();
+                let weights = rational.then(|| vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+                let poles = NurbsPoleGrid::from_lanes(&ctx, rows, weights).unwrap().unwrap();
+                let surface = NurbsSurface::new(
+                    &ctx, NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false), poles, false,
+                ).unwrap().unwrap();
+                edits.patch_nurbs_surface(&ctx, &mut bytes, &records[0], super::NurbsSurfaceEdit {
+                    surface: &surface, periodic: None,
+                }, None).unwrap();
+                let decoded = crate::nurbs::core::final_surface_patch_layout(&ctx, &bytes, width).unwrap().unwrap();
+                assert_eq!(decoded.surface.pole_grid(), surface.pole_grid());
+            }
         }
     }
 

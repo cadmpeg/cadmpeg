@@ -25,15 +25,6 @@ fn body_source_stream_copy_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
     use std::collections::HashMap;
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        super::super::id(crate::asm_format!("f3d"), 1)
-            .as_str()
-            .len()
-            + 4 * std::mem::size_of::<crate::brep::records::BodyNativeKey>(),
-    );
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let records = [Record {
         index: 1,
         name: "body".into(),
@@ -42,20 +33,27 @@ fn body_source_stream_copy_refuses_retained_limit() {
         len: 0,
     }];
     let by_index = HashMap::from([(1, &records[0])]);
-    let error = emit_containers(
-        &ctx,
-        &mut AsmBrep::default(),
-        ContainerInputs {
-            records: &records,
-            by_index: &by_index,
-            reach: &Reachable::default(),
-            wire: &WireShellTopology::default(),
-            stream: "folder/source.brp",
-            header_scale: 1.0,
-            format: crate::asm_format!("f3d"),
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes, "ASM body source stream", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            emit_containers(
+                &ctx,
+                &mut AsmBrep::default(),
+                ContainerInputs {
+                    records: &records,
+                    by_index: &by_index,
+                    reach: &Reachable::default(),
+                    wire: &WireShellTopology::default(),
+                    stream: "folder/source.brp",
+                    header_scale: 1.0,
+                    format: crate::asm_format!("f3d"),
+                },
+            )
         },
-    )
-    .expect_err("stream name exceeds zero retained bytes");
+    );
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected resource refusal: {error:?}");
     };
@@ -69,14 +67,6 @@ fn edge_continuity_copy_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
     use std::collections::HashMap;
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        4 * (std::mem::size_of::<cadmpeg_ir::topology::Edge>()
-            + std::mem::size_of::<crate::brep::records::EdgeOwnership>()
-            + std::mem::size_of::<crate::brep::records::EdgeContinuity>()),
-    );
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut tokens = vec![Token::Long(0); 11];
     tokens[3] = Token::Ref(1);
     tokens[5] = Token::Ref(2);
@@ -94,19 +84,26 @@ fn edge_continuity_copy_refuses_retained_limit() {
         vertices: HashSet::from([1, 2]),
         ..Reachable::default()
     };
-    let error = emit_edges(
-        &ctx,
-        &mut AsmBrep::default(),
-        &records,
-        &by_index,
-        &reach,
-        CurveSenseRefs {
-            reversed_curve_refs: &HashSet::new(),
-            forward_curve_refs: &HashSet::new(),
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes, "ASM edge continuity text", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            emit_edges(
+                &ctx,
+                &mut AsmBrep::default(),
+                &records,
+                &by_index,
+                &reach,
+                CurveSenseRefs {
+                    reversed_curve_refs: &HashSet::new(),
+                    forward_curve_refs: &HashSet::new(),
+                },
+                crate::asm_format!("f3d"),
+            )
         },
-        crate::asm_format!("f3d"),
-    )
-    .expect_err("edge continuity exceeds zero retained bytes");
+    );
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected resource refusal: {error:?}");
     };
@@ -120,10 +117,6 @@ fn loop_ring_members_refuse_collection_limit() {
     use cadmpeg_core::CodecError;
     use std::collections::HashMap;
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let record = |index, name: &str, refs: &[i64]| Record {
         index,
         name: name.into(),
@@ -150,20 +143,54 @@ fn loop_ring_members_refuse_collection_limit() {
         coedges: HashSet::from([1, 2]),
         ..Reachable::default()
     };
-    let error = emit_loops(
-        &ctx,
-        &mut AsmBrep::default(),
-        &records,
-        &by_index,
-        &reach,
-        crate::asm_format!("f3d"),
-    )
-    .expect_err("duplicate-check set exceeds remaining collection items");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems, "loop ring members", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            emit_loops(
+                &ctx,
+                &mut AsmBrep::default(),
+                &records,
+                &by_index,
+                &reach,
+                crate::asm_format!("f3d"),
+            )
+        },
+    );
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected resource refusal: {error:?}");
     };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     assert_eq!(limit.operation, "loop ring members");
+}
+
+#[test]
+fn saved_edge_container_members_refuse_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::HashMap;
+    for operation in [
+        "ASM saved edge body regions", "ASM saved edge region shells", "ASM saved edge shell wires",
+    ] {
+        let wire = WireShellTopology { saved_free_edges: vec![7], ..WireShellTopology::default() };
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems, operation, |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                emit_containers(&ctx, &mut AsmBrep::default(), ContainerInputs {
+                    records: &[], by_index: &HashMap::new(), reach: &Reachable::default(),
+                    wire: &wire, stream: "folder/source.brp", header_scale: 1.0,
+                    format: crate::asm_format!("f3d"),
+                })
+            },
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, operation);
+    }
 }
 
 fn subtype_table(records: &[Record]) -> nurbs::toks::SubtypeTable {
@@ -214,10 +241,6 @@ fn reversed_nurbs_carrier_copy_refuses_collection_limit() {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::math::Point3;
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let curve = NurbsCurve::from_lanes(
         &cadmpeg_test_support::service_decode_context(),
         1,
@@ -228,20 +251,27 @@ fn reversed_nurbs_carrier_copy_refuses_collection_limit() {
     )
     .expect("fixture constructor admission")
     .unwrap();
-    let mut carriers = Carriers::default();
-    carriers
-        .curve_geo
-        .insert(4, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)));
-    let error = emit_carrier_curve(
-        &ctx,
-        &mut AsmBrep::default(),
-        4,
-        &mut carriers,
-        &HashSet::from([4]),
-        &HashSet::from([4]),
-        crate::asm_format!("f3d"),
-    )
-    .expect_err("four knots exceed three collection items");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems, "ASM reversed carrier curve", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let mut carriers = Carriers::default();
+            carriers
+                .curve_geo
+                .insert(4, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.clone())));
+        emit_carrier_curve(
+                &ctx,
+                &mut AsmBrep::default(),
+                4,
+                &mut carriers,
+                &HashSet::from([4]),
+                &HashSet::from([4]),
+                crate::asm_format!("f3d"),
+            )
+        },
+    );
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected resource refusal: {error:?}");
     };
@@ -359,26 +389,31 @@ fn unknown_carrier_source_copy_refuses_retained_limit_before_emission() {
         undecoded_carriers: HashSet::from([0]),
         ..Reachable::default()
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(bytes.len() - 1);
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let mut out = AsmBrep::default();
-    let error = super::emit_passthrough_unknowns(
-        &ctx,
-        &mut out,
-        &records,
-        bytes,
-        &reach,
-        crate::asm_format!("f3d"),
-    )
-    .expect_err("unknown source exceeds retained limit");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes, "retain ASM unknown record", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
+            let mut out = AsmBrep::default();
+        let result = super::emit_passthrough_unknowns(
+                &ctx,
+                &mut out,
+                &records,
+                bytes,
+                &reach,
+                crate::asm_format!("f3d"),
+            );
+        assert!(out.unknowns.is_empty());
+        result
+        },
+    );
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected resource refusal, got {error:?}");
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert!(out.unknowns.is_empty());
 
+    let mut out = AsmBrep::default();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();

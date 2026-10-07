@@ -149,7 +149,7 @@ use super::topology::{
     loop_chain, region_chain, ring_coedges, shell_chain, shell_faces, subshell_ancestor_shells,
 };
 use super::{id, inherited_attribute_target, AsmBrep, Carriers, Reachable, WireShellTopology};
-const EPS_EMIT_EMIT_EDGES_E9: f64 = 1.0e-9;
+const EPS_CONIC_PERIOD: f64 = 1.0e-9;
 
 /// Emit a kept surface carrier and, when present, its procedural-surface
 /// construction and nested support carriers.
@@ -694,8 +694,7 @@ fn emit_carrier_surface(
     Ok(())
 }
 
-/// Emit a kept 3D curve carrier (with its `:reversed` clone when shared) and
-/// any procedural-curve construction and nested support carriers.
+/// Emit a deformable surface construction and its support carriers.
 fn emit_deformable_surface(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 
@@ -5114,10 +5113,10 @@ pub(super) fn emit_edges(
                             // vertices.
                             let sweep = b - a;
                             let full_period = (sweep.abs() - std::f64::consts::TAU).abs()
-                                < EPS_EMIT_EMIT_EDGES_E9;
+                                < EPS_CONIC_PERIOD;
                             if !full_period {
                                 a = a.rem_euclid(std::f64::consts::TAU);
-                                if std::f64::consts::TAU - a < EPS_EMIT_EMIT_EDGES_E9 {
+                                if std::f64::consts::TAU - a < EPS_CONIC_PERIOD {
                                     a = 0.0;
                                 }
                                 b = a + sweep;
@@ -5693,13 +5692,11 @@ pub(super) fn emit_containers(
                                     )
                                 )
                             )?,
-                            source_brep: stream
-                                .rsplit('/')
-                                .next()
-                                .map(|name| {
-                                    ctx.copy_retained_text(name, "ASM body source stream")
-                                })
-                                .transpose()?,
+                            source_brep: Some(ctx.copy_retained_text(
+                                ctx.rsplit_once(stream, "/", "ASM body source stream name")?
+                                    .map_or(stream, |(_, name)| name),
+                                "ASM body source stream",
+                            )?),
                             asm_body_key: u64::try_from(*key).ok(),
                         }
                     );
@@ -5771,7 +5768,10 @@ pub(super) fn emit_containers(
             Body {
                 id: body_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                 kind: cadmpeg_ir::topology::BodyKind::Wire,
-                regions: vec![region_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?],
+                regions: ctx.collect_vec(
+                    [region_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?],
+                    "ASM saved edge body regions",
+                )?,
                 transform: None,
                 name: None,
                 color: None,
@@ -5784,13 +5784,20 @@ pub(super) fn emit_containers(
             Region {
                 id: region_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                 body: body_id,
-                shells: vec![shell_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?],
+                shells: ctx.collect_vec(
+                    [shell_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?],
+                    "ASM saved edge region shells",
+                )?,
             }
         );
         charged_push!(
             ctx,
             out.shells,
-            Shell::with_wire_edge(shell_id, region_id, <EdgeId>::from(id(format, edge)),)
+            Shell::new(
+                shell_id, region_id, Vec::new(),
+                ctx.collect_vec([EdgeId::from(id(format, edge))], "ASM saved edge shell wires")?,
+                Vec::new(),
+            ).map_err(cadmpeg_core::CodecError::malformed)?
         );
     }
     Ok(())
