@@ -17,7 +17,10 @@ pub fn collect_attributes(
     entity: &Record,
     target: &AttributeTarget,
     by_index: &HashMap<i64, &Record, RandomState>,
-    emitted: (&mut HashSet<i64, RandomState>, &mut cadmpeg_core::decode::ScopedReservation<'_>),
+    emitted: (
+        &mut HashSet<i64, RandomState>,
+        &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ),
     out: &mut Vec<SourceAttribute>,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -27,13 +30,17 @@ pub fn collect_attributes(
     let mut chain_storage = ctx.reserve_scoped(0, "ASM attribute chain")?;
     while let Some(index) = current {
         ctx.charge_work(1, "ASM attribute chain walk")?;
-        if !chain_storage.with_storage(|| ctx.insert_hash_set(&mut chain, index, "ASM attribute chain"))? {
+        if !chain_storage
+            .with_storage(|| ctx.insert_hash_set(&mut chain, index, "ASM attribute chain"))?
+        {
             break;
         }
         let Some(record) = by_index.get(&index) else {
             break;
         };
-        if emitted_storage.with_storage(|| ctx.insert_hash_set(emitted, index, "ASM emitted attributes"))? {
+        if emitted_storage
+            .with_storage(|| ctx.insert_hash_set(emitted, index, "ASM emitted attributes"))?
+        {
             ctx.reserve_vec(out, 1, "ASM source attributes")?;
             out.push(source_attribute(
                 ctx,
@@ -147,7 +154,8 @@ pub fn attribute_key<'attribute>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     attribute: &'attribute SourceAttribute,
 ) -> Result<&'attribute str, cadmpeg_core::CodecError> {
-    Ok(ctx.rsplit_once(attribute.id.as_str(), "#", "ASM attribute identity key")?
+    Ok(ctx
+        .rsplit_once(attribute.id.as_str(), "#", "ASM attribute identity key")?
         .map_or(attribute.id.as_str(), |(_, key)| key))
 }
 
@@ -163,7 +171,10 @@ pub fn source_attribute(
     // value tokens, and a payload identifier names an embedded construction
     // rather than carrying an attribute value.
     let mut values = Vec::new();
-    for token in ctx.admit_iter(record.tokens.as_ref(), "ASM source attribute tokens")?.filter(|token| !token.is_payload_ident()) {
+    for token in ctx
+        .admit_iter(record.tokens.as_ref(), "ASM source attribute tokens")?
+        .filter(|token| !token.is_payload_ident())
+    {
         ctx.reserve_vec(&mut values, 1, "ASM attribute values")?;
         let value = attribute_value(ctx, token, format)?.ok_or_else(|| {
             cadmpeg_core::CodecError::malformed(format_args!(
@@ -210,8 +221,12 @@ fn attribute_value(
         Token::Ref(value) => {
             AttributeValue::Reference(brep_id!(format, Identity, "entity", value).into_string())
         }
-        Token::SubtypeOpen => AttributeValue::String(ctx.copy_retained_text("subtype_open", "ASM attribute subtype marker")?),
-        Token::SubtypeClose => AttributeValue::String(ctx.copy_retained_text("subtype_close", "ASM attribute subtype marker")?),
+        Token::SubtypeOpen => AttributeValue::String(
+            ctx.copy_retained_text("subtype_open", "ASM attribute subtype marker")?,
+        ),
+        Token::SubtypeClose => AttributeValue::String(
+            ctx.copy_retained_text("subtype_close", "ASM attribute subtype marker")?,
+        ),
         Token::Position(value) | Token::Vector3(value) => match AttributeValue::vector(*value) {
             Some(value) => value,
             None => return Ok(None),
@@ -322,17 +337,21 @@ fn direct_attribute_color(
             let mut field = 0;
             let mut channels = [None; 5];
             for channel in &mut channels {
-                *channel = ctx.find_map(&mut tokens, |token| {
-                    if token.is_payload_ident() {
-                        return Ok(None);
-                    }
-                    let current = field;
-                    field += 1;
-                    Ok(match token {
-                        Token::Double(value) if current >= payload => Some((current, *value)),
-                        _ => None,
-                    })
-                }, "ASM RGB attribute tokens")?;
+                *channel = ctx.find_map(
+                    &mut tokens,
+                    |token| {
+                        if token.is_payload_ident() {
+                            return Ok(None);
+                        }
+                        let current = field;
+                        field += 1;
+                        Ok(match token {
+                            Token::Double(value) if current >= payload => Some((current, *value)),
+                            _ => None,
+                        })
+                    },
+                    "ASM RGB attribute tokens",
+                )?;
                 if channel.is_none() {
                     break;
                 }
@@ -411,7 +430,13 @@ fn direct_attribute_color(
             else {
                 return Ok(None);
             };
-            if text.is_empty() || !ctx.all_by(text.as_bytes(), |byte| Ok(byte.is_ascii_digit()), "ASM decimal color digits")? {
+            if text.is_empty()
+                || !ctx.all_by(
+                    text.as_bytes(),
+                    |byte| Ok(byte.is_ascii_digit()),
+                    "ASM decimal color digits",
+                )?
+            {
                 return Ok(None);
             }
             let parsed = ctx.parse_text::<u32>(text, "parse ASM decimal color")?;
@@ -447,7 +472,9 @@ pub fn attribute_chain_color_carrier<'a>(
     let mut storage = ctx.reserve_scoped(0, "ASM color chain visited")?;
     for _ in 0..max_steps {
         ctx.charge_work(1, "ASM color chain walk")?;
-        if !storage.with_storage(|| ctx.insert_hash_set(&mut visited, current, "ASM color chain visited"))? {
+        if !storage.with_storage(|| {
+            ctx.insert_hash_set(&mut visited, current, "ASM color chain visited")
+        })? {
             break;
         }
         let Some(record) = by_index(current) else {
@@ -470,10 +497,12 @@ pub fn attribute_chain_color(
     entity: &Record,
     by_index: &HashMap<i64, &Record, RandomState>,
 ) -> Result<Option<Color>, cadmpeg_core::CodecError> {
-    Ok(attribute_chain_color_carrier(ctx, entity, by_index.len(), |index| {
-        by_index.get(&index).copied()
-    })?
-    .map(|(_, decoded)| decoded.color))
+    Ok(
+        attribute_chain_color_carrier(ctx, entity, by_index.len(), |index| {
+            by_index.get(&index).copied()
+        })?
+        .map(|(_, decoded)| decoded.color),
+    )
 }
 
 /// The first non-empty name attribute on `entity`'s attribute chain.
@@ -489,17 +518,21 @@ pub fn attribute_chain_name(
     let mut storage = ctx.reserve_scoped(0, "ASM name chain visited")?;
     for _ in 0..by_index.len() {
         ctx.charge_work(1, "ASM name chain walk")?;
-        if !storage.with_storage(|| ctx.insert_hash_set(&mut visited, current, "ASM name chain visited"))? {
+        if !storage
+            .with_storage(|| ctx.insert_hash_set(&mut visited, current, "ASM name chain visited"))?
+        {
             break;
         }
         let Some(record) = by_index.get(&current) else {
             return Ok(None);
         };
         if record.name == "string_attrib-name_attrib-gen-attrib" {
-            let mut values = ctx.admit_iter(record.tokens.as_ref(), "ASM name attribute tokens")?.filter_map(|token| match token {
-                Token::Str(value) => Some(value.as_str()),
-                _ => None,
-            });
+            let mut values = ctx
+                .admit_iter(record.tokens.as_ref(), "ASM name attribute tokens")?
+                .filter_map(|token| match token {
+                    Token::Str(value) => Some(value.as_str()),
+                    _ => None,
+                });
             let mut previous = None;
             let mut last = None;
             for value in &mut values {
@@ -530,7 +563,8 @@ pub fn unknown_record_id(
     format: IdFormat,
 ) -> Result<UnknownId, cadmpeg_core::CodecError> {
     let mut kind_storage = ctx.reserve_scoped(0, "ASM unknown record kind scratch")?;
-    let name = kind_storage.with_storage(|| ctx.copy_retained_text(rec.head(), "ASM unknown record kind"))?;
+    let name = kind_storage
+        .with_storage(|| ctx.copy_retained_text(rec.head(), "ASM unknown record kind"))?;
     let kind = IdentityComponent::try_new(name).map_err(|error| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "invalid ASM source identity component: {error}"
@@ -560,7 +594,9 @@ mod tests {
         };
         let expected = "f3d:brep:mystery#1";
         let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes, "ASM unknown record identity", |cap| {
+            ResourceDimension::RetainedBytes,
+            "ASM unknown record identity",
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_retained_bytes = cap;
@@ -568,9 +604,16 @@ mod tests {
                 super::unknown_record_id(&ctx, &record, crate::asm_format!("f3d"))
             },
         );
-        assert_eq!(super::unknown_record_id(
-            &cadmpeg_test_support::service_decode_context(), &record, crate::asm_format!("f3d"),
-        ).unwrap().as_str(), expected);
+        assert_eq!(
+            super::unknown_record_id(
+                &cadmpeg_test_support::service_decode_context(),
+                &record,
+                crate::asm_format!("f3d"),
+            )
+            .unwrap()
+            .as_str(),
+            expected
+        );
         let CodecError::ResourceLimit(refusal) = error else {
             panic!("expected resource refusal, got {error:?}");
         };
@@ -603,9 +646,14 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_ir::attributes::AttributeValue;
 
-        for (token, expected) in [(Token::SubtypeOpen, "subtype_open"), (Token::SubtypeClose, "subtype_close")] {
+        for (token, expected) in [
+            (Token::SubtypeOpen, "subtype_open"),
+            (Token::SubtypeClose, "subtype_close"),
+        ] {
             let error = cadmpeg_test_support::refusal::resource_limit_at(
-                ResourceDimension::RetainedBytes, "ASM attribute subtype marker", |cap| {
+                ResourceDimension::RetainedBytes,
+                "ASM attribute subtype marker",
+                |cap| {
                     let arena = DecodeArena::new();
                     let mut policy = DecodePolicy::service();
                     policy.limits.max_retained_bytes = cap;
@@ -613,9 +661,19 @@ mod tests {
                     super::attribute_value(&ctx, &token, crate::asm_format!("f3d"))
                 },
             );
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal")
+            };
             assert_eq!(limit.operation, "ASM attribute subtype marker");
-            assert_eq!(super::attribute_value(&cadmpeg_test_support::service_decode_context(), &token, crate::asm_format!("f3d")).unwrap(), Some(AttributeValue::String(expected.into())));
+            assert_eq!(
+                super::attribute_value(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &token,
+                    crate::asm_format!("f3d")
+                )
+                .unwrap(),
+                Some(AttributeValue::String(expected.into()))
+            );
         }
     }
 
@@ -650,7 +708,12 @@ mod tests {
             &entity,
             &AttributeTarget::Document,
             &by_index,
-            (&mut HashSet::new(), &mut ctx.reserve_scoped(0, "ASM test emitted attributes").unwrap()),
+            (
+                &mut HashSet::new(),
+                &mut ctx
+                    .reserve_scoped(0, "ASM test emitted attributes")
+                    .unwrap(),
+            ),
             &mut Vec::new(),
             crate::asm_format!("f3d"),
         )
@@ -681,18 +744,32 @@ mod tests {
     #[test]
     fn transform_decode_propagates_affine_constructor_rejection() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let identity = transform_record(1.0, [1.0, 0.0, 0.0]);
         assert_eq!(
             decode_transform(&ctx, &identity, 1.0).unwrap(),
             Some(cadmpeg_ir::transform::Transform::identity())
         );
         for scale in [0.0, 2.0, f64::NAN, f64::INFINITY] {
-            assert!(decode_transform(&ctx, &transform_record(scale, [1.0, 0.0, 0.0]), 1.0).unwrap().is_none());
+            assert!(
+                decode_transform(&ctx, &transform_record(scale, [1.0, 0.0, 0.0]), 1.0)
+                    .unwrap()
+                    .is_none()
+            );
         }
-        assert!(decode_transform(&ctx, &transform_record(1.0, [f64::NAN, 0.0, 0.0]), 1.0).unwrap().is_none());
-        assert!(decode_transform(&ctx, &identity, f64::INFINITY).unwrap().is_none());
+        assert!(
+            decode_transform(&ctx, &transform_record(1.0, [f64::NAN, 0.0, 0.0]), 1.0)
+                .unwrap()
+                .is_none()
+        );
+        assert!(decode_transform(&ctx, &identity, f64::INFINITY)
+            .unwrap()
+            .is_none());
     }
     mod limits;
-
 }

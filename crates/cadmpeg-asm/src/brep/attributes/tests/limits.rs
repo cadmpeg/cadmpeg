@@ -20,7 +20,9 @@ fn source_attribute_string_refuses_retained_limit() {
         len: 0,
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes, "ASM attribute string", |cap| {
+        ResourceDimension::RetainedBytes,
+        "ASM attribute string",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
@@ -125,8 +127,12 @@ fn decimal_attribute_color_refuses_work_before_parsing() {
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             let result = crate::brep::attributes::attribute_chain_color_carrier(
-                &ctx, &entity, by_index.len(), |index| by_index.get(&index).copied(),
-            ).map(|_| ());
+                &ctx,
+                &entity,
+                by_index.len(),
+                |index| by_index.get(&index).copied(),
+            )
+            .map(|_| ());
             if let Err(CodecError::ResourceLimit(ref limit)) = result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
             }
@@ -140,4 +146,3 @@ fn decimal_attribute_color_refuses_work_before_parsing() {
     assert_eq!(refusal.operation, "parse ASM decimal color");
     assert_eq!(refusal.additional, 7);
 }
-

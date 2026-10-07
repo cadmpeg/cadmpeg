@@ -5,7 +5,13 @@ use crate::sab::{Record, Token};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 fn record(tokens: Vec<Token>) -> Record {
-    Record { index: 1, name: "tcoedge".into(), tokens: tokens.into(), offset: 0, len: 0 }
+    Record {
+        index: 1,
+        name: "tcoedge".into(),
+        tokens: tokens.into(),
+        offset: 0,
+        len: 0,
+    }
 }
 
 #[test]
@@ -25,10 +31,20 @@ fn analytic_carrier_storage_is_scoped_and_released() {
 fn embedded_coedge() -> Record {
     let mut tokens = (0..13).map(|_| Token::Ref(-1)).collect::<Vec<_>>();
     tokens.extend([
-        Token::Ref(2), Token::Long(1), Token::True, Token::SubtypeOpen,
-        Token::Ident("curve".into()), Token::Long(4), Token::SubtypeOpen,
-        Token::Long(5), Token::SubtypeClose, Token::SubtypeClose,
-        Token::Ident("null_curve".into()), Token::False, Token::False, Token::Long(0),
+        Token::Ref(2),
+        Token::Long(1),
+        Token::True,
+        Token::SubtypeOpen,
+        Token::Ident("curve".into()),
+        Token::Long(4),
+        Token::SubtypeOpen,
+        Token::Long(5),
+        Token::SubtypeClose,
+        Token::SubtypeClose,
+        Token::Ident("null_curve".into()),
+        Token::False,
+        Token::False,
+        Token::Long(0),
         Token::Ident("null_curve".into()),
     ]);
     record(tokens)
@@ -38,7 +54,9 @@ fn embedded_coedge() -> Record {
 fn tolerant_coedge_payload_walk_refuses_before_visiting() {
     let record = embedded_coedge();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "ASM tolerant coedge payload", |cap| {
+        ResourceDimension::WorkUnits,
+        "ASM tolerant coedge payload",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
@@ -46,29 +64,52 @@ fn tolerant_coedge_payload_walk_refuses_before_visiting() {
             tolerant_coedge_extension(&ctx, &record)
         },
     );
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("resource refusal")
+    };
     assert_eq!(limit.operation, "ASM tolerant coedge payload");
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(matches!(tolerant_coedge_extension(&ctx, &record).unwrap(), Some(
-        crate::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
-            target: Some(2), curve_reversed: true, payload_token_count: 4, parameter_range: None,
-        }
-    )));
+    assert!(matches!(
+        tolerant_coedge_extension(&ctx, &record).unwrap(),
+        Some(
+            crate::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
+                target: Some(2),
+                curve_reversed: true,
+                payload_token_count: 4,
+                parameter_range: None,
+            }
+        )
+    ));
 }
 
 #[test]
 fn pcurve_tail_search_ignores_payload_identifiers() {
     let record = record(vec![
-        Token::Ident("ignored".into()), Token::Ref(-1), Token::Ref(-1), Token::Ref(-1),
-        Token::Long(0), Token::True, Token::False, Token::True, Token::False,
-        Token::Ident("null_curve".into()), Token::Double(2.0), Token::Double(3.0),
+        Token::Ident("ignored".into()),
+        Token::Ref(-1),
+        Token::Ref(-1),
+        Token::Ref(-1),
+        Token::Long(0),
+        Token::True,
+        Token::False,
+        Token::True,
+        Token::False,
+        Token::Ident("null_curve".into()),
+        Token::Double(2.0),
+        Token::Double(3.0),
         Token::Ident("null_curve".into()),
     ]);
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert_eq!(pcurve_tail_metadata(&ctx, &record).unwrap(),
-        (Some([true, false, true, false]), Some([2.0, 3.0])));
+    assert_eq!(
+        pcurve_tail_metadata(&ctx, &record)
+            .map(|tail| (tail.flags, tail.parameter_range))
+            .unwrap(),
+        (Some([true, false, true, false]), Some([2.0, 3.0]))
+    );
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "ASM pcurve parameter tail", |cap| {
+        ResourceDimension::WorkUnits,
+        "ASM pcurve parameter tail",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
@@ -76,7 +117,9 @@ fn pcurve_tail_search_ignores_payload_identifiers() {
             pcurve_tail_metadata(&ctx, &record)
         },
     );
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("resource refusal")
+    };
     assert_eq!(limit.operation, "ASM pcurve parameter tail");
 }
 
@@ -84,13 +127,24 @@ fn pcurve_tail_search_ignores_payload_identifiers() {
 fn record_sense_search_admits_raw_tokens_and_keeps_scope_precedence() {
     use super::super::record_reversed;
     let tokens = vec![
-        Token::Ident("ignored".into()), Token::Ref(-1), Token::Long(-1), Token::Ref(-1),
-        Token::True, Token::False, Token::Ident("ignored".into()), Token::SubtypeOpen,
+        Token::Ident("ignored".into()),
+        Token::Ref(-1),
+        Token::Long(-1),
+        Token::Ref(-1),
+        Token::True,
+        Token::False,
+        Token::Ident("ignored".into()),
+        Token::SubtypeOpen,
         Token::SubtypeClose,
     ];
-    let record = Record { name: "intcurve".into(), ..record(tokens) };
+    let record = Record {
+        name: "intcurve".into(),
+        ..record(tokens)
+    };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "ASM record sense tokens", |cap| {
+        ResourceDimension::WorkUnits,
+        "ASM record sense tokens",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
@@ -98,14 +152,28 @@ fn record_sense_search_admits_raw_tokens_and_keeps_scope_precedence() {
             record_reversed(&ctx, &record)
         },
     );
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("resource refusal")
+    };
     assert_eq!(limit.operation, "ASM record sense tokens");
     let ctx = cadmpeg_test_support::service_decode_context();
     assert!(!record_reversed(&ctx, &record).unwrap());
-    let plain = Record { name: "intcurve".into(), tokens: vec![
-        Token::Ident("ignored".into()), Token::Ref(-1), Token::Long(-1), Token::Ref(-1), Token::True,
-    ].into(), ..record };
+    let plain = Record {
+        name: "intcurve".into(),
+        tokens: vec![
+            Token::Ident("ignored".into()),
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::True,
+        ]
+        .into(),
+        ..record
+    };
     assert!(record_reversed(&ctx, &plain).unwrap());
-    let spline = Record { name: "spline".into(), ..plain };
+    let spline = Record {
+        name: "spline".into(),
+        ..plain
+    };
     assert!(!record_reversed(&ctx, &spline).unwrap());
 }

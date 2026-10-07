@@ -74,29 +74,64 @@ pub(super) fn emit_annotation_records(
         ctx.collect_hash_set(
             ctx.admit_iter(&out.bodies, "ASM annotation source arena")?
                 .map(|entity| entity.id.as_str())
-                .chain(ctx.admit_iter(&out.regions, "ASM annotation source arena")?.map(|entity| entity.id.as_str()))
-                .chain(ctx.admit_iter(&out.shells, "ASM annotation source arena")?.map(|entity| entity.id.as_str()))
-                .chain(ctx.admit_iter(&out.faces, "ASM annotation source arena")?.map(|entity| entity.id.as_str()))
-                .chain(ctx.admit_iter(&out.loops, "ASM annotation source arena")?.map(|entity| entity.id.as_str()))
-                .chain(ctx.admit_iter(&out.coedges, "ASM annotation source arena")?.map(|entity| entity.id.as_str()))
-                .chain(ctx.admit_iter(&out.edges, "ASM annotation source arena")?.map(|entity| entity.id.as_str()))
-                .chain(ctx.admit_iter(&out.vertices, "ASM annotation source arena")?.map(|entity| entity.id.as_str()))
-                .chain(ctx.admit_iter(&out.points, "ASM annotation source arena")?.map(|entity| entity.id.as_str()))
-                .chain(ctx.admit_iter(&out.surfaces, "ASM annotation source arena")?.map(|entity| entity.id.as_str()))
-                .chain(ctx.admit_iter(&out.curves, "ASM annotation source arena")?.map(|entity| entity.id.as_str()))
-                .chain(ctx.admit_iter(&out.pcurves, "ASM annotation source arena")?.map(|entity| entity.id.as_str())),
+                .chain(
+                    ctx.admit_iter(&out.regions, "ASM annotation source arena")?
+                        .map(|entity| entity.id.as_str()),
+                )
+                .chain(
+                    ctx.admit_iter(&out.shells, "ASM annotation source arena")?
+                        .map(|entity| entity.id.as_str()),
+                )
+                .chain(
+                    ctx.admit_iter(&out.faces, "ASM annotation source arena")?
+                        .map(|entity| entity.id.as_str()),
+                )
+                .chain(
+                    ctx.admit_iter(&out.loops, "ASM annotation source arena")?
+                        .map(|entity| entity.id.as_str()),
+                )
+                .chain(
+                    ctx.admit_iter(&out.coedges, "ASM annotation source arena")?
+                        .map(|entity| entity.id.as_str()),
+                )
+                .chain(
+                    ctx.admit_iter(&out.edges, "ASM annotation source arena")?
+                        .map(|entity| entity.id.as_str()),
+                )
+                .chain(
+                    ctx.admit_iter(&out.vertices, "ASM annotation source arena")?
+                        .map(|entity| entity.id.as_str()),
+                )
+                .chain(
+                    ctx.admit_iter(&out.points, "ASM annotation source arena")?
+                        .map(|entity| entity.id.as_str()),
+                )
+                .chain(
+                    ctx.admit_iter(&out.surfaces, "ASM annotation source arena")?
+                        .map(|entity| entity.id.as_str()),
+                )
+                .chain(
+                    ctx.admit_iter(&out.curves, "ASM annotation source arena")?
+                        .map(|entity| entity.id.as_str()),
+                )
+                .chain(
+                    ctx.admit_iter(&out.pcurves, "ASM annotation source arena")?
+                        .map(|entity| entity.id.as_str()),
+                ),
             "ASM annotation emitted IDs",
         )
     })?;
     let attribute_ids = index_storage.with_storage(|| {
         ctx.collect_hash_set(
-            ctx.admit_iter(&out.attributes, "ASM annotation source arena")?.map(|attribute| attribute.id.as_str()),
+            ctx.admit_iter(&out.attributes, "ASM annotation source arena")?
+                .map(|attribute| attribute.id.as_str()),
             "ASM annotation attribute IDs",
         )
     })?;
     let unknown_ids = index_storage.with_storage(|| {
         ctx.collect_hash_set(
-            ctx.admit_iter(&out.unknowns, "ASM annotation source arena")?.map(|unknown| unknown.id().as_str()),
+            ctx.admit_iter(&out.unknowns, "ASM annotation source arena")?
+                .map(|unknown| unknown.id().as_str()),
             "ASM annotation unknown IDs",
         )
     })?;
@@ -115,15 +150,21 @@ pub(super) fn emit_annotation_records(
         let mut candidates = ctx.reserve_scoped(0, "ASM annotation candidate IDs")?;
         let index = i64::try_from(record.index).map_err(|_| {
             ctx.refuse_codec_limit(
-                "ASM record index", 9_223_372_036_854_775_807,
+                "ASM record index",
+                9_223_372_036_854_775_807,
                 cadmpeg_core::decode::u64_from_index(record.index),
             )
         })?;
         let entity_id = ctx.format_scoped_text(
-            &mut candidates, format_args!("{format}:brep:entity#{index}"),
+            &mut candidates,
+            format_args!("{format}:brep:entity#{index}"),
             "ASM annotation entity candidate",
         )?;
-        if ctx.contains_hash_set(&emitted_ids, &entity_id.as_str(), "ASM annotation entity lookup")? {
+        if ctx.contains_hash_set(
+            &emitted_ids,
+            &entity_id.as_str(),
+            "ASM annotation entity lookup",
+        )? {
             let mut derived_fields = Vec::new();
             match record.head() {
                 "plane" => {
@@ -146,14 +187,18 @@ pub(super) fn emit_annotation_records(
                     ctx.reserve_vec(&mut derived_fields, 1, "ASM annotation derived fields")?;
                     derived_fields.push("geometry.direction");
                 }
-                "ellipse" => match ctx.get_hash_map(&curve_geometries, &entity_id.as_str(), "ASM annotation curve lookup")? {
+                "ellipse" => match ctx.get_hash_map(
+                    &curve_geometries,
+                    &entity_id.as_str(),
+                    "ASM annotation curve lookup",
+                )? {
                     Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))) => {
                         ctx.reserve_vec(&mut derived_fields, 2, "ASM annotation derived fields")?;
-                    derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
+                        derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
                     }
                     Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))) => {
                         ctx.reserve_vec(&mut derived_fields, 2, "ASM annotation derived fields")?;
-                    derived_fields.extend(["geometry.axis", "geometry.major_direction"]);
+                        derived_fields.extend(["geometry.axis", "geometry.major_direction"]);
                     }
                     _ => {}
                 },
@@ -182,10 +227,15 @@ pub(super) fn emit_annotation_records(
             });
         }
         let attribute_id = ctx.format_scoped_text(
-            &mut candidates, format_args!("{format}:brep:attribute#{}", record.index),
+            &mut candidates,
+            format_args!("{format}:brep:attribute#{}", record.index),
             "ASM annotation attribute candidate",
         )?;
-        if ctx.contains_hash_set(&attribute_ids, &attribute_id.as_str(), "ASM annotation attribute lookup")? {
+        if ctx.contains_hash_set(
+            &attribute_ids,
+            &attribute_id.as_str(),
+            "ASM annotation attribute lookup",
+        )? {
             ctx.reserve_vec(&mut out.annotation_records, 1, "ASM annotation records")?;
             out.annotation_records.push(AnnotationRecord {
                 id: ctx.copy_retained_text(&attribute_id, "ASM annotation attribute id")?,
@@ -198,7 +248,11 @@ pub(super) fn emit_annotation_records(
             });
         }
         let unknown_id = candidates.with_storage(|| unknown_record_id(ctx, record, format))?;
-        if ctx.contains_hash_set(&unknown_ids, &unknown_id.as_str(), "ASM annotation unknown lookup")? {
+        if ctx.contains_hash_set(
+            &unknown_ids,
+            &unknown_id.as_str(),
+            "ASM annotation unknown lookup",
+        )? {
             ctx.reserve_vec(&mut out.annotation_records, 1, "ASM annotation records")?;
             out.annotation_records.push(AnnotationRecord {
                 id: ctx.copy_retained_text(unknown_id.as_str(), "ASM annotation unknown id")?,
@@ -215,10 +269,15 @@ pub(super) fn emit_annotation_records(
             ("procedural_curve", AnnotationTag::ProceduralCurve),
         ] {
             let synthetic_id = ctx.format_scoped_text(
-                &mut candidates, format_args!("{format}:brep:{kind}#{}", record.index),
+                &mut candidates,
+                format_args!("{format}:brep:{kind}#{}", record.index),
                 "ASM annotation procedural candidate",
             )?;
-            if ctx.contains_hash_set(&procedural_ids, &synthetic_id.as_str(), "ASM annotation procedural lookup")? {
+            if ctx.contains_hash_set(
+                &procedural_ids,
+                &synthetic_id.as_str(),
+                "ASM annotation procedural lookup",
+            )? {
                 ctx.reserve_vec(&mut out.annotation_records, 1, "ASM annotation records")?;
                 out.annotation_records.push(AnnotationRecord {
                     id: ctx.copy_retained_text(&synthetic_id, "ASM annotation procedural id")?,
@@ -230,14 +289,31 @@ pub(super) fn emit_annotation_records(
             }
         }
     }
-    for (index, entity_id, tag) in ctx.admit_iter(
-        std::mem::take(&mut carriers.procedural_support_sources),
-        "ASM procedural support annotations",
-    )?.map(|(index, id)| (index, cadmpeg_ir::ids::Identity::from(id).into_string(), AnnotationTag::ProceduralSupport))
-        .chain(ctx.admit_iter(
-            std::mem::take(&mut carriers.procedural_curve_child_sources),
-            "ASM procedural child annotations",
-        )?.map(|(index, id)| (index, cadmpeg_ir::ids::Identity::from(id).into_string(), AnnotationTag::ProceduralCurveChild)))
+    for (index, entity_id, tag) in ctx
+        .admit_iter(
+            std::mem::take(&mut carriers.procedural_support_sources),
+            "ASM procedural support annotations",
+        )?
+        .map(|(index, id)| {
+            (
+                index,
+                cadmpeg_ir::ids::Identity::from(id).into_string(),
+                AnnotationTag::ProceduralSupport,
+            )
+        })
+        .chain(
+            ctx.admit_iter(
+                std::mem::take(&mut carriers.procedural_curve_child_sources),
+                "ASM procedural child annotations",
+            )?
+            .map(|(index, id)| {
+                (
+                    index,
+                    cadmpeg_ir::ids::Identity::from(id).into_string(),
+                    AnnotationTag::ProceduralCurveChild,
+                )
+            }),
+        )
     {
         let record = by_index.get(&index).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed(format_args!(

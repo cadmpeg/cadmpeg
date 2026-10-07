@@ -65,8 +65,15 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
         len: 0,
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
-    let transform = cadmpeg_asm::brep::attributes::decode_transform(&ctx, &record, 60.0).unwrap().unwrap();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let transform = cadmpeg_asm::brep::attributes::decode_transform(&ctx, &record, 60.0)
+        .unwrap()
+        .unwrap();
     assert_eq!(transform.rows()[0], [1.0, 0.0, 0.0, 600.0]);
     assert_eq!(transform.rows()[1], [0.0, 1.0, 0.0, 1200.0]);
     assert_eq!(transform.rows()[2], [0.0, 0.0, 1.0, 1800.0]);

@@ -265,8 +265,7 @@ pub fn collect_owned_ids(
     let _depth = ctx.enter_nested("collect ASM owned ids")?;
     match value {
         Value::Map(fields) => {
-            if let Some(id) = entity_id(ctx, value)?
-            {
+            if let Some(id) = entity_id(ctx, value)? {
                 ctx.insert_string_set(out, id, "ASM owned ids")?;
             }
             for (key, value) in ctx.admit_iter(fields, "ASM serialized map fields")? {
@@ -306,11 +305,7 @@ pub fn collect_entity_adjacency(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &Value,
     owned: &HashSet<String, std::collections::hash_map::RandomState>,
-    out: &mut HashMap<
-        String,
-        BTreeSet<String>,
-        std::collections::hash_map::RandomState,
-    >,
+    out: &mut HashMap<String, BTreeSet<String>, std::collections::hash_map::RandomState>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let Value::Map(fields) = value else {
         return Ok(());
@@ -324,8 +319,10 @@ pub fn collect_entity_adjacency(
                 continue;
             };
             let mut references = BTreeSet::new();
-            let mut reference_storage = ctx.reserve_scoped(0, "ASM adjacency scratch references")?;
-            reference_storage.with_storage(|| collect_references(ctx, item, owned, &mut references))?;
+            let mut reference_storage =
+                ctx.reserve_scoped(0, "ASM adjacency scratch references")?;
+            reference_storage
+                .with_storage(|| collect_references(ctx, item, owned, &mut references))?;
             ctx.remove_btree_set(&mut references, id, "ASM adjacency self reference")?;
             for reference in ctx.admit_iter(references, "ASM adjacency references")? {
                 insert_adjacency(ctx, out, id, &reference)?;
@@ -361,8 +358,14 @@ pub fn entity_id<'value>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &'value Value,
 ) -> Result<Option<&'value str>, cadmpeg_core::CodecError> {
-    let Value::Map(fields) = value else { return Ok(None) };
-    let field = ctx.find_by(fields, |(key, _)| Ok(matches!(key, Value::String(name) if name == "id")), "ASM serialized entity id")?;
+    let Value::Map(fields) = value else {
+        return Ok(None);
+    };
+    let field = ctx.find_by(
+        fields,
+        |(key, _)| Ok(matches!(key, Value::String(name) if name == "id")),
+        "ASM serialized entity id",
+    )?;
     match field {
         Some((_, value)) => value_string(ctx, value),
         None => Ok(None),
@@ -379,7 +382,9 @@ pub fn collect_references(
     let _depth = ctx.enter_nested("collect ASM references")?;
     match value {
         Value::String(id) => {
-            if ctx.contains_hash_set(owned, id.as_str(), "ASM owned reference lookup")? && !ctx.contains_btree_set(out, id.as_str(), "ASM reference lookup")? {
+            if ctx.contains_hash_set(owned, id.as_str(), "ASM owned reference lookup")?
+                && !ctx.contains_btree_set(out, id.as_str(), "ASM reference lookup")?
+            {
                 let id = ctx.copy_retained_text(id, "ASM reference id")?;
                 ctx.insert_btree_set(out, id, "ASM references")?;
             }
@@ -410,13 +415,19 @@ pub fn retain_root_entities(
     value: &mut Value,
     reachable: &HashSet<String, std::collections::hash_map::RandomState>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let Value::Map(fields) = value else { return Ok(()) };
+    let Value::Map(fields) = value else {
+        return Ok(());
+    };
     for (_, value) in ctx.admit_iter(fields, "ASM retained root fields")? {
         if let Value::Seq(items) = value {
-            ctx.retain_vec(items, |item| match entity_id(ctx, item)? {
-                Some(id) => ctx.contains_hash_set(reachable, id, "ASM root reachability"),
-                None => Ok(true),
-            }, "ASM root entity retention")?;
+            ctx.retain_vec(
+                items,
+                |item| match entity_id(ctx, item)? {
+                    Some(id) => ctx.contains_hash_set(reachable, id, "ASM root reachability"),
+                    None => Ok(true),
+                },
+                "ASM root entity retention",
+            )?;
         }
     }
     Ok(())
@@ -431,7 +442,9 @@ pub fn remap_owned_ids(
     let _depth = ctx.enter_nested("remap ASM owned ids")?;
     match value {
         Value::String(id) => {
-            if let Some(replacement) = ctx.get_hash_map(replacements, id.as_str(), "ASM replacement id lookup")? {
+            if let Some(replacement) =
+                ctx.get_hash_map(replacements, id.as_str(), "ASM replacement id lookup")?
+            {
                 *id = ctx.copy_retained_text(replacement, "ASM remapped id")?;
             }
         }
@@ -625,21 +638,33 @@ pub fn decode_with_header(
     let mut scratch = ctx.reserve_scoped(0, "ASM decode scratch")?;
     let mut by_index = HashMap::new();
     for record in ctx.admit_iter(records, "index ASM records")? {
-        let index = i64::try_from(record.index).map_err(|_| ctx.refuse_codec_limit(
-            "ASM record index", i64::MAX.unsigned_abs(), cadmpeg_core::decode::u64_from_index(record.index),
-        ))?;
-        scratch.with_storage(|| ctx.insert_hash_map(&mut by_index, index, record, "index ASM records"))?;
+        let index = i64::try_from(record.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                i64::MAX.unsigned_abs(),
+                cadmpeg_core::decode::u64_from_index(record.index),
+            )
+        })?;
+        scratch.with_storage(|| {
+            ctx.insert_hash_map(&mut by_index, index, record, "index ASM records")
+        })?;
     }
     // Subtype-definition positions, built once for every carrier resolution.
-    let token_count = ctx.fold(records, 0_u64, |count, record| {
-        let record_tokens = cadmpeg_core::decode::u64_from_index(record.tokens.len());
-        count
-            .checked_add(record_tokens)
-            .ok_or_else(|| ctx.refuse_codec_limit("ASM subtype scan work", u64::MAX, u64::MAX))
-    }, "ASM subtype source records")?;
+    let token_count = ctx.fold(
+        records,
+        0_u64,
+        |count, record| {
+            let record_tokens = cadmpeg_core::decode::u64_from_index(record.tokens.len());
+            count
+                .checked_add(record_tokens)
+                .ok_or_else(|| ctx.refuse_codec_limit("ASM subtype scan work", u64::MAX, u64::MAX))
+        },
+        "ASM subtype source records",
+    )?;
     ctx.charge_work(token_count, "scan ASM subtype definitions")?;
     let mut subtype_storage = ctx.reserve_scoped(0, "index ASM subtype definitions")?;
-    let token_table = subtype_storage.with_storage(|| nurbs::toks::SubtypeTable::from_records(ctx, records))?
+    let token_table = subtype_storage
+        .with_storage(|| nurbs::toks::SubtypeTable::from_records(ctx, records))?
         .with_save_format_version(header.and_then(|header| header.save_format_version));
     nurbs::toks::admit_subtype_references(ctx, records, &token_table)?;
     let save_format_major = header.and_then(crate::kernel_header::KernelHeader::save_format_major);
@@ -648,7 +673,8 @@ pub fn decode_with_header(
         .and_then(|count| i64::try_from(count).ok());
     let header_scale = header.and_then(|header| header.scale).unwrap_or(1.0);
 
-    let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(ctx, records, &mut scratch)?;
+    let (mut carriers, inward_normal_surfaces) =
+        decode_analytic_carriers(ctx, records, &mut scratch)?;
     let mut reach = Reachable::default();
 
     let topology_context = TopologyContext {
@@ -663,15 +689,26 @@ pub fn decode_with_header(
         &mut out,
         records,
         &mut carriers,
-        &mut reach, &mut scratch)?;
-    walk_reachable_topology(topology_context, &mut out, records, &mut carriers, &mut reach, &mut scratch)?;
+        &mut reach,
+        &mut scratch,
+    )?;
+    walk_reachable_topology(
+        topology_context,
+        &mut out,
+        records,
+        &mut carriers,
+        &mut reach,
+        &mut scratch,
+    )?;
     let wire = collect_wire_topology(
         topology_context,
         &mut out,
         records,
         saved_entity_limit,
         &mut carriers,
-        &mut reach, &mut scratch)?;
+        &mut reach,
+        &mut scratch,
+    )?;
 
     let (reversed_curve_refs, forward_curve_refs) =
         scratch.with_storage(|| classify_edge_curve_senses(ctx, records, &reach))?;
@@ -738,11 +775,27 @@ pub fn decode_with_header(
             format,
         },
     )?;
-    let emitted_attributes = emit_attributes(ctx, &mut out, records, &by_index, &reach, format, &mut scratch)?;
+    let emitted_attributes = emit_attributes(
+        ctx,
+        &mut out,
+        records,
+        &by_index,
+        &reach,
+        format,
+        &mut scratch,
+    )?;
     if purpose == DecodePurpose::Model {
         emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
         count_other_records(ctx, &mut out, records, &reach, &emitted_attributes)?;
-        emit_annotation_records(ctx, &mut out, records, &by_index, &mut carriers, stream, format)?;
+        emit_annotation_records(
+            ctx,
+            &mut out,
+            records,
+            &by_index,
+            &mut carriers,
+            stream,
+            format,
+        )?;
 
         classify_body_kinds(ctx, &mut out)?;
         clamp_edge_ranges_to_carrier_domains(ctx, &mut out)?;
@@ -761,17 +814,25 @@ fn inherited_attribute_target(
     let mut storage = ctx.reserve_scoped(0, "ASM inherited attribute visited")?;
     loop {
         ctx.charge_work(1, "ASM inherited attribute walk")?;
-        if !storage.with_storage(|| ctx.insert_hash_set(&mut visited, owner, "ASM inherited attribute visited"))? {
+        if !storage.with_storage(|| {
+            ctx.insert_hash_set(&mut visited, owner, "ASM inherited attribute visited")
+        })? {
             return Ok(None);
         }
         if let Some(target) = targets.get(&owner) {
-            return target.try_clone_for_decode(ctx, "ASM inherited attribute target").map(Some);
+            return target
+                .try_clone_for_decode(ctx, "ASM inherited attribute target")
+                .map(Some);
         }
-        let Some(attribute) = by_index.get(&owner) else { return Ok(None) };
+        let Some(attribute) = by_index.get(&owner) else {
+            return Ok(None);
+        };
         if !attribute.name.ends_with("-attrib") {
             return Ok(None);
         }
-        let Some(parent) = attribute_owner(attribute) else { return Ok(None) };
+        let Some(parent) = attribute_owner(attribute) else {
+            return Ok(None);
+        };
         owner = parent;
     }
 }
