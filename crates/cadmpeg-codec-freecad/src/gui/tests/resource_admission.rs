@@ -532,9 +532,7 @@ fn material_appearance_refusal(operation: &str) -> cadmpeg_core::CodecError {
                 emissive: 0,
                 shininess: zero,
                 transparency: zero,
-                image: String::new(),
-                image_path: String::new(),
-                uuid: "material-guid".into(),
+                uuid: "material-guid",
             };
             super::super::material_appearance(
                 ctx,
@@ -829,9 +827,9 @@ fn gui_material_string_refuses_at_caller_limit() {
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     let error = crate::test_support::refusal_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         &[],
-        "FCStd GUI material string",
+        "FCStd GUI material string UTF-8",
         |ctx| {
             let error = super::super::parse_material_list(
                 &ctx,
@@ -841,15 +839,15 @@ fn gui_material_string_refuses_at_caller_limit() {
                 false,
             )
             .err()
-            .expect("material string must charge before retaining its bytes");
+            .expect("material string must charge before UTF-8 validation");
             Err::<(), cadmpeg_core::CodecError>(error)
         },
     );
 
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && failure.operation == "FCStd GUI material string"),
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && failure.operation == "FCStd GUI material string UTF-8"),
         "{error:?}"
     );
 }

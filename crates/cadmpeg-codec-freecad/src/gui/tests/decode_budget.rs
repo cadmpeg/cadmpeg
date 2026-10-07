@@ -349,9 +349,7 @@ fn gui_deferred_removal_keeps_material_face_binding_identity() {
                 emissive: 0,
                 shininess: zero,
                 transparency: zero,
-                image: String::new(),
-                image_path: String::new(),
-                uuid: String::new(),
+                uuid: "",
             }],
         )]);
         let mut plan = AppearancePlan::new(ctx).expect("plan");
@@ -404,4 +402,69 @@ fn gui_deferred_removal_keeps_material_face_binding_identity() {
         plan.apply(ctx, &mut ir).expect("apply");
         assert_eq!(ir.model.appearance_bindings.len(), 3);
     });
+}
+
+#[test]
+fn gui_material_text_stays_borrowed_until_output_transfer() {
+    let fields = [
+        b"image".as_slice(),
+        b"image-path".as_slice(),
+        b"material-guid".as_slice(),
+    ];
+    let mut bytes = 1_u32.to_le_bytes().to_vec();
+    bytes.extend_from_slice(&[0_u8; 24]);
+    for text in fields {
+        bytes.extend_from_slice(
+            &u32::try_from(text.len())
+                .expect("field length")
+                .to_le_bytes(),
+        );
+        bytes.extend_from_slice(text);
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let (materials, _storage) = ctx
+        .with_scoped_storage("material cache", || {
+            super::super::parse_material_list(
+                &ctx,
+                cadmpeg_core::decode::View::over_retained(&bytes),
+                3,
+                "material",
+                false,
+            )
+        })
+        .expect("no retained scratch copies");
+    assert_eq!(materials[0].uuid, "material-guid");
+    assert_eq!(
+        materials[0].uuid.as_ptr(),
+        bytes[bytes.len() - fields[2].len()..].as_ptr()
+    );
+}
+
+#[test]
+fn gui_material_text_validates_each_field_before_borrowing() {
+    for invalid in 0..3 {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        bytes.extend_from_slice(&[0_u8; 24]);
+        for field in 0..3 {
+            bytes.extend_from_slice(&1_u32.to_le_bytes());
+            bytes.push(if field == invalid { 0xff } else { b'x' });
+        }
+        crate::test_support::with_service_context(&bytes, |ctx| {
+            let error = super::super::parse_material_list(
+                ctx,
+                cadmpeg_core::decode::View::over_retained(&bytes),
+                3,
+                "material",
+                false,
+            )
+            .err()
+            .expect("invalid material UTF-8");
+            assert!(
+                matches!(error, CodecError::Malformed(ref message) if message.contains("string is not UTF-8"))
+            );
+        });
+    }
 }

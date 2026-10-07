@@ -4923,25 +4923,22 @@ fn validate_gui_constraint_list(
     Ok(())
 }
 
-#[derive(Clone)]
-struct GuiMaterial {
+struct GuiMaterial<'data> {
     ambient: u32,
     diffuse: u32,
     specular: u32,
     emissive: u32,
     shininess: FiniteBinary32,
     transparency: FiniteBinary32,
-    image: String,
-    image_path: String,
-    uuid: String,
+    uuid: &'data str,
 }
 
-fn validate_gui_list_payloads<'property>(
+fn validate_gui_list_payloads<'property, 'data>(
     ctx: &DecodeContext<'_>,
     properties: &'property [GuiPropertyRecord],
-    entries: &BTreeMap<String, View<'_>>,
+    entries: &BTreeMap<String, View<'data>>,
     requires_alpha_conversion: bool,
-) -> Result<HashMap<&'property str, Vec<GuiMaterial>>, CodecError> {
+) -> Result<HashMap<&'property str, Vec<GuiMaterial<'data>>>, CodecError> {
     let mut material_lists = HashMap::new();
     for property in ctx.admit_iter(properties, "FCStd GUI list property sources")? {
         if property.side_entries.is_empty() {
@@ -5289,13 +5286,13 @@ fn parse_fillet_edges(
     Ok(())
 }
 
-fn parse_material_list(
+fn parse_material_list<'data>(
     ctx: &DecodeContext<'_>,
-    mut view: View<'_>,
+    mut view: View<'data>,
     version: u32,
     property_id: &str,
     requires_alpha_conversion: bool,
-) -> Result<Vec<GuiMaterial>, CodecError> {
+) -> Result<Vec<GuiMaterial<'data>>, CodecError> {
     let (count, has_strings) = match version {
         0 | 1 => {
             let header = view.i32_le().ok_or_else(|| {
@@ -5389,9 +5386,7 @@ fn parse_material_list(
             emissive,
             shininess: FiniteBinary32::new(shininess).ok_or_else(invalid)?,
             transparency: FiniteBinary32::new(transparency).ok_or_else(invalid)?,
-            image: String::new(),
-            image_path: String::new(),
-            uuid: String::new(),
+            uuid: "",
         });
     }
     if requires_alpha_conversion {
@@ -5404,8 +5399,8 @@ fn parse_material_list(
     }
     if has_strings {
         for material in ctx.admit_iter(&mut materials, "FCStd GUI material records")? {
-            material.image = read_material_string(ctx, &mut view, property_id)?;
-            material.image_path = read_material_string(ctx, &mut view, property_id)?;
+            read_material_string(ctx, &mut view, property_id)?;
+            read_material_string(ctx, &mut view, property_id)?;
             material.uuid = read_material_string(ctx, &mut view, property_id)?;
         }
     }
@@ -5418,11 +5413,11 @@ fn parse_material_list(
     Ok(materials)
 }
 
-fn read_material_string(
+fn read_material_string<'data>(
     ctx: &DecodeContext<'_>,
-    view: &mut View<'_>,
+    view: &mut View<'data>,
     property_id: &str,
-) -> Result<String, CodecError> {
+) -> Result<&'data str, CodecError> {
     let length = view.u32_le().ok_or_else(|| {
         gui_malformed(
             ctx,
@@ -5452,14 +5447,14 @@ fn read_material_string(
                 format_args!("GUI material list {property_id} string is not UTF-8"),
             )
         })?;
-    ctx.copy_retained_text(text, "FCStd GUI material string")
+    Ok(text)
 }
 
 fn transfer_shape_appearances(
     ctx: &DecodeContext<'_>,
     plan: &mut AppearancePlan<'_>,
     graph: &Graph,
-    material_lists: &HashMap<&str, Vec<GuiMaterial>>,
+    material_lists: &HashMap<&str, Vec<GuiMaterial<'_>>>,
     shape_index: &ShapeIndex<'_, '_>,
     topology_index: &TopologyIndex<'_, '_>,
     losses: &mut Vec<LossNote>,
@@ -5817,7 +5812,7 @@ fn material_appearance(
     id: AppearanceId,
     provider_name: &str,
     index: usize,
-    material: &GuiMaterial,
+    material: &GuiMaterial<'_>,
 ) -> Result<Appearance, CodecError> {
     let scalar = |name: &str, value: f64| {
         cadmpeg_ir::scalar::FiniteReal::new(value)
@@ -5830,7 +5825,7 @@ fn material_appearance(
             "FCStd GUI appearance name",
         )?),
         asset_guid: (!material.uuid.is_empty())
-            .then(|| ctx.copy_retained_text(&material.uuid, "FCStd GUI material asset GUID"))
+            .then(|| ctx.copy_retained_text(material.uuid, "FCStd GUI material asset GUID"))
             .transpose()?,
         library_id: None,
         visual_guid: None,
