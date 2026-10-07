@@ -123,20 +123,18 @@ fn polygon_boundaries_intersect(
             .take(left.len())
             .enumerate(),
         |(left_index, (&left_start, &left_end))| {
+            let first_right = if same_polygon { left_index + 1 } else { 0 };
             ctx.any_by(
-                right
-                    .iter()
-                    .zip(right.iter().cycle().skip(1))
-                    .take(right.len())
-                    .enumerate(),
-                |(right_index, (&right_start, &right_end))| {
+                first_right..right.len(),
+                |right_index| {
                     if same_polygon
-                        && (left_index == right_index
-                            || (left_index + 1) % left.len() == right_index
+                        && ((left_index + 1) % left.len() == right_index
                             || (right_index + 1) % right.len() == left_index)
                     {
                         return Ok(false);
                     }
+                    let right_start = right[right_index];
+                    let right_end = right[(right_index + 1) % right.len()];
                     Ok(segments_intersect_or_touch(
                         left_start,
                         left_end,
@@ -414,6 +412,37 @@ mod tests {
             .enumerate()
             .map(|(index, boundary)| (loop_id(index), boundary))
             .collect()
+    }
+
+    #[test]
+    fn self_intersection_visits_each_unordered_edge_pair_once() {
+        use cadmpeg_ir::math::Point2;
+        let square = [
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(1.0, 1.0),
+            Point2::new(0.0, 1.0),
+        ];
+        // Four outer visits and their end probe; six unordered pairs and
+        // the four inner end probes. Adjacent pairs need only a fixed check.
+        let result = crate::test_support::with_work_limit(15, |ctx| {
+            super::polygon_boundaries_intersect(ctx, &square, &square, 0.0, true)
+        })
+        .expect("one visit per unordered pair and end probe");
+        assert!(!result);
+        let refusal =
+            crate::test_support::with_work_refusal("catia_boundary_segment_pairs", |ctx| {
+                let result = super::polygon_boundaries_intersect(ctx, &square, &square, 0.0, true);
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            });
+        assert!(
+            matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "catia_boundary_segment_pairs")
+        );
     }
 
     #[test]
