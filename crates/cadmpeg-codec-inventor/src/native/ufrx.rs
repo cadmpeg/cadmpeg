@@ -137,10 +137,6 @@ fn arena_conversion_error(
         message,
     };
     let arena = ctx.copy_retained_text(arena, "retain native arena error name")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NativeConvertError>()),
-        "retain native arena error",
-    )?;
     Ok(NativeConvertError::Arena {
         arena,
         source: Box::new(source),
