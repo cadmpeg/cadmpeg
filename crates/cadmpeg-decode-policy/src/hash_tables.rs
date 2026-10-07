@@ -104,6 +104,52 @@ pub(crate) fn traversal<'tcx>(
     .map(|(_, _, method)| method)
 }
 
+/// Returns whether a call instantiates an `IntoIterator` bound of its callee
+/// with a hash table, so the callee may traverse it: a hash table passed to
+/// `Vec::extend`, `FromIterator::from_iter`, `Iterator::zip` or a collector
+/// taking `impl IntoIterator`, or hash tables yielded to `Iterator::flatten`
+/// or returned to `Iterator::flat_map`.
+pub(crate) fn iterated_instance<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    typing_env: ty::TypingEnv<'tcx>,
+    callee: DefId,
+    arguments: ty::GenericArgsRef<'tcx>,
+) -> bool {
+    if !matches!(
+        tcx.def_kind(callee),
+        rustc_hir::def::DefKind::Fn | rustc_hir::def::DefKind::AssocFn
+    ) {
+        return false;
+    }
+    tcx.clauses_of(callee)
+        .instantiate(tcx, arguments)
+        .clauses
+        .iter()
+        .any(|clause| match clause.kind().skip_binder() {
+            ty::ClauseKind::Trait(predicate)
+                if types::standard(tcx, predicate.def_id())
+                    && tcx.item_name(predicate.def_id()).as_str() == "IntoIterator" =>
+            {
+                let source = predicate.self_ty();
+                if source.has_escaping_bound_vars() {
+                    return false;
+                }
+                let source = tcx
+                    .try_normalize_erasing_regions(typing_env, ty::Unnormalized::new_wip(source))
+                    .unwrap_or(source);
+                collection_kind(tcx, source).is_some()
+            }
+            _ => false,
+        })
+}
+
+/// The DecodeContext methods whose bodies are the charged removals.
+pub(crate) const CHARGED_REMOVALS: &[&str] = &[
+    "remove_hash_map",
+    "remove_entry_hash_map",
+    "remove_hash_set",
+];
+
 /// The replacement named for a raw removal from a hash table.
 pub(crate) const REMOVAL_REPLACEMENT: &str = "DecodeContext::remove_hash_map, DecodeContext::remove_entry_hash_map or DecodeContext::remove_hash_set";
 
