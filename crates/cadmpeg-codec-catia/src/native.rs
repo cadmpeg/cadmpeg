@@ -5972,7 +5972,7 @@ fn range_interval(
         }
         None => payload.len(),
     };
-    let Some(interval) = entity_table::parse_range_interval(payload, start, end) else {
+    let Some(interval) = entity_table::parse_range_interval(ctx, payload, start, end)? else {
         return Ok(None);
     };
     let (incoming_references, incoming_storage_references) = incidences.of(ctx, entity_id)?;
@@ -10639,7 +10639,8 @@ impl CatiaNative {
                 }
                 record.repeated_reference_schema_selection = repeated_reference_schema_selection(
                     ctx,
-                    object_graph::repeated_reference_schema_preamble(&record.payload).as_ref(),
+                    object_graph::repeated_reference_schema_preamble_charged(ctx, &record.payload)?
+                        .as_ref(),
                     catalog,
                 )?;
             }
