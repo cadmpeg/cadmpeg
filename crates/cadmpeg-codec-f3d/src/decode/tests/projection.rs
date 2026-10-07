@@ -408,8 +408,16 @@ fn indexed_mesh_channels_project_default_and_override_selectors() {
     };
     let mut unresolved = std::collections::BTreeMap::new();
     let channels = crate::test_support::with_decode_context(|ctx| {
-        mesh_attribute_channels(ctx, &[attribute], 3, &[[0, 1, 2]], &mut unresolved)
-            .expect("mesh attribute budget")
+        let mut unresolved_storage = ctx.reserve_scoped(0, "test mesh attribute counts").unwrap();
+        mesh_attribute_channels(
+            ctx,
+            &[attribute],
+            3,
+            &[[0, 1, 2]],
+            &mut unresolved,
+            &mut unresolved_storage,
+        )
+        .expect("mesh attribute budget")
     });
 
     assert!(unresolved.is_empty());
@@ -1874,12 +1882,14 @@ fn triangle_attribute_selector_range_refuses_work_after_valid_output() {
         let attribute = crate::paramesh::triangle_domain_test_attribute(ctx)
             .expect("triangle-domain attribute");
         let mut unresolved = std::collections::BTreeMap::new();
+        let mut unresolved_storage = ctx.reserve_scoped(0, "test mesh attribute counts").unwrap();
         let channels = mesh_attribute_channels(
             ctx,
             std::slice::from_ref(&attribute),
             3,
             &triangles,
             &mut unresolved,
+            &mut unresolved_storage,
         )
         .expect("valid triangle attribute");
         assert!(unresolved.is_empty());
@@ -1898,12 +1908,14 @@ fn triangle_attribute_selector_range_refuses_work_after_valid_output() {
         |ctx| {
             let attribute = crate::paramesh::triangle_domain_test_attribute(ctx)?;
             let mut unresolved = std::collections::BTreeMap::new();
+            let mut unresolved_storage = ctx.reserve_scoped(0, "test mesh attribute counts")?;
             mesh_attribute_channels(
                 ctx,
                 std::slice::from_ref(&attribute),
                 3,
                 &triangles,
                 &mut unresolved,
+                &mut unresolved_storage,
             )
             .map(|_| ())
         },

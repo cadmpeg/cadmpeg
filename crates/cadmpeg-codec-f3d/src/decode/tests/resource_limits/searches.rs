@@ -16,13 +16,16 @@ fn model_brep_basename_lookup_preserves_work_refusal() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     assert!(!blob_names.is_empty());
-    let candidates = super::super::super::model_brep_candidates(&ctx, &scan, &blob_names).unwrap();
+    let (candidates, _storage) =
+        super::super::super::model_brep_candidates(&ctx, &scan, &blob_names).unwrap();
     assert_eq!(candidates.len(), blob_names.len());
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "find F3D model BREP by basename",
         0,
-        |limited| super::super::super::model_brep_candidates(limited, &scan, &blob_names),
+        |limited| {
+            super::super::super::model_brep_candidates(limited, &scan, &blob_names).map(|_| ())
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

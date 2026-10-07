@@ -153,10 +153,17 @@ impl Brep {
     }
 
     /// Map solved bodies to the selector used by this blob's Design body map.
-    pub(crate) fn body_selectors(
+    pub(crate) fn body_selectors<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<BTreeMap<BodyId, u64>, CodecError> {
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<
+        (
+            BTreeMap<BodyId, u64>,
+            cadmpeg_core::decode::ScopedReservation<'ctx>,
+        ),
+        CodecError,
+    > {
+        let mut storage = ctx.reserve_scoped(0, "stage F3D BREP body selectors")?;
         let ordinal_mode = ctx.all_by(
             &self.asm.body_native_keys,
             |body| Ok(body.asm_body_key.is_none()),
@@ -172,32 +179,40 @@ impl Brep {
             let Some(selector) = selector else {
                 continue;
             };
-            let id = body
-                .body
-                .try_clone_for_decode(ctx, "copy F3D BREP body ID")?;
+            let id = storage
+                .with_storage(|| body.body.try_clone_for_decode(ctx, "copy F3D BREP body ID"))?;
 
-            ctx.insert_btree_map(
-                &mut selectors,
-                id,
-                selector,
-                "index F3D BREP body selectors",
-            )?;
+            storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut selectors,
+                    id,
+                    selector,
+                    "index F3D BREP body selectors",
+                )
+            })?;
         }
-        Ok(selectors)
+        Ok((selectors, storage))
     }
 
     /// Resolve the Design selectors present for this blob. An exact native
     /// body key has precedence. A selector absent from the native-key domain
     /// selects the body with the same zero-based ordinal.
-    pub(crate) fn body_selectors_for(
+    pub(crate) fn body_selectors_for<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'_>,
         selectors: &BTreeSet<u64>,
-    ) -> Result<BTreeMap<BodyId, u64>, cadmpeg_core::CodecError> {
+    ) -> Result<
+        (
+            BTreeMap<BodyId, u64>,
+            cadmpeg_core::decode::ScopedReservation<'ctx>,
+        ),
+        cadmpeg_core::CodecError,
+    > {
+        let mut storage = ctx.reserve_scoped(0, "stage F3D selected BREP bodies")?;
         let mut resolved = BTreeMap::new();
         ctx.charge_work(0, "scan F3D body selectors")?;
         if selectors.is_empty() {
-            return Ok(resolved);
+            return Ok((resolved, storage));
         }
         let (body_keys, _body_keys_storage) = ctx.unique_index(
             ctx.admit_iter(&self.asm.body_native_keys, "scan F3D indexed body keys")?
@@ -243,21 +258,27 @@ impl Brep {
                     "describe ambiguous F3D body selector",
                 )?));
             };
-            let id = body.try_clone_for_decode(ctx, "copy F3D BREP body ID")?;
+            let id =
+                storage.with_storage(|| body.try_clone_for_decode(ctx, "copy F3D BREP body ID"))?;
 
-            if let Some(previous) = ctx.insert_btree_map(
-                &mut resolved,
-                id,
-                *selector,
-                "index F3D selected BREP bodies",
-            )? {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                    "F3D body {} is selected by both {previous} and {selector}",
-                    body.as_str()
-                )));
+            if let Some(previous) = storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut resolved,
+                    id,
+                    *selector,
+                    "index F3D selected BREP bodies",
+                )
+            })? {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!(
+                        "F3D body {} is selected by both {previous} and {selector}",
+                        body.as_str()
+                    ),
+                    "describe conflicting F3D body selectors",
+                )?));
             }
         }
-        Ok(resolved)
+        Ok((resolved, storage))
     }
 
     /// Append a disjoint, already-qualified BREP graph.

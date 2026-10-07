@@ -21,7 +21,7 @@ use crate::xref::{self, XrefTable};
 pub(super) fn merge_archive(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
-    archive: &ArchiveSession<'_>,
+    archive: &ArchiveSession<'_, '_>,
     model_root: String,
     ir: &mut cadmpeg_ir::CadIr,
     report: &mut cadmpeg_ir::codec::DecodeBody,
@@ -29,13 +29,15 @@ pub(super) fn merge_archive(
 ) -> Result<usize, CodecError> {
     let table = xref_table_from_ir(ctx, ir)?;
 
+    let mut stack_storage = ctx.reserve_scoped(0, "stage F3Z merge stack")?;
     let mut stack = Vec::new();
-    ctx.reserve_vec(&mut stack, 1, "seed F3Z merge stack")?;
+    ctx.reserve_scoped_vec(&mut stack_storage, &mut stack, 1, "seed F3Z merge stack")?;
     stack.push(model_root);
     MergeSession {
         ctx,
         scan,
         archive,
+        stack_storage,
         stack,
     }
     .merge(ir, report, fidelity, &table)
@@ -111,7 +113,9 @@ fn xref_table_from_ir(
             },
         }
     }
-    let Some(namespace) = ir.native.namespace("f3d") else {
+    let Some(namespace) =
+        ctx.get_btree_map(&ir.native.0, "f3d", "find F3Z native XREF namespace")?
+    else {
         return Ok(XrefTable::default());
     };
     Ok(XrefTable {
@@ -126,7 +130,8 @@ fn xref_table_from_ir(
 struct MergeSession<'r, 'a> {
     ctx: &'r DecodeContext<'a>,
     scan: &'r ContainerScan<'a>,
-    archive: &'r ArchiveSession<'a>,
+    archive: &'r ArchiveSession<'a, 'r>,
+    stack_storage: cadmpeg_core::decode::ScopedReservation<'r>,
     stack: Vec<String>,
 }
 
@@ -144,7 +149,11 @@ impl MergeSession<'_, '_> {
             .ctx
             .admit_iter(&table.references, "merge F3Z reference rows")?
         {
-            let occurrence = occurrence_key(self.ctx, reference)?;
+            let (occurrence, _occurrence_storage) = self
+                .ctx
+                .with_scoped_storage("stage F3Z occurrence key", || {
+                    occurrence_key(self.ctx, reference)
+                })?;
             let label = xref::design_for(self.ctx, table, reference)?
                 .map_or(reference.relative_path.as_str(), |design| {
                     design.display_name.as_str()
@@ -237,11 +246,19 @@ impl MergeSession<'_, '_> {
                 body: mut component_report,
                 source_fidelity: mut component_fidelity,
             } = component;
-            self.ctx.push_formatted_retained(
+            let (path, _path_storage) =
+                self.ctx
+                    .with_scoped_storage("stage F3Z merge stack path", || {
+                        self.ctx.copy_retained_text(
+                            &reference.relative_path,
+                            "retain F3Z merge stack path",
+                        )
+                    })?;
+            self.ctx.push_scoped_vec(
+                &mut self.stack_storage,
                 &mut self.stack,
-                format_args!("{}", reference.relative_path),
+                path,
                 "grow F3Z merge stack",
-                "retain F3Z merge stack path",
             )?;
             let descendants = self.merge(
                 &mut component_ir,
@@ -880,6 +897,7 @@ mod tests {
                 .unwrap();
         let scan = crate::container::scan(&normal, root).unwrap();
         let archive = super::ArchiveSession {
+            _members_storage: normal.reserve_scoped(0, "test member index").unwrap(),
             members: std::collections::BTreeMap::new(),
             layers: cadmpeg_core::dialect::DialectLayers::of(scan.kind.dialect().clone()),
             losses: Vec::new(),

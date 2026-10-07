@@ -844,18 +844,18 @@ fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
     };
 
     assert_eq!(
-        with_context(|ctx| brep.body_selectors(ctx).unwrap()).len(),
+        with_context(|ctx| brep.body_selectors(ctx).unwrap().0).len(),
         2
     );
     assert_eq!(
-        with_context(|ctx| brep.body_selectors(ctx).unwrap())
+        with_context(|ctx| brep.body_selectors(ctx).unwrap().0)
             [&BodyId::mint("f3d:brep:entity#1").expect("identity grammar")],
         1
     );
 
     brep.asm.body_native_keys[1].asm_body_key = Some(7);
     assert_eq!(
-        with_context(|ctx| brep.body_selectors(ctx).unwrap()),
+        with_context(|ctx| brep.body_selectors(ctx).unwrap().0),
         BTreeMap::from([(
             BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
             7
@@ -864,7 +864,7 @@ fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
 }
 
 #[test]
-fn body_selector_id_copy_refuses_retained_limit() {
+fn body_selector_id_copy_refuses_scratch_limit() {
     let brep = Brep {
         asm: AsmBrep {
             body_native_keys: vec![BodyNativeKey {
@@ -881,7 +881,12 @@ fn body_selector_id_copy_refuses_retained_limit() {
         },
         ..Brep::default()
     };
-    let error = with_limits(u64::MAX, 0, |ctx| brep.body_selectors(ctx).unwrap_err());
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "copy F3D BREP body ID",
+        0,
+        |ctx| brep.body_selectors(ctx).map(|_| ()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D BREP body ID")
@@ -934,7 +939,10 @@ fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
     };
 
     assert_eq!(
-        with_context(|ctx| brep.body_selectors_for(ctx, &BTreeSet::from([0])).unwrap()),
+        with_context(|ctx| brep
+            .body_selectors_for(ctx, &BTreeSet::from([0]))
+            .unwrap()
+            .0),
         BTreeMap::from([(
             BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
             0
@@ -943,7 +951,10 @@ fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
 
     brep.asm.body_native_keys = vec![native_key(0, 436)];
     assert_eq!(
-        with_context(|ctx| brep.body_selectors_for(ctx, &BTreeSet::from([0])).unwrap()),
+        with_context(|ctx| brep
+            .body_selectors_for(ctx, &BTreeSet::from([0]))
+            .unwrap()
+            .0),
         BTreeMap::from([(
             BodyId::mint("f3d:brep:entity#0").expect("identity grammar"),
             0
@@ -973,7 +984,10 @@ fn selected_body_index_refuses_collection_limit() {
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "index F3D selected BREP bodies",
         0,
-        |ctx| brep.body_selectors_for(ctx, &BTreeSet::from([7])),
+        |ctx| {
+            brep.body_selectors_for(ctx, &BTreeSet::from([7]))
+                .map(|_| ())
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1030,6 +1044,7 @@ fn indexed_body_selectors_preserve_precedence_and_conflicts() {
     let selected = with_context(|ctx| {
         brep.body_selectors_for(ctx, &BTreeSet::from([0, u64::MAX - 1, u64::MAX]))
             .unwrap()
+            .0
     });
     assert_eq!(
         selected,
@@ -1062,7 +1077,10 @@ fn indexed_body_selectors_preserve_index_and_lookup_refusals() {
             dimension,
             "index F3D native body selectors",
             0,
-            |ctx| brep.body_selectors_for(ctx, &BTreeSet::from([7])),
+            |ctx| {
+                brep.body_selectors_for(ctx, &BTreeSet::from([7]))
+                    .map(|_| ())
+            },
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1077,7 +1095,10 @@ fn indexed_body_selectors_preserve_index_and_lookup_refusals() {
             ResourceDimension::WorkUnits,
             operation,
             0,
-            |ctx| brep.body_selectors_for(ctx, &BTreeSet::from([selector])),
+            |ctx| {
+                brep.body_selectors_for(ctx, &BTreeSet::from([selector]))
+                    .map(|_| ())
+            },
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

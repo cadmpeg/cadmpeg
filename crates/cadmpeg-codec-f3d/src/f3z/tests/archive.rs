@@ -203,7 +203,7 @@ fn f3z_description_json_refuses_recursion_limit() {
 }
 
 #[test]
-fn f3z_model_root_name_refuses_retained_limit() {
+fn f3z_model_root_name_refuses_work_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let bytes = f3z_archive("model.f3d", &[("model.f3d", b"model")]);
@@ -212,10 +212,10 @@ fn f3z_model_root_name_refuses_retained_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_context, root).unwrap();
     let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "retain F3Z model root",
         0,
-        |ctx| crate::f3z::archive::model_root(ctx, &scan),
+        |ctx| crate::f3z::archive::model_root(ctx, &scan).map(|_| ()),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -236,7 +236,7 @@ fn f3z_model_candidate_refuses_collection_limit() {
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "collect F3Z model candidates",
         0,
-        |ctx| crate::f3z::archive::model_root(ctx, &scan),
+        |ctx| crate::f3z::archive::model_root(ctx, &scan).map(|_| ()),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -257,7 +257,7 @@ fn f3z_derived_model_match_refuses_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "match F3Z derived model reference",
         0,
-        |ctx| crate::f3z::archive::model_root(ctx, &scan),
+        |ctx| crate::f3z::archive::model_root(ctx, &scan).map(|_| ()),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -266,7 +266,7 @@ fn f3z_derived_model_match_refuses_work_limit() {
 }
 
 #[test]
-fn f3z_drawing_root_copy_refuses_retained_limit() {
+fn f3z_drawing_root_copy_refuses_work_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let bytes = drawing_archive_for_root_limit_tests();
@@ -275,10 +275,10 @@ fn f3z_drawing_root_copy_refuses_retained_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_context, root).unwrap();
     let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "retain F3Z drawing root",
         0,
-        |ctx| crate::f3z::archive::model_root(ctx, &scan),
+        |ctx| crate::f3z::archive::model_root(ctx, &scan).map(|_| ()),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
