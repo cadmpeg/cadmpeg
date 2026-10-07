@@ -73,18 +73,20 @@ fn deltas_merge_route_refuses_collection_limit() {
 fn deltas_merge_route_refuses_work_limit() {
     let partition = [0xff; 10];
 
-    let census = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::census::walk(ctx, &[])
-    }).expect("census setup passes");
+    let census =
+        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &[]))
+            .expect("census setup passes");
     let error = crate::test_support::resource_refusal_at(
         &partition,
         ResourceDimension::WorkUnits,
         "scan NX topology candidates",
         |ctx| crate::deltas::merge_full_records_with_census(ctx, &partition, &[], &census),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "scan NX topology candidates"));
+            && limit.operation == "scan NX topology candidates")
+    );
 }
 
 #[test]

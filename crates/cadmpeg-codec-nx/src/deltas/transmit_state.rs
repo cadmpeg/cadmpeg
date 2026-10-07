@@ -38,9 +38,13 @@ impl TransmitState {
         schema: String,
         references: [u32; 2],
     ) -> Result<Self, &'static str> {
-        match validate_text(&description, &schema, references, |value| {
-            Ok::<_, Infallible>(value.chars())
-        }) {
+        match validate_text(
+            &description,
+            &schema,
+            references,
+            |value, valid| Ok::<_, Infallible>(value.chars().all(valid)),
+            |value| Ok::<_, Infallible>(value.contains("(deltas)")),
+        ) {
             Ok(validation) => validation?,
             Err(never) => match never {},
         }
@@ -53,16 +57,35 @@ impl TransmitState {
     }
     pub(super) fn from_wire(
         ctx: &DecodeContext<'_>,
-        description: String,
-        schema: String,
+        description: &str,
+        schema: &str,
         references: [u32; 2],
     ) -> Result<Result<Self, &'static str>, CodecError> {
-        let validation = validate_text(&description, &schema, references, |value| {
-            ctx.admit_iter(value, "NX transmit text validation")
-        })?;
-        Ok(validation.map(|()| Self {
+        let validation = validate_text(
             description,
             schema,
+            references,
+            |value, valid| {
+                ctx.all_by(
+                    value.chars(),
+                    |character| Ok(valid(character)),
+                    "NX transmit text validation",
+                )
+            },
+            |value| {
+                ctx.any_by(
+                    value.as_bytes().windows(8),
+                    |window| Ok(window == b"(deltas)"),
+                    "NX transmit deltas marker",
+                )
+            },
+        )?;
+        if let Err(error) = validation {
+            return Ok(Err(error));
+        }
+        Ok(Ok(Self {
+            description: ctx.copy_retained_text(description, "NX deltas description")?,
+            schema: ctx.copy_retained_text(schema, "NX deltas schema")?,
             first_reference: references[0],
         }))
     }
@@ -79,14 +102,15 @@ impl TransmitState {
     }
 }
 
-fn validate_text<'text, E, I: Iterator<Item = char>>(
-    description: &'text str,
-    schema: &'text str,
+fn validate_text<E>(
+    description: &str,
+    schema: &str,
     references: [u32; 2],
-    mut admit: impl FnMut(&'text str) -> Result<I, E>,
+    mut all_valid: impl FnMut(&str, fn(char) -> bool) -> Result<bool, E>,
+    contains_marker: impl FnOnce(&str) -> Result<bool, E>,
 ) -> Result<Result<(), &'static str>, E> {
-    if !description.contains("(deltas)")
-        || !admit(description)?.all(|byte| byte.is_ascii_graphic() || byte == ' ')
+    if !contains_marker(description)?
+        || !all_valid(description, |byte| byte.is_ascii_graphic() || byte == ' ')?
     {
         return Ok(Err(
             "description: require printable ASCII containing (deltas)",
@@ -94,7 +118,7 @@ fn validate_text<'text, E, I: Iterator<Item = char>>(
     }
     if schema.len() <= 4
         || !schema.starts_with("SCH_")
-        || !admit(schema)?.all(|byte| byte.is_ascii_alphanumeric() || byte == '_')
+        || !all_valid(schema, |byte| byte.is_ascii_alphanumeric() || byte == '_')?
     {
         return Ok(Err(
             "schema: require SCH_ followed by ASCII letters, digits, or underscores",
@@ -197,14 +221,7 @@ mod tests {
             &[],
             ResourceDimension::WorkUnits,
             "NX transmit text validation",
-            |ctx| {
-                super::TransmitState::from_wire(
-                    ctx,
-                    "header (deltas)".into(),
-                    "SCH_A".into(),
-                    [2, 3],
-                )
-            },
+            |ctx| super::TransmitState::from_wire(ctx, "header (deltas)", "SCH_A", [2, 3]),
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX transmit text validation"));
