@@ -25,8 +25,8 @@ use cadmpeg_ir::{
 use serde::{Deserialize, Serialize};
 
 use crate::pmdc::{
-    content_header, inventor_id, reference_list, type_id_string, u32_list, Cursor,
-    PmDcContentHeader, PmDcReferenceList, PmDcU32List,
+    content_header, inventor_id, reference_list, u32_list, Cursor, PmDcContentHeader,
+    PmDcReferenceList, PmDcU32List,
 };
 use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -262,25 +262,25 @@ impl Serialize for ClassId {
 
 impl ClassId {
     fn from_text(ctx: &DecodeContext<'_>, value: &str) -> Result<Self, CodecError> {
-        let valid = value.len() == 32
-            && ctx
-                .admit_iter(value.as_bytes(), "validate Inventor feature class identity")?
-                .all(|digit| digit.is_ascii_digit() || (b'a'..=b'f').contains(digit));
-        if !valid {
-            return Err(CodecError::Malformed(ctx.copy_retained_text(
+        let invalid = || {
+            Ok::<_, CodecError>(CodecError::Malformed(ctx.copy_retained_text(
                 "class_id must contain 32 lowercase hexadecimal digits",
                 "retain Inventor invalid feature class identity",
-            )?));
+            )?))
+        };
+        if value.len() != 32 {
+            return Err(invalid()?);
         }
+        // One pass over the 32 digits validates and decodes them.
         let mut bytes = [0; 16];
         for (index, digit) in ctx
             .admit_iter(value.as_bytes(), "decode Inventor feature class identity")?
             .enumerate()
         {
-            let nibble = if digit.is_ascii_digit() {
-                *digit - b'0'
-            } else {
-                *digit - b'a' + 10
+            let nibble = match digit {
+                b'0'..=b'9' => *digit - b'0',
+                b'a'..=b'f' => *digit - b'a' + 10,
+                _ => return Err(invalid()?),
             };
             if index % 2 == 0 {
                 bytes[index / 2] = nibble << 4;
@@ -297,7 +297,7 @@ impl ClassId {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<String, CodecError> {
-        type_id_string(ctx, self.0, operation)
+        crate::pmdc::type_id_string(ctx, self.0, operation)
     }
 }
 
@@ -350,19 +350,41 @@ impl PmDcFeatureLabelPayloadWire {
         self,
         ctx: &DecodeContext<'_>,
     ) -> Result<PmDcFeatureLabelPayload, CodecError> {
-        let name = ctx.validate_nonblank_text(self.name, "validate Inventor feature label name")?;
+        let class_id = ClassId::from_text(ctx, &self.class_id)?;
+        PmDcFeatureLabelPayload::new(
+            ctx,
+            self.save_version_major,
+            self.header,
+            self.index,
+            self.participants,
+            self.name,
+            class_id,
+        )
+    }
+}
+
+impl PmDcFeatureLabelPayload {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        save_version_major: u8,
+        header: PmDcLinkedHeader,
+        index: u32,
+        participants: PmDcReferenceList,
+        name: String,
+        class_id: ClassId,
+    ) -> Result<Self, CodecError> {
+        let name = ctx.validate_nonblank_text(name, "validate Inventor feature label name")?;
         let Ok(name) = NonBlankString::try_from(name) else {
             return Err(CodecError::Malformed(ctx.copy_retained_text(
                 "name must not be empty",
                 "retain Inventor invalid feature label name",
             )?));
         };
-        let class_id = ClassId::from_text(ctx, &self.class_id)?;
-        Ok(PmDcFeatureLabelPayload {
-            save_version_major: self.save_version_major,
-            header: self.header,
-            index: self.index,
-            participants: self.participants,
+        Ok(Self {
+            save_version_major,
+            header,
+            index,
+            participants,
             name,
             class_id,
         })
@@ -1046,26 +1068,10 @@ fn parse_label(
     let index = cursor.u32("feature label index")?;
     let participants = reference_list(ctx, &mut cursor, 2, "feature-label participants")?;
     let name = cursor.utf16(ctx, "feature label")?;
-    let class_id_bytes = cursor.take_array("feature-label class id")?;
-    let mut class_id_storage =
-        ctx.reserve_scoped(0, "materialize Inventor feature label class id")?;
-    let class_id = class_id_storage.with_storage(|| {
-        type_id_string(
-            ctx,
-            class_id_bytes,
-            "retain Inventor feature label class id",
-        )
-    })?;
+    // The class id stays in its sixteen bytes: decode never renders it.
+    let class_id = ClassId(cursor.take_array("feature-label class id")?);
     cursor.finish("feature label")?;
-    PmDcFeatureLabelPayloadWire {
-        save_version_major: version,
-        header,
-        index,
-        participants,
-        name,
-        class_id,
-    }
-    .into_record(ctx)
+    PmDcFeatureLabelPayload::new(ctx, version, header, index, participants, name, class_id)
 }
 
 const EXTRUSION_CLASS_ID: ClassId = ClassId([
@@ -1448,28 +1454,25 @@ fn project_extrusion(
     if source.properties.references().get(23)? != source.properties.references().get(1)? {
         return None;
     }
-    for (position, selection) in
+    // Selections must be distinct; one set of the indices seen so far
+    // answers each selection instead of a scan of the ones before it.
+    let mut seen_storage =
+        option_result_value!(ctx.reserve_scoped(0, "check distinct Inventor extrusion selections"));
+    let mut seen = std::collections::HashSet::new();
+    for selection in
         option_result_value!(ctx.admit_iter(boundary.references(), "visit Inventor feature items"))
-            .enumerate()
     {
-        let mut duplicate = false;
-        for prior in option_result_value!(ctx.admit_iter(
-            &boundary.references()[..position],
+        let first = option_result_value!(seen_storage.with_storage(|| ctx.insert_hash_set(
+            &mut seen,
+            selection.index(),
             "check distinct Inventor extrusion selections",
-        )) {
-            if option_result_value!(ctx.equal(
-                &prior.index(),
-                &selection.index(),
-                "compare Inventor extrusion selection references",
-            )) {
-                duplicate = true;
-                break;
-            }
-        }
-        if duplicate {
+        )));
+        if !first {
             return None;
         }
     }
+    drop(seen);
+    drop(seen_storage);
     let mut selections = Vec::new();
     for reference in
         option_result_value!(ctx.admit_iter(boundary.references(), "visit Inventor feature items"))
@@ -2394,14 +2397,13 @@ fn boolean_properties(
     let mut properties = BTreeMap::new();
     for slot in ctx.admit_iter(slots, "visit Inventor feature items")? {
         if let Some(value) = boolean(ctx, source, *slot, index)? {
-            ctx.charge_retained(
-                if value { 4 } else { 5 },
-                "retain Inventor feature property value",
-            )?;
             ctx.insert_btree_map(
                 &mut properties,
                 cadmpeg_core::nonblank_literal!(ctx, "property_{slot}_boolean")?,
-                value.to_string(),
+                ctx.copy_retained_text(
+                    if value { "true" } else { "false" },
+                    "retain Inventor feature property value",
+                )?,
                 "project Inventor feature boolean property",
             )?;
         }
@@ -3228,31 +3230,16 @@ mod tests {
     }
 
     #[test]
-    fn feature_label_class_id_refuses_materialized_limit_before_hex_copy() {
+    fn feature_label_keeps_its_class_id_bytes_without_scoped_text() {
         let bytes = feature_label_bytes();
         let arena = DecodeArena::new();
-        let (ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("label view");
-        assert_eq!(
-            parse_label(&ctx, source, 22)
-                .expect("label is admitted")
-                .name
-                .as_str(),
-            "a"
-        );
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 31;
+        policy.limits.max_materialized_bytes = 0;
         let (ctx, source) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("label view");
-        assert!(matches!(
-            parse_label(&ctx, source, 22),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::MaterializedBytes
-                    && limit.operation == "retain Inventor feature label class id"
-                    && limit.used == 0
-                    && limit.additional == 32
-        ));
+        let label = parse_label(&ctx, source, 22).expect("label needs no scoped storage");
+        assert_eq!(label.name.as_str(), "a");
+        assert_eq!(label.class_id, ClassId([0xab; 16]));
     }
 
     #[test]
