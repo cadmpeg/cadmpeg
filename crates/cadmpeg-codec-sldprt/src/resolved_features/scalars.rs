@@ -342,21 +342,49 @@ impl<'lane, 'ctx> ObjectNames<'lane, 'ctx> {
         ctx: &DecodeContext<'_>,
         feature: &crate::records::Feature,
     ) -> Result<Option<&'lane FeatureInputName>, CodecError> {
+        Ok(match self.lookup(ctx, feature)? {
+            NameLookup::One(name) => Some(name),
+            NameLookup::Absent | NameLookup::Repeated => None,
+        })
+    }
+
+    /// The lane names that could serialize `feature`'s object: those with its
+    /// object id, or, when no name carries that id, those with its text.
+    pub(crate) fn lookup(
+        &self,
+        ctx: &DecodeContext<'_>,
+        feature: &crate::records::Feature,
+    ) -> Result<NameLookup<'lane>, CodecError> {
         if let Some(source_id) = feature.source_value() {
             if let Some(name) =
                 ctx.get_hash_map(&self.by_object, &source_id, "find SLDPRT object name by id")?
             {
-                return Ok(*name);
+                return Ok(NameLookup::from_unique(*name));
             }
         }
-        Ok(ctx
-            .get_hash_map(
+        Ok(
+            match ctx.get_hash_map(
                 &self.by_value,
                 feature.name.as_str(),
                 "find SLDPRT object name by text",
-            )?
-            .copied()
-            .flatten())
+            )? {
+                Some(name) => NameLookup::from_unique(*name),
+                None => NameLookup::Absent,
+            },
+        )
+    }
+}
+
+/// How many lane names could serialize one feature's object.
+pub(crate) enum NameLookup<'lane> {
+    Absent,
+    One(&'lane FeatureInputName),
+    Repeated,
+}
+
+impl<'lane> NameLookup<'lane> {
+    fn from_unique(name: Option<&'lane FeatureInputName>) -> Self {
+        name.map_or(Self::Repeated, Self::One)
     }
 }
 

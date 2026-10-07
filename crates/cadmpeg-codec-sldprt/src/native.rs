@@ -441,7 +441,10 @@ impl SldprtNative {
                 "load SLDPRT sketch entities",
             )?;
         }
-        for wire in entity_wires {
+        for wire in ctx
+            .admit_iter(entity_wires, "load SLDPRT sketch entities")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             let Some(payload) = ctx
                 .get_hash_map(
                     &(lane_payloads),
@@ -610,25 +613,21 @@ impl SldprtNative {
                 )?,
             ));
         }
-        let (name_ids, _name_ids_reservation) = ctx.collect_scoped_string_set(
-            names.len(),
-            names.iter().map(|record| record.id.as_str()),
-            "index SLDPRT feature names",
-        )?;
+        let lookup = ScalarLookup::new(ctx, &scalars, &names)?;
         if let Some(record) = ctx.find_by(
             &body_selections,
             |record| {
                 let record = *record;
                 Ok({
-                    !ctx.contains_hash_set(
-                        &(name_ids),
-                        record.object_name_ref.as_str(),
-                        "test SLDPRT hashed identity",
-                    )? || !ctx.contains_hash_set(
-                        &(feature_ids),
-                        record.feature_ref.as_str(),
-                        "test SLDPRT hashed identity",
-                    )? || record.local_body_ids.is_empty()
+                    lookup
+                        .name_value(ctx, record.object_name_ref.as_str())?
+                        .is_none()
+                        || !ctx.contains_hash_set(
+                            &(feature_ids),
+                            record.feature_ref.as_str(),
+                            "test SLDPRT hashed identity",
+                        )?
+                        || record.local_body_ids.is_empty()
                 })
             },
             "validate SLDPRT native references",
@@ -648,15 +647,15 @@ impl SldprtNative {
             |record| {
                 let record = *record;
                 Ok({
-                    !ctx.contains_hash_set(
-                        &(name_ids),
-                        record.object_name_ref.as_str(),
-                        "test SLDPRT hashed identity",
-                    )? || !ctx.contains_hash_set(
-                        &(feature_ids),
-                        record.feature_ref.as_str(),
-                        "test SLDPRT hashed identity",
-                    )? || record.local_edge_ids.is_empty()
+                    lookup
+                        .name_value(ctx, record.object_name_ref.as_str())?
+                        .is_none()
+                        || !ctx.contains_hash_set(
+                            &(feature_ids),
+                            record.feature_ref.as_str(),
+                            "test SLDPRT hashed identity",
+                        )?
+                        || record.local_edge_ids.is_empty()
                 })
             },
             "validate SLDPRT native references",
@@ -676,15 +675,15 @@ impl SldprtNative {
             |record| {
                 let record = *record;
                 Ok({
-                    !ctx.contains_hash_set(
-                        &(name_ids),
-                        record.object_name_ref.as_str(),
-                        "test SLDPRT hashed identity",
-                    )? || !ctx.contains_hash_set(
-                        &(feature_ids),
-                        record.feature_ref.as_str(),
-                        "test SLDPRT hashed identity",
-                    )? || record.components.is_empty()
+                    lookup
+                        .name_value(ctx, record.object_name_ref.as_str())?
+                        .is_none()
+                        || !ctx.contains_hash_set(
+                            &(feature_ids),
+                            record.feature_ref.as_str(),
+                            "test SLDPRT hashed identity",
+                        )?
+                        || record.components.is_empty()
                         || ctx
                             .admit_iter(
                                 &record.producer_feature_refs[..],
@@ -748,11 +747,7 @@ impl SldprtNative {
             &scalars,
             |record| {
                 let record = *record;
-                Ok(!ctx.contains_hash_set(
-                    &(name_ids),
-                    record.name.as_str(),
-                    "test SLDPRT hashed identity",
-                )?)
+                Ok(lookup.name_value(ctx, record.name.as_str())?.is_none())
             },
             "validate SLDPRT native references",
         )? {
@@ -771,39 +766,36 @@ impl SldprtNative {
             references.iter().map(|record| (record.id.as_str(), record)),
             "index SLDPRT references",
         )?;
-        let (class_ids, _class_ids_reservation) = ctx.collect_scoped_string_set(
+        // The first class with an identity answers, so the index is filled
+        // in reverse.
+        let (classes_by_id, _classes_by_id_reservation) = ctx.collect_scoped_string_map(
             classes.len(),
-            classes.iter().map(|record| record.id.as_str()),
-            "index SLDPRT classes",
-        )?;
-        let (scalar_ids, _scalar_ids_reservation) = ctx.collect_scoped_string_set(
-            scalars.len(),
-            ctx.admit_iter(&scalars[..], "scan SLDPRT load_charged values")
+            ctx.admit_iter(&classes, "index SLDPRT classes")
                 .map_err(cadmpeg_core::CodecError::from)?
-                .map(|record| record.id.as_str()),
-            "index SLDPRT scalars",
+                .rev()
+                .map(|record| (record.id.as_str(), record)),
+            "index SLDPRT classes",
         )?;
         if let Some(record) = ctx.find_by(
             &relation_bindings,
             |record| {
                 let record = *record;
                 Ok({
-                    !ctx.contains_hash_set(
-                        &(class_ids),
+                    ctx.get_hash_map(
+                        &classes_by_id,
                         record.class_ref.as_str(),
                         "test SLDPRT hashed identity",
-                    )? || !ctx.contains_hash_set(
-                        &(scalar_ids),
-                        record.scalar_ref.as_str(),
-                        "test SLDPRT hashed identity",
-                    )? || match record.feature_ref.as_deref() {
-                        Some(feature) => !ctx.contains_hash_set(
-                            &(feature_ids),
-                            feature,
-                            "test SLDPRT hashed identity",
-                        )?,
-                        None => false,
-                    }
+                    )?
+                    .is_none()
+                        || lookup.scalar(ctx, record.scalar_ref.as_str())?.is_none()
+                        || match record.feature_ref.as_deref() {
+                            Some(feature) => !ctx.contains_hash_set(
+                                &(feature_ids),
+                                feature,
+                                "test SLDPRT hashed identity",
+                            )?,
+                            None => false,
+                        }
                 })
             },
             "validate SLDPRT native references",
@@ -818,30 +810,10 @@ impl SldprtNative {
                 )?,
             ));
         }
-        // The first record with an identity answers a lookup, so the
-        // indexes are filled in reverse and the last write wins.
-        let (classes_by_id, _classes_by_id_reservation) = ctx.collect_scoped_string_map(
-            classes.len(),
-            ctx.admit_iter(&classes, "index SLDPRT classes")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .rev()
-                .map(|record| (record.id.as_str(), record)),
-            "index SLDPRT classes",
-        )?;
-        let (scalars_by_id, _scalars_by_id_reservation) = ctx.collect_scoped_string_map(
-            scalars.len(),
-            ctx.admit_iter(&scalars, "index SLDPRT scalars")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .rev()
-                .map(|record| (record.id.as_str(), record)),
-            "index SLDPRT scalars",
-        )?;
         let instance_owners = RelationInstanceOwners {
             classes: &classes_by_id,
             features: &feature_ids,
-            scalars: &scalars_by_id,
-            scalar_records: &scalars,
-            names: &names,
+            lookup: &lookup,
         };
         if let Some(record) = ctx.find_by(
             &relation_instances,
@@ -1175,13 +1147,7 @@ impl SldprtNative {
             .admit_iter(&self.feature_input_lanes, "scan SLDPRT store values")
             .map_err(cadmpeg_core::CodecError::from)?
         {
-            let (name_ids, _name_ids_reservation) = ctx.collect_scoped_string_set(
-                lane.names.len(),
-                ctx.admit_iter(&lane.names[..], "scan SLDPRT store values")
-                    .map_err(cadmpeg_core::CodecError::from)?
-                    .map(|record| record.id.as_str()),
-                "index SLDPRT stored names",
-            )?;
+            let lookup = ScalarLookup::new(ctx, &lane.scalars, &lane.names)?;
             let (references_by_id, _references_by_id_reservation) = ctx.collect_scoped_string_map(
                 lane.references.len(),
                 lane.references
@@ -1189,25 +1155,19 @@ impl SldprtNative {
                     .map(|record| (record.id.as_str(), record)),
                 "index SLDPRT stored references",
             )?;
-            let (class_ids, _class_ids_reservation) = ctx.collect_scoped_string_set(
+            // Filled in reverse so the first class with an identity answers.
+            let (classes_by_id, _classes_by_id_reservation) = ctx.collect_scoped_string_map(
                 lane.classes.len(),
-                ctx.admit_iter(&lane.classes[..], "scan SLDPRT store values")
-                    .map_err(cadmpeg_core::CodecError::from)?
-                    .map(|record| record.id.as_str()),
-                "index SLDPRT stored classes",
-            )?;
-            // Filled in reverse so the first scalar with an identity answers.
-            let (scalars_by_id, _scalars_by_id_reservation) = ctx.collect_scoped_string_map(
-                lane.scalars.len(),
-                ctx.admit_iter(&lane.scalars, "index SLDPRT stored scalars")
+                ctx.admit_iter(&lane.classes, "index SLDPRT stored classes")
                     .map_err(cadmpeg_core::CodecError::from)?
                     .rev()
                     .map(|record| (record.id.as_str(), record)),
-                "index SLDPRT stored scalars",
+                "index SLDPRT stored classes",
             )?;
             let scalar = |id: &str| {
-                ctx.get_hash_map(&scalars_by_id, id, "validate SLDPRT stored records")
-                    .map(|scalar| scalar.copied())
+                lookup
+                    .scalar(ctx, id)
+                    .map(|scalar| scalar.map(|(_, scalar)| scalar))
             };
             if let Some(record) = ctx.find_by(
                 &lane.classes,
@@ -1280,15 +1240,15 @@ impl SldprtNative {
                     record.parent.as_str(),
                     lane.id.as_str(),
                     "validate SLDPRT stored records",
-                )? || !ctx.contains_hash_set(
-                    &(name_ids),
-                    record.object_name_ref.as_str(),
-                    "test SLDPRT hashed identity",
-                )? || !ctx.contains_hash_set(
-                    &(feature_ids),
-                    record.feature_ref.as_str(),
-                    "test SLDPRT hashed identity",
-                )? || record.local_body_ids.is_empty();
+                )? || lookup
+                    .name_value(ctx, record.object_name_ref.as_str())?
+                    .is_none()
+                    || !ctx.contains_hash_set(
+                        &(feature_ids),
+                        record.feature_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )?
+                    || record.local_body_ids.is_empty();
                 if invalid {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                         ctx.format_retained(
@@ -1333,15 +1293,15 @@ impl SldprtNative {
                     record.parent.as_str(),
                     lane.id.as_str(),
                     "validate SLDPRT stored records",
-                )? || !ctx.contains_hash_set(
-                    &(name_ids),
-                    record.object_name_ref.as_str(),
-                    "test SLDPRT hashed identity",
-                )? || !ctx.contains_hash_set(
-                    &(feature_ids),
-                    record.feature_ref.as_str(),
-                    "test SLDPRT hashed identity",
-                )? || record.local_edge_ids.is_empty();
+                )? || lookup
+                    .name_value(ctx, record.object_name_ref.as_str())?
+                    .is_none()
+                    || !ctx.contains_hash_set(
+                        &(feature_ids),
+                        record.feature_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )?
+                    || record.local_edge_ids.is_empty();
                 if invalid
                     || edge_selection_disagrees_with_payload(ctx, lane, record, &lane_features)?
                 {
@@ -1364,15 +1324,15 @@ impl SldprtNative {
                     record.parent.as_str(),
                     lane.id.as_str(),
                     "validate SLDPRT stored records",
-                )? || !ctx.contains_hash_set(
-                    &(name_ids),
-                    record.object_name_ref.as_str(),
-                    "test SLDPRT hashed identity",
-                )? || !ctx.contains_hash_set(
-                    &(feature_ids),
-                    record.feature_ref.as_str(),
-                    "test SLDPRT hashed identity",
-                )? || record.components.is_empty();
+                )? || lookup
+                    .name_value(ctx, record.object_name_ref.as_str())?
+                    .is_none()
+                    || !ctx.contains_hash_set(
+                        &(feature_ids),
+                        record.feature_ref.as_str(),
+                        "test SLDPRT hashed identity",
+                    )?
+                    || record.components.is_empty();
                 if invalid
                     || surface_selection_disagrees_with_payload(ctx, lane, record, &lane_features)?
                 {
@@ -1445,11 +1405,14 @@ impl SldprtNative {
                             record.parent.as_str(),
                             lane.id.as_str(),
                             "validate SLDPRT stored records",
-                        )? || !ctx.contains_hash_set(
-                            &(class_ids),
-                            record.class_ref.as_str(),
-                            "test SLDPRT hashed identity",
-                        )? || scalar(&record.scalar_ref)?.is_none()
+                        )? || ctx
+                            .get_hash_map(
+                                &classes_by_id,
+                                record.class_ref.as_str(),
+                                "test SLDPRT hashed identity",
+                            )?
+                            .is_none()
+                            || scalar(&record.scalar_ref)?.is_none()
                             || match record.feature_ref.as_deref() {
                                 Some(feature) => !ctx.contains_hash_set(
                                     &(feature_ids),
@@ -1480,20 +1443,19 @@ impl SldprtNative {
                         record.parent.as_str(),
                         lane.id.as_str(),
                         "validate SLDPRT stored records",
-                    )? || !ctx.contains_hash_set(
-                        &(class_ids),
-                        record.class_ref.as_str(),
-                        "test SLDPRT hashed identity",
-                    )? || !ctx.contains_hash_set(
-                        &(feature_ids),
-                        record.feature_ref.as_str(),
-                        "test SLDPRT hashed identity",
-                    )? || !relation_instance_shape_valid(ctx, record, lane)?
-                        || !ctx.all_by(
-                            record.scalar_refs(),
-                            |id| Ok(scalar(id)?.is_some()),
-                            "validate SLDPRT stored records",
+                    )? || ctx
+                        .get_hash_map(
+                            &classes_by_id,
+                            record.class_ref.as_str(),
+                            "test SLDPRT hashed identity",
                         )?
+                        .is_none()
+                        || !ctx.contains_hash_set(
+                            &(feature_ids),
+                            record.feature_ref.as_str(),
+                            "test SLDPRT hashed identity",
+                        )?
+                        || !relation_instance_shape_valid(ctx, record, &classes_by_id, &lookup)?
                         || match record.parameter_scalar_ref() {
                             Some(id) => scalar(id)?.is_none_or(|scalar| {
                                 scalar.role != crate::records::FeatureInputScalarRole::Driving
@@ -1548,11 +1510,7 @@ impl SldprtNative {
                 &lane.scalars,
                 |record| {
                     let record = *record;
-                    Ok(!ctx.contains_hash_set(
-                        &(name_ids),
-                        record.name.as_str(),
-                        "test SLDPRT hashed identity",
-                    )?)
+                    Ok(lookup.name_value(ctx, record.name.as_str())?.is_none())
                 },
                 "validate SLDPRT stored records",
             )? {
@@ -1573,11 +1531,45 @@ impl SldprtNative {
                     .map(|record| (record.id(), record)),
                 "index SLDPRT stored sketch entities",
             )?;
+            // Each scalar resolves its operands among its own feature's sketch
+            // entities, in source order.
+            let mut entity_groups_storage =
+                ctx.reserve_scoped(0, "group SLDPRT stored sketch entities")?;
+            let mut entities_by_feature = std::collections::HashMap::<
+                Option<&str>,
+                Vec<&crate::records::SketchInputEntity>,
+            >::new();
+            for entity in ctx
+                .admit_iter(&lane.sketch_entities, "group SLDPRT stored sketch entities")
+                .map_err(cadmpeg_core::CodecError::from)?
+            {
+                entity_groups_storage.with_storage(|| {
+                    ctx.push_hash_group(
+                        &mut entities_by_feature,
+                        entity.feature_ref.as_deref(),
+                        entity,
+                        "group SLDPRT stored sketch entities",
+                        "group SLDPRT stored sketch entities",
+                    )
+                })?;
+            }
             for scalar in ctx
                 .admit_iter(&lane.scalars, "scan SLDPRT store values")
                 .map_err(cadmpeg_core::CodecError::from)?
             {
-                let resolved_operands = resolved_scalar_operand_markers(ctx, lane, scalar)?;
+                let candidates = ctx
+                    .get_hash_map(
+                        &entities_by_feature,
+                        &scalar.feature_ref.as_deref(),
+                        "group SLDPRT stored sketch entities",
+                    )?
+                    .map_or(&[][..], Vec::as_slice);
+                let resolved_operands =
+                    crate::resolved_features::operands::resolve_scalar_operand_markers(
+                        ctx,
+                        candidates,
+                        &scalar.operands,
+                    )?;
                 for (operand, resolved) in ctx
                     .admit_iter(&scalar.operands, "scan SLDPRT scalar operands")
                     .map_err(cadmpeg_core::CodecError::from)?
@@ -1633,7 +1625,15 @@ impl SldprtNative {
                                 )?,
                             ));
                         };
-                        if *resolved != Some(*target) {
+                        let agrees = match resolved {
+                            Some(resolved) => ctx.equal(
+                                resolved.id(),
+                                target.id(),
+                                "validate SLDPRT stored records",
+                            )?,
+                            None => false,
+                        };
+                        if !agrees {
                             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                                 ctx.format_retained(
                                     format_args!(
@@ -1802,16 +1802,75 @@ fn lane_feature_context<'ctx>(
     Ok((features, reservation))
 }
 
-/// The records a relation instance must resolve against.
-struct RelationInstanceOwners<'a> {
-    classes: &'a std::collections::HashMap<&'a str, &'a FeatureInputClass>,
-    features: &'a std::collections::HashSet<&'a str>,
-    scalars: &'a std::collections::HashMap<&'a str, &'a FeatureInputScalar>,
-    scalar_records: &'a [FeatureInputScalar],
-    names: &'a [FeatureInputName],
+/// Identity lookups over feature-input scalars and names. The first record
+/// with an identity answers.
+struct ScalarLookup<'a, 'ctx> {
+    /// Each scalar with its position among the indexed scalars.
+    scalars: std::collections::HashMap<&'a str, (usize, &'a FeatureInputScalar)>,
+    name_values: std::collections::HashMap<&'a str, &'a str>,
+    _storage: [cadmpeg_core::decode::ScopedReservation<'ctx>; 2],
 }
 
-impl RelationInstanceOwners<'_> {
+impl<'a, 'ctx> ScalarLookup<'a, 'ctx> {
+    const OPERATION: &'static str = "index SLDPRT scalars and names";
+
+    fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        scalars: &'a [FeatureInputScalar],
+        names: &'a [FeatureInputName],
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        // Filled in reverse so the first record with an identity is the last write.
+        let (scalar_index, scalar_storage) = ctx.collect_scoped_string_map(
+            scalars.len(),
+            ctx.admit_iter(scalars, Self::OPERATION)?
+                .enumerate()
+                .rev()
+                .map(|(position, scalar)| (scalar.id.as_str(), (position, scalar))),
+            Self::OPERATION,
+        )?;
+        let (name_values, name_storage) = ctx.collect_scoped_string_map(
+            names.len(),
+            ctx.admit_iter(names, Self::OPERATION)?
+                .rev()
+                .map(|name| (name.id.as_str(), name.value.as_str())),
+            Self::OPERATION,
+        )?;
+        Ok(Self {
+            scalars: scalar_index,
+            name_values,
+            _storage: [scalar_storage, name_storage],
+        })
+    }
+
+    fn scalar(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &str,
+    ) -> Result<Option<(usize, &'a FeatureInputScalar)>, cadmpeg_core::CodecError> {
+        Ok(ctx
+            .get_hash_map(&self.scalars, id, Self::OPERATION)?
+            .copied())
+    }
+
+    fn name_value(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &str,
+    ) -> Result<Option<&'a str>, cadmpeg_core::CodecError> {
+        Ok(ctx
+            .get_hash_map(&self.name_values, id, Self::OPERATION)?
+            .copied())
+    }
+}
+
+/// The records a relation instance must resolve against.
+struct RelationInstanceOwners<'a, 'ctx> {
+    classes: &'a std::collections::HashMap<&'a str, &'a FeatureInputClass>,
+    features: &'a std::collections::HashSet<&'a str>,
+    lookup: &'a ScalarLookup<'a, 'ctx>,
+}
+
+impl RelationInstanceOwners<'_, '_> {
     /// Whether a relation instance names a missing or mismatched class,
     /// feature or scalar, repeats a scalar, or states a scalar role its
     /// scalar does not carry.
@@ -1832,12 +1891,7 @@ impl RelationInstanceOwners<'_> {
         ) || !ctx.contains_hash_set(self.features, record.feature_ref.as_str(), OPERATION)?
             || record.scalar_refs().is_empty()
             || (record.scalar_refs().len() > 3
-                && !repeated_circle_display_shape_valid(
-                    ctx,
-                    record,
-                    self.scalar_records,
-                    self.names,
-                )?)
+                && !repeated_circle_display_shape_valid(ctx, record, self.lookup)?)
         {
             return Ok(true);
         }
@@ -1846,18 +1900,17 @@ impl RelationInstanceOwners<'_> {
         for scalar in ctx.admit_iter(record.scalar_refs(), OPERATION)? {
             if !workspace
                 .with_storage(|| ctx.insert_hash_set(&mut seen, scalar.as_str(), OPERATION))?
-                || ctx
-                    .get_hash_map(self.scalars, scalar.as_str(), OPERATION)?
-                    .is_none()
+                || self.lookup.scalar(ctx, scalar)?.is_none()
             {
                 return Ok(true);
             }
         }
         let role_mismatch = |id: Option<&str>, role| {
             Ok::<_, cadmpeg_core::CodecError>(match id {
-                Some(id) => ctx
-                    .get_hash_map(self.scalars, id, OPERATION)?
-                    .is_none_or(|scalar| scalar.role != role),
+                Some(id) => self
+                    .lookup
+                    .scalar(ctx, id)?
+                    .is_none_or(|(_, scalar)| scalar.role != role),
                 None => false,
             })
         };
@@ -2024,31 +2077,6 @@ fn first_orphan<'r, T>(
     )
 }
 
-fn resolved_scalar_operand_markers<'a>(
-    ctx: &DecodeContext<'_>,
-    lane: &'a FeatureInputLane,
-    scalar: &crate::records::FeatureInputScalar,
-) -> Result<Vec<Option<&'a crate::records::SketchInputEntity>>, cadmpeg_ir::NativeConvertError> {
-    let (entities, _entity_storage) =
-        ctx.with_scoped_storage("SLDPRT scalar operand candidates", || {
-            ctx.collect_vec(
-                ctx.admit_iter(
-                    &lane.sketch_entities,
-                    "scan SLDPRT scalar operand candidates",
-                )?
-                .filter(|candidate| candidate.feature_ref == scalar.feature_ref),
-                "collect SLDPRT scalar operand markers",
-            )
-        })?;
-    Ok(
-        crate::resolved_features::operands::resolve_scalar_operand_markers(
-            ctx,
-            &entities,
-            &scalar.operands,
-        )?,
-    )
-}
-
 const PAYLOAD_AGREEMENT: &str = "compare SLDPRT native records with their payload";
 
 fn generated_surface_identities_disagree_with_payload(
@@ -2204,17 +2232,16 @@ fn surface_selection_disagrees_with_payload(
 }
 
 fn relation_instance_shape_valid(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     record: &FeatureInputRelationInstance,
-    lane: &FeatureInputLane,
+    classes: &std::collections::HashMap<&str, &FeatureInputClass>,
+    lookup: &ScalarLookup<'_, '_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if record.scalar_refs().is_empty() {
+    const OPERATION: &str = "validate SLDPRT relation instance shape";
+    let Some((first_ref, _)) = record.scalar_refs().split_first() else {
         return Ok(false);
-    }
-    let Some(class) = ctx
-        .admit_iter(&lane.classes, "find SLDPRT relation instance class")?
-        .find(|class| class.id == record.class_ref)
-    else {
+    };
+    let Some(class) = ctx.get_hash_map(classes, record.class_ref.as_str(), OPERATION)? else {
         return Ok(false);
     };
     if !matches!(
@@ -2224,64 +2251,55 @@ fn relation_instance_shape_valid(
     ) {
         return Ok(false);
     }
-    for scalar_ref in ctx.admit_iter(
-        record.scalar_refs(),
-        "scan SLDPRT relation scalar references",
-    )? {
-        let Some(scalar) = ctx
-            .admit_iter(&lane.scalars, "find SLDPRT relation instance scalar")?
-            .find(|scalar| scalar.id == *scalar_ref)
-        else {
+    for scalar_ref in ctx.admit_iter(record.scalar_refs(), OPERATION)? {
+        let Some((_, scalar)) = lookup.scalar(ctx, scalar_ref)? else {
             return Ok(false);
         };
-        if scalar.feature_ref.as_deref() != Some(record.feature_ref.as_str()) {
+        let owned = match scalar.feature_ref.as_deref() {
+            Some(feature) => ctx.equal(feature, record.feature_ref.as_str(), OPERATION)?,
+            None => false,
+        };
+        if !owned {
             return Ok(false);
         }
     }
-    let repeated_circle_display =
-        repeated_circle_display_shape_valid(ctx, record, &lane.scalars, &lane.names)?;
+    let repeated_circle_display = repeated_circle_display_shape_valid(ctx, record, lookup)?;
     if record.scalar_refs().len() > 3 && !repeated_circle_display {
         return Ok(false);
     }
-    let scalar_operands_match = |scalar: &crate::records::FeatureInputScalar| {
-        scalar
-            .operands
-            .iter()
-            .map(|operand| (operand.kind, operand.entity_index))
-            .eq(record
-                .operands
-                .iter()
-                .map(|operand| (operand.kind, operand.entity_index)))
-            || (record.family == crate::records::FeatureInputRelationFamily::CircleDiameter
-                && matches!(record.operands.as_slice(), [first, _]
-                    if matches!(scalar.operands.as_slice(), [candidate]
-                        if candidate.kind == first.kind
-                            && candidate.entity_index == first.entity_index)))
-            || (repeated_circle_display
-                && matches!(record.operands.as_slice(), [first]
-                    if matches!(scalar.operands.as_slice(), [candidate]
-                        if candidate.kind == first.kind)))
+    let scalar_operands_match = |scalar: &FeatureInputScalar| {
+        let all_match = scalar.operands.len() == record.operands.len()
+            && ctx.all_by(
+                scalar.operands.iter().zip(&record.operands),
+                |(candidate, operand)| {
+                    Ok(candidate.kind == operand.kind
+                        && candidate.entity_index == operand.entity_index)
+                },
+                OPERATION,
+            )?;
+        Ok::<_, cadmpeg_core::CodecError>(
+            all_match
+                || (record.family == crate::records::FeatureInputRelationFamily::CircleDiameter
+                    && matches!(record.operands.as_slice(), [first, _]
+                        if matches!(scalar.operands.as_slice(), [candidate]
+                            if candidate.kind == first.kind
+                                && candidate.entity_index == first.entity_index)))
+                || (repeated_circle_display
+                    && matches!(record.operands.as_slice(), [first]
+                        if matches!(scalar.operands.as_slice(), [candidate]
+                            if candidate.kind == first.kind))),
+        )
     };
-    let Some(first) = ctx
-        .admit_iter(&lane.scalars, "find SLDPRT first relation scalar")?
-        .find(|scalar| scalar.id == record.scalar_refs()[0])
-    else {
+    let Some((_, first)) = lookup.scalar(ctx, first_ref)? else {
         return Ok(false);
     };
-    if first.offset != record.offset || !scalar_operands_match(first) {
+    if first.offset != record.offset || !scalar_operands_match(first)? {
         return Ok(false);
     }
     let mut last_operand_position = None;
     let mut detached = None;
-    for scalar_ref in ctx.admit_iter(
-        record.scalar_refs(),
-        "scan SLDPRT relation scalar references",
-    )? {
-        let Some((position, scalar)) = ctx
-            .admit_iter(&lane.scalars, "find SLDPRT relation scalar position")?
-            .enumerate()
-            .find(|(_, scalar)| scalar.id == *scalar_ref)
-        else {
+    for scalar_ref in ctx.admit_iter(record.scalar_refs(), OPERATION)? {
+        let Some((position, scalar)) = lookup.scalar(ctx, scalar_ref)? else {
             return Ok(false);
         };
         if scalar.operands.is_empty() {
@@ -2290,7 +2308,7 @@ fn relation_instance_shape_valid(
             }
         } else {
             if last_operand_position.is_some_and(|previous| position != previous + 1)
-                || !scalar_operands_match(scalar)
+                || !scalar_operands_match(scalar)?
             {
                 return Ok(false);
             }
@@ -2300,18 +2318,27 @@ fn relation_instance_shape_valid(
     let Some(last_operand_position) = last_operand_position else {
         return Ok(false);
     };
-    Ok(detached.is_none_or(|(position, scalar)| {
-        record.parameter_scalar_ref() == Some(scalar.id.as_str())
-            && position > last_operand_position
-    }))
+    Ok(match detached {
+        None => true,
+        Some((position, scalar)) => {
+            position > last_operand_position
+                && match record.parameter_scalar_ref() {
+                    Some(parameter) => ctx.equal(parameter, scalar.id.as_str(), OPERATION)?,
+                    None => false,
+                }
+        }
+    })
 }
 
+/// Whether a circle-diameter relation is a run of display scalars with
+/// consecutive ordinals, one name, one operand kind and distinct operand
+/// entities.
 fn repeated_circle_display_shape_valid(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     record: &FeatureInputRelationInstance,
-    scalars: &[FeatureInputScalar],
-    names: &[FeatureInputName],
+    lookup: &ScalarLookup<'_, '_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "validate SLDPRT repeated circle display";
     if record.family != crate::records::FeatureInputRelationFamily::CircleDiameter
         || record.parameter_scalar_ref().is_some()
         || record.display_scalar_ref().is_some()
@@ -2320,34 +2347,17 @@ fn repeated_circle_display_shape_valid(
     {
         return Ok(false);
     }
-    let scalar_name_value = |scalar: &FeatureInputScalar| {
-        Ok::<_, cadmpeg_core::CodecError>(
-            ctx.admit_iter(names, "find SLDPRT repeated circle scalar name")?
-                .find(|name| name.id == scalar.name)
-                .map(|name| name.value.as_str()),
-        )
-    };
-    let Some(first) = ctx
-        .admit_iter(scalars, "find SLDPRT first circle display scalar")?
-        .find(|scalar| scalar.id == record.scalar_refs()[0])
-    else {
+    let Some((_, first)) = lookup.scalar(ctx, &record.scalar_refs()[0])? else {
         return Ok(false);
     };
-    let Some(first_name) = scalar_name_value(first)? else {
+    let Some(first_name) = lookup.name_value(ctx, &first.name)? else {
         return Ok(false);
     };
+    let mut workspace = ctx.reserve_scoped(0, OPERATION)?;
+    let mut entities = std::collections::HashSet::new();
     let mut previous_ordinal = None;
-    for (index, scalar_id) in ctx
-        .admit_iter(
-            record.scalar_refs(),
-            "scan SLDPRT repeated circle scalar references",
-        )?
-        .enumerate()
-    {
-        let Some(scalar) = ctx
-            .admit_iter(scalars, "find SLDPRT circle display scalar")?
-            .find(|scalar| scalar.id == *scalar_id)
-        else {
+    for scalar_id in ctx.admit_iter(record.scalar_refs(), OPERATION)? {
+        let Some((_, scalar)) = lookup.scalar(ctx, scalar_id)? else {
             return Ok(false);
         };
         if previous_ordinal.is_some_and(|ordinal: u32| {
@@ -2362,22 +2372,19 @@ fn repeated_circle_display_shape_valid(
         };
         if scalar.role != crate::records::FeatureInputScalarRole::Display
             || operand.kind != record.operands[0].kind
-            || scalar_name_value(scalar)? != Some(first_name)
         {
             return Ok(false);
         }
-        for previous_id in ctx.admit_iter(
-            &record.scalar_refs()[..index],
-            "scan SLDPRT prior circle display scalars",
-        )? {
-            if !ctx
-                .admit_iter(scalars, "find SLDPRT prior circle display scalar")?
-                .find(|candidate| candidate.id == *previous_id)
-                .and_then(|previous| previous.operands.first())
-                .is_some_and(|previous| previous.entity_index != operand.entity_index)
-            {
-                return Ok(false);
-            }
+        let same_name = match lookup.name_value(ctx, &scalar.name)? {
+            Some(name) => ctx.equal(name, first_name, OPERATION)?,
+            None => false,
+        };
+        if !same_name
+            || !workspace.with_storage(|| {
+                ctx.insert_hash_set(&mut entities, operand.entity_index, OPERATION)
+            })?
+        {
+            return Ok(false);
         }
     }
     Ok(true)

@@ -178,6 +178,7 @@ fn site_keys_use_outer_container_identity() {
         type_id: 0,
         comp_sz: 0,
         section: BlockName::Named(cadmpeg_ir::stream_name!("Contents/Config-0-Partition")),
+        name_words: container::NameWords::PARTITION_ONLY,
         family: container::PayloadFamily::Parasolid,
         payload: Vec::new(),
         ps_streams: Vec::new(),
@@ -194,6 +195,7 @@ fn site_keys_use_outer_container_identity() {
 
     let compound = CompoundStream {
         path: cadmpeg_ir::stream_name!("Contents/Config-0-Partition"),
+        name_words: container::NameWords::PARTITION_ONLY,
         directory_id: 300,
         start_sector: 0,
         payload: Vec::new(),
@@ -821,6 +823,7 @@ fn invalid_marker_name_refuses_work_before_validation() {
 fn inventory_compound_classification_refuses_work_before_signature_scan() {
     let stream = CompoundStream {
         path: cadmpeg_ir::stream_name!("Contents/Unknown"),
+        name_words: container::NameWords::default(),
         directory_id: 0,
         start_sector: 0,
         payload: vec![0; 64],

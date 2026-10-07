@@ -940,10 +940,7 @@ fn classless_dimension_schema_class(
         else {
             return Ok(None);
         };
-        ctx.charge_work(
-            u64_from_index(diameter.len()),
-            "parse SLDPRT chamfer diameter",
-        )?;
+        crate::history::literals::admit_literal(ctx, diameter, "parse SLDPRT chamfer diameter")?;
         if crate::history::literals::parse_positive_dimension_length_mm(diameter).is_none() {
             return Ok(None);
         }
@@ -959,7 +956,7 @@ fn classless_dimension_schema_class(
         {
             return Ok(None);
         }
-        ctx.charge_work(u64_from_index(angle.len()), "parse SLDPRT chamfer angle")?;
+        crate::history::literals::admit_literal(ctx, angle, "parse SLDPRT chamfer angle")?;
         if crate::history::literals::parse_angle_rad(angle)
             .is_some_and(|angle| angle.get() > 0.0 && angle.get() < std::f64::consts::PI)
         {

@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{u64_from_index, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::FiniteReal;
 
 use super::LEN_TO_MM;
@@ -88,15 +88,11 @@ pub(super) fn scan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body: &[u8],
 ) -> Result<BTreeMap<u16, OffsetCarrier>, cadmpeg_core::CodecError> {
-    ctx.charge_work(u64_from_index(body.len()), "scan SLDPRT offset carriers")?;
     let mut out = BTreeMap::new();
-    let Some(last_offset) = body.len().checked_sub(1) else {
-        return Ok(out);
-    };
-    for offset in 0..last_offset {
+    let starts = 0..body.len().checked_sub(1).map_or(0, |end| end);
+    for offset in ctx.admit_iter(starts, "scan SLDPRT offset carriers")? {
         if let Some((attr, carrier)) = parse_at(body, offset) {
-            ctx.admit_btree_entry(&mut out, &attr, "index SLDPRT offset carriers")?;
-            out.insert(attr, carrier);
+            ctx.insert_btree_map(&mut out, attr, carrier, "index SLDPRT offset carriers")?;
         }
     }
     Ok(out)
