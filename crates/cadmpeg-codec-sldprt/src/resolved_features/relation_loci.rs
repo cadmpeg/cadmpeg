@@ -28,7 +28,7 @@ use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 // Relation geometry is projected after feature coordinates are rounded to the
 // model-space quantum. Keep the ordinary identity comparison strict, but allow
@@ -6762,7 +6762,7 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
             {
                 continue;
             }
-            let mut directly_bound = HashMap::<GridPoint, HashSet<GridPoint>>::new();
+            let mut directly_bound = BTreeMap::<GridPoint, BTreeSet<GridPoint>>::new();
             for marker in &markers {
                 ctx.charge_work(64, OPERATION)?;
                 let Some([u, v]) = marker
@@ -6806,10 +6806,10 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
                 }
             }
             let compatible = |primary_only: bool| -> Result<
-                HashMap<GridPoint, HashSet<GridPoint>>,
+                BTreeMap<GridPoint, BTreeSet<GridPoint>>,
                 cadmpeg_core::CodecError,
             > {
-                let mut points = HashMap::<GridPoint, HashSet<GridPoint>>::new();
+                let mut points = BTreeMap::<GridPoint, BTreeSet<GridPoint>>::new();
                 for marker in &markers {
                     ctx.charge_work(64, OPERATION)?;
                     if !matches!(
@@ -6942,16 +6942,12 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
 
 fn insert_compatible_locus(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    points: &mut HashMap<GridPoint, HashSet<GridPoint>>,
+    points: &mut BTreeMap<GridPoint, BTreeSet<GridPoint>>,
     marker: GridPoint,
     locus: GridPoint,
 ) -> Result<(), cadmpeg_core::CodecError> {
     const OPERATION: &str = "index SLDPRT compatible marker loci";
-    ctx.charge_work(64, OPERATION)?;
-    ctx.admit_hash_map_entry(points, &marker, OPERATION)?;
-    let loci = points.entry(marker).or_default();
-    ctx.insert_hash_set(loci, locus, OPERATION)?;
-    Ok(())
+    ctx.insert_btree_group_set(points, marker, locus, OPERATION, OPERATION)
 }
 
 fn marker_geometry_anchors(kind: SketchInputKind, geometry: &SketchGeometry) -> Vec<Point2> {

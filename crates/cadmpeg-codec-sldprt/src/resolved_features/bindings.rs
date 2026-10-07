@@ -386,7 +386,9 @@ pub(crate) fn bind_pattern_inputs(
                     }
                 }
                 if needs_axis {
-                    if let Some(axis) = temporary_axis_reference(&lane.native_payload, start, end) {
+                    if let Some(axis) =
+                        temporary_axis_reference(ctx, &lane.native_payload, start, end)?
+                    {
                         push_feature_binding_candidate(
                             ctx,
                             &mut circular_axis_assignments,
@@ -566,12 +568,13 @@ pub(crate) fn bind_pattern_inputs(
                             })
                             .map(|value| value.get() / 1000.0);
                         let display = linear_pattern_display_directions(
+                            ctx,
                             &lane.native_payload,
                             start,
                             end,
                             &lane.names,
                             [first_spacing_m, second_spacing_m],
-                        );
+                        )?;
                         ctx.extend_vec(
                             &mut directions,
                             display,
