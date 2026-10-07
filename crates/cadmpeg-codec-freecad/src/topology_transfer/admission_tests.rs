@@ -441,11 +441,70 @@ fn polygonal_surface_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn triangulated_surface_emitted_identity_refuses_at_retained_limit() {
-    assert_codec_retained_refusal(
-        &triangulated_face_archive(),
+fn triangulated_surface_emitted_identity_refuses_at_materialized_limit() {
+    let input = triangulated_face_archive();
+    let mut options = cadmpeg_ir::DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = u64::MAX;
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "FreeCAD emitted surface identity",
+        None,
     );
+    {
+        use cadmpeg_ir::Codec;
+        crate::FcstdCodec
+            .decode(&mut std::io::Cursor::new(&input), &options)
+            .expect("the archive retains no emitted-set identity");
+    }
+    drop(probe);
+    let triangulations = [serde_json::from_value(serde_json::json!({
+        "deflection": 0.02,
+        "nodes": [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 1.0, "y": 0.0, "z": 0.0}, {"x": 0.0, "y": 1.0, "z": 0.0}],
+        "triangles": [[1, 2, 3]], "uv_nodes": null, "normals": null
+    })).unwrap()];
+    let shapes: TextTShapes = serde_json::from_value(serde_json::json!([{
+        "index": 1, "kind": "face",
+        "geometry": {"kind": "face", "natural_restriction": false, "tolerance": 0.0, "surface": 0, "location": 0, "triangulation": 1},
+        "flags": [false, false, false, false, false, false, false], "children": []
+    }])).unwrap();
+    let payload = ShapePayloadRecord {
+        id: "fcstd:native:entry#MeshShape:Shape:Shape.brp".into(),
+        property: "Shape".into(),
+        entry: "Shape.brp".into(),
+        payload: ShapePayload::Empty,
+    };
+    crate::test_support::materialized_refusal_at("FreeCAD emitted surface identity", |ctx| {
+        let tables = Tables {
+            locations: &[],
+            curve2ds: &[],
+            curves: &[],
+            surfaces: &[],
+            polygons3d: &[],
+            polygons_on_triangulations: &[],
+            tshapes: &shapes,
+            triangulations: &triangulations,
+            roots: &[],
+        };
+        let mut builder = Builder::new(
+            ctx,
+            &payload,
+            tables,
+            cadmpeg_core::text::NonBlankString::try_from("MeshShape".to_owned()).unwrap(),
+            super::GeometryIndexes::new(ctx, &CadIr::empty())?,
+        )?;
+        builder.append_face(
+            &mut CadIr::empty(),
+            &cadmpeg_ir::ids::ShellId::mint("fcstd:model:shell#MeshShape:Shape:Shape.brp:6")
+                .unwrap(),
+            &crate::brep::TextShapeUse {
+                shape: 1,
+                orientation: crate::brep::TextOrientation::Forward,
+                location: 0.into(),
+            },
+            Transform::identity(),
+            false,
+        )
+    });
 }
 
 #[test]
@@ -808,6 +867,7 @@ fn empty_builder<'a, 'c, 'r>(
             roots: &[],
         },
         cadmpeg_core::text::NonBlankString::try_from("Object".to_owned()).unwrap(),
+        super::GeometryIndexes::new(ctx, &CadIr::empty())?,
     )
 }
 
@@ -1045,6 +1105,7 @@ fn assert_standalone_polygon_refusal(
             roots: &[],
         },
         cadmpeg_core::text::NonBlankString::try_from("Object".to_owned()).unwrap(),
+        super::GeometryIndexes::new(&ctx, &CadIr::empty()).unwrap(),
     )
     .unwrap();
     let edge = EdgeId::mint("fcstd:model:edge#Payload:1").unwrap();
@@ -1137,4 +1198,60 @@ fn polygon_curve_id_spelling_is_preserved() {
         builder.polygon_curve_id(&edge, 0, true).unwrap().as_str(),
         "fcstd:model:edge#Payload:1:polygon:1:secondary"
     );
+}
+
+#[test]
+fn geometry_position_indexes_charge_work_and_scoped_storage() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let mut ir = CadIr::empty();
+    let id = cadmpeg_ir::ids::CurveId::mint("fcstd:model:curve#Index:1").unwrap();
+    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        id: id.clone(),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedCurveGeometry::Polyline(
+                cadmpeg_ir::geometry::sampled::PolylineCurve::from_scaled_deflection(
+                    cadmpeg_ir::geometry::sampled::PolylineSamples::Unparameterized {
+                        points: vec![
+                            FinitePoint3::ZERO,
+                            FinitePoint3::from_coordinates(
+                                FiniteReal::ONE,
+                                FiniteReal::ZERO,
+                                FiniteReal::ZERO,
+                            ),
+                        ]
+                        .try_into()
+                        .unwrap(),
+                    },
+                    NonNegativeReal::ZERO,
+                    cadmpeg_ir::scalar::PositiveReal::ONE,
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .unwrap()
+                .unwrap(),
+            ),
+        ),
+        source_object: None,
+    });
+    crate::test_support::refusal_at(
+        ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD curve position lookup",
+        |ctx| {
+            let indexes = super::GeometryIndexes::new(ctx, &ir)?;
+            ctx.get_btree_map(&indexes.curves, &id, "FreeCAD curve position lookup")
+                .map(|_| ())
+        },
+    );
+    crate::test_support::materialized_refusal_at("FreeCAD curve position key", |ctx| {
+        super::GeometryIndexes::new(ctx, &ir).map(|_| ())
+    });
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut indexes = super::GeometryIndexes::new(ctx, &ir).unwrap();
+        assert_eq!(indexes.curves.get(&id), Some(&0));
+        indexes.index_curve(ctx, &id, 9).unwrap();
+        assert_eq!(indexes.curves.get(&id), Some(&0));
+        let next = cadmpeg_ir::ids::CurveId::mint("fcstd:model:curve#Index:2").unwrap();
+        indexes.index_curve(ctx, &next, 1).unwrap();
+        assert_eq!(indexes.curves.get(&next), Some(&1));
+    });
 }
