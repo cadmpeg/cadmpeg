@@ -246,3 +246,34 @@ fn hatch_link_bridge_uses_scratch_storage() {
         .expect("bridge backing and text are no longer live");
     drop(storage);
 }
+
+#[test]
+fn replacing_brep_fallback_cause_releases_previous_text() {
+    let (data, mut raw) = source_shaped_plane_brep();
+    raw.c3.slots = (0..100).map(|_| Some(crate::brep::RawBrepChild {
+        class_uuid: crate::wire::Uuid::nil(), class_data_range: 0..0, source_range: 0..0,
+    })).collect();
+    raw.surfaces.slots.clear();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 1024;
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("root bytes");
+    let association = super::test_association();
+    let unknown = DecodeContext::mint_unknown_id(0);
+    let mut mesh_budget = crate::mesh::MeshBudget::new();
+    let mut storage = ctx.reserve_scoped(0, "fixture Brep arena scratch").expect("scratch");
+    let carriers = super::super::stage_brep_carriers(super::super::BrepCarrierInput {
+        expand: crate::mesh::MeshExpand::new(&ctx, root), data: &data,
+        archive: ArchiveVersion::V5, writer_version: Some(200_206_180), raw: &raw,
+        key: "fixture", association: &association, unknown: &unknown,
+        scale: crate::settings::MillimeterScale::IDENTITY, mesh_budget: &mut mesh_budget,
+    }, true, &mut storage).expect("only the latest fallback cause remains live");
+    assert!(carriers.staged.draft.model().curves.is_empty());
+    assert!(carriers.child_cause.as_ref().expect("fallback cause").0.starts_with("C3 slot 99:"));
+    drop(carriers);
+    drop(storage);
+    let storage = ctx.reserve_scoped(1024, "fallback cause storage released")
+        .expect("all cause reservations are released");
+    drop(storage);
+}
