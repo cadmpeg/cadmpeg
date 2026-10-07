@@ -141,7 +141,9 @@ mod tests {
             cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
                 let mut policy = DecodePolicy::service();
                 match dimension {
-                    ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                    ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap;
+                    }
                     ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
                     ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
                     _ => unreachable!("tested queue dimensions"),
@@ -155,7 +157,9 @@ mod tests {
                 };
                 assert_eq!(limit.dimension, dimension);
                 drop(queue);
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                );
                 result
             });
         }
@@ -190,29 +194,43 @@ mod tests {
 
     #[test]
     fn priority_queue_returns_comparison_and_removal_refusals_unchanged() {
-        for operation in ["IR priority queue comparison", "IR priority queue swap", "IR priority queue remove", "IR priority queue root replacement"] {
+        for operation in [
+            "IR priority queue comparison",
+            "IR priority queue swap",
+            "IR priority queue remove",
+            "IR priority queue root replacement",
+        ] {
             cadmpeg_test_support::refusal::resource_limit_at(
-                ResourceDimension::WorkUnits, operation, |cap| {
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
                     let mut policy = DecodePolicy::service();
                     policy.limits.max_work_units = cap;
                     let arena = DecodeArena::new();
-                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
                     let mut queue = PriorityQueue::new(&ctx).expect("empty queue");
                     let result = (|| -> Result<(), cadmpeg_core::decode::ResourceLimit> {
                         queue.push(1_u32)?;
                         queue.push(2)?;
-                        if matches!(operation, "IR priority queue remove" | "IR priority queue root replacement") {
+                        if matches!(
+                            operation,
+                            "IR priority queue remove" | "IR priority queue root replacement"
+                        ) {
                             let _ = queue.pop()?;
                         }
                         Ok(())
-                    })().map_err(CodecError::from);
+                    })()
+                    .map_err(CodecError::from);
                     let Err(CodecError::ResourceLimit(limit)) = &result else {
                         panic!("the named queue boundary must refuse");
                     };
                     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
                     assert_eq!(limit.operation, operation);
                     drop(queue);
-                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                    );
                     result
                 },
             );
@@ -250,7 +268,9 @@ mod tests {
         ctx.finish_session()
             .expect("replacements allocate no additional slots");
         cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, "IR priority queue root replacement", |cap| {
+            ResourceDimension::WorkUnits,
+            "IR priority queue root replacement",
+            |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let arena = DecodeArena::new();
@@ -264,7 +284,9 @@ mod tests {
                 assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(limit.operation, "IR priority queue root replacement");
                 drop(queue);
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                );
                 result
             },
         );
@@ -273,21 +295,28 @@ mod tests {
     #[test]
     fn priority_queue_peek_preserves_work_refusal() {
         cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, "IR priority queue peek", |cap| {
+            ResourceDimension::WorkUnits,
+            "IR priority queue peek",
+            |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let arena = DecodeArena::new();
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
                 let mut queue = PriorityQueue::new(&ctx).expect("empty queue");
                 queue.push(1_u32).expect("one append unit");
-                let result = queue.peek().map(|value| value.copied()).map_err(CodecError::from);
+                let result = queue
+                    .peek()
+                    .map(Option::<&u32>::copied)
+                    .map_err(CodecError::from);
                 let Err(CodecError::ResourceLimit(limit)) = &result else {
                     panic!("root read needs work");
                 };
                 assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(limit.operation, "IR priority queue peek");
                 drop(queue);
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                );
                 result
             },
         );
@@ -306,12 +335,19 @@ mod tests {
             queue.push(value).expect("append and actual sift work");
         }
         for expected in [4_u32, 3, 2, 1] {
-            assert_eq!(queue.pop().expect("actual sift and removal work"), Some(expected));
+            assert_eq!(
+                queue.pop().expect("actual sift and removal work"),
+                Some(expected)
+            );
         }
         assert_eq!(queue.pop().expect("empty pop makes no comparison"), None);
-        let limit = ctx.charge_work_limit(1, "test next queue operation").expect_err("exact queue work");
+        let limit = ctx
+            .charge_work_limit(1, "test next queue operation")
+            .expect_err("exact queue work");
         assert_eq!((limit.used, limit.additional), (29, 1));
         drop(queue);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
 }
