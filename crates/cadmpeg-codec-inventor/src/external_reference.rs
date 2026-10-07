@@ -200,22 +200,42 @@ fn parse_stream_grammar<'a>(
 ) -> Result<UfrxDocument<'a>, CodecError> {
     let mut cursor = Cursor::new(source);
     let schema = cursor.u16("schema")?;
+    let assembly_representation = match (schema, document_kind) {
+        (15, DocumentKind::Assembly) => Some(true),
+        (15, DocumentKind::Part) => Some(false),
+        (15, _) => None,
+        _ => Some(false),
+    };
     let section_count = cursor.count16("section-version count", 256)?;
     if section_count < 5 {
         return Err(CodecError::Malformed(
             "UFRxDoc section-version table is too short".into(),
         ));
     }
-    cursor.fits(section_count, MIN_SECTION_VERSION_BYTES, "section-version count")?;
-    let mut section_versions =
-        ctx.vector_storage(section_count, "admit UFRxDoc section-version entries")?;
-    for _ in ctx.admit_iter(&(0..section_count), "admit UFRxDoc section-version entries")? {
-        ctx.push_vec(
-            &mut section_versions,
-            cursor.u16("section version")?,
-            "admit UFRxDoc section-version entries",
+    cursor.fits(
+        section_count,
+        MIN_SECTION_VERSION_BYTES,
+        "section-version count",
+    )?;
+    let section_versions = if assembly_representation.is_some() {
+        let mut versions =
+            ctx.vector_storage(section_count, "admit UFRxDoc section-version entries")?;
+        for _ in ctx.admit_iter(&(0..section_count), "admit UFRxDoc section-version entries")? {
+            ctx.push_vec(
+                &mut versions,
+                cursor.u16("section version")?,
+                "admit UFRxDoc section-version entries",
+            )?;
+        }
+        versions
+    } else {
+        // Every u16 value is valid. The unsupported header needs only bounds.
+        cursor.take(
+            section_count * MIN_SECTION_VERSION_BYTES,
+            "section versions",
         )?;
-    }
+        Vec::new()
+    };
     let save_version = cursor.array::<8>("save version")?;
     cursor.take(8, "save FILETIME")?;
     cursor.take(8, "secondary version")?;
@@ -228,7 +248,12 @@ fn parse_stream_grammar<'a>(
     cursor.take(16, "database revision id")?;
     cursor.u32("database revision state")?;
     cursor.take(16, "internal document id")?;
-    let original_file_name = cursor.utf16(ctx, "original file name", 65_536)?;
+    let original_file_name = if assembly_representation.is_some() {
+        cursor.utf16(ctx, "original file name", 65_536)?
+    } else {
+        cursor.skip_utf16(ctx, "original file name", 65_536)?;
+        String::new()
+    };
     cursor.u16("original file-name state")?;
 
     let lod_toc_count = cursor.count32("LOD table count", 65_536)?;
@@ -247,27 +272,12 @@ fn parse_stream_grammar<'a>(
         cursor.skip_utf16(ctx, "header pair value", 65_536)?;
     }
     cursor.take(4, "active LOD state")?;
-    let assembly_representation = if schema == 15 {
-        match document_kind {
-            DocumentKind::Assembly => true,
-            DocumentKind::Part => false,
-            DocumentKind::Drawing
-            | DocumentKind::Presentation
-            | DocumentKind::Mixed
-            | DocumentKind::Unknown => {
-                let detail = ctx.format_retained(
-                    format_args!(
-                        "UFRxDoc schema 15 {} header is not implemented",
-                        document_kind.label()
-                    ),
-                    "retain UFRx schema header diagnostic",
-                )?;
-                return Err(CodecError::NotImplemented(detail));
-            }
-        }
-    } else {
-        false
-    };
+    let assembly_representation = assembly_representation.ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "UFRxDoc schema 15 {} header is not implemented",
+            document_kind.label()
+        ))
+    })?;
     let representation = if schema == 15 {
         let prefix = cursor.u16("representation prefix")?;
         let active_representation = if assembly_representation {
@@ -319,7 +329,9 @@ fn parse_stream_grammar<'a>(
     let model_states = if schema == 15 {
         parse_model_states(ctx, source, &mut cursor, lod_count)?
     } else if lod_count != 0 {
-        return Err(CodecError::NotImplemented(ctx.format_retained(format_args!("UFRxDoc contains {lod_count} unframed LOD records"), "retain UFRx unframed LOD diagnostic")?));
+        return Err(CodecError::NotImplemented(format!(
+            "UFRxDoc contains {lod_count} unframed LOD records"
+        )));
     } else {
         Vec::new()
     };
@@ -327,7 +339,11 @@ fn parse_stream_grammar<'a>(
     let reference_count = cursor.count32("external-reference count", 1_000_000)?;
     let caption = cursor.utf16(ctx, "external-reference caption", 65_536)?;
     cursor.u32("external-reference table state")?;
-    cursor.fits(reference_count, MIN_REFERENCE_BYTES, "external-reference count")?;
+    cursor.fits(
+        reference_count,
+        MIN_REFERENCE_BYTES,
+        "external-reference count",
+    )?;
     let mut references =
         ctx.vector_storage(reference_count, "admit Inventor external references")?;
     for _ in ctx.admit_iter(&(0..reference_count), "admit Inventor external references")? {
@@ -343,7 +359,11 @@ fn parse_stream_grammar<'a>(
         }
         let display_name = cursor.utf16(ctx, "reference display name", 65_536)?;
         let state_count = cursor.count32("reference state-group count", 65_536)?;
-        cursor.fits(state_count, MIN_REFERENCE_STATE_GROUP_BYTES, "reference state-group count")?;
+        cursor.fits(
+            state_count,
+            MIN_REFERENCE_STATE_GROUP_BYTES,
+            "reference state-group count",
+        )?;
         let mut state_groups = ctx.vector_storage(
             state_count,
             "admit Inventor external-reference state groups",
@@ -502,7 +522,9 @@ fn parse_occurrences<'a>(
     // The extended header replaces five bytes with a marker and three u32
     // states. Legacy versions 20 and 21 each add a byte; saves from 2015
     // add one export padding byte.
-    let header_extra = if section_version >= 28 { 9 } else {
+    let header_extra = if section_version >= 28 {
+        9
+    } else {
         usize::from(section_version >= 20) + usize::from(section_version >= 21)
     };
     let minimum = MIN_OCCURRENCE_BYTES + header_extra + usize::from(save_year >= 2015);
@@ -602,7 +624,11 @@ fn parse_occurrence_section(
 ) -> Result<(), CodecError> {
     cursor.u32("occurrence section state")?;
     let count = cursor.count32("occurrence section property count", 65_536)?;
-    cursor.fits(count, MIN_OCCURRENCE_PROPERTY_BYTES, "occurrence section property count")?;
+    cursor.fits(
+        count,
+        MIN_OCCURRENCE_PROPERTY_BYTES,
+        "occurrence section property count",
+    )?;
     for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc occurrence properties")? {
         cursor.boolean("occurrence property presence")?;
         let tag = cursor.u8("occurrence property tag")?;
@@ -619,7 +645,11 @@ fn parse_occurrence_settings(
     cursor: &mut Cursor<'_>,
 ) -> Result<(), CodecError> {
     let count = cursor.count32("occurrence setting count", 65_536)?;
-    cursor.fits(count, MIN_OCCURRENCE_SETTING_BYTES, "occurrence setting count")?;
+    cursor.fits(
+        count,
+        MIN_OCCURRENCE_SETTING_BYTES,
+        "occurrence setting count",
+    )?;
     for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc occurrence settings")? {
         cursor.skip_utf16(ctx, "occurrence setting name", 65_536)?;
         cursor.take(16, "occurrence setting id")?;
@@ -681,15 +711,23 @@ fn parse_occurrence_items(
             "UFRxDoc occurrence export item counts differ: {count} and {repeated}"
         )));
     }
-    cursor.fits(count, MIN_OCCURRENCE_ITEM_BYTES, "occurrence export item count")?;
+    cursor.fits(
+        count,
+        MIN_OCCURRENCE_ITEM_BYTES,
+        "occurrence export item count",
+    )?;
     for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc occurrence export items")? {
         cursor.boolean("occurrence export item presence")?;
         let tag = cursor.u8("occurrence export item tag")?;
         let value_count = cursor.count32("occurrence export item value count", 65_536)?;
-        cursor.fits(value_count, MIN_OCCURRENCE_VALUE_BYTES, "occurrence export item value count")?;
+        cursor.fits(
+            value_count,
+            MIN_OCCURRENCE_VALUE_BYTES,
+            "occurrence export item value count",
+        )?;
         for _ in ctx.admit_iter(&(0..value_count), "admit UFRxDoc occurrence export values")? {
             require_tag(cursor.u8("occurrence export repeated tag")?, tag)?;
-            parse_occurrence_item_value(ctx, cursor, tag)?;
+            parse_occurrence_item_value(cursor, tag)?;
         }
         cursor.u32("occurrence export item trailer")?;
     }
@@ -716,17 +754,15 @@ fn parse_occurrence_value(
             cursor.take(16, "occurrence property id")?;
         }
         _ => {
-            return Err(CodecError::NotImplemented(ctx.format_retained(format_args!("UFRxDoc occurrence property tag {tag:#04x} is not implemented"), "retain UFRx occurrence property diagnostic")?));
+            return Err(CodecError::NotImplemented(format!(
+                "UFRxDoc occurrence property tag {tag:#04x} is not implemented"
+            )));
         }
     }
     Ok(())
 }
 
-fn parse_occurrence_item_value(
-    ctx: &DecodeContext<'_>,
-    cursor: &mut Cursor<'_>,
-    tag: u8,
-) -> Result<(), CodecError> {
+fn parse_occurrence_item_value(cursor: &mut Cursor<'_>, tag: u8) -> Result<(), CodecError> {
     match tag {
         0x07 => {
             cursor.u8("occurrence export item byte")?;
@@ -738,7 +774,9 @@ fn parse_occurrence_item_value(
             cursor.take(16, "occurrence export item id")?;
         }
         _ => {
-            return Err(CodecError::NotImplemented(ctx.format_retained(format_args!("UFRxDoc occurrence export item tag {tag:#04x} is not implemented"), "retain UFRx occurrence export diagnostic")?));
+            return Err(CodecError::NotImplemented(format!(
+                "UFRxDoc occurrence export item tag {tag:#04x} is not implemented"
+            )));
         }
     }
     Ok(())
@@ -779,7 +817,11 @@ fn parse_model_states<'a>(
         ];
         let prefix_count = cursor.u32("model-state prefix count")?;
         let parameter_count = cursor.count32("model-state parameter count", 1_000_000)?;
-        cursor.fits(parameter_count, MIN_MODEL_STATE_PARAMETER_BYTES, "model-state parameter count")?;
+        cursor.fits(
+            parameter_count,
+            MIN_MODEL_STATE_PARAMETER_BYTES,
+            "model-state parameter count",
+        )?;
         let mut parameters =
             ctx.vector_storage(parameter_count, "admit UFRxDoc model-state parameters")?;
         for _ in ctx.admit_iter(
@@ -832,7 +874,11 @@ fn parse_schema_table(
     let mut cursor = Cursor::new(source);
     let schema = cursor.u16("schema")?;
     let section_count = cursor.count16("section-version count", 256)?;
-    cursor.fits(section_count, MIN_SECTION_VERSION_BYTES, "section-version count")?;
+    cursor.fits(
+        section_count,
+        MIN_SECTION_VERSION_BYTES,
+        "section-version count",
+    )?;
     let mut section_versions =
         ctx.vector_storage(section_count, "admit UFRxDoc section-version entries")?;
     for _ in ctx.admit_iter(&(0..section_count), "admit UFRxDoc section-version entries")? {
@@ -903,9 +949,12 @@ impl<'a> Cursor<'a> {
 
     /// Checks the unread payload before admitting storage or traversal.
     fn fits(&self, count: usize, minimum: usize, field: &'static str) -> Result<(), CodecError> {
-        self.view.counted(cadmpeg_core::decode::u64_from_index(count), minimum)
+        self.view
+            .counted(cadmpeg_core::decode::u64_from_index(count), minimum)
             .map(|_| ())
-            .ok_or_else(|| CodecError::malformed(format_args!("UFRxDoc {field} exceeds remaining payload")))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("UFRxDoc {field} exceeds remaining payload"))
+            })
     }
 
     fn count16(&mut self, field: &'static str, maximum: usize) -> Result<usize, CodecError> {
@@ -1023,17 +1072,23 @@ mod tests {
     use cadmpeg_core::CodecError;
 
     fn assert_impossible_count(
-        bytes: &[u8], field: &str, visits: u64,
+        bytes: &[u8],
+        field: &str,
+        visits: u64,
         parse: impl FnOnce(&DecodeContext<'_>, View<'_>) -> Result<(), CodecError>,
     ) {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         policy.limits.max_work_units = visits;
-        let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("count fixture");
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("count fixture");
         let error = parse(&ctx, root).expect_err("count does not fit the unread payload");
-        assert!(matches!(error, CodecError::Malformed(ref detail)
-            if detail == &format!("UFRxDoc {field} exceeds remaining payload")), "{error:?}");
+        assert!(
+            matches!(error, CodecError::Malformed(ref detail)
+            if detail == &format!("UFRxDoc {field} exceeds remaining payload")),
+            "{error:?}"
+        );
     }
 
     #[test]
@@ -1042,17 +1097,22 @@ mod tests {
         push_u16(&mut bytes, 11);
         push_u16(&mut bytes, 5);
         bytes.extend_from_slice(&[0; 9]);
-        assert_impossible_count(&bytes, "section-version count", 0,
-            |ctx, root| parse_schema_table(ctx, root).map(|_| ()));
+        assert_impossible_count(&bytes, "section-version count", 0, |ctx, root| {
+            parse_schema_table(ctx, root).map(|_| ())
+        });
     }
 
     #[test]
     fn embedded_references_reject_impossible_ufrx_count() {
-        for (version, minimum) in [(0, super::MIN_EMBEDDED_REFERENCE_BYTES), (7, super::MIN_EMBEDDED_REFERENCE_BYTES + 4)] {
+        for (version, minimum) in [
+            (0, super::MIN_EMBEDDED_REFERENCE_BYTES),
+            (7, super::MIN_EMBEDDED_REFERENCE_BYTES + 4),
+        ] {
             let mut bytes = 1_u32.to_le_bytes().to_vec();
             bytes.resize(4 + minimum - 1, 0);
-            assert_impossible_count(&bytes, "embedded-reference count", 0,
-                |ctx, root| parse_embedded_references(ctx, root, &mut Cursor::new(root), version).map(|_| ()));
+            assert_impossible_count(&bytes, "embedded-reference count", 0, |ctx, root| {
+                parse_embedded_references(ctx, root, &mut Cursor::new(root), version).map(|_| ())
+            });
         }
     }
 
@@ -1061,8 +1121,9 @@ mod tests {
         for (version, year, extra) in [(0, 0, 0), (20, 2015, 2), (21, 2015, 3), (28, 2015, 10)] {
             let mut bytes = 1_u32.to_le_bytes().to_vec();
             bytes.resize(4 + super::MIN_OCCURRENCE_BYTES + extra - 1, 0);
-            assert_impossible_count(&bytes, "occurrence count", 0,
-                |ctx, root| parse_occurrences(ctx, root, &mut Cursor::new(root), version, year).map(|_| ()));
+            assert_impossible_count(&bytes, "occurrence count", 0, |ctx, root| {
+                parse_occurrences(ctx, root, &mut Cursor::new(root), version, year).map(|_| ())
+            });
         }
     }
 
@@ -1071,26 +1132,35 @@ mod tests {
         let mut bytes = vec![0; 4];
         push_u32(&mut bytes, 1);
         bytes.resize(8 + super::MIN_OCCURRENCE_PROPERTY_BYTES - 1, 0);
-        assert_impossible_count(&bytes, "occurrence section property count", 0,
-            |ctx, root| super::parse_occurrence_section(ctx, &mut Cursor::new(root)));
+        assert_impossible_count(
+            &bytes,
+            "occurrence section property count",
+            0,
+            |ctx, root| super::parse_occurrence_section(ctx, &mut Cursor::new(root)),
+        );
     }
 
     #[test]
     fn occurrence_settings_reject_impossible_ufrx_count() {
         let mut bytes = 1_u32.to_le_bytes().to_vec();
         bytes.resize(4 + super::MIN_OCCURRENCE_SETTING_BYTES - 1, 0);
-        assert_impossible_count(&bytes, "occurrence setting count", 0,
-            |ctx, root| super::parse_occurrence_settings(ctx, &mut Cursor::new(root)));
+        assert_impossible_count(&bytes, "occurrence setting count", 0, |ctx, root| {
+            super::parse_occurrence_settings(ctx, &mut Cursor::new(root))
+        });
     }
 
     #[test]
     fn occurrence_exports_reject_impossible_ufrx_count() {
-        for (year, prefix, minimum) in [(0, 10, super::MIN_OCCURRENCE_EXPORT_BYTES), (2018, 11, super::MIN_OCCURRENCE_EXPORT_BYTES + 1)] {
+        for (year, prefix, minimum) in [
+            (0, 10, super::MIN_OCCURRENCE_EXPORT_BYTES),
+            (2018, 11, super::MIN_OCCURRENCE_EXPORT_BYTES + 1),
+        ] {
             let mut bytes = vec![0; prefix];
             push_u32(&mut bytes, 2);
             bytes.resize(prefix + 4 + 2 * minimum - 1, 0);
-            assert_impossible_count(&bytes, "occurrence export count", 0,
-                |ctx, root| super::parse_occurrence_export(ctx, &mut Cursor::new(root), year));
+            assert_impossible_count(&bytes, "occurrence export count", 0, |ctx, root| {
+                super::parse_occurrence_export(ctx, &mut Cursor::new(root), year)
+            });
         }
     }
 
@@ -1099,8 +1169,9 @@ mod tests {
         let mut bytes = 1_u32.to_le_bytes().to_vec();
         push_u32(&mut bytes, 1);
         bytes.resize(8 + super::MIN_OCCURRENCE_ITEM_BYTES - 1, 0);
-        assert_impossible_count(&bytes, "occurrence export item count", 0,
-            |ctx, root| super::parse_occurrence_items(ctx, &mut Cursor::new(root)));
+        assert_impossible_count(&bytes, "occurrence export item count", 0, |ctx, root| {
+            super::parse_occurrence_items(ctx, &mut Cursor::new(root))
+        });
     }
 
     #[test]
@@ -1112,15 +1183,20 @@ mod tests {
         bytes.extend_from_slice(&[0; 4]);
         // The one outer item visit is admitted; three tag/value pairs need
         // six unread bytes and only four remain. No inner visit is admitted.
-        assert_impossible_count(&bytes, "occurrence export item value count", 1,
-            |ctx, root| super::parse_occurrence_items(ctx, &mut Cursor::new(root)));
+        assert_impossible_count(
+            &bytes,
+            "occurrence export item value count",
+            1,
+            |ctx, root| super::parse_occurrence_items(ctx, &mut Cursor::new(root)),
+        );
     }
 
     #[test]
     fn model_states_reject_impossible_ufrx_count() {
         let bytes = vec![0; super::MIN_MODEL_STATE_BYTES - 1];
-        assert_impossible_count(&bytes, "model-state count", 0,
-            |ctx, root| super::parse_model_states(ctx, root, &mut Cursor::new(root), 1).map(|_| ()));
+        assert_impossible_count(&bytes, "model-state count", 0, |ctx, root| {
+            super::parse_model_states(ctx, root, &mut Cursor::new(root), 1).map(|_| ())
+        });
     }
 
     #[test]
@@ -1130,8 +1206,9 @@ mod tests {
         bytes.extend_from_slice(&[0; 77]);
         // One model-state visit reaches six parameters. Their 15-byte minima
         // need 90 bytes; only the 77-byte suffix remains.
-        assert_impossible_count(&bytes, "model-state parameter count", 1,
-            |ctx, root| super::parse_model_states(ctx, root, &mut Cursor::new(root), 1).map(|_| ()));
+        assert_impossible_count(&bytes, "model-state parameter count", 1, |ctx, root| {
+            super::parse_model_states(ctx, root, &mut Cursor::new(root), 1).map(|_| ())
+        });
     }
 
     #[test]
@@ -1144,10 +1221,20 @@ mod tests {
         for (field, offset, original, count) in [
             ("LOD table count", lod_table_offset, 0, 65_536),
             ("header pair count", lod_table_offset + 4, 0, 65_536),
-            ("external-reference count", invariant_offset + 2 + 4 + 4 + 4, 1, 1_000_000),
+            (
+                "external-reference count",
+                invariant_offset + 2 + 4 + 4 + 4,
+                1,
+                1_000_000,
+            ),
             // After the table count: caption 24 + state 4 + path 48 + library
             // id 4 + library name 18 + library state 2 + display name 22.
-            ("reference state-group count", invariant_offset + 2 + 4 + 4 + 4 + 4 + 24 + 4 + 48 + 4 + 18 + 2 + 22, 0, 65_536),
+            (
+                "reference state-group count",
+                invariant_offset + 2 + 4 + 4 + 4 + 4 + 24 + 4 + 48 + 4 + 18 + 2 + 22,
+                0,
+                65_536,
+            ),
         ] {
             let (mut bytes, _) = fixture(11);
             assert_eq!(View::u32_le_at(&bytes, offset), Some(original));
@@ -1156,10 +1243,15 @@ mod tests {
             let mut policy = DecodePolicy::service();
             // Only the 23 section-version entries precede these tables.
             policy.limits.max_collection_items = 23;
-            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-            let error = parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly).expect_err("count cannot fit");
-            assert!(matches!(error, CodecError::Malformed(ref detail)
-                if detail == &format!("UFRxDoc {field} exceeds remaining payload")), "{field}: {error:?}");
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+            let error = parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly)
+                .expect_err("count cannot fit");
+            assert!(
+                matches!(error, CodecError::Malformed(ref detail)
+                if detail == &format!("UFRxDoc {field} exceeds remaining payload")),
+                "{field}: {error:?}"
+            );
         }
     }
 
@@ -1173,34 +1265,40 @@ mod tests {
         // checks at most nine u16 words and stores no collection.
         policy.limits.max_work_units = 1;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-        let occurrences = parse_occurrences(&ctx, root, &mut Cursor::new(root), 28, 2020).expect("one admitted visit");
+        let occurrences = parse_occurrences(&ctx, root, &mut Cursor::new(root), 28, 2020)
+            .expect("one admitted visit");
         assert_eq!(occurrences[0].header_padding_words, 2);
-        assert!(matches!(ctx.charge_work(1, "probe visits"), Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits && limit.used == 1 && limit.additional == 1));
+        assert!(
+            matches!(ctx.charge_work(1, "probe visits"), Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits && limit.used == 1 && limit.additional == 1)
+        );
     }
 
     #[test]
-    fn ufrx_unknown_property_tags_refuse_retained_limit_before_format() {
+    fn ufrx_unknown_property_tags_use_fixed_diagnostics() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
+        // Both tags render four hexadecimal bytes in a fixed diagnostic.
+        // No variable text is scanned or retained by either refusal.
         policy.limits.max_retained_bytes = 0;
+        policy.limits.max_work_units = 0;
         let (limited, root) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
         assert!(matches!(
             parse_occurrence_value(&limited, &mut Cursor::new(root), 0xff),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
+            Err(CodecError::NotImplemented(detail))
+                if detail == "UFRxDoc occurrence property tag 0xff is not implemented"
         ));
         assert!(matches!(
-            parse_occurrence_item_value(&limited, &mut Cursor::new(root), 0xff),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
+            parse_occurrence_item_value(&mut Cursor::new(root), 0xff),
+            Err(CodecError::NotImplemented(detail))
+                if detail == "UFRxDoc occurrence export item tag 0xff is not implemented"
         ));
         let (service, root) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("empty root fits service policy");
         let property_error = parse_occurrence_value(&service, &mut Cursor::new(root), 0xff)
             .expect_err("unknown property tag rejected");
-        let item_error = parse_occurrence_item_value(&service, &mut Cursor::new(root), 0xff)
+        let item_error = parse_occurrence_item_value(&mut Cursor::new(root), 0xff)
             .expect_err("unknown export tag rejected");
         assert!(property_error.to_string().contains("tag 0xff"));
         assert!(item_error.to_string().contains("tag 0xff"));
@@ -1268,7 +1366,10 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("fixture context");
         let document = parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly)
             .expect("fixture document parses within its collection budget");
-        assert!(matches!(UfrxState::Parsed(Box::new(document)), UfrxState::Parsed(_)));
+        assert!(matches!(
+            UfrxState::Parsed(Box::new(document)),
+            UfrxState::Parsed(_)
+        ));
         assert!(matches!(
             ctx.charge_collection_items(1, "probe collection slots"),
             Err(CodecError::ResourceLimit(limit))
@@ -1290,77 +1391,108 @@ mod tests {
             .id()
     }
 
-    fn assert_diagnostic_refuses_retained_limit(
-        bytes: &[u8],
-        document_kind: &DocumentKind,
-        operation: &'static str,
-    ) {
+    #[test]
+    fn schema_15_document_kind_uses_fixed_diagnostic() {
+        let (bytes, _) = fixture(15);
         let arena = DecodeArena::new();
-        let mut cap = 0;
-        let mut needed = None;
-        for _ in 0..64 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, root) =
-                DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("fixture context");
-            match parse_stream(&ctx, root, stream_id(), document_kind) {
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes =>
-                {
-                    let next = limit
-                        .used
-                        .checked_add(limit.additional)
-                        .expect("fixture charge fits u64");
-                    if limit.operation == operation {
-                        needed = Some(next);
-                        break;
-                    }
-                    assert!(next > cap, "fixture advances to its next retained charge");
-                    cap = next;
-                }
-                result => panic!("expected retained admission before {operation}: {result:?}"),
-            }
-        }
-        let needed = needed.expect("diagnostic reached within fixture charges");
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = needed - 1;
-        let (ctx, root) =
-            DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            parse_stream(&ctx, root, stream_id(), document_kind),
+        // The unsupported kind stores neither versions nor the file name.
+        // Validation visits seven comment characters and thirteen file-name
+        // characters, with one end probe for each string: 8 + 14 = 22.
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_work_units = 22;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        assert!(
+            matches!(parse_stream(&ctx, root, stream_id(), &DocumentKind::Unknown),
+            Err(CodecError::NotImplemented(detail))
+                if detail == "UFRxDoc schema 15 unknown header is not implemented")
+        );
+        assert!(
+            matches!(ctx.charge_retained(1, "probe unsupported header retention"),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == operation
-                    && limit.limit == needed - 1
-        ));
-        let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+                    && limit.used == 0 && limit.additional == 1)
+        );
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("service context");
         assert!(matches!(
-            parse_stream(&ctx, root, stream_id(), document_kind),
+            parse_stream(&ctx, root, stream_id(), &DocumentKind::Unknown),
             Err(CodecError::NotImplemented(_))
         ));
     }
 
     #[test]
-    fn schema_15_document_kind_diagnostic_refuses_before_format() {
-        let (bytes, _) = fixture(15);
-        assert_diagnostic_refuses_retained_limit(
-            &bytes,
-            &DocumentKind::Unknown,
-            "retain UFRx schema header diagnostic",
+    fn schema_15_unsupported_header_validates_file_name_without_storage() {
+        let (mut bytes, _) = fixture(15);
+        // Declaration, 27 version words, save fields, counted comment,
+        // origin fields, database id/state and internal document id.
+        let name_count_offset = 4 + 27 * 2 + 32 + (4 + 7 * 2) + 32 + (16 + 4 + 16);
+        assert_eq!(View::u32_le_at(&bytes, name_count_offset), Some(13));
+        let first_unit = name_count_offset + 4;
+        bytes[first_unit..first_unit + 2].copy_from_slice(&0xd800_u16.to_le_bytes());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        assert!(
+            matches!(parse_stream(&ctx, root, stream_id(), &DocumentKind::Unknown),
+            Err(CodecError::Malformed(detail)) if detail == "UFRxDoc original file name is not UTF-16")
         );
     }
 
     #[test]
-    fn unframed_lod_diagnostic_refuses_before_format() {
+    fn unframed_lod_uses_fixed_diagnostic() {
         let (mut bytes, invariant_offset) = fixture(11);
         let lod_count_offset = invariant_offset + 2 + 4 + 4;
         bytes[lod_count_offset..lod_count_offset + 4].copy_from_slice(&1_u32.to_le_bytes());
-        assert_diagnostic_refuses_retained_limit(
-            &bytes,
-            &DocumentKind::Assembly,
-            "retain UFRx unframed LOD diagnostic",
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The 23 version words retain 46 bytes; the ASCII file name retains
+        // 13 bytes. The bounded diagnostic adds none: 46 + 13 = 59.
+        policy.limits.max_retained_bytes = 59;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        assert!(
+            matches!(parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly),
+            Err(CodecError::NotImplemented(detail)) if detail == "UFRxDoc contains 1 unframed LOD records")
         );
+        assert!(
+            matches!(ctx.charge_retained(1, "probe retained grammar storage"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.used == 59 && limit.additional == 1)
+        );
+        policy.limits.max_retained_bytes = 58;
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("short context");
+        assert!(
+            matches!(parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain UFRxDoc string"
+                    && limit.used == 46 && limit.additional == 13)
+        );
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("service context");
+        assert!(matches!(
+            parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly),
+            Err(CodecError::NotImplemented(_))
+        ));
+    }
+
+    #[test]
+    fn retained_ufrx_grammar_uses_no_materialized_storage() {
+        let (bytes, _) = fixture(11);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // These strings and vectors belong to the returned document. They
+        // need retained admission, with no temporary materialization budget.
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        let document = parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly)
+            .expect("retained document needs no materialized bytes");
+        assert_eq!(document.schema, 11);
     }
 
     #[test]
