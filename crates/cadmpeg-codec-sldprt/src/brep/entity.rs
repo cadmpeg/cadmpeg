@@ -6,7 +6,7 @@ use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_ir::topology::Color;
 use std::collections::{BTreeSet, HashMap};
 
-use super::attrib::Family;
+use super::attrib::{Declaration, Family};
 use crate::layout::entity_common_header as entity_hdr;
 
 #[derive(Debug, Clone)]
@@ -353,9 +353,9 @@ pub(crate) fn scan_metadata(
                 .copied(),
             None => None,
         };
-        let named_face_color = declared == Some(Some(Family::FaceColor));
-        let unnamed_face_color =
-            declared.is_none() && (linked.is_some() || color_record(body, face.end).is_some());
+        let named_face_color = declared == Declaration::Family(Family::FaceColor);
+        let unnamed_face_color = declared == Declaration::Undeclared
+            && (linked.is_some() || color_record(body, face.end).is_some());
         if !named_face_color && !unnamed_face_color {
             continue;
         }

@@ -95,7 +95,7 @@ pub(crate) struct Summary {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Mesh {
-    mesh: TessellationMesh,
+    geometry: TessellationMesh,
     channels: Vec<TessellationChannel>,
     /// Vertices the strips span, counted when the lanes were paired.
     vertices: usize,
@@ -106,7 +106,7 @@ pub(crate) struct Mesh {
 impl Default for Mesh {
     fn default() -> Self {
         Self {
-            mesh: TessellationMesh::List {
+            geometry: TessellationMesh::List {
                 vertices: Vec::new(),
                 triangles: Vec::new(),
             },
@@ -139,7 +139,7 @@ impl Mesh {
         id: cadmpeg_ir::tessellation::TessellationId,
     ) -> Result<cadmpeg_ir::tessellation::Tessellation, cadmpeg_ir::tessellation::TessellationError>
     {
-        cadmpeg_ir::tessellation::Tessellation::new(id, self.mesh, self.channels)
+        cadmpeg_ir::tessellation::Tessellation::new(id, self.geometry, self.channels)
     }
 }
 
@@ -449,9 +449,6 @@ pub(crate) fn auxiliary_channels_are_consistent(
     strips: &[usize],
     channels: &[TessellationChannel],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let [b, c, d] = channels else {
-        return Ok(false);
-    };
     fn lane(channel: &TessellationChannel) -> Descriptor<'_> {
         Descriptor {
             item_size: channel.item_size(),
@@ -461,6 +458,9 @@ pub(crate) fn auxiliary_channels_are_consistent(
             data: channel.data(),
         }
     }
+    let [b, c, d] = channels else {
+        return Ok(false);
+    };
     auxiliary_lanes_agree(ctx, strips, |length| length, [lane(b), lane(c), lane(d)])
 }
 
@@ -687,7 +687,7 @@ fn parse_table(
     drop(scratch);
     Ok(Some((
         Mesh {
-            mesh,
+            geometry: mesh,
             channels,
             vertices: vertex_count,
             strips: spans.len(),
@@ -1046,18 +1046,15 @@ impl<'m> MeshRows<'m> {
             }
             TessellationMesh::ShadedList { vertices, .. } => Self::Shaded(vertices.iter()),
             TessellationMesh::Strips { strips } => {
-                Self::PositionStrips(strips.as_slice().iter().flat_map(
-                    cadmpeg_ir::tessellation::Strip::vertices
-                        as fn(
-                            &'m cadmpeg_ir::tessellation::Strip<FinitePoint3>,
-                        ) -> &'m [FinitePoint3],
-                ))
+                let rows: fn(
+                    &'m cadmpeg_ir::tessellation::Strip<FinitePoint3>,
+                ) -> &'m [FinitePoint3] = cadmpeg_ir::tessellation::Strip::vertices;
+                Self::PositionStrips(strips.as_slice().iter().flat_map(rows))
             }
             TessellationMesh::ShadedStrips { strips } => {
-                Self::ShadedStrips(strips.as_slice().iter().flat_map(
-                    cadmpeg_ir::tessellation::Strip::vertices
-                        as fn(&'m cadmpeg_ir::tessellation::Strip<ShadedRow>) -> &'m [ShadedRow],
-                ))
+                let rows: fn(&'m cadmpeg_ir::tessellation::Strip<ShadedRow>) -> &'m [ShadedRow] =
+                    cadmpeg_ir::tessellation::Strip::vertices;
+                Self::ShadedStrips(strips.as_slice().iter().flat_map(rows))
             }
         }
     }
@@ -2020,7 +2017,12 @@ impl PlanarTrim {
                         !polygon_contains(ctx, outer, *point, tolerance)?
                     }
                     Some(PlanarOuter::Circle(outer)) => {
-                        !(point_distance(*point, outer.center) <= outer.radius + tolerance)
+                        // A distance that is not a number is outside.
+                        !matches!(
+                            point_distance(*point, outer.center)
+                                .partial_cmp(&(outer.radius + tolerance)),
+                            Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+                        )
                     }
                     None => false,
                 };
@@ -2490,8 +2492,7 @@ fn planar_trim(
     };
     let mut loop_ids = outer_loop.iter().chain(inner_loops);
     while let Some(loop_id) = ctx.next_charged(&mut loop_ids, "scan SLDPRT planar trim loop")? {
-        let loop_ =
-            *require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
+        let loop_ = *require_some!(ctx.get_hash_map(loops, loop_id, "look up SLDPRT hash key")?);
         if loop_.coedges().is_empty()
             || loop_.vertices().next().is_some()
             || !ctx.equal(
@@ -2516,16 +2517,10 @@ fn planar_trim(
         let mut previous_end = None;
         for coedge_id in loop_.coedges() {
             ctx.charge_work(1, "scan SLDPRT planar trim coedge")?;
-            let coedge = *require_some!(ctx.get_hash_map(
-                &(coedges),
-                coedge_id,
-                "look up SLDPRT hash key"
-            )?);
-            let edge = *require_some!(ctx.get_hash_map(
-                &(edges),
-                &coedge.edge,
-                "look up SLDPRT hash key"
-            )?);
+            let coedge =
+                *require_some!(ctx.get_hash_map(coedges, coedge_id, "look up SLDPRT hash key")?);
+            let edge =
+                *require_some!(ctx.get_hash_map(edges, &coedge.edge, "look up SLDPRT hash key")?);
             if !ctx.equal(
                 &coedge.owner_loop,
                 &loop_.id,
@@ -2538,15 +2533,13 @@ fn planar_trim(
                 Sense::Reversed => (&edge.end, &edge.start),
             };
             let start = *require_some!(ctx.get_hash_map(
-                &(points),
-                &require_some!(ctx.get_hash_map(&(vertices), start, "look up SLDPRT hash key")?)
-                    .point,
+                points,
+                &require_some!(ctx.get_hash_map(vertices, start, "look up SLDPRT hash key")?).point,
                 "look up SLDPRT hash key"
             )?);
             let end = *require_some!(ctx.get_hash_map(
-                &(points),
-                &require_some!(ctx.get_hash_map(&(vertices), end, "look up SLDPRT hash key")?)
-                    .point,
+                points,
+                &require_some!(ctx.get_hash_map(vertices, end, "look up SLDPRT hash key")?).point,
                 "look up SLDPRT hash key"
             )?);
             if require_some!(analytic_surface_residual(
@@ -2564,7 +2557,7 @@ fn planar_trim(
             let (samples, sample_tolerance) = require_some!(planar_boundary_samples(
                 ctx,
                 require_some!(ctx.get_hash_map(
-                    &(curves),
+                    curves,
                     require_some!(edge.curve()),
                     "look up SLDPRT hash key"
                 )?),
@@ -2621,6 +2614,9 @@ fn planar_trim(
     }))
 }
 
+/// A planar face's outer polygon and its holes.
+type OuterAndHoles = (Vec<Point2>, Vec<PlanarHole>);
+
 /// Split a planar face's polygon loops and circular loops into its outer
 /// polygon and its holes.
 ///
@@ -2632,7 +2628,7 @@ fn polygon_outer_and_holes(
     polygons: Vec<Vec<Point2>>,
     circles: &[CircularHole],
     tolerance: f64,
-) -> Result<Option<(Vec<Point2>, Vec<PlanarHole>)>, cadmpeg_core::CodecError> {
+) -> Result<Option<OuterAndHoles>, cadmpeg_core::CodecError> {
     const COMPARE: &str = "compare SLDPRT planar trim boundaries";
     let mut scratch = ctx.reserve_scoped(0, COMPARE)?;
     let mut areas = Vec::new();
@@ -2760,8 +2756,7 @@ fn planar_hole_trim(
     };
     let mut loop_ids = outer_loop.iter().chain(inner_loops);
     while let Some(loop_id) = ctx.next_charged(&mut loop_ids, "scan SLDPRT planar hole loop")? {
-        let loop_ =
-            require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
+        let loop_ = require_some!(ctx.get_hash_map(loops, loop_id, "look up SLDPRT hash key")?);
         has_polygon_loop |= loop_.coedges().len() > 1;
     }
     if !has_polygon_loop {
@@ -2772,8 +2767,7 @@ fn planar_hole_trim(
         .admit_iter(outer_loop, "test SLDPRT planar hole loop")?
         .chain(ctx.admit_iter(inner_loops, "test SLDPRT planar hole loop")?)
     {
-        let loop_ =
-            require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
+        let loop_ = require_some!(ctx.get_hash_map(loops, loop_id, "look up SLDPRT hash key")?);
         if loop_.coedges().len() == 1
             && loop_.vertices().next().is_none()
             && ctx.equal(
@@ -2827,7 +2821,7 @@ fn cylindrical_trim(
         return Ok(None);
     }
     let loop_id = require_some!(face.loops.iter().next());
-    let loop_ = *require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
+    let loop_ = *require_some!(ctx.get_hash_map(loops, loop_id, "look up SLDPRT hash key")?);
     if loop_.coedges().is_empty()
         || loop_.vertices().next().is_some()
         || !ctx.equal(
@@ -2844,7 +2838,7 @@ fn cylindrical_trim(
     for coedge_id in loop_.coedges() {
         ctx.charge_work(1, "scan SLDPRT cylindrical trim coedges")?;
         let coedge =
-            *require_some!(ctx.get_hash_map(&(coedges), coedge_id, "look up SLDPRT hash key")?);
+            *require_some!(ctx.get_hash_map(coedges, coedge_id, "look up SLDPRT hash key")?);
         if !ctx.equal(
             &coedge.owner_loop,
             &loop_.id,
@@ -2853,9 +2847,9 @@ fn cylindrical_trim(
             return Ok(None);
         }
         let edge =
-            *require_some!(ctx.get_hash_map(&(edges), &coedge.edge, "look up SLDPRT hash key")?);
+            *require_some!(ctx.get_hash_map(edges, &coedge.edge, "look up SLDPRT hash key")?);
         let curve = require_some!(ctx.get_hash_map(
-            &(curves),
+            curves,
             require_some!(edge.curve()),
             "look up SLDPRT hash key"
         )?);
@@ -2879,13 +2873,10 @@ fn cylindrical_trim(
         }
         for vertex_id in [&edge.start, &edge.end] {
             ctx.charge_work(1, "scan SLDPRT cylindrical trim endpoints")?;
-            let vertex = require_some!(ctx.get_hash_map(
-                &(vertices),
-                vertex_id,
-                "look up SLDPRT hash key"
-            )?);
+            let vertex =
+                require_some!(ctx.get_hash_map(vertices, vertex_id, "look up SLDPRT hash key")?);
             let point = *require_some!(ctx.get_hash_map(
-                &(points),
+                points,
                 &vertex.point,
                 "look up SLDPRT hash key"
             )?);
@@ -2955,7 +2946,7 @@ fn conical_trim(
         return Ok(None);
     }
     let loop_id = require_some!(face.loops.iter().next());
-    let loop_ = *require_some!(ctx.get_hash_map(&(loops), loop_id, "look up SLDPRT hash key")?);
+    let loop_ = *require_some!(ctx.get_hash_map(loops, loop_id, "look up SLDPRT hash key")?);
     if loop_.coedges().is_empty()
         || loop_.vertices().next().is_some()
         || !ctx.equal(
@@ -2972,7 +2963,7 @@ fn conical_trim(
     for coedge_id in loop_.coedges() {
         ctx.charge_work(1, "scan SLDPRT conical trim coedges")?;
         let coedge =
-            *require_some!(ctx.get_hash_map(&(coedges), coedge_id, "look up SLDPRT hash key")?);
+            *require_some!(ctx.get_hash_map(coedges, coedge_id, "look up SLDPRT hash key")?);
         if !ctx.equal(
             &coedge.owner_loop,
             &loop_.id,
@@ -2981,9 +2972,9 @@ fn conical_trim(
             return Ok(None);
         }
         let edge =
-            *require_some!(ctx.get_hash_map(&(edges), &coedge.edge, "look up SLDPRT hash key")?);
+            *require_some!(ctx.get_hash_map(edges, &coedge.edge, "look up SLDPRT hash key")?);
         let curve = require_some!(ctx.get_hash_map(
-            &(curves),
+            curves,
             require_some!(edge.curve()),
             "look up SLDPRT hash key"
         )?);
@@ -3063,13 +3054,10 @@ fn conical_trim(
         }
         for vertex_id in [&edge.start, &edge.end] {
             ctx.charge_work(1, "scan SLDPRT conical trim endpoints")?;
-            let vertex = require_some!(ctx.get_hash_map(
-                &(vertices),
-                vertex_id,
-                "look up SLDPRT hash key"
-            )?);
+            let vertex =
+                require_some!(ctx.get_hash_map(vertices, vertex_id, "look up SLDPRT hash key")?);
             let point = *require_some!(ctx.get_hash_map(
-                &(points),
+                points,
                 &vertex.point,
                 "look up SLDPRT hash key"
             )?);

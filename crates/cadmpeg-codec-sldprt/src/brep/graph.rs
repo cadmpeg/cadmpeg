@@ -1969,6 +1969,9 @@ fn copy_graph_stream_name(
     .map_err(|_| cadmpeg_core::CodecError::malformed("empty Parasolid graph stream name"))
 }
 
+/// The body group and the shell attribute of each face bridge.
+type BridgeBindings = (BTreeMap<u16, usize>, BTreeMap<u16, u16>);
+
 /// Bind each walked face to a body record and a shell.
 ///
 /// A face belongs to the last body record whose references name its bridge or
@@ -1981,8 +1984,9 @@ fn bind_bridges(
     t: &topology::Tables,
     body_records: &[BodyRecord],
     faces: &[WalkedFace],
-) -> Result<(BTreeMap<u16, usize>, BTreeMap<u16, u16>), cadmpeg_core::CodecError> {
+) -> Result<BridgeBindings, cadmpeg_core::CodecError> {
     const INDEX: &str = "index Parasolid body references";
+    const BIND: &str = "bind Parasolid face bridges";
     // Attr -> body groups whose references name it, in group order.
     let mut groups_by_ref = BTreeMap::<u16, Vec<usize>>::new();
     // (attr, group) -> (ordinal, shell attr) of the group's first shell that
@@ -2007,7 +2011,6 @@ fn bind_bridges(
         }
     }
 
-    const BIND: &str = "bind Parasolid face bridges";
     let mut bridge_group = BTreeMap::new();
     let mut bridge_shell = BTreeMap::new();
     for face in ctx.admit_iter(faces, BIND)? {
@@ -2960,7 +2963,7 @@ fn decode_graph(
                                         return Ok(None);
                                     }
                                     let mut selected = None;
-                                    for candidate in pair.supports.iter() {
+                                    for candidate in &pair.supports {
                                         let Some(edges) =
                                             face_edges_by_surface_carrier.get(candidate)
                                         else {
@@ -3846,6 +3849,7 @@ fn derive_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const LOOK_UP: &str = "look up Parasolid pcurve supports";
     let Brep {
         loops,
         faces,
@@ -3869,7 +3873,6 @@ fn derive_pcurves(
         &**vertices,
         &**points,
     );
-    const LOOK_UP: &str = "look up Parasolid pcurve supports";
     let (supports, _supports_storage) =
         ctx.with_scoped_storage("index Parasolid pcurve supports", || {
             let surfaces = ctx.collect_hash_map(
@@ -6996,23 +6999,21 @@ fn ruled_surface_line_pcurve(
     if matches!(
         surface.pole_grid(),
         cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { .. }
-    ) {
-        if ctx.any_by(
-            0..fixed_count,
-            |fixed| {
-                let ((a_u, a_v), (b_u, b_v)) = match fixed_axis {
-                    SurfaceParameterAxis::U => ((fixed, 0), (fixed, 1)),
-                    SurfaceParameterAxis::V => ((0, fixed), (1, fixed)),
-                };
-                Ok(match (surface.weight(a_u, a_v), surface.weight(b_u, b_v)) {
-                    (Some(a), Some(b)) => (a.get() - b.get()).abs() > EPS_NURBS_WEIGHT,
-                    _ => true,
-                })
-            },
-            "compare ruled surface weights",
-        )? {
-            return Ok(InverseResolution::NoMatch);
-        }
+    ) && ctx.any_by(
+        0..fixed_count,
+        |fixed| {
+            let ((a_u, a_v), (b_u, b_v)) = match fixed_axis {
+                SurfaceParameterAxis::U => ((fixed, 0), (fixed, 1)),
+                SurfaceParameterAxis::V => ((0, fixed), (1, fixed)),
+            };
+            Ok(match (surface.weight(a_u, a_v), surface.weight(b_u, b_v)) {
+                (Some(a), Some(b)) => (a.get() - b.get()).abs() > EPS_NURBS_WEIGHT,
+                _ => true,
+            })
+        },
+        "compare ruled surface weights",
+    )? {
+        return Ok(InverseResolution::NoMatch);
     }
     let Some(fixed_degree) = usize::try_from(fixed_degree).ok() else {
         return Ok(InverseResolution::NoMatch);
