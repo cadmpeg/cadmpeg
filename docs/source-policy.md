@@ -449,7 +449,10 @@ Decode code uses `HashMap` and `HashSet` only for keyed lookup, insertion
 and removal. Iteration order is unspecified, so decoded output must not
 depend on it, and a scan walks the allocated table, which has no exact public
 bound once removals leave deleted slots. Traversal (`iter`, `keys`, `values`,
-`values_mut`, `into_keys`, `into_values`, `IntoIterator`, `for` loops), the
+`values_mut`, `into_keys`, `into_values`, `IntoIterator`, `for` loops,
+including a loop that charges each step, and a table passed to any
+`IntoIterator` parameter such as `extend`, `from_iter`, `zip`, `flatten` or a
+core collector), the
 set relations (`difference`, `intersection`, `union`, `is_subset`,
 `is_disjoint`), the set operators `|`, `&`, `-` and `^`, whole-table `==`,
 `clone`, `retain`, `drain` and `extract_if` are reported; a collection that decode traverses or compares is a `BTreeMap`,
