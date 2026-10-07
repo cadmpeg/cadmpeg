@@ -77,52 +77,64 @@ pub fn final_pcurve_patch_layout(
     record: &[u8],
     int_width: RefWidth,
 ) -> Result<Option<PcurvePatchLayout>, cadmpeg_core::CodecError> {
-    let (positions, _marker_storage) = ctx.with_scoped_storage("ASM pcurve patch marker positions", || construction_marker_positions(ctx, record, int_width))?;
+    let (positions, _marker_storage) = ctx
+        .with_scoped_storage("ASM pcurve patch marker positions", || {
+            construction_marker_positions(ctx, record, int_width)
+        })?;
     let Some(positions) = positions else {
         return Ok(None);
     };
-    ctx.find_map(positions.into_iter().rev(), |marker_pos| {
-        (|| -> Option<Result<PcurvePatchLayout, cadmpeg_core::CodecError>> {
-            let marker = marker_at(record, marker_pos)?;
-            let rational = marker.rational();
-            let mut pos = marker_pos + marker.byte_len();
-            let degree_value_offset = pos + 1;
-            let degree = take_tagged_int(record, &mut pos, 0x04, int_width)?;
-            if !(1..=20).contains(&degree) {
-                return None;
-            }
-            let periodic_value_offset = pos + 1;
-            let _closure = take_tagged_int(record, &mut pos, 0x15, int_width)?;
-            let unique = take_tagged_int(record, &mut pos, 0x04, int_width)?;
-            if !(1..=1000).contains(&unique) {
-                return None;
-            }
-            let (_knots, control_count, knot_layout) = read_knots(
-                record,
-                &mut pos,
-                usize::try_from(unique).ok()?,
-                degree,
-                int_width,
-            )?;
-            let control_start = pos;
-            let components = if rational { 3 } else { 2 };
-            let mut visits = 0..control_count * components;
-            while propagate_resource!(ctx.next_charged(&mut visits, "ASM pcurve patch control components")).is_some() {
-                if record.get(pos) != Some(&0x06) {
+    ctx.find_map(
+        positions.into_iter().rev(),
+        |marker_pos| {
+            (|| -> Option<Result<PcurvePatchLayout, cadmpeg_core::CodecError>> {
+                let marker = marker_at(record, marker_pos)?;
+                let rational = marker.rational();
+                let mut pos = marker_pos + marker.byte_len();
+                let degree_value_offset = pos + 1;
+                let degree = take_tagged_int(record, &mut pos, 0x04, int_width)?;
+                if !(1..=20).contains(&degree) {
                     return None;
                 }
-                pos += 9;
-            }
-            Some(Ok(PcurvePatchLayout {
-                degree_value_offset,
-                control_start,
-                rational,
-                control_count,
-                knots: knot_layout,
-                periodic_value_offset,
-            }))
-        })().transpose()
-    }, "ASM pcurve patch candidates")
+                let periodic_value_offset = pos + 1;
+                let _closure = take_tagged_int(record, &mut pos, 0x15, int_width)?;
+                let unique = take_tagged_int(record, &mut pos, 0x04, int_width)?;
+                if !(1..=1000).contains(&unique) {
+                    return None;
+                }
+                let (_knots, control_count, knot_layout) = read_knots(
+                    record,
+                    &mut pos,
+                    usize::try_from(unique).ok()?,
+                    degree,
+                    int_width,
+                )?;
+                let control_start = pos;
+                let components = if rational { 3 } else { 2 };
+                let mut visits = 0..control_count * components;
+                while propagate_resource!(
+                    ctx.next_charged(&mut visits, "ASM pcurve patch control components")
+                )
+                .is_some()
+                {
+                    if record.get(pos) != Some(&0x06) {
+                        return None;
+                    }
+                    pos += 9;
+                }
+                Some(Ok(PcurvePatchLayout {
+                    degree_value_offset,
+                    control_start,
+                    rational,
+                    control_count,
+                    knots: knot_layout,
+                    periodic_value_offset,
+                }))
+            })()
+            .transpose()
+        },
+        "ASM pcurve patch candidates",
+    )
 }
 
 fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: RefWidth) -> Option<PcurveNurbs> {
@@ -266,7 +278,9 @@ pub(super) fn pcurve_block_with_end(
         };
     }
     let mut visits = 0..n_poles;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM pcurve block with end entries")).is_some() {
+    while propagate_resource!(ctx.next_charged(&mut visits, "ASM pcurve block with end entries"))
+        .is_some()
+    {
         let u = cur.take_f64()?;
         let v = cur.take_f64()?;
         let point = FinitePoint2::new(Point2::new(u, v))?;
@@ -318,7 +332,9 @@ pub fn explicit_pcurve_cache(
     scope: toks::SubtypeScope<'_>,
 ) -> Option<Result<PcurveNurbs, cadmpeg_core::CodecError>> {
     let position = {
-        let (positions, _marker_storage) = propagate_resource!(ctx.with_scoped_storage("ASM explicit pcurve marker positions", || scope.owned_marker_positions(ctx)));
+        let (positions, _marker_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM explicit pcurve marker positions", || scope
+                .owned_marker_positions(ctx)));
         positions.into_iter().next()?
     };
     pcurve_block(ctx, scope.tokens(), position)
@@ -350,8 +366,16 @@ pub fn pcurve_fit_tolerance(
 ) -> Option<Result<f64, cadmpeg_core::CodecError>> {
     let tokens = scope.tokens();
     let end = {
-        let (positions, _marker_storage) = propagate_resource!(ctx.with_scoped_storage("ASM pcurve tolerance marker positions", || scope.owned_marker_positions(ctx)));
-        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage("ASM pcurve tolerance cache", || ctx.find_map(positions.into_iter().rev(), |pos| pcurve_block_with_end(ctx, tokens, pos).transpose(), "ASM pcurve tolerance candidates")));
+        let (positions, _marker_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM pcurve tolerance marker positions", || scope
+                .owned_marker_positions(ctx)));
+        let (decoded, _cache_storage) =
+            propagate_resource!(ctx.with_scoped_storage("ASM pcurve tolerance cache", || ctx
+                .find_map(
+                    positions.into_iter().rev(),
+                    |pos| pcurve_block_with_end(ctx, tokens, pos).transpose(),
+                    "ASM pcurve tolerance candidates"
+                )));
         decoded?.1
     };
     match tokens.get(end) {

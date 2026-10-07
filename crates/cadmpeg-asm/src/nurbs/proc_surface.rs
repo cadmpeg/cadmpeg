@@ -870,10 +870,10 @@ fn g2_blend_spl_sur(
         *parameter = cur.take_f64()?;
     }
     let cache_end = {
-        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-            "ASM construction cache",
-            || surface_block(ctx, span, cur.pos()).transpose(),
-        ));
+        let (decoded, _cache_storage) =
+            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                surface_block(ctx, span, cur.pos()).transpose()
+            },));
         decoded?.1
     };
     let cache_fit_tolerance = match span.get(cache_end) {
@@ -1668,7 +1668,9 @@ fn compound_loft_scale(
     let mut members =
         propagate_resource!(ctx.collection_vec(count, "ASM compound loft scale members"));
     let mut visits = 0..count;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM compound loft scale entries")).is_some() {
+    while propagate_resource!(ctx.next_charged(&mut visits, "ASM compound loft scale entries"))
+        .is_some()
+    {
         let type_code = cur.take_long()?;
         let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
         cur.set_pos(curve_end);
@@ -1685,7 +1687,9 @@ fn compound_loft_scale(
         ctx.collection_vec(auxiliary_count, "ASM compound loft scale auxiliaries")
     );
     let mut visits = 0..auxiliary_count;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM compound loft scale entries")).is_some() {
+    while propagate_resource!(ctx.next_charged(&mut visits, "ASM compound loft scale entries"))
+        .is_some()
+    {
         let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
         cur.set_pos(curve_end);
         auxiliaries.push(curve);
@@ -1858,7 +1862,9 @@ fn revision_loft_section(
         Err(error) => return Some(Err(error)),
     };
     let mut visits = 0..count;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM revision loft section entries")).is_some() {
+    while propagate_resource!(ctx.next_charged(&mut visits, "ASM revision loft section entries"))
+        .is_some()
+    {
         let parameter = cur.take_f64()?;
         let member_count = usize::try_from(cur.take_long()?).ok()?;
         // Each member consumes at least its type-code token.
@@ -1872,7 +1878,10 @@ fn revision_loft_section(
             Err(error) => return Some(Err(error)),
         };
         let mut visits = 0..member_count;
-        while propagate_resource!(ctx.next_charged(&mut visits, "ASM revision loft section entries")).is_some() {
+        while
+            propagate_resource!(ctx.next_charged(&mut visits, "ASM revision loft section entries"))
+                .is_some()
+        {
             let type_code = cur.take_long()?;
             let curve = propagate_resource!(embedded_base_curve_resolving_refs(ctx, cur, table)?);
             let endpoints = [
@@ -1920,7 +1929,10 @@ fn revision_loft_section(
             Err(error) => return Some(Err(error)),
         };
         let mut visits = 0..auxiliary_count;
-        while propagate_resource!(ctx.next_charged(&mut visits, "ASM revision loft section entries")).is_some() {
+        while
+            propagate_resource!(ctx.next_charged(&mut visits, "ASM revision loft section entries"))
+                .is_some()
+        {
             let (auxiliary, auxiliary_end) =
                 propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
             cur.set_pos(auxiliary_end);
@@ -1976,11 +1988,16 @@ fn loft_subdata_form(
     )?;
     let mut rows = propagate_resource!(ctx.collection_vec(rows_to_read, "ASM loft subdata rows"));
     let mut visits = 0..rows_to_read;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM loft subdata form entries")).is_some() {
+    while propagate_resource!(ctx.next_charged(&mut visits, "ASM loft subdata form entries"))
+        .is_some()
+    {
         let parameters = [cur.take_f64()?, cur.take_f64()?];
-        let mut columns = propagate_resource!(ctx.collection_vec(columns_to_read, "ASM loft subdata columns"));
+        let mut columns =
+            propagate_resource!(ctx.collection_vec(columns_to_read, "ASM loft subdata columns"));
         let mut visits = 0..columns_to_read;
-        while propagate_resource!(ctx.next_charged(&mut visits, "ASM loft subdata columns")).is_some() {
+        while propagate_resource!(ctx.next_charged(&mut visits, "ASM loft subdata columns"))
+            .is_some()
+        {
             columns.push([cur.take_f64()?, cur.take_f64()?]);
         }
         let extra = if revision {
@@ -2058,7 +2075,9 @@ fn loft_section(
             ctx.collection_vec(member_count, "ASM legacy loft profile members")
         );
         let mut visits = 0..member_count;
-        while propagate_resource!(ctx.next_charged(&mut visits, "ASM loft section entries")).is_some() {
+        while propagate_resource!(ctx.next_charged(&mut visits, "ASM loft section entries"))
+            .is_some()
+        {
             let type_code = cur.take_long()?;
             let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
             cur.set_pos(curve_end);
@@ -2081,7 +2100,9 @@ fn loft_section(
             ctx.collection_vec(auxiliary_count, "ASM legacy loft auxiliary curves")
         );
         let mut visits = 0..auxiliary_count;
-        while propagate_resource!(ctx.next_charged(&mut visits, "ASM loft section entries")).is_some() {
+        while propagate_resource!(ctx.next_charged(&mut visits, "ASM loft section entries"))
+            .is_some()
+        {
             let (auxiliary, auxiliary_end) =
                 propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
             cur.set_pos(auxiliary_end);
@@ -2206,10 +2227,10 @@ fn loft_spl_sur(
         Err(error) => return Some(Err(error)),
     };
     let cache_end = {
-        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-            "ASM construction cache",
-            || surface_block(ctx, span, cur.pos()).transpose(),
-        ));
+        let (decoded, _cache_storage) =
+            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                surface_block(ctx, span, cur.pos()).transpose()
+            },));
         decoded?.1
     };
     cur.set_pos(cache_end);
@@ -2251,7 +2272,9 @@ fn revision_cl_scale(
             Err(error) => return Some(Err(error)),
         };
     let mut visits = 0..member_count;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM revision cl scale entries")).is_some() {
+    while propagate_resource!(ctx.next_charged(&mut visits, "ASM revision cl scale entries"))
+        .is_some()
+    {
         let type_code = cur.take_long()?;
         let curve = propagate_resource!(embedded_base_curve_resolving_refs(ctx, cur, table)?);
         let endpoints = [
@@ -2301,7 +2324,9 @@ fn revision_cl_scale(
         Err(error) => return Some(Err(error)),
     };
     let mut visits = 0..auxiliary_count;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM revision cl scale entries")).is_some() {
+    while propagate_resource!(ctx.next_charged(&mut visits, "ASM revision cl scale entries"))
+        .is_some()
+    {
         let (auxiliary, auxiliary_end) =
             propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
         cur.set_pos(auxiliary_end);
@@ -2349,7 +2374,9 @@ fn revision_compound_loft(
         Err(error) => return Some(Err(error)),
     };
     let mut visits = 0..entry_count;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM revision compound loft entries")).is_some() {
+    while propagate_resource!(ctx.next_charged(&mut visits, "ASM revision compound loft entries"))
+        .is_some()
+    {
         let (profile, path) = match revision_cl_scale(ctx, &mut cur, table, asm_extension_present)?
         {
             Ok(scale) => scale,
@@ -2436,10 +2463,10 @@ fn compound_loft_spl_sur(
         return revision_compound_loft(ctx, span, resolver);
     }
     let cache_end = {
-        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-            "ASM construction cache",
-            || surface_block(ctx, span, cur.pos()).transpose(),
-        ));
+        let (decoded, _cache_storage) =
+            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                surface_block(ctx, span, cur.pos()).transpose()
+            },));
         decoded?.1
     };
     cur.set_pos(cache_end);
@@ -2542,10 +2569,10 @@ fn scaled_compound_loft_spl_sur(
     let singularity = cur.take_enum()?;
     let (shape, cache_fit_tolerance) = if cur.peek().is_some_and(Token::is_payload_ident) {
         let cache_end = {
-            let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-                "ASM construction cache",
-                || surface_block(ctx, span, cur.pos()).transpose(),
-            ));
+            let (decoded, _cache_storage) =
+                propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                    surface_block(ctx, span, cur.pos()).transpose()
+                },));
             decoded?.1
         };
         cur.set_pos(cache_end);
@@ -2848,7 +2875,9 @@ fn law_formula_resolving(
     }
     let mut variables = propagate_resource!(ctx.collection_vec(count, "ASM law formula variables"));
     let mut visits = 0..count;
-    while propagate_resource!(ctx.next_charged(&mut visits, "ASM law formula resolving entries")).is_some() {
+    while propagate_resource!(ctx.next_charged(&mut visits, "ASM law formula resolving entries"))
+        .is_some()
+    {
         variables.push(propagate_resource!(law_expression_resolving(
             ctx, cur, 0, resolver
         )?));
@@ -2903,7 +2932,9 @@ fn skin_spl_sur(
         let mut profiles =
             propagate_resource!(ctx.collection_vec(profile_count, "ASM skin surface profiles"));
         let mut visits = 0..profile_count;
-        while propagate_resource!(ctx.next_charged(&mut visits, "ASM skin spl sur entries")).is_some() {
+        while propagate_resource!(ctx.next_charged(&mut visits, "ASM skin spl sur entries"))
+            .is_some()
+        {
             let type_code = cur.take_long()?;
             let (curve, curve_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
             cur.set_pos(curve_end);
@@ -2926,10 +2957,10 @@ fn skin_spl_sur(
         propagate_resource!(curve_block(ctx, span, cur.pos())?);
     cur.set_pos(parameter_curve_end);
     let cache_end = {
-        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-            "ASM construction cache",
-            || surface_block(ctx, span, cur.pos()).transpose(),
-        ));
+        let (decoded, _cache_storage) =
+            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                surface_block(ctx, span, cur.pos()).transpose()
+            },));
         decoded?.1
     };
     cur.set_pos(cache_end);
@@ -2999,10 +3030,10 @@ pub(super) fn law_spl_sur(
     let (tail, cache_fit_tolerance) = match selector {
         0 => {
             let cache_end = {
-                let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-                    "ASM construction cache",
-                    || surface_block(ctx, span, cur.pos()).transpose(),
-                ));
+                let (decoded, _cache_storage) =
+                    propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                        surface_block(ctx, span, cur.pos()).transpose()
+                    },));
                 decoded?.1
             };
             cur.set_pos(cache_end);
@@ -3124,10 +3155,10 @@ fn net_spl_sur(
         propagate_resource!(law_formula(ctx, &mut cur)?),
     ];
     let cache_end = {
-        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-            "ASM construction cache",
-            || surface_block(ctx, span, cur.pos()).transpose(),
-        ));
+        let (decoded, _cache_storage) =
+            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                surface_block(ctx, span, cur.pos()).transpose()
+            },));
         decoded?.1
     };
     cur.set_pos(cache_end);
@@ -3362,10 +3393,10 @@ fn sweep_spl_sur(
         }
     };
     let cache_end = {
-        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-            "ASM construction cache",
-            || surface_block(ctx, span, cur.pos()).transpose(),
-        ));
+        let (decoded, _cache_storage) =
+            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                surface_block(ctx, span, cur.pos()).transpose()
+            },));
         decoded?.1
     };
     cur.set_pos(cache_end);
@@ -3644,10 +3675,10 @@ fn taper_spl_sur(
     };
     let parameter = cur.take_f64()?;
     let cache_end = {
-        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-            "ASM construction cache",
-            || surface_block(ctx, span, cur.pos()).transpose(),
-        ));
+        let (decoded, _cache_storage) =
+            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                surface_block(ctx, span, cur.pos()).transpose()
+            },));
         decoded?.1
     };
     cur.set_pos(cache_end);
@@ -3712,10 +3743,10 @@ fn comp_spl_sur(
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let cache_end = {
-        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-            "ASM construction cache",
-            || surface_block(ctx, span, cur.pos()).transpose(),
-        ));
+        let (decoded, _cache_storage) =
+            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                surface_block(ctx, span, cur.pos()).transpose()
+            },));
         decoded?.1
     };
     cur.set_pos(cache_end);
@@ -3724,12 +3755,18 @@ fn comp_spl_sur(
     } else {
         None
     };
-    let (parameters, _parameter_storage) = propagate_resource!(ctx.with_scoped_storage("ASM compound surface parameters", || cur.take_float_array(ctx).transpose()));
+    let (parameters, _parameter_storage) = propagate_resource!(ctx
+        .with_scoped_storage("ASM compound surface parameters", || cur
+            .take_float_array(ctx)
+            .transpose()));
     let parameters = parameters?;
     let mut components = propagate_resource!(
         ctx.collection_vec(parameters.len(), "ASM compound surface components")
     );
-    for parameter in propagate_resource!(ctx.admit_iter(parameters, "ASM compound surface components").map_err(cadmpeg_core::CodecError::from)) {
+    for parameter in propagate_resource!(ctx
+        .admit_iter(parameters, "ASM compound surface components")
+        .map_err(cadmpeg_core::CodecError::from))
+    {
         components.push(cadmpeg_ir::geometry::CompoundComponent {
             parameter,
             component: propagate_resource!(embedded_surface(ctx, &mut cur)?),
@@ -3790,7 +3827,10 @@ pub fn revision_surface_tail(
     let enumeration = cur.take_enum()?;
     let cache = match enumeration {
         0 => {
-            let (cache, _cache_storage) = propagate_resource!(ctx.with_scoped_storage("ASM surface cache domains", || surface_block(ctx, cur.toks(), cur.pos()).transpose()));
+            let (cache, _cache_storage) =
+                propagate_resource!(ctx.with_scoped_storage("ASM surface cache domains", || {
+                    surface_block(ctx, cur.toks(), cur.pos()).transpose()
+                }));
             let (cache, cache_end) = cache?;
             cur.set_pos(cache_end);
             let domains = [
@@ -3917,10 +3957,10 @@ fn off_spl_sur(
         cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {}
     };
     let cache_end = {
-        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-            "ASM construction cache",
-            || surface_block(ctx, span, cur.pos()).transpose(),
-        ));
+        let (decoded, _cache_storage) =
+            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                surface_block(ctx, span, cur.pos()).transpose()
+            },));
         decoded?.1
     };
     cur.set_pos(cache_end);
@@ -4017,7 +4057,10 @@ fn rot_spl_sur(
     let axis_direction = UnitVector3::normalized_nonzero(
         cadmpeg_ir::features::FiniteVector3::new(Vector3::from(axis))?,
     )?;
-    let (cache, _cache_storage) = propagate_resource!(ctx.with_scoped_storage("ASM surface cache domains", || surface_block(ctx, span, cur.pos()).transpose()));
+    let (cache, _cache_storage) =
+        propagate_resource!(ctx.with_scoped_storage("ASM surface cache domains", || {
+            surface_block(ctx, span, cur.pos()).transpose()
+        }));
     let (cache, cache_end) = cache?;
     cur.set_pos(cache_end);
     let angular_interval = [*cache.v_knots().first()?, *cache.v_knots().last()?];
@@ -4105,10 +4148,10 @@ fn sum_spl_sur(
         None
     } else {
         let cache_end = {
-            let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-                "ASM construction cache",
-                || surface_block(ctx, span, cur.pos()).transpose(),
-            ));
+            let (decoded, _cache_storage) =
+                propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                    surface_block(ctx, span, cur.pos()).transpose()
+                },));
             decoded?.1
         };
         cur.set_pos(cache_end);
@@ -4141,10 +4184,10 @@ fn ruled_spl_sur(
         None
     } else {
         let cache_end = {
-            let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-                "ASM construction cache",
-                || surface_block(ctx, span, cur.pos()).transpose(),
-            ));
+            let (decoded, _cache_storage) =
+                propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                    surface_block(ctx, span, cur.pos()).transpose()
+                },));
             decoded?.1
         };
         cur.set_pos(cache_end);
@@ -4212,10 +4255,10 @@ fn exact_spl_sur(
         )));
     }
     let cache_end = {
-        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-            "ASM construction cache",
-            || surface_block(ctx, span, cur.pos()).transpose(),
-        ));
+        let (decoded, _cache_storage) =
+            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                surface_block(ctx, span, cur.pos()).transpose()
+            },));
         decoded?.1
     };
     cur.set_pos(cache_end);
@@ -4286,10 +4329,10 @@ fn t_spl_sur(
         }));
     } else {
         let cache_end = {
-            let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-                "ASM construction cache",
-                || surface_block(ctx, span, cur.pos()).transpose(),
-            ));
+            let (decoded, _cache_storage) =
+                propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                    surface_block(ctx, span, cur.pos()).transpose()
+                },));
             decoded?.1
         };
         cur.set_pos(cache_end);
@@ -4324,8 +4367,15 @@ fn t_spl_sur(
         *resolved = propagate_resource!(usize::try_from(*index)
             .ok()
             .and_then(|index| {
-                let mut scratch = propagate_resource!(ctx.reserve_scoped(0, "ASM t spline references"));
-                resolve_t_spline_subtransform(ctx, index, table, &mut std::collections::HashSet::new(), &mut scratch)
+                let mut scratch =
+                    propagate_resource!(ctx.reserve_scoped(0, "ASM t spline references"));
+                resolve_t_spline_subtransform(
+                    ctx,
+                    index,
+                    table,
+                    &mut std::collections::HashSet::new(),
+                    &mut scratch,
+                )
             })
             .transpose());
     }
@@ -4524,7 +4574,9 @@ fn defm_spl_sur(
                 ctx.collection_vec(count, "ASM deformable surface parameter triples")
             );
             let mut visits = 0..count;
-            while propagate_resource!(ctx.next_charged(&mut visits, "ASM defm spl sur entries")).is_some() {
+            while propagate_resource!(ctx.next_charged(&mut visits, "ASM defm spl sur entries"))
+                .is_some()
+            {
                 parameter_triples.push([cur.take_f64()?, cur.take_f64()?, cur.take_f64()?]);
             }
             EmbeddedDeformableSurfaceData::Resolved(DeformableSurfaceData::Plain {
@@ -4561,7 +4613,9 @@ fn defm_spl_sur(
                 ctx.collection_vec(count, "ASM deformable surface curve parameter triples")
             );
             let mut visits = 0..count;
-            while propagate_resource!(ctx.next_charged(&mut visits, "ASM defm spl sur entries")).is_some() {
+            while propagate_resource!(ctx.next_charged(&mut visits, "ASM defm spl sur entries"))
+                .is_some()
+            {
                 parameter_triples.push([cur.take_f64()?, cur.take_f64()?, cur.take_f64()?]);
             }
             EmbeddedDeformableSurfaceData::SurfaceCurve {
@@ -4658,10 +4712,10 @@ fn defm_spl_sur(
         )))
     } else {
         let cache_end = {
-            let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
-                "ASM construction cache",
-                || surface_block(ctx, span, cur.pos()).transpose(),
-            ));
+            let (decoded, _cache_storage) =
+                propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                    surface_block(ctx, span, cur.pos()).transpose()
+                },));
             decoded?.1
         };
         cur.set_pos(cache_end);
@@ -4826,7 +4880,11 @@ fn resolve_t_spline_subtransform(
     scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Option<Result<cadmpeg_ir::geometry::InlineTSplineSubtransform, cadmpeg_core::CodecError>> {
     let _depth = propagate_resource!(ctx.enter_nested("resolve ASM t spline subtransform"));
-    if !propagate_resource!(scratch.with_storage(|| ctx.insert_hash_set(seen, index, "ASM t spline references"))) {
+    if !propagate_resource!(scratch.with_storage(|| ctx.insert_hash_set(
+        seen,
+        index,
+        "ASM t spline references"
+    ))) {
         return None;
     }
     let span = table.span(index)?.tokens();
@@ -4857,7 +4915,8 @@ pub fn procedural_surface_resolving_refs(
     table: &SubtypeTable,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let mut seen = std::collections::HashSet::new();
-    let mut scratch = propagate_resource!(ctx.reserve_scoped(0, "ASM procedural surface references"));
+    let mut scratch =
+        propagate_resource!(ctx.reserve_scoped(0, "ASM procedural surface references"));
     procedural_resolving_refs(ctx, toks, table, &mut seen, &mut scratch)
 }
 
@@ -4899,18 +4958,29 @@ fn procedural_resolving_refs(
     // Follow references for records whose own construction is absent. A record
     // with an undecoded construction keeps its native data; its references
     // belong to that construction's supports.
-    if propagate_resource!(crate::nurbs::subtypes::has_owned_construction(ctx, toks))
-    {
+    if propagate_resource!(crate::nurbs::subtypes::has_owned_construction(ctx, toks)) {
         return None;
     }
     let mut reference_position = 0;
-    while let Some(index) = propagate_resource!(crate::nurbs::subtypes::next_subtype_reference(ctx, toks, &mut reference_position)) {
-        if propagate_resource!(ctx.contains_hash_set(seen, &index, "ASM procedural surface references")) {
+    while let Some(index) = propagate_resource!(crate::nurbs::subtypes::next_subtype_reference(
+        ctx,
+        toks,
+        &mut reference_position
+    )) {
+        if propagate_resource!(ctx.contains_hash_set(
+            seen,
+            &index,
+            "ASM procedural surface references"
+        )) {
             continue;
         }
         // An unresolved reference withholds the candidates that follow it.
         let target = table.span(index)?.tokens();
-        propagate_resource!(scratch.with_storage(|| ctx.insert_hash_set(seen, index, "ASM procedural surface references")));
+        propagate_resource!(scratch.with_storage(|| ctx.insert_hash_set(
+            seen,
+            index,
+            "ASM procedural surface references"
+        )));
         if let Some(decoded) = procedural_resolving_refs(ctx, target, table, seen, scratch) {
             return Some(decoded);
         }
@@ -4963,11 +5033,11 @@ mod reference_allocation_tests {
             ResourceDimension::CollectionItems,
             "ASM procedural surface references",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
                 procedural_surface_resolving_refs(&ctx, &tokens, &table()).unwrap()
             },
         );
@@ -4984,20 +5054,19 @@ mod reference_allocation_tests {
             ResourceDimension::CollectionItems,
             "ASM revision discontinuities",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let source = [
-            vec![1.0],
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ];
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let source = [
+                    vec![1.0],
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                ];
                 copy_revision_discontinuities(&ctx, &source)
-
             },
         );
         assert_refusal(
@@ -5013,20 +5082,19 @@ mod reference_allocation_tests {
             ResourceDimension::RetainedBytes,
             "ASM revision discontinuities",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let source = [
-            vec![1.0],
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ];
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let source = [
+                    vec![1.0],
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                ];
                 copy_revision_discontinuities(&ctx, &source)
-
             },
         );
         assert_refusal(
@@ -5042,14 +5110,14 @@ mod reference_allocation_tests {
             ResourceDimension::CollectionItems,
             "ASM t spline references",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
 
-            let mut seen = std::collections::HashSet::new();
-            let mut scratch = ctx.reserve_scoped(0, "ASM t spline references")?;
-            resolve_t_spline_subtransform(&ctx, 0, &table(), &mut seen, &mut scratch).unwrap()
+                let mut seen = std::collections::HashSet::new();
+                let mut scratch = ctx.reserve_scoped(0, "ASM t spline references")?;
+                resolve_t_spline_subtransform(&ctx, 0, &table(), &mut seen, &mut scratch).unwrap()
             },
         );
         assert_refusal(
@@ -5065,15 +5133,15 @@ mod reference_allocation_tests {
             ResourceDimension::RetainedBytes,
             "ASM t spline program",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [
-            Token::Ident("t_spl_subtrans_object".into()),
-            Token::Str("x".into()),
-            Token::Str("y".into()),
-        ];
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let tokens = [
+                    Token::Ident("t_spl_subtrans_object".into()),
+                    Token::Str("x".into()),
+                    Token::Str("y".into()),
+                ];
                 t_spline_subtransform(&ctx, &mut Cur::at(&tokens, 0)).unwrap()
             },
         );
@@ -5090,11 +5158,11 @@ mod reference_allocation_tests {
             ResourceDimension::RetainedBytes,
             "ASM G2 side label",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::Str("side".into())];
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let tokens = [Token::Str("side".into())];
                 g2_side(&ctx, &mut Cur::at(&tokens, 0)).unwrap()
             },
         );
@@ -5111,14 +5179,12 @@ mod reference_allocation_tests {
             ResourceDimension::RetainedBytes,
             "ASM loft bridge text",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::Str("bridge".into())];
-                bridge_token(&ctx, &mut Cur::at(&tokens, 0))
-            .unwrap()
-
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let tokens = [Token::Str("bridge".into())];
+                bridge_token(&ctx, &mut Cur::at(&tokens, 0)).unwrap()
             },
         );
         assert_refusal(
@@ -5134,11 +5200,11 @@ mod reference_allocation_tests {
             ResourceDimension::RetainedBytes,
             "ASM law formula name",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::Str("named".into())];
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let tokens = [Token::Str("named".into())];
                 law_formula(&ctx, &mut Cur::at(&tokens, 0)).unwrap()
             },
         );
@@ -5155,11 +5221,11 @@ mod reference_allocation_tests {
             ResourceDimension::RetainedBytes,
             "ASM sweep law text",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::Str("X".into())];
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let tokens = [Token::Str("X".into())];
                 sweep_law_expression(&ctx, &mut Cur::at(&tokens, 0)).unwrap()
             },
         );
@@ -5176,11 +5242,11 @@ mod reference_allocation_tests {
             ResourceDimension::RetainedBytes,
             "ASM law operator",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::Str("ABS".into()), Token::Double(1.0)];
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let tokens = [Token::Str("ABS".into()), Token::Double(1.0)];
                 law_expression(&ctx, &mut Cur::at(&tokens, 0), 0).unwrap()
             },
         );
@@ -5193,15 +5259,15 @@ mod reference_allocation_tests {
             ResourceDimension::RetainedBytes,
             "ASM t spline values",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [
-            Token::Ident("t_spl_subtrans_object".into()),
-            Token::Str("x".into()),
-            Token::Str("y".into()),
-        ];
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let tokens = [
+                    Token::Ident("t_spl_subtrans_object".into()),
+                    Token::Str("x".into()),
+                    Token::Str("y".into()),
+                ];
                 t_spline_subtransform(&ctx, &mut Cur::at(&tokens, 0)).unwrap()
             },
         );
@@ -5266,26 +5332,35 @@ mod loft_bridge_work_tests {
         ]);
         for _ in 0..2 {
             tokens.extend([
-                Token::Double(0.0), Token::Long(1),
-                Token::Double(1.0), Token::Long(1),
+                Token::Double(0.0),
+                Token::Long(1),
+                Token::Double(1.0),
+                Token::Long(1),
             ]);
         }
-        for point in [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]] {
+        for point in [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0],
+        ] {
             tokens.extend(point.map(Token::Double));
         }
         tokens.extend([Token::Double(0.001), Token::SubtypeClose]);
         let service_ctx = cadmpeg_test_support::service_decode_context();
-        assert!(matches!(loft_spl_sur(&service_ctx, &tokens, None), Some(Ok(_))));
+        assert!(matches!(
+            loft_spl_sur(&service_ctx, &tokens, None),
+            Some(Ok(_))
+        ));
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             ResourceDimension::WorkUnits,
             "ASM loft bridge token scan",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                loft_spl_sur(&ctx, &tokens, None)
-            .expect("recognized refusal route")
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                loft_spl_sur(&ctx, &tokens, None).expect("recognized refusal route")
             },
         );
         let CodecError::ResourceLimit(limit) = error else {
@@ -5324,10 +5399,19 @@ mod loft_count_tests {
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::Long(211), Token::Long(4), Token::Long(0), Token::Double(2.0), Token::Double(3.0)];
+        let tokens = [
+            Token::Long(211),
+            Token::Long(4),
+            Token::Long(0),
+            Token::Double(2.0),
+            Token::Double(3.0),
+        ];
         let mut cur = Cur::at(&tokens, 0);
         let subdata = loft_subdata_form(&ctx, &mut cur, true).unwrap().unwrap();
-        assert_eq!(subdata, cadmpeg_ir::geometry::LoftSubdata::type_211([4, 0], [2.0, 3.0]));
+        assert_eq!(
+            subdata,
+            cadmpeg_ir::geometry::LoftSubdata::type_211([4, 0], [2.0, 3.0])
+        );
         assert_eq!(cur.pos(), tokens.len());
         ctx.finish_session().unwrap();
     }
@@ -5336,13 +5420,17 @@ mod loft_count_tests {
     fn loft_subdata_columns_refuse_unadmitted_parser_work() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let tokens = one_row_one_column_tokens();
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "ASM loft subdata columns", |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            loft_subdata_form(&ctx, &mut Cur::at(&tokens, 0), false).unwrap()
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "ASM loft subdata columns",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                loft_subdata_form(&ctx, &mut Cur::at(&tokens, 0), false).unwrap()
+            },
+        );
     }
 
     #[test]
@@ -5353,14 +5441,12 @@ mod loft_count_tests {
             ResourceDimension::CollectionItems,
             "ASM loft subdata rows",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = one_row_one_column_tokens();
-                loft_subdata_form(&ctx, &mut Cur::at(&tokens, 0), false)
-            .unwrap()
-
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let tokens = one_row_one_column_tokens();
+                loft_subdata_form(&ctx, &mut Cur::at(&tokens, 0), false).unwrap()
             },
         );
         let CodecError::ResourceLimit(limit) = error else {
@@ -5378,14 +5464,12 @@ mod loft_count_tests {
             ResourceDimension::CollectionItems,
             "ASM loft subdata columns",
             |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = one_row_one_column_tokens();
-                loft_subdata_form(&ctx, &mut Cur::at(&tokens, 0), false)
-            .unwrap()
-
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let tokens = one_row_one_column_tokens();
+                loft_subdata_form(&ctx, &mut Cur::at(&tokens, 0), false).unwrap()
             },
         );
         let CodecError::ResourceLimit(limit) = error else {
