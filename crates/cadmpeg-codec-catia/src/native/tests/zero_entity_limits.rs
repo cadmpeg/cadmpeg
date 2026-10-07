@@ -53,12 +53,12 @@ fn native_zero_entity_pair_ids_refuse_retained_limit() {
     let refused = crate::test_support::with_retained_refusal(
         &[],
         "catia_native_zero_face_record_id",
-        |ctx| super::super::zero_entity_endpoint_pair_candidates(ctx, vec![pair]),
+        |ctx| super::super::zero_entity_endpoint_pair_candidates(ctx, std::slice::from_ref(&pair)),
     );
     assert!(matches!(refused, Err(CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_zero_face_record_id"));
     let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::zero_entity_endpoint_pair_candidates(ctx, vec![pair])
+        super::super::zero_entity_endpoint_pair_candidates(ctx, std::slice::from_ref(&pair))
     })
     .expect("service profile admits pair IDs");
     assert_eq!(
