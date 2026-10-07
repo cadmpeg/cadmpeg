@@ -129,16 +129,14 @@ pub(crate) fn validate_native(
     let (actual_arenas, _actual_arenas_storage) =
         ctx.with_scoped_storage("collect Inventor native arena names", || {
             ctx.collect_btree_set(
-                ctx.admit_iter(namespace.arenas(), "visit Inventor native arenas")?
-                    .map(|(name, _)| name.as_str()),
+                namespace.arenas().keys().map(String::as_str),
                 "collect Inventor native arena names",
             )
         })?;
     let (expected_arenas, _expected_arenas_storage) =
         ctx.with_scoped_storage("collect expected Inventor arena names", || {
             ctx.collect_btree_set(
-                ctx.admit_iter(ARENAS, "visit Inventor expected arena names")?
-                    .copied(),
+                ARENAS.iter().copied(),
                 "collect expected Inventor arena names",
             )
         })?;
@@ -292,13 +290,12 @@ fn validate_design(
     let (raw, _raw_storage) =
         ctx.with_scoped_storage("collect Inventor RSe design record index", || {
             ctx.collect_hash_map(
-                ctx.admit_iter(&data.records, "index Inventor RSe design records")?
-                    .map(|record| {
-                        (
-                            (record.token.as_str(), record.ordinal),
-                            record.type_id.as_str(),
-                        )
-                    }),
+                data.records.iter().map(|record| {
+                    (
+                        (record.token.as_str(), record.ordinal),
+                        record.type_id.as_str(),
+                    )
+                }),
                 "collect Inventor RSe design record index",
             )
         })?;
@@ -369,17 +366,11 @@ fn validate_design(
             None => false,
         };
         if !record_matches
-            || ctx
-                .admit_iter(&references, "resolve Inventor PmDc parameter references")?
-                .find_map(|reference| {
-                    match resolves(parameter.identity.segment_token.as_str(), *reference) {
-                        Ok(true) => None,
-                        Ok(false) => Some(Ok(true)),
-                        Err(error) => Some(Err(error)),
-                    }
-                })
-                .transpose()?
-                .unwrap_or(false)
+            || !ctx.all_by(
+                &references,
+                |reference| resolves(parameter.identity.segment_token.as_str(), *reference),
+                "resolve Inventor PmDc parameter references",
+            )?
         {
             push_finding(
                 ctx,
@@ -449,17 +440,11 @@ fn validate_design(
             None => false,
         };
         if !record_matches
-            || ctx
-                .admit_iter(&references, "resolve Inventor PmDc expression references")?
-                .find_map(|reference| {
-                    match resolves(expression.identity.segment_token.as_str(), *reference) {
-                        Ok(true) => None,
-                        Ok(false) => Some(Ok(true)),
-                        Err(error) => Some(Err(error)),
-                    }
-                })
-                .transpose()?
-                .unwrap_or(false)
+            || !ctx.all_by(
+                &references,
+                |reference| resolves(expression.identity.segment_token.as_str(), *reference),
+                "resolve Inventor PmDc expression references",
+            )?
         {
             push_finding(
                 ctx,
@@ -518,17 +503,11 @@ fn validate_design(
             None => false,
         };
         if !record_matches
-            || ctx
-                .admit_iter(&references, "resolve Inventor PmDc unit references")?
-                .find_map(|reference| {
-                    match resolves(unit.identity.segment_token.as_str(), *reference) {
-                        Ok(true) => None,
-                        Ok(false) => Some(Ok(true)),
-                        Err(error) => Some(Err(error)),
-                    }
-                })
-                .transpose()?
-                .unwrap_or(false)
+            || !ctx.all_by(
+                &references,
+                |reference| resolves(unit.identity.segment_token.as_str(), *reference),
+                "resolve Inventor PmDc unit references",
+            )?
         {
             push_finding(
                 ctx,
@@ -620,13 +599,12 @@ fn validate_sketches(
     let (raw, _raw_storage) =
         ctx.with_scoped_storage("collect Inventor RSe sketch record index", || {
             ctx.collect_hash_map(
-                ctx.admit_iter(&data.records, "index Inventor RSe sketch records")?
-                    .map(|record| {
-                        (
-                            (record.token.as_str(), record.ordinal),
-                            record.type_id.as_str(),
-                        )
-                    }),
+                data.records.iter().map(|record| {
+                    (
+                        (record.token.as_str(), record.ordinal),
+                        record.type_id.as_str(),
+                    )
+                }),
                 "collect Inventor RSe sketch record index",
             )
         })?;
@@ -638,24 +616,20 @@ fn validate_sketches(
         }
     };
     let references_resolve = |token: &str, references: &[u32], operation| {
-        let first_unresolved = ctx
-            .admit_iter(references, operation)?
-            .find_map(|reference| {
+        ctx.all_by(
+            references,
+            |reference| {
                 if *reference == 0 {
-                    return None;
+                    return Ok(true);
                 }
-                match ctx.contains_key_hash_map(
+                ctx.contains_key_hash_map(
                     &raw,
                     &(token, reference - 1),
                     "resolve Inventor PmDc sketch reference",
-                ) {
-                    Ok(true) => None,
-                    Ok(false) => Some(Ok(false)),
-                    Err(error) => Some(Err(error)),
-                }
-            })
-            .transpose()?;
-        Ok::<bool, CodecError>(first_unresolved.unwrap_or(true))
+                )
+            },
+            operation,
+        )
     };
     unique(
         ctx,
@@ -1196,24 +1170,17 @@ fn validate_sketches(
             )?,
             None => false,
         };
-        let endpoint_resolves = ctx
-            .admit_iter(
-                &entity.endpoint_refs,
-                "validate Inventor neutral sketch endpoints",
-            )?
-            .find_map(|reference| {
-                match ctx.contains_hash_set(
+        let endpoint_resolves = ctx.all_by(
+            &entity.endpoint_refs,
+            |reference| {
+                ctx.contains_hash_set(
                     &native_entities,
                     reference.as_str(),
                     "resolve Inventor neutral endpoint source",
-                ) {
-                    Ok(true) => None,
-                    Ok(false) => Some(Ok(false)),
-                    Err(error) => Some(Err(error)),
-                }
-            })
-            .transpose()?
-            .unwrap_or(true);
+                )
+            },
+            "validate Inventor neutral sketch endpoints",
+        )?;
         if !native_resolves || !endpoint_resolves {
             push_finding(
                 ctx,
@@ -1280,13 +1247,12 @@ fn validate_features(
     let (raw, _raw_storage) =
         ctx.with_scoped_storage("collect Inventor RSe feature record index", || {
             ctx.collect_hash_map(
-                ctx.admit_iter(&data.records, "index Inventor RSe feature records")?
-                    .map(|record| {
-                        (
-                            (record.token.as_str(), record.ordinal),
-                            record.type_id.as_str(),
-                        )
-                    }),
+                data.records.iter().map(|record| {
+                    (
+                        (record.token.as_str(), record.ordinal),
+                        record.type_id.as_str(),
+                    )
+                }),
                 "collect Inventor RSe feature record index",
             )
         })?;
@@ -1376,31 +1342,16 @@ fn validate_features(
             None => false,
         };
         if !record_matches
-            || !ctx
-                .admit_iter(&references, "resolve Inventor PmDc feature references")?
-                .find_map(|reference| {
-                    match resolves(feature.identity.segment_token.as_str(), *reference) {
-                        Ok(true) => None,
-                        Ok(false) => Some(Ok(false)),
-                        Err(error) => Some(Err(error)),
-                    }
-                })
-                .transpose()?
-                .unwrap_or(true)
-            || !ctx
-                .admit_iter(
-                    feature.properties.references(),
-                    "resolve Inventor PmDc feature property references",
-                )?
-                .find_map(|reference| {
-                    match resolves(feature.identity.segment_token.as_str(), reference.index()) {
-                        Ok(true) => None,
-                        Ok(false) => Some(Ok(false)),
-                        Err(error) => Some(Err(error)),
-                    }
-                })
-                .transpose()?
-                .unwrap_or(true)
+            || !ctx.all_by(
+                &references,
+                |reference| resolves(feature.identity.segment_token.as_str(), *reference),
+                "resolve Inventor PmDc feature references",
+            )?
+            || !ctx.all_by(
+                feature.properties.references(),
+                |reference| resolves(feature.identity.segment_token.as_str(), reference.index()),
+                "resolve Inventor PmDc feature property references",
+            )?
         {
             push_finding(
                 ctx,
@@ -1431,54 +1382,26 @@ fn validate_features(
             };
         let token = feature.identity.segment_token.as_str();
         if !record_matches
-            || !ctx
-                .admit_iter(
-                    &references,
-                    "resolve Inventor PmDc pattern-feature references",
-                )?
-                .find_map(|reference| match resolves(token, *reference) {
-                    Ok(true) => None,
-                    Ok(false) => Some(Ok(false)),
-                    Err(error) => Some(Err(error)),
-                })
-                .transpose()?
-                .unwrap_or(true)
-            || !ctx
-                .admit_iter(
-                    feature.properties.references(),
-                    "resolve Inventor PmDc pattern-feature properties",
-                )?
-                .find_map(|reference| match resolves(token, reference.index()) {
-                    Ok(true) => None,
-                    Ok(false) => Some(Ok(false)),
-                    Err(error) => Some(Err(error)),
-                })
-                .transpose()?
-                .unwrap_or(true)
-            || !ctx
-                .admit_iter(
-                    feature.participants.references(),
-                    "resolve Inventor PmDc pattern participants",
-                )?
-                .find_map(|reference| match resolves(token, reference.index()) {
-                    Ok(true) => None,
-                    Ok(false) => Some(Ok(false)),
-                    Err(error) => Some(Err(error)),
-                })
-                .transpose()?
-                .unwrap_or(true)
-            || !ctx
-                .admit_iter(
-                    &feature.property_slots,
-                    "resolve Inventor PmDc pattern property slots",
-                )?
-                .find_map(|reference| match resolves(token, reference.index()) {
-                    Ok(true) => None,
-                    Ok(false) => Some(Ok(false)),
-                    Err(error) => Some(Err(error)),
-                })
-                .transpose()?
-                .unwrap_or(true)
+            || !ctx.all_by(
+                &references,
+                |reference| resolves(token, *reference),
+                "resolve Inventor PmDc pattern-feature references",
+            )?
+            || !ctx.all_by(
+                feature.properties.references(),
+                |reference| resolves(token, reference.index()),
+                "resolve Inventor PmDc pattern-feature properties",
+            )?
+            || !ctx.all_by(
+                feature.participants.references(),
+                |reference| resolves(token, reference.index()),
+                "resolve Inventor PmDc pattern participants",
+            )?
+            || !ctx.all_by(
+                &feature.property_slots,
+                |reference| resolves(token, reference.index()),
+                "resolve Inventor PmDc pattern property slots",
+            )?
         {
             push_finding(
                 ctx,
@@ -1602,18 +1525,11 @@ fn validate_features(
                 None => false,
             };
         if !record_matches
-            || !ctx
-                .admit_iter(
-                    &references,
-                    "resolve Inventor PmDc feature-property references",
-                )?
-                .find_map(|reference| match resolves(token, *reference) {
-                    Ok(true) => None,
-                    Ok(false) => Some(Ok(false)),
-                    Err(error) => Some(Err(error)),
-                })
-                .transpose()?
-                .unwrap_or(true)
+            || !ctx.all_by(
+                &references,
+                |reference| resolves(token, *reference),
+                "resolve Inventor PmDc feature-property references",
+            )?
         {
             push_finding(
                 ctx,
@@ -1647,20 +1563,11 @@ fn validate_features(
                 None => false,
             };
         if !record_matches
-            || !ctx
-                .admit_iter(
-                    &references,
-                    "resolve Inventor PmDc entity-style-link references",
-                )?
-                .find_map(|reference| {
-                    match resolves(link.identity.segment_token.as_str(), *reference) {
-                        Ok(true) => None,
-                        Ok(false) => Some(Ok(false)),
-                        Err(error) => Some(Err(error)),
-                    }
-                })
-                .transpose()?
-                .unwrap_or(true)
+            || !ctx.all_by(
+                &references,
+                |reference| resolves(link.identity.segment_token.as_str(), *reference),
+                "resolve Inventor PmDc entity-style-link references",
+            )?
         {
             push_finding(
                 ctx,
@@ -1694,30 +1601,16 @@ fn validate_features(
                 None => false,
             };
         if !record_matches
-            || !ctx
-                .admit_iter(
-                    &references,
-                    "resolve Inventor PmDc feature-label header references",
-                )?
-                .find_map(|reference| match resolves(token, *reference) {
-                    Ok(true) => None,
-                    Ok(false) => Some(Ok(false)),
-                    Err(error) => Some(Err(error)),
-                })
-                .transpose()?
-                .unwrap_or(true)
-            || !ctx
-                .admit_iter(
-                    label.participants.references(),
-                    "resolve Inventor PmDc feature-label participants",
-                )?
-                .find_map(|reference| match resolves(token, reference.index()) {
-                    Ok(true) => None,
-                    Ok(false) => Some(Ok(false)),
-                    Err(error) => Some(Err(error)),
-                })
-                .transpose()?
-                .unwrap_or(true)
+            || !ctx.all_by(
+                &references,
+                |reference| resolves(token, *reference),
+                "resolve Inventor PmDc feature-label header references",
+            )?
+            || !ctx.all_by(
+                label.participants.references(),
+                |reference| resolves(token, reference.index()),
+                "resolve Inventor PmDc feature-label participants",
+            )?
         {
             push_finding(
                 ctx,
@@ -1750,20 +1643,11 @@ fn validate_features(
                 None => false,
             };
         if !record_matches
-            || !ctx
-                .admit_iter(
-                    &references,
-                    "resolve Inventor PmDc feature-terminator references",
-                )?
-                .find_map(|reference| {
-                    match resolves(terminator.identity.segment_token.as_str(), *reference) {
-                        Ok(true) => None,
-                        Ok(false) => Some(Ok(false)),
-                        Err(error) => Some(Err(error)),
-                    }
-                })
-                .transpose()?
-                .unwrap_or(true)
+            || !ctx.all_by(
+                &references,
+                |reference| resolves(terminator.identity.segment_token.as_str(), *reference),
+                "resolve Inventor PmDc feature-terminator references",
+            )?
         {
             push_finding(
                 ctx,
@@ -2201,8 +2085,7 @@ fn validate_presentation(
     let (neutral_faces, _neutral_faces_storage) =
         ctx.with_scoped_storage("index Inventor neutral face ids", || {
             ctx.collect_hash_set(
-                ctx.admit_iter(&ir.model.faces, "index Inventor neutral faces")?
-                    .map(|face| face.id.as_str()),
+                ir.model.faces.iter().map(|face| face.id.as_str()),
                 "index Inventor neutral face ids",
             )
         })?;
@@ -2234,24 +2117,21 @@ fn validate_presentation(
     let (raw_records, _raw_records_storage) =
         ctx.with_scoped_storage("collect Inventor RSe presentation record index", || {
             ctx.collect_hash_map(
-                ctx.admit_iter(&data.records, "index Inventor RSe presentation records")?
-                    .map(|record| {
-                        (
-                            (record.token.as_str(), record.ordinal),
-                            record.type_id.as_str(),
-                        )
-                    }),
+                data.records.iter().map(|record| {
+                    (
+                        (record.token.as_str(), record.ordinal),
+                        record.type_id.as_str(),
+                    )
+                }),
                 "collect Inventor RSe presentation record index",
             )
         })?;
     let (rendering_keys, _rendering_keys_storage) =
         ctx.with_scoped_storage("collect Inventor rendering-style keys", || {
             ctx.collect_hash_set(
-                ctx.admit_iter(
-                    &data.pm_app_rendering_styles,
-                    "index Inventor rendering styles",
-                )?
-                .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+                data.pm_app_rendering_styles
+                    .iter()
+                    .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
                 "collect Inventor rendering-style keys",
             )
         })?;
@@ -2525,29 +2405,26 @@ fn validate_active_carrier(
         ..
     } = carrier
     {
-        let resolves = ctx
-            .admit_iter(&data.records, "resolve Inventor active carrier")?
-            .find_map(|record| {
-                match ctx.equal(
+        let resolves = ctx.any_by(
+            &data.records,
+            |record| {
+                if ctx.equal(
                     record.token.as_str(),
                     segment_token,
                     "compare Inventor active-carrier segment token",
-                ) {
-                    Ok(true) if record.ordinal == *record_ordinal => match ctx.equal(
+                )? && record.ordinal == *record_ordinal
+                {
+                    ctx.equal(
                         record.type_id.as_str(),
                         "5c5945f6d5113313100060a6bba647b5",
                         "compare Inventor active-carrier type",
-                    ) {
-                        Ok(true) => Some(Ok(true)),
-                        Ok(false) => None,
-                        Err(error) => Some(Err(error)),
-                    },
-                    Ok(_) => None,
-                    Err(error) => Some(Err(error)),
+                    )
+                } else {
+                    Ok(false)
                 }
-            })
-            .transpose()?
-            .unwrap_or(false);
+            },
+            "resolve Inventor active carrier",
+        )?;
         if !resolves {
             push_finding(
                 ctx,
@@ -2957,8 +2834,7 @@ fn validate_databases(
     let (storage, _storage_storage) =
         ctx.with_scoped_storage("collect Inventor storage bands", || {
             ctx.collect_btree_set(
-                ctx.admit_iter(&data.storage_bands, "index Inventor storage bands")?
-                    .map(|record| record.band),
+                data.storage_bands.iter().map(|record| record.band),
                 "collect Inventor storage bands",
             )
         })?;
@@ -3066,7 +2942,8 @@ fn validate_segments(
     let (registry_ids, _registry_ids_storage) =
         ctx.with_scoped_storage("collect Inventor segment registry ids", || {
             ctx.collect_hash_set(
-                ctx.admit_iter(&data.registry, "index Inventor segment registry ids")?
+                data.registry
+                    .iter()
                     .map(|record| record.segment_id.as_str()),
                 "collect Inventor segment registry ids",
             )
@@ -3092,8 +2969,7 @@ fn validate_segments(
     let (pair_tokens, _pair_tokens_storage) =
         ctx.with_scoped_storage("collect Inventor paired segment tokens", || {
             ctx.collect_btree_set(
-                ctx.admit_iter(&data.pairs, "index Inventor paired segment tokens")?
-                    .map(|record| record.token.as_str()),
+                data.pairs.iter().map(|record| record.token.as_str()),
                 "collect Inventor paired segment tokens",
             )
         })?;
@@ -3204,11 +3080,7 @@ fn validate_segments(
     let (expected_sections, _expected_sections_storage) =
         ctx.with_scoped_storage("collect expected Inventor metadata sections", || {
             ctx.collect_btree_set(
-                ctx.admit_iter(
-                    &EXPECTED_SECTIONS,
-                    "visit expected Inventor metadata sections",
-                )?
-                .copied(),
+                EXPECTED_SECTIONS.iter().copied(),
                 "collect expected Inventor metadata sections",
             )
         })?;
@@ -3242,7 +3114,8 @@ fn validate_segments(
     let (type_keys, _type_keys_storage) =
         ctx.with_scoped_storage("collect Inventor RSe type keys", || {
             ctx.collect_hash_set(
-                ctx.admit_iter(&data.meta_types, "index Inventor RSe type keys")?
+                data.meta_types
+                    .iter()
                     .map(|record| (record.token.as_str(), record.index, record.type_id.as_str())),
                 "collect Inventor RSe type keys",
             )
@@ -3320,7 +3193,8 @@ fn validate_segments(
     let (expanded_lengths, _expanded_lengths_storage) =
         ctx.with_scoped_storage("collect Inventor expanded bulk lengths", || {
             ctx.collect_hash_map(
-                ctx.admit_iter(&data.bulk, "index Inventor expanded bulk lengths")?
+                data.bulk
+                    .iter()
                     .map(|bulk| (bulk.token.as_str(), bulk.expanded_len)),
                 "collect Inventor expanded bulk lengths",
             )
@@ -3473,8 +3347,7 @@ fn validate_properties(
     let (set_paths, _set_paths_storage) =
         ctx.with_scoped_storage("collect Inventor property-set paths", || {
             ctx.collect_hash_set(
-                ctx.admit_iter(&data.property_sets, "index Inventor property-set paths")?
-                    .map(|record| record.path.as_str()),
+                data.property_sets.iter().map(|record| record.path.as_str()),
                 "collect Inventor property-set paths",
             )
         })?;
@@ -3548,7 +3421,9 @@ fn validate_protein_assets(
     let (entry_names, _entry_names_storage) =
         ctx.with_scoped_storage("collect Inventor Protein entry names", || {
             ctx.collect_hash_set(
-                ctx.admit_iter(data.protein.entries(), "index Inventor Protein entry names")?
+                data.protein
+                    .entries()
+                    .iter()
                     .map(|entry| entry.name.as_str()),
                 "collect Inventor Protein entry names",
             )
@@ -3593,7 +3468,9 @@ fn validate_protein_rejections(
     let (entry_names, _entry_names_storage) =
         ctx.with_scoped_storage("collect Inventor Protein entry names", || {
             ctx.collect_hash_set(
-                ctx.admit_iter(data.protein.entries(), "index Inventor Protein entry names")?
+                data.protein
+                    .entries()
+                    .iter()
                     .map(|entry| entry.name.as_str()),
                 "collect Inventor Protein entry names",
             )
@@ -3601,11 +3478,9 @@ fn validate_protein_rejections(
     let (accepted_positions, _accepted_positions_storage) =
         ctx.with_scoped_storage("collect accepted Inventor Protein positions", || {
             ctx.collect_hash_set(
-                ctx.admit_iter(
-                    &data.protein_assets,
-                    "index accepted Inventor Protein positions",
-                )?
-                .map(|record| (record.entry_name.as_str(), record.ordinal())),
+                data.protein_assets
+                    .iter()
+                    .map(|record| (record.entry_name.as_str(), record.ordinal())),
                 "collect accepted Inventor Protein positions",
             )
         })?;
@@ -3781,8 +3656,7 @@ fn validate_ufrx(
     let (model_state_ordinals, _model_state_ordinals_storage) =
         ctx.with_scoped_storage("collect Inventor UFRxDoc model-state ordinals", || {
             ctx.collect_btree_set(
-                ctx.admit_iter(model_states, "index Inventor UFRxDoc model-state ordinals")?
-                    .map(|state| state.ordinal),
+                model_states.iter().map(|state| state.ordinal),
                 "collect Inventor UFRxDoc model-state ordinals",
             )
         })?;
@@ -3859,11 +3733,10 @@ fn validate_ufrx(
     let (reference_ids, _reference_ids_storage) =
         ctx.with_scoped_storage("collect Inventor UFRxDoc external reference ids", || {
             ctx.collect_hash_set(
-                ctx.admit_iter(
-                    data.ufrx.external_references(),
-                    "index Inventor UFRxDoc external reference ids",
-                )?
-                .map(|reference| reference.reference_id),
+                data.ufrx
+                    .external_references()
+                    .iter()
+                    .map(|reference| reference.reference_id),
                 "collect Inventor UFRxDoc external reference ids",
             )
         })?;
@@ -3871,11 +3744,9 @@ fn validate_ufrx(
         "collect Inventor assembly occurrence ids for UFRxDoc",
         || {
             ctx.collect_hash_set(
-                ctx.admit_iter(
-                    &data.assembly_occurrences,
-                    "index Inventor assembly occurrence ids for UFRxDoc",
-                )?
-                .map(|occurrence| occurrence.occurrence_id),
+                data.assembly_occurrences
+                    .iter()
+                    .map(|occurrence| occurrence.occurrence_id),
                 "collect Inventor assembly occurrence ids for UFRxDoc",
             )
         },
@@ -3977,11 +3848,9 @@ fn validate_assembly(
     let (occurrence_ids, _occurrence_ids_storage) =
         ctx.with_scoped_storage("collect Inventor assembly occurrence ids", || {
             ctx.collect_hash_set(
-                ctx.admit_iter(
-                    &data.assembly_occurrences,
-                    "index Inventor assembly occurrence ids",
-                )?
-                .map(|record| record.occurrence_id),
+                data.assembly_occurrences
+                    .iter()
+                    .map(|record| record.occurrence_id),
                 "collect Inventor assembly occurrence ids",
             )
         })?;
