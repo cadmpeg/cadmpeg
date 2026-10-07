@@ -430,7 +430,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             ctx,
         )?;
         let conditional_losses = global.conditional_double_precision_losses(
-            parameter::uses_double_precision(&parameters),
+            parameter::uses_double_precision(&parameters, ctx)?,
             ctx,
         )?;
         let mut conditional_losses = conditional_losses;

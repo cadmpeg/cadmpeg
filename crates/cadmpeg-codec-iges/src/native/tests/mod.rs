@@ -205,41 +205,42 @@ fn native_ambiguity_and_entity_slots_refuse_after_input_indexes() {
                 },
             );
         }
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items =
-            cadmpeg_core::decode::u64_from_index((scan.cards().len() + scan.trailing().len()) + 3);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = super::store(
-            &mut cadmpeg_ir::CadIr::empty(),
-            super::NativeStoreInputs {
-                scan: &scan,
-                directory: &directory,
-                parameters: &assembly.records,
-                trailing_pointer_analysis: &analysis,
-                quarantine: super::QuarantinedRecords {
-                    directory: &quarantined_directory,
-                    parameters: &assembly.quarantined,
-                },
-                structure_admitted: None,
-                sequences: &crate::entities::geometry::SourceSequences::default(),
-                boundary_vertex_derivations: &[],
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::store(
+                    &mut cadmpeg_ir::CadIr::empty(),
+                    super::NativeStoreInputs {
+                        scan: &scan,
+                        directory: &directory,
+                        parameters: &assembly.records,
+                        trailing_pointer_analysis: &analysis,
+                        quarantine: super::QuarantinedRecords {
+                            directory: &quarantined_directory,
+                            parameters: &assembly.quarantined,
+                        },
+                        structure_admitted: None,
+                        sequences: &crate::entities::geometry::SourceSequences::default(),
+                        boundary_vertex_derivations: &[],
+                    },
+                    &mut std::collections::BTreeMap::new(),
+                    &global,
+                    super::ProductOccurrenceLimits::new(100_000, 64),
+                    &ctx,
+                )
+                .map(|_| ())
             },
-            &mut std::collections::BTreeMap::new(),
-            &global,
-            super::ProductOccurrenceLimits::new(100_000, 64),
-            &ctx,
         );
-        let observed = result.as_ref().err().map(ToString::to_string);
-        assert!(
-            matches!(
-                result,
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == operation
-            ),
-            "observed {observed:?}"
-        );
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems && limit.additional == 1
+        ));
     }
 }
 
@@ -285,41 +286,42 @@ fn native_required_back_pointer_member_refuses_node_limit() {
     assert!(quarantined_directory.is_empty());
     assert!(assembly.quarantined.is_empty());
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items =
-        cadmpeg_core::decode::u64_from_index((scan.cards().len() + scan.trailing().len()) + 6);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = super::store(
-        &mut cadmpeg_ir::CadIr::empty(),
-        super::NativeStoreInputs {
-            scan: &scan,
-            directory: &directory,
-            parameters: &assembly.records,
-            trailing_pointer_analysis: &assembly.trailing_pointer_analysis,
-            quarantine: super::QuarantinedRecords {
-                directory: &quarantined_directory,
-                parameters: &assembly.quarantined,
-            },
-            structure_admitted: None,
-            sequences: &crate::entities::geometry::SourceSequences::default(),
-            boundary_vertex_derivations: &[],
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "iges native required back-pointer member",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::store(
+                &mut cadmpeg_ir::CadIr::empty(),
+                super::NativeStoreInputs {
+                    scan: &scan,
+                    directory: &directory,
+                    parameters: &assembly.records,
+                    trailing_pointer_analysis: &assembly.trailing_pointer_analysis,
+                    quarantine: super::QuarantinedRecords {
+                        directory: &quarantined_directory,
+                        parameters: &assembly.quarantined,
+                    },
+                    structure_admitted: None,
+                    sequences: &crate::entities::geometry::SourceSequences::default(),
+                    boundary_vertex_derivations: &[],
+                },
+                &mut std::collections::BTreeMap::new(),
+                &global,
+                super::ProductOccurrenceLimits::new(100_000, 64),
+                &ctx,
+            )
+            .map(|_| ())
         },
-        &mut std::collections::BTreeMap::new(),
-        &global,
-        super::ProductOccurrenceLimits::new(100_000, 64),
-        &ctx,
     );
-    let observed = result.as_ref().err().map(ToString::to_string);
-    assert!(
-        matches!(
-            result,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "iges native required back-pointer member"
-        ),
-        "observed {observed:?}"
-    );
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems && limit.additional == 1
+    ));
 }
 
 #[test]
