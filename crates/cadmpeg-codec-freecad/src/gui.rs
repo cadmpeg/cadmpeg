@@ -255,7 +255,7 @@ pub(crate) fn transfer(
         "SchemaVersion",
         "schemaVersion",
     )?;
-    let admission = schema::classify(ctx, schema_declaration.as_deref())?;
+    let admission = schema::classify(schema_declaration.as_deref());
     let neutral_schema_version = admission.neutral_schema_version();
     let transferred = transfer_schema_one(
         ctx,
@@ -272,8 +272,8 @@ pub(crate) fn transfer(
             plan.apply(ctx, ir)?;
             Ok(graph)
         }
-        (GuiSchemaAdmission::Unverified { declaration }, Ok((mut graph, plan))) => {
-            let declaration = declaration.as_deref().unwrap_or("missing");
+        (GuiSchemaAdmission::Unverified, Ok((mut graph, plan))) => {
+            let declaration = schema_declaration.as_deref().unwrap_or("missing");
             plan.apply(ctx, ir)?;
             ctx.reserve_vec(&mut graph.losses, 1, "FCStd GUI schema losses")?;
             graph.losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(
@@ -284,10 +284,10 @@ pub(crate) fn transfer(
             Ok(graph)
         }
         (
-            GuiSchemaAdmission::Unverified { declaration },
+            GuiSchemaAdmission::Unverified,
             Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })),
         ) => {
-            let declaration = declaration.as_deref().unwrap_or("missing");
+            let declaration = schema_declaration.as_deref().unwrap_or("missing");
             let mut losses = ctx.collection_vec(1, "FCStd GUI schema losses")?;
             losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(
                 ctx.format_retained(format_args!(
@@ -299,7 +299,7 @@ pub(crate) fn transfer(
                 ..Graph::default()
             })
         }
-        (GuiSchemaAdmission::Unverified { .. }, Err(error)) => Err(error),
+        (GuiSchemaAdmission::Unverified, Err(error)) => Err(error),
     }
 }
 
