@@ -1086,23 +1086,6 @@ fn marker_entities_inner<'a, 'loci>(
     Ok(selected.unwrap_or_default())
 }
 
-/// Charges the two keyed lookups of `marker_id` that follow: one in the
-/// marker table and one in the locus table.
-pub(super) fn charge_profile_marker_lookup(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    marker_id: &str,
-    _markers_by_id: &HashMap<&str, &SketchInputEntity>,
-    _loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-    operation: &'static str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let key = cadmpeg_core::decode::u64_from_index(marker_id.len());
-    ctx.charge_work(
-        key.checked_mul(2)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-        operation,
-    )
-}
-
 pub(super) fn sort_marker_entity_ids(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entities: &mut Vec<SketchEntityId>,
