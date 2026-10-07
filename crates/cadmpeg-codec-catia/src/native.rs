@@ -8345,12 +8345,12 @@ macro_rules! define_catia_arenas {
         Vec<$record>
     };
     (@flattened_collect $ctx:ident, $native:ident, object_graph_records, $owner:ident, $children:ident) => {
-        $ctx.try_collect_vec($native.$owner.iter_mut()
+        $ctx.try_collect_vec($ctx.admit_iter(&mut $native.$owner, "catia_native_flattened_parent_visits").map_err(CodecError::from)?
                 .flat_map(|parent| std::mem::take(&mut parent.$children))
                 .map(|record| CatiaObjectRecordWire::from_charged($ctx, record)), "catia_native_object_record_wires")
     };
     (@flattened_collect $ctx:ident, $native:ident, $field:ident, $owner:ident, $children:ident) => {
-        $ctx.collect_vec($native.$owner.iter_mut()
+        $ctx.collect_vec($ctx.admit_iter(&mut $native.$owner, "catia_native_flattened_parent_visits").map_err(CodecError::from)?
                 .flat_map(|parent| std::mem::take(&mut parent.$children)), "catia_native_flattened_arena")
     };
     (@flattened_prepare $ctx:ident, $native:ident, $field:ident, $owner:ident, $children:ident) => {
@@ -8359,11 +8359,8 @@ macro_rules! define_catia_arenas {
         )?;
     };
     (@prepare $ctx:ident, catalogs, $native:ident, $kind:ident, $binding:ident) => {
-        let catalog_rows = $ctx
-            .admit_iter(&$native.catalogs, "catia_native_catalog_header_source_visits")
-            .map_err(CodecError::from)?;
         let $binding = $ctx.try_collect_vec(
-            catalog_rows.map(|catalog| CatiaCatalogWire::header_charged($ctx, catalog)),
+            $native.catalogs.iter().map(|catalog| CatiaCatalogWire::header_charged($ctx, catalog)),
             "catia_native_catalog_headers",
         )?;
     };
