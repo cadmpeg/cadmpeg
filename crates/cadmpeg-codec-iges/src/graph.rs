@@ -225,9 +225,8 @@ struct Candidate {
 
 pub(crate) struct ParameterResolver<'a, 'ctx> {
     ctx: &'a DecodeContext<'ctx>,
-    directory: BTreeMap<u32, &'a DirectoryEntry>,
+    directory: &'a [DirectoryEntry],
     edges: RefCell<BTreeMap<u32, Vec<ReferenceEdge>>>,
-    _directory_storage: cadmpeg_core::decode::ScopedReservation<'a>,
 }
 
 impl<'a, 'ctx> ParameterResolver<'a, 'ctx> {
@@ -235,23 +234,10 @@ impl<'a, 'ctx> ParameterResolver<'a, 'ctx> {
         directory: &'a [DirectoryEntry],
         ctx: &'a DecodeContext<'ctx>,
     ) -> Result<Self, CodecError> {
-        let mut directory_storage = ctx.reserve_scoped(0, "IGES resolver directory storage")?;
-        let mut index = BTreeMap::new();
-        for entry in directory {
-            directory_storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut index,
-                    entry.sequence,
-                    entry,
-                    "iges parameter resolver directory index",
-                )
-            })?;
-        }
         Ok(Self {
             ctx,
-            directory: index,
+            directory,
             edges: RefCell::new(BTreeMap::new()),
-            _directory_storage: directory_storage,
         })
     }
 
@@ -312,7 +298,10 @@ impl<'a, 'ctx> ParameterResolver<'a, 'ctx> {
         expected: ReferenceExpectation,
         accepts: impl FnOnce(&DirectoryEntry) -> bool,
     ) -> Result<Option<u32>, CodecError> {
-        let target = target_sequence.and_then(|sequence| self.directory.get(&sequence).copied());
+        let target = match target_sequence {
+            Some(sequence) => crate::directory::entry_by_sequence(self.directory, sequence, self.ctx)?,
+            None => None,
+        };
         let resolution = classify(target_sequence, target, accepts);
         let mut graph = self.edges.borrow_mut();
         self.ctx
@@ -652,22 +641,14 @@ pub(crate) fn build(
     directory: &[DirectoryEntry],
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u32, Vec<ReferenceEdge>>, CodecError> {
-    let mut index = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut index,
-            entry.sequence,
-            entry,
-            "iges reference directory index",
-        )?;
-    }
     let mut graph = BTreeMap::new();
-    for entry in directory {
+    for entry in ctx.admit_iter(directory, "iges directory reference sources")? {
         let mut edges = Vec::new();
         for candidate in candidates(entry) {
-            let target = candidate
-                .target_sequence
-                .and_then(|value| index.get(&value).copied());
+            let target = match candidate.target_sequence {
+                Some(sequence) => crate::directory::entry_by_sequence(directory, sequence, ctx)?,
+                None => None,
+            };
             let resolution = classify(candidate.target_sequence, target, |value| {
                 accepts(candidate.kind, entry, value)
             });
