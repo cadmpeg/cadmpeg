@@ -81,8 +81,8 @@ fn identity_cache_comparisons_admit_only_the_bytes_inspected() {
 #[test]
 fn identity_sort_visits_ordered_values_without_sorting() {
     let mut values = ["a", "b", "c"];
-    // Two adjacent pairs and the end probe, each pair comparing one byte.
-    let work = 3 + 2 * 2;
+    // Two adjacent pairs, each one step and both one-byte keys.
+    let work = 2 * (1 + 2);
     for allowance in [work - 1, work] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = allowance;
