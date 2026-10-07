@@ -92,6 +92,49 @@ pub(crate) struct FeatureProjection {
     regeneration_parents: Vec<(FeatureId, FeatureId)>,
 }
 
+const FEATURE_LITERAL: &str = "read SLDPRT feature literal";
+
+/// A named parameter of `feature`, admitted for one literal reading.
+pub(super) fn parameter_literal<'f>(
+    ctx: &DecodeContext<'_>,
+    feature: &'f Feature,
+    name: &str,
+) -> Result<Option<&'f str>, CodecError> {
+    named_literal(ctx, &feature.parameters, name, FEATURE_LITERAL)
+}
+
+/// A named property of `feature`, admitted for one literal reading.
+pub(super) fn property_literal<'f>(
+    ctx: &DecodeContext<'_>,
+    feature: &'f Feature,
+    name: &str,
+) -> Result<Option<&'f str>, CodecError> {
+    named_literal(ctx, &feature.properties, name, FEATURE_LITERAL)
+}
+
+/// A named property of `feature` that the caller compares with literal tokens
+/// or copies; only the lookup is charged.
+pub(super) fn property_value<'f>(
+    ctx: &DecodeContext<'_>,
+    feature: &'f Feature,
+    name: &str,
+) -> Result<Option<&'f str>, CodecError> {
+    Ok(ctx
+        .get_btree_map(&feature.properties, name, FEATURE_LITERAL)?
+        .map(String::as_str))
+}
+
+/// A copy of a named property of `feature`, such as a native selection.
+pub(super) fn property_text(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+    name: &str,
+) -> Result<Option<String>, CodecError> {
+    property_value(ctx, feature, name)?
+        .map(|value| ctx.copy_retained_text(value, "retain SLDPRT feature property"))
+        .transpose()
+}
+
 /// Mints a typed identity from formatted text after admitting the grammar scan of it.
 fn mint_identity<T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
     ctx: &DecodeContext<'_>,
@@ -1751,7 +1794,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Dome) {
         project_dome(ctx, feature)?
     } else if class == Some(FeatureClass::Flex) {
-        project_flex(feature)
+        project_flex(ctx, feature)?
     } else if class == Some(FeatureClass::Scale) {
         project_scale(ctx, feature)?
     } else if class == Some(FeatureClass::Hole) {
