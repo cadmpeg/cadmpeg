@@ -395,6 +395,7 @@ struct PhysicalParse<'a, 'ctx> {
     quarantined_parameters: Vec<parameter::QuarantinedParameterRecord>,
     framing_recoveries: card::FramingRecoveries,
     references: BTreeMap<u32, Vec<graph::ReferenceEdge>>,
+    _global_storage: ScopedReservation<'ctx>,
     _scan_storage: ScopedReservation<'ctx>,
 }
 
@@ -411,7 +412,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         // The card framing borrows the source and is dropped with this parse.
         let mut scan_storage = ctx.reserve_scoped(0, card_storage)?;
         let scan = scan_storage.with_storage(|| card::scan_with_context(bytes, ctx))?;
-        let (global, mut global_losses) = global::parse(&scan, ctx)?;
+        let (global, mut global_losses, global_storage) = global::parse(&scan, ctx)?;
         let (directory, quarantined_directory) =
             directory::parse(&scan, global.global_table(ctx)?, ctx)?;
         if mode == ParseMode::Decode {
@@ -454,6 +455,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             quarantined_parameters,
             framing_recoveries,
             references,
+            _global_storage: global_storage,
             _scan_storage: scan_storage,
         })
     }

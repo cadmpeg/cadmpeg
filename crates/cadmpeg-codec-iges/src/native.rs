@@ -2504,7 +2504,7 @@ pub(crate) fn store(
         };
         ctx.reserve_vec(&mut macro_instances, 1, "iges native macro instance slots")?;
         let structure_sequence =
-            crate::graph::resolved_structure_sequence(references, entry.sequence);
+            crate::graph::resolved_structure_sequence(references, entry.sequence, ctx)?;
         let macro_definition = structure_sequence
             .filter(|sequence| {
                 entries
@@ -5602,7 +5602,7 @@ pub(crate) fn store(
         |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let definition_sequence =
-                crate::graph::resolved_structure_sequence(references, entry.sequence);
+                crate::graph::resolved_structure_sequence(references, entry.sequence, ctx)?;
             let definition_record =
                 definition_sequence.and_then(|sequence| by_directory.get(&sequence).copied());
             let definition = definition_sequence

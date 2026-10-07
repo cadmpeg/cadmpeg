@@ -177,32 +177,37 @@ pub(crate) fn classify(
     let dialect = dialect_id(representation, global.declared_version(ctx)?);
     let recovery = global.dialect_recovery();
     let mut declared = BTreeMap::new();
-    declared.insert(
+    ctx.insert_btree_map(&mut declared,
         cadmpeg_core::nonblank_const!(DECLARED_REPRESENTATION),
-        representation.as_str().into(),
-    );
-    declared.insert(
+        ctx.copy_retained_text(representation.as_str(), "iges declared representation")?,
+        "iges dialect declarations",
+    )?;
+    ctx.insert_btree_map(&mut declared,
         cadmpeg_core::nonblank_const!(DECLARED_VERSION_FLAG),
-        global.declared_version_flag().to_string(),
-    );
-    declared.insert(
+        ctx.format_retained(format_args!("{}", global.declared_version_flag()), "iges declared version flag")?,
+        "iges dialect declarations",
+    )?;
+    ctx.insert_btree_map(&mut declared,
         cadmpeg_core::nonblank_const!(DECLARED_EFFECTIVE_VERSION),
-        global.version_name(ctx)?.to_owned(),
-    );
+        ctx.copy_retained_text(global.version_name(ctx)?, "iges declared effective version")?,
+        "iges dialect declarations",
+    )?;
     if matches!(
         recovery,
         DialectRecovery::Unverified(UnverifiedDialectRecovery::Clamped)
     ) {
-        declared.insert(
+        ctx.insert_btree_map(&mut declared,
             cadmpeg_core::nonblank_const!(DECLARED_EFFECTIVE_VERSION_FLAG),
-            global.effective_version_flag(ctx)?.to_string(),
-        );
+            ctx.format_retained(format_args!("{}", global.effective_version_flag(ctx)?), "iges declared effective flag")?,
+            "iges dialect declarations",
+        )?;
     }
     if let Some(text) = global.unreadable_version_declaration() {
-        declared.insert(
+        ctx.insert_btree_map(&mut declared,
             cadmpeg_core::nonblank_const!(DECLARED_VERSION_FLAG_DECLARATION),
-            text.to_owned(),
-        );
+            ctx.copy_retained_text(text, "iges declared unreadable flag")?,
+            "iges dialect declarations",
+        )?;
     }
     Ok(if matches!(recovery, DialectRecovery::Verified) {
         DialectMatch::admitted(dialect)

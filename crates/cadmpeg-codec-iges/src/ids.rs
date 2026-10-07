@@ -28,7 +28,6 @@ pub(crate) fn directory_lookup_key<'a>(
     let mut value = sequence;
     let mut start = digits.len();
     loop {
-        ctx.charge_work(1, "iges directory lookup digits")?;
         start -= 1;
         let Ok(digit) = u8::try_from(value % 10) else {
             return Ok(None);
@@ -559,30 +558,15 @@ mod tests {
         assert_eq!(Stem::number(-1_i64).to_string(), "-1");
     }
     #[test]
-    fn directory_lookup_digits_refuse_work_before_formatting() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let arena = DecodeArena::new();
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        let mut storage = [0xaa; 64];
-        let error = directory_lookup_key("D", 1, &mut storage, &ctx).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "iges directory lookup digits"));
-        assert_eq!(storage, [0xaa; 64]);
-    }
-
-    #[test]
     fn directory_lookup_text_refuses_utf8_scan() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 1;
-        let arena = DecodeArena::new();
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        let mut storage = [0_u8; 64];
-        let error = directory_lookup_key("D", 1, &mut storage, &ctx).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "iges directory lookup text"));
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "iges directory lookup text", |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let ctx = DecodeContext::new(&arena, &policy, false);
+            let mut storage = [0_u8; 64];
+            directory_lookup_key("D", 1, &mut storage, &ctx).map(|_| ())
+        });
     }
 
 }
