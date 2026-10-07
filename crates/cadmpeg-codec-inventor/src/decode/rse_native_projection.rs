@@ -147,9 +147,8 @@ pub(super) fn project(
                     },
                     "retain Inventor native structural records",
                 )?;
-                for section in
-                    ctx.admit_iter(&meta.tables.sections, "visit Inventor metadata sections")?
-                {
+                // The metadata tables always hold their eleven fixed sections.
+                for section in &meta.tables.sections {
                     ctx.charge_entities(1, "admit Inventor native structural records")?;
                     ctx.push_vec(
                         &mut projection.meta_sections,
