@@ -55,8 +55,18 @@ fn assert_section_refusal(bytes: &[u8], operation: &str, dimension: ResourceDime
             ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
             _ => panic!("unsupported test dimension"),
         }
-        IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-            .map_err(|failure| match failure { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            )
+            .map_err(|failure| match failure {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("unexpected decode failure: {other:?}"),
+            })
     });
 }
 
@@ -125,7 +135,10 @@ fn malformed_flag_note_width_sum_refuses_without_overflow() {
         &flag_record,
         &entries,
         &records,
-        GlobalTable::V5_0, &mut validation).unwrap());
+        GlobalTable::V5_0,
+        &mut validation
+    )
+    .unwrap());
 }
 
 #[test]
@@ -202,37 +215,50 @@ fn general_note_kanji_text_uses_biased_jis_hex_pairs() {
         b"34413B7A",
         2001,
         GlobalTable::V5_0,
-        false, &ctx).unwrap());
-    assert!(general_note_text_valid_for_global_table(
-        b"",
-        2001,
-        GlobalTable::V5_0,
-        false, &ctx).unwrap());
+        false,
+        &ctx
+    )
+    .unwrap());
+    assert!(
+        general_note_text_valid_for_global_table(b"", 2001, GlobalTable::V5_0, false, &ctx)
+            .unwrap()
+    );
     assert!(!general_note_text_valid_for_global_table(
         b"34413B7",
         2001,
         GlobalTable::V5_0,
-        false, &ctx).unwrap());
+        false,
+        &ctx
+    )
+    .unwrap());
     assert!(!general_note_text_valid_for_global_table(
         b"34413B7G",
         2001,
         GlobalTable::V5_0,
-        false, &ctx).unwrap());
+        false,
+        &ctx
+    )
+    .unwrap());
     assert!(!general_note_text_valid_for_global_table(
         b"20413B7A",
         2001,
         GlobalTable::V5_0,
-        false, &ctx).unwrap());
-    assert!(general_note_text_valid_for_global_table(
-        b" ",
-        2001,
-        GlobalTable::V5_0,
-        true, &ctx).unwrap());
+        false,
+        &ctx
+    )
+    .unwrap());
+    assert!(
+        general_note_text_valid_for_global_table(b" ", 2001, GlobalTable::V5_0, true, &ctx)
+            .unwrap()
+    );
     assert!(!general_note_text_valid_for_global_table(
         b"34413B7A",
         2001,
         GlobalTable::V4_0,
-        false, &ctx).unwrap());
+        false,
+        &ctx
+    )
+    .unwrap());
 }
 
 #[test]
@@ -685,9 +711,19 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         let pattern_plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
         assert!({
             let mut index = None;
-            decode_ctx.all_by([1, 3], |sequence| sectioned_area_curve_coplanar(
-                (&ir, &mut index), sequence, pattern_plane, 0.001, decode_ctx,
-            ), "test section boundary traversal")
+            decode_ctx.all_by(
+                [1, 3],
+                |sequence| {
+                    sectioned_area_curve_coplanar(
+                        (&ir, &mut index),
+                        sequence,
+                        pattern_plane,
+                        0.001,
+                        decode_ctx,
+                    )
+                },
+                "test section boundary traversal",
+            )
         }
         .unwrap());
         if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
@@ -709,9 +745,19 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         }
         assert!(!{
             let mut index = None;
-            decode_ctx.all_by([1, 3], |sequence| sectioned_area_curve_coplanar(
-                (&ir, &mut index), sequence, pattern_plane, 0.001, decode_ctx,
-            ), "test section boundary traversal")
+            decode_ctx.all_by(
+                [1, 3],
+                |sequence| {
+                    sectioned_area_curve_coplanar(
+                        (&ir, &mut index),
+                        sequence,
+                        pattern_plane,
+                        0.001,
+                        decode_ctx,
+                    )
+                },
+                "test section boundary traversal",
+            )
         }
         .unwrap());
 
@@ -1011,25 +1057,13 @@ fn leader_arrow_dimensions_follow_the_declared_dialect() {
     let record = leader_record(1.0, 2.0);
     let entry = leader_entry(5);
 
-    assert!(leader_valid_for_global_table(
-        &entry,
-        &record,
-        GlobalTable::V4_0, &ctx).unwrap());
-    assert!(!leader_valid_for_global_table(
-        &entry,
-        &record,
-        GlobalTable::V5Later, &ctx).unwrap());
+    assert!(leader_valid_for_global_table(&entry, &record, GlobalTable::V4_0, &ctx).unwrap());
+    assert!(!leader_valid_for_global_table(&entry, &record, GlobalTable::V5Later, &ctx).unwrap());
 
     let record = leader_record(1.0, 2.0);
     let entry = leader_entry(4);
-    assert!(leader_valid_for_global_table(
-        &entry,
-        &record,
-        GlobalTable::V4_0, &ctx).unwrap());
-    assert!(!leader_valid_for_global_table(
-        &entry,
-        &record,
-        GlobalTable::V5Later, &ctx).unwrap());
+    assert!(leader_valid_for_global_table(&entry, &record, GlobalTable::V4_0, &ctx).unwrap());
+    assert!(!leader_valid_for_global_table(&entry, &record, GlobalTable::V5Later, &ctx).unwrap());
 }
 
 #[test]
@@ -1061,19 +1095,28 @@ fn general_symbol_zero_note_pointer_follows_the_declared_dialect() {
         &entries,
         &records,
         0,
-        GlobalTable::V4_0, &mut validation).unwrap());
+        GlobalTable::V4_0,
+        &mut validation
+    )
+    .unwrap());
     assert!(general_symbol_note_valid(
         &record,
         &entries,
         &records,
         0,
-        GlobalTable::V5_0, &mut validation).unwrap());
+        GlobalTable::V5_0,
+        &mut validation
+    )
+    .unwrap());
     assert!(!general_symbol_note_valid(
         &record,
         &entries,
         &records,
         1,
-        GlobalTable::V5_0, &mut validation).unwrap());
+        GlobalTable::V5_0,
+        &mut validation
+    )
+    .unwrap());
 }
 
 #[test]
@@ -1357,7 +1400,10 @@ fn decode_type230_form1_is_admitted_in_iges_5_0() {
 #[test]
 fn annotation_traversal_refusals_reach_decode() {
     let bytes = text_annotation_file();
-    for operation in ["iges annotation directory traversal", "iges annotation validation traversal"] {
+    for operation in [
+        "iges annotation directory traversal",
+        "iges annotation validation traversal",
+    ] {
         assert_section_refusal(&bytes, operation, ResourceDimension::WorkUnits);
     }
 }
@@ -1372,15 +1418,60 @@ fn shared_note_and_leader_validation_stays_linear() {
     let mut leader = leader_entry(4);
     leader.sequence = 3;
     leader.status = SourceStatus::from_codes([0, 1, 1, 0]);
-    let record = |sequence, values: Vec<TokenValue>| ParameterRecord::from_test_tokens(sequence, 1..2, Vec::new(), values.len(), values.into_iter().map(|value| Token { value, span: 0..0 }).collect(), Vec::new());
+    let record = |sequence, values: Vec<TokenValue>| {
+        ParameterRecord::from_test_tokens(
+            sequence,
+            1..2,
+            Vec::new(),
+            values.len(),
+            values
+                .into_iter()
+                .map(|value| Token { value, span: 0..0 })
+                .collect(),
+            Vec::new(),
+        )
+    };
     let mut values = vec![TokenValue::Integer(212), TokenValue::Integer(count)];
     for _ in 0..count {
-        values.extend([TokenValue::Integer(0), TokenValue::real(0.0), TokenValue::real(0.0), TokenValue::Integer(1), TokenValue::real(std::f64::consts::FRAC_PI_2), TokenValue::real(0.0), TokenValue::Integer(0), TokenValue::Integer(0), TokenValue::real(0.0), TokenValue::real(0.0), TokenValue::real(0.0), TokenValue::String(Vec::new())]);
+        values.extend([
+            TokenValue::Integer(0),
+            TokenValue::real(0.0),
+            TokenValue::real(0.0),
+            TokenValue::Integer(1),
+            TokenValue::real(std::f64::consts::FRAC_PI_2),
+            TokenValue::real(0.0),
+            TokenValue::Integer(0),
+            TokenValue::Integer(0),
+            TokenValue::real(0.0),
+            TokenValue::real(0.0),
+            TokenValue::real(0.0),
+            TokenValue::String(Vec::new()),
+        ]);
     }
     let note = record(1, values);
     let leader_record = leader_record(0.0, 0.0);
-    let label = record(5, vec![TokenValue::Integer(210), TokenValue::Integer(1), TokenValue::Integer(1), TokenValue::Integer(3)]);
-    let flag = record(7, vec![TokenValue::Integer(208), TokenValue::real(0.0), TokenValue::real(0.0), TokenValue::real(0.0), TokenValue::real(0.0), TokenValue::Integer(1), TokenValue::Integer(1), TokenValue::Integer(3)]);
+    let label = record(
+        5,
+        vec![
+            TokenValue::Integer(210),
+            TokenValue::Integer(1),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+        ],
+    );
+    let flag = record(
+        7,
+        vec![
+            TokenValue::Integer(208),
+            TokenValue::real(0.0),
+            TokenValue::real(0.0),
+            TokenValue::real(0.0),
+            TokenValue::real(0.0),
+            TokenValue::Integer(1),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+        ],
+    );
     let mut flag_entry = leader_entry(0);
     flag_entry.entity_type = 208;
     flag_entry.sequence = 7;
@@ -1395,8 +1486,24 @@ fn shared_note_and_leader_validation_stays_linear() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut validation = super::AnnotationValidation::new(&ctx).unwrap();
     for _ in 0..count {
-        assert!(flag_or_label_valid(&label_entry, &label, &entries, &records, GlobalTable::V5Later, &mut validation).unwrap());
-        assert!(flag_or_label_valid(&flag_entry, &flag, &entries, &records, GlobalTable::V5Later, &mut validation).unwrap());
+        assert!(flag_or_label_valid(
+            &label_entry,
+            &label,
+            &entries,
+            &records,
+            GlobalTable::V5Later,
+            &mut validation
+        )
+        .unwrap());
+        assert!(flag_or_label_valid(
+            &flag_entry,
+            &flag,
+            &entries,
+            &records,
+            GlobalTable::V5Later,
+            &mut validation
+        )
+        .unwrap());
     }
     drop(validation);
     ctx.finish_session().unwrap();
@@ -1411,9 +1518,12 @@ fn sectioned_area_shared_geometry_index_stays_linear() {
             id: CurveId::mint(format!("iges:model:curve#D{sequence}")).unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0), 1.0,
-                ).unwrap(),
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .unwrap(),
             )),
             source_object: None,
         });
@@ -1427,7 +1537,9 @@ fn sectioned_area_shared_geometry_index_stays_linear() {
     let mut index = None;
     let plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
     for sequence in (1..=2_000_u32).map(|index| index * 2 - 1) {
-        assert!(sectioned_area_curve_coplanar((&ir, &mut index), sequence, plane, 0.001, &ctx).unwrap());
+        assert!(
+            sectioned_area_curve_coplanar((&ir, &mut index), sequence, plane, 0.001, &ctx).unwrap()
+        );
     }
     drop(index);
     ctx.finish_session().unwrap();
@@ -1441,9 +1553,12 @@ fn noncoplanar_section_boundary_skips_island_geometry_work() {
             id: CurveId::mint(format!("iges:model:curve#D{sequence}")).unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    Point3::new(0.0, 0.0, z), Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0), 1.0,
-                ).unwrap(),
+                    Point3::new(0.0, 0.0, z),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                )
+                .unwrap(),
             )),
             source_object: None,
         });
@@ -1455,16 +1570,47 @@ fn noncoplanar_section_boundary_skips_island_geometry_work() {
     island.sequence = 3;
     let entries = BTreeMap::from([(1, &boundary), (3, &island)]);
     let count = 20_000;
-    let mut values = vec![TokenValue::Integer(230), TokenValue::Integer(1), TokenValue::Integer(0), TokenValue::real(0.0), TokenValue::real(0.0), TokenValue::real(0.0), TokenValue::real(0.0), TokenValue::real(0.0), TokenValue::Integer(i64::try_from(count).unwrap())];
+    let mut values = vec![
+        TokenValue::Integer(230),
+        TokenValue::Integer(1),
+        TokenValue::Integer(0),
+        TokenValue::real(0.0),
+        TokenValue::real(0.0),
+        TokenValue::real(0.0),
+        TokenValue::real(0.0),
+        TokenValue::real(0.0),
+        TokenValue::Integer(i64::try_from(count).unwrap()),
+    ];
     values.resize(9 + count, TokenValue::Integer(3));
-    let record = ParameterRecord::from_test_tokens(5, 1..2, Vec::new(), values.len(), values.into_iter().map(|value| Token { value, span: 0..0 }).collect(), Vec::new());
+    let record = ParameterRecord::from_test_tokens(
+        5,
+        1..2,
+        Vec::new(),
+        values.len(),
+        values
+            .into_iter()
+            .map(|value| Token { value, span: 0..0 })
+            .collect(),
+        Vec::new(),
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // The island pointer checks fit; admitting an unvisited second pass does not.
     policy.limits.max_work_units = 30_000;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(!sectioned_area_valid((&ir, &mut None), &record, &entries, 0, super::SectionedAreaContext {
-        global_table: GlobalTable::V5Later, transform: Transform::identity(), length_factor: 1.0, resolution: 0.001,
-    }, &ctx).unwrap());
+    assert!(!sectioned_area_valid(
+        (&ir, &mut None),
+        &record,
+        &entries,
+        0,
+        super::SectionedAreaContext {
+            global_table: GlobalTable::V5Later,
+            transform: Transform::identity(),
+            length_factor: 1.0,
+            resolution: 0.001,
+        },
+        &ctx
+    )
+    .unwrap());
     ctx.finish_session().unwrap();
 }

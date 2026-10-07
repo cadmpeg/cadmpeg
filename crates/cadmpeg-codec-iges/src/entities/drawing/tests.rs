@@ -62,8 +62,14 @@ fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
 fn drawing_entity_loss_refuses_unadmitted_slot_and_message() {
     let entry = directory_entry(404, 0);
     for (dimension, operation) in [
-        (ResourceDimension::CollectionItems, "iges drawing loss slots"),
-        (ResourceDimension::RetainedBytes, "iges drawing loss message"),
+        (
+            ResourceDimension::CollectionItems,
+            "iges drawing loss slots",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "iges drawing loss message",
+        ),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -1024,18 +1030,44 @@ fn decode_types_v4_view_list_with_required_back_pointers() {
 #[test]
 fn drawing_traversal_refusals_reach_decode() {
     for (bytes, operation) in [
-        (drawing_with_properties_file(), "iges drawing directory traversal"),
-        (drawing_with_properties_file(), "iges drawing reference traversal"),
-        (drawing_with_properties_file(), "iges drawing property traversal"),
-        (segmented_view_visibility_file(), "iges segmented view traversal"),
+        (
+            drawing_with_properties_file(),
+            "iges drawing directory traversal",
+        ),
+        (
+            drawing_with_properties_file(),
+            "iges drawing reference traversal",
+        ),
+        (
+            drawing_with_properties_file(),
+            "iges drawing property traversal",
+        ),
+        (
+            segmented_view_visibility_file(),
+            "iges segmented view traversal",
+        ),
         (view_visibility_forms_file(), "iges view association search"),
     ] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-                .map_err(|failure| match failure { cadmpeg_ir::codec::DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                IgesCodec
+                    .decode(
+                        &mut Cursor::new(&bytes),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .map_err(|failure| match failure {
+                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected decode failure: {other:?}"),
+                    })
+            },
+        );
     }
 }
 
@@ -1047,9 +1079,28 @@ fn invalid_segmented_view_stops_before_the_remaining_count() {
     entry.form = 19;
     entry.status = SourceStatus::from_codes([0, 0, 1, 0]);
     let count = 20_000;
-    let mut values = vec![TokenValue::Integer(402), TokenValue::Integer(i64::try_from(count).unwrap()), TokenValue::Integer(0), TokenValue::real(0.0), TokenValue::Integer(0), TokenValue::Integer(0), TokenValue::Integer(1), TokenValue::Integer(0)];
+    let mut values = vec![
+        TokenValue::Integer(402),
+        TokenValue::Integer(i64::try_from(count).unwrap()),
+        TokenValue::Integer(0),
+        TokenValue::real(0.0),
+        TokenValue::Integer(0),
+        TokenValue::Integer(0),
+        TokenValue::Integer(1),
+        TokenValue::Integer(0),
+    ];
     values.resize(2 + count * 6, TokenValue::Integer(0));
-    let record = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), values.len(), values.into_iter().map(|value| Token { value, span: 0..0 }).collect(), Vec::new());
+    let record = ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        Vec::new(),
+        values.len(),
+        values
+            .into_iter()
+            .map(|value| Token { value, span: 0..0 })
+            .collect(),
+        Vec::new(),
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 10_000;
@@ -1059,9 +1110,23 @@ fn invalid_segmented_view_stops_before_the_remaining_count() {
     let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
     let global = global.length_context(&ctx).unwrap().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let outcome = super::project(&mut ir, std::slice::from_ref(&entry), (&BTreeMap::from([(1, &entry)]), &BTreeMap::from([(1, &record)])), &BTreeMap::new(), &global, &ctx).unwrap();
+    let outcome = super::project(
+        &mut ir,
+        std::slice::from_ref(&entry),
+        (
+            &BTreeMap::from([(1, &entry)]),
+            &BTreeMap::from([(1, &record)]),
+        ),
+        &BTreeMap::new(),
+        &global,
+        &ctx,
+    )
+    .unwrap();
     assert!(outcome.decoded.is_empty());
     assert_eq!(outcome.losses.len(), 1);
-    assert_eq!(outcome.losses[0].code, IgesLossCode::EntityNotProjected.kind());
+    assert_eq!(
+        outcome.losses[0].code,
+        IgesLossCode::EntityNotProjected.kind()
+    );
     ctx.finish_session().unwrap();
 }

@@ -44,9 +44,7 @@ fn retained_utf8(
     let Ok(value) = ctx.validate_utf8(bytes, operation)? else {
         return Ok(None);
     };
-    Ok(Some(
-        ctx.copy_retained_text(value, operation)?,
-    ))
+    Ok(Some(ctx.copy_retained_text(value, operation)?))
 }
 
 fn push_presentation_loss(
@@ -161,21 +159,32 @@ fn appearance(
     name: Option<&[u8]>,
     color: Color,
     ctx: &DecodeContext<'_>,
-    (identities, storage): (&mut Option<BTreeSet<String>>, &mut cadmpeg_core::decode::ScopedReservation<'_>),
+    (identities, storage): (
+        &mut Option<BTreeSet<String>>,
+        &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ),
 ) -> Result<(), CodecError> {
     if identities.is_none() {
         let mut index = BTreeSet::new();
         for item in ctx.admit_iter(&ir.model.appearances, "iges appearance index traversal")? {
-            let key = ctx.copy_scoped_text(item.id.as_str(), storage, "iges appearance index keys")?;
-            storage.with_storage(|| ctx.insert_btree_set(&mut index, key, "iges appearance index nodes"))?;
+            let key =
+                ctx.copy_scoped_text(item.id.as_str(), storage, "iges appearance index keys")?;
+            storage.with_storage(|| {
+                ctx.insert_btree_set(&mut index, key, "iges appearance index nodes")
+            })?;
         }
         *identities = Some(index);
     }
-    let index = identities.as_mut().ok_or_else(|| CodecError::malformed("IGES appearance index is absent"))?;
+    let index = identities
+        .as_mut()
+        .ok_or_else(|| CodecError::malformed("IGES appearance index is absent"))?;
     if !ctx.contains_btree_set(index, id.as_str(), "iges appearance index lookup")? {
         let key = ctx.copy_scoped_text(id.as_str(), storage, "iges appearance index keys")?;
         storage.with_storage(|| ctx.insert_btree_set(index, key, "iges appearance index nodes"))?;
-        let name = name.map(|name| retained_utf8(ctx, name, "iges color definition name")).transpose()?.flatten();
+        let name = name
+            .map(|name| retained_utf8(ctx, name, "iges color definition name"))
+            .transpose()?
+            .flatten();
         ctx.reserve_vec(
             &mut ir.model.appearances,
             1,
@@ -211,37 +220,74 @@ fn text_font_definition(
     let parameter_end = record.parameter_end();
     let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
         && entry.status.use_flag(global_table) == Some(UseFlag::Definition);
-    if !directory_valid || record.integer(1).is_none_or(|value| value < 0)
+    if !directory_valid
+        || record.integer(1).is_none_or(|value| value < 0)
         || record.string(2).is_none_or(<[u8]>::is_empty)
-        || record.integer(4).is_none_or(|scale| scale <= 0) {
+        || record.integer(4).is_none_or(|scale| scale <= 0)
+    {
         return Ok(None);
     }
     let supersedes = match record.value(3) {
         None | Some(TokenValue::Omitted) => None,
         Some(TokenValue::Integer(value)) if *value >= 0 => None,
-        Some(TokenValue::Integer(value)) => value.checked_neg()
+        Some(TokenValue::Integer(value)) => value
+            .checked_neg()
             .and_then(|value| u32::try_from(value).ok())
             .filter(|sequence| sequence % 2 == 1)
-            .filter(|sequence| entries.get(sequence).is_some_and(|target| target.entity_type == 310 && target.form == 0)),
+            .filter(|sequence| {
+                entries
+                    .get(sequence)
+                    .is_some_and(|target| target.entity_type == 310 && target.form == 0)
+            }),
         Some(TokenValue::Real(_) | TokenValue::String(_)) => return Ok(None),
     };
-    if record.integer(3).is_some_and(|value| value < 0) && supersedes.is_none() { return Ok(None); }
-    let Some(count) = record.count(5).filter(|count| *count > 0) else { return Ok(None); };
+    if record.integer(3).is_some_and(|value| value < 0) && supersedes.is_none() {
+        return Ok(None);
+    }
+    let Some(count) = record.count(5).filter(|count| *count > 0) else {
+        return Ok(None);
+    };
     let mut cursor = 6;
     let mut character_codes = 0_u128;
     let mut characters = 0..count;
-    while ctx.next_charged(&mut characters, "iges text font character traversal")?.is_some() {
-        let Some(code) = record.integer(cursor).filter(|value| matches!(value, 0..=127)) else { return Ok(None); };
-        let Some(mask) = u32::try_from(code).ok().and_then(|code| 1_u128.checked_shl(code)) else { return Ok(None); };
-        if character_codes & mask != 0 { return Ok(None); }
+    while ctx
+        .next_charged(&mut characters, "iges text font character traversal")?
+        .is_some()
+    {
+        let Some(code) = record
+            .integer(cursor)
+            .filter(|value| matches!(value, 0..=127))
+        else {
+            return Ok(None);
+        };
+        let Some(mask) = u32::try_from(code)
+            .ok()
+            .and_then(|code| 1_u128.checked_shl(code))
+        else {
+            return Ok(None);
+        };
+        if character_codes & mask != 0 {
+            return Ok(None);
+        }
         character_codes |= mask;
-        if record.integer(cursor + 1).is_none() || record.integer(cursor + 2).is_none() { return Ok(None); }
-        let Some(count) = record.count(cursor + 3) else { return Ok(None); };
+        if record.integer(cursor + 1).is_none() || record.integer(cursor + 2).is_none() {
+            return Ok(None);
+        }
+        let Some(count) = record.count(cursor + 3) else {
+            return Ok(None);
+        };
         cursor += 4;
         let mut motions = 0..count;
-        while ctx.next_charged(&mut motions, "iges text font motion traversal")?.is_some() {
-            if record.integer_or(cursor, 0).is_none_or(|value| !matches!(value, 0..=1))
-                || record.integer(cursor + 1).is_none() || record.integer(cursor + 2).is_none() {
+        while ctx
+            .next_charged(&mut motions, "iges text font motion traversal")?
+            .is_some()
+        {
+            if record
+                .integer_or(cursor, 0)
+                .is_none_or(|value| !matches!(value, 0..=1))
+                || record.integer(cursor + 1).is_none()
+                || record.integer(cursor + 2).is_none()
+            {
                 return Ok(None);
             }
             cursor += 3;
@@ -253,7 +299,10 @@ fn text_font_definition(
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
-    (entries, records): (&BTreeMap<u32, &DirectoryEntry>, &BTreeMap<u32, &ParameterRecord>),
+    (entries, records): (
+        &BTreeMap<u32, &DirectoryEntry>,
+        &BTreeMap<u32, &ParameterRecord>,
+    ),
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
@@ -265,37 +314,60 @@ pub(super) fn project(
     let mut appearances = None;
     let mut defined = BTreeMap::new();
     let mut text_fonts = BTreeMap::new();
-    for entry in ctx.admit_iter(directory, "iges presentation directory traversal")?
+    for entry in ctx
+        .admit_iter(directory, "iges presentation directory traversal")?
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
         if let Some(font) = records
             .get(&entry.sequence)
             .copied()
-            .map(|record| text_font_definition(entry, record, entries, global.global_table(), ctx)).transpose()?.flatten()
+            .map(|record| text_font_definition(entry, record, entries, global.global_table(), ctx))
+            .transpose()?
+            .flatten()
         {
-            scratch.with_storage(|| ctx.insert_btree_map(
-                &mut text_fonts,
-                entry.sequence,
-                font,
-                "iges presentation font index",
-            ))?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut text_fonts,
+                    entry.sequence,
+                    font,
+                    "iges presentation font index",
+                )
+            })?;
         }
     }
     let mut cyclic_fonts = BTreeMap::new();
 
-    for entry in ctx.admit_iter(directory, "iges presentation directory traversal")?
+    for entry in ctx
+        .admit_iter(directory, "iges presentation directory traversal")?
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
         let mut cycle_storage = ctx.reserve_scoped(0, "iges font cycle scratch")?;
         let mut active = BTreeSet::new();
-        let mut chain = std::iter::successors(Some(entry.sequence), |sequence| text_fonts.get(sequence).and_then(|font| font.supersedes));
+        let mut chain = std::iter::successors(Some(entry.sequence), |sequence| {
+            text_fonts.get(sequence).and_then(|font| font.supersedes)
+        });
         let cyclic = loop {
-            let Some(sequence) = ctx.next_charged(&mut chain, "iges font cycle traversal")? else { break false; };
-            if let Some(cyclic) = cyclic_fonts.get(&sequence) { break *cyclic; }
-            if !cycle_storage.with_storage(|| ctx.insert_btree_set(&mut active, sequence, "iges font cycle active"))? { break true; }
+            let Some(sequence) = ctx.next_charged(&mut chain, "iges font cycle traversal")? else {
+                break false;
+            };
+            if let Some(cyclic) = cyclic_fonts.get(&sequence) {
+                break *cyclic;
+            }
+            if !cycle_storage.with_storage(|| {
+                ctx.insert_btree_set(&mut active, sequence, "iges font cycle active")
+            })? {
+                break true;
+            }
         };
         for sequence in ctx.admit_iter(active, "iges font cycle result traversal")? {
-            scratch.with_storage(|| ctx.insert_btree_map(&mut cyclic_fonts, sequence, cyclic, "iges font cycle results"))?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut cyclic_fonts,
+                    sequence,
+                    cyclic,
+                    "iges font cycle results",
+                )
+            })?;
         }
         let target_valid = text_fonts.get(&entry.sequence).is_some_and(|font| {
             font.supersedes
@@ -312,7 +384,8 @@ pub(super) fn project(
         }
     }
 
-    for entry in ctx.admit_iter(directory, "iges presentation directory traversal")?
+    for entry in ctx
+        .admit_iter(directory, "iges presentation directory traversal")?
         .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -350,7 +423,8 @@ pub(super) fn project(
         }
     }
 
-    for entry in ctx.admit_iter(directory, "iges presentation directory traversal")?
+    for entry in ctx
+        .admit_iter(directory, "iges presentation directory traversal")?
         .filter(|entry| entry.entity_type == 406 && entry.form == 1)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -360,16 +434,22 @@ pub(super) fn project(
         let levels_valid = if let Some(count) = record.count(1).filter(|count| *count > 0) {
             let mut level_storage = ctx.reserve_scoped(0, "iges presentation level scratch")?;
             let mut levels = BTreeSet::new();
-            ctx.all_by(0..count, |index| {
-                let Some(level) = record.integer(2 + index).filter(|level| *level >= 0) else {
-                    return Ok(false);
-                };
-                level_storage.with_storage(|| ctx.insert_btree_set(
-                    &mut levels,
-                    level,
-                    "iges presentation definition levels",
-                ))
-            }, "iges definition level traversal")?
+            ctx.all_by(
+                0..count,
+                |index| {
+                    let Some(level) = record.integer(2 + index).filter(|level| *level >= 0) else {
+                        return Ok(false);
+                    };
+                    level_storage.with_storage(|| {
+                        ctx.insert_btree_set(
+                            &mut levels,
+                            level,
+                            "iges presentation definition levels",
+                        )
+                    })
+                },
+                "iges definition level traversal",
+            )?
         } else {
             false
         };
@@ -389,7 +469,8 @@ pub(super) fn project(
         }
     }
 
-    for entry in ctx.admit_iter(directory, "iges presentation directory traversal")?
+    for entry in ctx
+        .admit_iter(directory, "iges presentation directory traversal")?
         .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -426,21 +507,36 @@ pub(super) fn project(
             let count = record.count(1).filter(|count| *count > 0);
             if let Some(count) = count {
                 let expected_digits = count.div_ceil(4);
-                ctx.all_by(0..count, |index| Ok(record.number(2 + index).is_some_and(|value| value.is_finite() && value > 0.0)), "iges line font segment traversal")?
-                    && if let Some(pattern) = record.string(2 + count) {
-                        pattern.len() == expected_digits
-                            && ctx.all_by(pattern, |byte| Ok(byte.is_ascii_hexdigit()), "iges line font pattern validation")?
-                            && {
-                                let first = match pattern[0] {
-                                    b'0'..=b'9' => pattern[0] - b'0',
-                                    b'A'..=b'F' => pattern[0] - b'A' + 10,
-                                    b'a'..=b'f' => pattern[0] - b'a' + 10,
-                                    _ => 255,
-                                };
-                                first < (1_u8 << (4 - (expected_digits * 4 - count)))
-                            }
-                    } else { false }
-            } else { false }
+                ctx.all_by(
+                    0..count,
+                    |index| {
+                        Ok(record
+                            .number(2 + index)
+                            .is_some_and(|value| value.is_finite() && value > 0.0))
+                    },
+                    "iges line font segment traversal",
+                )? && if let Some(pattern) = record.string(2 + count) {
+                    pattern.len() == expected_digits
+                        && ctx.all_by(
+                            pattern,
+                            |byte| Ok(byte.is_ascii_hexdigit()),
+                            "iges line font pattern validation",
+                        )?
+                        && {
+                            let first = match pattern[0] {
+                                b'0'..=b'9' => pattern[0] - b'0',
+                                b'A'..=b'F' => pattern[0] - b'A' + 10,
+                                b'a'..=b'f' => pattern[0] - b'a' + 10,
+                                _ => 255,
+                            };
+                            first < (1_u8 << (4 - (expected_digits * 4 - count)))
+                        }
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
         };
         if valid {
             ctx.insert_btree_set(
@@ -458,7 +554,8 @@ pub(super) fn project(
         }
     }
 
-    for entry in ctx.admit_iter(directory, "iges presentation directory traversal")?
+    for entry in ctx
+        .admit_iter(directory, "iges presentation directory traversal")?
         .filter(|entry| entry.entity_type == 314 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -481,10 +578,7 @@ pub(super) fn project(
         };
         let name = match record.value(4) {
             None | Some(crate::parameter::TokenValue::Omitted) => None,
-            Some(crate::parameter::TokenValue::String(_)) => match record.string(4) {
-                Some(bytes) => Some(bytes),
-                None => None,
-            },
+            Some(crate::parameter::TokenValue::String(_)) => record.string(4),
             Some(crate::parameter::TokenValue::Integer(0))
                 if matches!(global.global_table(), GlobalTable::V4_0) =>
             {
@@ -527,12 +621,14 @@ pub(super) fn project(
             )?;
             continue;
         };
-        scratch.with_storage(|| ctx.insert_btree_map(
-            &mut defined,
-            entry.sequence,
-            color,
-            "iges presentation defined colors",
-        ))?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut defined,
+                entry.sequence,
+                color,
+                "iges presentation defined colors",
+            )
+        })?;
         appearance(
             ir,
             crate::ids::appearance_color_admitted(
@@ -583,9 +679,12 @@ pub(super) fn project(
         Ok(Some((id, color)))
     };
 
-    for entry in ctx.admit_iter(directory, "iges presentation directory traversal")?.filter(|entry| {
-        entry.color != 0 && directory_color_is_semantic(entry, global.global_table())
-    }) {
+    for entry in ctx
+        .admit_iter(directory, "iges presentation directory traversal")?
+        .filter(|entry| {
+            entry.color != 0 && directory_color_is_semantic(entry, global.global_table())
+        })
+    {
         if resolve_color(entry.color).is_none() {
             push_presentation_loss(
                 ctx,
@@ -595,7 +694,10 @@ pub(super) fn project(
             )?;
         }
     }
-    for entry in ctx.admit_iter(directory, "iges presentation directory traversal")?.filter(|entry| entry.level < 0) {
+    for entry in ctx
+        .admit_iter(directory, "iges presentation directory traversal")?
+        .filter(|entry| entry.level < 0)
+    {
         let sequence = entry.level.unsigned_abs();
         if u32::try_from(sequence).ok().is_none_or(|sequence| {
             !decoded.contains(&sequence)
@@ -611,9 +713,13 @@ pub(super) fn project(
             )?;
         }
     }
-    for entry in ctx.admit_iter(directory, "iges presentation directory traversal")?.filter(|entry| {
-        entry.line_weight != 0 && directory_line_weight_is_semantic(entry, global.global_table())
-    }) {
+    for entry in ctx
+        .admit_iter(directory, "iges presentation directory traversal")?
+        .filter(|entry| {
+            entry.line_weight != 0
+                && directory_line_weight_is_semantic(entry, global.global_table())
+        })
+    {
         if !global.line_weight_number_is_valid(entry.line_weight) {
             push_presentation_loss(
                 ctx,
@@ -706,15 +812,42 @@ pub(super) fn project(
         let mut first: Option<&str> = None;
         let mut conflicting = false;
         let mut properties = groups.properties().iter();
-        while let Some(pointer) = ctx.next_charged(&mut properties, "iges body property traversal")? {
-            if entries.get(pointer).is_none_or(|entry| entry.entity_type != 406 || entry.form != 15) { continue; }
-            let Some(record) = records.get(pointer) else { continue; };
-            if record.integer(1) != Some(1) { continue; }
-            let Some(name) = record.string(2).filter(|name| !name.is_empty()) else { continue; };
-            if !ctx.all_by(name, |byte| Ok(byte.is_ascii_graphic() || *byte == b' '), "iges body property name characters")? { continue; }
-            let Ok(name) = ctx.validate_utf8(name, "iges body property name validation")? else { continue; };
+        while let Some(pointer) =
+            ctx.next_charged(&mut properties, "iges body property traversal")?
+        {
+            if entries
+                .get(pointer)
+                .is_none_or(|entry| entry.entity_type != 406 || entry.form != 15)
+            {
+                continue;
+            }
+            let Some(record) = records.get(pointer) else {
+                continue;
+            };
+            if record.integer(1) != Some(1) {
+                continue;
+            }
+            let Some(name) = record.string(2).filter(|name| !name.is_empty()) else {
+                continue;
+            };
+            if !ctx.all_by(
+                name,
+                |byte| Ok(byte.is_ascii_graphic() || *byte == b' '),
+                "iges body property name characters",
+            )? {
+                continue;
+            }
+            let Ok(name) = ctx.validate_utf8(name, "iges body property name validation")? else {
+                continue;
+            };
             match first {
-                Some(first) if !ctx.equal_bytes(name.as_bytes(), first.as_bytes(), "iges body property name agreement")? => {
+                Some(first)
+                    if !ctx.equal_bytes(
+                        name.as_bytes(),
+                        first.as_bytes(),
+                        "iges body property name agreement",
+                    )? =>
+                {
                     conflicting = true;
                     break;
                 }

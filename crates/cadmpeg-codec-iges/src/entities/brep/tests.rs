@@ -28,13 +28,17 @@ const EPS_EDGE_ENDPOINT_MATCH: f64 = 1.0e-9;
 
 #[test]
 fn brep_surface_endpoint_keeps_evaluator_resource_refusal() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "iges B-rep surface evaluation", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        ctx.charge_collection_items(2, "iges B-rep surface evaluation")
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "iges B-rep surface evaluation",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            ctx.charge_collection_items(2, "iges B-rep surface evaluation")
+        },
+    );
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected collection limit refusal");
     };
@@ -58,13 +62,17 @@ fn brep_counted_vectors_refuse_before_nested_allocation() {
         "iges B-rep use pcurves",
         "iges B-rep shell face uses",
     ] {
-        let result = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            ctx.collection_vec::<u8>(2, operation)
-        });
+        let result = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                ctx.collection_vec::<u8>(2, operation)
+            },
+        );
         assert!(matches!(result, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.used == 0 && limit.additional == 2 && limit.operation == operation));
@@ -135,7 +143,10 @@ fn two_loop_face_file() -> Vec<u8> {
 fn brep_definition_nodes_and_nested_shells_refuse_before_allocation() {
     for (bytes, operation) in [
         (explicit_vertex_loop_file(), "iges B-rep vertex-list nodes"),
-        (explicit_vertex_loop_file(), "iges B-rep definition reservations"),
+        (
+            explicit_vertex_loop_file(),
+            "iges B-rep definition reservations",
+        ),
         (
             explicit_tetrahedron_solid_file(),
             "iges B-rep edge-list nodes",
@@ -152,12 +163,26 @@ fn brep_definition_nodes_and_nested_shells_refuse_before_allocation() {
             "iges B-rep referenced closed shells",
         ),
     ] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-                .map_err(|failure| match failure { cadmpeg_ir::codec::DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                IgesCodec
+                    .decode(
+                        &mut Cursor::new(&bytes),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .map_err(|failure| match failure {
+                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected decode failure: {other:?}"),
+                    })
+            },
+        );
     }
 }
 
@@ -177,19 +202,40 @@ fn brep_projected_pcurve_uses_refuse_before_both_vector_allocations() {
         )]
     };
     let stem = crate::ids::Stem::directory(9_u32);
-    for operation in ["iges B-rep projected pcurve uses", "iges B-rep pcurve slots"] {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut candidate = ModelDraft::new();
-            let result = super::project_pcurve_uses(&mut candidate, &uses, resolved(), None, &stem, &ctx)
-                .map_err(|error| match error { super::PcurveProjectionError::Resource(error) => error, other => panic!("unexpected projection failure: {other:?}") });
-            assert!(candidate.model().pcurves.is_empty());
-            result
-        });
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation && limit.additional == 1));
+    for operation in [
+        "iges B-rep projected pcurve uses",
+        "iges B-rep pcurve slots",
+    ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut candidate = ModelDraft::new();
+                let result = super::project_pcurve_uses(
+                    &mut candidate,
+                    &uses,
+                    resolved(),
+                    None,
+                    &stem,
+                    &ctx,
+                )
+                .map_err(|error| match error {
+                    super::PcurveProjectionError::Resource(error) => error,
+                    other @ super::PcurveProjectionError::Invalid(_) => {
+                        panic!("unexpected projection failure: {other:?}")
+                    }
+                });
+                assert!(candidate.model().pcurves.is_empty());
+                result
+            },
+        );
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation && limit.additional == 1)
+        );
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -278,12 +324,26 @@ fn brep_topology_indexes_and_adjacency_refuse_before_growth() {
             "iges B-rep face unspecified loop ids",
         ),
     ] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-                .map_err(|failure| match failure { cadmpeg_ir::codec::DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                IgesCodec
+                    .decode(
+                        &mut Cursor::new(&bytes),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .map_err(|failure| match failure {
+                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected decode failure: {other:?}"),
+                    })
+            },
+        );
     }
 }
 
@@ -296,36 +356,80 @@ fn brep_index_key_copies_refuse_work_before_allocation() {
             "iges B-rep curve index keys",
         ),
     ] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-                .map_err(|failure| match failure { cadmpeg_ir::codec::DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                IgesCodec
+                    .decode(
+                        &mut Cursor::new(&bytes),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .map_err(|failure| match failure {
+                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected decode failure: {other:?}"),
+                    })
+            },
+        );
     }
 }
 
 #[test]
 fn brep_surface_index_key_copy_refuses_materialized_budget_before_allocation() {
     let bytes = explicit_vertex_loop_file();
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "iges B-rep surface index keys", |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = cap;
-        IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-            .map_err(|failure| match failure { cadmpeg_ir::codec::DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "iges B-rep surface index keys",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map_err(|failure| match failure {
+                    cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
 }
 
 #[test]
 fn brep_topology_identity_copies_refuse_before_retaining_text() {
     let bytes = explicit_vertex_loop_file();
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "iges B-rep identity copy", |cap| {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges B-rep identity copy",
+        |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
-            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-                .map_err(|failure| match failure { cadmpeg_ir::codec::DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
-        });
-    IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map_err(|failure| match failure {
+                    cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
+    IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
 }
 
 #[test]
@@ -869,13 +973,34 @@ fn decode_preserves_a_three_use_non_manifold_radial_ring() {
 #[test]
 fn brep_traversal_refusals_reach_decode() {
     let bytes = explicit_tetrahedron_solid_file();
-    for operation in ["iges B-rep directory traversal", "iges B-rep definition tuples", "iges B-rep edge use count", "iges B-rep source edge index traversal", "iges B-rep radial closure", "iges B-rep radial member traversal"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-                .map_err(|failure| match failure { cadmpeg_ir::codec::DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
-        });
+    for operation in [
+        "iges B-rep directory traversal",
+        "iges B-rep definition tuples",
+        "iges B-rep edge use count",
+        "iges B-rep source edge index traversal",
+        "iges B-rep radial closure",
+        "iges B-rep radial member traversal",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                IgesCodec
+                    .decode(
+                        &mut Cursor::new(&bytes),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .map_err(|failure| match failure {
+                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected decode failure: {other:?}"),
+                    })
+            },
+        );
     }
 }
 
@@ -883,18 +1008,43 @@ fn brep_traversal_refusals_reach_decode() {
 fn rejected_brep_definition_vectors_release_their_storage() {
     use crate::parameter::{ParameterRecord, Token, TokenValue};
     let count = 2_000_u32;
-    let directory: Vec<_> = (0..count).map(|index| {
-        let mut entry = crate::test_support::directory_target(1 + index * 2, 502);
-        entry.form = 1;
-        entry
-    }).collect();
-    let parameters: Vec<_> = directory.iter().map(|entry| {
-        let mut values = vec![TokenValue::Integer(502), TokenValue::Integer(1_000), TokenValue::Omitted];
-        values.resize(2 + 1_000 * 3, TokenValue::Integer(0));
-        ParameterRecord::from_test_tokens(entry.sequence, 1..2, Vec::new(), values.len(), values.into_iter().map(|value| Token { value, span: 0..0 }).collect(), Vec::new())
-    }).collect();
-    let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect();
-    let records = parameters.iter().map(|record| (record.directory_sequence, record)).collect();
+    let directory: Vec<_> = (0..count)
+        .map(|index| {
+            let mut entry = crate::test_support::directory_target(1 + index * 2, 502);
+            entry.form = 1;
+            entry
+        })
+        .collect();
+    let parameters: Vec<_> = directory
+        .iter()
+        .map(|entry| {
+            let mut values = vec![
+                TokenValue::Integer(502),
+                TokenValue::Integer(1_000),
+                TokenValue::Omitted,
+            ];
+            values.resize(2 + 1_000 * 3, TokenValue::Integer(0));
+            ParameterRecord::from_test_tokens(
+                entry.sequence,
+                1..2,
+                Vec::new(),
+                values.len(),
+                values
+                    .into_iter()
+                    .map(|value| Token { value, span: 0..0 })
+                    .collect(),
+                Vec::new(),
+            )
+        })
+        .collect();
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect();
+    let records = parameters
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // One rejected coordinate vector fits; retaining all rejected vectors does not.
@@ -907,7 +1057,15 @@ fn rejected_brep_definition_vectors_release_their_storage() {
     let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
     let global = global.length_context(&ctx).unwrap().unwrap();
     let mut ir = CadIr::empty();
-    let outcome = super::project(&mut ir, &directory, (&entries, &records), &global, &ctx, &mut super::super::geometry::SourceSequences::default()).unwrap();
+    let outcome = super::project(
+        &mut ir,
+        &directory,
+        (&entries, &records),
+        &global,
+        &ctx,
+        &mut super::super::geometry::SourceSequences::default(),
+    )
+    .unwrap();
     assert!(outcome.decoded.is_empty());
     assert_eq!(outcome.losses.len(), usize::try_from(count).unwrap());
     assert!(ir.model.points.is_empty());
