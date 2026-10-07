@@ -870,29 +870,26 @@ fn history_feature_sources<'a>(
 ) -> Result<HashMap<&'a str, Option<FeatureSourceId>>, CodecError> {
     const OPERATION: &str = "index SLDPRT topology selections";
     let mut sources = HashMap::new();
+    let mut name_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut lane_names = None;
     for history in ctx.admit_iter(histories, "scan SLDPRT feature histories")? {
         for feature in ctx.admit_iter(&history.features, "scan SLDPRT topology history features")? {
             let mut source = feature.source_id;
             if source.is_none() {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(lanes.len()),
-                    "resolve SLDPRT topology feature sources",
-                )?;
-                for lane in lanes {
-                    ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(lane.names.len()),
-                        "resolve SLDPRT topology feature sources",
-                    )?;
+                if lane_names.is_none() {
+                    lane_names = Some(crate::resolved_features::scalars::lane_object_names(
+                        ctx, &mut name_storage, lanes,
+                    )?);
                 }
                 let mut first = None;
-                for candidate in ctx
-                    .admit_iter(lanes, "resolve SLDPRT topology source candidates")?
-                    .filter_map(|lane| {
-                        crate::resolved_features::scalars::feature_object_name(feature, lane)?
-                            .object_id?
-                            .value()
-                    })
-                {
+                let mut names = lane_names.as_deref().unwrap_or_default().iter();
+                while let Some(names) = ctx.next_charged(
+                    &mut names, "resolve SLDPRT topology source candidates",
+                )? {
+                    let Some(candidate) = names.of(ctx, feature)?
+                        .and_then(|name| name.object_id?.value()) else {
+                        continue;
+                    };
                     if first.is_some_and(|known| known != candidate) {
                         first = None;
                         break;

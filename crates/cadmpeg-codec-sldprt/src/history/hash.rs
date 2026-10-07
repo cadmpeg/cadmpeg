@@ -4,9 +4,8 @@
 use crate::records::{FeatureContent, FeatureHistory};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DesignConfiguration, DesignParameter, FeatureId};
+use cadmpeg_ir::features::{DesignConfiguration, DesignParameter};
 use serde::Serialize;
-use std::collections::HashMap;
 
 /// The digest of one record set's canonical JSON.
 ///
@@ -34,13 +33,14 @@ pub(crate) fn feature_hash(
 ) -> Result<String, CodecError> {
     const OPERATION: &str = "match SLDPRT feature hash parents";
     let views = ctx.with_scoped_storage("SLDPRT canonical hash views", || {
-        let tree_parents = first_tree_parents(ctx, model)?;
+        let mut parent_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let tree_parents = crate::history::bind::tree_parents(ctx, &mut parent_storage, &model.features)?;
         let mut features = Vec::new();
         for feature in ctx.admit_iter(&model.features, "scan SLDPRT canonical hash views")? {
             // The structural owner, or the regeneration predecessor when no
             // tree node owns the feature.
             let parent = match ctx.get_hash_map(&tree_parents, &feature.id, OPERATION)? {
-                Some(parent) => Some(*parent),
+                Some((first, _)) => Some(*first),
                 None => model.feature_regeneration_parent(&feature.id),
             };
             ctx.push_vec(
@@ -72,29 +72,6 @@ pub(crate) fn feature_hash(
         Ok::<_, CodecError>(features)
     })?;
     hash_records(ctx, &views.0)
-}
-
-/// The first tree node, in feature order, listing each child.
-fn first_tree_parents<'m>(
-    ctx: &DecodeContext<'_>,
-    model: &'m cadmpeg_ir::document::Model,
-) -> Result<HashMap<&'m FeatureId, &'m FeatureId>, CodecError> {
-    const OPERATION: &str = "match SLDPRT feature hash parents";
-    let mut parents = HashMap::new();
-    for feature in ctx.admit_iter(&model.features, OPERATION)? {
-        let cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::TreeNode { children, .. },
-        ) = feature.evaluation.definition()
-        else {
-            continue;
-        };
-        for child in ctx.admit_iter(&children[..], OPERATION)? {
-            if !ctx.contains_key_hash_map(&parents, child, OPERATION)? {
-                ctx.insert_hash_map(&mut parents, child, &feature.id, OPERATION)?;
-            }
-        }
-    }
-    Ok(parents)
 }
 
 /// The feature state the digest covers: the neutral feature and the tree

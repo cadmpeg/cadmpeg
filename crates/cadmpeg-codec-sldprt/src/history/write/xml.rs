@@ -166,12 +166,11 @@ pub(crate) fn valid_xml_name(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     name: &str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let mut bytes = ctx
-        .admit_iter(name.as_bytes(), "scan SLDPRT XML name bytes")?
-        .copied();
-    Ok(bytes
-        .next()
-        .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
-        && bytes
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-' | b'.')))
+    const OPERATION: &str = "scan SLDPRT XML name bytes";
+    let mut bytes = name.bytes();
+    let first = ctx.next_charged(&mut bytes, OPERATION)?;
+    Ok(first.is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
+        && ctx.all_by(bytes, |byte| {
+            Ok(byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-' | b'.'))
+        }, OPERATION)?)
 }
