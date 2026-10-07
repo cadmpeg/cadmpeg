@@ -631,12 +631,19 @@ impl Decoder<'_> {
         }
         let mut best: Option<usize> = None;
         let mut index = self.active.len();
+        let mut fixed_visits = 16;
         while index > 0 {
             let Some(distance) = self.active.len().checked_sub(index) else {
                 return Ok(best);
             };
             if distance >= 16 {
                 break;
+            }
+            // Removing a face keeps its distance unchanged and can extend the scan.
+            if fixed_visits == 0 {
+                ctx.charge_work(1, "scan JT variable active frontier")?;
+            } else {
+                fixed_visits -= 1;
             }
             index -= 1;
             let Some(&face) = self.active.get(index) else {
