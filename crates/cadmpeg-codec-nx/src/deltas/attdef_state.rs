@@ -75,9 +75,14 @@ impl AttdefState {
             Ok(xmt) => xmt,
             Err(error) => return Ok(Err(error)),
         };
-        let validation = validate_slots(slot_count, active_count, &references, |values| {
-            ctx.admit_iter(values, "NX ATTDEF slot validation")
-        })?;
+        let validation =
+            validate_slots(slot_count, active_count, &references, |values, invalid| {
+                ctx.any_by(
+                    values,
+                    |reference| Ok(invalid(reference)),
+                    "NX ATTDEF slot validation",
+                )
+            })?;
         Ok(validation.map(|()| Self {
             xmt,
             slots: AttdefSlots {
@@ -106,8 +111,8 @@ impl AttdefState {
 
 impl AttdefSlots {
     fn new(slot_count: u32, active_count: u32, references: Vec<u32>) -> Result<Self, &'static str> {
-        match validate_slots(slot_count, active_count, &references, |values| {
-            Ok::<_, Infallible>(values.iter())
+        match validate_slots(slot_count, active_count, &references, |values, invalid| {
+            Ok::<_, Infallible>(values.iter().any(invalid))
         }) {
             Ok(validation) => validation?,
             Err(never) => match never {},
@@ -146,11 +151,11 @@ impl AttdefSlots {
         self.references.iter().copied()
     }
 }
-fn validate_slots<'values, E, I: Iterator<Item = &'values u32>>(
+fn validate_slots<E>(
     slot_count: u32,
     active_count: u32,
-    references: &'values [u32],
-    mut admit: impl FnMut(&'values [u32]) -> Result<I, E>,
+    references: &[u32],
+    mut any_invalid: impl FnMut(&[u32], fn(&u32) -> bool) -> Result<bool, E>,
 ) -> Result<Result<(), &'static str>, E> {
     if slot_count == 0 || u32::try_from(references.len()).ok() != Some(slot_count) {
         return Ok(Err(
@@ -161,11 +166,12 @@ fn validate_slots<'values, E, I: Iterator<Item = &'values u32>>(
         return Ok(Err("active_count: exceeds slot_count"));
     }
     let active_len = cadmpeg_core::decode::index_from_u32(active_count);
-    if admit(&references[active_len..])?.any(|reference| *reference != 1) {
+    if any_invalid(&references[active_len..], |reference| *reference != 1)? {
         return Ok(Err("references: inactive slots must be null"));
     }
-    if admit(&references[..active_len])?.any(|reference| NonNullXmt::try_from(*reference).is_err())
-    {
+    if any_invalid(&references[..active_len], |reference| {
+        NonNullXmt::try_from(*reference).is_err()
+    })? {
         return Ok(Err("references: active slots must be non-null"));
     }
     Ok(Ok(()))

@@ -15,6 +15,17 @@ enum StateForm {
     Two,
 }
 
+/// Unvalidated scalar and entry fields of one parsed preamble.
+pub(super) struct PreambleFields {
+    pub(super) identity: u16,
+    pub(super) references: [u32; 2],
+    pub(super) state_references: [u32; 3],
+    pub(super) state_words: [u32; 4],
+    pub(super) count: u16,
+    pub(super) entries: Vec<(u16, u32)>,
+    pub(super) terminal_value: u16,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "PreambleWire")]
 pub(crate) struct PreambleState {
@@ -56,61 +67,34 @@ impl PreambleState {
         entries: Vec<(u16, u32)>,
         terminal_value: u16,
     ) -> Result<Self, &'static str> {
-        let (first_reference, linked, form, count) = match validate_preamble(
-            identity,
-            references,
-            state_references,
-            state_words,
-            count,
-            &entries,
-            |values| Ok::<_, Infallible>(values.iter()),
+        match validate_preamble(
+            PreambleFields {
+                identity,
+                references,
+                state_references,
+                state_words,
+                count,
+                entries,
+                terminal_value,
+            },
+            |values| Ok::<_, Infallible>(values.iter().copied().find_map(entry_error)),
         ) {
-            Ok(validation) => validation?,
+            Ok(validation) => validation,
             Err(never) => match never {},
-        };
-        Ok(Self {
-            identity,
-            first_reference,
-            linked,
-            form,
-            last_word: state_words[3],
-            count,
-            entries,
-            terminal_value,
-        })
+        }
     }
 
     pub(super) fn from_wire(
         ctx: &DecodeContext<'_>,
-        identity: u16,
-        references: [u32; 2],
-        state_references: [u32; 3],
-        state_words: [u32; 4],
-        count: u16,
-        entries: Vec<(u16, u32)>,
-        terminal_value: u16,
+        fields: PreambleFields,
     ) -> Result<Result<Self, &'static str>, CodecError> {
-        let validation = validate_preamble(
-            identity,
-            references,
-            state_references,
-            state_words,
-            count,
-            &entries,
-            |values| ctx.admit_iter(values, "NX schema preamble entry validation"),
-        )?;
-        Ok(
-            validation.map(|(first_reference, linked, form, count)| Self {
-                identity,
-                first_reference,
-                linked,
-                form,
-                last_word: state_words[3],
-                count,
-                entries,
-                terminal_value,
-            }),
-        )
+        validate_preamble(fields, |values| {
+            ctx.find_map(
+                values,
+                |entry| Ok(entry_error(*entry)),
+                "NX schema preamble entry validation",
+            )
+        })
     }
 
     pub(crate) fn identity(&self) -> u16 {
@@ -149,15 +133,19 @@ impl PreambleState {
     }
 }
 
-fn validate_preamble<'entries, E, I: Iterator<Item = &'entries (u16, u32)>>(
-    identity: u16,
-    references: [u32; 2],
-    state_references: [u32; 3],
-    state_words: [u32; 4],
-    count: u16,
-    entries: &'entries [(u16, u32)],
-    admit: impl FnOnce(&'entries [(u16, u32)]) -> Result<I, E>,
-) -> Result<Result<(u32, bool, StateForm, NonZeroU16), &'static str>, E> {
+fn validate_preamble<E>(
+    fields: PreambleFields,
+    first_error: impl FnOnce(&[(u16, u32)]) -> Result<Option<&'static str>, E>,
+) -> Result<Result<PreambleState, &'static str>, E> {
+    let PreambleFields {
+        identity,
+        references,
+        state_references,
+        state_words,
+        count,
+        entries,
+        terminal_value,
+    } = fields;
     if identity <= 1 {
         return Ok(Err("identity: must exceed one"));
     }
@@ -190,15 +178,29 @@ fn validate_preamble<'entries, E, I: Iterator<Item = &'entries (u16, u32)>>(
     if entries.is_empty() {
         return Ok(Err("entries: require at least one entry"));
     }
-    for (kind, reference) in admit(entries)? {
-        if *reference <= 1 {
-            return Ok(Err("entries.reference: must exceed one"));
-        }
-        if !matches!(*kind, 81 | 82) {
-            return Ok(Err("entries.kind: must be 81 or 82"));
-        }
+    if let Some(error) = first_error(&entries)? {
+        return Ok(Err(error));
     }
-    Ok(Ok((first_reference, linked, form, count)))
+    Ok(Ok(PreambleState {
+        identity,
+        first_reference,
+        linked,
+        form,
+        last_word: state_words[3],
+        count,
+        entries,
+        terminal_value,
+    }))
+}
+
+fn entry_error((kind, reference): (u16, u32)) -> Option<&'static str> {
+    if reference <= 1 {
+        Some("entries.reference: must exceed one")
+    } else if !matches!(kind, 81 | 82) {
+        Some("entries.kind: must be 81 or 82")
+    } else {
+        None
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -335,13 +337,15 @@ mod tests {
             |ctx| {
                 super::PreambleState::from_wire(
                     ctx,
-                    300,
-                    [40000, 40001],
-                    [1; 3],
-                    [2, 0, 1, 55],
-                    7,
-                    vec![(81, 4), (82, 40000), (81, 5)],
-                    9,
+                    super::PreambleFields {
+                        identity: 300,
+                        references: [40000, 40001],
+                        state_references: [1; 3],
+                        state_words: [2, 0, 1, 55],
+                        count: 7,
+                        entries: vec![(81, 4), (82, 40000), (81, 5)],
+                        terminal_value: 9,
+                    },
                 )
             },
         );
