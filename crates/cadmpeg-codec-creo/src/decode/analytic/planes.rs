@@ -418,11 +418,11 @@ pub(super) fn solve_carriers_with_diagnostics(
     ctx.retain_vec(
         &mut candidates,
         |point| {
-            Ok(ctx.all_by(
+            ctx.all_by(
                 carriers,
                 |carrier| Ok(point_on_carrier(*point, *carrier)),
                 "creo carrier candidate equations",
-            )?)
+            )
         },
         "creo carrier candidate retention",
     )?;
@@ -516,7 +516,7 @@ where
             .iter()
             .zip(plane.normal)
             .all(|(left, right)| (left - right).abs() <= EPS_AGREE)
-            || !((first_distance - distance).abs() <= EPS_AGREE * scale)
+            || !crate::vecmath::within((first_distance - distance).abs(), EPS_AGREE * scale)
         {
             return Ok(None);
         }
@@ -611,7 +611,7 @@ fn agreed_plane_surface(
             .iter()
             .zip(plane.normal)
             .all(|(left, right)| (left - right).abs() <= EPS_AGREE)
-            || !((first_distance - distance).abs() <= EPS_AGREE * scale)
+            || !crate::vecmath::within((first_distance - distance).abs(), EPS_AGREE * scale)
         {
             return Ok(None);
         }
@@ -1108,7 +1108,7 @@ fn fc05_cylinder_branch_witnesses(
             .admit_iter(&topology.faces, "creo FC05 bounded topology faces")?
             .enumerate()
         {
-            face_ids[index] = face.map(|face| face.get());
+            face_ids[index] = face.map(std::num::NonZero::get);
         }
         let pair = match face_ids {
             [Some(first), Some(second)]
@@ -2211,7 +2211,10 @@ fn envelope_reconciled_plane_candidate(
         .chain(equation.origin.iter())
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    if !((dot(normal, origin) - dot(normal, equation.origin)).abs() <= EPS_AGREE * origin_scale) {
+    if !crate::vecmath::within(
+        (dot(normal, origin) - dot(normal, equation.origin)).abs(),
+        EPS_AGREE * origin_scale,
+    ) {
         return Ok(None);
     }
     let Some(slots) = frame.complete_slots() else {

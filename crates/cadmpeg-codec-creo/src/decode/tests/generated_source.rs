@@ -162,7 +162,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| analytic_surface_id_for_feature(
             ctx,
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
             std::slice::from_ref(&table),
             17,
             10,
@@ -174,7 +174,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| ordered_analytic_surface_id_for_feature(
             ctx,
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
             std::slice::from_ref(&table),
             17,
             &order,
@@ -187,7 +187,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| analytic_surface_id_for_feature(
             ctx,
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
             std::slice::from_ref(&table),
             17,
             10,
@@ -199,7 +199,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| ordered_analytic_surface_id_for_feature(
             ctx,
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
             std::slice::from_ref(&table),
             17,
             &order,
@@ -212,7 +212,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| ordered_analytic_surface_id_for_feature(
             ctx,
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
             std::slice::from_ref(&table),
             17,
             &order,
@@ -277,7 +277,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| ordered_analytic_surface_id_for_feature(
             ctx,
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
             std::slice::from_ref(&table),
             17,
             &order,
@@ -290,7 +290,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| ordered_family_surface_bindings_for_feature(
             ctx,
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
             17,
             std::slice::from_ref(&table),
             &order,
@@ -318,7 +318,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             8,
             &[crate::surface::SurfaceKind::Cylinder],
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
         ))
         .expect("admitted test lookup")
     );
@@ -338,7 +338,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
                 crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
             ],
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(extrusion_rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(extrusion_rows.clone()),
         ))
         .expect("admitted test lookup")
     );
@@ -350,7 +350,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             9,
             &[crate::surface::SurfaceKind::Spline],
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(extrusion_rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(extrusion_rows.clone()),
         ))
         .expect("admitted test lookup")
     );
@@ -365,7 +365,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
                 crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
             ],
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(extrusion_rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(extrusion_rows.clone()),
         ))
         .expect("admitted test lookup")
     );
@@ -377,7 +377,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             10,
             &[crate::surface::SurfaceKind::Cylinder],
             &[table],
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
         ))
         .expect("admitted test lookup")
     );
@@ -441,7 +441,7 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
             ctx,
             9,
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone())
         ))
         .expect("service stepped form"),
         Some(HoleForm::Counterbore)
@@ -451,7 +451,7 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
             ctx,
             9,
             &[table.clone(), table.clone()],
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone())
         ))
         .expect("service stepped ambiguity"),
         None
@@ -463,7 +463,7 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
             ctx,
             9,
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone())
         ))
         .expect("service stepped form"),
         None
@@ -536,7 +536,7 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
             ctx,
             9,
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone())
         ))
         .expect("service split-patch form"),
         Some(HoleForm::Counterbore)
@@ -546,7 +546,7 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
             ctx,
             9,
             &[table.clone(), table.clone()],
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone())
         ))
         .expect("service split-patch ambiguity"),
         None
@@ -561,7 +561,7 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
             ctx,
             9,
             std::slice::from_ref(&missing_plane_companion),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone())
         ))
         .expect("service missing companion"),
         None
@@ -573,7 +573,7 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
             ctx,
             9,
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone())
         ))
         .expect("service nonplanar form"),
         None
@@ -592,7 +592,7 @@ fn assert_split_patch_collection_refusal(operation: &'static str) {
             &ctx,
             9,
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
         )
     };
     assert_eq!(
@@ -665,7 +665,7 @@ fn assert_paired_hole_collection_refusal(operation: &'static str) {
             &ctx,
             9,
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
         )
         .map(|recipe| recipe.map(|recipe| recipe.dimension_family))
     };
@@ -721,7 +721,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
             ctx,
             9,
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone())
         ))
         .expect("service drilled recipe")
         .map(|recipe| recipe.dimension_family),
@@ -732,7 +732,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
             ctx,
             9,
             &[table.clone(), table.clone()],
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone())
         )
         .map(|recipe| recipe.is_none()))
         .expect("service drilled ambiguity")
@@ -752,7 +752,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
             ctx,
             9,
             std::slice::from_ref(&extended),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone())
         ))
         .expect("service extended recipe")
         .map(|recipe| recipe.dimension_family),
@@ -770,7 +770,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
             ctx,
             9,
             std::slice::from_ref(&unknown_family),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone())
         ))
         .expect("service unknown family")
         .is_none()
@@ -785,7 +785,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
             ctx,
             9,
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone())
         ))
         .expect("service source-zero recipe")
         .is_some()
@@ -797,7 +797,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
             ctx,
             9,
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone())
         ))
         .expect("service duplicate source-zero recipe")
         .is_none()
@@ -810,7 +810,7 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
             ctx,
             9,
             &[table],
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec())
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone())
         )
         .map(|recipe| recipe.is_none()))
         .expect("service missing cone recipe")
@@ -1902,7 +1902,7 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
             ctx,
             &BTreeSet::from([23]),
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
         ))
         .expect("service pair admitted"),
         vec![(12, 13, 47)]
@@ -1912,7 +1912,7 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
             ctx,
             &BTreeSet::new(),
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
         ))
         .expect("service empty pair admitted")
         .is_empty()
@@ -1923,7 +1923,7 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
             ctx,
             &BTreeSet::from([23]),
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
             &BTreeSet::from([12]),
         ))
         .expect("service rowless orientation admitted"),
@@ -1934,7 +1934,7 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
             ctx,
             &BTreeSet::from([23]),
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
             &BTreeSet::new(),
         ))
         .expect("service absent orientation admitted")
@@ -1947,7 +1947,7 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
             ctx,
             &BTreeSet::from([23]),
             &[table],
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(materialized_rowless.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(materialized_rowless.clone()),
         ))
         .expect("service materialized row admitted")
         .is_empty()

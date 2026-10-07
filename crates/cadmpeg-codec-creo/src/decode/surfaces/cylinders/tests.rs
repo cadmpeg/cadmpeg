@@ -1906,7 +1906,7 @@ fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
             ctx,
             &std::collections::BTreeSet::from([23]),
             &[table],
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
         ))
         .expect("service duplicate-row pair admitted")
         .is_empty()

@@ -61,35 +61,35 @@ fn section_line_entity_fixed_coordinate_with_mode(
     include_unique_rows: bool,
 ) -> Result<Option<SectionAxis>, CodecError> {
     let mut adjacency = BTreeMap::<u32, Vec<(u32, bool)>>::new();
-    // discarded-value: The visitor runs through every active SKAMP row.
-    let _ = visit_section_skamps::<()>(ctx, definition, true, |skamp| {
-        let (parity, first, second) = match (skamp.kind, skamp.items.as_slice()) {
-            (5 | 7, [first, second]) if first.sense == 0 && second.sense == 0 => {
-                (skamp.kind == 5, first, second)
+    let ControlFlow::Continue(()) =
+        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
+            let (parity, first, second) = match (skamp.kind, skamp.items.as_slice()) {
+                (5 | 7, [first, second]) if first.sense == 0 && second.sense == 0 => {
+                    (skamp.kind == 5, first, second)
+                }
+                _ => return Ok(ControlFlow::Continue(())),
+            };
+            if !section_skamp_is_line(ctx, definition, first)?
+                || !section_skamp_is_line(ctx, definition, second)?
+            {
+                return Ok(ControlFlow::Continue(()));
             }
-            _ => return Ok(ControlFlow::Continue(())),
-        };
-        if !section_skamp_is_line(ctx, definition, first)?
-            || !section_skamp_is_line(ctx, definition, second)?
-        {
-            return Ok(ControlFlow::Continue(()));
-        }
-        for (entity_id, neighbor) in [
-            (first.entity_id, second.entity_id),
-            (second.entity_id, first.entity_id),
-        ] {
-            let neighbors = ctx
-                .entry_btree_map(
-                    &mut adjacency,
-                    entity_id,
-                    "creo fixed-coordinate adjacency nodes",
-                )?
-                .or_default();
-            ctx.reserve_vec(neighbors, 1, "creo fixed-coordinate adjacency links")?;
-            neighbors.push((neighbor, parity));
-        }
-        Ok(ControlFlow::Continue(()))
-    })?;
+            for (entity_id, neighbor) in [
+                (first.entity_id, second.entity_id),
+                (second.entity_id, first.entity_id),
+            ] {
+                let neighbors = ctx
+                    .entry_btree_map(
+                        &mut adjacency,
+                        entity_id,
+                        "creo fixed-coordinate adjacency nodes",
+                    )?
+                    .or_default();
+                ctx.reserve_vec(neighbors, 1, "creo fixed-coordinate adjacency links")?;
+                neighbors.push((neighbor, parity));
+            }
+            Ok(ControlFlow::Continue(()))
+        })?;
     ctx.charge_collection_items(1, "creo fixed-coordinate parity seed")?;
     let mut parities = BTreeMap::from([(entity_id, false)]);
     let mut pending = std::collections::VecDeque::new();
@@ -211,23 +211,27 @@ fn section_line_direct_fixed_coordinates_with_mode(
             "creo direct fixed-coordinate nodes",
         )?;
     }
-    // discarded-value: The visitor runs through every active SKAMP row.
-    let _ = visit_section_skamps::<()>(ctx, definition, true, |skamp| {
-        let coordinate = match (skamp.kind, skamp.items.as_slice()) {
-            (1, [item]) if item.sense == 0 && item.entity_id == entity_id => Some(SectionAxis::V),
-            (2, [item]) if item.sense == 0 && item.entity_id == entity_id => Some(SectionAxis::U),
-            _ => None,
-        };
-        let Some(coordinate) = coordinate else {
-            return Ok(ControlFlow::Continue(()));
-        };
-        ctx.insert_btree_set(
-            &mut coordinates,
-            coordinate,
-            "creo direct fixed-coordinate nodes",
-        )?;
-        Ok(ControlFlow::Continue(()))
-    })?;
+    let ControlFlow::Continue(()) =
+        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
+            let coordinate = match (skamp.kind, skamp.items.as_slice()) {
+                (1, [item]) if item.sense == 0 && item.entity_id == entity_id => {
+                    Some(SectionAxis::V)
+                }
+                (2, [item]) if item.sense == 0 && item.entity_id == entity_id => {
+                    Some(SectionAxis::U)
+                }
+                _ => None,
+            };
+            let Some(coordinate) = coordinate else {
+                return Ok(ControlFlow::Continue(()));
+            };
+            ctx.insert_btree_set(
+                &mut coordinates,
+                coordinate,
+                "creo direct fixed-coordinate nodes",
+            )?;
+            Ok(ControlFlow::Continue(()))
+        })?;
     if saved_section_line_witness_allowed(definition, entity_id) {
         if let Some(crate::feature::definitions::FeatureSavedEntity::Line(line)) =
             section_saved_entity(ctx, definition, entity_id)?

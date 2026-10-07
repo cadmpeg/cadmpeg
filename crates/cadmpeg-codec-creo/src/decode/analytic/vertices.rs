@@ -38,10 +38,10 @@ fn unique_model_curve<'a>(
 ) -> Result<Option<&'a Curve>, cadmpeg_core::CodecError> {
     let mut matching_curve = None;
     for curve in ctx.admit_iter(&ir.model.curves, "creo unique model curve search")? {
-        if ctx.equal(&curve.id, id, "creo unique model curve identity comparison")? {
-            if matching_curve.replace(curve).is_some() {
-                return Ok(None);
-            }
+        if ctx.equal(&curve.id, id, "creo unique model curve identity comparison")?
+            && matching_curve.replace(curve).is_some()
+        {
+            return Ok(None);
         }
     }
     Ok(matching_curve)
@@ -96,7 +96,7 @@ fn pcurve_endpoint_is_ambiguous(
     let Some(first) = candidates.first() else {
         return Ok(false);
     };
-    Ok(ctx.any_by(
+    ctx.any_by(
         &candidates[1..],
         |candidate| {
             Ok(!finite_model_point(*first)
@@ -104,7 +104,7 @@ fn pcurve_endpoint_is_ambiguous(
                 .is_some_and(|(first, candidate)| model_points_agree(first, candidate)))
         },
         "creo pcurve endpoint ambiguity search",
-    )?)
+    )
 }
 
 fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Option<[f64; 3]> {
@@ -469,11 +469,11 @@ fn incident_analytic_vertex_domain(
     ctx.retain_vec(
         &mut candidates,
         |point| {
-            Ok(ctx.all_by(
+            ctx.all_by(
                 curves,
                 |curve| Ok(curve_contains_points(curve, [*point, *point])),
                 "creo incident analytic curve containment",
-            )?)
+            )
         },
         "creo retained incident analytic candidates",
     )?;
@@ -747,7 +747,7 @@ pub(in crate::decode) fn solve_topological_vertices(
             if ambiguous {
                 continue;
             }
-            for (vertex, point) in vertices.into_iter().zip(ordered) {
+            for (vertex, point) in vertices.iter().zip(ordered) {
                 diagnostics.directed_endpoint_assignments += 1;
                 ctx.entry_btree_map(&mut fixed_points, *vertex, "creo fixed vertex point nodes")?
                     .or_insert(*point);
@@ -781,7 +781,7 @@ pub(in crate::decode) fn solve_topological_vertices(
             "creo vertex curve lookup identity",
         )?;
         if !ctx.contains_btree_set(
-            &nurbs_endpoint_witnesses,
+            nurbs_endpoint_witnesses,
             &id,
             "creo NURBS endpoint witness membership",
         )? {

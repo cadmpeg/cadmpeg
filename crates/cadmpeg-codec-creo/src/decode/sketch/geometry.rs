@@ -882,7 +882,8 @@ pub(in crate::decode) fn saved_section_entity_geometry(
     } else {
         None
     };
-    let result = (|| match entity {
+
+    (|| match entity {
         crate::feature::definitions::FeatureSavedEntity::Line(line) => {
             let [[Some(start_u), Some(start_v), _], [Some(end_u), Some(end_v), _]] = line.endpoints
             else {
@@ -982,8 +983,7 @@ pub(in crate::decode) fn saved_section_entity_geometry(
         }
         crate::feature::definitions::FeatureSavedEntity::Spline(_)
         | crate::feature::definitions::FeatureSavedEntity::Dummy(_) => None,
-    })();
-    result
+    })()
 }
 
 pub(in crate::decode) fn is_full_circle_geometry(geometry: &SketchGeometry) -> bool {
@@ -1100,8 +1100,9 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
     };
 
     let mut geometries = Vec::new();
-    // discarded-value: The visitor continues through every semantic saved entity.
-    let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
+    let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
+        std::convert::Infallible,
+    >(ctx, definition, |entity| {
         let Some(geometry) = saved_section_entity_geometry(entity) else {
             return Ok(ControlFlow::Continue(()));
         };
@@ -1170,10 +1171,10 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
             if candidate_index == index {
                 continue;
             }
-            if saved_points_coincide(*endpoint, *candidate) {
-                if first_mate.replace(candidate_index).is_some() {
-                    has_multiple_mates = true;
-                }
+            if saved_points_coincide(*endpoint, *candidate)
+                && first_mate.replace(candidate_index).is_some()
+            {
+                has_multiple_mates = true;
             }
         }
         if has_multiple_mates {
@@ -1275,11 +1276,10 @@ pub(in crate::decode) fn saved_profile_chains(
                             endpoints[endpoint_index],
                             candidate_endpoints[candidate_endpoint],
                         )
+                        && mate.replace((candidate_row, candidate_endpoint)).is_some()
                     {
-                        if mate.replace((candidate_row, candidate_endpoint)).is_some() {
-                            has_second_mate = true;
-                            break 'candidate_rows;
-                        }
+                        has_second_mate = true;
+                        break 'candidate_rows;
                     }
                 }
             }

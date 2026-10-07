@@ -319,9 +319,10 @@ pub(in crate::decode) fn solve_planes(
                 }
                 let mut agrees = true;
                 for plane in ctx.admit_iter(planes, "creo plane solver residual candidates")? {
-                    if !((dot(plane.normal, point) - dot(plane.normal, plane.origin)).abs()
-                        <= EPS_PLANE_RESIDUAL)
-                    {
+                    if !crate::vecmath::within(
+                        (dot(plane.normal, point) - dot(plane.normal, plane.origin)).abs(),
+                        EPS_PLANE_RESIDUAL,
+                    ) {
                         agrees = false;
                         break;
                     }

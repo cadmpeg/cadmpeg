@@ -376,35 +376,35 @@ pub(in super::super) fn solver_only_section_entities(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeMap<u32, usize>, cadmpeg_core::CodecError> {
     let mut entities = BTreeMap::<u32, usize>::new();
-    // discarded-value: The visitor processes all solver SKAMP rows.
-    let _ = visit_all_section_skamps::<()>(ctx, definition, |skamp| {
-        for item in ctx.admit_iter(&skamp.items, "creo solver-only SKAMP items")? {
-            let id = item.entity_id;
-            let segment_id_exists = if let Some(table) = definition.segments.as_ref() {
-                ctx.any_by(
-                    table.rows.identity_entries(),
-                    |(&segment_id, _)| Ok(segment_id == id),
-                    "creo solver-only segment identity rows",
-                )?
-            } else {
-                false
-            };
-            if segment_id_exists {
-                continue;
+    let ControlFlow::Continue(()) =
+        visit_all_section_skamps::<std::convert::Infallible>(ctx, definition, |skamp| {
+            for item in ctx.admit_iter(&skamp.items, "creo solver-only SKAMP items")? {
+                let id = item.entity_id;
+                let segment_id_exists = if let Some(table) = definition.segments.as_ref() {
+                    ctx.any_by(
+                        table.rows.identity_entries(),
+                        |(&segment_id, _)| Ok(segment_id == id),
+                        "creo solver-only segment identity rows",
+                    )?
+                } else {
+                    false
+                };
+                if segment_id_exists {
+                    continue;
+                }
+                if let Some(first_offset) = entities.get_mut(&id) {
+                    *first_offset = (*first_offset).min(skamp.offset);
+                } else {
+                    ctx.insert_btree_map(
+                        &mut entities,
+                        id,
+                        skamp.offset,
+                        "creo solver-only entity nodes",
+                    )?;
+                }
             }
-            if let Some(first_offset) = entities.get_mut(&id) {
-                *first_offset = (*first_offset).min(skamp.offset);
-            } else {
-                ctx.insert_btree_map(
-                    &mut entities,
-                    id,
-                    skamp.offset,
-                    "creo solver-only entity nodes",
-                )?;
-            }
-        }
-        Ok(ControlFlow::Continue(()))
-    })?;
+            Ok(ControlFlow::Continue(()))
+        })?;
     Ok(entities)
 }
 
@@ -426,18 +426,19 @@ pub(in super::super) fn solver_only_section_entity_offset(
         return Ok(None);
     }
     let mut first_offset = None;
-    // discarded-value: The visitor finds the minimum offset across matching rows.
-    let _ = visit_all_section_skamps::<()>(ctx, definition, |skamp| {
-        if ctx.any_by(
-            &skamp.items,
-            |item| Ok(item.entity_id == entity_id),
-            "creo solver-only entity SKAMP items",
-        )? {
-            first_offset =
-                Some(first_offset.map_or(skamp.offset, |offset: usize| offset.min(skamp.offset)));
-        }
-        Ok(ControlFlow::Continue(()))
-    })?;
+    let ControlFlow::Continue(()) =
+        visit_all_section_skamps::<std::convert::Infallible>(ctx, definition, |skamp| {
+            if ctx.any_by(
+                &skamp.items,
+                |item| Ok(item.entity_id == entity_id),
+                "creo solver-only entity SKAMP items",
+            )? {
+                first_offset = Some(
+                    first_offset.map_or(skamp.offset, |offset: usize| offset.min(skamp.offset)),
+                );
+            }
+            Ok(ControlFlow::Continue(()))
+        })?;
     Ok(first_offset)
 }
 
@@ -649,87 +650,87 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
     if matches!(outcome, ControlFlow::Break(())) {
         evidence.insert(SectionEntityIncidenceFamily::Line);
     }
-    // discarded-value: The visitor gathers all section incidence evidence.
-    let _ = visit_section_skamps::<()>(ctx, definition, false, |skamp| {
-        for item in ctx.admit_iter(&skamp.items, "creo section incidence SKAMP items")? {
-            if item.entity_id == entity_id && matches!(item.sense, 2 | 3) {
-                evidence.insert(SectionEntityIncidenceFamily::BoundedCurve);
+    let ControlFlow::Continue(()) =
+        visit_section_skamps::<std::convert::Infallible>(ctx, definition, false, |skamp| {
+            for item in ctx.admit_iter(&skamp.items, "creo section incidence SKAMP items")? {
+                if item.entity_id == entity_id && matches!(item.sense, 2 | 3) {
+                    evidence.insert(SectionEntityIncidenceFamily::BoundedCurve);
+                }
+                if item.entity_id == entity_id && item.sense == 4 {
+                    evidence.insert(SectionEntityIncidenceFamily::Circular);
+                }
             }
-            if item.entity_id == entity_id && item.sense == 4 {
-                evidence.insert(SectionEntityIncidenceFamily::Circular);
-            }
-        }
-        if matches!(solver_roles, SolverRoles::Extended) {
-            if let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
-                let roles = [(first, second), (second, first)];
-                for (target, point) in ctx.admit_iter(&roles, "creo type-35 incidence roles")? {
-                    if target.entity_id != entity_id || target.sense != 0 {
-                        continue;
-                    }
-                    if point.sense == 4
-                        && unique_centered_line_segment(definition, point.entity_id).is_some()
-                    {
-                        continue;
-                    }
-                    if !section_skamp_has_proven_point_locus(ctx, definition, point)? {
-                        continue;
-                    }
-                    if unique_opaque_section_entity(definition, target.entity_id)
-                        || solver_only_section_entity_offset(ctx, definition, target.entity_id)?
-                            .is_some()
-                    {
-                        evidence.insert(SectionEntityIncidenceFamily::LineOrArc);
-                        break;
+            if matches!(solver_roles, SolverRoles::Extended) {
+                if let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
+                    let roles = [(first, second), (second, first)];
+                    for (target, point) in ctx.admit_iter(&roles, "creo type-35 incidence roles")? {
+                        if target.entity_id != entity_id || target.sense != 0 {
+                            continue;
+                        }
+                        if point.sense == 4
+                            && unique_centered_line_segment(definition, point.entity_id).is_some()
+                        {
+                            continue;
+                        }
+                        if !section_skamp_has_proven_point_locus(ctx, definition, point)? {
+                            continue;
+                        }
+                        if unique_opaque_section_entity(definition, target.entity_id)
+                            || solver_only_section_entity_offset(ctx, definition, target.entity_id)?
+                                .is_some()
+                        {
+                            evidence.insert(SectionEntityIncidenceFamily::LineOrArc);
+                            break;
+                        }
                     }
                 }
             }
-        }
-        if matches!(
-            solver_roles,
-            SolverRoles::WithoutType35Target | SolverRoles::Extended
-        ) {
-            if let (0, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
-                let roles = [(first, second), (second, first)];
-                for (target, point) in ctx.admit_iter(&roles, "creo point incidence roles")? {
-                    if target.entity_id != entity_id || target.sense != 0 {
-                        continue;
+            if matches!(
+                solver_roles,
+                SolverRoles::WithoutType35Target | SolverRoles::Extended
+            ) {
+                if let (0, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
+                    let roles = [(first, second), (second, first)];
+                    for (target, point) in ctx.admit_iter(&roles, "creo point incidence roles")? {
+                        if target.entity_id != entity_id || target.sense != 0 {
+                            continue;
+                        }
+                        if !section_skamp_has_proven_point_locus(ctx, definition, point)? {
+                            continue;
+                        }
+                        if unique_opaque_section_entity(definition, target.entity_id)
+                            || solver_only_section_entity_offset(ctx, definition, target.entity_id)?
+                                .is_some()
+                        {
+                            evidence.insert(SectionEntityIncidenceFamily::Point);
+                            break;
+                        }
                     }
-                    if !section_skamp_has_proven_point_locus(ctx, definition, point)? {
-                        continue;
-                    }
-                    if unique_opaque_section_entity(definition, target.entity_id)
-                        || solver_only_section_entity_offset(ctx, definition, target.entity_id)?
-                            .is_some()
+                }
+            }
+            // Line-family roles are structural; type-six circular evidence is
+            // activity-dependent, like its radius-equality constraint.
+            if let (5 | 7 | 8, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
+                if first.sense == 0 && second.sense == 0 {
+                    let has_solver_entity =
+                        solver_only_section_entity_offset(ctx, definition, entity_id)?.is_some();
+                    if has_solver_entity
+                        && (first.entity_id == entity_id || second.entity_id == entity_id)
                     {
-                        evidence.insert(SectionEntityIncidenceFamily::Point);
-                        break;
+                        evidence.insert(SectionEntityIncidenceFamily::Line);
                     }
                 }
             }
-        }
-        // Line-family roles are structural; type-six circular evidence is
-        // activity-dependent, like its radius-equality constraint.
-        if let (5 | 7 | 8, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
-            if first.sense == 0 && second.sense == 0 {
-                let has_solver_entity =
-                    solver_only_section_entity_offset(ctx, definition, entity_id)?.is_some();
-                if has_solver_entity
-                    && (first.entity_id == entity_id || second.entity_id == entity_id)
-                {
-                    evidence.insert(SectionEntityIncidenceFamily::Line);
-                }
-            }
-        }
-        if section_skamp_active(skamp.status)
-            && matches!((skamp.kind, skamp.items.as_slice()), (6, [first, second])
+            if section_skamp_active(skamp.status)
+                && matches!((skamp.kind, skamp.items.as_slice()), (6, [first, second])
                 if first.sense == 0
                     && second.sense == 0
                     && (first.entity_id == entity_id || second.entity_id == entity_id))
-        {
-            evidence.insert(SectionEntityIncidenceFamily::Circular);
-        }
-        Ok(ControlFlow::Continue(()))
-    })?;
+            {
+                evidence.insert(SectionEntityIncidenceFamily::Circular);
+            }
+            Ok(ControlFlow::Continue(()))
+        })?;
     normalize_section_incidence_curve_family_evidence(&mut evidence);
     Ok(evidence)
 }

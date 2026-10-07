@@ -23,17 +23,20 @@ const EPS_CIRCLE_RESIDUAL: f64 = 1.0e-9;
 const EPS_ANGLE_AGREEMENT: f64 = 1.0e-6;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
+mod solve;
+use solve::{
+    eliminate_pivot_column, evaluate_affine_program, solve_nonlinear_expression_block,
+    solve_unique_affine_system, AffineEquationRow,
+};
+#[cfg(test)]
+use solve::{
+    nonlinear_initial_guesses, refine_nonlinear_solution, NONLINEAR_SOLVE_SOLUTION_TOLERANCE,
+};
+
 /// A labeled curve namespace entry.
 ///
 /// `type_byte` remains raw because the namespace grammar does not define its
 /// geometric interpretation.
-mod solve;
-use solve::{
-    eliminate_pivot_column, evaluate_affine_program, nonlinear_initial_guesses,
-    refine_nonlinear_solution, solve_nonlinear_expression_block, solve_unique_affine_system,
-    AffineEquationRow, NONLINEAR_SOLVE_SOLUTION_TOLERANCE,
-};
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CurvePrototype {
     /// The row's `crv_id`: the curve's identifier in the `crv_array`
@@ -1381,11 +1384,11 @@ fn curve_equation_prohibited_constructs(
                     && ctx.any_by(
                         PROHIBITED_FUNCTIONS,
                         |candidate| {
-                            Ok(ctx.eq_ignore_ascii_case(
+                            ctx.eq_ignore_ascii_case(
                                 name,
                                 candidate,
                                 "creo relation text comparison",
-                            )?)
+                            )
                         },
                         "creo relation comparison traversal",
                     )?
@@ -1590,11 +1593,11 @@ fn extend_expression_dependencies(
                 && !ctx.any_by(
                     dependencies.iter(),
                     |existing| {
-                        Ok(ctx.eq_ignore_ascii_case(
+                        ctx.eq_ignore_ascii_case(
                             existing,
                             dependency,
                             "creo relation text comparison",
-                        )?)
+                        )
                     },
                     "creo relation comparison traversal",
                 )?
@@ -1725,11 +1728,11 @@ fn curve_expression_solve_program(
                                 ctx.any_by(
                                     unknowns,
                                     |unknown| {
-                                        Ok(ctx.eq_ignore_ascii_case(
+                                        ctx.eq_ignore_ascii_case(
                                             &unknown.name,
                                             dependency,
                                             "creo relation text comparison",
-                                        )?)
+                                        )
                                     },
                                     "creo relation comparison traversal",
                                 )?
@@ -1832,9 +1835,7 @@ fn curve_expression_solve_unknowns(
         }
         if ctx.any_by(
             &unknowns,
-            |known| {
-                Ok(ctx.eq_ignore_ascii_case(&known.name, name, "creo relation text comparison")?)
-            },
+            |known| ctx.eq_ignore_ascii_case(&known.name, name, "creo relation text comparison"),
             "creo solve unknown duplicate checks",
         )? {
             return Ok(None);
@@ -1997,7 +1998,7 @@ fn expression_system_symbol_family(
         value
     };
     {
-        let Some(value) = {
+        let Some(()) = {
             let Some(value) = name.get(digit_start..) else {
                 return Ok(None);
             };
@@ -2008,7 +2009,6 @@ fn expression_system_symbol_family(
         .then_some(()) else {
             return Ok(None);
         };
-        value
     };
     let prefix = {
         let Some(value) = name.get(..digit_start) else {
@@ -2033,9 +2033,7 @@ fn expression_system_symbol_family(
             Some(CurveExpressionSystemSymbolFamily::PatternCount)
         } else if ctx.any_by(
             &["tpm", "tp", "tm"],
-            |family| {
-                Ok(ctx.eq_ignore_ascii_case(prefix, family, "creo relation text comparison")?)
-            },
+            |family| ctx.eq_ignore_ascii_case(prefix, family, "creo relation text comparison"),
             "creo relation comparison traversal",
         )? {
             Some(CurveExpressionSystemSymbolFamily::Tolerance)
@@ -2230,16 +2228,15 @@ fn conditional_keyword_expression<'a>(
         value
     };
     {
-        let Some(value) = ctx
+        let Some(()) = ctx
             .eq_ignore_ascii_case(prefix, keyword, "creo relation text comparison")?
             .then_some(())
         else {
             return Ok(None);
         };
-        value
     };
     {
-        let Some(value) = source
+        let Some(()) = source
             .as_bytes()
             .get(keyword.len())
             .is_some_and(u8::is_ascii_whitespace)
@@ -2247,7 +2244,6 @@ fn conditional_keyword_expression<'a>(
         else {
             return Ok(None);
         };
-        value
     };
     let expression = {
         let Some(value) = source.get(keyword.len()..) else {
@@ -2934,11 +2930,9 @@ impl RelationUnitParser<'_> {
             self.nesting -= 1;
             self.whitespace();
             {
-                let Some(value) = (self.source.get(self.cursor) == Some(&b')')).then_some(())
-                else {
+                let Some(()) = (self.source.get(self.cursor) == Some(&b')')).then_some(()) else {
                     return Ok(None);
                 };
-                value
             };
             self.cursor += 1;
             return Ok(Some(unit));
@@ -2969,7 +2963,7 @@ impl RelationUnitParser<'_> {
             };
             value
         };
-        Ok(relation_unit_symbol(self.ctx, symbol)?)
+        relation_unit_symbol(self.ctx, symbol)
     }
 
     fn whitespace(&mut self) {

@@ -40,12 +40,12 @@ pub(super) fn multi_component_intersection_candidates(
         .chain(coaxial_cylinder_sphere_circle_candidates(first, second))
         .chain(coaxial_cone_cylinder_circle_candidates(first, second))
         .chain(coaxial_cones_section_candidates(ctx, first, second)?)
-        .chain(apex_plane_cone_generator_candidates(ctx, first, second)?.into_iter())
+        .chain(apex_plane_cone_generator_candidates(ctx, first, second)?)
         .chain(coaxial_cone_sphere_circle_candidates(first, second))
         .chain(coaxial_cone_torus_circle_candidates(ctx, first, second)?)
         .chain(coaxial_cylinder_torus_circle_candidates(first, second))
-        .chain(coaxial_sphere_torus_circle_candidates(ctx, first, second)?.into_iter())
-        .chain(coaxial_tori_circle_candidates(ctx, first, second)?.into_iter())
+        .chain(coaxial_sphere_torus_circle_candidates(ctx, first, second)?)
+        .chain(coaxial_tori_circle_candidates(ctx, first, second)?)
         .chain(axis_normal_plane_torus_circle_candidates(first, second))
         .chain(axis_containing_plane_torus_circle_candidates(first, second)))
 }
@@ -75,7 +75,7 @@ pub(in super::super) fn intersect_plane_with_carrier_components(
     let mut intersections = Vec::new();
     let components = carrier_intersection_components(ctx, first, second)?;
     for (geometry, _) in ctx.admit_iter(&components, "creo carrier intersection components")? {
-        let Some((center, axis, radius)) = circle_parameters(&geometry) else {
+        let Some((center, axis, radius)) = circle_parameters(geometry) else {
             continue;
         };
         let points = intersect_plane_with_circle(ctx, plane, center, axis, radius)?;

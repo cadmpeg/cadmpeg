@@ -350,7 +350,7 @@ fn positional_surface_parameter_lookup_rejects_repeated_identity() {
     };
     assert_eq!(
         unique_surface_parameter(
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(records.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(records.clone()),
             7
         ),
         Some(record)

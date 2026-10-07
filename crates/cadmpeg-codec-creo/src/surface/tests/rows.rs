@@ -530,7 +530,7 @@ fn finds_one_byte_and_two_byte_surface_rows() {
     );
     assert_eq!(
         unique_surface_row(
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(decoded.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(decoded.clone()),
             7
         )
         .map(|row| row.offset),
@@ -539,7 +539,7 @@ fn finds_one_byte_and_two_byte_surface_rows() {
     let mut duplicate = decoded.clone();
     duplicate.push(decoded[0].clone());
     assert!(unique_surface_row(
-        &crate::surface::unique_rows::UniqueIdRows::from_rows(duplicate.to_vec()),
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(duplicate.clone()),
         7
     )
     .is_none());
@@ -587,7 +587,7 @@ fn positional_spline_replay_uses_the_named_array_extents() {
     assert_eq!(spline_replay_shape(&prototype).unwrap().point_count, 4);
 
     let parameters = parameter_records(&payload);
-    let parameters_index = crate::surface::SurfaceParameters::from_rows(parameters.to_vec());
+    let parameters_index = crate::surface::SurfaceParameters::from_rows(parameters.clone());
     let later_parameter = unique_surface_parameter(&parameters_index, 8).unwrap();
     assert_eq!(later_parameter.boundary, SurfaceBodyBoundary::CompoundClose);
     assert!(later_parameter.body.len() > 1);
@@ -683,7 +683,7 @@ fn positional_spline_replay_rejects_unordered_parameters_at_grid_admission() {
     let later = decoded_rows.iter().find(|row| row.id == 8).unwrap();
     let prototype = positional_spline_replay_prototype(&payload, &decoded_rows, later).unwrap();
     let parameters = parameter_records(&payload);
-    let parameters_index = crate::surface::SurfaceParameters::from_rows(parameters.to_vec());
+    let parameters_index = crate::surface::SurfaceParameters::from_rows(parameters.clone());
     let later_parameter = unique_surface_parameter(&parameters_index, 8).unwrap();
     let cache = scalar::ScalarCache::from_section(&payload);
     let mut replay_body = later_parameter.body.clone();

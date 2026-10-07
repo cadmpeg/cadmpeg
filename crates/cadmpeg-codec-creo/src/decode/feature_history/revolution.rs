@@ -356,8 +356,9 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             transferred += 1;
         }
         if let Some(order) = definition.order_table.as_ref() {
-            // discarded-value: this visitor continues after each saved entity.
-            let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
+            let std::ops::ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
+                std::convert::Infallible,
+            >(ctx, definition, |entity| {
                 let Some((internal_id, section_geometry, offset)) =
                     saved_section_entity_geometry(entity)
                 else {
@@ -439,8 +440,9 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 Ok(std::ops::ControlFlow::Continue(()))
             })?;
         }
-        // discarded-value: this visitor continues after each saved entity.
-        let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
+        let std::ops::ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
+            std::convert::Infallible,
+        >(ctx, definition, |entity| {
             let crate::feature::definitions::FeatureSavedEntity::Spline(spline) = entity else {
                 return Ok(std::ops::ControlFlow::Continue(()));
             };

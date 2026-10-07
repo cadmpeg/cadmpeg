@@ -40,10 +40,7 @@ pub(in super::super) fn feature_dependencies(
         )
     })?;
     let mut dependencies = Vec::new();
-    for dependency in ctx
-        .admit_iter(&native, "creo external feature dependency IDs")?
-        .copied()
-    {
+    for dependency in ctx.admit_iter(&native, "creo external feature dependency IDs")? {
         let text = ctx.format_retained(
             format_args!("creo:model:feature#{dependency}"),
             "creo feature dependency IDs",
@@ -405,11 +402,11 @@ pub(in super::super) fn has_feature_affected_ids(
     feature_id: u32,
     kind: crate::feature::rows::AffectedIdKind,
 ) -> Result<bool, CodecError> {
-    Ok(ctx.any_by(
+    ctx.any_by(
         records,
         |record| Ok(record.feature_id == feature_id && record.kind == kind),
         "creo feature affected ID records",
-    )?)
+    )
 }
 
 fn agreed_feature_parent_ids(
@@ -629,13 +626,10 @@ pub(in super::super) fn reconcile_feature_links(
                 ),
             )
         })?;
-        for dependency in ctx
-            .admit_iter(
-                &native_dependency_ids,
-                "creo reconciled native dependency IDs",
-            )?
-            .copied()
-        {
+        for dependency in ctx.admit_iter(
+            &native_dependency_ids,
+            "creo reconciled native dependency IDs",
+        )? {
             let text = ctx.format_retained(
                 format_args!("creo:model:feature#{dependency}"),
                 "creo reconciled native dependency IDs",

@@ -393,10 +393,9 @@ fn surface_intersect_feature_definition(
         if surface_count > 0
             && surface_count == table.unique_surface_ids().len()
             && all_surfaces_owned
+            && eligible_table.replace(()).is_some()
         {
-            if eligible_table.replace(()).is_some() {
-                return Ok(None);
-            }
+            return Ok(None);
         }
     }
     if eligible_table.is_none() {

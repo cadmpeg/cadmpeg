@@ -1782,7 +1782,7 @@ fn model_geometry_sections<'a>(
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     let mut visible_namespace_present = false;
     for candidate in sections {
-        if !(candidate.section.name() == VISIBGEOM) {
+        if candidate.section.name() != VISIBGEOM {
             continue;
         }
         let payload = candidate.region;
@@ -1825,7 +1825,7 @@ fn nonvisible_geometry_sections<'a>(
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     let mut selected = Vec::new();
     for section in sections {
-        if !(section.section.name() == "NovisGeom") {
+        if section.section.name() != "NovisGeom" {
             continue;
         }
         ctx.reserve_vec(&mut selected, 1, "creo nonvisible geometry sections")?;
@@ -1846,7 +1846,7 @@ fn loop_array_sections<'a>(
         selected.push(section.copy_retained(ctx)?);
     }
     for section in sections {
-        if !(section.section.name() == "Xsections") {
+        if section.section.name() != "Xsections" {
             continue;
         }
         if ctx
@@ -2589,7 +2589,7 @@ fn feature_rows(
 ) -> Result<Vec<FeatureRow>, CodecError> {
     let mut rows = Vec::new();
     for section in sections {
-        if !(section.section.name() == "AllFeatur") {
+        if section.section.name() != "AllFeatur" {
             continue;
         }
         let section_bytes = section.region;
@@ -2997,7 +2997,7 @@ fn feature_reference_names(
 ) -> Result<Vec<FeatureReferenceName>, CodecError> {
     let mut records = Vec::new();
     for section in sections {
-        if !(section.section.name() == "MdlRefInfo") {
+        if section.section.name() != "MdlRefInfo" {
             continue;
         }
         let section_bytes = section.region;
@@ -3036,7 +3036,7 @@ fn depdb_recipe_rows(
 ) -> Result<Vec<FeatureRow>, CodecError> {
     let mut rows = Vec::new();
     for section in sections {
-        if !(section.section.name() == "DEPDB_DATA") {
+        if section.section.name() != "DEPDB_DATA" {
             continue;
         }
         let payload = section.region;
@@ -3153,7 +3153,7 @@ fn reference_scan(
     let mut circles = Vec::new();
     let mut conics = Vec::new();
     for section in sections {
-        if !(section.section.name() == "MdlRefInfo") {
+        if section.section.name() != "MdlRefInfo" {
             continue;
         }
         let payload = section.region;

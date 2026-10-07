@@ -88,14 +88,15 @@ pub(in crate::decode) fn saved_section_coordinate_witnesses(
         else {
             continue;
         };
-        for point in ctx.admit_iter(&points, "creo saved segment coordinate slots")? {
-            if let Some(point) = point {
-                ctx.push_vec(
-                    &mut witnesses,
-                    *point,
-                    "creo saved section coordinate witnesses",
-                )?;
-            }
+        for point in ctx
+            .admit_iter(&points, "creo saved segment coordinate slots")?
+            .flatten()
+        {
+            ctx.push_vec(
+                &mut witnesses,
+                *point,
+                "creo saved section coordinate witnesses",
+            )?;
         }
     }
     for segment in ctx
@@ -429,202 +430,204 @@ pub(in crate::decode) fn resolved_section_coordinates(
         Vec::new()
     };
     let mut coincident_points = Vec::new();
-    // discarded-value: The visitor runs through every active SKAMP row.
-    let _ = visit_section_skamps::<()>(ctx, definition, true, |skamp| {
-        let [first, second] = skamp.items.as_slice() else {
-            return Ok(ControlFlow::Continue(()));
-        };
-        let pair = match skamp.kind {
-            0 => {
-                let Some(first) = section_skamp_incidence_point(ctx, definition, first)? else {
-                    return Ok(ControlFlow::Continue(()));
-                };
-                let Some(second) = section_skamp_incidence_point(ctx, definition, second)? else {
-                    return Ok(ControlFlow::Continue(()));
-                };
-                Some([Some(first), Some(second)])
-            }
-            3 => {
-                let first_point = section_skamp_point_entity_id(definition, first);
-                let second_point = section_skamp_point_entity_id(definition, second);
-                match (first_point, second_point) {
-                    (Some(first), Some(second)) => Some([
-                        Some(SectionPointSource::Point(first)),
-                        Some(SectionPointSource::Point(second)),
-                    ]),
-                    (Some(point), None) => Some([
-                        Some(SectionPointSource::Point(point)),
-                        section_skamp_incidence_point(ctx, definition, second)?,
-                    ]),
-                    (None, Some(point)) => Some([
-                        section_skamp_incidence_point(ctx, definition, first)?,
-                        Some(SectionPointSource::Point(point)),
-                    ]),
-                    _ => None,
+    let ControlFlow::Continue(()) =
+        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
+            let [first, second] = skamp.items.as_slice() else {
+                return Ok(ControlFlow::Continue(()));
+            };
+            let pair = match skamp.kind {
+                0 => {
+                    let Some(first) = section_skamp_incidence_point(ctx, definition, first)? else {
+                        return Ok(ControlFlow::Continue(()));
+                    };
+                    let Some(second) = section_skamp_incidence_point(ctx, definition, second)?
+                    else {
+                        return Ok(ControlFlow::Continue(()));
+                    };
+                    Some([Some(first), Some(second)])
                 }
+                3 => {
+                    let first_point = section_skamp_point_entity_id(definition, first);
+                    let second_point = section_skamp_point_entity_id(definition, second);
+                    match (first_point, second_point) {
+                        (Some(first), Some(second)) => Some([
+                            Some(SectionPointSource::Point(first)),
+                            Some(SectionPointSource::Point(second)),
+                        ]),
+                        (Some(point), None) => Some([
+                            Some(SectionPointSource::Point(point)),
+                            section_skamp_incidence_point(ctx, definition, second)?,
+                        ]),
+                        (None, Some(point)) => Some([
+                            section_skamp_incidence_point(ctx, definition, first)?,
+                            Some(SectionPointSource::Point(point)),
+                        ]),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            let Some([Some(first), Some(second)]) = pair else {
+                return Ok(ControlFlow::Continue(()));
+            };
+            let pair = [first, second];
+            if pair
+                .iter()
+                .any(|point| matches!(point, SectionPointSource::Point(_)))
+                && pair.iter().all(|point| match point {
+                    SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
+                    SectionPointSource::Value(_) => true,
+                })
+            {
+                ctx.push_vec(
+                    &mut coincident_points,
+                    pair,
+                    "creo section coincident point pairs",
+                )?;
             }
-            _ => None,
-        };
-        let Some([Some(first), Some(second)]) = pair else {
-            return Ok(ControlFlow::Continue(()));
-        };
-        let pair = [first, second];
-        if pair
-            .iter()
-            .any(|point| matches!(point, SectionPointSource::Point(_)))
-            && pair.iter().all(|point| match point {
+            Ok(ControlFlow::Continue(()))
+        })?;
+    let mut same_coordinate_points = Vec::new();
+    let ControlFlow::Continue(()) =
+        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
+            let Some((pair, coordinate)) =
+                section_skamp_same_coordinate_sources(ctx, definition, skamp)?
+            else {
+                return Ok(ControlFlow::Continue(()));
+            };
+            let has_point = pair
+                .iter()
+                .any(|point| matches!(point, SectionPointSource::Point(_)));
+            if !has_point {
+                return Ok(ControlFlow::Continue(()));
+            }
+            let unambiguous = pair.iter().all(|point| match point {
                 SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
                 SectionPointSource::Value(_) => true,
-            })
-        {
-            ctx.push_vec(
-                &mut coincident_points,
-                pair,
-                "creo section coincident point pairs",
-            )?;
-        }
-        Ok(ControlFlow::Continue(()))
-    })?;
-    let mut same_coordinate_points = Vec::new();
-    // discarded-value: The visitor runs through every active SKAMP row.
-    let _ = visit_section_skamps::<()>(ctx, definition, true, |skamp| {
-        let Some((pair, coordinate)) =
-            section_skamp_same_coordinate_sources(ctx, definition, skamp)?
-        else {
-            return Ok(ControlFlow::Continue(()));
-        };
-        let has_point = pair
-            .iter()
-            .any(|point| matches!(point, SectionPointSource::Point(_)));
-        if !has_point {
-            return Ok(ControlFlow::Continue(()));
-        }
-        let unambiguous = pair.iter().all(|point| match point {
-            SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
-            SectionPointSource::Value(_) => true,
-        });
-        if unambiguous {
-            ctx.push_vec(
-                &mut same_coordinate_points,
-                (pair, coordinate),
-                "creo section same-coordinate pairs",
-            )?;
-        }
-        Ok(ControlFlow::Continue(()))
-    })?;
+            });
+            if unambiguous {
+                ctx.push_vec(
+                    &mut same_coordinate_points,
+                    (pair, coordinate),
+                    "creo section same-coordinate pairs",
+                )?;
+            }
+            Ok(ControlFlow::Continue(()))
+        })?;
     let mut point_on_line_coordinates = Vec::new();
     let mut saved_point_on_line_coordinates = Vec::new();
-    // discarded-value: The visitor runs through every active SKAMP row.
-    let _ = visit_section_skamps::<()>(ctx, definition, true, |skamp| {
-        if let Some((first, second, coordinate)) =
-            section_skamp_point_on_line(ctx, definition, skamp)?
-        {
-            if !ambiguous_point_ids.contains(&first) && !ambiguous_point_ids.contains(&second) {
-                ctx.push_vec(
-                    &mut point_on_line_coordinates,
-                    (first, second, coordinate),
-                    "creo section point-on-line coordinates",
-                )?;
+    let ControlFlow::Continue(()) =
+        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
+            if let Some((first, second, coordinate)) =
+                section_skamp_point_on_line(ctx, definition, skamp)?
+            {
+                if !ambiguous_point_ids.contains(&first) && !ambiguous_point_ids.contains(&second) {
+                    ctx.push_vec(
+                        &mut point_on_line_coordinates,
+                        (first, second, coordinate),
+                        "creo section point-on-line coordinates",
+                    )?;
+                }
             }
-        }
-        if let Some((point_id, coordinate, value)) =
-            section_skamp_saved_point_on_line(ctx, definition, skamp)?
-        {
-            if !ambiguous_point_ids.contains(&point_id) {
-                ctx.push_vec(
-                    &mut saved_point_on_line_coordinates,
-                    (point_id, coordinate, value),
-                    "creo section saved point-on-line coordinates",
-                )?;
+            if let Some((point_id, coordinate, value)) =
+                section_skamp_saved_point_on_line(ctx, definition, skamp)?
+            {
+                if !ambiguous_point_ids.contains(&point_id) {
+                    ctx.push_vec(
+                        &mut saved_point_on_line_coordinates,
+                        (point_id, coordinate, value),
+                        "creo section saved point-on-line coordinates",
+                    )?;
+                }
             }
-        }
-        Ok(ControlFlow::Continue(()))
-    })?;
+            Ok(ControlFlow::Continue(()))
+        })?;
     let mut line_midpoint_constraints = Vec::new();
-    // discarded-value: The visitor runs through every active SKAMP row.
-    let _ = visit_section_skamps::<()>(ctx, definition, true, |skamp| {
-        let Some((point_sources, point)) =
-            section_skamp_line_midpoint_sources(ctx, definition, skamp)?
-        else {
-            return Ok(ControlFlow::Continue(()));
-        };
-        let sources_unambiguous = point_sources.iter().all(|source| match source {
-            SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
-            SectionPointSource::Value(_) => true,
-        });
-        if !sources_unambiguous {
-            return Ok(ControlFlow::Continue(()));
-        }
-        let point_unambiguous = match point {
-            SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
-            SectionPointSource::Value(_) => true,
-        };
-        if point_unambiguous {
-            ctx.push_vec(
-                &mut line_midpoint_constraints,
-                (point_sources, point),
-                "creo section line midpoint constraints",
-            )?;
-        }
-        Ok(ControlFlow::Continue(()))
-    })?;
+    let ControlFlow::Continue(()) =
+        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
+            let Some((point_sources, point)) =
+                section_skamp_line_midpoint_sources(ctx, definition, skamp)?
+            else {
+                return Ok(ControlFlow::Continue(()));
+            };
+            let sources_unambiguous = point_sources.iter().all(|source| match source {
+                SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
+                SectionPointSource::Value(_) => true,
+            });
+            if !sources_unambiguous {
+                return Ok(ControlFlow::Continue(()));
+            }
+            let point_unambiguous = match point {
+                SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
+                SectionPointSource::Value(_) => true,
+            };
+            if point_unambiguous {
+                ctx.push_vec(
+                    &mut line_midpoint_constraints,
+                    (point_sources, point),
+                    "creo section line midpoint constraints",
+                )?;
+            }
+            Ok(ControlFlow::Continue(()))
+        })?;
     let mut symmetric_point_constraints = Vec::new();
-    // discarded-value: The visitor runs through every active SKAMP row.
-    let _ = visit_section_skamps::<()>(ctx, definition, true, |skamp| {
-        let Some((axis, first, second, coordinate)) =
-            section_skamp_axis_symmetry(ctx, definition, skamp)?
-        else {
-            return Ok(ControlFlow::Continue(()));
-        };
-        let has_point = [first, second]
-            .into_iter()
-            .any(|point| matches!(point, SectionPointSource::Point(_)));
-        if !has_point {
-            return Ok(ControlFlow::Continue(()));
-        }
-        let points_unambiguous = [first, second].into_iter().all(|point| match point {
-            SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
-            SectionPointSource::Value(_) => true,
-        });
-        if !points_unambiguous {
-            return Ok(ControlFlow::Continue(()));
-        }
-        let axis_unambiguous = match axis {
-            SectionSymmetryAxis::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
-            SectionSymmetryAxis::Value(_) => true,
-        };
-        if axis_unambiguous {
-            ctx.push_vec(
-                &mut symmetric_point_constraints,
-                (axis, first, second, coordinate),
-                "creo section axis symmetry constraints",
-            )?;
-        }
-        Ok(ControlFlow::Continue(()))
-    })?;
+    let ControlFlow::Continue(()) =
+        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
+            let Some((axis, first, second, coordinate)) =
+                section_skamp_axis_symmetry(ctx, definition, skamp)?
+            else {
+                return Ok(ControlFlow::Continue(()));
+            };
+            let has_point = [first, second]
+                .into_iter()
+                .any(|point| matches!(point, SectionPointSource::Point(_)));
+            if !has_point {
+                return Ok(ControlFlow::Continue(()));
+            }
+            let points_unambiguous = [first, second].into_iter().all(|point| match point {
+                SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
+                SectionPointSource::Value(_) => true,
+            });
+            if !points_unambiguous {
+                return Ok(ControlFlow::Continue(()));
+            }
+            let axis_unambiguous = match axis {
+                SectionSymmetryAxis::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
+                SectionSymmetryAxis::Value(_) => true,
+            };
+            if axis_unambiguous {
+                ctx.push_vec(
+                    &mut symmetric_point_constraints,
+                    (axis, first, second, coordinate),
+                    "creo section axis symmetry constraints",
+                )?;
+            }
+            Ok(ControlFlow::Continue(()))
+        })?;
     let mut point_symmetric_constraints = Vec::new();
-    // discarded-value: The visitor runs through every active SKAMP row.
-    let _ = visit_section_skamps::<()>(ctx, definition, true, |skamp| {
-        let Some((center, first, second)) = section_skamp_point_symmetry(ctx, definition, skamp)?
-        else {
-            return Ok(ControlFlow::Continue(()));
-        };
-        if ambiguous_point_ids.contains(&center) {
-            return Ok(ControlFlow::Continue(()));
-        }
-        let points_unambiguous = [first, second].into_iter().all(|point| match point {
-            SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
-            SectionPointSource::Value(_) => true,
-        });
-        if points_unambiguous {
-            ctx.push_vec(
-                &mut point_symmetric_constraints,
-                (center, first, second),
-                "creo section point symmetry constraints",
-            )?;
-        }
-        Ok(ControlFlow::Continue(()))
-    })?;
+    let ControlFlow::Continue(()) =
+        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
+            let Some((center, first, second)) =
+                section_skamp_point_symmetry(ctx, definition, skamp)?
+            else {
+                return Ok(ControlFlow::Continue(()));
+            };
+            if ambiguous_point_ids.contains(&center) {
+                return Ok(ControlFlow::Continue(()));
+            }
+            let points_unambiguous = [first, second].into_iter().all(|point| match point {
+                SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
+                SectionPointSource::Value(_) => true,
+            });
+            if points_unambiguous {
+                ctx.push_vec(
+                    &mut point_symmetric_constraints,
+                    (center, first, second),
+                    "creo section point symmetry constraints",
+                )?;
+            }
+            Ok(ControlFlow::Continue(()))
+        })?;
     let auxiliary_constraints =
         section_equation_auxiliary_constraints(ctx, definition, &ambiguous_point_ids)?;
     let mut auxiliary_scalar_values = section_equation_scalar_seed_values(ctx, definition)?;
@@ -1061,21 +1064,21 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &mut auxiliary_scalar_values,
     )?;
     let mut arc_midpoint_constraints = Vec::new();
-    // discarded-value: The visitor runs through every active SKAMP row.
-    let _ = visit_section_skamps::<()>(ctx, definition, true, |skamp| {
-        if let Some((SectionPointSource::Point(point_id), midpoint)) =
-            section_skamp_arc_midpoint_source(ctx, definition, skamp, &solved_coordinates)?
-        {
-            if !ambiguous_point_ids.contains(&point_id) {
-                ctx.push_vec(
-                    &mut arc_midpoint_constraints,
-                    (point_id, midpoint),
-                    "creo section arc midpoint constraints",
-                )?;
+    let ControlFlow::Continue(()) =
+        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
+            if let Some((SectionPointSource::Point(point_id), midpoint)) =
+                section_skamp_arc_midpoint_source(ctx, definition, skamp, &solved_coordinates)?
+            {
+                if !ambiguous_point_ids.contains(&point_id) {
+                    ctx.push_vec(
+                        &mut arc_midpoint_constraints,
+                        (point_id, midpoint),
+                        "creo section arc midpoint constraints",
+                    )?;
+                }
             }
-        }
-        Ok(ControlFlow::Continue(()))
-    })?;
+            Ok(ControlFlow::Continue(()))
+        })?;
     for &(point_id, midpoint) in
         ctx.admit_iter(&arc_midpoint_constraints, "creo arc midpoint constraints")?
     {
@@ -1184,7 +1187,7 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
     if duplicate_segment {
         return Ok(None);
     }
-    Ok((|| -> Result<Option<SectionAxis>, CodecError> {
+    (|| -> Result<Option<SectionAxis>, CodecError> {
         let Some(table) = definition.segments.as_ref() else {
             return Ok(None);
         };
@@ -1297,7 +1300,7 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
             return Ok(Some(SectionAxis::U));
         }
         Ok(None)
-    })()?)
+    })()
 }
 
 pub(in crate::decode) fn resolved_section_points(

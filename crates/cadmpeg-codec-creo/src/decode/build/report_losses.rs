@@ -1020,9 +1020,7 @@ pub(super) fn push_structural_layer_notes(
             if record.backup {
                 return Ok::<_, CodecError>(total);
             }
-            let unresolved = if !record.prohibited_constructs.is_empty() {
-                true
-            } else {
+            let unresolved = if record.prohibited_constructs.is_empty() {
                 let mut unresolved_solve = false;
                 for block in ctx.admit_iter(
                     &record.solve_blocks,
@@ -1038,6 +1036,8 @@ pub(super) fn push_structural_layer_notes(
                     }
                 }
                 unresolved_solve || record.unresolved_solve_control
+            } else {
+                true
             };
             total.checked_add(usize::from(unresolved)).ok_or_else(|| {
                 cadmpeg_core::decode::refuse_local_limit(
