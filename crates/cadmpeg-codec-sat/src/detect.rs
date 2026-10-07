@@ -45,7 +45,7 @@ pub(crate) fn classify(
 /// Whether the prefix opens like a text stream: a first line of four ASCII
 /// integer fields (the four header words) followed by a counted-string line.
 fn looks_like_text_stream(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<bool, CodecError> {
-    if !sat::has_text_magic(prefix) {
+    if !sat::has_text_magic(ctx, prefix)? {
         return Ok(false);
     }
     let Some(line_end) = ctx
