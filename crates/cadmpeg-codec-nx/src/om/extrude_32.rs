@@ -375,7 +375,7 @@ mod tests {
                     super::OperationBodyInput::new(&malformed, 100, 0, "EXTRUDE").unwrap()
                 )
                 .unwrap()
-                .is_none())
+                .is_none());
             },
         );
         crate::test_support::resource_refusal_at(

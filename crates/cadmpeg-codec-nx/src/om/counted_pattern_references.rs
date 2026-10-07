@@ -39,10 +39,11 @@ impl<B> CountedPatternReferences<B> {
     where
         B: 'a,
     {
-        let end = admit(entries)?
-            .fold(Some(offset), |end, (token, _)| {
-                end.and_then(|end| end.checked_add(u64_from_index(token.raw().len())))
-            })
+        let mut end = Some(offset);
+        for (token, _) in admit(entries)? {
+            end = end.and_then(|at| at.checked_add(u64_from_index(token.raw().len())));
+        }
+        let end = end
             .and_then(|end| end.checked_add(2))
             .and_then(|end| end.checked_add(u64_from_index(TRAILER.len())));
         Ok(end

@@ -158,10 +158,11 @@ impl<B> ThruCurveGroup<B> {
     where
         B: 'a,
     {
-        let end = admit(branches)?
-            .fold(Some(offset), |end, branch| {
-                end.and_then(|end| end.checked_add(branch.byte_len()))
-            })
+        let mut end = Some(offset);
+        for branch in admit(branches)? {
+            end = end.and_then(|at| at.checked_add(branch.byte_len()));
+        }
+        let end = end
             .and_then(|end| end.checked_add(1))
             .and_then(|end| end.checked_add(u64_from_index(terminator.bytes().len())));
         Ok(end
@@ -497,7 +498,7 @@ mod tests {
                     super::OperationPayload::new(&payload, 100, "THRU_CURVE").unwrap()
                 )
                 .unwrap()
-                .is_none())
+                .is_none());
             },
         );
     }
