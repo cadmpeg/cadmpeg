@@ -1,7 +1,7 @@
 //! Sketch marker record decoding and profile point coordinates.
 
 use super::bindings::spatial_relation_manager_ranges_charged;
-use super::curves::slot_curve_and_center_indices;
+use super::curves::{slot_curve_and_center_indices, SlotReferences};
 use super::endpoints::{
     compact_curve_endpoint_indices, compact_indexed_curve_endpoint_indices,
     compact_legacy_90_geometry_line_roster_indices, current_compact_104_profile_line,
@@ -1083,6 +1083,7 @@ pub(super) fn admit_sketch_input_entities(
     let Some(marker_starts) = payload.get(..last_start) else {
         return Ok(Vec::new());
     };
+    let slots = SlotReferences::new(ctx, payload)?;
     ctx.admit_iter(marker_starts, "scan SLDPRT sketch marker offsets")?
         .enumerate()
         .filter(|(offset, _)| sketch_marker_at(payload, *offset))
@@ -1142,7 +1143,7 @@ pub(super) fn admit_sketch_input_entities(
             if coordinates_m.is_none() {
                 coordinates_m = marker_coordinates(payload, offset);
             }
-            let kind = if slot_curve_and_center_indices(payload, offset).is_some() {
+            let kind = if slot_curve_and_center_indices(ctx, &slots, offset)?.is_some() {
                 SketchInputKind::from_handle_code(code)
             } else if inline_arc.is_some() {
                 SketchInputKind::Arc

@@ -1731,6 +1731,7 @@ pub(crate) fn project_marker_backed_sketches(
     let mut replaced_storage = ctx.reserve_scoped(0, "remove prior SLDPRT marker sketches")?;
     let mut replaced = HashSet::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT profiles records")? {
+        let slots = super::curves::SlotReferences::new(ctx, &lane.native_payload)?;
         let object_names = ObjectNames::new(ctx, lane)?;
         let mut plane_frames_storage = ctx.reserve_scoped(0, "resolve SLDPRT feature frames")?;
         let plane_frames = plane_frames_storage
@@ -3112,7 +3113,7 @@ pub(crate) fn project_marker_backed_sketches(
             )?;
             resolve_slot_marker_arcs(
                 ctx,
-                &lane.native_payload,
+                &slots,
                 &object_markers,
                 &mut projected,
                 QUANTUM,

@@ -536,46 +536,58 @@ pub(super) fn tangent_bounded_curve(
     .ok()
 }
 
-pub(super) fn slot_curve_and_center_indices(
-    payload: &[u8],
-    offset: usize,
-) -> Option<([usize; 4], [usize; 2])> {
-    const SLOT_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x08\x00sgSlot_c\0\0\0\0\x01\0\0\0";
-    let layout = slot_curve_reference_cells(payload, offset)?;
-    let declared = if payload.get(offset.checked_sub(SLOT_DECLARATION.len())?..offset)
-        == Some(SLOT_DECLARATION)
-    {
-        true
-    } else if let Some(stride) = layout.continuation_stride {
-        let mut cursor = offset;
-        loop {
-            cursor = cursor.checked_sub(stride)?;
-            if payload.get(cursor.checked_sub(SLOT_DECLARATION.len())?..cursor)
-                == Some(SLOT_DECLARATION)
-            {
-                break true;
+/// Declared slot records and their fixed-stride continuations, resolved in offset order.
+pub(super) struct SlotReferences<'ctx> {
+    records: HashMap<usize, SlotReferenceLayout>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx> SlotReferences<'ctx> {
+    pub(super) fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        payload: &[u8],
+    ) -> Result<Self, CodecError> {
+        const OPERATION: &str = "index SLDPRT slot predecessors";
+        const SLOT_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x08\x00sgSlot_c\0\0\0\0\x01\0\0\0";
+        let declared_at = |offset: usize| {
+            offset.checked_sub(SLOT_DECLARATION.len())
+                .and_then(|start| payload.get(start..offset)) == Some(SLOT_DECLARATION)
+        };
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut records: HashMap<usize, SlotReferenceLayout> = HashMap::new();
+        for (offset, _) in ctx.admit_iter(payload, OPERATION)?.enumerate() {
+            if !sketch_marker_prefix_at(payload, offset) {
+                continue;
             }
-            if slot_curve_reference_cells(payload, cursor)
-                .is_none_or(|candidate| candidate.continuation_stride != Some(stride))
-            {
-                break false;
+            let Some(layout) = slot_curve_reference_cells(payload, offset) else {
+                continue;
+            };
+            let mut declared = declared_at(offset);
+            if !declared {
+                if let Some(previous) = layout.continuation_stride.and_then(|stride| offset.checked_sub(stride)) {
+                    declared = declared_at(previous)
+                        || ctx.get_hash_map(&records, &previous, OPERATION)?
+                            .is_some_and(|candidate| candidate.continuation_stride == layout.continuation_stride);
+                }
+            }
+            if declared {
+                storage.with_storage(|| ctx.insert_hash_map(&mut records, offset, layout, OPERATION))?;
             }
         }
-    } else {
-        false
-    };
-    if !declared {
-        return None;
+        Ok(Self { records, _storage: storage })
     }
-    Some((
-        [
-            layout.indices[0],
-            layout.indices[1],
-            layout.indices[2],
-            layout.indices[3],
-        ],
-        [layout.indices[4], layout.indices[5]],
-    ))
+}
+
+pub(super) fn slot_curve_and_center_indices(
+    ctx: &DecodeContext<'_>,
+    slots: &SlotReferences<'_>,
+    offset: usize,
+) -> Result<Option<([usize; 4], [usize; 2])>, CodecError> {
+    Ok(ctx.get_hash_map(&slots.records, &offset, "resolve SLDPRT indexed slot")?
+        .map(|layout| (
+            [layout.indices[0], layout.indices[1], layout.indices[2], layout.indices[3]],
+            [layout.indices[4], layout.indices[5]],
+        )))
 }
 
 struct SlotReferenceLayout {
@@ -593,32 +605,28 @@ fn slot_curve_reference_cells(payload: &[u8], offset: usize) -> Option<SlotRefer
         return None;
     }
     let layouts = match payload.get(offset..offset + SKETCH_MARKER.len()) {
-        Some(prefix) if prefix == SKETCH_MARKER => vec![(72, 12, None)],
+        Some(prefix) if prefix == SKETCH_MARKER => &[(72, 12, None)][..],
         Some(prefix) if prefix == LEGACY_SKETCH_MARKER => {
-            vec![(64, 8, Some(126))]
+            &[(64, 8, Some(126))][..]
         }
         Some(prefix) if prefix == LEGACY_EXTENDED_SKETCH_MARKER => {
-            vec![(64, 8, Some(126)), (64, 12, None)]
+            &[(64, 8, Some(126)), (64, 12, None)][..]
         }
         _ => return None,
     };
     layouts
-        .into_iter()
+        .iter().copied()
         .find_map(|(cells_offset, cell_size, continuation_stride)| {
-            let cells: [(u16, usize); 6] = (0..6)
-                .map(|index| {
-                    let start = offset.checked_add(cells_offset + index * cell_size)?;
-                    let cell = payload.get(start..start + cell_size)?;
-                    (cell[4..8] == [0xff; 4]
-                        && (cell_size == 8 || cell.get(8..12) == Some(&[0; 4])))
-                    .then_some((
-                        View::u16_le_at(cell, 0)?,
-                        usize::from(View::u16_le_at(cell, 2)?),
-                    ))
-                })
-                .collect::<Option<Vec<_>>>()?
-                .try_into()
-                .ok()?;
+            let mut cells = [(0, 0); 6];
+            for (index, cell) in cells.iter_mut().enumerate() {
+                let start = offset.checked_add(cells_offset + index * cell_size)?;
+                let bytes = payload.get(start..start + cell_size)?;
+                if bytes[4..8] != [0xff; 4]
+                    || (cell_size != 8 && bytes.get(8..12) != Some(&[0; 4])) {
+                    return None;
+                }
+                *cell = (View::u16_le_at(bytes, 0)?, usize::from(View::u16_le_at(bytes, 2)?));
+            }
             let component_tag = cells[0].0;
             (component_tag != 0
                 && cells[1].0 != 0
@@ -638,7 +646,7 @@ fn slot_curve_reference_cells(payload: &[u8], offset: usize) -> Option<SlotRefer
 
 pub(super) fn resolve_slot_marker_arcs(
     ctx: &DecodeContext<'_>,
-    payload: &[u8],
+    slots: &SlotReferences<'_>,
     markers: &[&SketchInputEntity],
     entities: &mut [SketchEntity],
     tolerance: f64,
@@ -646,9 +654,10 @@ pub(super) fn resolve_slot_marker_arcs(
     let Some((curve_indices, center_indices)) = ctx.find_map(
         markers,
         |marker| {
-            Ok(usize::try_from(marker.offset())
-                .ok()
-                .and_then(|offset| slot_curve_and_center_indices(payload, offset)))
+            match usize::try_from(marker.offset()).ok() {
+                Some(offset) => slot_curve_and_center_indices(ctx, slots, offset),
+                None => Ok(None),
+            }
         },
         "find SLDPRT slot record",
     )?

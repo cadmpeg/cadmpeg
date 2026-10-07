@@ -1736,12 +1736,14 @@ fn packed_slot_descriptor_run_is_not_independent_geometry() {
     }
     payload.copy_within(slot_offset..slot_offset + 126, slot_offset + 126);
 
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let slots = super::SlotReferences::new(&ctx, &payload).unwrap();
     assert_eq!(
-        super::slot_curve_and_center_indices(&payload, slot_offset),
+        super::slot_curve_and_center_indices(&ctx, &slots, slot_offset).unwrap(),
         Some(([0, 3, 1, 2], [0, 1]))
     );
     assert_eq!(
-        super::slot_curve_and_center_indices(&payload, slot_offset + 126),
+        super::slot_curve_and_center_indices(&ctx, &slots, slot_offset + 126).unwrap(),
         Some(([0, 3, 1, 2], [0, 1]))
     );
 
