@@ -610,14 +610,14 @@ impl RecordFamily {
             Some(value) => Some(FixedPosition::new(kind, value)?),
             None => None,
         };
-        Self::from_fixed_admitted(kind, node_id, position, references)
+        Self::from_fixed_admitted(kind, node_id, position, &references)
     }
 
     pub(super) fn from_fixed_admitted(
         kind: u16,
         node_id: Option<u32>,
         position: Option<FixedPosition>,
-        references: Vec<u32>,
+        references: &[u32],
     ) -> Option<Self> {
         Some(match kind {
             13 => Self::Shell {
