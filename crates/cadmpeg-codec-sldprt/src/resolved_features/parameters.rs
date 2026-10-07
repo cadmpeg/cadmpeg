@@ -458,9 +458,7 @@ fn scalar_unit_from_feature_parameter(
         if let Some(mode) =
             ctx.get_btree_map(&feature.properties, "Mode", "lookup SLDPRT move-face mode")?
         {
-            if ctx.eq_ignore_ascii_case(mode, "Offset", "compare SLDPRT move-face mode")?
-                || ctx.eq_ignore_ascii_case(mode, "Translate", "compare SLDPRT move-face mode")?
-            {
+            if mode.eq_ignore_ascii_case("Offset") || mode.eq_ignore_ascii_case("Translate") {
                 return Ok(Some(ScalarUnit::Length));
             }
         }

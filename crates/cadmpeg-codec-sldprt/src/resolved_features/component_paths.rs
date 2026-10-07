@@ -329,9 +329,14 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     let mut neutral_indices = HashMap::new();
     for (index, feature) in ctx.admit_iter(&*features, INDEX)?.enumerate() {
         if let Some(native) = feature.native_ref.as_deref() {
-            let native = storage.with_storage(|| ctx.copy_retained_text(native, INDEX))?;
-            storage
-                .with_storage(|| ctx.insert_hash_map(&mut neutral_indices, native, index, INDEX))?;
+            if let Some(indexed) = ctx.get_mut_hash_map(&mut neutral_indices, native, INDEX)? {
+                *indexed = index;
+            } else {
+                let native = storage.with_storage(|| ctx.copy_retained_text(native, INDEX))?;
+                storage.with_storage(|| {
+                    ctx.insert_hash_map(&mut neutral_indices, native, index, INDEX)
+                })?;
+            }
         }
     }
     let mut profiles = BTreeMap::<&str, Vec<ProfileVote<'_>>>::new();
