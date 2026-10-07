@@ -210,6 +210,7 @@ fn uuid_list(
         .collection_vec(count, "Rhino history UUID list")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino history cursor traversal")?;
         values.push(uuid(&mut reader)?);
     }
     reader.skip_remaining()?;
@@ -227,6 +228,7 @@ fn array<'a, T>(
         .collection_vec(count, "Rhino history value array")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino history cursor traversal")?;
         values.push(read(reader)?);
     }
     Ok(values)
@@ -316,6 +318,7 @@ fn object_reference(
         .collection_vec(path_count, "Rhino history instance path")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..path_count {
+        ctx.charge_work(1, "Rhino history cursor traversal")?;
         let (value, value_next) =
             instance_reference(ctx, bytes, reader.position(), reader.end(), archive)?;
         reader.skip(value_next - reader.position())?;
@@ -354,6 +357,7 @@ fn object_references(
         .collection_vec(count, "Rhino history object references")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino history cursor traversal")?;
         let (value, next) = object_reference(
             ctx,
             reader.backing_bytes(),
@@ -383,6 +387,7 @@ fn geometries(
         .collection_vec(count, "Rhino history embedded geometries")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino history cursor traversal")?;
         let start = nested.position();
         let wrapper = chunk_at(nested.backing_bytes(), start, nested.end(), archive, false)?;
         let mut warnings = Diagnostics::new();
@@ -457,6 +462,7 @@ fn poly_edge(
         .collection_vec(segment_count, "Rhino history polyedge segments")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..segment_count {
+        ctx.charge_work(1, "Rhino history cursor traversal")?;
         let (segment, segment_next) =
             curve_proxy(ctx, bytes, reader.position(), reader.end(), archive)?;
         reader.skip(segment_next - reader.position())?;
@@ -493,6 +499,7 @@ fn poly_edges(
         .collection_vec(count, "Rhino history polyedges")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino history cursor traversal")?;
         let (value, value_next) = poly_edge(
             ctx,
             nested.backing_bytes(),
@@ -589,6 +596,7 @@ fn subd_edge_chains(
         .collection_vec(count, "Rhino history SubD edge chains")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino history cursor traversal")?;
         let (value, value_next) = subd_edge_chain(
             ctx,
             nested.backing_bytes(),
@@ -700,6 +708,7 @@ fn parse_record(
         .collection_vec(value_count, "Rhino history record values")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..value_count {
+        ctx.charge_work(1, "Rhino history cursor traversal")?;
         let (value, value_next) = parse_value_with_warnings(
             ctx,
             bytes,
