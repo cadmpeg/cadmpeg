@@ -162,8 +162,7 @@ impl DraftIdentityFrame {
         else {
             return Ok(None);
         };
-        let mut identity = ctx.retained_string(len, "NX draft identity text")?;
-        ctx.append_retained(&mut identity, text, "NX admitted text append")?;
+        let identity = ctx.copy_retained_text(text, "NX draft identity text")?;
         Ok(Some(Self {
             prefix,
             identity,
@@ -249,18 +248,12 @@ mod tests {
     fn draft_identity_text_refuses_retained_limit() {
         let bytes = b"A\xf0\x27\xff\x02\x01abc123?";
 
-        crate::test_support::with_decode_context_over(
-            bytes,
-            |policy| {
-                policy.limits.max_retained_bytes = 0;
-            },
-            |ctx| {
-                let error = DraftIdentityFrame::read(ctx, bytes, 0).unwrap_err();
+        let error = crate::test_support::resource_refusal_at(bytes,
+cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+"NX draft identity text", |ctx| DraftIdentityFrame::read(ctx, bytes, 0));
                 assert!(
                     matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
                 );
-            },
-        );
     }
 
     #[test]

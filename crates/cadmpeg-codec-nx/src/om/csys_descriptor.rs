@@ -18,12 +18,7 @@ impl Serialize for CsysIdentity {
 impl TryFrom<String> for CsysIdentity {
     type Error = &'static str;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        match Self::validate(&value, |value| {
-            Ok::<_, std::convert::Infallible>(value.chars())
-        }) {
-            Ok(valid) => valid?,
-            Err(error) => match error {},
-        }
+        Self::validate(&value)?;
         Ok(Self(value))
     }
 }
@@ -42,18 +37,13 @@ impl From<CsysIdentity> for String {
 }
 
 impl CsysIdentity {
-    fn validate<'a, E, I: Iterator<Item = char>>(
-        value: &'a str,
-        admit: impl FnOnce(&'a str) -> Result<I, E>,
-    ) -> Result<Result<(), &'static str>, E> {
+    fn validate(value: &str) -> Result<(), &'static str> {
         if !(30..=32).contains(&value.len())
-            || !admit(value)?.all(|ch| ch.is_ascii_digit() || ('a'..='f').contains(&ch))
+            || !value.chars().all(|ch| ch.is_ascii_digit() || ('a'..='f').contains(&ch))
         {
-            return Ok(Err(
-                "identity must contain 30 through 32 lowercase hexadecimal digits",
-            ));
+            return Err("identity must contain 30 through 32 lowercase hexadecimal digits");
         }
-        Ok(Ok(()))
+        Ok(())
     }
 
     pub(crate) fn as_str(&self) -> &str {
@@ -73,30 +63,43 @@ pub(crate) struct CsysDescriptor {
 }
 
 impl CsysDescriptor {
-    fn identity_bounds(bytes: &[u8]) -> Option<(usize, usize)> {
+    fn identity_bounds<E>(
+        bytes: &[u8],
+        mut next: impl FnMut(&mut std::ops::Range<usize>) -> Result<Option<usize>, E>,
+    ) -> Result<Option<(usize, usize)>, E> {
         let mut candidate = None;
-        let mut at = 0;
-        while at < bytes.len() {
-            if !is_identity_byte(bytes[at]) {
-                at += 1;
-                continue;
-            }
-            let start = at;
-            while at < bytes.len() && is_identity_byte(bytes[at]) {
-                at += 1;
-            }
-            if (30..=32).contains(&(at - start)) {
-                if candidate.is_some() {
-                    return None;
+        let mut start = None;
+        let mut input = 0..bytes.len();
+        while let Some(at) = next(&mut input)? {
+            if is_identity_byte(bytes[at]) {
+                start.get_or_insert(at);
+            } else if let Some(begin) = start.take() {
+                if (30..=32).contains(&(at - begin)) {
+                    if candidate.is_some() {
+                        return Ok(None);
+                    }
+                    candidate = Some((begin, at));
                 }
-                candidate = Some((start, at));
             }
         }
-        candidate
+        if let Some(begin) = start {
+            if (30..=32).contains(&(bytes.len() - begin)) {
+                if candidate.is_some() {
+                    return Ok(None);
+                }
+                candidate = Some((begin, bytes.len()));
+            }
+        }
+        Ok(candidate)
     }
 
     pub(super) fn read(bytes: &[u8]) -> Option<Self> {
-        let (start, end) = Self::identity_bounds(bytes)?;
+        let (start, end) = match Self::identity_bounds(bytes, |input| {
+            Ok::<_, std::convert::Infallible>(input.next())
+        }) {
+            Ok(bounds) => bounds?,
+            Err(error) => match error {},
+        };
         Some(Self {
             prefix: bytes[..start].to_vec(),
             identity: CsysIdentity(bytes[start..end].iter().copied().map(char::from).collect()),
@@ -108,14 +111,13 @@ impl CsysDescriptor {
         ctx: &DecodeContext<'_>,
         bytes: &[u8],
     ) -> Result<Option<Self>, CodecError> {
-        let Some((start, end)) = Self::identity_bounds(bytes) else {
+        let Some((start, end)) = Self::identity_bounds(bytes, |input| {
+            ctx.next_charged(input, "NX datum CSYS identity runs")
+        })? else {
             return Ok(None);
         };
         let prefix = ctx.copy_retained(&bytes[..start], "NX datum CSYS descriptor prefix")?;
-        let Ok(identity) = ctx.validate_utf8(
-            &bytes[start..end],
-            "NX datum CSYS identity UTF-8 validation",
-        )?
+        let Ok(identity) = std::str::from_utf8(&bytes[start..end])
         else {
             return Ok(None);
         };
@@ -219,13 +221,26 @@ impl From<CsysDescriptorSlot> for u8 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn csys_descriptor_run_scan_refusal_precedes_any_retained_copy() {
+        let bytes = b"?012345678901234567890123456789?";
+        let error = crate::test_support::resource_refusal_at(
+            &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX datum CSYS identity runs", |ctx| super::CsysDescriptor::read_charged(ctx, bytes),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 1));
+        crate::test_support::with_decode_context_over(&[],
+            |policy| policy.limits.max_retained_bytes = 0,
+            |ctx| assert!(super::CsysDescriptor::read_charged(ctx, b"??").unwrap().is_none()));
+    }
+
     use super::{
         CsysDescriptor, CsysDescriptorSlot, CsysIdentity, LocatedCsysDescriptor,
         CSYS_IDENTITY_INTO_WIRE_COUNT,
     };
 
     #[test]
-    fn csys_descriptor_utf8_refusal_propagates() {
+    fn csys_descriptor_identity_copy_refusal_propagates() {
         let bytes = b"\x02\x01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?";
         let descriptor = crate::test_support::with_decode_context(|ctx| {
             CsysDescriptor::read_charged(ctx, bytes)
@@ -241,7 +256,7 @@ mod tests {
         let error = crate::test_support::resource_refusal_at(
             &[],
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "NX datum CSYS identity UTF-8 validation",
+            "NX datum CSYS descriptor identity",
             |ctx| CsysDescriptor::read_charged(ctx, bytes),
         );
         assert!(matches!(

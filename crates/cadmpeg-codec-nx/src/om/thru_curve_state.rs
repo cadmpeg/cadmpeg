@@ -17,7 +17,7 @@ pub(crate) enum ThruCurveBranchItems<T> {
 impl<T> ThruCurveBranchItems<T> {
     pub(crate) fn from_parts(members: Vec<T>, lane: &[u8]) -> Result<Self, &'static str> {
         match Self::validate(members, lane, |lane| {
-            Ok::<_, std::convert::Infallible>(lane.iter())
+            Ok::<_, std::convert::Infallible>(lane.iter().all(|&byte| byte == 0))
         }) {
             Ok(value) => value,
             Err(error) => match error {},
@@ -30,16 +30,16 @@ impl<T> ThruCurveBranchItems<T> {
         lane: &[u8],
     ) -> Result<Result<Self, &'static str>, CodecError> {
         Ok(Self::validate(members, lane, |lane| {
-            ctx.admit_iter(lane, "NX thru-curve state lane validation")
+            ctx.all_by(lane, |&byte| Ok(byte == 0), "NX thru-curve state lane validation")
         })?)
     }
 
-    fn validate<'a, E, I: Iterator<Item = &'a u8>>(
+    fn validate<'a, E>(
         members: Vec<T>,
         lane: &'a [u8],
-        admit: impl FnOnce(&'a [u8]) -> Result<I, E>,
+        admit: impl FnOnce(&'a [u8]) -> Result<bool, E>,
     ) -> Result<Result<Self, &'static str>, E> {
-        if members.len().checked_add(4) == Some(lane.len()) && admit(lane)?.all(|&byte| byte == 0) {
+        if members.len().checked_add(4) == Some(lane.len()) && admit(lane)? {
             return Ok(BranchItems::new(members).map(Self::Standard));
         }
         if let [0, 0, 0, 0, 1, 5, a, b, c, d, 1, 5, e, f, g, h, 0, 0] = lane {
