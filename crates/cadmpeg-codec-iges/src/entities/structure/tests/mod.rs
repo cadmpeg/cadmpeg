@@ -1510,7 +1510,8 @@ cadmpeg_test_support::refusal::resource_limit_at(
         crate::test_support::with_policy_context(&bytes, &policy, |ctx| {
             let index = cadmpeg_ir::index::ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
             let plane = super::plane_carrier(&index, 1, ctx)?.expect("fixture parent plane");
-            super::plane_boundary_edge(&index, plane, 5, &entries, 0.001, ctx)
+            let mut proofs = super::PlaneBoundaryProofs { proven: BTreeMap::new(), storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")? };
+            super::plane_boundary_edge(&index, plane, 5, &entries, 0.001, ctx, &mut proofs)
                 .map(|_| ())
                 .map_err(|error| error.message().expect_err("expected active identity resource refusal"))
         })

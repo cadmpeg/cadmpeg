@@ -513,3 +513,41 @@ fn plane_nurbs_weight_validation_charges_only_rational_poles() {
         assert_eq!(points[0], points[4]);
     }
 }
+
+#[test]
+fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
+    let bytes = bounded_plane_entity_file(GLOBAL_V5_0, 100, "100,0,0,0,1,0,1,0;");
+    let decoded = decode(bytes.clone());
+    let scan = crate::test_support::scan(&bytes).unwrap();
+    let (directory, quarantined) = crate::test_support::with_service_context(&bytes, |ctx| {
+        crate::directory::parse(&scan, crate::global::GlobalTable::V5_0, ctx)
+    }).unwrap();
+    assert!(quarantined.is_empty());
+    let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect::<std::collections::BTreeMap<_, _>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 10_000;
+    crate::test_support::with_policy_context(&bytes, &policy, |ctx| {
+        let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+        let plane = super::super::plane_carrier(&index, 1, ctx).unwrap().unwrap();
+        let mut proofs = super::super::PlaneBoundaryProofs { proven: std::collections::BTreeMap::new(), storage: ctx.reserve_scoped(0, "iges plane boundary proof cache").unwrap() };
+        for _ in 0..20_000 {
+            assert!(super::super::plane_boundary_edge(&index, plane, 3, &entries, 0.001, ctx, &mut proofs).is_ok());
+        }
+        assert_eq!(proofs.proven.len(), 1);
+        assert!(super::super::plane_boundary_edge(&index, plane, 3, &entries, 0.002, ctx, &mut proofs).is_ok());
+        assert_eq!(proofs.proven.len(), 2);
+        let shifted = (Point3::new(0.0, 0.0, 1.0), plane.1);
+        assert!(matches!(super::super::plane_boundary_edge(&index, shifted, 3, &entries, 0.001, ctx, &mut proofs), Err(super::super::PlaneBoundaryError::NotCoplanar)));
+        assert_eq!(proofs.proven.len(), 2);
+    });
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "iges plane boundary proof cache", |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        crate::test_support::with_policy_context(&bytes, &policy, |ctx| {
+            let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+            let plane = super::super::plane_carrier(&index, 1, ctx)?.unwrap();
+            let mut proofs = super::super::PlaneBoundaryProofs { proven: std::collections::BTreeMap::new(), storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")? };
+            super::super::plane_boundary_edge(&index, plane, 3, &entries, 0.001, ctx, &mut proofs).map(|_| ()).map_err(|error| error.message().expect_err("expected cache resource refusal"))
+        })
+    });
+}

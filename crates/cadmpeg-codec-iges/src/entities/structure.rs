@@ -1669,6 +1669,14 @@ impl From<CodecError> for PlaneBoundaryError {
     }
 }
 
+type PlaneBoundaryKey = (u32, [u64; 7]);
+
+/// Successful boundary proofs for one immutable model.
+struct PlaneBoundaryProofs<'ir, 'ctx> {
+    proven: BTreeMap<PlaneBoundaryKey, &'ir Edge>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
 fn plane_boundary_edge<'ir>(
     index: &ModelIndex<'ir>,
     plane: (Point3, Vector3),
@@ -1676,7 +1684,10 @@ fn plane_boundary_edge<'ir>(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     resolution: f64,
     ctx: &DecodeContext<'_>,
+    proofs: &mut PlaneBoundaryProofs<'ir, '_>,
 ) -> Result<&'ir Edge, PlaneBoundaryError> {
+    let proof_key = (boundary_sequence, [plane.0.x.to_bits(), plane.0.y.to_bits(), plane.0.z.to_bits(), plane.1.x.to_bits(), plane.1.y.to_bits(), plane.1.z.to_bits(), resolution.to_bits()]);
+    if let Some(edge) = proofs.proven.get(&proof_key) { return Ok(*edge) }
     let mut key_storage = [0_u8; 64];
     let key =
         crate::ids::directory_lookup_key("iges:model:edge#D", boundary_sequence, &mut key_storage, ctx)?
@@ -1738,6 +1749,7 @@ fn plane_boundary_edge<'ir>(
     if start.distance(end) > resolution {
         return Err(PlaneBoundaryError::NotClosed);
     }
+    proofs.storage.with_storage(|| ctx.insert_btree_map(&mut proofs.proven, proof_key, source_edge, "iges plane boundary proof cache"))?;
     Ok(source_edge)
 }
 
@@ -1939,8 +1951,8 @@ struct LegacyPlaneSource<'a> {
     record: &'a ParameterRecord,
 }
 
-fn legacy_single_parent_face<'ctx>(
-    index: &ModelIndex<'_>,
+fn legacy_single_parent_face<'ir, 'ctx>(
+    proof_context: (&ModelIndex<'ir>, &mut PlaneBoundaryProofs<'ir, '_>),
     source: LegacyPlaneSource<'_>,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
@@ -1948,6 +1960,7 @@ fn legacy_single_parent_face<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<Option<(ModelDraft, Vec<u32>, cadmpeg_core::decode::ScopedReservation<'ctx>)>, LegacyPlaneError> {
+    let (index, proofs) = proof_context;
     let LegacyPlaneSource { entry, record } = source;
     let Some(parent_sequence) = existing_pointer(record, 3, entries) else {
         return Ok(None);
@@ -2015,7 +2028,7 @@ while let Some((boundary_index, (plane_sequence, boundary_sequence))) = ctx.next
             return Err("legacy single-parent plane boundaries are not coplanar".into());
         }
         let edge =
-            plane_boundary_edge(index, plane, boundary_sequence, entries, resolution, ctx)
+            plane_boundary_edge(index, plane, boundary_sequence, entries, resolution, ctx, proofs)
                 .map_err(|error| match error.legacy_message() {
                     Ok(message) => LegacyPlaneError::Invalid(message),
                     Err(resource) => LegacyPlaneError::Resource(resource),
@@ -2929,6 +2942,7 @@ while let Some(offset) = ctx.next_charged(&mut input, "iges structure list trave
     }
 
     let mut plane_index = None;
+    let mut plane_proofs = PlaneBoundaryProofs { proven: BTreeMap::new(), storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")? };
     for entry in ctx.admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15))
     {
@@ -3017,12 +3031,12 @@ has_association_back_pointer(
                 "iges structure decoded sequences",
             )?;
             if entry.form == 9 && existing_pointer(record, 3, entries).and_then(|sequence| entries.get(&sequence)).is_some_and(|parent| parent.entity_type == 108 && parent.form == 1) {
-                if plane_index.is_none() {
-                    plane_index = Some(ModelIndex::new_model_only(ir, ctx).map_err(CodecError::from)?);
-                }
-                let index = plane_index.as_ref().expect("plane index initialized for a legacy plane");
+                let index = match &mut plane_index {
+                    Some(index) => index,
+                    slot @ None => slot.insert(ModelIndex::new_model_only(ir, ctx).map_err(CodecError::from)?),
+                };
                 match legacy_single_parent_face(
-                    index,
+                    (index, &mut plane_proofs),
                     LegacyPlaneSource { entry, record },
                     entries,
                     records,
@@ -3068,10 +3082,10 @@ has_association_back_pointer(
         let Some(record) = records.get(&entry.sequence).copied() else {
             continue;
         };
-        if plane_index.is_none() {
-            plane_index = Some(ModelIndex::new_model_only(ir, ctx).map_err(CodecError::from)?);
-        }
-        let index = plane_index.as_ref().expect("plane index initialized for a bounded plane");
+        let index = match &mut plane_index {
+                    Some(index) => index,
+                    slot @ None => slot.insert(ModelIndex::new_model_only(ir, ctx).map_err(CodecError::from)?),
+                };
         let Some(plane) = plane_carrier(index, entry.sequence, ctx)? else {
             continue;
         };
@@ -3086,6 +3100,7 @@ has_association_back_pointer(
                 entries,
                 global.minimum_resolution_mm(),
                 ctx,
+                &mut plane_proofs,
             ) {
                 Ok(edge) => {
                     let edge_id = crate::ids::edge_admitted(
@@ -3143,6 +3158,7 @@ has_association_back_pointer(
                 entries,
                 global.minimum_resolution_mm(),
                 ctx,
+                &mut plane_proofs,
             ) {
                 Ok(_) => super::push_entity_loss(
                     ctx,
@@ -3163,6 +3179,7 @@ has_association_back_pointer(
         }
     }
 
+    drop(plane_proofs);
     drop(plane_index);
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
     for (entry, candidate) in ctx.admit_iter(legacy_face_candidates, "iges structure list traversal")? {
