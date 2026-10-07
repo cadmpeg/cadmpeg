@@ -4576,6 +4576,24 @@ pub(crate) fn assemble_with_context(
     })
 }
 
+/// The record of the Directory entry `sequence`. Assembly emits records in
+/// Directory order, so their Directory sequences strictly increase.
+pub(crate) fn record_by_sequence<'a>(
+    records: &'a [ParameterRecord],
+    sequence: u32,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<&'a ParameterRecord>, CodecError> {
+    Ok(ctx
+        .binary_search_by_key(
+            records,
+            &sequence,
+            |record| Ok(record.directory_sequence),
+            "iges parameter record lookup",
+        )?
+        .ok()
+        .and_then(|index| records.get(index)))
+}
+
 pub(crate) fn summary_notes(
     records: &[ParameterRecord],
     ctx: &DecodeContext<'_>,
