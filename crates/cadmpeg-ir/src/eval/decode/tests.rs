@@ -363,7 +363,7 @@ fn admitted_curve_tangent_refuses_rational_weight_copy() {
 }
 
 #[test]
-fn admitted_polyline_tangent_refuses_points_and_parameters() {
+fn admitted_polyline_tangent_borrows_points_and_parameters() {
     use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
     for parameterized in [false, true] {
         let points = vec![
@@ -398,17 +398,23 @@ fn admitted_polyline_tangent_refuses_points_and_parameters() {
             .expect("polyline construction admission")
             .expect("polyline"),
         ));
-        for (cap, operation) in [
-            (2, "IR polyline derivative points"),
-            (5, "IR polyline derivative parameters"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            assert!(
-                matches!(with_policy(policy, |ctx| crate::eval::decode::outer_refusal(crate::eval::decode::curve_tangent(ctx, &geometry, 0.5)).map_err(CodecError::from)),
-                Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
-            );
-        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_work_units = 2;
+        assert_eq!(with_policy(policy, |ctx| crate::eval::decode::outer_refusal(
+            crate::eval::decode::curve_tangent(ctx, &geometry, 0.5),
+        ).map_err(CodecError::from)).unwrap().unwrap().get(), crate::math::Vector3::new(1.0, 0.0, 0.0));
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, "IR polyline tangent segment scan", |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                with_policy(policy, |ctx| crate::eval::decode::outer_refusal(
+                    crate::eval::decode::curve_tangent(ctx, &geometry, 0.5),
+                ).map_err(CodecError::from))
+            },
+        );
         assert_eq!(
             with_policy(DecodePolicy::service(), |ctx| {
                 crate::eval::decode::outer_refusal(crate::eval::decode::curve_tangent(

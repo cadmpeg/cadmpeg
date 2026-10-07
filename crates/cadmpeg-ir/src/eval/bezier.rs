@@ -124,11 +124,7 @@ pub(super) fn restrict_homogeneous_bezier<'ctx>(
                 )?;
                 (reservation, values)
             };
-            ctx.charge_work_limit(
-                u64_from_index(controls.len()),
-                "IR Bezier collapsed control fill",
-            )?;
-            collapsed.resize(controls.len(), split.point);
+            collapsed.extend(ctx.admit_iter(0..controls.len(), "IR Bezier collapsed control fill")?.map(|_| split.point));
             return Ok(Some(ScopedRows::new(collapsed, storage)));
         }
         let Some(split) = split_homogeneous_bezier(ctx, controls, end)? else {
@@ -363,9 +359,11 @@ mod tests {
             result
         };
         run(13).expect("exact split work");
-        cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, "IR Bezier split interior blend", run,
-        );
+        for operation in ["IR Bezier split interior blend", "IR Bezier split reverse"] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits, operation, run,
+            );
+        }
     }
 
     #[test]

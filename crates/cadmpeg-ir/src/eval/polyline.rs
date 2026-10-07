@@ -138,26 +138,29 @@ pub(super) fn polyline_point(
 /// tangent outside the finite range.
 pub(super) fn polyline_tangent(
     admission: EvaluationAdmission<'_, '_>,
-    points: &[FinitePoint3],
-    parameters: &[FiniteReal],
+    count: usize,
+    point: impl Fn(usize) -> Option<FinitePoint3>,
+    parameter: impl Fn(usize) -> Option<FiniteReal>,
     t: f64,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    if points.len() < 2 || points.len() != parameters.len() {
+    if count < 2 {
         return Err(EvaluationFailure::NoValue);
     }
     let t = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?;
     let mut tangent = None;
-    for (segment, window) in parameters.windows(2).enumerate() {
+    for segment in 0..count - 1 {
         admission
             .work(1, "IR polyline tangent segment scan")
             .map_err(EvaluationFailure::ResourceLimit)?;
-        if !((t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1])) {
+        let start = parameter(segment).ok_or(EvaluationFailure::NoValue)?;
+        let end = parameter(segment + 1).ok_or(EvaluationFailure::NoValue)?;
+        if !((t >= start && t <= end) || (t <= start && t >= end)) {
             continue;
         }
-        let [start_x, start_y, start_z] = points[segment].coordinates();
-        let [end_x, end_y, end_z] = points[segment + 1].coordinates();
-        let slope = |end, start| {
-            difference_quotient(end, start, window[1], window[0])
+        let [start_x, start_y, start_z] = point(segment).ok_or(EvaluationFailure::NoValue)?.coordinates();
+        let [end_x, end_y, end_z] = point(segment + 1).ok_or(EvaluationFailure::NoValue)?.coordinates();
+        let slope = |value_end, value_start| {
+            difference_quotient(value_end, value_start, end, start)
                 .map_err(|failure| failure.map(|_| ()))
         };
         let candidate = FiniteVector3::from_components(
@@ -198,7 +201,7 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let admission = EvaluationAdmission::Decode(&ctx);
             let result = if derivative {
-                polyline_tangent(admission, &points, &parameters, 0.5)
+                polyline_tangent(admission, points.len(), |index| points.get(index).copied(), |index| parameters.get(index).copied(), 0.5)
                     .map(|_| ())
                     .map_err(|error| error.map(|()| ()))
             } else {
@@ -247,13 +250,52 @@ mod tests {
     }
 
     #[test]
+    fn polyline_tangent_stops_at_the_first_conflicting_segment() {
+        use cadmpeg_core::decode::WorkBudget;
+        let points = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(2.0, 1.0, 0.0),
+            Point3::new(3.0, 1.0, 0.0),
+        ].map(|point| FinitePoint3::new(point).unwrap());
+        let parameters = FiniteReal::array([0.0, 1.0, 2.0, 3.0]).unwrap();
+        for sliced in [false, true] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 2;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let budget = WorkBudget::new(2);
+            let admission = EvaluationAdmission::Decode(&ctx);
+            let result = if sliced {
+                admission.within_work_slice(&budget, |admission| polyline_tangent(
+                    admission, points.len(), |index| points.get(index).copied(),
+                    |index| parameters.get(index).copied(), 1.0,
+                ))
+            } else {
+                polyline_tangent(
+                    admission, points.len(), |index| points.get(index).copied(),
+                    |index| parameters.get(index).copied(), 1.0,
+                )
+            };
+            assert_eq!(result, Err(EvaluationFailure::NoValue));
+            if sliced {
+                assert_eq!(budget.consumed(), 2);
+            }
+            ctx.finish_session().unwrap();
+        }
+    }
+
+    #[test]
     fn polyline_tangent_admits_every_segment_before_agreement_checks() {
         let (points, parameters) = samples();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 1;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = polyline_tangent(EvaluationAdmission::Decode(&ctx), &points, &parameters, 0.5);
+        let result = polyline_tangent(EvaluationAdmission::Decode(&ctx), points.len(), |index| points.get(index).copied(), |index| parameters.get(index).copied(), 0.5);
         let EvaluationFailure::ResourceLimit(first) = result.unwrap_err() else {
             panic!("a tangent examines later segments");
         };

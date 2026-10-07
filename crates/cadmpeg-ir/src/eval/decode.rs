@@ -425,13 +425,10 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
                 None,
             )
         } else {
-            {
-                let mut basis = Vec::new();
-                let storage =
-                    ctx.reserve_temporary_vec(&mut basis, support, "IR B-spline basis")?;
-                basis.extend(ctx.admit_iter(0..support, "IR B-spline basis work")?.map(|_| 0.0));
-                (SupportValues::Heap(basis), Some(storage))
-            }
+            let mut basis = Vec::new();
+            let storage = ctx.reserve_temporary_vec(&mut basis, support, "IR B-spline basis")?;
+            basis.extend(ctx.admit_iter(0..support, "IR B-spline basis work")?.map(|_| 0.0));
+            (SupportValues::Heap(basis), Some(storage))
         };
         Ok(Self {
             curve,
