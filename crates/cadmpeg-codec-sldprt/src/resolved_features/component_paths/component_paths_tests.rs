@@ -2,7 +2,7 @@
 
 use super::{
     component_path_feature, component_path_features, component_path_input_features,
-    component_path_terminal_feature, surface_selection_producer_features, ComponentPathEnd,
+    FeaturesBySource, surface_selection_producer_features, ComponentPathEnd,
 };
 use crate::records::FeatureSource;
 use crate::records::{Feature, FeatureInputComponentPathEntry};
@@ -73,11 +73,8 @@ fn component_path_type_identities_name_ordered_features() {
         vec!["producer", "other"]
     );
     assert_eq!(
-        component_path_terminal_feature(
-            &ctx,
-            &mixed,
-            &[feature("producer", "42"), feature("other", "43")]
-        )
+        FeaturesBySource::new(&ctx, &[feature("producer", "42"), feature("other", "43")])
+            .unwrap().terminal(&ctx, &mixed)
         .unwrap(),
         Some("other".into())
     );
@@ -101,14 +98,16 @@ fn component_path_type_identities_name_ordered_features() {
         local_id: Some(5),
     });
     assert_eq!(
-        component_path_terminal_feature(
-            &ctx,
-            &mixed,
-            &[feature("producer", "42"), feature("other", "43")]
-        )
+        FeaturesBySource::new(&ctx, &[feature("producer", "42"), feature("other", "43")])
+            .unwrap().terminal(&ctx, &mixed)
         .unwrap(),
         Some("other".into())
     );
+
+    let ambiguous = [feature("producer", "42"), feature("other", "43"), feature("repeated", "43")];
+    let ambiguous_sources = FeaturesBySource::new(&ctx, &ambiguous).unwrap();
+    assert_eq!(ambiguous_sources.terminal(&ctx, &mixed).unwrap(), None);
+    assert_eq!(ambiguous_sources.features(&ctx, &mixed).unwrap(), ["producer"]);
 
     let owner = feature("mirror", "44");
     mixed.push(FeatureInputComponentPathEntry {

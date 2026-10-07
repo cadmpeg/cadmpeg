@@ -3,7 +3,7 @@
 use super::markers::{
     admit_sketch_input_entities, reference_cells_charged, relation_bindings_charged,
 };
-use super::names::{class_declarations, configuration, declared_class_names, object_names};
+use super::names::{class_declarations, configuration, next_payload_class, object_names};
 use super::scalars::named_scalars_charged;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::classification::native_object_class;
@@ -201,7 +201,8 @@ fn legacy_sketch_object_stream(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut sketch = false;
     let mut sketch_entity = false;
-    for name in declared_class_names(ctx, payload)? {
+    let mut offsets = 0..payload.len().saturating_sub(3);
+    while let Some((_, name)) = next_payload_class(ctx, payload, &mut offsets)? {
         sketch |= name == "sgSketch";
         sketch_entity |= native_object_class(name).role() == FeatureInputClassRole::SketchEntity;
         if sketch && sketch_entity {

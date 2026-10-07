@@ -186,3 +186,19 @@ fn native_identity_decimal_parse_propagates_work_refusal() {
     assert!(super::decimal_matches(&ctx, "12", 12).unwrap());
     assert!(!super::decimal_matches(&ctx, "012", 12).unwrap());
 }
+
+#[test]
+fn class_mismatch_does_not_scan_the_remaining_payload() {
+    let mut payload = super::super::CLASS_MARKER.to_vec();
+    payload.extend_from_slice(&8u16.to_le_bytes());
+    payload.extend_from_slice(b"sgSketch");
+    payload.resize(16384, 0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 4096;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let actual = crate::records::FeatureInputClass {
+        id: "invalid".into(), parent: "lane".into(), ordinal: 0, offset: 0, name: "sgSketch".into(),
+    };
+    assert!(!super::class_declarations_match(&ctx, &payload, "lane", &[actual]).unwrap());
+}

@@ -8,7 +8,7 @@ use cadmpeg_ir::report::{
     check::{Check, Finding},
     Severity,
 };
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 /// Validate `SolidWorks` native feature-input byte references.
 pub(crate) fn validate_native(
@@ -63,13 +63,13 @@ pub(crate) fn validate_native(
                 )
             })?;
             let all_features = temporary.with_storage(|| {
-                ctx.collect_hash_set(
+                ctx.collect_btree_set(
                     history.features.iter().map(|feature| feature.id.as_str()),
                     "index SLDPRT native history content",
                 )
             })?;
-            let mut seen_configurations = HashSet::new();
-            let mut seen_features = HashSet::new();
+            let mut seen_configurations = BTreeSet::new();
+            let mut seen_features = BTreeSet::new();
             for item in ctx.admit_iter(&history.content, "scan SLDPRT native history content")? {
                 let error = match item {
                     crate::records::HistoryContent::Configuration(id) => {
@@ -85,7 +85,7 @@ pub(crate) fn validate_native(
                                 "format SLDPRT native finding",
                             )?)
                         } else if !temporary.with_storage(|| {
-                            ctx.insert_hash_set(
+                            ctx.insert_btree_set(
                                 &mut seen_configurations,
                                 id.as_str(),
                                 "index SLDPRT native history content",
@@ -100,7 +100,7 @@ pub(crate) fn validate_native(
                         }
                     }
                     crate::records::HistoryContent::Feature(id) => {
-                        if !ctx.contains_hash_set(
+                        if !ctx.contains_btree_set(
                             &all_features,
                             id.as_str(),
                             "find SLDPRT native history content",
@@ -123,7 +123,7 @@ pub(crate) fn validate_native(
                                 "format SLDPRT native finding",
                             )?)
                         } else if !temporary.with_storage(|| {
-                            ctx.insert_hash_set(
+                            ctx.insert_btree_set(
                                 &mut seen_features,
                                 id.as_str(),
                                 "index SLDPRT native history content",
@@ -153,7 +153,7 @@ pub(crate) fn validate_native(
                 }
             }
             for missing in ctx.admit_iter(&configurations, "scan SLDPRT omitted history content")? {
-                if ctx.contains_hash_set(
+                if ctx.contains_btree_set(
                     &seen_configurations,
                     *missing,
                     "find SLDPRT native history content",
@@ -175,7 +175,7 @@ pub(crate) fn validate_native(
                 )?;
             }
             for missing in ctx.admit_iter(&root_features, "scan SLDPRT omitted history content")? {
-                if ctx.contains_hash_set(
+                if ctx.contains_btree_set(
                     &seen_features,
                     *missing,
                     "find SLDPRT native history content",

@@ -15,13 +15,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// History features by native source identifier, indexed once. A source that
 /// more than one feature carries names no feature.
-pub(super) struct FeaturesBySource<'a, 'ctx> {
+pub(crate) struct FeaturesBySource<'a, 'ctx> {
     table: HashMap<u32, Option<&'a Feature>>,
     _storage: ScopedReservation<'ctx>,
 }
 
 impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
-    pub(super) fn new(
+    pub(crate) fn new(
         ctx: &'ctx DecodeContext<'_>,
         features: impl IntoIterator<Item = &'a Feature>,
     ) -> Result<Self, CodecError> {
@@ -54,22 +54,21 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
         ctx: &DecodeContext<'_>,
         component: &FeatureInputComponentPathEntry,
         operation: &'static str,
-    ) -> Result<Option<Option<&'a Feature>>, CodecError> {
+    ) -> Result<Option<&Option<&'a Feature>>, CodecError> {
         let Some(source) = View::u32_le_at(&component.type_signature, 4) else {
             return Ok(None);
         };
-        Ok(ctx.get_hash_map(&self.table, &source, operation)?.copied())
+        Ok(ctx.get_hash_map(&self.table, &source, operation)?)
     }
 
-    /// The feature that carries a native source: `None` when none does,
-    /// `Some(None)` when more than one does.
+    /// The unique feature that carries a native source.
     pub(super) fn source(
         &self,
         ctx: &DecodeContext<'_>,
         source: u32,
         operation: &'static str,
-    ) -> Result<Option<Option<&'a Feature>>, CodecError> {
-        Ok(ctx.get_hash_map(&self.table, &source, operation)?.copied())
+    ) -> Result<Option<&'a Feature>, CodecError> {
+        Ok(ctx.get_hash_map(&self.table, &source, operation)?.copied().flatten())
     }
 
     /// The feature the last resolvable component names, if one feature
@@ -86,7 +85,7 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
                 |component| self.component(ctx, component, OPERATION),
                 OPERATION,
             )?
-            .flatten())
+            .copied().flatten())
     }
 
     /// The distinct features the components name, in component order.
@@ -233,14 +232,6 @@ pub(crate) fn surface_selection_producer_features(
     Ok(producers)
 }
 
-pub(super) fn component_path_terminal_feature<'a>(
-    ctx: &DecodeContext<'_>,
-    components: &[FeatureInputComponentPathEntry],
-    features: impl IntoIterator<Item = &'a Feature>,
-) -> Result<Option<String>, CodecError> {
-    FeaturesBySource::new(ctx, features)?.terminal(ctx, components)
-}
-
 #[derive(Clone, Copy)]
 pub(super) enum ComponentPathEnd {
     Leading,
@@ -274,7 +265,7 @@ pub(super) fn component_path_feature<'a>(
         }
         Ok(by_source
             .component(ctx, component, OPERATION)?
-            .flatten()
+            .copied().flatten()
             .map(|feature| (component, feature)))
     };
     match end {

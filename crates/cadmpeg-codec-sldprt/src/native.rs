@@ -2224,7 +2224,9 @@ fn surface_selection_disagrees_with_payload(
             &lane.native_payload,
             offset,
             &record.components,
-            surface_features,
+            &crate::resolved_features::component_paths::FeaturesBySource::new(
+                ctx, surface_features.iter(),
+            )?,
         )?,
         &record.terminal_feature_ref,
         PAYLOAD_AGREEMENT,

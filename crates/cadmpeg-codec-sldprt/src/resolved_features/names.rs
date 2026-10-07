@@ -18,23 +18,6 @@ fn record_id(
     )
 }
 
-/// Admits the two payload scans that find object names: the search for the
-/// lane's repeated-class token and the walk over every name-marker window.
-/// Each window and each candidate reads a bounded number of bytes.
-fn admit_name_scan(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_work(
-        u64_from_index(payload.len()),
-        "find SLDPRT feature input name class",
-    )?;
-    ctx.charge_work(
-        u64_from_index(payload.len()),
-        "scan SLDPRT feature input names",
-    )
-}
-
 pub(super) fn operand_kind_name(
     ctx: &DecodeContext<'_>,
     kind: FeatureInputOperandKind,
@@ -62,8 +45,8 @@ pub(crate) fn object_names(
         .rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?
         .map_or(parent, |(_, key)| key);
     let mut names = Vec::new();
-    admit_name_scan(ctx, payload)?;
-    for (offset, object_id, units) in payload_name_candidates(payload) {
+    let mut scanner = NameScanner::new(ctx, payload)?;
+    while let Some((offset, object_id, units)) = scanner.next(ctx, false)? {
         let (decoded, _name_reservation) = match ctx.utf16le_scoped_text(
             units,
             units.len() / 2,
@@ -74,11 +57,8 @@ pub(crate) fn object_names(
             Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
             Err(error) => return Err(error),
         };
-        ctx.charge_work(
-            u64_from_index(decoded.len()),
-            "validate SLDPRT feature input name",
-        )?;
-        if decoded.chars().any(char::is_control) {
+        if ctx.any_by(decoded.chars(), |character| Ok(character.is_control()),
+            "validate SLDPRT feature input name")? {
             continue;
         }
         let ordinal = u32::try_from(names.len()).map_err(|_| {
@@ -142,60 +122,67 @@ pub(crate) fn utf16_units(units: &[u8]) -> impl Iterator<Item = u16> + '_ {
     (0..units.len() / 2).filter_map(|index| View::u16_le_at(units, index * 2))
 }
 
-fn payload_name_candidates(
-    payload: &[u8],
-) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
-    let mut name_marker = [0; 5];
-    name_marker.copy_from_slice(NAME_MARKER);
-    if let Some(token) = name_class_token(payload) {
-        name_marker[..2].copy_from_slice(&token.to_le_bytes());
+type NameCandidate<'a> = (usize, Option<ObjectId>, &'a [u8]);
+
+/// A name-marker cursor. Each candidate holds at most 128 UTF-16 units.
+struct NameScanner<'a> {
+    payload: &'a [u8],
+    marker: [u8; 5],
+    offsets: std::ops::Range<usize>,
+}
+
+impl<'a> NameScanner<'a> {
+    fn new(ctx: &DecodeContext<'_>, payload: &'a [u8]) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut marker = [0; 5];
+        marker.copy_from_slice(NAME_MARKER);
+        if let Some(token) = name_class_token(ctx, payload)? {
+            marker[..2].copy_from_slice(&token.to_le_bytes());
+        }
+        Ok(Self { payload, marker, offsets: 0..payload.len().saturating_sub(4) })
     }
-    payload
-        .windows(name_marker.len())
-        .enumerate()
-        .filter_map(move |(offset, marker)| (marker == name_marker).then_some(offset))
-        .filter_map(move |offset| {
-            let length = usize::from(*payload.get(offset + NAME_MARKER.len())?);
-            if !(1..=128).contains(&length) {
-                return None;
-            }
-            let start = offset + NAME_MARKER.len() + 1;
-            let end = start.checked_add(length.checked_mul(2)?)?;
-            let units = payload.get(start..end)?;
-            let object_id = end
-                .checked_add(8)
-                .and_then(|position| View::u32_le_at(payload, position))
-                .and_then(|value| ObjectId::try_from(value).ok());
-            Some((offset, object_id, units))
-        })
+
+    fn next(&mut self, ctx: &DecodeContext<'_>, valid_only: bool)
+        -> Result<Option<NameCandidate<'a>>, cadmpeg_core::CodecError>
+    {
+        let payload = self.payload;
+        ctx.find_map(&mut self.offsets, |offset| {
+            let candidate = (|| {
+                if payload.get(offset..offset + 5) != Some(&self.marker) { return None; }
+                let length = usize::from(*payload.get(offset + 5)?);
+                if !(1..=128).contains(&length) { return None; }
+                let start = offset + 6;
+                let end = start.checked_add(length.checked_mul(2)?)?;
+                let units = payload.get(start..end)?;
+                if valid_only && !std::char::decode_utf16(utf16_units(units))
+                    .all(|character| character.is_ok_and(|character| !character.is_control()))
+                { return None; }
+                let object_id = end.checked_add(8)
+                    .and_then(|position| View::u32_le_at(payload, position))
+                    .and_then(|value| ObjectId::try_from(value).ok());
+                Some((offset, object_id, units))
+            })();
+            Ok(candidate)
+        }, "scan SLDPRT feature input names")
+    }
 }
 
-fn payload_names(payload: &[u8]) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
-    payload_name_candidates(payload).filter(|(_, _, units)| {
-        std::char::decode_utf16(utf16_units(units))
-            .all(|character| character.is_ok_and(|character| !character.is_control()))
-    })
-}
-
-fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &str)> {
-    payload
-        .windows(CLASS_MARKER.len())
-        .enumerate()
-        .filter_map(|(offset, marker)| (marker == CLASS_MARKER).then_some(offset))
-        .filter_map(|offset| {
+/// Reads the next class declaration. A declaration holds at most 128 ASCII bytes.
+pub(super) fn next_payload_class<'a>(
+    ctx: &DecodeContext<'_>, payload: &'a [u8], offsets: &mut std::ops::Range<usize>,
+) -> Result<Option<(usize, &'a str)>, cadmpeg_core::CodecError> {
+    ctx.find_map(offsets, |offset| {
+        let candidate = (|| {
+            if payload.get(offset..offset + 4) != Some(CLASS_MARKER) { return None; }
             let length = usize::from(View::u16_le_at(payload, offset + 4)?);
-            if !(1..=128).contains(&length) {
-                return None;
-            }
+            if !(1..=128).contains(&length) { return None; }
             let bytes = payload.get(offset + 6..offset + 6 + length)?;
-            if !bytes
-                .iter()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-            {
+            if !bytes.iter().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')) {
                 return None;
             }
             Some((offset, std::str::from_utf8(bytes).ok()?))
-        })
+        })();
+        Ok(candidate)
+    }, "scan SLDPRT feature input classes")
 }
 
 pub(crate) fn class_declarations_match(
@@ -207,19 +194,14 @@ pub(crate) fn class_declarations_match(
     let lane_key = ctx
         .rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?
         .map_or(parent, |(_, key)| key);
-    ctx.charge_work(
-        u64_from_index(payload.len()),
-        "scan SLDPRT feature input classes",
-    )?;
-    let mut expected = payload_classes(payload).enumerate();
+    let mut offsets = 0..payload.len().saturating_sub(3);
     let all_match = ctx.all_by(
         classes.iter().enumerate(),
         |(ordinal, actual)| {
-            let Some((index, (offset, name))) = expected.next() else {
+            let Some((offset, name)) = next_payload_class(ctx, payload, &mut offsets)? else {
                 return Ok(false);
             };
-            Ok(index == ordinal
-                && u32::try_from(ordinal) == Ok(actual.ordinal)
+            Ok(u32::try_from(ordinal) == Ok(actual.ordinal)
                 && u64::try_from(offset) == Ok(actual.offset)
                 && native_id_matches(
                     ctx,
@@ -241,7 +223,7 @@ pub(crate) fn class_declarations_match(
         },
         "check SLDPRT feature input classes",
     )?;
-    Ok(all_match && expected.next().is_none())
+    Ok(all_match && next_payload_class(ctx, payload, &mut offsets)?.is_none())
 }
 
 pub(crate) fn object_names_structure_match(
@@ -253,16 +235,14 @@ pub(crate) fn object_names_structure_match(
     let lane_key = ctx
         .rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?
         .map_or(parent, |(_, key)| key);
-    admit_name_scan(ctx, payload)?;
-    let mut expected = payload_names(payload).enumerate();
+    let mut scanner = NameScanner::new(ctx, payload)?;
     let all_match = ctx.all_by(
         names.iter().enumerate(),
         |(ordinal, actual)| {
-            let Some((index, (offset, object_id, _))) = expected.next() else {
+            let Some((offset, object_id, _)) = scanner.next(ctx, true)? else {
                 return Ok(false);
             };
-            Ok(index == ordinal
-                && u32::try_from(ordinal) == Ok(actual.ordinal)
+            Ok(u32::try_from(ordinal) == Ok(actual.ordinal)
                 && u64::try_from(offset) == Ok(actual.offset)
                 && actual.object_id == object_id
                 && native_id_matches(
@@ -280,8 +260,10 @@ pub(crate) fn object_names_structure_match(
         },
         "check SLDPRT feature input names",
     )?;
-    Ok(all_match && expected.next().is_none())
+    Ok(all_match && scanner.next(ctx, true)?.is_none())
 }
+
+type ObjectNameMismatch<'a> = (usize, &'a FeatureInputName, &'a [u8]);
 
 /// The first stored name whose text differs from the name its payload states.
 /// A payload name holds at most 128 UTF-16 units, so each comparison reads a
@@ -290,17 +272,18 @@ pub(crate) fn first_object_name_value_mismatch<'a>(
     ctx: &DecodeContext<'_>,
     payload: &'a [u8],
     names: &'a [FeatureInputName],
-) -> Result<Option<(usize, &'a FeatureInputName, &'a [u8])>, cadmpeg_core::CodecError> {
-    admit_name_scan(ctx, payload)?;
-    ctx.find_map(
-        names.iter().zip(payload_names(payload)).enumerate(),
-        |(index, (actual, (_, _, units)))| {
-            let expected = std::char::decode_utf16(utf16_units(units));
-            Ok((!actual.value.chars().eq(expected.filter_map(Result::ok)))
-                .then_some((index, actual, units)))
-        },
-        "compare SLDPRT feature input name values",
-    )
+) -> Result<Option<ObjectNameMismatch<'a>>, cadmpeg_core::CodecError> {
+    if names.is_empty() { return Ok(None); }
+    let mut scanner = NameScanner::new(ctx, payload)?;
+    let mut actual = names.iter().enumerate();
+    while let Some((index, actual)) = ctx.next_charged(&mut actual, "compare SLDPRT feature input name values")? {
+        let Some((_, _, units)) = scanner.next(ctx, true)? else { break; };
+        let expected = std::char::decode_utf16(utf16_units(units));
+        if !actual.value.chars().eq(expected.filter_map(Result::ok)) {
+            return Ok(Some((index, actual, units)));
+        }
+    }
+    Ok(None)
 }
 
 /// Lane-scoped repeated-class token carried by every feature-name record.
@@ -308,12 +291,12 @@ pub(crate) fn first_object_name_value_mismatch<'a>(
 /// The token is established by the first name record in the lane: the first
 /// class declaration directly followed by a repeated-class token and the
 /// UTF-16 name prefix `ff fe ff`.
-fn name_class_token(payload: &[u8]) -> Option<u16> {
-    payload
-        .windows(CLASS_MARKER.len())
-        .enumerate()
-        .filter(|(_, window)| *window == CLASS_MARKER)
-        .find_map(|(offset, _)| {
+fn name_class_token(ctx: &DecodeContext<'_>, payload: &[u8])
+    -> Result<Option<u16>, cadmpeg_core::CodecError>
+{
+    ctx.find_map(payload.windows(CLASS_MARKER.len()).enumerate(), |(offset, window)| {
+        if window != CLASS_MARKER { return Ok(None); }
+        Ok((|| {
             let length = usize::from(View::u16_le_at(payload, offset + 4)?);
             if !(1..=128).contains(&length) {
                 return None;
@@ -332,20 +315,8 @@ fn name_class_token(payload: &[u8]) -> Option<u16> {
             }
             let units = usize::from(*payload.get(token_offset + 5)?);
             (1..=128).contains(&units).then_some(token)
-        })
-}
-
-/// The class names a payload declares, in payload order, after admitting
-/// the payload scan that finds them.
-pub(super) fn declared_class_names<'p>(
-    ctx: &DecodeContext<'_>,
-    payload: &'p [u8],
-) -> Result<impl Iterator<Item = &'p str>, cadmpeg_core::CodecError> {
-    ctx.charge_work(
-        u64_from_index(payload.len()),
-        "scan SLDPRT feature input classes",
-    )?;
-    Ok(payload_classes(payload).map(|(_, name)| name))
+        })())
+    }, "find SLDPRT feature input name class")
 }
 
 pub(crate) fn class_declarations(
@@ -357,11 +328,9 @@ pub(crate) fn class_declarations(
         .rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?
         .map_or(parent, |(_, key)| key);
     let mut classes = Vec::new();
-    ctx.charge_work(
-        u64_from_index(payload.len()),
-        "scan SLDPRT feature input classes",
-    )?;
-    for (ordinal, (offset, name)) in payload_classes(payload).enumerate() {
+    let mut offsets = 0..payload.len().saturating_sub(3);
+    while let Some((offset, name)) = next_payload_class(ctx, payload, &mut offsets)? {
+        let ordinal = classes.len();
         let id = record_id(ctx, "class", lane_key, offset)?;
         let parent = ctx.copy_retained_text(parent, "retain SLDPRT feature input class parent")?;
         let name = ctx.copy_retained_text(name, "retain SLDPRT feature input class name")?;

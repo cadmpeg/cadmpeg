@@ -29,7 +29,7 @@ pub(crate) fn named_scalars_charged(
         let Some(name_offset) = usize::try_from(name.offset).ok() else {
             continue;
         };
-        let Some(value_offset) = scalar_value_offset(payload, name_offset)? else {
+        let Some(value_offset) = scalar_value_offset(payload, name_offset) else {
             continue;
         };
         let Some(value) = View::f64_le_at(payload, value_offset).and_then(FiniteReal::new) else {
@@ -83,7 +83,7 @@ pub(crate) fn named_scalars_charged(
 ///
 /// The name length comes from the payload's own length byte, so the offset is a
 /// function of the retained bytes alone and never of a stored name value.
-fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Result<Option<usize>, CodecError> {
+fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
     let Some((header_offset, value_offset)) = (|| {
         let units = usize::from(*payload.get(name_offset.checked_add(NAME_MARKER.len())?)?);
         let header_offset = name_offset
@@ -94,20 +94,20 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Result<Option<usiz
             header_offset.checked_add(SCALAR_HEADER.len())?,
         ))
     })() else {
-        return Ok(None);
+        return None;
     };
     if payload.get(header_offset..value_offset) == Some(SCALAR_HEADER) {
-        return Ok(Some(value_offset));
+        return Some(value_offset);
     }
     let Some(compact_value_offset) = header_offset.checked_add(COMPACT_SCALAR_HEADER.len()) else {
-        return Ok(None);
+        return None;
     };
     if payload.get(header_offset..compact_value_offset) == Some(COMPACT_SCALAR_HEADER) {
         let Some(trailer_offset) = compact_value_offset.checked_add(8) else {
-            return Ok(None);
+            return None;
         };
         if compact_scalar_layout(payload, trailer_offset) {
-            return Ok(Some(compact_value_offset));
+            return Some(compact_value_offset);
         }
     }
     let Some((value_only_offset, shifted_value_offset, shifted_trailer_offset)) = (|| {
@@ -119,19 +119,17 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Result<Option<usiz
             shifted_value_offset.checked_add(8)?,
         ))
     })() else {
-        return Ok(None);
+        return None;
     };
     if payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER)
         && payload.get(value_only_offset..shifted_value_offset) == Some(&[0; 4])
         && View::f64_le_at(payload, shifted_value_offset).is_some_and(f64::is_finite)
         && shifted_value_only_scalar_trailer(payload, shifted_trailer_offset)
     {
-        return Ok(Some(shifted_value_offset));
+        return Some(shifted_value_offset);
     }
-    Ok(
-        (payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER))
-            .then_some(value_only_offset),
-    )
+    (payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER))
+        .then_some(value_only_offset)
 }
 
 /// Whether two scalar indexes agree, field by field, with values within four
@@ -210,7 +208,7 @@ fn scalar_operands_charged(
         offset,
         kind,
         entity_index,
-    } in operand_cells(payload, trailer_offset)?
+    } in operand_cells(payload, trailer_offset)
         .into_iter()
         .flatten()
     {
@@ -245,7 +243,7 @@ struct ScalarOperandCell {
 fn operand_cells(
     payload: &[u8],
     trailer_offset: usize,
-) -> Result<[Option<ScalarOperandCell>; 2], CodecError> {
+) -> [Option<ScalarOperandCell>; 2] {
     let compact = compact_scalar_layout(payload, trailer_offset);
     let first = if compact || !legacy_scalar_layout(payload, trailer_offset) {
         35
@@ -257,7 +255,7 @@ fn operand_cells(
     } else {
         first + operand_cell::LEN
     };
-    Ok([first, second].map(|relative| {
+    [first, second].map(|relative| {
         let offset = trailer_offset.checked_add(relative)?;
         if compact {
             let cell = payload.get(offset..offset.checked_add(8)?)?;
@@ -284,7 +282,7 @@ fn operand_cells(
             ])?,
             entity_index: View::u16_le_at(cell, operand_cell::MARKER_ADDRESS)?,
         })
-    }))
+    })
 }
 
 pub(super) fn operand_kind(tag: [u8; 2]) -> Option<FeatureInputOperandKind> {
@@ -315,11 +313,18 @@ impl<'lane, 'ctx> ObjectNames<'lane, 'ctx> {
         ctx: &'ctx DecodeContext<'_>,
         lane: &'lane FeatureInputLane,
     ) -> Result<Self, CodecError> {
-        let (by_object, object_storage) = ctx.unique_index(
-            ctx.admit_iter(&lane.names, "index SLDPRT object names by id")?
-                .filter_map(|name| Some((name.object_id?.value()?, name))),
-            "index SLDPRT object names by id",
-        )?;
+        let mut by_object = std::collections::HashMap::new();
+        let mut object_storage = ctx.reserve_scoped(0, "index SLDPRT object names by id")?;
+        for name in ctx.admit_iter(&lane.names, "index SLDPRT object names by id")? {
+            let Some(source) = name.object_id.and_then(ObjectId::value) else { continue; };
+            if let Some(previous) = ctx.get_mut_hash_map(&mut by_object, &source,
+                "index SLDPRT object names by id")? {
+                *previous = None;
+            } else {
+                object_storage.with_storage(|| ctx.insert_hash_map(&mut by_object, source, Some(name),
+                    "index SLDPRT object names by id"))?;
+            }
+        }
         let (by_value, value_storage) = ctx.unique_index(
             lane.names.iter().map(|name| (name.value.as_str(), name)),
             "index SLDPRT object names by text",

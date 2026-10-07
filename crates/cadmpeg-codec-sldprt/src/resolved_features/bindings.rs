@@ -413,7 +413,7 @@ pub(crate) fn bind_pattern_inputs(
                             {
                                 continue;
                             }
-                            let Some(Some(seed)) = by_source.source(
+                            let Some(seed) = by_source.source(
                                 ctx,
                                 identity.feature_source_id.value(),
                                 "scan SLDPRT pattern input candidates",

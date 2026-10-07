@@ -5,7 +5,7 @@ use super::curves::{
     sketch_plane_frames, SketchPlaneUAxisSource, CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE,
     REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
 };
-use super::scalars::feature_object_name;
+use super::scalars::ObjectNames;
 use super::selections::{
     compact_component_path_end_at, component_face_reference_in_record, COMPACT_EDGE_VECTOR_MARKER,
 };
@@ -220,6 +220,7 @@ pub(crate) fn enrich_history_reference_planes(
         known_reference_plane_sources.push(reference_sources);
     }
     for lane in ctx.admit_iter(lanes, "scan SLDPRT reference plane lanes")? {
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut starts = Vec::new();
         for (history_index, history) in ctx
             .admit_iter(&*histories, "scan SLDPRT reference plane features")?
@@ -229,7 +230,7 @@ pub(crate) fn enrich_history_reference_planes(
                 .admit_iter(&history.features, "scan SLDPRT reference plane features")?
                 .enumerate()
             {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = object_names.of(ctx, feature)? {
                     ctx.reserve_vec(&mut starts, 1, "collect SLDPRT reference plane starts")?;
                     starts.push((name.offset, history_index, feature_index));
                 }
@@ -883,6 +884,7 @@ pub(crate) fn enrich_history_reference_points(
 ) -> Result<(), CodecError> {
     let mut candidates = BTreeMap::<(usize, usize), Option<Point3>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT reference point lanes")? {
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut starts = Vec::new();
         for (history_index, history) in ctx
             .admit_iter(&*histories, "scan SLDPRT reference point features")?
@@ -892,7 +894,7 @@ pub(crate) fn enrich_history_reference_points(
                 .admit_iter(&history.features, "scan SLDPRT reference point features")?
                 .enumerate()
             {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = object_names.of(ctx, feature)? {
                     ctx.reserve_vec(&mut starts, 1, "collect SLDPRT reference point starts")?;
                     starts.push((name.offset, history_index, feature_index));
                 }
@@ -914,7 +916,7 @@ pub(crate) fn enrich_history_reference_points(
             {
                 continue;
             }
-            let Some(name) = feature_object_name(feature, lane) else {
+            let Some(name) = object_names.of(ctx, feature)? else {
                 continue;
             };
             let record_end = starts
@@ -1076,6 +1078,7 @@ pub(crate) fn enrich_history_coordinate_systems(
     let mut candidates =
         BTreeMap::<(usize, usize), Option<(Point3, Vector3, Vector3, Vector3)>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT coordinate system lanes")? {
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut starts = Vec::new();
         for (history_index, history) in ctx
             .admit_iter(&*histories, "scan SLDPRT coordinate system features")?
@@ -1085,7 +1088,7 @@ pub(crate) fn enrich_history_coordinate_systems(
                 .admit_iter(&history.features, "scan SLDPRT coordinate system features")?
                 .enumerate()
             {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = object_names.of(ctx, feature)? {
                     ctx.reserve_vec(&mut starts, 1, "collect SLDPRT coordinate system starts")?;
                     starts.push((name.offset, history_index, feature_index));
                 }
@@ -2401,6 +2404,7 @@ pub(crate) fn enrich_history_reference_axes(
         }
     }
     for lane in ctx.admit_iter(lanes, "scan SLDPRT reference axis lanes")? {
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut starts = Vec::new();
         for (history_index, history) in ctx
             .admit_iter(&*histories, "collect SLDPRT reference axis starts")?
@@ -2410,7 +2414,7 @@ pub(crate) fn enrich_history_reference_axes(
                 .admit_iter(&history.features, "collect SLDPRT reference axis starts")?
                 .enumerate()
             {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = object_names.of(ctx, feature)? {
                     ctx.reserve_vec(&mut starts, 1, "collect SLDPRT reference axis starts")?;
                     starts.push((name.offset, history_index, feature_index));
                 }

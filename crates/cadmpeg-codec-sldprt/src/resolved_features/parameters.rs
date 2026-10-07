@@ -1,6 +1,6 @@
 //! Design parameter enrichment and scalar synchronisation.
 
-use super::scalars::{feature_object_name, ObjectNames};
+use super::scalars::ObjectNames;
 use super::{NAME_MARKER, VALUE_ONLY_SCALAR_HEADER};
 use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
@@ -568,13 +568,15 @@ pub(crate) fn sync_changed_feature_scalars(
             .iter()
             .map(|name| (name.id.as_str(), name.value.as_str()))
             .collect::<HashMap<_, _>>();
-        let mut starts = histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .filter_map(|feature| {
-                feature_object_name(feature, lane).map(|name| (name.offset, feature))
-            })
-            .collect::<Vec<_>>();
+        let object_names = ObjectNames::new(ctx, lane)?;
+        let mut starts = Vec::new();
+        for history in ctx.admit_iter(histories, "index SLDPRT scalar update features")? {
+            for feature in ctx.admit_iter(&history.features, "index SLDPRT scalar update features")? {
+                if let Some(name) = object_names.of(ctx, feature)? {
+                    ctx.push_vec(&mut starts, (name.offset, feature), "index SLDPRT scalar update features")?;
+                }
+            }
+        }
         ctx.stable_sort_by(
             &mut starts,
             |value| &value.0,
