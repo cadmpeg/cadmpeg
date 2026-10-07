@@ -253,11 +253,7 @@ fn attach_indexed_om_unknowns(
             crate::om::IndexedStore::OffsetOnly {
                 control, records, ..
             } => {
-                for (record_index, record) in ctx
-                    .admit_iter(
-                        std::slice::from_ref(control),
-                        "NX unknown control traversal",
-                    )?
+                for (record_index, record) in std::iter::once(control)
                     .chain(ctx.admit_iter(records.as_ref(), "NX offset unknown record traversal")?)
                     .enumerate()
                 {
@@ -304,13 +300,13 @@ pub(super) fn attach(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
-    let has_object_sections = !scan.container.indexed_om_sections(ctx)?.is_empty();
+    let no_native_content = model.is_empty() && scan.container.indexed_om_sections(ctx)?.is_empty();
     let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
-    if model.is_empty() && !has_object_sections {
+    if no_native_content {
         return Ok(());
     }
     attach_rm_face_colors(ctx, ir, model, scan, annotations)?;
