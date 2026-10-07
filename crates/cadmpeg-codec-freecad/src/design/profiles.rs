@@ -257,9 +257,9 @@ fn finish_profile_chain(
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct EndpointLocus {
-    pub(super) entity: usize,
-    pub(super) start: bool,
+struct EndpointLocus {
+    entity: usize,
+    start: bool,
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for EndpointLocus {
@@ -277,17 +277,17 @@ impl cadmpeg_core::decode::cost::DecodeCost for EndpointLocus {
     }
 }
 
-pub(super) struct IndexedEndpoint {
+struct IndexedEndpoint {
     locus: EndpointLocus,
     point: Point2,
 }
 
-pub(super) struct EndpointIndex {
-    pub(super) by_scale: BTreeMap<u64, Vec<IndexedEndpoint>>,
+struct EndpointIndex {
+    by_scale: BTreeMap<u64, Vec<IndexedEndpoint>>,
 }
 
 impl EndpointIndex {
-    pub(super) fn new<'ctx>(
+    fn new<'ctx>(
         ctx: &'ctx DecodeContext<'_>,
         profile_entities: &BTreeSet<usize>,
         entities: &[SketchEntity],
@@ -335,7 +335,7 @@ fn endpoint_scale_bucket(point: Point2) -> u64 {
     point.u.abs().max(point.v.abs()).max(1.0).to_bits() >> 52
 }
 
-pub(super) fn endpoint_candidates<'ctx>(
+fn endpoint_candidates<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     endpoint: EndpointLocus,
     available: &BTreeSet<usize>,
@@ -568,7 +568,7 @@ fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
 
 const SKETCH_ENDPOINT_ROUNDING_ULPS: f64 = 64.0;
 
-pub(super) fn endpoints_match_by_roundoff(a: Point2, b: Point2) -> bool {
+fn endpoints_match_by_roundoff(a: Point2, b: Point2) -> bool {
     let scale =
         a.u.abs()
             .max(a.v.abs())
@@ -577,3 +577,6 @@ pub(super) fn endpoints_match_by_roundoff(a: Point2, b: Point2) -> bool {
             .max(1.0);
     (a.u - b.u).hypot(a.v - b.v) <= SKETCH_ENDPOINT_ROUNDING_ULPS * f64::EPSILON * scale
 }
+
+#[cfg(test)]
+mod tests;
