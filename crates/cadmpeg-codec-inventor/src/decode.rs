@@ -2601,7 +2601,8 @@ fn known_property_name(
     ctx: &DecodeContext<'_>,
     name: &str,
 ) -> Result<Option<KnownPropertyName>, CodecError> {
-    let mut normalized = [0_u8; KNOWN_PROPERTY_NAME_MAX];
+    // Four spare bytes let each character's whole UTF-8 buffer be copied.
+    let mut normalized = [0_u8; KNOWN_PROPERTY_NAME_MAX + 4];
     let mut len = 0_usize;
     let mut characters = name.chars();
     while let Some(character) =
@@ -2612,15 +2613,16 @@ fn known_property_name(
         }
         for lower in character.to_lowercase() {
             let mut buffer = [0_u8; 4];
-            let encoded = lower.encode_utf8(&mut buffer).as_bytes();
-            let Some(slot) = len
-                .checked_add(encoded.len())
-                .and_then(|end| normalized.get_mut(len..end))
-            else {
+            let width = lower.encode_utf8(&mut buffer).len();
+            let end = len + width;
+            if end > KNOWN_PROPERTY_NAME_MAX {
+                return Ok(None);
+            }
+            let Some(slot) = normalized.get_mut(len..len + 4) else {
                 return Ok(None);
             };
-            slot.copy_from_slice(encoded);
-            len += encoded.len();
+            slot.copy_from_slice(&buffer);
+            len = end;
         }
     }
     Ok(match &normalized[..len] {

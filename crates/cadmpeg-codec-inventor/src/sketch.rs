@@ -1543,16 +1543,6 @@ pub(crate) fn project(
         .len()
         .checked_sub(constraints.len())
         .ok_or_else(|| CodecError::malformed("Inventor constraints exceed inventory"))?;
-    let mut projected_entity_keys_storage =
-        ctx.reserve_scoped(0, "index projected Inventor sketch entity closure keys")?;
-    let projected_entity_keys = projected_entity_keys_storage.with_storage(|| {
-        ctx.collect_hash_set(
-            projected_entity_by_key.iter().map(|(key, _)| *key),
-            "index projected Inventor sketch entity closure keys",
-        )
-    })?;
-    drop(projected_entity_by_key);
-    drop(projected_entity_by_key_storage);
     let mut raw_sketch_by_native_storage =
         ctx.reserve_scoped(0, "index Inventor raw sketch native refs")?;
     let mut raw_sketch_by_native = HashMap::new();
@@ -1596,8 +1586,8 @@ pub(crate) fn project(
                         return Ok(false);
                     }
                     let key = (raw.identity.segment_token.as_str(), ordinal);
-                    Ok(ctx.contains_hash_set(
-                        &projected_entity_keys,
+                    Ok(ctx.contains_key_btree_map(
+                        &projected_entity_by_key,
                         &key,
                         "access Inventor sketch records",
                     )? || ctx.contains_hash_set(
@@ -1621,8 +1611,8 @@ pub(crate) fn project(
     )?;
     drop(raw_sketch_by_native);
     drop(raw_sketch_by_native_storage);
-    drop(projected_entity_keys);
-    drop(projected_entity_keys_storage);
+    drop(projected_entity_by_key);
+    drop(projected_entity_by_key_storage);
     let mut closed_sketch_ids_storage =
         ctx.reserve_scoped(0, "index closed Inventor sketch ids")?;
     let closed_sketch_ids = closed_sketch_ids_storage.with_storage(|| {

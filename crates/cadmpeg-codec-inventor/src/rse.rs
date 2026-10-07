@@ -113,8 +113,8 @@ impl SegmentToken {
             return Ok(None);
         }
         let token_len = cadmpeg_core::decode::u64_from_index(token.len());
-        ctx.charge_work(token_len, "validate RSe segment token key")?;
         ctx.charge_retained(token_len, "retain RSe segment token")?;
+        ctx.charge_work(token_len, "validate RSe segment token key")?;
         let Ok(token) = IdentityKey::try_new(token) else {
             return Ok(None);
         };
