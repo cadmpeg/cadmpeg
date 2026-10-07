@@ -115,12 +115,12 @@ fn selection_fixture() -> (
 
 fn bind(
     max_items: u64,
-    max_retained_bytes: u64,
+    max_materialized_bytes: u64,
 ) -> Result<BodySelection, cadmpeg_core::CodecError> {
     let (scope, groups, operands, mut selection) = selection_fixture();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained_bytes;
+    policy.limits.max_materialized_bytes = max_materialized_bytes;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let feature = FeatureId::mint("f3d:model:feature#body").unwrap();
@@ -464,7 +464,7 @@ fn body_recipe_validation_refuses_collection_limit() {
 #[test]
 fn body_recipe_identity_refuses_retained_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "retain F3D history input identity",
         |cap| bind(u64::MAX, cap).map(|_| ()),
     );

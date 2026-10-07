@@ -1101,7 +1101,7 @@ fn body_recipe_history_accounts_temporary_identity_lookup_key() {
     let error = crate::test_support::resource_refusal_at(
         ResourceDimension::WorkUnits,
         operation,
-        2,
+        1,
         |decode| {
             let (scope, history, mut operands, _) = body_recipe_history_fixture();
             operands.push(operands[0].clone());
