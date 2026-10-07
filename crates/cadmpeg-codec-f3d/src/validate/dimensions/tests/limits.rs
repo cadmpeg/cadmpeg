@@ -192,7 +192,7 @@ fn dimension_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_cor
         policy.limits.max_collection_items = max_items;
         policy.limits.max_retained_bytes = max_retained;
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let mut ctx = crate::validate::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
         let mut findings = Vec::new();
         match case {
@@ -404,7 +404,7 @@ fn dimension_recipe_absent_companion_member_skips_text_comparison() {
             }))
             .unwrap(),
         );
-        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let ctx = crate::validate::Ctx::new(&ir, &native, decode).unwrap();
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
             "compare F3D dimension companion recipe order",

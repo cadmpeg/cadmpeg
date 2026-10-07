@@ -118,7 +118,7 @@ fn scope_error(case: Case, max_items: u64) -> cadmpeg_core::CodecError {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = max_items;
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let mut ctx = crate::validate::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
         super::super::validate_parameter_scopes(&ctx, &mut Vec::new()).unwrap_err()
     })
@@ -207,7 +207,7 @@ fn edge_flange_reference_scan_preserves_work_refusal() {
                 operation,
                 0,
                 |decode| {
-                    let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
+                    let mut ctx = crate::validate::Ctx::new(&ir, &native, service)?;
                     ctx.decode = decode;
                     super::super::validate_parameter_scopes(&ctx, &mut Vec::new())
                 },
@@ -276,7 +276,7 @@ fn variable_alignment_reference_windows_refuse_work_limit() {
             "scan F3D variable alignment reference-window starts",
             0,
             |decode| {
-                let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
+                let mut ctx = crate::validate::Ctx::new(&ir, &native, service)?;
                 ctx.decode = decode;
                 super::super::validate_parameter_scopes(&ctx, &mut Vec::new())
             },
