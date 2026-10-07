@@ -351,7 +351,9 @@ impl PmDcTransformPayloadWire {
             None => false,
             Some(TRANSFORM_PREFIX) => true,
             Some(_) => {
-                return Err(CodecError::malformed("transform prefix must be 515 or null"));
+                return Err(CodecError::malformed(
+                    "transform prefix must be 515 or null",
+                ));
             }
         };
         Ok(PmDcTransformPayload {
@@ -653,10 +655,7 @@ fn parse_entity(
     })
 }
 
-fn point2(
-    cursor: &mut Cursor<'_>,
-    fields: [&str; 2],
-) -> Result<[FiniteReal; 2], CodecError> {
+fn point2(cursor: &mut Cursor<'_>, fields: [&str; 2]) -> Result<[FiniteReal; 2], CodecError> {
     Ok([cursor.f64(fields[0])?, cursor.f64(fields[1])?])
 }
 
@@ -734,9 +733,17 @@ fn parse_line(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcSketchEntityKind, CodecError> {
-    let (points, auxiliary) = edge_prefix(ctx, cursor, 32, "line", [
-        "line point list", "line auxiliary list 0", "line auxiliary list 1"
-    ])?;
+    let (points, auxiliary) = edge_prefix(
+        ctx,
+        cursor,
+        32,
+        "line",
+        [
+            "line point list",
+            "line auxiliary list 0",
+            "line auxiliary list 1",
+        ],
+    )?;
     let origin = point2(cursor, ["line origin u", "line origin v"])?;
     let direction = point2(cursor, ["line direction u", "line direction v"])?;
     Ok(PmDcSketchEntityKind::Line {
@@ -751,9 +758,17 @@ fn parse_circle(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcSketchEntityKind, CodecError> {
-    let (points, auxiliary) = edge_prefix(ctx, cursor, 13, "circle", [
-        "circle point list", "circle auxiliary list 0", "circle auxiliary list 1"
-    ])?;
+    let (points, auxiliary) = edge_prefix(
+        ctx,
+        cursor,
+        13,
+        "circle",
+        [
+            "circle point list",
+            "circle auxiliary list 0",
+            "circle auxiliary list 1",
+        ],
+    )?;
     let center = cursor.reference("circle center reference")?;
     let radius = cursor.f64("circle radius")?;
     let state = cursor.u8("circle state")?;
@@ -773,11 +788,22 @@ fn parse_ellipse(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcSketchEntityKind, CodecError> {
-    let (points, auxiliary) = edge_prefix(ctx, cursor, 37, "ellipse", [
-        "ellipse point list", "ellipse auxiliary list 0", "ellipse auxiliary list 1"
-    ])?;
+    let (points, auxiliary) = edge_prefix(
+        ctx,
+        cursor,
+        37,
+        "ellipse",
+        [
+            "ellipse point list",
+            "ellipse auxiliary list 0",
+            "ellipse auxiliary list 1",
+        ],
+    )?;
     let center = cursor.reference("ellipse center reference")?;
-    let major_direction = point2(cursor, ["ellipse major direction u", "ellipse major direction v"])?;
+    let major_direction = point2(
+        cursor,
+        ["ellipse major direction u", "ellipse major direction v"],
+    )?;
     let major_radius = cursor.f64("ellipse major radius")?;
     let minor_radius = cursor.f64("ellipse minor radius")?;
     let state = cursor.u8("ellipse state")?;
@@ -883,8 +909,12 @@ fn map_header(
         })
         .transpose()?;
     if cadmpeg_core::decode::bounded_len(
-        cadmpeg_core::decode::u64_from_index(count), min_entry_bytes, cursor.remaining()
-    ).is_none() {
+        cadmpeg_core::decode::u64_from_index(count),
+        min_entry_bytes,
+        cursor.remaining(),
+    )
+    .is_none()
+    {
         return Err(CodecError::malformed(format_args!(
             "Inventor PmDc {field} count exceeds remaining payload"
         )));
@@ -900,7 +930,12 @@ fn reference_scalar_map(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcReferenceScalarMap, CodecError> {
-    let (count, metadata) = map_header(ctx, cursor, "constraint scalar map", MIN_SCALAR_MAP_ENTRY_BYTES)?;
+    let (count, metadata) = map_header(
+        ctx,
+        cursor,
+        "constraint scalar map",
+        MIN_SCALAR_MAP_ENTRY_BYTES,
+    )?;
     let mut entries = ctx.vector_storage(count, "admit Inventor sketch constraint map")?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(count),
@@ -928,7 +963,12 @@ fn reference_pair_map(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcReferencePairMap, CodecError> {
-    let (count, metadata) = map_header(ctx, cursor, "constraint reference map", MIN_REFERENCE_MAP_ENTRY_BYTES)?;
+    let (count, metadata) = map_header(
+        ctx,
+        cursor,
+        "constraint reference map",
+        MIN_REFERENCE_MAP_ENTRY_BYTES,
+    )?;
     let mut entries = ctx.vector_storage(count, "admit Inventor sketch constraint map")?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(count),
@@ -1170,18 +1210,18 @@ pub(crate) fn project(
     let mut parameter_index_storage = ctx.reserve_scoped(0, "index Inventor sketch parameter")?;
     let mut parameter_index = HashMap::new();
     if !inventory.constraints.is_empty() {
-    for parameter in ctx.admit_iter(parameters, "visit Inventor sketch items")? {
-        if let Some(native) = &parameter.native_ref {
-            parameter_index_storage.with_storage(|| {
-                ctx.insert_hash_map(
-                    &mut parameter_index,
-                    native.as_str(),
-                    &parameter.id,
-                    "index Inventor sketch parameter",
-                )
-            })?;
+        for parameter in ctx.admit_iter(parameters, "visit Inventor sketch items")? {
+            if let Some(native) = &parameter.native_ref {
+                parameter_index_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut parameter_index,
+                        native.as_str(),
+                        &parameter.id,
+                        "index Inventor sketch parameter",
+                    )
+                })?;
+            }
         }
-    }
     }
 
     // Which records each sketch lists, keyed by the sketch's identity and the
@@ -2890,20 +2930,24 @@ mod tests {
     #[test]
     fn line_component_expands_shared_endpoint_neighbours_once() {
         let entity = cadmpeg_ir::sketches::SketchEntity::new(
-            cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#2").expect("entity id"),
+            cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#2")
+                .expect("entity id"),
             cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id"),
             cadmpeg_ir::sketches::SketchGeometry::try_from(
                 cadmpeg_ir::sketches::SketchGeometryDefinition::Line {
                     start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
                     end: cadmpeg_ir::math::Point2::new(1.0, 0.0),
                 },
-            ).expect("line geometry"),
-        ).with_endpoint_refs(vec!["point-a".into(), "point-b".into()]);
+            )
+            .expect("line geometry"),
+        )
+        .with_endpoint_refs(vec!["point-a".into(), "point-b".into()]);
         for count in [1_usize, 256] {
             let lines = vec![&entity; count];
             let neighbours = (0..count).collect::<Vec<_>>();
             let adjacency = std::collections::HashMap::from([
-                ("point-a", neighbours.clone()), ("point-b", neighbours),
+                ("point-a", neighbours.clone()),
+                ("point-b", neighbours),
             ]);
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -2911,8 +2955,12 @@ mod tests {
             let slots = cadmpeg_core::decode::u64_from_index(3 * count + 3);
             policy.limits.max_collection_items = slots;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-            let (component, storage) = super::line_component(&ctx, 0, &lines, &adjacency).expect("linear neighbour expansion");
-            assert_eq!(component.iter().copied().collect::<Vec<_>>(), (0..count).collect::<Vec<_>>());
+            let (component, storage) = super::line_component(&ctx, 0, &lines, &adjacency)
+                .expect("linear neighbour expansion");
+            assert_eq!(
+                component.iter().copied().collect::<Vec<_>>(),
+                (0..count).collect::<Vec<_>>()
+            );
             drop((component, storage));
             assert!(matches!(ctx.charge_collection_items(1, "probe"),
                 Err(CodecError::ResourceLimit(limit)) if limit.used == slots));
@@ -2921,9 +2969,11 @@ mod tests {
             let (component, storage) = super::line_component(&ctx, 0, &lines, &adjacency)
                 .expect("linear neighbour expansion");
             drop((component, storage));
-            assert!(matches!(ctx.reserve_scoped(u64::MAX, "released component storage"),
+            assert!(
+                matches!(ctx.reserve_scoped(u64::MAX, "released component storage"),
                 Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == 0));
+                    if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == 0)
+            );
         }
     }
 
@@ -3004,7 +3054,8 @@ mod tests {
     #[test]
     fn sketch_parameter_index_borrows_unselected_values() {
         let parameters = [cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint("inventor:design:parameter#segment-0").expect("parameter id"),
+            id: cadmpeg_ir::features::ParameterId::mint("inventor:design:parameter#segment-0")
+                .expect("parameter id"),
             owner: None,
             ordinal: 0,
             name: "p".into(),
@@ -3023,7 +3074,12 @@ mod tests {
         let constraint = parse(&bytes, |ctx, source| {
             parse_constraint(ctx, SketchConstraintTag::Horizontal, source, 22).expect("constraint")
         });
-        inventory.constraints.push(Located::new(constraint, fixture_record_type_id(HORIZONTAL_TYPE), cadmpeg_ir::identity_key!("segment"), 3));
+        inventory.constraints.push(Located::new(
+            constraint,
+            fixture_record_type_id(HORIZONTAL_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            3,
+        ));
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
@@ -3039,7 +3095,8 @@ mod tests {
     #[test]
     fn sketch_projection_without_constraints_skips_parameter_index() {
         let parameters = [cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint("inventor:design:parameter#segment-0").expect("parameter id"),
+            id: cadmpeg_ir::features::ParameterId::mint("inventor:design:parameter#segment-0")
+                .expect("parameter id"),
             owner: None,
             ordinal: 0,
             name: "p".into(),
@@ -3063,7 +3120,11 @@ mod tests {
             assert!(projection.constraints.is_empty());
             // No constraints read the parameter index; unused parameters add zero entries.
             match ctx.charge_collection_items(policy.limits.max_collection_items + 1, "probe") {
-                Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems => slots.push(limit.used),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::CollectionItems =>
+                {
+                    slots.push(limit.used);
+                }
                 other => panic!("expected collection probe refusal, got {other:?}"),
             }
         }
@@ -3073,7 +3134,8 @@ mod tests {
     #[test]
     fn sketch_projection_without_sketches_skips_parameter_index() {
         let parameters = [cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint("inventor:design:parameter#segment-0").expect("parameter id"),
+            id: cadmpeg_ir::features::ParameterId::mint("inventor:design:parameter#segment-0")
+                .expect("parameter id"),
             owner: None,
             ordinal: 0,
             name: "p".into(),
@@ -3086,14 +3148,19 @@ mod tests {
             native_ref: Some("inventor:pmdc:parameter#segment-0".into()),
         }];
         let inventory = SketchInventory {
-            sketches: Vec::new(), entities: Vec::new(), transforms: Vec::new(),
-            directions: Vec::new(), constraints: Vec::new(), issues: Vec::new(),
+            sketches: Vec::new(),
+            entities: Vec::new(),
+            transforms: Vec::new(),
+            directions: Vec::new(),
+            constraints: Vec::new(),
+            issues: Vec::new(),
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let projection = project(&ctx, &inventory, &parameters).expect("index holds borrowed values");
+        let projection =
+            project(&ctx, &inventory, &parameters).expect("index holds borrowed values");
         assert!(projection.sketches.is_empty());
         assert!(projection.entities.is_empty());
         assert!(projection.constraints.is_empty());
@@ -3840,7 +3907,11 @@ mod tests {
     #[test]
     fn constraint_map_counts_refuse_truncated_payload_before_admission() {
         for scalar in [true, false] {
-            let width = if scalar { super::MIN_SCALAR_MAP_ENTRY_BYTES } else { super::MIN_REFERENCE_MAP_ENTRY_BYTES };
+            let width = if scalar {
+                super::MIN_SCALAR_MAP_ENTRY_BYTES
+            } else {
+                super::MIN_REFERENCE_MAP_ENTRY_BYTES
+            };
             for count in [1_u32, u32::MAX] {
                 let mut bytes = Vec::new();
                 bytes.extend_from_slice(&6_u16.to_le_bytes());
@@ -3854,7 +3925,8 @@ mod tests {
                 policy.limits.max_materialized_bytes = 0;
                 policy.limits.max_retained_bytes = 0;
                 policy.limits.max_work_units = 0;
-                let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+                let (ctx, view) =
+                    DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
                 let mut cursor = crate::pmdc::Cursor::new(view);
                 let result = if scalar {
                     super::reference_scalar_map(&ctx, &mut cursor).map(|map| map.entries().len())
@@ -3879,10 +3951,16 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = 0;
-            let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+            let (ctx, view) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
             let result = super::reference_scalar_map(&ctx, &mut crate::pmdc::Cursor::new(view));
             if value.is_finite() {
-                assert_eq!(result.expect("no temporary diagnostic text").entries()[0].1.get(), value);
+                assert_eq!(
+                    result.expect("no temporary diagnostic text").entries()[0]
+                        .1
+                        .get(),
+                    value
+                );
             } else {
                 assert!(matches!(result, Err(CodecError::Malformed(detail))
                     if detail == "Inventor PmDc constraint scalar-map value 0 is not finite"));
@@ -3894,11 +3972,15 @@ mod tests {
     fn planar_geometry_uses_static_diagnostic_fields() {
         let point = point_bytes(1, 3, [1.25, -2.5]);
         let line = line_bytes(2, 3, [4, 5]);
-        for (tag, bytes) in [(SketchEntityTag::Point, point), (SketchEntityTag::Line, line)] {
+        for (tag, bytes) in [
+            (SketchEntityTag::Point, point),
+            (SketchEntityTag::Line, line),
+        ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = 0;
-            let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+            let (ctx, view) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
             assert!(parse_entity(&ctx, tag, view, 22).is_ok());
         }
         let mut bytes = content(0);
@@ -4253,7 +4335,9 @@ mod tests {
         let mut bytes = content(1);
         bytes.extend_from_slice(&0x8421u16.to_le_bytes());
         bytes.extend_from_slice(&0x7bdeu16.to_le_bytes());
-        let transform = parse(&bytes, |ctx, source| parse_transform(ctx, source, 22).expect("transform"));
+        let transform = parse(&bytes, |ctx, source| {
+            parse_transform(ctx, source, 22).expect("transform")
+        });
         let mut wire = serde_json::to_value(transform).expect("wire");
         wire["prefix"] = serde_json::json!(516);
         let wire = serde_json::from_value::<PmDcTransformPayloadWire>(wire).expect("wire fields");
@@ -4262,7 +4346,10 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert!(matches!(wire.into_payload(&ctx), Err(CodecError::Malformed(_))));
+        assert!(matches!(
+            wire.into_payload(&ctx),
+            Err(CodecError::Malformed(_))
+        ));
     }
 
     #[test]

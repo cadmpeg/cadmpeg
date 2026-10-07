@@ -262,16 +262,14 @@ impl Serialize for ClassId {
 
 impl ClassId {
     fn from_text(value: &str) -> Result<Self, CodecError> {
-        let invalid = || CodecError::malformed(
-            "class_id must contain 32 lowercase hexadecimal digits"
-        );
+        let invalid =
+            || CodecError::malformed("class_id must contain 32 lowercase hexadecimal digits");
         if value.len() != 32 {
             return Err(invalid());
         }
         // One pass over the 32 digits validates and decodes them.
         let mut bytes = [0; 16];
-        for (index, digit) in value.as_bytes().iter().enumerate()
-        {
+        for (index, digit) in value.as_bytes().iter().enumerate() {
             let nibble = match digit {
                 b'0'..=b'9' => *digit - b'0',
                 b'a'..=b'f' => *digit - b'a' + 10,
@@ -1145,7 +1143,11 @@ pub(crate) fn project(
         .len()
         .checked_add(inventory.pattern_features.len())
         .ok_or_else(|| ctx.refuse_codec_limit("Inventor feature count", u64::MAX, u64::MAX))?;
-    let Some((first, feature_tail)) = inventory.features.split_first().filter(|_| !inventory.labels.is_empty()) else {
+    let Some((first, feature_tail)) = inventory
+        .features
+        .split_first()
+        .filter(|_| !inventory.labels.is_empty())
+    else {
         return Ok(FeatureProjection {
             features: Vec::new(),
             result_topologies: Vec::new(),
@@ -1155,13 +1157,30 @@ pub(crate) fn project(
     };
     let token = first.identity.segment_token.as_str();
     let pattern_tail = inventory.pattern_features.as_slice();
-    let multiple_tokens =
-        (!feature_tail.is_empty() && ctx.any_by(feature_tail, |feature| {
-            Ok(!ctx.equal(token, feature.identity.segment_token.as_str(), "check Inventor feature tokens")?)
-        }, "check Inventor feature tokens")?)
-            || (!pattern_tail.is_empty() && ctx.any_by(pattern_tail, |feature| {
-                Ok(!ctx.equal(token, feature.identity.segment_token.as_str(), "check Inventor feature tokens")?)
-            }, "check Inventor feature tokens")?);
+    let multiple_tokens = (!feature_tail.is_empty()
+        && ctx.any_by(
+            feature_tail,
+            |feature| {
+                Ok(!ctx.equal(
+                    token,
+                    feature.identity.segment_token.as_str(),
+                    "check Inventor feature tokens",
+                )?)
+            },
+            "check Inventor feature tokens",
+        )?)
+        || (!pattern_tail.is_empty()
+            && ctx.any_by(
+                pattern_tail,
+                |feature| {
+                    Ok(!ctx.equal(
+                        token,
+                        feature.identity.segment_token.as_str(),
+                        "check Inventor feature tokens",
+                    )?)
+                },
+                "check Inventor feature tokens",
+            )?);
     if multiple_tokens {
         return Ok(FeatureProjection {
             features: Vec::new(),
@@ -2520,80 +2539,8 @@ mod tests {
         for slots in [&[20, 22][..], &[2, 3, 4, 5, 8][..], &[6, 9][..]] {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
             assert!(super::boolean_properties(&ctx, &source, slots, &index)
-                .expect("fixed slot lists need no variable-work admission").is_empty());
-        }
-    }
-
-    #[test]
-    fn feature_token_check_stops_at_first_distinct_token() {
-        let bytes = pattern_feature_bytes(21, PmDcPatternFamily::Mirror);
-        let pattern = parse(&bytes, |ctx, source| {
-            parse_pattern_feature(ctx, source, 21, PmDcPatternFamily::Mirror)
-                .expect("pattern fixture")
-        });
-        for count in [2_u32, 256] {
-            // Ordinary-only, pattern-only and ordinary followed by patterns.
-            for mode in 0..3 {
-            for with_label in [false, true] {
-                let mut features = Vec::new();
-                let mut pattern_features = Vec::new();
-                for ordinal in 0..count {
-                    let token = if ordinal == 1 {
-                        cadmpeg_ir::identity_key!("other")
-                    } else {
-                        segment()
-                    };
-                    if mode == 0 || (mode == 2 && ordinal == 0) {
-                        let mut feature = test_feature(ordinal, 0, &[]);
-                        feature.identity.segment_token = token;
-                        features.push(feature);
-                    } else {
-                        pattern_features.push(Located::new(
-                            pattern.clone(), test_type_id(MIRROR_FEATURE_TYPE), token, ordinal,
-                        ));
-                    }
-                }
-                let inventory = super::FeatureInventory {
-                    features, pattern_features, terminators: Vec::new(),
-                    properties: Vec::new(), labels: if with_label { vec![test_label(0, 1, EXTRUSION_CLASS_ID, &[])] } else { Vec::new() },
-                    entity_style_links: Vec::new(), issues: Vec::new(),
-                };
-                let design = crate::design::DesignInventory {
-                    parameters: Vec::new(), expressions: Vec::new(),
-                    units: Vec::new(), issues: Vec::new(),
-                };
-                let sketch = crate::sketch::SketchInventory {
-                    sketches: Vec::new(), entities: Vec::new(), transforms: Vec::new(),
-                    directions: Vec::new(), constraints: Vec::new(), issues: Vec::new(),
-                };
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_collection_items = 0;
-                policy.limits.max_materialized_bytes = 0;
-                // One source visit compares the first token and the second token.
-                let work = 1 + cadmpeg_core::decode::u64_from_index(
-                    segment().as_str().len() + "other".len(),
-                );
-                policy.limits.max_work_units = work;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-                let projection = super::project(&ctx, &inventory, &design, &sketch, &[], &[])
-                    .expect("second token ends the check");
-                assert_eq!(projection.unresolved_features, usize::try_from(count).expect("count"));
-                assert!(projection.features.is_empty());
-                assert!(projection.result_topologies.is_empty());
-                if with_label && mode != 1 {
-                    assert!(matches!(ctx.charge_work(1, "probe"),
-                        Err(CodecError::ResourceLimit(limit))
-                            if limit.dimension == ResourceDimension::WorkUnits && limit.used == work));
-                } else {
-                    // No labels or no ordinary features means zero projection work.
-                    ctx.charge_work(1, "probe").expect("no token search is needed");
-                    assert!(matches!(ctx.charge_work(work, "probe"),
-                        Err(CodecError::ResourceLimit(limit))
-                            if limit.dimension == ResourceDimension::WorkUnits && limit.used == 1));
-                }
-            }
-            }
+                .expect("fixed slot lists need no variable-work admission")
+                .is_empty());
         }
     }
 
@@ -2601,11 +2548,17 @@ mod tests {
     fn feature_result_fixed_record_uses_no_extra_collection_slot() {
         let source = test_feature(0, 1, &[(0, 1)]);
         let properties = [
-            test_property(1, PmDcFeaturePropertyKind::References {
-                family: PmDcFeatureReferenceFamily::ObjectCollection,
-                items: reference_list(&[3]),
-            }),
-            test_property(2, PmDcFeaturePropertyKind::SurfaceBody { body: reference(0) }),
+            test_property(
+                1,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::ObjectCollection,
+                    items: reference_list(&[3]),
+                },
+            ),
+            test_property(
+                2,
+                PmDcFeaturePropertyKind::SurfaceBody { body: reference(0) },
+            ),
         ];
         let index = test_projection_index(&properties, &[], &[], &[], &[], &[], &[], &[]);
         let arena = DecodeArena::new();
@@ -2614,7 +2567,8 @@ mod tests {
         policy.limits.max_collection_items = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (_, result) = super::feature_result(&ctx, &source, 0, &index)
-            .expect("result candidate").expect("fixed record adds no collection entry");
+            .expect("result candidate")
+            .expect("fixed record adds no collection entry");
         assert_eq!(result.bodies().len(), 1);
         assert!(matches!(ctx.charge_collection_items(1, "probe"),
             Err(CodecError::ResourceLimit(limit)) if limit.used == 2));
@@ -2734,7 +2688,10 @@ mod tests {
             policy.limits.max_retained_bytes = 0;
             policy.limits.max_work_units = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-            assert!(matches!(wire.into_record(&ctx), Err(CodecError::Malformed(_))));
+            assert!(matches!(
+                wire.into_record(&ctx),
+                Err(CodecError::Malformed(_))
+            ));
         }
     }
 
@@ -2748,8 +2705,10 @@ mod tests {
         // Copying the seven tag bytes uses seven work units.
         policy.limits.max_work_units = 7;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert_eq!(super::admit_projected_feature(&ctx, &source, "extrude")
-            .expect("charged tag copy"), "extrude");
+        assert_eq!(
+            super::admit_projected_feature(&ctx, &source, "extrude").expect("charged tag copy"),
+            "extrude"
+        );
         assert!(matches!(ctx.charge_work(1, "probe"),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits && limit.used == 7));
@@ -2918,7 +2877,7 @@ mod tests {
         }
     }
 
-    fn segment() -> cadmpeg_ir::ids::IdentityKey {
+    pub(super) fn segment() -> cadmpeg_ir::ids::IdentityKey {
         cadmpeg_ir::identity_key!("generated")
     }
 
@@ -2999,7 +2958,7 @@ mod tests {
         )
     }
 
-    fn test_feature(ordinal: u32, slot_count: usize, slots: &[(usize, u32)]) -> PmDcFeature {
+    pub(super) fn test_feature(ordinal: u32, slot_count: usize, slots: &[(usize, u32)]) -> PmDcFeature {
         let mut references = vec![reference(0); slot_count];
         for (slot, record_ordinal) in slots {
             references[*slot] = reference(record_ordinal + 1);
@@ -3032,7 +2991,7 @@ mod tests {
         )
     }
 
-    fn test_type_id(value: [u8; 16]) -> crate::record_identity::RecordTypeId {
+    pub(super) fn test_type_id(value: [u8; 16]) -> crate::record_identity::RecordTypeId {
         let ctx = cadmpeg_test_support::service_decode_context();
         crate::record_identity::RecordTypeId::from_bytes(
             &ctx,
@@ -3087,7 +3046,7 @@ mod tests {
         assert!(decode_label(wire).is_err());
     }
 
-    fn test_label(
+    pub(super) fn test_label(
         owner_ordinal: u32,
         index: u32,
         class_id: ClassId,
@@ -3311,7 +3270,7 @@ mod tests {
         assert_eq!(parsed.state, -1);
     }
 
-    fn pattern_feature_bytes(version: u8, family: PmDcPatternFamily) -> Vec<u8> {
+    pub(super) fn pattern_feature_bytes(version: u8, family: PmDcPatternFamily) -> Vec<u8> {
         let mut bytes = content(21);
         bytes.extend_from_slice(&69u32.to_le_bytes());
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -3531,7 +3490,9 @@ mod tests {
         // The null first reference stops validation after one source step.
         policy.limits.max_work_units = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert!(!super::closed_edge_items(&ctx, "generated", &items, &index).expect("early rejection"));
+        assert!(
+            !super::closed_edge_items(&ctx, "generated", &items, &index).expect("early rejection")
+        );
         assert!(matches!(ctx.charge_work(1, "probe"),
             Err(CodecError::ResourceLimit(limit)) if limit.used == 1));
     }
@@ -3655,7 +3616,9 @@ mod tests {
         // One fillet group, one body member and one uniqueness-index slot use three slots.
         policy.limits.max_collection_items = 3;
         let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert!(project_fillet(&limited, &fillet, &label, &index).expect("candidate").is_ok());
+        assert!(project_fillet(&limited, &fillet, &label, &index)
+            .expect("candidate")
+            .is_ok());
 
         let raw_distance = raw_parameter(40);
         let neutral_distance = neutral_parameter(
@@ -3735,7 +3698,9 @@ mod tests {
         // One body member and one uniqueness-index slot use two slots; the chamfer group is fixed.
         policy.limits.max_collection_items = 2;
         let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert!(project_chamfer(&limited, &chamfer, &label, &index).expect("candidate").is_ok());
+        assert!(project_chamfer(&limited, &chamfer, &label, &index)
+            .expect("candidate")
+            .is_ok());
         assert!(matches!(
             projected.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Chamfer {
@@ -3962,7 +3927,8 @@ mod tests {
         // and planar selection uniqueness each use one slot: five in total.
         policy.limits.max_collection_items = 5;
         let (feature, result) = generated_extrusion(&[4], policy)
-            .expect("candidate").expect("five stored member and index slots");
+            .expect("candidate")
+            .expect("five stored member and index slots");
         assert_eq!(feature.source_tag.as_deref(), Some("extrude"));
         assert_eq!(feature.name.as_deref(), Some("Feature 5"));
         assert_eq!(result.bodies().len(), 1);
@@ -4152,7 +4118,9 @@ mod tests {
         // One body member and one uniqueness-index slot use two slots; the placement is fixed.
         policy.limits.max_collection_items = 2;
         let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert!(project_hole(&limited, &feature, &label, &index).expect("candidate").is_ok());
+        assert!(project_hole(&limited, &feature, &label, &index)
+            .expect("candidate")
+            .is_ok());
         assert!(matches!(
             projected.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
                 placements,
@@ -4440,5 +4408,110 @@ mod tests {
             serde_json::json!({"id": record.id, "value": owned}),
         );
         crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    }
+}
+
+#[cfg(test)]
+mod token_tests {
+    use super::tests::{pattern_feature_bytes, segment, test_feature, test_label, test_type_id};
+    use super::{parse_pattern_feature, PmDcPatternFamily, EXTRUSION_CLASS_ID, MIRROR_FEATURE_TYPE};
+    use crate::record_identity::Located;
+    use crate::test_support::test_fixtures::parse;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn feature_token_check_stops_at_first_distinct_token() {
+        let bytes = pattern_feature_bytes(21, PmDcPatternFamily::Mirror);
+        let pattern = parse(&bytes, |ctx, source| {
+            parse_pattern_feature(ctx, source, 21, PmDcPatternFamily::Mirror)
+                .expect("pattern fixture")
+        });
+        for count in [2_u32, 256] {
+            // Ordinary-only, pattern-only and ordinary followed by patterns.
+            for mode in 0..3 {
+                for with_label in [false, true] {
+                    let mut features = Vec::new();
+                    let mut pattern_features = Vec::new();
+                    for ordinal in 0..count {
+                        let token = if ordinal == 1 {
+                            cadmpeg_ir::identity_key!("other")
+                        } else {
+                            segment()
+                        };
+                        if mode == 0 || (mode == 2 && ordinal == 0) {
+                            let mut feature = test_feature(ordinal, 0, &[]);
+                            feature.identity.segment_token = token;
+                            features.push(feature);
+                        } else {
+                            pattern_features.push(Located::new(
+                                pattern.clone(),
+                                test_type_id(MIRROR_FEATURE_TYPE),
+                                token,
+                                ordinal,
+                            ));
+                        }
+                    }
+                    let inventory = super::FeatureInventory {
+                        features,
+                        pattern_features,
+                        terminators: Vec::new(),
+                        properties: Vec::new(),
+                        labels: if with_label {
+                            vec![test_label(0, 1, EXTRUSION_CLASS_ID, &[])]
+                        } else {
+                            Vec::new()
+                        },
+                        entity_style_links: Vec::new(),
+                        issues: Vec::new(),
+                    };
+                    let design = crate::design::DesignInventory {
+                        parameters: Vec::new(),
+                        expressions: Vec::new(),
+                        units: Vec::new(),
+                        issues: Vec::new(),
+                    };
+                    let sketch = crate::sketch::SketchInventory {
+                        sketches: Vec::new(),
+                        entities: Vec::new(),
+                        transforms: Vec::new(),
+                        directions: Vec::new(),
+                        constraints: Vec::new(),
+                        issues: Vec::new(),
+                    };
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_collection_items = 0;
+                    policy.limits.max_materialized_bytes = 0;
+                    // One source visit compares the first token and the second token.
+                    let work = 1 + cadmpeg_core::decode::u64_from_index(
+                        segment().as_str().len() + "other".len(),
+                    );
+                    policy.limits.max_work_units = work;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+                    let projection = super::project(&ctx, &inventory, &design, &sketch, &[], &[])
+                        .expect("second token ends the check");
+                    assert_eq!(
+                        projection.unresolved_features,
+                        usize::try_from(count).expect("count")
+                    );
+                    assert!(projection.features.is_empty());
+                    assert!(projection.result_topologies.is_empty());
+                    if with_label && mode != 1 {
+                        assert!(matches!(ctx.charge_work(1, "probe"),
+                        Err(CodecError::ResourceLimit(limit))
+                            if limit.dimension == ResourceDimension::WorkUnits && limit.used == work));
+                    } else {
+                        // No labels or no ordinary features means zero projection work.
+                        ctx.charge_work(1, "probe")
+                            .expect("no token search is needed");
+                        assert!(matches!(ctx.charge_work(work, "probe"),
+                        Err(CodecError::ResourceLimit(limit))
+                            if limit.dimension == ResourceDimension::WorkUnits && limit.used == 1));
+                    }
+                }
+            }
+        }
     }
 }
