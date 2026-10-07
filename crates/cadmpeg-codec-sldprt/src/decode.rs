@@ -95,7 +95,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let mut admitted_entities = 0_u64;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(
+        let (ir, annotations, unknowns, mut pmi_losses, _native) = build_metadata_ir(
             ctx,
             &scan,
             &classification,
@@ -122,7 +122,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         ctx.charge_entities(u64_from_index(streams.len()), "admit SLDPRT body streams")?;
         if let Some((decoded, mut report)) = try_decode_brep(ctx, &scan, &streams, &classification)?
         {
-            let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
+            let (ir, annotations, unknowns, mut pmi_losses, native) = build_geometry_ir(
                 ctx,
                 &mut scan,
                 &classification,
@@ -137,12 +137,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             )?;
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(ctx, &ir, &mut report)?;
-            append_design_losses(ctx, &ir, &mut report)?;
+            append_design_losses_with(ctx, &ir, Some(&native), &mut report)?;
             return decode_result(ctx, ir, report, annotations, unknowns);
         }
     }
 
-    let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(
+    let (ir, annotations, unknowns, mut pmi_losses, native) = build_metadata_ir(
         ctx,
         &scan,
         &classification,
@@ -161,7 +161,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         "append SLDPRT PMI losses",
     )?;
     report.losses.append(&mut pmi_losses);
-    append_design_losses(ctx, &ir, &mut report)?;
+    append_design_losses_with(ctx, &ir, Some(&native), &mut report)?;
     decode_result(ctx, ir, report, annotations, unknowns)
 }
 
@@ -358,6 +358,8 @@ fn spatial_sketch_constraint_has_complete_neutral_semantics(
     }
 }
 
+/// The helpers below take an admitted traversal: its admission paid for
+/// every visit, so they charge only the collection work.
 fn count_keys<K: Ord + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     keys: impl IntoIterator<Item = K>,
@@ -365,7 +367,6 @@ fn count_keys<K: Ord + cadmpeg_core::decode::cost::DecodeCost>(
 ) -> Result<BTreeMap<K, usize>, CodecError> {
     let mut counts = BTreeMap::<K, usize>::new();
     for key in keys {
-        ctx.charge_work(1, operation)?;
         if let Some(count) = ctx.get_mut_btree_map(&mut (counts), &key, operation)? {
             let next = count
                 .checked_add(1)
@@ -385,7 +386,6 @@ fn charged_map<K: Ord + cadmpeg_core::decode::cost::DecodeCost, V>(
 ) -> Result<BTreeMap<K, V>, CodecError> {
     let mut map = BTreeMap::new();
     for (key, value) in entries {
-        ctx.charge_work(1, operation)?;
         ctx.insert_btree_map(&mut map, key, value, operation)?;
     }
     Ok(map)
@@ -398,7 +398,6 @@ fn charged_btree_set<T: Ord + cadmpeg_core::decode::cost::DecodeCost>(
 ) -> Result<BTreeSet<T>, CodecError> {
     let mut set = BTreeSet::new();
     for value in values {
-        ctx.charge_work(1, operation)?;
         ctx.insert_btree_set(&mut set, value, operation)?;
     }
     Ok(set)
@@ -411,7 +410,6 @@ fn charged_vec<T>(
 ) -> Result<Vec<T>, CodecError> {
     let mut result = Vec::new();
     for value in values {
-        ctx.charge_work(1, operation)?;
         ctx.push_vec(&mut result, value, operation)?;
     }
     Ok(result)
@@ -435,7 +433,6 @@ fn insert_charged_set<'a, T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost 
     value: &'a T,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(1, operation)?;
     ctx.insert_hash_set(set, value, operation)?;
     Ok(())
 }
@@ -447,7 +444,6 @@ fn charged_hash_map<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
 ) -> Result<HashMap<K, V>, CodecError> {
     let mut map = HashMap::new();
     for (key, value) in entries {
-        ctx.charge_work(1, operation)?;
         ctx.insert_hash_map(&mut map, key, value, operation)?;
     }
     Ok(map)
@@ -472,18 +468,13 @@ fn has_incoherent_refs<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
     Ok(false)
 }
 
+/// Scan a model read back from its native namespace, as a test fixture does.
+#[cfg(test)]
 fn append_design_losses(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     report: &mut DecodeBody,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{
-        AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
-        ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, FeatureSourceContent,
-        LinearTermination, PathRef, PlanarProfileRef, ProfileRef, RevolveExtent, SplitFaceTool,
-    };
-    use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
-
     let native = match ir.native.namespace("sldprt") {
         None => None,
         Some(namespace) => match crate::native::SldprtNative::load_charged(ctx, namespace) {
@@ -494,6 +485,23 @@ fn append_design_losses(
             },
         },
     };
+    append_design_losses_with(ctx, ir, native.as_ref(), report)
+}
+
+/// Report what the decoded design leaves unresolved, reading the native
+/// records the decode stored.
+fn append_design_losses_with(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    native: Option<&crate::native::SldprtNative>,
+    report: &mut DecodeBody,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::{
+        AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
+        ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, FeatureSourceContent,
+        LinearTermination, PathRef, PlanarProfileRef, ProfileRef, RevolveExtent, SplitFaceTool,
+    };
+    use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
 
     let active_configurations = ctx
         .admit_iter(
@@ -560,10 +568,11 @@ fn append_design_losses(
     }
     let configuration_source_counts = count_keys(
         ctx,
-        ir.model
-            .configurations
-            .iter()
-            .filter_map(|configuration| configuration.source_index),
+        ctx.admit_iter(
+            &ir.model.configurations,
+            "count SLDPRT configuration source indices",
+        )?
+        .filter_map(|configuration| configuration.source_index),
         "count SLDPRT configuration source indices",
     )?;
     let ambiguous_configuration_sources = ctx
@@ -589,17 +598,16 @@ fn append_design_losses(
         .count();
     let configuration_ordinal_counts = count_keys(
         ctx,
-        ir.model
-            .configurations
-            .iter()
-            .map(|configuration| configuration.ordinal),
+        ctx.admit_iter(
+            &ir.model.configurations,
+            "count SLDPRT configuration ordinals",
+        )?
+        .map(|configuration| configuration.ordinal),
         "count SLDPRT configuration ordinals",
     )?;
     let configuration_name_counts = count_keys(
         ctx,
-        ir.model
-            .configurations
-            .iter()
+        ctx.admit_iter(&ir.model.configurations, "count SLDPRT configuration names")?
             .filter_map(|configuration| configuration.name.as_deref())
             .filter(|name| !name.is_empty()),
         "count SLDPRT configuration names",
@@ -632,7 +640,8 @@ fn append_design_losses(
     }
     let model_body_ids = charged_set(
         ctx,
-        ir.model.bodies.iter().map(|body| &body.id),
+        ctx.admit_iter(&ir.model.bodies, "index SLDPRT model body IDs")?
+            .map(|body| &body.id),
         "index SLDPRT model body IDs",
     )?;
     let mut incoherent_configuration_bodies = 0;
@@ -664,12 +673,14 @@ fn append_design_losses(
 
     let feature_ids = charged_set(
         ctx,
-        ir.model.features.iter().map(|feature| &feature.id),
+        ctx.admit_iter(&ir.model.features, "index SLDPRT feature IDs")?
+            .map(|feature| &feature.id),
         "index SLDPRT feature IDs",
     )?;
     let parameter_ids = charged_set(
         ctx,
-        ir.model.parameters.iter().map(|parameter| &parameter.id),
+        ctx.admit_iter(&ir.model.parameters, "index SLDPRT parameter IDs")?
+            .map(|parameter| &parameter.id),
         "index SLDPRT parameter IDs",
     )?;
     let mut incomplete_configuration_feature_snapshots = 0;
@@ -736,28 +747,30 @@ fn append_design_losses(
         &ir.model.configurations,
         "scan SLDPRT configuration suppression snapshots",
     )? {
-        let mut incoherent = false;
-        for (id, state) in ctx.admit_iter(
+        let mut incoherent = !ctx.all_by(
             &configuration.feature_states,
+            |(id, _)| ctx.contains_hash_set(&feature_ids, id, "test SLDPRT hashed identity"),
             "scan SLDPRT configuration suppression members",
-        )? {
-            if !ctx.contains_hash_set(&(feature_ids), id, "test SLDPRT hashed identity")?
-                || (configuration.active
-                    && ctx
-                        .admit_iter(
-                            &ir.model.features,
-                            "find SLDPRT configuration suppression feature",
+        )?;
+        // The active configuration's states agree with each feature's own
+        // suppression; each feature looks its state up.
+        if !incoherent && configuration.active {
+            incoherent = ctx.any_by(
+                &ir.model.features,
+                |feature| {
+                    let Some(suppressed) = feature.suppressed else {
+                        return Ok(false);
+                    };
+                    Ok(ctx
+                        .get_btree_map(
+                            &configuration.feature_states,
+                            &feature.id,
+                            "find SLDPRT configuration suppression state",
                         )?
-                        .find(|feature| feature.id == *id)
-                        .is_some_and(|feature| {
-                            feature.suppressed.is_some_and(|suppressed| {
-                                suppressed != state.evaluation.is_suppressed()
-                            })
-                        }))
-            {
-                incoherent = true;
-                break;
-            }
+                        .is_some_and(|state| suppressed != state.evaluation.is_suppressed()))
+                },
+                "scan SLDPRT configuration suppression features",
+            )?;
         }
         incoherent_configuration_suppression += usize::from(incoherent);
     }
@@ -800,18 +813,10 @@ fn append_design_losses(
         let Some(name) = &feature.name else {
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()),
-            OPERATION,
-        )?;
         lookup_storage.with_storage(|| {
             ctx.admit_hash_map_entry(&mut feature_names, &feature.id, OPERATION)
         })?;
-        let id = cadmpeg_ir::features::FeatureId::mint(
-            lookup_storage
-                .with_storage(|| copy_retained_string(ctx, feature.id.as_str(), OPERATION))?,
-        )
-        .map_err(CodecError::malformed)?;
+        let id = lookup_storage.with_storage(|| feature.id.try_clone_for_decode(ctx, OPERATION))?;
         let name = lookup_storage.with_storage(|| copy_retained_string(ctx, name, OPERATION))?;
         feature_names.insert(id, name);
     }
@@ -821,10 +826,6 @@ fn append_design_losses(
         "scan SLDPRT append_design_losses values",
     )? {
         const OPERATION: &str = "index SLDPRT global parameter owners";
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()),
-            OPERATION,
-        )?;
         if !crate::history::parameters::is_global_parameter_owner(feature)
             || ctx.contains_hash_set(
                 &(global_parameter_owners),
@@ -834,11 +835,7 @@ fn append_design_losses(
         {
             continue;
         }
-        let id = cadmpeg_ir::features::FeatureId::mint(
-            lookup_storage
-                .with_storage(|| copy_retained_string(ctx, feature.id.as_str(), OPERATION))?,
-        )
-        .map_err(CodecError::malformed)?;
+        let id = lookup_storage.with_storage(|| feature.id.try_clone_for_decode(ctx, OPERATION))?;
         lookup_storage
             .with_storage(|| ctx.insert_hash_set(&mut global_parameter_owners, id, OPERATION))?;
     }
@@ -891,17 +888,13 @@ fn append_design_losses(
         )?;
     let feature_ordinals = charged_map(
         ctx,
-        ir.model
-            .features
-            .iter()
+        ctx.admit_iter(&ir.model.features, "index SLDPRT feature ordinals")?
             .map(|feature| (&feature.id, feature.ordinal)),
         "index SLDPRT feature ordinals",
     )?;
     let parameter_positions = charged_map(
         ctx,
-        ir.model
-            .parameters
-            .iter()
+        ctx.admit_iter(&ir.model.parameters, "index SLDPRT parameter positions")?
             .map(|parameter| (&parameter.id, (&parameter.owner, parameter.ordinal))),
         "index SLDPRT parameter positions",
     )?;
@@ -995,18 +988,14 @@ fn append_design_losses(
         .count();
     let parameter_name_counts = count_keys(
         ctx,
-        ir.model
-            .parameters
-            .iter()
+        ctx.admit_iter(&ir.model.parameters, "count SLDPRT parameter names")?
             .filter(|parameter| !parameter.name.is_empty())
             .map(|parameter| (&parameter.owner, parameter.name.as_str())),
         "count SLDPRT parameter names",
     )?;
     let parameter_ordinal_counts = count_keys(
         ctx,
-        ir.model
-            .parameters
-            .iter()
+        ctx.admit_iter(&ir.model.parameters, "count SLDPRT parameter ordinals")?
             .map(|parameter| (&parameter.owner, parameter.ordinal)),
         "count SLDPRT parameter ordinals",
     )?;
@@ -1127,9 +1116,7 @@ fn append_design_losses(
     } else {
         charged_vec(
             ctx,
-            ir.model
-                .features
-                .iter()
+            ctx.admit_iter(&ir.model.features, "collect SLDPRT feature states")?
                 .map(|feature| EvaluatedFeatureState {
                     feature,
                     dependencies: &feature.dependencies,
@@ -1184,7 +1171,8 @@ fn append_design_losses(
         })?;
     let feature_ordinal_counts = count_keys(
         ctx,
-        ir.model.features.iter().map(|feature| feature.ordinal),
+        ctx.admit_iter(&ir.model.features, "count SLDPRT feature ordinals")?
+            .map(|feature| feature.ordinal),
         "count SLDPRT feature ordinals",
     )?;
     let duplicate_feature_ordinals = ctx
@@ -1203,17 +1191,13 @@ fn append_design_losses(
     }
     let parameter_owners = charged_map(
         ctx,
-        ir.model
-            .parameters
-            .iter()
+        ctx.admit_iter(&ir.model.parameters, "index SLDPRT parameter owners")?
             .map(|parameter| (&parameter.id, &parameter.owner)),
         "index SLDPRT parameter owners",
     )?;
     let features_by_id = charged_map(
         ctx,
-        ir.model
-            .features
-            .iter()
+        ctx.admit_iter(&ir.model.features, "index SLDPRT features by ID")?
             .map(|feature| (&feature.id, feature)),
         "index SLDPRT features by ID",
     )?;
@@ -2127,103 +2111,111 @@ fn unbound_feature_input_operation_objects(
     ctx: &DecodeContext<'_>,
     native: &crate::native::SldprtNative,
 ) -> Result<usize, CodecError> {
-    use crate::classification::{classify, native_object_class};
+    use crate::classification::{classify, native_object_class, FeatureClass};
     use crate::records::FeatureInputClassRole;
+    const OPERATION: &str = "count SLDPRT unbound feature-input operation objects";
 
-    let features = native
-        .feature_histories
-        .iter()
-        .flat_map(|history| &history.features);
-    let source_counts = count_keys(
-        ctx,
-        features
-            .clone()
-            .filter_map(super::records::Feature::source_value),
-        "count SLDPRT feature-input sources",
-    )?;
-    let binding_counts = count_keys(
-        ctx,
-        features
-            .clone()
-            .filter_map(|feature| feature.source_value().zip(feature.input_class.as_deref())),
-        "count SLDPRT feature-input bindings",
-    )?;
-    let named_binding_counts = count_keys(
-        ctx,
-        native.feature_input_lanes.iter().flat_map(|lane| {
-            features.clone().filter_map(move |feature| {
-                feature
-                    .input_class
-                    .as_deref()
-                    .zip(crate::resolved_features::scalars::feature_object_name(
-                        feature, lane,
-                    ))
-                    .map(|(class, name)| (lane.id.as_str(), name.id.as_str(), class))
-            })
-        }),
-        "count SLDPRT named feature-input bindings",
-    )?;
+    let mut workspace = ctx.reserve_scoped(0, OPERATION)?;
+    fn increment<K: Ord + cadmpeg_core::decode::cost::DecodeCost>(
+        ctx: &DecodeContext<'_>,
+        counts: &mut BTreeMap<K, usize>,
+        key: K,
+    ) -> Result<(), CodecError> {
+        let count = ctx.entry_btree_map(counts, key, OPERATION)?.or_insert(0);
+        *count = count
+            .checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        Ok(())
+    }
+    // One pass over the history records: how often each source and each
+    // source-class pair occurs, and the operation class of each classless
+    // record by source.
+    let mut source_counts = BTreeMap::<u32, usize>::new();
+    let mut binding_counts = BTreeMap::<(u32, &str), usize>::new();
+    let mut classless_kinds = HashMap::<u32, Vec<FeatureClass>>::new();
+    for history in ctx.admit_iter(&native.feature_histories, OPERATION)? {
+        for feature in ctx.admit_iter(&history.features, OPERATION)? {
+            let Some(source) = feature.source_value() else {
+                continue;
+            };
+            workspace.with_storage(|| {
+                increment(ctx, &mut source_counts, source)?;
+                match feature.input_class.as_deref() {
+                    Some(class) => increment(ctx, &mut binding_counts, (source, class)),
+                    None => match classify(feature) {
+                        Some(kind) => ctx.push_hash_group(
+                            &mut classless_kinds,
+                            source,
+                            kind,
+                            OPERATION,
+                            OPERATION,
+                        ),
+                        None => Ok(()),
+                    },
+                }
+            })?;
+        }
+    }
+    let mut named_binding_counts = BTreeMap::<(&str, &str, &str), usize>::new();
+    for lane in ctx.admit_iter(&native.feature_input_lanes, OPERATION)? {
+        for history in ctx.admit_iter(&native.feature_histories, OPERATION)? {
+            for feature in ctx.admit_iter(&history.features, OPERATION)? {
+                let Some(class) = feature.input_class.as_deref() else {
+                    continue;
+                };
+                if let Some(name) =
+                    crate::resolved_features::scalars::feature_object_name(feature, lane)
+                {
+                    workspace.with_storage(|| {
+                        increment(
+                            ctx,
+                            &mut named_binding_counts,
+                            (lane.id.as_str(), name.id.as_str(), class),
+                        )
+                    })?;
+                }
+            }
+        }
+    }
     let mut count = 0_usize;
-    for lane in ctx.admit_iter(
-        &native.feature_input_lanes,
-        "scan SLDPRT unbound operation lanes",
-    )? {
+    for lane in ctx.admit_iter(&native.feature_input_lanes, OPERATION)? {
+        // The first name at an offset answers, so the index is filled in
+        // reverse and the last write wins.
+        let mut names_by_offset = HashMap::new();
+        for name in ctx.admit_iter(&lane.names, OPERATION)?.rev() {
+            workspace.with_storage(|| {
+                ctx.insert_hash_map(&mut names_by_offset, name.offset, name, OPERATION)
+            })?;
+        }
         for class in ctx
-            .admit_iter(&lane.classes, "scan SLDPRT unbound operation classes")?
+            .admit_iter(&lane.classes, OPERATION)?
             .filter(|class| class.role() == FeatureInputClassRole::Feature)
         {
             let name_offset = class.offset + 6 + u64_from_index(class.name.len());
-            let Some(name) = ctx
-                .admit_iter(&lane.names, "find SLDPRT unbound operation object name")?
-                .find(|name| name.offset == name_offset)
-            else {
+            let Some(name) = ctx.get_hash_map(&names_by_offset, &name_offset, OPERATION)? else {
                 continue;
             };
             let source_bound = match name.object_id.and_then(ObjectId::value) {
-                Some(id) => source_counts.get(&id).copied() == Some(1)
-                    && (ctx
-                        .get_btree_map(
-                            &(binding_counts),
-                            &(id, class.name.as_str()),
-                            "look up SLDPRT ordered key",
-                        )?
-                        .copied()
-                        == Some(1)
-                        || match native_object_class(&class.name).feature() {
-                            Some(expected) => ctx
-                                .admit_iter(
-                                    &native.feature_histories,
-                                    "scan SLDPRT unbound_feature_input_operation_objects values",
-                                )?
-                                .try_fold(false, |found, history| {
-                                    if found {
-                                        return Ok::<_, cadmpeg_core::CodecError>(true);
-                                    }
-                                    ctx.admit_iter(
-                                        &history.features,
-                                        "scan SLDPRT unbound history feature classes",
-                                    )?
-                                    .try_fold(
-                                        false,
-                                        |found, feature| {
-                                            Ok::<_, cadmpeg_core::CodecError>(
-                                                found
-                                                    || feature.source_value() == Some(id)
-                                                        && feature.input_class.is_none()
-                                                        && classify(feature) == Some(expected),
-                                            )
-                                        },
-                                    )
-                                })?,
-                            None => false,
-                        }),
+                Some(id) => {
+                    ctx.get_btree_map(&source_counts, &id, OPERATION)?.copied() == Some(1)
+                        && (ctx
+                            .get_btree_map(&binding_counts, &(id, class.name.as_str()), OPERATION)?
+                            .copied()
+                            == Some(1)
+                            || match native_object_class(&class.name).feature() {
+                                Some(expected) => ctx
+                                    .get_hash_map(&classless_kinds, &id, OPERATION)?
+                                    .is_some_and(|kinds| kinds.contains(&expected)),
+                                None => false,
+                            })
+                }
                 None => false,
             };
             let name_bound = ctx
                 .get_btree_map(
-                    &(named_binding_counts),
+                    &named_binding_counts,
                     &(lane.id.as_str(), name.id.as_str(), class.name.as_str()),
-                    "look up SLDPRT ordered key",
+                    OPERATION,
                 )?
                 .copied()
                 == Some(1);
@@ -2233,6 +2225,33 @@ fn unbound_feature_input_operation_objects(
     Ok(count)
 }
 
+/// The native records every projected sketch constraint and entity names, in
+/// model order.
+fn projected_native_refs<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
+) -> Result<Vec<&'ir str>, CodecError> {
+    const OPERATION: &str = "collect SLDPRT projected sketch relations";
+    let model = &ir.model;
+    ctx.collect_vec(
+        ctx.admit_iter(&model.sketch_constraints, OPERATION)?
+            .filter_map(|constraint| constraint.native_ref.as_deref())
+            .chain(
+                ctx.admit_iter(&model.sketch_entities, OPERATION)?
+                    .filter_map(|entity| entity.native_ref.as_deref()),
+            )
+            .chain(
+                ctx.admit_iter(&model.spatial_sketch_entities, OPERATION)?
+                    .filter_map(|entity| entity.native_ref.as_deref()),
+            )
+            .chain(
+                ctx.admit_iter(&model.spatial_sketch_constraints, OPERATION)?
+                    .filter_map(|constraint| constraint.native_ref.as_deref()),
+            ),
+        OPERATION,
+    )
+}
+
 fn unprojected_sketch_relation_records(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -2240,9 +2259,7 @@ fn unprojected_sketch_relation_records(
 ) -> Result<usize, CodecError> {
     let sketch_feature_refs = charged_set(
         ctx,
-        ir.model
-            .features
-            .iter()
+        ctx.admit_iter(&ir.model.features, "index SLDPRT sketch feature references")?
             .filter(|feature| {
                 matches!(
                     feature.evaluation.definition(),
@@ -2255,30 +2272,14 @@ fn unprojected_sketch_relation_records(
             .filter_map(|feature| feature.native_ref.as_deref()),
         "index SLDPRT sketch feature references",
     )?;
+    let (native_refs, _native_refs_storage) = ctx
+        .with_scoped_storage("collect SLDPRT projected sketch relations", || {
+            projected_native_refs(ctx, ir)
+        })?;
     let projected = charged_set(
         ctx,
-        ir.model
-            .sketch_constraints
-            .iter()
-            .filter_map(|constraint| constraint.native_ref.as_deref())
-            .chain(
-                ir.model
-                    .sketch_entities
-                    .iter()
-                    .filter_map(|entity| entity.native_ref.as_deref()),
-            )
-            .chain(
-                ir.model
-                    .spatial_sketch_entities
-                    .iter()
-                    .filter_map(|entity| entity.native_ref.as_deref()),
-            )
-            .chain(
-                ir.model
-                    .spatial_sketch_constraints
-                    .iter()
-                    .filter_map(|constraint| constraint.native_ref.as_deref()),
-            ),
+        ctx.admit_iter(&native_refs, "index SLDPRT projected sketch relations")?
+            .copied(),
         "index SLDPRT projected sketch relations",
     )?;
     let (owned_instances, _ownership_storage) =
@@ -2298,9 +2299,11 @@ fn unprojected_sketch_relation_records(
     )? {
         let markers_by_id = charged_hash_map(
             ctx,
-            lane.sketch_entities
-                .iter()
-                .map(|marker| (marker.id(), marker)),
+            ctx.admit_iter(
+                &lane.sketch_entities,
+                "index SLDPRT sketch relation markers",
+            )?
+            .map(|marker| (marker.id(), marker)),
             "index SLDPRT sketch relation markers",
         )?;
         let instances = ctx
@@ -2329,35 +2332,50 @@ fn unprojected_sketch_relation_records(
                         }),
                 )
             })?;
-        let bindings = ctx
-            .admit_iter(
-                &lane.relation_bindings[..],
-                "scan SLDPRT unprojected_sketch_relation_records values",
-            )?
-            .try_fold(0_usize, |count, candidate| {
-                let binding = &candidate;
-                Ok::<_, cadmpeg_core::CodecError>(
-                    count
-                        + usize::from({
-                            (match binding.feature_ref.as_deref() {
-                                Some(feature_ref) => ctx.contains_hash_set(
-                                    &(sketch_feature_refs),
-                                    feature_ref,
-                                    "test SLDPRT hashed identity",
-                                )?,
-                                None => false,
-                            }) && !ctx
-                                .admit_iter(
-                                    &lane.relation_instances[..],
-                                    "scan SLDPRT unprojected_sketch_relation_records values",
-                                )?
-                                .any(|relation| {
-                                    relation.class_ref == binding.class_ref
-                                        && relation.scalar_refs().contains(&binding.scalar_ref)
-                                })
-                        }),
-                )
-            })?;
+        // Each instance's class with each of its scalars, for the binding check.
+        let mut instance_scalars = HashSet::new();
+        let mut instance_scalars_storage =
+            ctx.reserve_scoped(0, "index SLDPRT relation instance scalars")?;
+        for relation in ctx.admit_iter(
+            &lane.relation_instances,
+            "index SLDPRT relation instance scalars",
+        )? {
+            for scalar in ctx.admit_iter(
+                relation.scalar_refs(),
+                "index SLDPRT relation instance scalars",
+            )? {
+                instance_scalars_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut instance_scalars,
+                        (relation.class_ref.as_str(), scalar.as_str()),
+                        "index SLDPRT relation instance scalars",
+                    )
+                })?;
+            }
+        }
+        let mut bindings = 0_usize;
+        for binding in ctx.admit_iter(
+            &lane.relation_bindings,
+            "scan SLDPRT unprojected relation bindings",
+        )? {
+            let sketch_binding = match binding.feature_ref.as_deref() {
+                Some(feature_ref) => ctx.contains_hash_set(
+                    &sketch_feature_refs,
+                    feature_ref,
+                    "scan SLDPRT unprojected relation bindings",
+                )?,
+                None => false,
+            };
+            if sketch_binding
+                && !ctx.contains_hash_set(
+                    &instance_scalars,
+                    &(binding.class_ref.as_str(), binding.scalar_ref.as_str()),
+                    "scan SLDPRT unprojected relation bindings",
+                )?
+            {
+                bindings += 1;
+            }
+        }
         let mut markers = 0;
         for marker in ctx.admit_iter(
             &lane.sketch_entities,
@@ -2399,9 +2417,11 @@ fn multiply_projected_sketch_relation_records(
     )? {
         let markers_by_id = charged_hash_map(
             ctx,
-            lane.sketch_entities
-                .iter()
-                .map(|marker| (marker.id(), marker)),
+            ctx.admit_iter(
+                &lane.sketch_entities,
+                "index SLDPRT sketch relation markers",
+            )?
+            .map(|marker| (marker.id(), marker)),
             "index SLDPRT sketch relation markers",
         )?;
         for relation in ctx.admit_iter(
@@ -2434,30 +2454,11 @@ fn multiply_projected_sketch_relation_records(
         }
     }
     let mut projection_counts = BTreeMap::<&str, usize>::new();
-    for native_ref in ir
-        .model
-        .sketch_constraints
-        .iter()
-        .filter_map(|constraint| constraint.native_ref.as_deref())
-        .chain(
-            ir.model
-                .sketch_entities
-                .iter()
-                .filter_map(|entity| entity.native_ref.as_deref()),
-        )
-        .chain(
-            ir.model
-                .spatial_sketch_entities
-                .iter()
-                .filter_map(|entity| entity.native_ref.as_deref()),
-        )
-        .chain(
-            ir.model
-                .spatial_sketch_constraints
-                .iter()
-                .filter_map(|constraint| constraint.native_ref.as_deref()),
-        )
-    {
+    let (native_refs, _native_refs_storage) = ctx
+        .with_scoped_storage("collect SLDPRT projected sketch relations", || {
+            projected_native_refs(ctx, ir)
+        })?;
+    for &native_ref in ctx.admit_iter(&native_refs, "count SLDPRT relation projections")? {
         if !ctx.contains_hash_set(
             &native_relation_ids,
             native_ref,
@@ -2466,7 +2467,6 @@ fn multiply_projected_sketch_relation_records(
             continue;
         }
         const OPERATION: &str = "count SLDPRT relation projections";
-        ctx.charge_work(1, OPERATION)?;
         if let Some(count) = ctx.get_mut_btree_map(
             &mut (projection_counts),
             &native_ref,
@@ -3092,6 +3092,16 @@ fn ensure_display_appearance(
     Ok(id)
 }
 
+/// A decoded model, its source annotations, unknown records, PMI losses, and
+/// the native records it stored, which the design-loss scan reads directly.
+type BuiltIr = (
+    CadIr,
+    Annotations,
+    Vec<UnknownRecord>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+    crate::native::SldprtNative,
+);
+
 fn build_geometry_ir(
     ctx: &DecodeContext<'_>,
     scan: &mut ContainerScan<'_>,
@@ -3099,15 +3109,7 @@ fn build_geometry_ir(
     decoded: DecodedBrep,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
-) -> Result<
-    (
-        CadIr,
-        Annotations,
-        Vec<UnknownRecord>,
-        Vec<cadmpeg_ir::report::loss::LossNote>,
-    ),
-    CodecError,
-> {
+) -> Result<BuiltIr, CodecError> {
     fn add_opaque_link<'a>(
         ctx: &DecodeContext<'_>,
         opaque_links: &mut BTreeMap<&'a str, Vec<String>>,
@@ -3867,9 +3869,11 @@ fn build_geometry_ir(
         {
             let candidates = charged_btree_set(
                 ctx,
-                face.surface_references
-                    .iter()
-                    .map(crate::tessellation::PersistentSurfaceReference::feature_source_id),
+                ctx.admit_iter(
+                    &face.surface_references,
+                    "index SLDPRT display surface sources",
+                )?
+                .map(crate::tessellation::PersistentSurfaceReference::feature_source_id),
                 "index SLDPRT display surface sources",
             )?;
             if candidates.len() > 1 {
@@ -4158,7 +4162,7 @@ fn build_geometry_ir(
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
     ir.finalize(ctx)?;
-    Ok((ir, annotations, unknowns, pmi_losses))
+    Ok((ir, annotations, unknowns, pmi_losses, native))
 }
 
 fn assign_native_configuration_indices(
@@ -4617,15 +4621,7 @@ fn build_metadata_ir(
     classification: &crate::dialect::LayerClassification,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
-) -> Result<
-    (
-        CadIr,
-        Annotations,
-        Vec<UnknownRecord>,
-        Vec<cadmpeg_ir::report::loss::LossNote>,
-    ),
-    CodecError,
-> {
+) -> Result<BuiltIr, CodecError> {
     let mut ir = CadIr::empty();
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
@@ -5074,7 +5070,7 @@ fn build_metadata_ir(
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
     ir.finalize(ctx)?;
-    Ok((ir, annotations, unknowns, pmi_losses))
+    Ok((ir, annotations, unknowns, pmi_losses, native))
 }
 
 #[derive(Clone, Copy)]

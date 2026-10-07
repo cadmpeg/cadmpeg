@@ -4942,6 +4942,14 @@ fn retain_unbound_presentation_record(
     Ok(())
 }
 
+/// Opens the workspace that counts each group's key entry while members are
+/// gathered.
+fn group_member_workspace<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<cadmpeg_core::decode::ScopedReservation<'ctx>, CodecError> {
+    ctx.reserve_scoped(0, "Rhino group member workspace")
+}
+
 /// Records one object's membership in a group: a new group grows the
 /// workspace and the key table before the member link is copied.
 fn admit_group_member(
@@ -5487,7 +5495,7 @@ pub(crate) fn install(
         }
     }
     let mut group_members = HashMap::<i32, Vec<String>>::new();
-    let mut group_member_workspace = ctx.reserve_scoped(0, "Rhino group member workspace")?;
+    let mut group_member_workspace = group_member_workspace(ctx)?;
     for (source_order, object) in scan.objects.iter().enumerate() {
         let Some(object) = object.framed() else {
             continue;
