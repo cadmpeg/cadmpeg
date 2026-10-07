@@ -1,7 +1,7 @@
 //! Boolean operation codes for extrusion, revolution and sweep.
 
 use super::is_class_token;
-use super::scalars::{feature_object_name, NameLookup, ObjectNames};
+use super::scalars::{lane_object_names, NameLookup, ObjectNames};
 use super::{classes_within, sorted_classes};
 use crate::classification::{classify, FeatureClass};
 use crate::layout::extrusion_sparse_operation_trailer as sparse_tr;
@@ -66,14 +66,15 @@ fn direct_classes<'l>(
 }
 
 /// The indexes every operation binder reads, built once per call.
-struct OperationIndexes<'h, 'l> {
+struct OperationIndexes<'h, 'l, 'ctx> {
     history_by_id: HashMap<&'h str, &'h Feature>,
     direct_classes: Vec<DirectClasses<'l>>,
+    object_names: Vec<ObjectNames<'l, 'ctx>>,
 }
 
-impl<'h, 'l> OperationIndexes<'h, 'l> {
+impl<'h, 'l, 'ctx> OperationIndexes<'h, 'l, 'ctx> {
     fn new(
-        ctx: &DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'_>,
         storage: &mut ScopedReservation<'_>,
         histories: &'h [FeatureHistory],
         lanes: &'l [FeatureInputLane],
@@ -86,6 +87,7 @@ impl<'h, 'l> OperationIndexes<'h, 'l> {
                 "index SLDPRT operation history",
             )?,
             direct_classes: direct_classes(ctx, storage, lanes)?,
+            object_names: lane_object_names(ctx, storage, lanes)?,
         })
     }
 
@@ -107,26 +109,39 @@ impl<'h, 'l> OperationIndexes<'h, 'l> {
     }
 }
 
-/// The one operation every lane that projects one agrees on.
+/// The one operation every lane that projects one agrees on. `project`
+/// receives each lane with its direct classes and the lane name of `feature`.
 fn agreed_lane_operation<T: Copy + PartialEq>(
     ctx: &DecodeContext<'_>,
     lanes: &[FeatureInputLane],
-    direct_classes: &[DirectClasses<'_>],
-    mut project: impl FnMut(&FeatureInputLane, &DirectClasses<'_>) -> Result<Option<T>, CodecError>,
+    indexes: &OperationIndexes<'_, '_, '_>,
+    feature: &Feature,
+    mut project: impl FnMut(
+        &FeatureInputLane,
+        &DirectClasses<'_>,
+        &FeatureInputName,
+    ) -> Result<Option<T>, CodecError>,
     operation: &'static str,
 ) -> Result<Option<T>, CodecError> {
-    let mut remaining = lanes.iter().zip(direct_classes);
-    let Some(first) = ctx.find_map(
-        &mut remaining,
-        |(lane, direct)| project(lane, direct),
-        operation,
-    )?
-    else {
+    let mut step = |((lane, direct), names): (
+        (&FeatureInputLane, &DirectClasses<'_>),
+        &ObjectNames<'_, '_>,
+    )| {
+        match names.of(ctx, feature)? {
+            Some(name) => project(lane, direct, name),
+            None => Ok(None),
+        }
+    };
+    let mut remaining = lanes
+        .iter()
+        .zip(&indexes.direct_classes)
+        .zip(&indexes.object_names);
+    let Some(first) = ctx.find_map(&mut remaining, &mut step, operation)? else {
         return Ok(None);
     };
     let disagrees = ctx.any_by(
         &mut remaining,
-        |(lane, direct)| Ok(project(lane, direct)?.is_some_and(|candidate| candidate != first)),
+        |lane| Ok(step(lane)?.is_some_and(|candidate| candidate != first)),
         operation,
     )?;
     Ok((!disagrees).then_some(first))
@@ -315,7 +330,7 @@ pub(crate) fn bind_revolution_operations(
 fn bind_revolution_operations_with(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
-    indexes: &OperationIndexes<'_, '_>,
+    indexes: &OperationIndexes<'_, '_, '_>,
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) -> Result<(), CodecError> {
@@ -336,11 +351,9 @@ fn bind_revolution_operations_with(
         let Some(resolved) = agreed_lane_operation(
             ctx,
             lanes,
-            &indexes.direct_classes,
-            |lane, direct| {
-                let Some(name) = feature_object_name(history, lane) else {
-                    return Ok(None);
-                };
+            indexes,
+            history,
+            |lane, direct, name| {
                 Ok(
                     operation_code(ctx, lane, direct, name, class, form_padding)?
                         .and_then(|code| revolution_operation(class, code)),
@@ -376,7 +389,7 @@ pub(crate) fn bind_sweep_operations(
 fn bind_sweep_operations_with(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
-    indexes: &OperationIndexes<'_, '_>,
+    indexes: &OperationIndexes<'_, '_, '_>,
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) -> Result<(), CodecError> {
@@ -399,11 +412,9 @@ fn bind_sweep_operations_with(
         let Some(resolved) = agreed_lane_operation(
             ctx,
             lanes,
-            &indexes.direct_classes,
-            |lane, direct| {
-                let Some(name) = feature_object_name(history, lane) else {
-                    return Ok(None);
-                };
+            indexes,
+            history,
+            |lane, direct, name| {
                 Ok(
                     match (
                         class,
@@ -534,7 +545,7 @@ pub(crate) fn bind_extrusion_operations(
 fn bind_extrusion_operations_with(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
-    indexes: &OperationIndexes<'_, '_>,
+    indexes: &OperationIndexes<'_, '_, '_>,
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) -> Result<(), CodecError> {
@@ -555,11 +566,9 @@ fn bind_extrusion_operations_with(
         let Some(resolved) = agreed_lane_operation(
             ctx,
             lanes,
-            &indexes.direct_classes,
-            |lane, direct| {
-                let Some(name) = feature_object_name(history, lane) else {
-                    return Ok(None);
-                };
+            indexes,
+            history,
+            |lane, direct, name| {
                 if let Some(operation) = feature_inline_operation(lane, name) {
                     return Ok(Some(operation));
                 }
@@ -601,11 +610,6 @@ pub(crate) fn inherit_configuration_operations(
     const OPERATION: &str = "inherit SLDPRT configuration operations";
     let mut storage = ctx.reserve_scoped(0, "SLDPRT operation indexes")?;
     let indexes = OperationIndexes::new(ctx, &mut storage, histories, lanes)?;
-    let mut object_names = Vec::new();
-    for lane in ctx.admit_iter(lanes, OPERATION)? {
-        let names = ObjectNames::new(ctx, lane)?;
-        storage.with_storage(|| ctx.push_vec(&mut object_names, names, OPERATION))?;
-    }
     let mut base_operations = HashMap::new();
     for feature in ctx.admit_iter(base_features, "index SLDPRT base definitions")? {
         let base = match feature.evaluation.definition() {
@@ -654,7 +658,10 @@ pub(crate) fn inherit_configuration_operations(
             continue;
         };
         if ctx.any_by(
-            lanes.iter().zip(&indexes.direct_classes).zip(&object_names),
+            lanes
+                .iter()
+                .zip(&indexes.direct_classes)
+                .zip(&indexes.object_names),
             |((lane, direct), names)| {
                 operation_carrier_present(ctx, kind, history, lane, direct, names, form_padding)
             },
@@ -735,10 +742,11 @@ pub(crate) fn enrich_history_split_lines(
             "moPLineProject_c",
             "index SLDPRT split-line projection classes",
         )?;
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut objects = Vec::new();
         for history in ctx.admit_iter(&*histories, "scan SLDPRT split-line objects")? {
             for feature in ctx.admit_iter(&history.features, "scan SLDPRT split-line objects")? {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = object_names.of(ctx, feature)? {
                     storage.with_storage(|| {
                         ctx.push_vec(
                             &mut objects,

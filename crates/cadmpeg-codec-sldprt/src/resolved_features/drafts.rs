@@ -1,7 +1,7 @@
 //! Draft-operation plane and face operands.
 
 use super::is_class_token;
-use super::scalars::feature_object_name;
+use super::scalars::ObjectNames;
 use super::selections::{
     compact_mixed_component_path, component_vector_path_at, is_component_vector_selector,
     COMPACT_EDGE_VECTOR_MARKER,
@@ -540,17 +540,12 @@ pub(super) fn draft_operand_candidates(
     lane: &FeatureInputLane,
 ) -> Result<Vec<(String, DraftOperands)>, CodecError> {
     const OPERATION: &str = "collect SLDPRT draft operand candidates";
-    const NAME_OPERATION: &str = "scan SLDPRT draft feature names";
-    let name_scan_work = u64::try_from(lane.names.len())
-        .ok()
-        .and_then(|count| count.checked_mul(2))
-        .ok_or_else(|| ctx.refuse_codec_limit(NAME_OPERATION, u64::MAX - 1, u64::MAX))?;
+    let object_names = ObjectNames::new(ctx, lane)?;
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut objects = Vec::new();
     for history in ctx.admit_iter(histories, OPERATION)? {
         for feature in ctx.admit_iter(&history.features, OPERATION)? {
-            ctx.charge_work(name_scan_work, NAME_OPERATION)?;
-            if let Some(name) = feature_object_name(feature, lane) {
+            if let Some(name) = object_names.of(ctx, feature)? {
                 storage.with_storage(|| {
                     ctx.push_vec(&mut objects, (name.offset, feature), OPERATION)
                 })?;
@@ -592,6 +587,30 @@ mod tests {
     use crate::records::{Feature, FeatureHistory, FeatureInputClass, FeatureInputName};
     use cadmpeg_core::decode::u64_from_index;
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureId, FeatureOperation};
+
+    fn collection_refusal_at(
+        operation: &str,
+        history: &FeatureHistory,
+        lane: &FeatureInputLane,
+    ) -> cadmpeg_core::CodecError {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &lane.native_payload,
+                    &arena,
+                    &policy,
+                )
+                .unwrap();
+                super::draft_operand_candidates(&ctx, std::slice::from_ref(history), lane)
+            },
+        )
+    }
+
     use cadmpeg_ir::math::Vector3;
     use std::collections::BTreeMap;
 
@@ -685,46 +704,20 @@ mod tests {
 
     #[test]
     fn draft_operand_candidates_refuses_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
         let (history, lane) = named_draft_fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
-            .expect("test context");
-        let error = super::draft_operand_candidates(&ctx, &[history], &lane)
-            .expect_err("draft object index exceeds collection limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect SLDPRT draft operand candidates")
-        );
+        collection_refusal_at("collect SLDPRT draft operand candidates", &history, &lane);
     }
 
     #[test]
-    fn draft_operand_candidates_refuses_name_scan_work_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
+    fn draft_operand_candidates_refuses_name_index_work_limit() {
         let (history, lane) = named_draft_fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Admit one history and one feature before the name scan.
-        policy.limits.max_work_units = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
-            .expect("test context");
-        let error = super::draft_operand_candidates(&ctx, &[history], &lane)
-            .expect_err("draft name scan exceeds work limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "scan SLDPRT draft feature names")
-        );
+        crate::test_support::work_refusal_at("index SLDPRT object names by text", |ctx| {
+            super::draft_operand_candidates(ctx, std::slice::from_ref(&history), &lane)
+        });
     }
 
     #[test]
     fn draft_operand_candidates_refuses_declared_reference_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
         let token = 0x8096;
         let mut payload = vec![0; 64];
@@ -773,18 +766,7 @@ mod tests {
             configurations: Vec::new(),
             features: vec![draft_feature()],
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
-            .expect("test context");
-        let error = super::draft_operand_candidates(&ctx, &[history], &lane)
-            .expect_err("declared draft references exceed collection limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect SLDPRT declared draft references")
-        );
+        collection_refusal_at("collect SLDPRT declared draft references", &history, &lane);
     }
 
     fn compact_selection(role: u8, paths: &[&[(u16, u32, u32, u32)]]) -> Vec<u8> {
@@ -848,7 +830,6 @@ mod tests {
 
     #[test]
     fn draft_operand_candidates_refuses_compact_record_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
         let mut payload = vec![0; 64];
         let object_start = payload.len();
@@ -884,18 +865,7 @@ mod tests {
             configurations: Vec::new(),
             features: vec![draft_feature()],
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
-            .expect("test context");
-        let error = super::draft_operand_candidates(&ctx, &[history], &lane)
-            .expect_err("compact draft records exceed collection limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect SLDPRT compact draft records")
-        );
+        collection_refusal_at("collect SLDPRT compact draft records", &history, &lane);
     }
 
     fn aligned_direction(direction: [f64; 3]) -> Vec<u8> {

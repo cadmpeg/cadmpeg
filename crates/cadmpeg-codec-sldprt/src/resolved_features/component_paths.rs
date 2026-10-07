@@ -2,7 +2,7 @@
 use cadmpeg_ir::features::PlanarProfileRef;
 
 use super::operations::feature_inline_operation_fields;
-use super::scalars::feature_object_name;
+use super::scalars::ObjectNames;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
     Feature, FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane,
@@ -317,12 +317,13 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     }
     let mut profiles = BTreeMap::<&str, Vec<ProfileVote<'_>>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT adjacent profile objects")? {
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut objects = Vec::new();
         for (index, feature) in ctx
             .admit_iter(&indexed_features, "scan SLDPRT adjacent profile objects")?
             .enumerate()
         {
-            let Some(name) = feature_object_name(feature, lane) else {
+            let Some(name) = object_names.of(ctx, feature)? else {
                 continue;
             };
             let metadata = match ctx.get_hash_map(
