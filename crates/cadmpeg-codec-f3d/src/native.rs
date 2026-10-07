@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 
 #[cfg(test)]
 thread_local! {
@@ -72,34 +72,40 @@ use cadmpeg_asm::brep::records::{
     TransformHints, VertexOwnership, WireTopology,
 };
 
-fn owner_indices<T>(
-    ctx: &DecodeContext<'_>,
-    records: &[T],
+fn owner_indices<'ctx, 'records, T>(
+    ctx: &'ctx DecodeContext<'_>,
+    records: &'records [T],
     id: impl Fn(&T) -> &str,
-) -> Result<HashMap<String, usize>, cadmpeg_ir::NativeConvertError> {
-    let mut indexed = HashMap::new();
-    for (ordinal, record) in ctx
-        .admit_iter(records, "scan F3D native owners")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .enumerate()
-    {
-        let key = ctx.copy_retained_text(id(record), "retain F3D native owner id")?;
-        ctx.insert_hash_map(&mut indexed, key, ordinal, "index F3D native owners")?;
-    }
-    Ok(indexed)
+) -> Result<(HashMap<&'records str, usize>, ScopedReservation<'ctx>), cadmpeg_ir::NativeConvertError>
+{
+    ctx.with_scoped_storage("index F3D native owners", || {
+        let mut indexed = HashMap::new();
+        for (ordinal, record) in ctx
+            .admit_iter(records, "scan F3D native owners")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .enumerate()
+        {
+            ctx.insert_hash_map(&mut indexed, id(record), ordinal, "index F3D native owners")?;
+        }
+        Ok(indexed)
+    })
 }
 
-fn group_by_owner<T>(
-    ctx: &DecodeContext<'_>,
+fn group_by_owner<'ctx, T, K: std::borrow::Borrow<str> + Eq + std::hash::Hash>(
+    ctx: &'ctx DecodeContext<'_>,
     records: Vec<T>,
-    owners: &HashMap<String, usize>,
+    owners: &HashMap<K, usize>,
     owner_count: usize,
     id: impl Fn(&T) -> &str,
     owner: impl Fn(&T) -> &str,
-) -> Result<Vec<Vec<T>>, cadmpeg_ir::NativeConvertError> {
-    let mut grouped =
-        ctx.collect_indexed_vec(owner_count, "group F3D native owners", |_| Ok(Vec::new()))?;
-    for record in records {
+) -> Result<(Vec<Vec<T>>, ScopedReservation<'ctx>), cadmpeg_ir::NativeConvertError> {
+    let (mut grouped, storage) = ctx.with_scoped_storage("group F3D native owners", || {
+        ctx.collect_indexed_vec(owner_count, "group F3D native owners", |_| Ok(Vec::new()))
+    })?;
+    for record in ctx
+        .admit_iter(records, "scan F3D native owner children")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let parent = owner(&record);
         let ordinal = ctx.get_hash_map(owners, parent, "find F3D native record owner")?.ok_or_else(|| {
             match ctx.format_retained(format_args!("orphaned or ambiguously parented records: child {} refers to missing parent {parent}", id(&record)), "report F3D native missing owner") {
@@ -113,7 +119,7 @@ fn group_by_owner<T>(
             "attach F3D native owner child",
         )?;
     }
-    Ok(grouped)
+    Ok((grouped, storage))
 }
 
 pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
@@ -1569,8 +1575,9 @@ impl F3dNative {
             read_arena!("asm_entity_changes");
         let records: Vec<crate::history_records::AsmHistoryRecord> =
             read_arena!("asm_history_records");
-        let board_indices = owner_indices(ctx, &boards, |board| board.id.as_str())?;
-        let changes_by_board = group_by_owner(
+        let (board_indices, board_index_storage) =
+            owner_indices(ctx, &boards, |board| board.id.as_str())?;
+        let (changes_by_board, changes_by_board_storage) = group_by_owner(
             ctx,
             changes,
             &board_indices,
@@ -1578,19 +1585,26 @@ impl F3dNative {
             |change| &change.id,
             |change| &change.parent,
         )?;
+        drop(board_indices);
+        drop(board_index_storage);
         let attached_boards = ctx.try_collect_vec(
-            boards
-                .into_iter()
-                .zip(changes_by_board)
+            ctx.admit_iter(boards, "attach F3D history boards")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .zip(
+                    ctx.admit_iter(changes_by_board, "attach F3D history board children")
+                        .map_err(cadmpeg_core::CodecError::from)?,
+                )
                 .map(|(mut board, changes)| {
                     board.changes = changes;
                     Ok::<_, cadmpeg_ir::NativeConvertError>(board)
                 }),
             "attach F3D history boards",
         )?;
+        drop(changes_by_board_storage);
         let boards = attached_boards;
-        let state_indices = owner_indices(ctx, &states, |state| state.id.as_str())?;
-        let boards_by_state = group_by_owner(
+        let (state_indices, state_index_storage) =
+            owner_indices(ctx, &states, |state| state.id.as_str())?;
+        let (boards_by_state, boards_by_state_storage) = group_by_owner(
             ctx,
             boards,
             &state_indices,
@@ -1598,7 +1612,7 @@ impl F3dNative {
             |board| &board.id,
             |board| &board.parent,
         )?;
-        let records_by_state = group_by_owner(
+        let (records_by_state, records_by_state_storage) = group_by_owner(
             ctx,
             records,
             &state_indices,
@@ -1606,11 +1620,19 @@ impl F3dNative {
             |record| &record.id,
             |record| &record.parent,
         )?;
+        drop(state_indices);
+        drop(state_index_storage);
         let attached_states = ctx.try_collect_vec(
-            states
-                .into_iter()
-                .zip(boards_by_state)
-                .zip(records_by_state)
+            ctx.admit_iter(states, "attach F3D history states")
+                .map_err(cadmpeg_core::CodecError::from)?
+                .zip(
+                    ctx.admit_iter(boards_by_state, "attach F3D history state boards")
+                        .map_err(cadmpeg_core::CodecError::from)?,
+                )
+                .zip(
+                    ctx.admit_iter(records_by_state, "attach F3D history state records")
+                        .map_err(cadmpeg_core::CodecError::from)?,
+                )
                 .map(|((mut state, bulletin_boards), records)| {
                     state.bulletin_boards = bulletin_boards;
                     state.records = records;
@@ -1618,10 +1640,12 @@ impl F3dNative {
                 }),
             "attach F3D history states",
         )?;
+        drop(boards_by_state_storage);
+        drop(records_by_state_storage);
         let states = attached_states;
-        let history_indices =
+        let (history_indices, history_index_storage) =
             owner_indices(ctx, &native.asm_histories, |history| history.id.as_str())?;
-        let states_by_history = group_by_owner(
+        let (states_by_history, states_by_history_storage) = group_by_owner(
             ctx,
             states,
             &history_indices,
@@ -1629,9 +1653,19 @@ impl F3dNative {
             |state| &state.id,
             |state| &state.parent,
         )?;
-        for (history, states) in native.asm_histories.iter_mut().zip(states_by_history) {
+        drop(history_indices);
+        drop(history_index_storage);
+        for (history, states) in ctx
+            .admit_iter(&mut native.asm_histories, "attach F3D histories")
+            .map_err(cadmpeg_core::CodecError::from)?
+            .zip(
+                ctx.admit_iter(states_by_history, "attach F3D history children")
+                    .map_err(cadmpeg_core::CodecError::from)?,
+            )
+        {
             history.states = states;
         }
+        drop(states_by_history_storage);
         Ok(native)
     }
 

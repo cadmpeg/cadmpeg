@@ -48,47 +48,33 @@ pub(crate) fn same_native_occurrence(
     fn occurrence<'id>(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         id: &'id str,
-        marker: &'static str,
-        operation: &'static str,
-    ) -> Result<Option<&'id str>, cadmpeg_core::CodecError> {
-        let mut occurrence_end = None;
-        let marker = marker.as_bytes();
-        let mut matched = 0;
-        for (index, byte) in ctx.admit_iter(id.as_bytes(), operation)?.enumerate() {
-            if *byte == marker[matched] {
-                matched += 1;
-                if matched == marker.len() {
-                    let digits_at = index + 1;
-                    let digits = &id[digits_at..];
-                    let digits_end = ctx
-                        .find_text(digits, "/", operation)?
-                        .map_or(id.len(), |end| digits_at + end);
-                    let digits = &id[digits_at..digits_end];
-                    if !digits.is_empty()
-                        && ctx
-                            .admit_iter(digits.as_bytes(), operation)?
-                            .all(u8::is_ascii_digit)
-                    {
-                        occurrence_end = Some(digits_end);
-                    }
-                    matched = 0;
-                }
-            } else {
-                matched = usize::from(*byte == marker[0]);
+    ) -> Result<(Option<&'id str>, bool), cadmpeg_core::CodecError> {
+        let mut search = id;
+        let mut has_marker = false;
+        while let Some(at) = ctx.rfind_text(search, OCCURRENCE_SEGMENT, OPERATION)? {
+            has_marker = true;
+            let digits_at = at + OCCURRENCE_SEGMENT.len();
+            let suffix = &id[digits_at..];
+            let digits = ctx
+                .split_once(suffix, "/", OPERATION)?
+                .map_or(suffix, |(digits, _)| digits);
+            if !digits.is_empty()
+                && ctx.all_by(
+                    digits.as_bytes(),
+                    |byte| Ok(byte.is_ascii_digit()),
+                    OPERATION,
+                )?
+            {
+                return Ok((Some(&id[..digits_at + digits.len()]), true));
             }
+            search = &id[..at];
         }
-        Ok(occurrence_end.map(|end| &id[..end]))
+        Ok((None, has_marker))
     }
 
-    match (
-        occurrence(ctx, left, OCCURRENCE_SEGMENT, OPERATION)?,
-        occurrence(ctx, right, OCCURRENCE_SEGMENT, OPERATION)?,
-    ) {
-        (Some(left_occurrence), Some(right_occurrence)) => {
-            ctx.equal(left_occurrence, right_occurrence, OPERATION)
-        }
-        (None, None) => Ok(!ctx.contains_text(left, OCCURRENCE_SEGMENT, OPERATION)?
-            && !ctx.contains_text(right, OCCURRENCE_SEGMENT, OPERATION)?),
+    match (occurrence(ctx, left)?, occurrence(ctx, right)?) {
+        ((Some(left), _), (Some(right), _)) => ctx.equal(left, right, OPERATION),
+        ((None, false), (None, false)) => Ok(true),
         _ => Ok(false),
     }
 }
@@ -1832,6 +1818,32 @@ mod tests {
             "f3d:design:persistent-subentity-tag#1",
         )
         .expect("admitted comparison"));
+    }
+
+    #[test]
+    fn native_occurrence_search_accepts_overlapping_partial_markers() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        for prefix in [
+            "f3d:xref/root/occurr",
+            "f3d:xref/root/",
+            "f3d:xref/root/occurrence",
+        ] {
+            let left = format!("{prefix}/occurrence-12/Asset/BulkStream.dat:record#1");
+            let right = format!("{prefix}/occurrence-12/design:record#2");
+            assert!(same_native_occurrence(&ctx, &left, &right).unwrap());
+            assert!(!same_native_occurrence(&ctx, &left, "f3d:design:record#2").unwrap());
+        }
+        for invalid in ["", "invalid", "12x"] {
+            let invalid = format!("f3d:xref/root/occurrence-{invalid}/design:record#2");
+            assert!(!same_native_occurrence(&ctx, &invalid, &invalid).unwrap());
+        }
+        // A later malformed marker does not hide the last complete numeric segment.
+        assert!(same_native_occurrence(
+            &ctx,
+            "f3d:xref/root/occurrence-12/occurrence-invalid/design:record#1",
+            "f3d:xref/root/occurrence-12/design:record#2",
+        )
+        .unwrap());
     }
 
     #[test]

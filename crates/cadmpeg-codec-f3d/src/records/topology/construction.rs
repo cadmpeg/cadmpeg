@@ -900,6 +900,8 @@ pub(crate) struct DesignConstructionOperandFlag {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for DesignConstructionOperandFlag {
+    const FIXED_BYTES: Option<u64> = Some(4 + 8 + 3 + 1 + 8);
+
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -930,6 +932,8 @@ pub(crate) struct DesignConstructionOperandTransform {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for DesignConstructionOperandTransform {
+    const FIXED_BYTES: Option<u64> = Some(4 + 8 + 3 + 128 + 3);
+
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -1115,6 +1119,8 @@ pub(crate) struct DesignConstructionOperandDualTransform {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for DesignConstructionOperandDualTransform {
+    const FIXED_BYTES: Option<u64> = Some(4 + 8 + 3 + 128 + 8 + 128 + 8);
+
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,

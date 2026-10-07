@@ -129,7 +129,9 @@ pub(crate) fn classify(ctx: &DecodeContext<'_>, name: &str) -> Result<ContainerR
     if name.ends_with('/') {
         return Ok(ContainerRole::Directory);
     }
-    let base = name.rsplit('/').next().unwrap_or(name);
+    let base = ctx
+        .rsplit_once(name, "/", "classify F3D entry basename")?
+        .map_or(name, |(_, base)| base);
     let extension = match std::path::Path::new(name).extension() {
         Some(extension) => ctx
             .validate_utf8(extension.as_encoded_bytes(), "validate F3D entry extension")?
@@ -357,14 +359,18 @@ impl<'a> ContainerScan<'a> {
         else {
             return Ok(None);
         };
-        for index in ctx.admit_iter(indices, "find F3D Design stream by scope")? {
-            if let Some(entry) = self.entries.get(*index) {
-                if self.is_design_stream(ctx, entry, expected_role)? {
-                    return Ok(Some(entry));
-                }
-            }
-        }
-        Ok(None)
+        ctx.find_map(
+            indices.iter(),
+            |index| {
+                let Some(entry) = self.entries.get(*index) else {
+                    return Ok(None);
+                };
+                Ok(self
+                    .is_design_stream(ctx, entry, expected_role)?
+                    .then_some(entry))
+            },
+            "find F3D Design stream by scope",
+        )
     }
 
     /// The parse of one `MetaStream` entry, computed at most once per scan.
@@ -747,7 +753,11 @@ pub(crate) fn scan<'a>(
     // discriminants, before anything semantic is read. Classifying here is what
     // keeps the report from re-deriving an identity the parse already settled.
     let root_document_members = root_f3d_members(ctx, &inflated_entries)?;
-    let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
+    let kind = if let Some(top_level_manifest) = ctx.get_btree_map(
+        &inflated_entries,
+        "Manifest.dat",
+        "find F3D top-level manifest",
+    )? {
         let top_level_manifest = manifest::parse_top_level(ctx, top_level_manifest.window())?;
         let matched = F3dDialect::classify_document(ctx, top_level_manifest.declared_version())?;
         let available_paths = ctx
@@ -762,8 +772,12 @@ pub(crate) fn scan<'a>(
             design_asset_folder,
             matched,
         }
-    } else if inflated_entries.contains_key("Manifest.json")
-        && inflated_entries.contains_key("DesignDescription.json")
+    } else if ctx.contains_key_btree_map(&inflated_entries, "Manifest.json", "find F3Z manifest")?
+        && ctx.contains_key_btree_map(
+            &inflated_entries,
+            "DesignDescription.json",
+            "find F3Z design description",
+        )?
         && !root_document_members.is_empty()
     {
         F3dContainerKind::MultiDocument {

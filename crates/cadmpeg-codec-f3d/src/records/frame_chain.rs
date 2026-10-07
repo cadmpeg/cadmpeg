@@ -37,11 +37,34 @@ impl RecordFrameChain {
 mod identity_rewrite;
 
 impl cadmpeg_core::decode::cost::DecodeCost for RecordFrameChain {
+    const FIXED_BYTES: Option<u64> = Some(4 + 8);
+
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, cadmpeg_core::CodecError> {
         (&self.record_index, &self.byte_offset).decode_cost(ctx, operation)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn fixed_frame_cost_avoids_scan() {
+        use cadmpeg_core::decode::cost::DecodeCost;
+        let row = super::RecordFrameChain::try_new(4, 100, 1, 10).unwrap();
+        let rows = [row; 100];
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert_eq!(
+                rows.as_slice()
+                    .decode_cost(ctx, "measure F3D frame rows")
+                    .unwrap(),
+                1200
+            );
+            assert_eq!(ctx.resource_refusal(), None);
+        });
     }
 }

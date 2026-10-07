@@ -6,7 +6,7 @@ use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{is_guid_hyphenated, lp_ascii_strict_charged, lp_utf16_bounded_charged};
+use crate::bytes::{lp_ascii_strict_charged, lp_utf16_bounded_charged, lp_utf16_bounded_view};
 use crate::records::entity_header::SegmentTypeData;
 
 /// Serializer magic that selects the modern `MetaStream` header group.
@@ -122,7 +122,12 @@ pub(crate) fn primary_record_frames(
                 "F3D secondary record index repeats an entity ID".into(),
             ));
         }
-        let Some(&ordinal) = primary_by_entity.get(&record.entity_id) else {
+        let Some(&ordinal) = ctx.get_hash_map(
+            &primary_by_entity,
+            &record.entity_id,
+            "find F3D primary entity frame",
+        )?
+        else {
             return Err(CodecError::Malformed(
                 "F3D secondary record index names an entity absent from the primary index".into(),
             ));
@@ -228,10 +233,11 @@ fn lp_graphic_charged(
     let Some((value, end)) = lp_ascii_strict_charged(ctx, bytes, at, bounds)? else {
         return Ok(None);
     };
-    if !ctx
-        .admit_iter(value.as_bytes(), "validate F3D MetaStream graphic text")?
-        .all(u8::is_ascii_graphic)
-    {
+    if !ctx.all_by(
+        value.as_bytes(),
+        |byte| Ok(byte.is_ascii_graphic()),
+        "validate F3D MetaStream graphic text",
+    )? {
         return Ok(None);
     }
     Ok(Some((value, end)))
@@ -256,12 +262,10 @@ fn take_version_guid(
         let Some(guid_at) = initial.checked_add(prefix_len) else {
             continue;
         };
-        let Some((guid, next)) =
-            lp_utf16_bounded_charged(ctx, bytes, guid_at, 36..=36, "retain F3D UTF-16 string")?
-        else {
+        let Some((guid, next)) = lp_utf16_bounded_view(ctx, bytes, guid_at, 36..=36)? else {
             continue;
         };
-        if is_guid_hyphenated(&guid) {
+        if guid.is_guid_hyphenated() {
             *at = next;
             return Ok(());
         }
@@ -285,18 +289,18 @@ fn take_version_urn(
         let Some(urn_at) = initial.checked_add(prefix_len) else {
             continue;
         };
-        let Some((urn, next)) =
-            lp_utf16_bounded_charged(ctx, bytes, urn_at, 1..=1024, "retain F3D UTF-16 string")?
-        else {
+        let Some((urn, next)) = lp_utf16_bounded_view(ctx, bytes, urn_at, 1..=1024)? else {
             continue;
         };
-        let urn = urn.as_bytes();
+        let urn_text = urn.to_scoped(ctx, "decode F3D MetaStream version URN")?;
+        let urn = urn_text.0.as_bytes();
         if urn.len() > 4
             && urn[..4].eq_ignore_ascii_case(b"urn:")
-            && ctx
-                .admit_iter(&urn[4..], "validate F3D MetaStream version URN")
-                .map_err(CodecError::from)?
-                .all(u8::is_ascii_graphic)
+            && ctx.all_by(
+                &urn[4..],
+                |byte| Ok(byte.is_ascii_graphic()),
+                "validate F3D MetaStream version URN",
+            )?
         {
             *at = next;
             return Ok(());
@@ -932,17 +936,15 @@ mod tests {
         lp_utf16(&mut bytes, "bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
         bytes.extend_from_slice(&2u32.to_le_bytes());
         bytes.extend_from_slice(&0u32.to_le_bytes());
-        let retained_before_urn = u64_from_index(
-            "ACT".len()
-                + "00000000-0000-0000-0000-000000000000".len()
-                + "FusionACTSegmentType".len()
-                + "Fusion".len()
-                + "11111111-2222-3333-4444-555555555555".len(),
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            "decode F3D MetaStream version URN",
+            0,
+            |ctx| super::parse(ctx, &bytes, "limited MetaStream"),
         );
-        let error = refused(&bytes, u64::MAX, retained_before_urn);
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D UTF-16 string")
+            if limit.operation == "decode F3D MetaStream version URN")
         );
     }
 

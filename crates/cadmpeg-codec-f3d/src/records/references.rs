@@ -49,6 +49,8 @@ pub(crate) struct PersistentReference {
 pub(crate) struct DesignClassTag(String);
 
 impl cadmpeg_core::decode::cost::DecodeCost for DesignClassTag {
+    const FIXED_BYTES: Option<u64> = Some(3);
+
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,

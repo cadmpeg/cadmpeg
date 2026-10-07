@@ -25,12 +25,12 @@ fn native_occurrence_scan_propagates_and_fuses_work_refusal() {
         (
             "f3d:xref/root/occurrence-0/design:record#1",
             "f3d:xref/root/occurrence-0/design:other#1",
-            8,
+            10,
         ),
         (
             "f3d:root/Design1/BulkStream.dat:record#1",
             "f3d:design:persistent-subentity-tag#1",
-            4,
+            2,
         ),
     ] {
         for skip in 0..refusals {

@@ -796,70 +796,136 @@ impl DesignDimensionAnnotationFrame {
         if draft.owner_reference_offset != owner_reference_offset {
             return Err("owner_reference_offset disagrees with frame layout".into());
         }
-        for (ordinal, operand) in draft.operands.iter().enumerate() {
+        let operand_error = |(ordinal, operand): (usize, &DesignDimensionAnnotationOperand)| {
             let start = draft.byte_offset + 24 + u64_from_index(ordinal) * 15;
-            if operand.geometry_reference_offset != start + 1 || operand.role_offset != start + 11 {
-                return Err(
-                    "operands geometry_reference_offset or role_offset disagrees with frame layout"
-                        .into(),
-                );
-            }
+            (operand.geometry_reference_offset != start + 1 || operand.role_offset != start + 11)
+                .then_some(
+                    "operands geometry_reference_offset or role_offset disagrees with frame layout",
+                )
+        };
+        let invalid_operand = match admission {
+            RecordAdmission::Charged(ctx) => ctx
+                .find_map(
+                    draft.operands.iter().enumerate(),
+                    |row| Ok(operand_error(row)),
+                    "validate F3D annotation operand offsets",
+                )
+                .map_err(AnnotationFrameBuildError::Resource)?,
+            RecordAdmission::Admitted => draft.operands.iter().enumerate().find_map(operand_error),
+        };
+        if let Some(error) = invalid_operand {
+            return Err(error.into());
         }
-        for (ordinal, member) in draft.return_members.iter().enumerate() {
+        let return_error = |(ordinal, member): (usize, &Located<NonZeroU32>)| {
             let expected = u64::try_from(ordinal)
                 .ok()
                 .and_then(|ordinal| ordinal.checked_mul(11))
                 .and_then(|delta| governing_owner_reference_offset.checked_add(delta))
-                .and_then(|offset| offset.checked_add(15))
-                .ok_or("return_member_offsets overflow")?;
-            if member.offset != expected {
-                return Err("return_member_offsets disagree with frame layout".into());
+                .and_then(|offset| offset.checked_add(15));
+            match expected {
+                None => Some("return_member_offsets overflow"),
+                Some(expected) if member.offset != expected => {
+                    Some("return_member_offsets disagree with frame layout")
+                }
+                Some(_) => None,
             }
+        };
+        let invalid_return = match admission {
+            RecordAdmission::Charged(ctx) => ctx
+                .find_map(
+                    draft.return_members.iter().enumerate(),
+                    |row| Ok(return_error(row)),
+                    "validate F3D annotation return offsets",
+                )
+                .map_err(AnnotationFrameBuildError::Resource)?,
+            RecordAdmission::Admitted => draft
+                .return_members
+                .iter()
+                .enumerate()
+                .find_map(return_error),
+        };
+        if let Some(error) = invalid_return {
+            return Err(error.into());
         }
         // The return members must be the operands' geometry indices as a multiset.
-        let operand_members = admission
-            .collect_vec(
-                draft
+        let members_agree = match admission {
+            RecordAdmission::Charged(ctx) => {
+                let (agree, _storage) = ctx
+                    .with_scoped_storage("count F3D annotation operand geometry indices", || {
+                        let mut unmatched = std::collections::BTreeMap::new();
+                        let mut member_count = 0usize;
+                        for operand in
+                            ctx.admit_iter(&draft.operands, "index F3D annotation operands")?
+                        {
+                            let Some(index) = operand.geometry_record_index else {
+                                continue;
+                            };
+                            member_count += 1;
+                            let count = ctx
+                                .get_btree_map(
+                                    &unmatched,
+                                    &index,
+                                    "count F3D annotation operand geometry indices",
+                                )?
+                                .copied()
+                                .unwrap_or(0usize);
+                            ctx.insert_btree_map(
+                                &mut unmatched,
+                                index,
+                                count + 1,
+                                "count F3D annotation operand geometry indices",
+                            )?;
+                        }
+                        let agree = ctx.all_by(
+                            &draft.return_members,
+                            |member| {
+                                let Some(count) = ctx.get_mut_btree_map(
+                                    &mut unmatched,
+                                    &member.value,
+                                    "match F3D annotation return members",
+                                )?
+                                else {
+                                    return Ok(false);
+                                };
+                                if *count == 0 {
+                                    return Ok(false);
+                                }
+                                *count -= 1;
+                                Ok(true)
+                            },
+                            "match F3D annotation return members",
+                        )?;
+                        Ok::<_, cadmpeg_core::CodecError>(
+                            agree && draft.return_members.len() == member_count,
+                        )
+                    })
+                    .map_err(AnnotationFrameBuildError::Resource)?;
+                agree
+            }
+            RecordAdmission::Admitted => {
+                let mut unmatched = std::collections::BTreeMap::new();
+                let mut member_count = 0usize;
+                for index in draft
                     .operands
                     .iter()
-                    .filter_map(|operand| operand.geometry_record_index),
-                "index F3D annotation operands",
-            )
-            .map_err(AnnotationFrameBuildError::Resource)?;
-        let return_members = admission
-            .collect_vec(
-                draft.return_members.iter().map(|member| member.value),
-                "index F3D annotation return members",
-            )
-            .map_err(AnnotationFrameBuildError::Resource)?;
-        let mut unmatched = std::collections::BTreeMap::new();
-        for index in &operand_members {
-            let count = unmatched.get(index).copied().unwrap_or(0usize);
-            admission
-                .insert_btree_map(
-                    &mut unmatched,
-                    *index,
-                    count + 1,
-                    "count F3D annotation operand geometry indices",
-                )
-                .map_err(AnnotationFrameBuildError::Resource)?;
-        }
-        let mut members_agree = return_members.len() == operand_members.len();
-        for member in &return_members {
-            let count = unmatched.get(member).copied().unwrap_or(0usize);
-            if count == 0 {
-                members_agree = false;
-                break;
+                    .filter_map(|operand| operand.geometry_record_index)
+                {
+                    member_count += 1;
+                    *unmatched.entry(index).or_insert(0usize) += 1;
+                }
+                let agree = draft.return_members.iter().all(|member| {
+                    let Some(count) = unmatched.get_mut(&member.value) else {
+                        return false;
+                    };
+                    if *count == 0 {
+                        return false;
+                    }
+                    *count -= 1;
+                    true
+                });
+                agree && draft.return_members.len() == member_count
             }
-            admission
-                .insert_btree_map(
-                    &mut unmatched,
-                    *member,
-                    count - 1,
-                    "match F3D annotation return members",
-                )
-                .map_err(AnnotationFrameBuildError::Resource)?;
-        }
+        };
         if !members_agree {
             return Err("return_members disagree with operands geometry indices".into());
         }
@@ -871,8 +937,17 @@ impl DesignDimensionAnnotationFrame {
             class_tag: draft.class_tag,
             record_index: draft.record_index,
             frame_length: draft.frame_length,
-            operands: admission
-                .collect_vec(
+            operands: match admission {
+                RecordAdmission::Charged(ctx) => ctx.collect_vec(
+                    ctx.admit_iter(draft.operands, "retain F3D annotation operands")
+                        .map_err(|error| AnnotationFrameBuildError::Resource(error.into()))?
+                        .map(|operand| DesignDimensionAnnotationLocus {
+                            geometry_record_index: operand.geometry_record_index,
+                            role: operand.role,
+                        }),
+                    "retain F3D annotation operands",
+                ),
+                RecordAdmission::Admitted => admission.collect_vec(
                     draft
                         .operands
                         .into_iter()
@@ -881,17 +956,25 @@ impl DesignDimensionAnnotationFrame {
                             role: operand.role,
                         }),
                     "retain F3D annotation operands",
-                )
-                .map_err(AnnotationFrameBuildError::Resource)?,
+                ),
+            }
+            .map_err(AnnotationFrameBuildError::Resource)?,
             entity_genesis: draft.entity_genesis,
             annotation_bytes: draft.annotation_bytes,
             governing_owner_record_index: draft.governing_owner_record_index,
-            return_members: admission
-                .collect_vec(
+            return_members: match admission {
+                RecordAdmission::Charged(ctx) => ctx.collect_vec(
+                    ctx.admit_iter(draft.return_members, "retain F3D annotation return members")
+                        .map_err(|error| AnnotationFrameBuildError::Resource(error.into()))?
+                        .map(|member| member.value),
+                    "retain F3D annotation return members",
+                ),
+                RecordAdmission::Admitted => admission.collect_vec(
                     draft.return_members.into_iter().map(|member| member.value),
                     "retain F3D annotation return members",
-                )
-                .map_err(AnnotationFrameBuildError::Resource)?,
+                ),
+            }
+            .map_err(AnnotationFrameBuildError::Resource)?,
             paired_class_tag: draft.paired_class_tag,
             owner_reference: draft.owner_reference,
         })

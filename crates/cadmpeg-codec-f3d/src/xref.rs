@@ -1120,11 +1120,7 @@ fn indexed_records(
         let Some(tag) = bytes.get(at + 4..at + 7) else {
             continue;
         };
-        if !ctx
-            .admit_iter(tag, "validate F3D xref record tag")?
-            .all(u8::is_ascii_digit)
-            || bytes.get(at + 7..at + 15).is_none()
-        {
+        if !tag.iter().all(u8::is_ascii_digit) || bytes.get(at + 7..at + 15).is_none() {
             continue;
         }
         if let Some(previous) = records.last_mut() {
