@@ -48,7 +48,7 @@ macro_rules! clone_copy_for_decode {
                 ctx: &cadmpeg_core::decode::DecodeContext<'_>,
                 operation: &'static str,
             ) -> Result<Self, cadmpeg_core::CodecError> {
-                ctx.charge_work(1, operation)?;
+                ctx.charge_work(0, operation)?;
                 Ok(*self)
             }
         }
@@ -98,7 +98,7 @@ macro_rules! clone_enum_for_decode {
                 ctx: &cadmpeg_core::decode::DecodeContext<'_>,
                 clone_operation: &'static str,
             ) -> Result<Self, cadmpeg_core::CodecError> {
-                ctx.charge_work(1, clone_operation)?;
+                ctx.charge_work(0, clone_operation)?;
                 match self {
                     $(Self::$variant $(($($tuple),*))? $({$($field),*})? => Ok(Self::$variant
                         $(($(crate::features::decode_clone::CloneForDecode::try_clone_for_decode($tuple, ctx, clone_operation)?),*))?
@@ -2144,13 +2144,20 @@ impl FeatureContent {
         operation: &'static str,
     ) -> Result<(), FeatureCollectionError> {
         if !matches!(value, FeatureSourceContent::Text(_)) {
-            for member in &self.0 {
-                ctx.charge_work_limit(1, operation)?;
-                if member == &value {
-                    return Err(FeatureCollectionError::Invalid(
-                        "source_content repeats a parameter or child-feature reference",
-                    ));
-                }
+            let distinct = ctx.all_by_limit(&self.0, |member| {
+                let equal = match (member, &value) {
+                    (FeatureSourceContent::Parameter(left), FeatureSourceContent::Parameter(right)) =>
+                        ctx.equal_bytes_limit(left.as_str().as_bytes(), right.as_str().as_bytes(), operation)?,
+                    (FeatureSourceContent::Feature(left), FeatureSourceContent::Feature(right)) =>
+                        ctx.equal_bytes_limit(left.as_str().as_bytes(), right.as_str().as_bytes(), operation)?,
+                    _ => false,
+                };
+                Ok(!equal)
+            }, operation)?;
+            if !distinct {
+                return Err(FeatureCollectionError::Invalid(
+                    "source_content repeats a parameter or child-feature reference",
+                ));
             }
         }
         ctx.reserve_vec_limit(&mut self.0, 1, operation)?;
@@ -6594,15 +6601,12 @@ impl GeneratedVertexRef {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct SelectionReference(String);
+pub struct SelectionReference(#[cfg_attr(feature = "schema", schemars(with = "String"))] NonBlankString);
 impl_feature_decode_cost_record!(SelectionReference; (0));
 impl TryFrom<String> for SelectionReference {
     type Error = BodySelectionError;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.trim().is_empty() {
-            return Err(BodySelectionError::BlankNativeMember);
-        }
-        Ok(Self(value))
+        NonBlankString::try_from(value).map(Self).map_err(|_| BodySelectionError::BlankNativeMember)
     }
 }
 
@@ -6612,23 +6616,22 @@ impl SelectionReference {
         value: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        ctx.charge_work_limit(
-            cadmpeg_core::decode::u64_from_index(value.len()),
-            "validate persistent selection reference",
-        )?;
-        Ok(Self::try_from(value))
+        const OPERATION: &str = "validate persistent selection reference";
+        ctx.charge_work_limit(0, OPERATION)?;
+        Ok(NonBlankString::for_decode(ctx, value, OPERATION)?.map(Self)
+            .ok_or(BodySelectionError::BlankNativeMember))
     }
 
     /// The retained reference text.
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
 impl std::ops::Deref for SelectionReference {
     type Target = str;
     fn deref(&self) -> &str {
-        &self.0
+        self.as_str()
     }
 }
 
@@ -6728,8 +6731,8 @@ impl<T: PartialEq + DecodeCost> DistinctMembers<T> {
         values: impl IntoIterator<Item = T>,
         operation: &'static str,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work_limit(0, operation)?;
-        for value in values {
+        let mut values = values.into_iter();
+        while let Some(value) = ctx.next_charged(&mut values, operation)? {
             self.insert(ctx, value, operation)?;
         }
         Ok(())
@@ -8409,11 +8412,8 @@ impl SketchProfileLoops {
             Err(FeatureCollectionError::Resource(limit)) => return Err(limit),
             Err(FeatureCollectionError::Invalid(_)) => return Ok(Err("holes must be distinct")),
         };
-        for hole in holes.as_slice() {
-            ctx.charge_work_limit(1, "validate sketch profile outer loop")?;
-            if hole == &outer {
-                return Ok(Err("holes must not contain outer"));
-            }
+        if !ctx.all_by_limit(holes.as_slice(), |hole| Ok(hole != &outer), "validate sketch profile outer loop")? {
+            return Ok(Err("holes must not contain outer"));
         }
         Ok(Ok(Self { outer, holes }))
     }

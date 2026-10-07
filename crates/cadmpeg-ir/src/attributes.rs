@@ -39,6 +39,7 @@ impl AttributeTarget {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.charge_work(0, operation)?;
         Ok(match self {
             Self::Document => Self::Document,
             Self::Body(id) => Self::Body(id.try_clone_for_decode(ctx, operation)?),
@@ -197,6 +198,10 @@ mod tests {
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "attribute target copy"));
+        assert!(matches!(
+            (error, AttributeTarget::Document.try_clone_for_decode(&ctx, "later document target")),
+            (CodecError::ResourceLimit(original), Err(CodecError::ResourceLimit(sticky))) if original == sticky
+        ));
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert_eq!(

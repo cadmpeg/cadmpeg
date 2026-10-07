@@ -41,108 +41,50 @@ fn plane() -> SubdPlaneFrame {
 
 #[test]
 fn cage_validation_admits_each_topology_and_grip_walk_before_visiting() {
-    // Core's BTreeSet<u32> node bound is 11 u32 key lanes + 16 pointer widths + two max-alignment pads.
-    // The first insertion shifts its node once and pays two passes for the node it adds to the
-    // node bound; the second only shifts. On 64-bit targets: 564 first-node + 188 second-insert
-    // + 8 key-comparison + 25 prior work = 785 before two final vertex visits, for 787 total.
-    // The second insertion compares its four-byte key once with the one stored key, in its lookup and its insertion.
-    const NODE_ALIGNMENT: usize = if std::mem::align_of::<u32>() > std::mem::align_of::<usize>() {
-        std::mem::align_of::<u32>()
-    } else {
-        std::mem::align_of::<usize>()
-    };
-    const NODE_BYTES: u64 = cadmpeg_core::decode::u64_from_index(
-        11 * std::mem::size_of::<u32>() + 16 * std::mem::size_of::<usize>() + 2 * NODE_ALIGNMENT,
-    );
-    let first_node_work = 3 * NODE_BYTES;
-    let second_insert_work = NODE_BYTES;
-    let after_first_node = 24 + first_node_work;
-    let before_final_vertices = 25 + first_node_work + second_insert_work + 2 * 4;
-    let full_work = before_final_vertices + 2;
-
-    for (cap, operation, used, additional) in [
-        (0, "validate SubD edge rows", 0, 1),
-        (1, "validate SubD edge vertices", 1, 1),
-        (3, "validate SubD edge rows", 3, 1),
-        (9, "validate SubD face rows", 9, 1),
-        (10, "validate SubD face edge references", 10, 1),
-        (12, "validate SubD directed ring", 12, 1),
-        (16, "validate SubD vertex rows", 16, 1),
-        (17, "validate SubD grip wedges", 17, 1),
-        (18, "validate SubD grip edge", 18, 1),
-        (19, "validate SubD grip edge owner", 19, 1),
-        (20, "validate SubD grip face", 20, 1),
-        (21, "validate SubD grip face edges", 21, 1),
-        (22, "validate SubD grip face owner", 22, 1),
-        (23, "validate SubD grip slots", 23, 1),
-        (24, "SubD validation members", 24, first_node_work),
-        (25, "SubD validation members", 24, first_node_work),
-        (26, "SubD validation members", 24, first_node_work),
-        (27, "SubD validation members", 24, first_node_work),
-        (
-            after_first_node,
-            "validate SubD grip slots",
-            after_first_node,
-            1,
-        ),
-        (
-            after_first_node + 1,
-            "SubD validation member search",
-            after_first_node + 1,
-            4,
-        ),
-        (
-            after_first_node + 5,
-            "SubD validation members",
-            after_first_node + 5,
-            second_insert_work,
-        ),
-        (
-            before_final_vertices - 1,
-            "SubD validation members",
-            before_final_vertices - 4,
-            4,
-        ),
-        (
-            before_final_vertices,
-            "validate SubD vertex rows",
-            before_final_vertices,
-            1,
-        ),
-        (
-            before_final_vertices + 1,
-            "validate SubD vertex rows",
-            before_final_vertices + 1,
-            1,
-        ),
+    for operation in [
+        "validate SubD edge rows",
+        "validate SubD face rows",
+        "validate SubD face edge references",
+        "validate SubD vertex rows",
+        "validate SubD grip wedges",
+        "validate SubD grip face edges",
+        "validate SubD grip slots",
+        "SubD validation members",
+        "SubD validation member search",
     ] {
-        let cage = gripped_cage();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) =
-            SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries, &ctx)
-        else {
-            panic!("cage walk must refuse at {cap}");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, operation);
-        assert_eq!(limit.used, used);
-        assert_eq!(limit.additional, additional);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-        );
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
+            let cage = gripped_cage();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries, &ctx);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(limit.operation, operation);
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit));
+            }
+            result
+        });
     }
-    // This admits both grip slots, searches, key comparisons, B-tree mutations and remaining vertex rows.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits,
+        "SubD cage validation complete", |cap| {
+            let cage = gripped_cage();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries, &ctx)?.unwrap();
+            ctx.charge_work(1, "SubD cage validation complete")
+        });
+    let CodecError::ResourceLimit(limit) = error else { panic!("validation completion boundary"); };
     let cage = gripped_cage();
+    let expected = cage.clone();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = full_work;
+    policy.limits.max_work_units = limit.used;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries, &ctx)
-        .unwrap()
-        .unwrap();
+    assert_eq!(SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries, &ctx).unwrap().unwrap(), expected);
     ctx.finish_session().unwrap();
 }
 
@@ -312,43 +254,40 @@ fn subdivision_symmetry_and_layout_constructors_use_the_caller_session() {
 
 #[test]
 fn subdivision_vertex_edit_refusals_are_atomic_and_release_candidates() {
-    // The edit callback follows 4 vertex iterator steps, 2 each for wedge, spoke and sector iterators, and 3 edit slots: 13 work units.
-    for (dimension, cap, edited) in [
-        (ResourceDimension::MaterializedBytes, 0, false),
-        (ResourceDimension::CollectionItems, 0, false),
-        (ResourceDimension::WorkUnits, 0, false),
-        (ResourceDimension::WorkUnits, 13, true),
-        (ResourceDimension::RetainedBytes, 0, true),
+    for (dimension, operation, edited) in [
+        (ResourceDimension::MaterializedBytes, "copy SubD edit vertices", false),
+        (ResourceDimension::CollectionItems, "copy SubD edit vertices", false),
+        (ResourceDimension::WorkUnits, "copy SubD edit vertices", false),
+        (ResourceDimension::WorkUnits, "validate SubD vertex rows", true),
+        (ResourceDimension::RetainedBytes, "SubD vertex edit storage", true),
     ] {
-        let mut cage = gripped_cage();
-        let expected = cage.clone();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-            _ => panic!("edit dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut invoked = false;
-        let Err(CodecError::ResourceLimit(limit)) = cage.edit_vertices(
-            |vertices| {
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let mut cage = gripped_cage();
+            let expected = cage.clone();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                _ => panic!("edit dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut invoked = false;
+            let result = cage.edit_vertices(|vertices| {
                 invoked = true;
                 vertices[0].tag = crate::subd::SubdVertexTag::Corner;
                 Ok(())
-            },
-            &ctx,
-        ) else {
-            panic!("edit admission must refuse");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert_eq!(invoked, edited);
-        assert_eq!(cage, expected);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-        );
+            }, &ctx);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(limit.dimension, dimension);
+                assert_eq!(invoked, edited);
+                assert_eq!(cage, expected);
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit));
+            }
+            result
+        });
     }
     let mut cage = gripped_cage();
     let expected = cage.clone();

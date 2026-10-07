@@ -10,24 +10,15 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
         map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let _depth = ctx.enter_nested("walk native attribute target")?;
-        let work =
-            cadmpeg_core::decode::u64_from_index(value.as_object().map_or(0, serde_json::Map::len))
-                .checked_mul(4)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("find native attribute kind", u64::MAX - 1, u64::MAX)
-                })?;
-        ctx.charge_work(work, "find native attribute kind")?;
-        let kind = value.get("kind").and_then(serde_json::Value::as_str);
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(kind.map_or(0, str::len))
-                .checked_mul(8)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("match native attribute kind", u64::MAX - 1, u64::MAX)
-                })?,
-            "match native attribute kind",
-        )?;
+        let kind = match value.as_object() {
+            Some(fields) => ctx.find_map(fields.iter(), |(name, value)| {
+                Ok(ctx.equal_bytes(name.as_bytes(), b"kind", "find native attribute kind")?
+                    .then(|| value.as_str()))
+            }, "find native attribute kind")?.flatten(),
+            None => None,
+        };
         match kind {
-            Some("body") => crate::schema::rewrite::typed::native_fields::rewrite_field(
+            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"body", "match native attribute kind")? => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
                 "id",
@@ -37,7 +28,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     _ => None,
                 },
             ),
-            Some("face") => crate::schema::rewrite::typed::native_fields::rewrite_field(
+            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"face", "match native attribute kind")? => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
                 "id",
@@ -47,7 +38,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     _ => None,
                 },
             ),
-            Some("shell") => crate::schema::rewrite::typed::native_fields::rewrite_field(
+            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"shell", "match native attribute kind")? => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
                 "id",
@@ -57,7 +48,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     _ => None,
                 },
             ),
-            Some("loop") => crate::schema::rewrite::typed::native_fields::rewrite_field(
+            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"loop", "match native attribute kind")? => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
                 "id",
@@ -67,7 +58,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     _ => None,
                 },
             ),
-            Some("coedge") => crate::schema::rewrite::typed::native_fields::rewrite_field(
+            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"coedge", "match native attribute kind")? => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
                 "id",
@@ -77,7 +68,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     _ => None,
                 },
             ),
-            Some("edge") => crate::schema::rewrite::typed::native_fields::rewrite_field(
+            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"edge", "match native attribute kind")? => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
                 "id",
@@ -87,7 +78,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     _ => None,
                 },
             ),
-            Some("vertex") => crate::schema::rewrite::typed::native_fields::rewrite_field(
+            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"vertex", "match native attribute kind")? => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
                 "id",
@@ -97,7 +88,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     _ => None,
                 },
             ),
-            Some("document") => Ok(()),
+            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"document", "match native attribute kind")? => Ok(()),
             _ => Err(cadmpeg_core::CodecError::malformed(
                 "native attribute target has an invalid kind",
             )),
@@ -109,7 +100,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
         visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let _depth = ctx.enter_nested("walk typed reference fields")?;
-        ctx.charge_work(1, "walk typed reference fields")?;
+        ctx.charge_work(0, "walk typed reference fields")?;
         match self {
             Self::Document => Ok(()),
             Self::Body(id) => id.visit_identity_references(ctx, visitor),
@@ -127,7 +118,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
         map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let _depth = ctx.enter_nested("typed rewrite variant")?;
-        ctx.charge_work(1, "typed rewrite variant")?;
+        ctx.charge_work(0, "typed rewrite variant")?;
         Ok(match self {
             Self::Document => Self::Document,
             Self::Body(id) => Self::Body(id.rewrite_identities(ctx, map)?),
@@ -150,3 +141,41 @@ rewrite_enum!(AttributeValue, []; {
     Vector(field0),
 });
 rewrite_record!(SourceAttribute, []; {id, target, name, values});
+
+#[cfg(test)]
+mod tests {
+    use super::AttributeTarget;
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn native_attribute_kind_admission_preserves_wire_and_refusals() {
+        for kind in ["body", "face", "shell", "loop", "coedge", "edge", "vertex", "document"] {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let mut value = serde_json::json!({"kind": kind, "unrelated": "雪".repeat(1024)});
+            let before = value.clone();
+            let mut mapping = IdentityMap::new(&ctx, "attribute test mapping", |id: &str| ctx.copy_retained_text(id, "attribute test identity")).unwrap();
+            AttributeTarget::rewrite_native_value(&ctx, &mut value, &mut mapping).unwrap();
+            assert_eq!(value, before);
+        }
+        for operation in ["find native attribute kind", "match native attribute kind"] {
+            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut value = serde_json::json!({"kind": "document", "unrelated": "雪".repeat(1024)});
+                let before = value.clone();
+                let mut mapping = IdentityMap::new(&ctx, "attribute test mapping", |id: &str| ctx.copy_retained_text(id, "attribute test identity"))?;
+                let result = AttributeTarget::rewrite_native_value(&ctx, &mut value, &mut mapping);
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(value, before);
+                    drop(mapping);
+                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                }
+                result
+            });
+        }
+    }
+}
