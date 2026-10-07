@@ -107,7 +107,7 @@ pub(super) fn scan(
         let Some(source_attr) = View::u16_be_at(bytes, marker_at + 1) else {
             continue;
         };
-        let Some(source) = carriers.curve(source_attr) else {
+        let Some(source) = carriers.curve(ctx, source_attr)? else {
             continue;
         };
         let geometry = &source.carrier().geometry;

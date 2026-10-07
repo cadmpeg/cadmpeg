@@ -648,7 +648,7 @@ impl Facts {
             )?;
         }
 
-        let reachable = reachable_shells(ctx, &regions, &candidates)?;
+        let (reachable, _reachable_storage) = reachable_shells(ctx, &regions, &candidates)?;
         let mut shells = BTreeMap::new();
         for &(region, shell) in
             ctx.admit_iter(&candidates, "index typed Parasolid ownership shells")?
@@ -735,11 +735,11 @@ impl Facts {
 /// The `(region, shell)` pairs where the shell lies on the region's shell
 /// chain. Shell links are resolved once per shell. Each region emits its own
 /// membership pairs until a link is absent, ambiguous, or already visited.
-fn reachable_shells(
-    ctx: &DecodeContext<'_>,
+fn reachable_shells<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     regions: &Regions<'_>,
     candidates: &[(u16, &ShellNode)],
-) -> Result<BTreeSet<(u16, u16)>, CodecError> {
+) -> Result<(BTreeSet<(u16, u16)>, ScopedReservation<'ctx>), CodecError> {
     let (by_attr, _index_storage) = ctx.unique_index(
         candidates.iter().map(|&(_, shell)| (shell.attr, shell)),
         "index typed Parasolid shell candidates",
@@ -747,6 +747,7 @@ fn reachable_shells(
     let mut storage = ctx.reserve_scoped(0, "hold typed Parasolid shell chains")?;
     let mut walked = BTreeSet::new();
     let mut reachable = BTreeSet::new();
+    let mut reachable_storage = ctx.reserve_scoped(0, "hold typed Parasolid reachable shells")?;
     let mut links = BTreeMap::<u16, Option<Option<u16>>>::new();
     for &(region, _) in ctx.admit_iter(candidates, "walk typed Parasolid shell chains")? {
         if !storage.with_storage(|| {
@@ -777,7 +778,7 @@ fn reachable_shells(
                 }
             };
             let Some(link) = link else { break; };
-            if !storage.with_storage(|| {
+            if !reachable_storage.with_storage(|| {
                 ctx.insert_btree_set(
                     &mut reachable,
                     (region, attr),
@@ -789,7 +790,7 @@ fn reachable_shells(
             next = link;
         }
     }
-    Ok(reachable)
+    Ok((reachable, reachable_storage))
 }
 
 /// The region chain shared by every body head candidate that names one, or
@@ -1395,7 +1396,7 @@ mod tests {
         let candidates = [(20, &shells[0]), (21, &shells[1])];
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        assert_eq!(super::reachable_shells(&ctx, &regions, &candidates).unwrap(),
+        assert_eq!(super::reachable_shells(&ctx, &regions, &candidates).unwrap().0,
             std::collections::BTreeSet::from([(20, 8), (20, 9), (21, 8), (21, 9)]));
     }
 

@@ -1618,7 +1618,7 @@ enum ManifestActiveConfiguration {
 }
 
 impl ManifestActiveConfiguration {
-    fn merge(&mut self, current: Self) {
+    fn merge(&mut self, ctx: &DecodeContext<'_>, current: Self) -> Result<(), CodecError> {
         match (&mut *self, current) {
             (_, Self::Absent) | (Self::Ambiguous, _) => {}
             (_, Self::Ambiguous) => *self = Self::Ambiguous,
@@ -1627,7 +1627,7 @@ impl ManifestActiveConfiguration {
                 if *previous_index != index
                     || matches!(
                         (previous_name.as_deref(), name.as_deref()),
-                        (Some(previous), Some(current)) if previous != current
+                        (Some(previous), Some(current)) if !ctx.equal(previous, current, "compare SLDPRT active configuration names")?
                     )
                 {
                     *self = Self::Ambiguous;
@@ -1636,6 +1636,7 @@ impl ManifestActiveConfiguration {
                 }
             }
         }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -1690,7 +1691,7 @@ fn scan_solidworks_envelopes<'a>(
         let is_envelope = root_name == "swSolidWorks";
         if is_envelope && is_features_manifest_name(ctx, section)? {
             scan.manifest_active_configuration
-                .merge(manifest_active_configuration_in(ctx, document)?);
+                .merge(ctx, manifest_active_configuration_in(ctx, document)?)?;
         }
         if ctx.contains_text(root_name, "Keywords", "classify SLDPRT envelope root")? {
             let mut nodes = document.descendants();
