@@ -2,6 +2,7 @@
 //! STEP boundary-representation ownership and orientation decoding.
 
 use crate::ids::{key_word, kind};
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 use std::rc::Rc;
@@ -55,9 +56,8 @@ fn push_topology_body_group(
     group_operation: &'static str,
     member_operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.admit_btree_entry(groups, &key, group_operation)?;
     let copy = body.try_clone_for_decode(ctx, member_operation)?;
-    ctx.push_vec(groups.entry(key).or_default(), copy, member_operation)
+    ctx.push_vec(ctx.entry_btree_map(groups, key, group_operation)?.or_default(), copy, member_operation)
 }
 
 fn insert_topology_body_group(
@@ -68,20 +68,21 @@ fn insert_topology_body_group(
     group_operation: &'static str,
     member_operation: &'static str,
 ) -> Result<(), CodecError> {
-    if let Some(bodies) = groups.get(&key) {
+    if let Some(bodies) = ctx.get_btree_map(groups, &key, "STEP topology groups lookup")? {
         if ctx.contains_btree_set(bodies, body, "STEP topology body group membership")? {
             return Ok(());
         }
     }
-    ctx.admit_btree_entry(groups, &key, group_operation)?;
     let copy = body.try_clone_for_decode(ctx, member_operation)?;
-    ctx.insert_btree_set(groups.entry(key).or_default(), copy, member_operation)?;
+    ctx.insert_btree_set(ctx.entry_btree_map(groups, key, group_operation)?.or_default(), copy, member_operation)?;
     Ok(())
 }
 
 mod admissions;
 
-pub(super) struct TopologyData {
+pub(super) struct TopologyData<'ctx> {
+    _storage: Option<ScopedReservation<'ctx>>,
+    claim_storage: Option<ScopedReservation<'ctx>>,
     pub(super) body_by_root: BTreeMap<u64, Vec<BodyId>>,
     shape_representation_relationships: BTreeMap<u64, Vec<u64>>,
     pub(super) body_by_shell: BTreeMap<u64, BTreeSet<BodyId>>,
@@ -90,8 +91,13 @@ pub(super) struct TopologyData {
     pub(super) vertices_by_source: BTreeMap<u64, Vec<VertexId>>,
 }
 
+impl TopologyData<'_> {
+    /// Release source claim nodes after the session has absorbed their IDs.
+    pub(super) fn release_claim_storage(&mut self) { drop(self.claim_storage.take()); }
+}
+
 fn topology_commit_error(
-    context: &str,
+    context: std::fmt::Arguments<'_>,
     error: &DraftError,
     ctx: &DecodeContext<'_>,
 ) -> Result<String, CodecError> {
@@ -153,18 +159,8 @@ fn cache_representation_bodies<'a>(
     ctx: &'a DecodeContext<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut admitted = admitted_body_clone(bodies, ctx, "step_representation_body_cache_values")?;
-    admitted
-        .reservation
-        .grow(u64_from_index(std::mem::size_of::<(
-            u64,
-            AdmittedRepresentationBodies<'_>,
-        )>()))?;
-    ctx.insert_btree_map(
-        cache,
-        representation,
-        admitted,
-        "step_representation_body_cache_entries",
-    )?;
+    let entry = admitted.reservation.with_storage(|| ctx.entry_btree_map(cache, representation, "step_representation_body_cache_entries"))?;
+    entry.or_insert(admitted);
     Ok(())
 }
 
@@ -177,10 +173,9 @@ fn insert_body_id(
     if ctx.contains_btree_set(bodies, body, "STEP bodies membership")? {
         return Ok(());
     }
-    bytes.grow(u64_from_index(std::mem::size_of::<BodyId>()))?;
     let body =
         bytes.with_storage(|| body.try_clone_for_decode(ctx, "step_representation_body_set"))?;
-    ctx.insert_btree_set(bodies, body, "step_representation_body_set")?;
+    bytes.with_storage(|| ctx.insert_btree_set(bodies, body, "step_representation_body_set"))?;
     Ok(())
 }
 
@@ -193,45 +188,38 @@ fn insert_body_id(
 pub(super) fn representation_bodies<'a>(
     representation: u64,
     exchange: &Exchange,
-    topology: &TopologyData,
+    topology: &TopologyData<'_>,
     cache: &mut BTreeMap<u64, AdmittedRepresentationBodies<'a>>,
     active: &mut BTreeSet<u64>,
     ctx: &'a DecodeContext<'_>,
 ) -> Result<AdmittedRepresentationBodies<'a>, cadmpeg_core::CodecError> {
-    if let Some(bodies) = cache.get(&representation) {
+    if let Some(bodies) = ctx.get_btree_map(cache, &representation, "STEP topology cache lookup")? {
         return admitted_body_clone(bodies, ctx, "step_representation_body_cache_copy");
     }
     let _depth_guard = ctx.enter_nested("step_representation_body_walk")?;
-    if let Some(bodies) = topology.body_by_root.get(&representation) {
+    if let Some(bodies) = ctx.get_btree_map(&topology.body_by_root, &representation, "STEP topology body lookup")? {
         let bodies = admitted_body_clone(bodies, ctx, "step_representation_body_root_copy")?;
         cache_representation_bodies(cache, representation, &bodies, ctx)?;
         return Ok(bodies);
     }
-    if active.contains(&representation) {
+    if ctx.contains_btree_set(active, &representation, "STEP topology active membership")? {
         return admitted_body_clone(&[], ctx, "step_representation_body_empty");
     }
-    let active_bytes = {
-        ctx.reserve_scoped(
-            u64_from_index(std::mem::size_of::<u64>()),
-            "step_representation_body_active",
-        )?
-    };
-    ctx.insert_btree_set(active, representation, "step_representation_body_active")?;
+    let mut active_bytes = ctx.reserve_scoped(0, "step_representation_body_active")?;
+    active_bytes.with_storage(|| ctx.insert_btree_set(active, representation, "step_representation_body_active"))?;
     let mut body_ids = BTreeSet::new();
     let mut body_ids_bytes = ctx.reserve_scoped(0, "step_representation_body_set")?;
-    if let Some(items) = exchange
-        .records()
-        .get(&representation)
+    if let Some(items) = ctx.get_btree_map(exchange.records(), &representation, "STEP topology record lookup")?
         .map(|record| representation_item_values(ctx, record))
         .transpose()?
         .flatten()
     {
-        for item in items.iter().filter_map(ValueExt::reference) {
-            let Some(record) = exchange.records().get(&item) else {
+        for item in ctx.admit_iter(items, "STEP topology reference traversal")?.filter_map(ValueExt::reference) {
+            let Some(record) = ctx.get_btree_map(exchange.records(), &item, "STEP topology record lookup")? else {
                 continue;
             };
-            if let Some(bodies) = topology.body_by_root.get(&item) {
-                for body in bodies {
+            if let Some(bodies) = ctx.get_btree_map(&topology.body_by_root, &item, "STEP topology body lookup")? {
+                for body in ctx.admit_iter(bodies, "STEP representation direct body traversal")? {
                     insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
                 }
                 continue;
@@ -255,13 +243,9 @@ pub(super) fn representation_bodies<'a>(
             }
         }
     }
-    for related in topology
-        .shape_representation_relationships
-        .get(&representation)
-        .into_iter()
-        .flatten()
-        .copied()
-    {
+    let related = ctx.get_btree_map(&topology.shape_representation_relationships, &representation, "STEP topology relationship lookup")?
+        .map(Vec::as_slice).unwrap_or_default();
+    for &related in ctx.admit_iter(related, "STEP related representation traversal")? {
         let nested = representation_bodies(related, exchange, topology, cache, active, ctx)?;
         for body in ctx.admit_iter(&nested[..], "STEP representation bodies traversal")? {
             insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
@@ -276,8 +260,8 @@ pub(super) fn representation_bodies<'a>(
         body_ids.len(),
         "step_representation_body_output",
     )?;
-    bodies.extend(body_ids);
-    active.remove(&representation);
+    bodies.extend(ctx.admit_iter(body_ids, "STEP representation body output traversal")?);
+    ctx.remove_btree_set(active, &representation, "STEP topology active removal")?;
     drop(active_bytes);
     cache_representation_bodies(cache, representation, &bodies, ctx)?;
     Ok(AdmittedRepresentationBodies {
@@ -305,25 +289,12 @@ fn shape_representation_relationships(
         let Some(relationship) = record.partial(ctx, "SHAPE_REPRESENTATION_RELATIONSHIP")? else {
             continue;
         };
-        let mut references = relationship
-            .parameters
-            .iter()
-            .filter_map(ValueExt::reference);
-        let (first, second) = match (references.next(), references.next()) {
-            (Some(first), Some(second)) => (first, second),
-            _ => {
-                let Some(base) = record.partial(ctx, "REPRESENTATION_RELATIONSHIP")? else {
-                    continue;
-                };
-                let mut references = base.parameters.iter().filter_map(ValueExt::reference);
-                let Some(first) = references.next() else {
-                    continue;
-                };
-                let Some(second) = references.next() else {
-                    continue;
-                };
-                (first, second)
-            }
+        let (first, second) = if let Some(endpoints) = first_two_references(&relationship.parameters, ctx)? {
+            endpoints
+        } else {
+            let Some(base) = record.partial(ctx, "REPRESENTATION_RELATIONSHIP")? else { continue; };
+            let Some(endpoints) = first_two_references(&base.parameters, ctx)? else { continue; };
+            endpoints
         };
         ctx.push_btree_group(
             &mut related,
@@ -340,14 +311,14 @@ fn shape_representation_relationships(
             "step_shape_relationship_members",
         )?;
     }
-    for representations in related.values_mut() {
+    for (_, representations) in ctx.admit_iter(&mut related, "STEP relationship groups traversal")? {
         ctx.sort_unstable_by(
             representations,
             |value| value,
             Ord::cmp,
             "step_shape_relationship_sort",
         )?;
-        representations.dedup();
+        ctx.dedup_vec(representations, "STEP relationship group deduplication")?;
     }
     Ok(related)
 }
@@ -362,25 +333,12 @@ fn representation_item_values<'a>(
                 return Ok(Some(items));
             }
         }
-        if let Some(name) = record.simple_name() {
-            if let Some(value) = entity_parameter(ctx, record, name, 1)? {
-                return reference_values(ctx, value);
-            }
-        }
         return Ok(None);
     }
     let Some(partial) = record.partial(ctx, "REPRESENTATION")? else {
         return Ok(None);
     };
-    for value in ctx.admit_iter(
-        partial.parameters.as_slice(),
-        "STEP representation reference parameter traversal",
-    )? {
-        if let Some(items) = reference_values(ctx, value)? {
-            return Ok(Some(items));
-        }
-    }
-    Ok(None)
+    ctx.find_map(partial.parameters.as_slice(), |value| reference_values(ctx, value), "STEP representation reference parameter traversal")
 }
 
 fn named_reference_values<'a>(
@@ -399,15 +357,7 @@ fn named_reference_values<'a>(
     let Some(partial) = record.partial(ctx, name)? else {
         return Ok(None);
     };
-    for value in ctx.admit_iter(
-        partial.parameters.as_slice(),
-        "STEP named reference parameter traversal",
-    )? {
-        if let Some(items) = reference_values(ctx, value)? {
-            return Ok(Some(items));
-        }
-    }
-    Ok(None)
+    ctx.find_map(partial.parameters.as_slice(), |value| reference_values(ctx, value), "STEP named reference parameter traversal")
 }
 
 fn reference_values<'a>(
@@ -434,24 +384,28 @@ fn mapped_representation(
     let Some(map) = named_reference(ctx, record, "MAPPED_ITEM", 1, 0)? else {
         return Ok(None);
     };
-    if let Some(map) = exchange.records().get(&map) {
+    if let Some(map) = ctx.get_btree_map(exchange.records(), &map, "STEP topology record lookup")? {
         named_reference(ctx, map, "REPRESENTATION_MAP", 1, 1)
     } else {
         Ok(None)
     }
 }
 
-pub(super) fn decode(
+pub(super) fn decode<'ctx>(
     exchange: &Exchange,
     ir: &mut CadIr,
     carrier_index: &CarrierIndex,
-    ctx: &DecodeContext<'_>,
-) -> Result<StageOutcome<TopologyData>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<StageOutcome<TopologyData<'ctx>>, CodecError> {
+    let mut topology_storage = ctx.reserve_scoped(0, "STEP topology result indexes")?;
+    let mut claim_storage = ctx.reserve_scoped(0, "STEP topology stage claims")?;
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
     let mut result = StageOutcome {
         value: TopologyData {
+            _storage: None,
+            claim_storage: None,
             body_by_root: BTreeMap::new(),
-            shape_representation_relationships: shape_representation_relationships(exchange, ctx)?,
+            shape_representation_relationships: topology_storage.with_storage(|| shape_representation_relationships(exchange, ctx))?,
             body_by_shell: BTreeMap::new(),
             faces_by_source: BTreeMap::new(),
             edges_by_source: BTreeMap::new(),
@@ -461,6 +415,7 @@ pub(super) fn decode(
         losses: Vec::new(),
         notes: Vec::new(),
     };
+    let mut loss_storage = ctx.reserve_scoped(0, "STEP loss staging slots")?;
     let mut losses: Vec<LossNote> = Vec::new();
     for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal")? {
         let Some(name) = most_specific(
@@ -494,41 +449,37 @@ pub(super) fn decode(
             "step_topology_losses",
         )?;
     }
-    let vertices = vertex_defs(exchange, ctx)?;
-    let edges = edge_defs(exchange, ctx)?;
-    let oriented = oriented_defs(exchange, ctx)?;
-    let shells = shell_defs(exchange, ctx)?;
-    let point_positions = carrier_index;
+    let (vertices, _vertex_storage) = ctx.with_scoped_storage("STEP vertex definition storage", || vertex_defs(exchange, ctx))?;
+    let (edges, _edge_storage) = ctx.with_scoped_storage("STEP edge definition storage", || edge_defs(exchange, ctx))?;
+    let (oriented, _oriented_storage) = ctx.with_scoped_storage("STEP oriented definition storage", || oriented_defs(exchange, ctx))?;
+    let (shells, _shell_storage) = ctx.with_scoped_storage("STEP shell definition storage", || shell_defs(exchange, ctx))?;
     for (vertex_id, vertex) in exchange.entities(ctx, "VERTEX_POINT")? {
         let Some(point_id) = named_reference(ctx, vertex, "VERTEX_POINT", 1, 0)? else {
-            ctx.push_vec(
-                &mut losses,
-                StepLossCode::DecodeWarning.note(format!(
+            ctx.push_scoped_vec(&mut loss_storage, &mut losses,
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "VERTEX_POINT #{vertex_id} has no resolvable point carrier"
-                )),
+                ), "STEP topology message")?),
                 "step_topology_losses",
             )?;
             continue;
         };
-        if !carrier_index.points.contains_key(&point_id) {
-            ctx.push_vec(
-                &mut losses,
-                StepLossCode::DecodeWarning.note(format!(
+        if !ctx.contains_key_hash_map(&carrier_index.points, &point_id, "STEP topology carrier membership")? {
+            ctx.push_scoped_vec(&mut loss_storage, &mut losses,
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "VERTEX_POINT #{vertex_id} has unresolved point carrier #{point_id}"
-                )),
+                ), "STEP topology message")?),
                 "step_topology_losses",
             )?;
         }
     }
+    let mut decode_storage = ctx.reserve_scoped(0, "STEP decode membership scratch")?;
     let mut built_wire_models = BTreeSet::new();
     for (&representation, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal")? {
         let Some(items) = representation_item_values(ctx, record)? else {
             continue;
         };
-        for model in items.iter().filter_map(Value::reference) {
-            if exchange
-                .records()
-                .get(&model)
+        for model in ctx.admit_iter(items, "STEP topology reference traversal")?.filter_map(Value::reference) {
+            if ctx.get_btree_map(exchange.records(), &model, "STEP topology record lookup")?
                 .map(|record| record.partial(ctx, "EDGE_BASED_WIREFRAME_MODEL"))
                 .transpose()?
                 .flatten()
@@ -536,22 +487,22 @@ pub(super) fn decode(
             {
                 continue;
             }
-            if built_wire_models.contains(&model) {
-                ctx.insert_btree_set(&mut result.claims, representation, "step_topology_claims")?;
-                if let Some(body_ids) = result.body_by_root.get(&model) {
-                    let copies = ctx.collect_indexed_vec(
+            if ctx.contains_btree_set(&built_wire_models, &model, "STEP topology built_wire_models membership")? {
+                claim_storage.with_storage(|| ctx.insert_btree_set(&mut result.claims, representation, "step_topology_claims"))?;
+                if let Some(body_ids) = ctx.get_btree_map(&result.body_by_root, &model, "STEP topology body lookup")? {
+                    let copies = topology_storage.with_storage(|| ctx.collect_indexed_vec(
                         body_ids.len(),
                         "step_topology_root_bodies",
                         |index| {
                             body_ids[index].try_clone_for_decode(ctx, "step_topology_root_bodies")
                         },
-                    )?;
-                    ctx.insert_btree_map(
+                    ))?;
+                    topology_storage.with_storage(|| ctx.insert_btree_map(
                         &mut result.body_by_root,
                         representation,
                         copies,
                         "step_topology_root_groups",
-                    )?;
+                    ))?;
                 }
                 continue;
             }
@@ -560,18 +511,17 @@ pub(super) fn decode(
                 exchange,
                 &vertices,
                 &edges,
-                point_positions,
-                &mut losses,
+                carrier_index,
+                (&mut losses, &mut loss_storage),
                 ctx,
             )?;
-            let (built, failures) = outcome.into_parts();
+            let (built, failures, _outcome_storage) = outcome.into_parts();
             let mut committed = 0;
-            for mut built in built {
+            for mut built in ctx.admit_iter(built, "STEP topology collection traversal")? {
                 if let Err(error) = commit_session.commit_model(built.draft)? {
-                    ctx.push_vec(
-                        &mut losses,
+                    ctx.push_scoped_vec(&mut loss_storage, &mut losses,
                         StepLossCode::DecodeWarning.note(topology_commit_error(
-                            &format!("EDGE_BASED_WIREFRAME_MODEL #{model}"),
+                            format_args!("EDGE_BASED_WIREFRAME_MODEL #{model}"),
                             &error,
                             ctx,
                         )?),
@@ -579,34 +529,32 @@ pub(super) fn decode(
                     )?;
                 } else {
                     committed += 1;
-                    ctx.insert_btree_set(&mut built_wire_models, model, "step_built_wire_models")?;
-                    ctx.insert_btree_set(&mut built.typed, representation, "step_wire_typed")?;
-                    push_topology_body_group(
+                    decode_storage.with_storage(|| ctx.insert_btree_set(&mut built_wire_models, model, "step_built_wire_models"))?;
+                    built._storage.with_storage(|| ctx.insert_btree_set(&mut built.typed, representation, "step_wire_typed"))?;
+                    topology_storage.with_storage(|| push_topology_body_group(
                         &mut result.body_by_root,
                         model,
                         &built.body_id,
                         ctx,
                         "step_topology_root_groups",
                         "step_topology_root_bodies",
-                    )?;
+                    ))?;
                     for typed in
                         ctx.admit_iter(std::mem::take(&mut built.typed), "step_topology_claims")?
                     {
-                        ctx.insert_btree_set(&mut result.claims, typed, "step_topology_claims")?;
+                        claim_storage.with_storage(|| ctx.insert_btree_set(&mut result.claims, typed, "step_topology_claims"))?;
                     }
                 }
             }
             if committed == 0 {
-                ctx.push_vec(
-                    &mut losses,
-                    StepLossCode::DecodeWarning.note(format!(
+                ctx.push_scoped_vec(&mut loss_storage, &mut losses,
+                    StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                         "EDGE_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
-                    )),
+                    ), "STEP topology message")?),
                     "step_topology_losses",
                 )?;
             } else if let Some(failures) = failures {
-                ctx.push_vec(
-                    &mut losses,
+                ctx.push_scoped_vec(&mut loss_storage, &mut losses,
                     StepLossCode::DecodeWarning.note(ctx.format_retained(
                         format_args!(
                 "EDGE_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved connected edge set(s)",
@@ -627,7 +575,7 @@ pub(super) fn decode(
                 let Some(shell) = Value::reference(raw) else {
                     return Ok(false);
                 };
-                Ok(result.body_by_shell.contains_key(&shell))
+                Ok(ctx.contains_key_btree_map(&result.body_by_shell, &shell, "STEP topology body shell lookup")?)
             },
             "STEP shell wireframe reference traversal",
         )?;
@@ -635,19 +583,18 @@ pub(super) fn decode(
             model,
             exchange,
             (&vertices, &edges),
-            point_positions,
+            carrier_index,
             scope_root,
-            &mut losses,
+            (&mut losses, &mut loss_storage),
             ctx,
         )?;
-        let (built, failures) = outcome.into_parts();
+        let (built, failures, _outcome_storage) = outcome.into_parts();
         let mut committed = 0;
-        for mut built in built {
+        for mut built in ctx.admit_iter(built, "STEP topology collection traversal")? {
             if let Err(error) = commit_session.commit_model(built.draft)? {
-                ctx.push_vec(
-                    &mut losses,
+                ctx.push_scoped_vec(&mut loss_storage, &mut losses,
                     StepLossCode::DecodeWarning.note(topology_commit_error(
-                        &format!("SHELL_BASED_WIREFRAME_MODEL #{model}"),
+                        format_args!("SHELL_BASED_WIREFRAME_MODEL #{model}"),
                         &error,
                         ctx,
                     )?),
@@ -656,41 +603,39 @@ pub(super) fn decode(
             } else {
                 committed += 1;
                 for shell in ctx.admit_iter(&built.shell_sources, "STEP decode traversal")? {
-                    insert_topology_body_group(
+                    topology_storage.with_storage(|| insert_topology_body_group(
                         &mut result.body_by_shell,
                         *shell,
                         &built.body_id,
                         ctx,
                         "step_topology_shell_groups",
                         "step_topology_shell_bodies",
-                    )?;
+                    ))?;
                 }
-                push_topology_body_group(
+                topology_storage.with_storage(|| push_topology_body_group(
                     &mut result.body_by_root,
                     model,
                     &built.body_id,
                     ctx,
                     "step_topology_root_groups",
                     "step_topology_root_bodies",
-                )?;
+                ))?;
                 for typed in
                     ctx.admit_iter(std::mem::take(&mut built.typed), "step_topology_claims")?
                 {
-                    ctx.insert_btree_set(&mut result.claims, typed, "step_topology_claims")?;
+                    claim_storage.with_storage(|| ctx.insert_btree_set(&mut result.claims, typed, "step_topology_claims"))?;
                 }
             }
         }
         if committed == 0 {
-            ctx.push_vec(
-                &mut losses,
-                StepLossCode::DecodeWarning.note(format!(
+            ctx.push_scoped_vec(&mut loss_storage, &mut losses,
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                     "SHELL_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
-                )),
+                ), "STEP topology message")?),
                 "step_topology_losses",
             )?;
         } else if let Some(failures) = failures {
-            ctx.push_vec(
-                &mut losses,
+            ctx.push_scoped_vec(&mut loss_storage, &mut losses,
                 StepLossCode::DecodeWarning.note(ctx.format_retained(
                     format_args!(
                         "SHELL_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved wire shell(s)",
@@ -708,7 +653,7 @@ pub(super) fn decode(
         "STEP decode traversal",
     )? {
         if let Some(id) = source_numeric_id(ctx, pcurve.id.as_str(), "pcurve")? {
-            ctx.insert_btree_set(&mut decoded_pcurves, id, "step_decoded_topology_pcurves")?;
+            decode_storage.with_storage(|| ctx.insert_btree_set(&mut decoded_pcurves, id, "step_decoded_topology_pcurves"))?;
         }
     }
     let topology_root_types = [
@@ -718,58 +663,62 @@ pub(super) fn decode(
         "MANIFOLD_SOLID_BREP",
         "BREP_WITH_VOIDS",
     ];
-    let mut distinct_roots = BTreeSet::new();
+    let distinct_root_count = {
+    let mut distinct_roots = BTreeMap::new();
     for entity in exchange.entities_any(ctx, &topology_root_types)? {
         let (_, record) = entity?;
-        if let Some(key) = root_key(record, exchange, &shells, ctx)? {
-            ctx.insert_btree_set(&mut distinct_roots, key, "step_distinct_topology_roots")?;
+        let (key, mut storage) = ctx.with_scoped_storage("STEP distinct root key scratch", || root_key(record, exchange, &shells, ctx))?;
+        if let Some(key) = key {
+            if let Entry::Vacant(entry) = storage.with_storage(|| ctx.entry_btree_map(&mut distinct_roots, key, "step_distinct_topology_roots"))? { entry.insert(storage); }
         }
     }
-    let distinct_root_count = distinct_roots.len();
+    distinct_roots.len()
+    };
     let scope_distinct_roots = distinct_root_count > 1;
-    let mut built_roots = BTreeMap::<RootKey, RootBuilt>::new();
+    let mut built_roots = BTreeMap::<RootKey, RootBuilt<'_>>::new();
     let mut representation_cache = BTreeMap::new();
     let mut admissions: Vec<PcurveAdmission> = Vec::new();
+    let mut admission_storage = ctx.reserve_scoped(0, "STEP document admission scratch")?;
     for entity in exchange.entities_any(ctx, &topology_root_types)? {
         let (id, record) = entity?;
-        let Some(key) = root_key(record, exchange, &shells, ctx)? else {
-            ctx.push_vec(
-                &mut losses,
-                StepLossCode::DecodeWarning.note(format!(
+        let (key, mut root_key_storage) = ctx.with_scoped_storage("STEP built root key scratch", || root_key(record, exchange, &shells, ctx))?;
+        let Some(key) = key else {
+            ctx.push_scoped_vec(&mut loss_storage, &mut losses,
+                StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                 "STEP topology root #{id} does not resolve to a complete connected topology graph",
-            )),
+            ), "STEP topology message")?),
                 "step_topology_losses",
             )?;
             continue;
         };
-        if let Some(root_built) = built_roots.get(&key) {
-            ctx.insert_btree_set(&mut result.claims, id, "step_topology_claims")?;
-            let copies = ctx.collect_indexed_vec(
+        if let Some(root_built) = ctx.get_btree_map(&built_roots, &key, "STEP topology built_roots lookup")? {
+            claim_storage.with_storage(|| ctx.insert_btree_set(&mut result.claims, id, "step_topology_claims"))?;
+            let copies = topology_storage.with_storage(|| ctx.collect_indexed_vec(
                 root_built.body_ids.len(),
                 "step_topology_root_bodies",
                 |index| {
                     root_built.body_ids[index]
                         .try_clone_for_decode(ctx, "step_topology_root_bodies")
                 },
-            )?;
-            ctx.insert_btree_map(
+            ))?;
+            topology_storage.with_storage(|| ctx.insert_btree_map(
                 &mut result.body_by_root,
                 id,
                 copies,
                 "step_topology_root_groups",
-            )?;
+            ))?;
             for (&shell, body_ids) in
                 ctx.admit_iter(&root_built.body_by_shell, "STEP decode traversal")?
             {
-                for body in body_ids {
-                    insert_topology_body_group(
+                for body in ctx.admit_iter(body_ids, "STEP topology collection traversal")? {
+                    topology_storage.with_storage(|| insert_topology_body_group(
                         &mut result.body_by_shell,
                         shell,
                         body,
                         ctx,
                         "step_topology_shell_groups",
                         "step_topology_shell_bodies",
-                    )?;
+                    ))?;
                 }
             }
             continue;
@@ -791,26 +740,24 @@ pub(super) fn decode(
                 odefs: &oriented,
                 shell_definitions: &shells,
                 decoded_pcurves: &decoded_pcurves,
-                point_positions,
+                point_positions: carrier_index,
                 ctx,
             },
             scope_root,
-            &mut losses,
+            (&mut losses, &mut loss_storage),
         )?;
-        let (built, failures) = outcome.into_parts();
-        let failure_message = failures
-            .as_ref()
-            .and_then(|failures| failures.first.as_ref())
-            .map(BuildFailure::message);
+        let (built, failures, _outcome_storage) = outcome.into_parts();
+        let mut failure_storage = ctx.reserve_scoped(0, "STEP root failure scratch")?;
+        let failure_message = failure_storage.with_storage(|| failures.as_ref().and_then(|failures| failures.first.as_ref()).map(|failure| failure.message(ctx)).transpose())?;
+        let mut root_data_storage = ctx.reserve_scoped(0, "STEP built root data scratch")?;
         let mut body_ids = Vec::new();
         let mut body_by_shell = BTreeMap::<u64, BTreeSet<BodyId>>::new();
-        for mut built in built {
+        for mut built in ctx.admit_iter(built, "STEP topology collection traversal")? {
             drop_committed_surfaces(&mut built.draft, &mut commit_session, ctx)?;
             if let Err(error) = commit_session.commit_model(built.draft)? {
-                ctx.push_vec(
-                    &mut losses,
+                ctx.push_scoped_vec(&mut loss_storage, &mut losses,
                     StepLossCode::DecodeWarning.note(topology_commit_error(
-                        &format!("STEP topology root #{id}"),
+                        format_args!("STEP topology root #{id}"),
                         &error,
                         ctx,
                     )?),
@@ -818,42 +765,42 @@ pub(super) fn decode(
                 )?;
             } else {
                 for shell in ctx.admit_iter(&built.shell_sources, "STEP decode traversal")? {
-                    insert_topology_body_group(
+                    topology_storage.with_storage(|| insert_topology_body_group(
                         &mut result.body_by_shell,
                         *shell,
                         &built.body_id,
                         ctx,
                         "step_topology_shell_groups",
                         "step_topology_shell_bodies",
-                    )?;
-                    insert_topology_body_group(
+                    ))?;
+                    root_data_storage.with_storage(|| insert_topology_body_group(
                         &mut body_by_shell,
                         *shell,
                         &built.body_id,
                         ctx,
                         "step_topology_built_shell_groups",
                         "step_topology_built_shell_bodies",
-                    )?;
+                    ))?;
                 }
-                ctx.push_vec(
+                root_data_storage.with_storage(|| ctx.push_vec(
                     &mut body_ids,
                     built
                         .body_id
                         .try_clone_for_decode(ctx, "step_topology_built_bodies")?,
                     "step_topology_built_bodies",
-                )?;
+                ))?;
                 for typed in
                     ctx.admit_iter(std::mem::take(&mut built.typed), "step_topology_claims")?
                 {
-                    ctx.insert_btree_set(&mut result.claims, typed, "step_topology_claims")?;
+                    claim_storage.with_storage(|| ctx.insert_btree_set(&mut result.claims, typed, "step_topology_claims"))?;
                 }
                 // A rejected draft transfers no relation, so only a committed
                 // body contributes its admitted relations to the document.
-                ctx.append_vec(
+                admission_storage.with_storage(|| ctx.append_vec(
                     &mut admissions,
                     &mut built.pcurve_admissions,
                     "step_topology_admissions",
-                )?;
+                ))?;
             }
         }
         if body_ids.is_empty() {
@@ -867,32 +814,25 @@ pub(super) fn decode(
                     "step_topology_losses",
                 )?;
             } else {
-                ctx.push_vec(&mut result.losses, StepLossCode::TopologyRootIncomplete.note(format!(
+                ctx.push_vec(&mut result.losses, StepLossCode::TopologyRootIncomplete.note(ctx.format_retained(format_args!(
                         "STEP topology root #{id} does not resolve to a complete connected topology graph",
-                    )), "step_topology_losses")?;
+                    ), "STEP topology message")?), "step_topology_losses")?;
             }
         } else {
             let copies =
-                ctx.collect_indexed_vec(body_ids.len(), "step_topology_root_bodies", |index| {
+                topology_storage.with_storage(|| ctx.collect_indexed_vec(body_ids.len(), "step_topology_root_bodies", |index| {
                     body_ids[index].try_clone_for_decode(ctx, "step_topology_root_bodies")
-                })?;
-            ctx.insert_btree_map(
+                }))?;
+            topology_storage.with_storage(|| ctx.insert_btree_map(
                 &mut result.body_by_root,
                 id,
                 copies,
                 "step_topology_root_groups",
-            )?;
-            ctx.insert_btree_map(
-                &mut built_roots,
-                key,
-                RootBuilt {
-                    body_ids,
-                    body_by_shell,
-                },
-                "step_topology_built_roots",
-            )?;
+            ))?;
+            let entry = root_key_storage.with_storage(|| ctx.entry_btree_map(&mut built_roots, key, "step_topology_built_roots"))?;
+            entry.or_insert(RootBuilt { body_ids, body_by_shell, _key_storage: root_key_storage, _storage: root_data_storage });
             if let Some(failures) = failures {
-                let detail = failure_message
+                let detail = failure_storage.with_storage(|| failure_message
                     .as_deref()
                     .map(|message| {
                         ctx.format_retained(
@@ -900,10 +840,8 @@ pub(super) fn decode(
                             "step_topology_root_failure_detail",
                         )
                     })
-                    .transpose()?
-                    .unwrap_or_default();
-                ctx.push_vec(
-                    &mut losses,
+                    .transpose()).map(|detail| detail.unwrap_or_default())?;
+                ctx.push_scoped_vec(&mut loss_storage, &mut losses,
                     StepLossCode::DecodeWarning.note(ctx.format_retained(
                         format_args!(
                             "STEP topology root #{id} omitted {} unresolved shell(s){detail}",
@@ -924,7 +862,7 @@ pub(super) fn decode(
     for (id, record) in
         exchange.entities(ctx, "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION")?
     {
-        let omitted = geometric_set_omissions(record, exchange, carrier_index, ctx)?;
+        let (omitted, _omission_storage) = ctx.with_scoped_storage("STEP omission member scratch", || geometric_set_omissions(record, exchange, carrier_index, ctx))?;
         if !omitted.is_empty() {
             let note = geometric_set_omission_message(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION",
@@ -932,51 +870,49 @@ pub(super) fn decode(
                 &omitted,
                 ctx,
             )?;
-            ctx.push_vec(
-                &mut losses,
+            ctx.push_scoped_vec(&mut loss_storage, &mut losses,
                 StepLossCode::DecodeWarning.note(note),
                 "step_topology_losses",
             )?;
         }
         let Some(mut built) =
-            build_geometric_set(id, record, exchange, carrier_index, &mut losses, ctx)?
+            build_geometric_set(id, record, exchange, carrier_index, (&mut losses, &mut loss_storage), ctx)?
         else {
-            if mark_standalone_geometric_set(
+            if claim_storage.with_storage(|| mark_standalone_geometric_set(
                 id,
                 record,
                 exchange,
                 carrier_index,
                 &mut result.claims,
                 ctx,
-            )? {
+            ))? {
                 continue;
             }
-            ctx.push_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
+            ctx.push_scoped_vec(&mut loss_storage, &mut losses, StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no decoded bounded surfaces"
-            )), "step_topology_losses")?;
+            ), "STEP topology message")?), "step_topology_losses")?;
             continue;
         };
         if let Err(error) = commit_session.commit_model(built.draft)? {
-            ctx.push_vec(
-                &mut losses,
+            ctx.push_scoped_vec(&mut loss_storage, &mut losses,
                 StepLossCode::DecodeWarning.note(topology_commit_error(
-                    &format!("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}"),
+                    format_args!("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}"),
                     &error,
                     ctx,
                 )?),
                 "step_topology_losses",
             )?;
         } else {
-            push_topology_body_group(
+            topology_storage.with_storage(|| push_topology_body_group(
                 &mut result.body_by_root,
                 id,
                 &built.body_id,
                 ctx,
                 "step_topology_root_groups",
                 "step_topology_root_bodies",
-            )?;
+            ))?;
             for typed in ctx.admit_iter(std::mem::take(&mut built.typed), "step_topology_claims")? {
-                ctx.insert_btree_set(&mut result.claims, typed, "step_topology_claims")?;
+                claim_storage.with_storage(|| ctx.insert_btree_set(&mut result.claims, typed, "step_topology_claims"))?;
             }
         }
     }
@@ -1001,23 +937,22 @@ pub(super) fn decode(
         else {
             continue;
         };
-        let omitted = geometric_set_omissions(record, exchange, carrier_index, ctx)?;
+        let (omitted, _omission_storage) = ctx.with_scoped_storage("STEP omission member scratch", || geometric_set_omissions(record, exchange, carrier_index, ctx))?;
         if !omitted.is_empty() {
             let note = geometric_set_omission_message(representation_type, id, &omitted, ctx)?;
-            ctx.push_vec(
-                &mut losses,
+            ctx.push_scoped_vec(&mut loss_storage, &mut losses,
                 StepLossCode::DecodeWarning.note(note),
                 "step_topology_losses",
             )?;
         }
-        mark_standalone_geometric_set(
+        claim_storage.with_storage(|| mark_standalone_geometric_set(
             id,
             record,
             exchange,
             carrier_index,
             &mut result.claims,
             ctx,
-        )?;
+        ))?;
     }
     for entity in exchange.entities_any(
         ctx,
@@ -1053,7 +988,7 @@ pub(super) fn decode(
         )?
         .is_empty();
         if has_body {
-            ctx.insert_btree_set(&mut result.claims, id, "step_topology_claims")?;
+            claim_storage.with_storage(|| ctx.insert_btree_set(&mut result.claims, id, "step_topology_claims"))?;
         }
     }
     for face in ctx.admit_iter(
@@ -1061,14 +996,14 @@ pub(super) fn decode(
         "STEP decode traversal",
     )? {
         if let Some(source) = source_numeric_id(ctx, face.id.as_str(), "face")? {
-            ctx.push_btree_group(
+            topology_storage.with_storage(|| ctx.push_btree_group(
                 &mut result.faces_by_source,
                 source,
                 face.id
                     .try_clone_for_decode(ctx, "step_topology_source_faces")?,
                 "step_topology_source_face_groups",
                 "step_topology_source_faces",
-            )?;
+            ))?;
         }
     }
     for edge in ctx.admit_iter(
@@ -1076,14 +1011,14 @@ pub(super) fn decode(
         "STEP decode traversal",
     )? {
         if let Some(source) = source_numeric_id(ctx, edge.id.as_str(), "edge")? {
-            ctx.push_btree_group(
+            topology_storage.with_storage(|| ctx.push_btree_group(
                 &mut result.edges_by_source,
                 source,
                 edge.id
                     .try_clone_for_decode(ctx, "step_topology_source_edges")?,
                 "step_topology_source_edge_groups",
                 "step_topology_source_edges",
-            )?;
+            ))?;
         }
     }
     for vertex in ctx.admit_iter(
@@ -1091,7 +1026,7 @@ pub(super) fn decode(
         "STEP decode traversal",
     )? {
         if let Some(source) = source_numeric_id(ctx, vertex.id.as_str(), "vertex")? {
-            ctx.push_btree_group(
+            topology_storage.with_storage(|| ctx.push_btree_group(
                 &mut result.vertices_by_source,
                 source,
                 vertex
@@ -1099,10 +1034,12 @@ pub(super) fn decode(
                     .try_clone_for_decode(ctx, "step_topology_source_vertices")?,
                 "step_topology_source_vertex_groups",
                 "step_topology_source_vertices",
-            )?;
+            ))?;
         }
     }
     ctx.append_vec(&mut result.losses, &mut losses, "step_topology_loss_merge")?;
+    result._storage = Some(topology_storage);
+    result.claim_storage = Some(claim_storage);
     Ok(result)
 }
 
@@ -1116,8 +1053,8 @@ fn geometric_set_omissions(
         return Ok(Vec::new());
     };
     let mut omitted = Vec::new();
-    for set_id in set_ids.iter().filter_map(Value::reference) {
-        let Some(set) = exchange.records().get(&set_id) else {
+    for set_id in ctx.admit_iter(set_ids, "STEP topology reference traversal")?.filter_map(Value::reference) {
+        let Some(set) = ctx.get_btree_map(exchange.records(), &set_id, "STEP topology record lookup")? else {
             continue;
         };
         let Some(set_type) = most_specific(ctx, set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"])?
@@ -1127,10 +1064,10 @@ fn geometric_set_omissions(
         let Some(members) = named_reference_values(ctx, set, set_type, 1)? else {
             continue;
         };
-        for member in members.iter().filter_map(Value::reference) {
-            if !carrier_index.points.contains_key(&member)
-                && !carrier_index.curves.contains_key(&member)
-                && !carrier_index.surfaces.contains_key(&member)
+        for member in ctx.admit_iter(members, "STEP topology reference traversal")?.filter_map(Value::reference) {
+            if !ctx.contains_key_hash_map(&carrier_index.points, &member, "STEP topology carrier membership")?
+                && !ctx.contains_key_hash_map(&carrier_index.curves, &member, "STEP topology carrier membership")?
+                && !ctx.contains_key_hash_map(&carrier_index.surfaces, &member, "STEP topology carrier membership")?
             {
                 ctx.push_vec(&mut omitted, member, "step_geometric_set_omissions")?;
             }
@@ -1139,41 +1076,24 @@ fn geometric_set_omissions(
     Ok(omitted)
 }
 
-struct OmittedMembers<'a>(&'a [u64]);
-
-impl std::fmt::Display for OmittedMembers<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (index, member) in self.0.iter().enumerate() {
-            if index > 0 {
-                f.write_str(", ")?;
-            }
-            write!(f, "#{member}")?;
-        }
-        Ok(())
-    }
-}
-
 fn geometric_set_omission_message(
     representation_type: &str,
     id: u64,
     omitted: &[u64],
     ctx: &DecodeContext<'_>,
 ) -> Result<String, CodecError> {
-    ctx.format_retained(
-        format_args!(
-            "{representation_type} #{id} omitted unsupported or unresolved member(s): {}",
-            OmittedMembers(omitted)
-        ),
-        "step_geometric_set_omission_text",
-    )
+    let mut message = ctx.format_retained(format_args!("{representation_type} #{id} omitted unsupported or unresolved member(s): "), "step_geometric_set_omission_text")?;
+    for (index, member) in ctx.admit_iter(omitted, "STEP geometric set omission traversal")?.enumerate() {
+        let separator = if index == 0 { "" } else { ", " };
+        ctx.append_formatted_retained(&mut message, format_args!("{separator}#{member}"), "step_geometric_set_omission_text")?;
+    }
+    Ok(message)
 }
 
-enum BuildOutcome {
-    Built(Vec<Built>),
-    Partial {
-        built: Vec<Built>,
-        failures: BuildFailures,
-    },
+struct BuildOutcome<'ctx> {
+    built: Vec<Built<'ctx>>,
+    failures: Option<BuildFailures>,
+    storage: ScopedReservation<'ctx>,
 }
 
 struct BuildFailures {
@@ -1181,47 +1101,25 @@ struct BuildFailures {
     first: Option<BuildFailure>,
 }
 
-impl BuildOutcome {
-    fn push(&mut self, value: Built, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-        match self {
-            Self::Built(built) | Self::Partial { built, .. } => {
-                ctx.push_vec(built, value, "step_topology_built_outcome")
-            }
-        }
+impl<'ctx> BuildOutcome<'ctx> {
+    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self { built: Vec::new(), failures: None, storage: ctx.reserve_scoped(0, "STEP built result scratch")? })
+    }
+
+    fn push(&mut self, value: Built<'ctx>, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        ctx.push_scoped_vec(&mut self.storage, &mut self.built, value, "step_topology_built_outcome")
     }
 
     fn fail(&mut self, failure: Option<BuildFailure>) -> Result<(), CodecError> {
-        match self {
-            Self::Built(built) => {
-                *self = Self::Partial {
-                    built: std::mem::take(built),
-                    failures: BuildFailures {
-                        count: NonZeroUsize::MIN,
-                        first: failure,
-                    },
-                };
-            }
-            Self::Partial { failures, .. } => {
-                failures.count = failures.count.checked_add(1).ok_or_else(|| {
-                    cadmpeg_core::decode::refuse_local_limit(
-                        "step topology failures",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?;
-                if failures.first.is_none() {
-                    failures.first = failure;
-                }
-            }
-        }
+        if let Some(failures) = &mut self.failures {
+            failures.count = failures.count.checked_add(1).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("step topology failures", u64::MAX, u64::MAX))?;
+            if failures.first.is_none() { failures.first = failure; }
+        } else { self.failures = Some(BuildFailures { count: NonZeroUsize::MIN, first: failure }); }
         Ok(())
     }
 
-    fn into_parts(self) -> (Vec<Built>, Option<BuildFailures>) {
-        match self {
-            Self::Built(built) => (built, None),
-            Self::Partial { built, failures } => (built, Some(failures)),
-        }
+    fn into_parts(self) -> (Vec<Built<'ctx>>, Option<BuildFailures>, ScopedReservation<'ctx>) {
+        (self.built, self.failures, self.storage)
     }
 }
 
@@ -1311,11 +1209,11 @@ struct BuildFailure {
 }
 
 impl BuildFailure {
-    fn message(&self) -> String {
-        format!(
+    fn message(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        ctx.format_retained(format_args!(
             "{} #{} missing or unresolved",
             self.carrier_kind, self.record_id
-        )
+        ), "STEP topology failure detail")
     }
 }
 
@@ -1341,36 +1239,29 @@ fn note_failure(failure: &mut Option<BuildFailure>, record_id: u64, carrier_kind
     });
 }
 
-fn build_wire(
+fn build_wire<'ctx>(
     id: u64,
     exchange: &Exchange,
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     point_positions: &CarrierIndex,
-    losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<BuildOutcome, CodecError> {
-    let Some(model) = exchange.records().get(&id) else {
-        return Ok(BuildOutcome::Partial {
-            built: Vec::new(),
-            failures: BuildFailures {
-                count: NonZeroUsize::MIN,
-                first: None,
-            },
-        });
+    losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<BuildOutcome<'ctx>, CodecError> {
+    let (losses, loss_storage) = losses;
+    let Some(model) = ctx.get_btree_map(exchange.records(), &id, "STEP topology record lookup")? else {
+        let mut outcome = BuildOutcome::new(ctx)?;
+        outcome.fail(None)?;
+        return Ok(outcome);
     };
     let Some(sets) = named_reference_values(ctx, model, "EDGE_BASED_WIREFRAME_MODEL", 1)? else {
-        return Ok(BuildOutcome::Partial {
-            built: Vec::new(),
-            failures: BuildFailures {
-                count: NonZeroUsize::MIN,
-                first: None,
-            },
-        });
+        let mut outcome = BuildOutcome::new(ctx)?;
+        outcome.fail(None)?;
+        return Ok(outcome);
     };
     let scoped = sets.len() > 1;
-    let mut outcome = BuildOutcome::Built(Vec::new());
-    for set_id in sets.iter().filter_map(Value::reference) {
+    let mut outcome = BuildOutcome::new(ctx)?;
+    for set_id in ctx.admit_iter(sets, "STEP topology reference traversal")?.filter_map(Value::reference) {
         match build_wire_set(
             id,
             set_id,
@@ -1381,7 +1272,7 @@ fn build_wire(
                 point_positions,
             },
             scoped,
-            losses,
+            (&mut *losses, &mut *loss_storage),
             ctx,
         ) {
             Ok(Some(value)) => outcome.push(value, ctx)?,
@@ -1405,21 +1296,24 @@ struct WireScope {
     root: bool,
 }
 
-fn build_wire_set(
+fn build_wire_set<'ctx>(
     id: u64,
     set_id: u64,
     exchange: &Exchange,
     sources: WireSources<'_>,
     scoped: bool,
-    losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Built>, CodecError> {
+    losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<Option<Built<'ctx>>, CodecError> {
+    let (losses, loss_storage) = losses;
+    let mut built_storage = ctx.reserve_scoped(0, "STEP staged metadata")?;
+    let mut scratch = ctx.reserve_scoped(0, "STEP topology staging scratch")?;
     let WireSources {
         vdefs,
         edefs,
         point_positions,
     } = sources;
-    let Some(set) = exchange.records().get(&set_id) else {
+    let Some(set) = ctx.get_btree_map(exchange.records(), &set_id, "STEP topology record lookup")? else {
         return Ok(None);
     };
     let Some(set_type) =
@@ -1436,18 +1330,18 @@ fn build_wire_set(
         IdentityKeyTail::empty()
     };
     let mut typed = BTreeSet::new();
-    ctx.insert_btree_set(&mut typed, id, "step_wire_typed")?;
-    ctx.insert_btree_set(&mut typed, set_id, "step_wire_typed")?;
+    built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_wire_typed"))?;
+    built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, set_id, "step_wire_typed"))?;
     if set_type == "CONNECTED_EDGE_SUB_SET"
-        && !validate_subset_parent(set_id, set, set_type, exchange, losses, ctx)?
+        && !validate_subset_parent(set_id, set, set_type, exchange, (&mut *losses, &mut *loss_storage), ctx)?
     {
         ctx.remove_btree_set(&mut typed, &set_id, "step_wire_typed")?;
     }
     let mut used_vertices = BTreeSet::new();
     let mut wire_edges = Vec::new();
     let mut built_edges = Vec::new();
-    for edge_id in used_edges.iter().filter_map(Value::reference) {
-        let Some(edge) = edefs.get(&edge_id) else {
+    for edge_id in ctx.admit_iter(used_edges, "STEP topology reference traversal")?.filter_map(Value::reference) {
+        let Some(edge) = ctx.get_btree_map(edefs, &edge_id, "STEP topology edefs lookup")? else {
             return Ok(None);
         };
         let (start, end) = edge.curve_vertices();
@@ -1470,12 +1364,11 @@ fn build_wire_set(
             ir_id.try_clone_for_decode(ctx, "step_wire_edge_ids")?,
             "step_wire_edge_ids",
         )?;
-        ctx.push_vec(
-            &mut built_edges,
+        ctx.push_scoped_vec(&mut scratch, &mut built_edges,
             Edge {
                 id: ir_id,
                 carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
-                    edge_id, edge, exchange, losses, ctx,
+                    edge_id, edge, exchange, (&mut *losses, &mut *loss_storage), ctx,
                 )?),
                 start: VertexId::from(ids::data(
                     kind!("vertex"),
@@ -1489,11 +1382,11 @@ fn build_wire_set(
             },
             "step_wire_edges",
         )?;
-        ctx.insert_btree_set(&mut used_vertices, start, "step_wire_used_vertices")?;
-        ctx.insert_btree_set(&mut used_vertices, end, "step_wire_used_vertices")?;
-        ctx.insert_btree_set(&mut typed, edge_id, "step_wire_typed")?;
+        scratch.with_storage(|| ctx.insert_btree_set(&mut used_vertices, start, "step_wire_used_vertices"))?;
+        scratch.with_storage(|| ctx.insert_btree_set(&mut used_vertices, end, "step_wire_used_vertices"))?;
+        built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, edge_id, "step_wire_typed"))?;
         if let Some(parent) = edge.parent() {
-            ctx.insert_btree_set(&mut typed, parent, "step_wire_typed")?;
+            built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, parent, "step_wire_typed"))?;
         }
     }
     let vertex_suffix = IdentityKeyTail::empty()
@@ -1502,15 +1395,14 @@ fn build_wire_set(
         .dash(key_word!("set"))
         .dash(set_id);
     let mut built_vertices = Vec::new();
-    for vertex_id in used_vertices {
-        let Some(vertex) = vdefs.get(&vertex_id) else {
+    for vertex_id in ctx.admit_iter(used_vertices, "STEP topology collection traversal")? {
+        let Some(vertex) = ctx.get_btree_map(vdefs, &vertex_id, "STEP topology vdefs lookup")? else {
             return Ok(None);
         };
-        if point_positions.get(vertex.point).is_none() {
+        if point_positions.get(vertex.point).copied().is_none() {
             return Ok(None);
         }
-        ctx.push_vec(
-            &mut built_vertices,
+        ctx.push_scoped_vec(&mut scratch, &mut built_vertices,
             Vertex {
                 id: VertexId::from(ids::data(
                     kind!("vertex"),
@@ -1521,7 +1413,7 @@ fn build_wire_set(
             },
             "step_wire_vertices",
         )?;
-        ctx.insert_btree_set(&mut typed, vertex_id, "step_wire_typed")?;
+        built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, vertex_id, "step_wire_typed"))?;
     }
     let body = BodyId::from(ids::data(
         kind!("body"),
@@ -1544,8 +1436,8 @@ fn build_wire_set(
     ) {
         Ok(shell) => shell,
         Err(error) => {
-            ctx.push_vec(
-                losses,
+            ctx.push_scoped_vec(
+                loss_storage, losses,
                 StepLossCode::DecodeWarning.note(ctx.format_retained(
                     format_args!("CONNECTED_EDGE_SET #{set_id}: {error}"),
                     "STEP build_wire_set text",
@@ -1564,7 +1456,7 @@ fn build_wire_set(
             loops: Vec::new(),
             faces: Vec::new(),
             surfaces: Vec::new(),
-            shells: ctx.collect_vec([shell_value], "step_wire_shells")?,
+            shells: scratch.with_storage(|| ctx.collect_vec([shell_value], "step_wire_shells"))?,
             region: Region {
                 id: region.try_clone_for_decode(ctx, "step_wire_region_id_copy")?,
                 body: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
@@ -1580,13 +1472,14 @@ fn build_wire_set(
                 visible: None,
             },
         },
+        built_storage,
         ctx,
     );
     let mut built = match staged {
         Ok(built) => built,
         Err(StageError::Draft(error)) => {
-            ctx.push_vec(
-                losses,
+            ctx.push_scoped_vec(
+                loss_storage, losses,
                 StepLossCode::DecodeWarning.note(ctx.format_retained(
                     format_args!("CONNECTED_EDGE_SET #{set_id}: {error}"),
                     "STEP build_wire_set text",
@@ -1597,41 +1490,34 @@ fn build_wire_set(
         }
         Err(StageError::Resource(error)) => return Err(error),
     };
-    ctx.insert_btree_set(&mut built.shell_sources, set_id, "step_wire_shell_sources")?;
+    built._storage.with_storage(|| ctx.insert_btree_set(&mut built.shell_sources, set_id, "step_wire_shell_sources"))?;
     Ok(Some(built))
 }
 
-fn build_shell_wire(
+fn build_shell_wire<'ctx>(
     id: u64,
     exchange: &Exchange,
     (vdefs, edefs): (&BTreeMap<u64, VertexDef>, &BTreeMap<u64, Rc<EdgeDef>>),
     point_positions: &CarrierIndex,
     scope_root: bool,
-    losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<BuildOutcome, CodecError> {
-    let Some(model) = exchange.records().get(&id) else {
-        return Ok(BuildOutcome::Partial {
-            built: Vec::new(),
-            failures: BuildFailures {
-                count: NonZeroUsize::MIN,
-                first: None,
-            },
-        });
+    losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<BuildOutcome<'ctx>, CodecError> {
+    let (losses, loss_storage) = losses;
+    let Some(model) = ctx.get_btree_map(exchange.records(), &id, "STEP topology record lookup")? else {
+        let mut outcome = BuildOutcome::new(ctx)?;
+        outcome.fail(None)?;
+        return Ok(outcome);
     };
     let Some(shell_ids) = named_reference_values(ctx, model, "SHELL_BASED_WIREFRAME_MODEL", 1)?
     else {
-        return Ok(BuildOutcome::Partial {
-            built: Vec::new(),
-            failures: BuildFailures {
-                count: NonZeroUsize::MIN,
-                first: None,
-            },
-        });
+        let mut outcome = BuildOutcome::new(ctx)?;
+        outcome.fail(None)?;
+        return Ok(outcome);
     };
     let scoped = shell_ids.len() > 1;
-    let mut outcome = BuildOutcome::Built(Vec::new());
-    for shell_id in shell_ids.iter().filter_map(Value::reference) {
+    let mut outcome = BuildOutcome::new(ctx)?;
+    for shell_id in ctx.admit_iter(shell_ids, "STEP topology reference traversal")?.filter_map(Value::reference) {
         match build_shell_wire_set(
             id,
             shell_id,
@@ -1645,7 +1531,7 @@ fn build_shell_wire(
                 scoped,
                 root: scope_root,
             },
-            losses,
+            (&mut *losses, &mut *loss_storage),
             ctx,
         ) {
             Ok(Some(value)) => outcome.push(value, ctx)?,
@@ -1656,15 +1542,18 @@ fn build_shell_wire(
     Ok(outcome)
 }
 
-fn build_shell_wire_set(
+fn build_shell_wire_set<'ctx>(
     id: u64,
     shell_id: u64,
     exchange: &Exchange,
     sources: WireSources<'_>,
     scope: WireScope,
-    losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Built>, CodecError> {
+    losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<Option<Built<'ctx>>, CodecError> {
+    let (losses, loss_storage) = losses;
+    let mut built_storage = ctx.reserve_scoped(0, "STEP staged metadata")?;
+    let mut scratch = ctx.reserve_scoped(0, "STEP topology staging scratch")?;
     let WireSources {
         vdefs,
         edefs,
@@ -1674,12 +1563,12 @@ fn build_shell_wire_set(
         scoped,
         root: scope_root,
     } = scope;
-    let Some(shell_record) = exchange.records().get(&shell_id) else {
+    let Some(shell_record) = ctx.get_btree_map(exchange.records(), &shell_id, "STEP topology record lookup")? else {
         return Ok(None);
     };
     let mut typed = BTreeSet::new();
-    ctx.insert_btree_set(&mut typed, id, "step_wire_typed")?;
-    ctx.insert_btree_set(&mut typed, shell_id, "step_wire_typed")?;
+    built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_wire_typed"))?;
+    built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, shell_id, "step_wire_typed"))?;
     let mut edge_uses = Vec::new();
     let mut used_vertices = BTreeSet::new();
     let mut free_vertices = BTreeSet::new();
@@ -1687,8 +1576,8 @@ fn build_shell_wire_set(
         let Some(loop_ids) = named_reference_values(ctx, shell_record, "WIRE_SHELL", 1)? else {
             return Ok(None);
         };
-        for loop_id in loop_ids.iter().filter_map(Value::reference) {
-            let Some(loop_record) = exchange.records().get(&loop_id) else {
+        for loop_id in ctx.admit_iter(loop_ids, "STEP topology reference traversal")?.filter_map(Value::reference) {
+            let Some(loop_record) = ctx.get_btree_map(exchange.records(), &loop_id, "STEP topology record lookup")? else {
                 return Ok(None);
             };
             if loop_record.partial(ctx, "EDGE_LOOP")?.is_some() {
@@ -1696,49 +1585,48 @@ fn build_shell_wire_set(
                 else {
                     return Ok(None);
                 };
-                for oriented_id in oriented_ids.iter().filter_map(Value::reference) {
-                    let Some(oriented) = exchange.records().get(&oriented_id) else {
+                for oriented_id in ctx.admit_iter(oriented_ids, "STEP topology reference traversal")?.filter_map(Value::reference) {
+                    let Some(oriented) = ctx.get_btree_map(exchange.records(), &oriented_id, "STEP topology record lookup")? else {
                         return Ok(None);
                     };
                     let Some(edge_id) = oriented_edge_reference(ctx, oriented)? else {
                         return Ok(None);
                     };
-                    let Some(edge) = edefs.get(&edge_id) else {
+                    let Some(edge) = ctx.get_btree_map(edefs, &edge_id, "STEP topology edefs lookup")? else {
                         return Ok(None);
                     };
                     let Some(forward) = oriented_edge_forward(ctx, oriented)? else {
                         return Ok(None);
                     };
-                    ctx.push_vec(
-                        &mut edge_uses,
+                    ctx.push_scoped_vec(&mut scratch, &mut edge_uses,
                         (edge_id, oriented_id, forward),
                         "step_wire_edge_uses",
                     )?;
-                    ctx.insert_btree_set(
+                    scratch.with_storage(|| ctx.insert_btree_set(
                         &mut used_vertices,
                         edge.vertices().0,
                         "step_wire_used_vertices",
-                    )?;
-                    ctx.insert_btree_set(
+                    ))?;
+                    scratch.with_storage(|| ctx.insert_btree_set(
                         &mut used_vertices,
                         edge.vertices().1,
                         "step_wire_used_vertices",
-                    )?;
+                    ))?;
                     for claim in [loop_id, oriented_id, edge_id] {
-                        ctx.insert_btree_set(&mut typed, claim, "step_wire_typed")?;
+                        built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, claim, "step_wire_typed"))?;
                     }
                     if let Some(parent) = edge.parent() {
-                        ctx.insert_btree_set(&mut typed, parent, "step_wire_typed")?;
+                        built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, parent, "step_wire_typed"))?;
                     }
                 }
             } else if loop_record.partial(ctx, "VERTEX_LOOP")?.is_some() {
                 let Some(vertex) = named_reference(ctx, loop_record, "VERTEX_LOOP", 1, 0)? else {
                     return Ok(None);
                 };
-                ctx.insert_btree_set(&mut used_vertices, vertex, "step_wire_used_vertices")?;
-                ctx.insert_btree_set(&mut free_vertices, vertex, "step_wire_free_vertices")?;
+                scratch.with_storage(|| ctx.insert_btree_set(&mut used_vertices, vertex, "step_wire_used_vertices"))?;
+                scratch.with_storage(|| ctx.insert_btree_set(&mut free_vertices, vertex, "step_wire_free_vertices"))?;
                 for claim in [loop_id, vertex] {
-                    ctx.insert_btree_set(&mut typed, claim, "step_wire_typed")?;
+                    built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, claim, "step_wire_typed"))?;
                 }
             } else {
                 return Ok(None);
@@ -1748,7 +1636,7 @@ fn build_shell_wire_set(
         let Some(loop_id) = named_reference(ctx, shell_record, "VERTEX_SHELL", 1, 0)? else {
             return Ok(None);
         };
-        let Some(loop_record) = exchange.records().get(&loop_id) else {
+        let Some(loop_record) = ctx.get_btree_map(exchange.records(), &loop_id, "STEP topology record lookup")? else {
             return Ok(None);
         };
         if loop_record.partial(ctx, "VERTEX_LOOP")?.is_none() {
@@ -1757,10 +1645,10 @@ fn build_shell_wire_set(
         let Some(vertex) = named_reference(ctx, loop_record, "VERTEX_LOOP", 1, 0)? else {
             return Ok(None);
         };
-        ctx.insert_btree_set(&mut used_vertices, vertex, "step_wire_used_vertices")?;
-        ctx.insert_btree_set(&mut free_vertices, vertex, "step_wire_free_vertices")?;
+        scratch.with_storage(|| ctx.insert_btree_set(&mut used_vertices, vertex, "step_wire_used_vertices"))?;
+        scratch.with_storage(|| ctx.insert_btree_set(&mut free_vertices, vertex, "step_wire_free_vertices"))?;
         for claim in [loop_id, vertex] {
-            ctx.insert_btree_set(&mut typed, claim, "step_wire_typed")?;
+            built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, claim, "step_wire_typed"))?;
         }
     } else {
         return Ok(None);
@@ -1779,8 +1667,8 @@ fn build_shell_wire_set(
         .dash(shell_id);
     let mut edges = Vec::new();
     let mut wire_edges = Vec::new();
-    for (index, (edge_id, oriented_id, forward)) in edge_uses.into_iter().enumerate() {
-        let Some(edge) = edefs.get(&edge_id) else {
+    for (index, (edge_id, oriented_id, forward)) in ctx.admit_iter(edge_uses, "STEP wire edge use traversal")?.enumerate() {
+        let Some(edge) = ctx.get_btree_map(edefs, &edge_id, "STEP topology edefs lookup")? else {
             return Ok(None);
         };
         let (curve_start, curve_end) = edge.curve_vertices();
@@ -1803,12 +1691,11 @@ fn build_shell_wire_set(
             ir_id.try_clone_for_decode(ctx, "step_wire_edge_ids")?,
             "step_wire_edge_ids",
         )?;
-        ctx.push_vec(
-            &mut edges,
+        ctx.push_scoped_vec(&mut scratch, &mut edges,
             Edge {
                 id: ir_id,
                 carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
-                    edge_id, edge, exchange, losses, ctx,
+                    edge_id, edge, exchange, (&mut *losses, &mut *loss_storage), ctx,
                 )?),
                 start: VertexId::from(ids::data(
                     kind!("vertex"),
@@ -1824,15 +1711,14 @@ fn build_shell_wire_set(
         )?;
     }
     let mut vertices = Vec::new();
-    for vertex_id in used_vertices {
-        let Some(vertex) = vdefs.get(&vertex_id) else {
+    for vertex_id in ctx.admit_iter(used_vertices, "STEP topology collection traversal")? {
+        let Some(vertex) = ctx.get_btree_map(vdefs, &vertex_id, "STEP topology vdefs lookup")? else {
             return Ok(None);
         };
-        if point_positions.get(vertex.point).is_none() {
+        if point_positions.get(vertex.point).copied().is_none() {
             return Ok(None);
         }
-        ctx.push_vec(
-            &mut vertices,
+        ctx.push_scoped_vec(&mut scratch, &mut vertices,
             Vertex {
                 id: VertexId::from(ids::data(
                     kind!("vertex"),
@@ -1854,7 +1740,7 @@ fn build_shell_wire_set(
     ));
     let shell = shell_identity(id, shell_id, scope_root);
     let mut free_vertex_ids = Vec::new();
-    for vertex in free_vertices {
+    for vertex in ctx.admit_iter(free_vertices, "STEP topology collection traversal")? {
         ctx.push_vec(
             &mut free_vertex_ids,
             VertexId::from(ids::data(
@@ -1873,8 +1759,8 @@ fn build_shell_wire_set(
     ) {
         Ok(shell) => shell,
         Err(error) => {
-            ctx.push_vec(
-                losses,
+            ctx.push_scoped_vec(
+                loss_storage, losses,
                 StepLossCode::DecodeWarning.note(ctx.format_retained(
                     format_args!("wire shell #{shell_id}: {error}"),
                     "STEP build_shell_wire_set text",
@@ -1893,7 +1779,7 @@ fn build_shell_wire_set(
             loops: Vec::new(),
             faces: Vec::new(),
             surfaces: Vec::new(),
-            shells: ctx.collect_vec([shell_value], "step_wire_shells")?,
+            shells: scratch.with_storage(|| ctx.collect_vec([shell_value], "step_wire_shells"))?,
             region: Region {
                 id: region.try_clone_for_decode(ctx, "step_wire_region_id_copy")?,
                 body: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
@@ -1909,13 +1795,14 @@ fn build_shell_wire_set(
                 visible: None,
             },
         },
+        built_storage,
         ctx,
     );
     let mut built = match staged {
         Ok(built) => built,
         Err(StageError::Draft(error)) => {
-            ctx.push_vec(
-                losses,
+            ctx.push_scoped_vec(
+                loss_storage, losses,
                 StepLossCode::DecodeWarning.note(ctx.format_retained(
                     format_args!("wire shell #{shell_id}: {error}"),
                     "STEP build_shell_wire_set text",
@@ -1926,11 +1813,11 @@ fn build_shell_wire_set(
         }
         Err(StageError::Resource(error)) => return Err(error),
     };
-    ctx.insert_btree_set(
+    built._storage.with_storage(|| ctx.insert_btree_set(
         &mut built.shell_sources,
         shell_id,
         "step_wire_shell_sources",
-    )?;
+    ))?;
     Ok(Some(built))
 }
 
@@ -1946,8 +1833,8 @@ fn mark_standalone_geometric_set(
         return Ok(false);
     };
     let mut decoded = false;
-    for set_id in set_ids.iter().filter_map(ValueExt::reference) {
-        let Some(set) = exchange.records().get(&set_id) else {
+    for set_id in ctx.admit_iter(set_ids, "STEP topology reference traversal")?.filter_map(ValueExt::reference) {
+        let Some(set) = ctx.get_btree_map(exchange.records(), &set_id, "STEP topology record lookup")? else {
             continue;
         };
         let Some(set_type) = most_specific(ctx, set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"])?
@@ -1957,11 +1844,12 @@ fn mark_standalone_geometric_set(
         let Some(items) = named_reference_values(ctx, set, set_type, 1)? else {
             continue;
         };
-        let has_decoded_member = items.iter().filter_map(ValueExt::reference).any(|item| {
-            carrier_index.points.contains_key(&item)
-                || carrier_index.curves.contains_key(&item)
-                || carrier_index.surfaces.contains_key(&item)
-        });
+        let has_decoded_member = ctx.any_by(items, |value| {
+            let Some(item) = value.reference() else { return Ok(false); };
+            Ok(ctx.contains_key_hash_map(&carrier_index.points, &item, "STEP topology carrier membership")?
+                || ctx.contains_key_hash_map(&carrier_index.curves, &item, "STEP topology carrier membership")?
+                || ctx.contains_key_hash_map(&carrier_index.surfaces, &item, "STEP topology carrier membership")?)
+        }, "STEP geometric set member search")?;
         if has_decoded_member {
             ctx.insert_btree_set(typed, set_id, "step_topology_claims")?;
             decoded = true;
@@ -1973,26 +1861,28 @@ fn mark_standalone_geometric_set(
     Ok(decoded)
 }
 
-fn build_geometric_set(
+fn build_geometric_set<'ctx>(
     id: u64,
     representation: &RawRecord,
     exchange: &Exchange,
     carrier_index: &CarrierIndex,
-    losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Built>, CodecError> {
+    losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<Option<Built<'ctx>>, CodecError> {
+    let (losses, loss_storage) = losses;
+    let mut built_storage = ctx.reserve_scoped(0, "STEP staged metadata")?;
+    let mut scratch = ctx.reserve_scoped(0, "STEP topology staging scratch")?;
     let Some(set_ids) = representation_item_values(ctx, representation)? else {
-        ctx.push_vec(
-            losses,
-            StepLossCode::DecodeWarning.note(format!(
+        ctx.push_scoped_vec(loss_storage, losses,
+            StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no item list"
-            )),
+            ), "STEP topology message")?),
             "step_topology_losses",
         )?;
         return Ok(None);
     };
     let mut typed = BTreeSet::new();
-    ctx.insert_btree_set(&mut typed, id, "step_geometric_set_typed")?;
+    built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_geometric_set_typed"))?;
     let body = BodyId::from(ids::data(kind!("body"), id));
     let region = RegionId::from(ids::data(kind!("region"), id));
     let shell_id = ShellId::from(ids::data(
@@ -2001,30 +1891,30 @@ fn build_geometric_set(
     ));
     let mut shell_faces = Vec::new();
     let mut faces = Vec::new();
-    for set_id in set_ids.iter().filter_map(ValueExt::reference) {
-        let Some(set) = exchange.records().get(&set_id) else {
-            ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
+    for set_id in ctx.admit_iter(set_ids, "STEP topology reference traversal")?.filter_map(ValueExt::reference) {
+        let Some(set) = ctx.get_btree_map(exchange.records(), &set_id, "STEP topology record lookup")? else {
+            ctx.push_scoped_vec(loss_storage, losses, StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped missing set #{set_id}"
-            )), "step_topology_losses")?;
+            ), "STEP topology message")?), "step_topology_losses")?;
             continue;
         };
         let Some(set_type) = most_specific(ctx, set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"])?
         else {
-            ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
+            ctx.push_scoped_vec(loss_storage, losses, StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped non-set member #{set_id}"
-            )), "step_topology_losses")?;
+            ), "STEP topology message")?), "step_topology_losses")?;
             continue;
         };
         let Some(items) = named_reference_values(ctx, set, set_type, 1)? else {
-            ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
+            ctx.push_scoped_vec(loss_storage, losses, StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped set #{set_id} with no member list"
-            )), "step_topology_losses")?;
+            ), "STEP topology message")?), "step_topology_losses")?;
             continue;
         };
-        ctx.insert_btree_set(&mut typed, set_id, "step_geometric_set_typed")?;
-        for surface_step in items.iter().filter_map(ValueExt::reference) {
+        built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, set_id, "step_geometric_set_typed"))?;
+        for surface_step in ctx.admit_iter(items, "STEP topology reference traversal")?.filter_map(ValueExt::reference) {
             let surface = SurfaceId::from(ids::data(kind!("surface"), surface_step));
-            if carrier_index.surfaces.contains_key(&surface_step) {
+            if ctx.contains_key_hash_map(&carrier_index.surfaces, &surface_step, "STEP topology carrier membership")? {
                 let face = Face {
                     id: FaceId::from(ids::data(
                         kind!("face"),
@@ -2047,14 +1937,14 @@ fn build_geometric_set(
                         .try_clone_for_decode(ctx, "step_geometric_set_shell_faces")?,
                     "step_geometric_set_shell_faces",
                 )?;
-                ctx.push_vec(&mut faces, face, "step_geometric_set_faces")?;
+                ctx.push_scoped_vec(&mut scratch, &mut faces, face, "step_geometric_set_faces")?;
             }
         }
     }
     if shell_faces.is_empty() {
-        ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
+        ctx.push_scoped_vec(loss_storage, losses, StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
             "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no indexed surface member; set dropped"
-        )), "step_topology_losses")?;
+        ), "STEP topology message")?), "step_topology_losses")?;
         return Ok(None);
     }
     let shell = Shell::new(
@@ -2074,7 +1964,7 @@ fn build_geometric_set(
             loops: Vec::new(),
             faces,
             surfaces: Vec::new(),
-            shells: ctx.collect_vec([shell], "step_geometric_set_shells")?,
+            shells: scratch.with_storage(|| ctx.collect_vec([shell], "step_geometric_set_shells"))?,
             region: Region {
                 id: region.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                 body: body.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
@@ -2090,13 +1980,14 @@ fn build_geometric_set(
                 visible: None,
             },
         },
+        built_storage,
         ctx,
     );
     match staged {
         Ok(built) => Ok(Some(built)),
         Err(StageError::Draft(error)) => {
-            ctx.push_vec(
-                losses,
+            ctx.push_scoped_vec(
+                loss_storage, losses,
                 StepLossCode::DecodeWarning.note(ctx.format_retained(
                     format_args!(
                         "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}: {error}"
@@ -2130,61 +2021,44 @@ enum EdgeDef {
         start: u64,
         end: u64,
         parent: u64,
-        basis: Rc<EdgeDef>,
+        curve: Option<u64>,
+        same: bool,
     },
     Oriented {
         element: u64,
-        basis: Rc<EdgeDef>,
-        forward: bool,
+        start: u64,
+        end: u64,
+        curve: Option<u64>,
+        same: bool,
     },
 }
 
 impl EdgeDef {
     fn vertices(&self) -> (u64, u64) {
-        let mut current = self;
-        loop {
-            match current {
-                Self::Bare { start, end }
-                | Self::Curve { start, end, .. }
-                | Self::Subedge { start, end, .. } => return (*start, *end),
-                Self::Oriented { basis, .. } => current = basis,
-            }
+        match self {
+            Self::Bare { start, end } | Self::Curve { start, end, .. }
+            | Self::Subedge { start, end, .. } | Self::Oriented { start, end, .. } => (*start, *end),
         }
     }
 
     fn curve_vertices(&self) -> (u64, u64) {
         let (start, end) = self.vertices();
-        if self.same() {
-            (start, end)
-        } else {
-            (end, start)
-        }
+        if self.same() { (start, end) } else { (end, start) }
     }
 
     fn curve(&self) -> Option<u64> {
-        let mut current = self;
-        loop {
-            match current {
-                Self::Bare { .. } => return None,
-                Self::Curve { curve, .. } => return Some(*curve),
-                Self::Subedge { basis, .. } | Self::Oriented { basis, .. } => current = basis,
-            }
+        match self {
+            Self::Bare { .. } => None,
+            Self::Curve { curve, .. } => Some(*curve),
+            Self::Subedge { curve, .. } | Self::Oriented { curve, .. } => *curve,
         }
     }
 
     fn same(&self) -> bool {
-        let mut current = self;
-        let mut orientation = true;
-        loop {
-            match current {
-                Self::Bare { .. } => return orientation,
-                Self::Curve { same, .. } => return *same == orientation,
-                Self::Subedge { basis, .. } => current = basis,
-                Self::Oriented { basis, forward, .. } => {
-                    orientation = orientation == *forward;
-                    current = basis;
-                }
-            }
+        match self {
+            Self::Bare { .. } => true,
+            Self::Curve { same, .. } | Self::Subedge { same, .. }
+            | Self::Oriented { same, .. } => *same,
         }
     }
 
@@ -2234,6 +2108,7 @@ fn edge_defs(
 ) -> Result<BTreeMap<u64, Rc<EdgeDef>>, CodecError> {
     let mut edges = BTreeMap::new();
     let mut cache = BTreeMap::new();
+    let mut cache_storage = ctx.reserve_scoped(0, "STEP edge cache storage")?;
     let mut active = BTreeSet::new();
     for entity in exchange.entities_any(
         ctx,
@@ -2246,7 +2121,7 @@ fn edge_defs(
         ],
     )? {
         let (id, _) = entity?;
-        if let Some(edge) = edge_def_for(id, exchange, &mut active, &mut cache, ctx)? {
+        if let Some(edge) = edge_def_for(id, exchange, &mut active, &mut cache, &mut cache_storage, ctx)? {
             ctx.insert_btree_map(&mut edges, id, edge, "step_edge_definitions")?;
         }
     }
@@ -2258,17 +2133,19 @@ fn edge_def_for(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     cache: &mut BTreeMap<u64, Option<Rc<EdgeDef>>>,
+    cache_storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Rc<EdgeDef>>, CodecError> {
-    if let Some(edge) = cache.get(&id) {
+    if let Some(edge) = ctx.get_btree_map(cache, &id, "STEP topology cache lookup")? {
         return Ok(edge.clone());
     }
     let _depth = ctx.enter_nested("step_edge_definition_recursion")?;
-    if active.contains(&id) {
+    if ctx.contains_btree_set(active, &id, "STEP topology active membership")? {
         return Ok(None);
     }
-    ctx.insert_btree_set(active, id, "step_edge_definition_active")?;
-    let result = if let Some(record) = exchange.records().get(&id) {
+    let mut active_storage = ctx.reserve_scoped(0, "step_edge_definition_active")?;
+    active_storage.with_storage(|| ctx.insert_btree_set(active, id, "step_edge_definition_active"))?;
+    let result = if let Some(record) = ctx.get_btree_map(exchange.records(), &id, "STEP topology record lookup")? {
         match most_specific(
             ctx,
             record,
@@ -2296,12 +2173,13 @@ fn edge_def_for(
                 if let Some(((start, end), parent)) =
                     edge_vertices(ctx, record)?.zip(subedge_parent(ctx, record)?)
                 {
-                    edge_def_for(parent, exchange, active, cache, ctx)?.map(|basis| {
+                    edge_def_for(parent, exchange, active, cache, cache_storage, ctx)?.map(|basis| {
                         EdgeDef::Subedge {
                             start,
                             end,
                             parent,
-                            basis,
+                            curve: basis.curve(),
+                            same: basis.same(),
                         }
                     })
                 } else {
@@ -2312,12 +2190,9 @@ fn edge_def_for(
                 if let Some((element, forward)) =
                     oriented_edge_reference(ctx, record)?.zip(oriented_edge_forward(ctx, record)?)
                 {
-                    edge_def_for(element, exchange, active, cache, ctx)?.map(|basis| {
-                        EdgeDef::Oriented {
-                            element,
-                            basis,
-                            forward,
-                        }
+                    edge_def_for(element, exchange, active, cache, cache_storage, ctx)?.map(|basis| {
+                        let (start, end) = basis.vertices();
+                        EdgeDef::Oriented { element, start, end, curve: basis.curve(), same: basis.same() == forward }
                     })
                 } else {
                     None
@@ -2328,7 +2203,8 @@ fn edge_def_for(
     } else {
         None
     };
-    active.remove(&id);
+    ctx.remove_btree_set(active, &id, "STEP topology active removal")?;
+    drop(active_storage);
     let result = if let Some(definition) = result {
         ctx.charge_retained(
             u64_from_index(std::mem::size_of::<EdgeDef>() + 2 * std::mem::size_of::<usize>()),
@@ -2338,12 +2214,7 @@ fn edge_def_for(
     } else {
         None
     };
-    ctx.insert_btree_map(
-        &mut *cache,
-        id,
-        result.clone(),
-        "step_edge_definition_cache",
-    )?;
+    cache_storage.with_storage(|| ctx.insert_btree_map(cache, id, result.clone(), "step_edge_definition_cache"))?;
     Ok(result)
 }
 
@@ -2351,20 +2222,20 @@ fn edge_curve_id_reported(
     edge_id: u64,
     edge: &EdgeDef,
     exchange: &Exchange,
-    losses: &mut Vec<LossNote>,
+    losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<CurveId>, CodecError> {
+    let (losses, loss_storage) = losses;
     let Some(curve_step) = edge.curve() else {
-        ctx.push_vec(
-            losses,
-            StepLossCode::DecodeWarning.note(format!(
+        ctx.push_scoped_vec(loss_storage, losses,
+            StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
                 "STEP edge #{edge_id} has no 3D curve carrier; edge committed without a curve"
-            )),
+            ), "STEP topology message")?),
             "step_topology_losses",
         )?;
         return Ok(None);
     };
-    let curve = exchange.records().get(&curve_step);
+    let curve = ctx.get_btree_map(exchange.records(), &curve_step, "STEP topology record lookup")?;
     let carrier = curve_carrier_record(ctx, curve_step, exchange)?;
     let unresolved_surface_curve = if carrier.is_none() {
         if let Some(record) = curve {
@@ -2385,9 +2256,9 @@ fn edge_curve_id_reported(
         false
     };
     if unresolved_surface_curve {
-        ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
+        ctx.push_scoped_vec(loss_storage, losses, StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!(
             "STEP edge curve #{edge_id}: surface-curve #{curve_step} has no resolvable basis; edge committed without a curve"
-        )), "step_topology_losses")?;
+        ), "STEP topology message")?), "step_topology_losses")?;
     }
     Ok(carrier.map(|curve| CurveId::from(ids::data(kind!("curve"), curve))))
 }
@@ -2448,28 +2319,13 @@ fn subedge_parent(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<
             return Ok(Some(id));
         }
     }
-    for partial in ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP subedge parent partial traversal",
-        )?
-        .rev()
-    {
-        if let Some(id) = ctx.find_map(
-            partial.parameters.as_slice().iter().rev(),
-            |value| Ok(ValueExt::reference(value)),
-            "STEP subedge parent reference traversal",
-        )? {
-            return Ok(Some(id));
-        }
-    }
-    Ok(None)
+    ctx.find_map(record.partials.iter().rev(), |partial| ctx.find_map(partial.parameters.as_slice().iter().rev(), |value| Ok(value.reference()), "STEP subedge parent reference traversal"), "STEP subedge parent partial traversal")
 }
 
 fn named_reference(
     ctx: &DecodeContext<'_>,
     record: &RawRecord,
-    name: &str,
+    name: &'static str,
     simple_index: usize,
     complex_index: usize,
 ) -> Result<Option<u64>, CodecError> {
@@ -2480,7 +2336,7 @@ fn named_reference(
         &record.partials[..],
         |partial| -> Result<Option<_>, CodecError> {
             Ok(
-                (ctx.equal(partial.name.as_str(), name, "STEP named reference equality")?)
+                (partial.name.as_str() == name)
                     .then_some(partial),
             )
         },
@@ -2489,13 +2345,11 @@ fn named_reference(
     else {
         return Ok(None);
     };
-    Ok(ctx
-        .admit_iter(
-            partial.parameters.as_slice(),
-            "STEP named topology parameter traversal",
-        )?
-        .filter_map(ValueExt::reference)
-        .nth(complex_index))
+    let mut remaining = complex_index;
+    ctx.find_map(partial.parameters.as_slice(), |value| {
+        let Some(reference) = value.reference() else { return Ok(None); };
+        if remaining == 0 { Ok(Some(reference)) } else { remaining -= 1; Ok(None) }
+    }, "STEP named topology parameter traversal")
 }
 
 fn oriented_edge_reference(
@@ -2543,7 +2397,7 @@ fn oriented_edge_forward(
 fn named_logical(
     ctx: &DecodeContext<'_>,
     record: &RawRecord,
-    name: &str,
+    name: &'static str,
     simple_index: usize,
     _complex_index: usize,
 ) -> Result<Option<bool>, CodecError> {
@@ -2554,7 +2408,7 @@ fn named_logical(
         &record.partials[..],
         |partial| -> Result<Option<_>, CodecError> {
             Ok(
-                (ctx.equal(partial.name.as_str(), name, "STEP named logical equality")?)
+                (partial.name.as_str() == name)
                     .then_some(partial),
             )
         },
@@ -2573,7 +2427,7 @@ fn named_logical(
 fn surface_curve_pcurves<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a RawRecord,
-) -> Result<impl Iterator<Item = u64> + 'a, CodecError> {
+) -> Result<&'a [Value], CodecError> {
     let mut values = if record.partials.len() == 1 {
         record.parameter(2).and_then(Value::list)
     } else {
@@ -2591,15 +2445,7 @@ fn surface_curve_pcurves<'a>(
                 |partial| Ok(Some(partial)),
             )?
         {
-            for value in ctx.admit_iter(
-                partial.parameters.as_slice(),
-                "STEP surface curve pcurve parameter traversal",
-            )? {
-                if let Some(items) = reference_values(ctx, value)? {
-                    values = Some(items);
-                    break;
-                }
-            }
+            values = ctx.find_map(partial.parameters.as_slice(), |value| reference_values(ctx, value), "STEP surface curve pcurve parameter traversal")?;
         }
     }
     let mut items = values.unwrap_or_default();
@@ -2612,9 +2458,13 @@ fn surface_curve_pcurves<'a>(
     {
         items = &[];
     }
-    Ok(ctx
-        .admit_iter(items, "STEP surface curve pcurve reference traversal")?
-        .filter_map(Value::reference))
+    Ok(items)
+}
+
+fn first_two_references(values: &[Value], ctx: &DecodeContext<'_>) -> Result<Option<(u64, u64)>, CodecError> {
+    let mut values = values.iter();
+    let Some(first) = ctx.find_map(&mut values, |value| Ok(value.reference()), "STEP edge vertex reference traversal")? else { return Ok(None); };
+    Ok(ctx.find_map(&mut values, |value| Ok(value.reference()), "STEP edge vertex reference traversal")?.map(|second| (first, second)))
 }
 
 fn edge_vertices(
@@ -2622,14 +2472,14 @@ fn edge_vertices(
     record: &RawRecord,
 ) -> Result<Option<(u64, u64)>, CodecError> {
     if record.partials.len() == 1 {
-        let Some(name) = record.simple_name() else {
+        let Some(_name) = record.simple_name() else {
             return Ok(None);
         };
-        let start = entity_parameter(ctx, record, name, 1)?.and_then(ValueExt::reference);
+        let start = record.parameter(1).and_then(ValueExt::reference);
         if start.is_none() {
             return Ok(None);
         }
-        let end = entity_parameter(ctx, record, name, 2)?.and_then(ValueExt::reference);
+        let end = record.parameter(2).and_then(ValueExt::reference);
         return Ok(start.zip(end));
     }
     let mut partial = record.partial(ctx, "EDGE")?;
@@ -2639,21 +2489,16 @@ fn edge_vertices(
     let Some(partial) = partial else {
         return Ok(None);
     };
-    let mut references = ctx
-        .admit_iter(
-            partial.parameters.as_slice(),
-            "STEP edge vertex reference traversal",
-        )?
-        .filter_map(ValueExt::reference);
-    Ok(references.next().zip(references.next()))
+    first_two_references(&partial.parameters, ctx)
+
 }
 
 fn edge_geometry(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u64>, CodecError> {
     if record.partials.len() == 1 {
-        let Some(name) = record.simple_name() else {
+        let Some(_name) = record.simple_name() else {
             return Ok(None);
         };
-        return Ok(entity_parameter(ctx, record, name, 3)?.and_then(ValueExt::reference));
+        return Ok(record.parameter(3).and_then(ValueExt::reference));
     }
     let Some(partial) = record.partial(ctx, "EDGE_CURVE")? else {
         return Ok(None);
@@ -2670,10 +2515,10 @@ fn edge_same_sense(
     record: &RawRecord,
 ) -> Result<Option<bool>, CodecError> {
     if record.partials.len() == 1 {
-        let Some(name) = record.simple_name() else {
+        let Some(_name) = record.simple_name() else {
             return Ok(None);
         };
-        return Ok(entity_parameter(ctx, record, name, 4)?.and_then(ValueExt::logical));
+        return Ok(record.parameter(4).and_then(ValueExt::logical));
     }
     let Some(partial) = record.partial(ctx, "EDGE_CURVE")? else {
         return Ok(None);
@@ -2685,7 +2530,8 @@ fn edge_same_sense(
     )
 }
 
-struct Built {
+struct Built<'ctx> {
+    _storage: ScopedReservation<'ctx>,
     typed: BTreeSet<u64>,
     draft: ModelDraft,
     body_id: BodyId,
@@ -2725,6 +2571,10 @@ impl From<DraftError> for StageError {
     }
 }
 
+impl From<ResourceLimit> for StageError {
+    fn from(limit: ResourceLimit) -> Self { Self::Resource(CodecError::ResourceLimit(limit)) }
+}
+
 impl From<CodecError> for StageError {
     fn from(error: CodecError) -> Self {
         Self::Resource(error)
@@ -2744,10 +2594,12 @@ struct StagedTopologyParts {
     body: Body,
 }
 
-fn staged_topology(
+fn staged_topology<'ctx>(
     parts: StagedTopologyParts,
-    ctx: &DecodeContext<'_>,
-) -> Result<Built, StageError> {
+    mut storage: ScopedReservation<'ctx>,
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<Built<'ctx>, StageError> {
+    let mut surface_storage = ctx.reserve_scoped(0, "STEP staged surface index")?;
     let StagedTopologyParts {
         typed,
         vertices,
@@ -2761,44 +2613,43 @@ fn staged_topology(
         body,
     } = parts;
     let mut draft = ModelDraft::new();
-    for vertex in vertices {
+    for vertex in ctx.admit_iter(vertices, "STEP topology collection traversal")? {
         draft.insert(vertex, ctx)?;
     }
-    for edge in edges {
+    for edge in ctx.admit_iter(edges, "STEP topology collection traversal")? {
         draft.insert(edge, ctx)?;
     }
-    for coedge in coedges {
+    for coedge in ctx.admit_iter(coedges, "STEP topology collection traversal")? {
         draft.insert(coedge, ctx)?;
     }
-    for loop_ in loops {
+    for loop_ in ctx.admit_iter(loops, "STEP topology collection traversal")? {
         draft.insert(loop_, ctx)?;
     }
-    for face in faces {
+    for face in ctx.admit_iter(faces, "STEP topology collection traversal")? {
         draft.insert(face, ctx)?;
     }
     let mut surface_ids = BTreeSet::new();
-    for surface in surfaces {
+    for surface in ctx.admit_iter(surfaces, "STEP topology collection traversal")? {
         if !ctx.contains_btree_set(
             &surface_ids,
             surface.id.as_str(),
             "STEP surface ids membership",
         )? {
             let id =
-                ctx.copy_retained(surface.id.as_str().as_bytes(), "step_staged_surface_ids")?;
+                surface_storage.with_storage(|| ctx.copy_retained(surface.id.as_str().as_bytes(), "step_staged_surface_ids"))?;
             let id = String::from_utf8(id).map_err(CodecError::malformed)?;
-            ctx.insert_btree_set(&mut surface_ids, id, "step_staged_surface_ids")?;
+            surface_storage.with_storage(|| ctx.insert_btree_set(&mut surface_ids, id, "step_staged_surface_ids"))?;
             draft.insert(surface, ctx)?;
         }
     }
-    for shell in shells {
+    for shell in ctx.admit_iter(shells, "STEP topology collection traversal")? {
         draft.insert(shell, ctx)?;
     }
     draft.insert(region, ctx)?;
-    let body_id = body
-        .id
-        .try_clone_for_decode(ctx, "step_topology_identity_copy")?;
+    let body_id = storage.with_storage(|| body.id.try_clone_for_decode(ctx, "step_topology_identity_copy"))?;
     draft.insert(body, ctx)?;
     Ok(Built {
+        _storage: storage,
         typed,
         draft,
         body_id,
@@ -2827,8 +2678,9 @@ impl cadmpeg_core::decode::cost::DecodeCost for RootKey {
     }
 }
 
-#[derive(Clone)]
-struct RootBuilt {
+struct RootBuilt<'ctx> {
+    _key_storage: ScopedReservation<'ctx>,
+    _storage: ScopedReservation<'ctx>,
     body_ids: Vec<BodyId>,
     body_by_shell: BTreeMap<u64, BTreeSet<BodyId>>,
 }
@@ -2845,7 +2697,7 @@ fn root_shell_steps(
         else {
             return Ok(None);
         };
-        for reference in values.iter().filter_map(ValueExt::reference) {
+        for reference in ctx.admit_iter(values, "STEP topology reference traversal")?.filter_map(ValueExt::reference) {
             ctx.push_vec(&mut ids, reference, "step_root_shell_steps")?;
         }
         return Ok(Some(ids));
@@ -2854,8 +2706,8 @@ fn root_shell_steps(
         let Some(values) = named_reference_values(ctx, root, "FACE_BASED_SURFACE_MODEL", 1)? else {
             return Ok(None);
         };
-        for set_step in values.iter().filter_map(ValueExt::reference) {
-            let Some(set) = exchange.records().get(&set_step) else {
+        for set_step in ctx.admit_iter(values, "STEP topology reference traversal")?.filter_map(ValueExt::reference) {
+            let Some(set) = ctx.get_btree_map(exchange.records(), &set_step, "STEP topology record lookup")? else {
                 return Ok(None);
             };
             if connected_face_set_type(ctx, set)?.is_none() {
@@ -2888,26 +2740,22 @@ fn root_shell_steps(
             return Ok(None);
         };
         ctx.push_vec(&mut ids, outer, "step_root_shell_steps")?;
-        for reference in values.iter().filter_map(ValueExt::reference) {
+        for reference in ctx.admit_iter(values, "STEP topology reference traversal")?.filter_map(ValueExt::reference) {
             ctx.push_vec(&mut ids, reference, "step_root_shell_steps")?;
         }
         // `voids` is a STEP SET. CADIR keeps the outer shell at index zero
         // and canonicalizes the void suffix by resolved shell identity.
-        ctx.sort_unstable_by(
-            &mut ids[1..],
-            |value| value,
-            |left, right| {
-                let key = |reference: &u64| {
-                    shell_definitions
-                        .get(reference)
-                        .map_or((u64::MAX, true, *reference), |definition| {
-                            (definition.base, definition.forward, *reference)
-                        })
-                };
-                key(left).cmp(&key(right))
-            },
-            "step_root_shell_steps_sort",
-        )?;
+        let mut key_storage = ctx.reserve_scoped(0, "step_root_shell_steps_keys")?;
+        let mut keys = Vec::new();
+        for &reference in ctx.admit_iter(&ids[1..], "STEP void shell key traversal")? {
+            let key = ctx.get_btree_map(shell_definitions, &reference, "STEP shell definition lookup")?
+                .map_or((u64::MAX, true, reference), |definition| (definition.base, definition.forward, reference));
+            ctx.push_scoped_vec(&mut key_storage, &mut keys, key, "step_root_shell_steps_keys")?;
+        }
+        ctx.sort_unstable_by(&mut keys, |key| key, Ord::cmp, "step_root_shell_steps_sort")?;
+        for (slot, key) in ctx.admit_iter(&mut ids[1..], "STEP void shell order traversal")?.zip(&keys) {
+            *slot = key.2;
+        }
         return Ok(Some(ids));
     }
     Ok(None)
@@ -2935,15 +2783,15 @@ fn root_key(
     };
     let mut shell_keys = Vec::new();
     let mut resolved = 0;
-    let Some(shell_steps) = root_shell_steps(root, exchange, shell_definitions, ctx)? else {
+    let (shell_steps, _shell_step_storage) = ctx.with_scoped_storage("STEP root shell step scratch", || root_shell_steps(root, exchange, shell_definitions, ctx))?;
+    let Some(shell_steps) = shell_steps else {
         return Ok(None);
     };
-    for shell in shell_steps {
+    for shell in ctx.admit_iter(shell_steps, "STEP topology collection traversal")? {
         let key = if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
             Some((shell, Some(true)))
         } else {
-            shell_definitions
-                .get(&shell)
+            ctx.get_btree_map(shell_definitions, &shell, "STEP topology shell_definitions lookup")?
                 .map(|definition| (definition.base, Some(definition.forward)))
                 .or(Some((shell, None)))
         };
@@ -2971,7 +2819,7 @@ fn root_key(
 }
 
 #[derive(Clone, Copy)]
-struct BuildSources<'a, 'b> {
+struct BuildSources<'a, 'ctx, 'b> {
     exchange: &'a Exchange,
     ir: &'a CadIr,
     vdefs: &'a BTreeMap<u64, VertexDef>,
@@ -2980,7 +2828,7 @@ struct BuildSources<'a, 'b> {
     shell_definitions: &'a BTreeMap<u64, ShellDef>,
     decoded_pcurves: &'a BTreeSet<u64>,
     point_positions: &'a CarrierIndex,
-    ctx: &'a DecodeContext<'b>,
+    ctx: &'ctx DecodeContext<'b>,
 }
 
 struct BuildRoot<'a> {
@@ -2996,30 +2844,25 @@ struct BuildScope {
     root: bool,
 }
 
-fn build(
+fn build<'ctx>(
     id: u64,
     root: &RawRecord,
-    sources: BuildSources<'_, '_>,
+    sources: BuildSources<'_, 'ctx, '_>,
     scope_root: bool,
-    losses: &mut Vec<LossNote>,
-) -> Result<BuildOutcome, CodecError> {
+    losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
+) -> Result<BuildOutcome<'ctx>, CodecError> {
+    let (losses, loss_storage) = losses;
     let BuildSources {
         exchange,
         shell_definitions,
         ctx,
         ..
     } = sources;
-    let Some(shell_steps) = root_shell_steps(root, exchange, shell_definitions, ctx)? else {
-        return Ok(BuildOutcome::Partial {
-            built: Vec::new(),
-            failures: BuildFailures {
-                count: NonZeroUsize::MIN,
-                first: Some(BuildFailure {
-                    record_id: id,
-                    carrier_kind: CarrierKind::TopologyRootCarrier,
-                }),
-            },
-        });
+    let (shell_steps, _shell_step_storage) = ctx.with_scoped_storage("STEP root shell step scratch", || root_shell_steps(root, exchange, shell_definitions, ctx))?;
+    let Some(shell_steps) = shell_steps else {
+        let mut outcome = BuildOutcome::new(ctx)?;
+        outcome.fail(Some(BuildFailure { record_id: id, carrier_kind: CarrierKind::TopologyRootCarrier }))?;
+        return Ok(outcome);
     };
     let solid = root.partial(ctx, "MANIFOLD_SOLID_BREP")?.is_some()
         || root.partial(ctx, "BREP_WITH_VOIDS")?.is_some()
@@ -3043,32 +2886,26 @@ fn build(
                 edges: scope_shell_carriers,
                 root: scope_root,
             },
-            losses,
+            (&mut *losses, &mut *loss_storage),
             &mut failure,
         );
-        return Ok(match built {
-            Ok(built) => {
-                BuildOutcome::Built(ctx.collect_vec([built], "step_topology_built_outcome")?)
-            }
-            Err(BuildError::Absent) => BuildOutcome::Partial {
-                built: Vec::new(),
-                failures: BuildFailures {
-                    count: NonZeroUsize::MIN,
-                    first: failure,
-                },
-            },
+        let mut outcome = BuildOutcome::new(ctx)?;
+        match built {
+            Ok(built) => outcome.push(built, ctx)?,
+            Err(BuildError::Absent) => outcome.fail(failure)?,
             Err(BuildError::Resource(error)) => return Err(error),
-        });
+        }
+        return Ok(outcome);
     }
 
     let scoped = shell_steps.len() > 1;
-    let mut outcome = BuildOutcome::Built(Vec::new());
-    for shell_reference in shell_steps {
+    let mut outcome = BuildOutcome::new(ctx)?;
+    for shell_reference in ctx.admit_iter(shell_steps, "STEP topology collection traversal")? {
         let mut failure = None;
         let shell_step = if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
             shell_reference
         } else {
-            match shell_definitions.get(&shell_reference) {
+            match ctx.get_btree_map(shell_definitions, &shell_reference, "STEP topology shell_definitions lookup")? {
                 Some(definition) => definition.base,
                 None => {
                     outcome.fail(Some(BuildFailure {
@@ -3108,7 +2945,7 @@ fn build(
                 edges: scoped || scope_root,
                 root: scope_root,
             },
-            losses,
+            (&mut *losses, &mut *loss_storage),
             &mut failure,
         ) {
             Ok(value) => outcome.push(value, ctx)?,
@@ -3124,21 +2961,26 @@ enum BuildError {
     Resource(CodecError),
 }
 
+impl From<ResourceLimit> for BuildError {
+    fn from(limit: ResourceLimit) -> Self { Self::Resource(CodecError::ResourceLimit(limit)) }
+}
+
 impl From<CodecError> for BuildError {
     fn from(error: CodecError) -> Self {
         Self::Resource(error)
     }
 }
 
-fn build_one(
+fn build_one<'ctx>(
     id: u64,
     root: &RawRecord,
-    sources: BuildSources<'_, '_>,
+    sources: BuildSources<'_, 'ctx, '_>,
     root_parts: BuildRoot<'_>,
     scope: BuildScope,
-    losses: &mut Vec<LossNote>,
+    losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
     failure: &mut Option<BuildFailure>,
-) -> Result<Built, BuildError> {
+) -> Result<Built<'ctx>, BuildError> {
+    let (losses, loss_storage) = losses;
     let BuildSources {
         exchange,
         ir,
@@ -3150,6 +2992,8 @@ fn build_one(
         point_positions,
         ctx,
     } = sources;
+    let mut scratch = ctx.reserve_scoped(0, "STEP body scratch")?;
+    let mut built_storage = ctx.reserve_scoped(0, "STEP staged metadata")?;
     let BuildRoot {
         shell_steps,
         bid,
@@ -3165,7 +3009,7 @@ fn build_one(
         || root.partial(ctx, "FACETED_BREP")?.is_some();
     let mut selection_index = None;
     let mut typed = BTreeSet::new();
-    ctx.insert_btree_set(&mut typed, id, "step_brep_typed")?;
+    built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_brep_typed"))?;
     let mut vertices = Vec::new();
     let mut edges = Vec::new();
     let mut coedges = Vec::new();
@@ -3211,23 +3055,23 @@ fn build_one(
     {
         let (shell_step, shell_forward) =
             if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
-                ctx.insert_btree_set(&mut typed, shell_reference, "step_brep_typed")?;
+                built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, shell_reference, "step_brep_typed"))?;
                 (shell_reference, true)
             } else {
                 require_carrier(
-                    shell_def_for(shell_reference, shell_definitions, &mut typed, ctx)?,
+                    built_storage.with_storage(|| shell_def_for(shell_reference, shell_definitions, &mut typed, ctx))?,
                     failure,
                     shell_reference,
                     CarrierKind::ShellCarrier,
                 )
                 .ok_or(BuildError::Absent)?
             };
-        if used_shells.contains(&shell_step) {
+        if ctx.contains_btree_set(&used_shells, &shell_step, "STEP topology used_shells membership")? {
             continue;
         }
-        ctx.insert_btree_set(&mut used_shells, shell_step, "step_brep_used_shells")?;
+        scratch.with_storage(|| ctx.insert_btree_set(&mut used_shells, shell_step, "step_brep_used_shells"))?;
         let sr = require_carrier(
-            exchange.records().get(&shell_step),
+            ctx.get_btree_map(exchange.records(), &shell_step, "STEP topology record lookup")?,
             failure,
             shell_step,
             CarrierKind::ShellRecord,
@@ -3242,7 +3086,7 @@ fn build_one(
             )
             .ok_or(BuildError::Absent)?;
             if set_type == "CONNECTED_FACE_SUB_SET"
-                && !validate_subset_parent(shell_step, sr, set_type, exchange, losses, ctx)?
+                && !validate_subset_parent(shell_step, sr, set_type, exchange, (&mut *losses, &mut *loss_storage), ctx)?
             {
                 ctx.remove_btree_set(&mut typed, &shell_step, "step_brep_typed")?;
             }
@@ -3276,22 +3120,27 @@ fn build_one(
             return Err(BuildError::Absent);
         }
         let sid = shell_identity(id, shell_step, scope_root);
+        let mut shell_scratch = ctx.reserve_scoped(0, "STEP shell scratch")?;
+        let mut shell_edges = BTreeSet::new();
+        let mut shell_poly_edges = Vec::new();
+        let loop_start = loops.len();
+        let coedge_start = coedges.len();
         let mut face_ids = vec![];
         for face_step in ctx
             .admit_iter(&face_steps[..], "STEP body topology traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .filter_map(Value::reference)
         {
-            if used_faces.contains(&(shell_step, face_step)) {
+            if ctx.contains_btree_set(&used_faces, &(shell_step, face_step), "STEP topology used_faces membership")? {
                 continue;
             }
-            ctx.insert_btree_set(
+            scratch.with_storage(|| ctx.insert_btree_set(
                 &mut used_faces,
                 (shell_step, face_step),
                 "step_brep_used_faces",
-            )?;
+            ))?;
             let fr = require_carrier(
-                exchange.records().get(&face_step),
+                ctx.get_btree_map(exchange.records(), &face_step, "STEP topology record lookup")?,
                 failure,
                 face_step,
                 CarrierKind::FaceRecord,
@@ -3301,21 +3150,19 @@ fn build_one(
                 note_failure(failure, face_step, CarrierKind::FaceCarrier);
                 return Err(BuildError::Absent);
             }
-            let face_info = require_carrier(
-                face_attributes(face_step, fr, exchange, &mut BTreeSet::new(), ctx)?,
-                failure,
-                face_step,
-                CarrierKind::FaceAttributes,
-            )
-            .ok_or(BuildError::Absent)?;
+            let (face_info, _face_attribute_storage) = ctx.with_scoped_storage("STEP face attribute scratch", || face_attributes(face_step, fr, exchange, &mut BTreeSet::new(), ctx))?;
+            let face_info = require_carrier(face_info, failure, face_step, CarrierKind::FaceAttributes).ok_or(BuildError::Absent)?;
+            let (face_bounds, _face_bound_storage) = ctx.with_scoped_storage("STEP effective face bound scratch", || {
+                let mut bounds = Vec::new();
+                for reference in ctx.admit_iter(face_info.bounds, "STEP face bound ID traversal")?.filter_map(Value::reference) { ctx.push_vec(&mut bounds, reference, "step_face_attribute_bounds")?; }
+                Ok::<_, CodecError>(bounds)
+            })?;
             let mut outer_bound_count = 0usize;
             for bound_step in ctx
-                .admit_iter(&face_info.bounds[..], "STEP body topology traversal")
+                .admit_iter(&face_bounds[..], "STEP body topology traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
             {
-                if exchange
-                    .records()
-                    .get(bound_step)
+                if ctx.get_btree_map(exchange.records(), bound_step, "STEP topology record lookup")?
                     .map(|bound| bound.partial(ctx, "FACE_OUTER_BOUND"))
                     .transpose()?
                     .flatten()
@@ -3327,11 +3174,11 @@ fn build_one(
                 }
             }
             if outer_bound_count > 1 {
-                let note = StepLossCode::FaceMultipleOuterBounds.note(format!(
+                let note = StepLossCode::FaceMultipleOuterBounds.note(ctx.format_retained(format_args!(
                     "face #{face_step} violates the STEP face-bound rule with {outer_bound_count} FACE_OUTER_BOUND loops; omitting the containing topology shell without assigning an outer role or deriving an implicit face carrier and retaining the source face, bounds, loops, and enclosing records as opaque"
-                ));
-                ctx.push_vec(
-                    losses,
+                ), "STEP topology message")?);
+                ctx.push_scoped_vec(
+                    loss_storage, losses,
                     note.with_provenance(
                         cadmpeg_ir::SourceProvenance::root(
                             crate::dialect::FORMAT,
@@ -3344,8 +3191,8 @@ fn build_one(
                 note_failure(failure, face_step, CarrierKind::FaceWithMultipleOuterBounds);
                 return Err(BuildError::Absent);
             }
-            for claim in face_info.typed {
-                ctx.insert_btree_set(&mut typed, claim, "step_brep_typed")?;
+            for claim in ctx.admit_iter(face_info.typed, "STEP topology collection traversal")? {
+                built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, claim, "step_brep_typed"))?;
             }
             let face_suffix = if scope_faces {
                 if scope_root {
@@ -3377,21 +3224,15 @@ fn build_one(
                     &surface_id,
                     "STEP implicit surface ids membership",
                 )? {
-                    ctx.insert_btree_set(
-                        &mut implicit_surface_ids,
-                        surface_index_storage.with_storage(|| {
-                            surface_id.try_clone_for_decode(ctx, "step_topology_identity_copy")
-                        })?,
-                        "step_brep_implicit_surface_ids",
-                    )?;
-                    ctx.push_vec(
-                        &mut surfaces,
+                    let identity = surface_index_storage.with_storage(|| surface_id.try_clone_for_decode(ctx, "step_topology_identity_copy"))?;
+                    surface_index_storage.with_storage(|| ctx.insert_btree_set(&mut implicit_surface_ids, identity, "step_brep_implicit_surface_ids"))?;
+                    ctx.push_scoped_vec(&mut scratch, &mut surfaces,
                         Surface {
                             id: surface_id
                                 .try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                             geometry: require_carrier(
                                 implicit_face_plane(
-                                    &face_info.bounds,
+                                    &face_bounds,
                                     exchange,
                                     vdefs,
                                     point_positions,
@@ -3432,9 +3273,11 @@ fn build_one(
                 .transpose()?
                 .flatten();
             let mut loop_ids = vec![];
-            for bound_step in face_info.bounds {
+            let mut face_scratch = ctx.reserve_scoped(0, "STEP face scratch")?;
+            for bound_step in ctx.admit_iter(face_bounds, "STEP topology collection traversal")? {
+                let mut bound_scratch = ctx.reserve_scoped(0, "STEP bound scratch")?;
                 let br = require_carrier(
-                    exchange.records().get(&bound_step),
+                    ctx.get_btree_map(exchange.records(), &bound_step, "STEP topology record lookup")?,
                     failure,
                     bound_step,
                     CarrierKind::FaceBound,
@@ -3459,7 +3302,7 @@ fn build_one(
                 )
                 .ok_or(BuildError::Absent)?;
                 let lr = require_carrier(
-                    exchange.records().get(&loop_step),
+                    ctx.get_btree_map(exchange.records(), &loop_step, "STEP topology record lookup")?,
                     failure,
                     loop_step,
                     CarrierKind::LoopRecord,
@@ -3480,15 +3323,15 @@ fn build_one(
                         CarrierKind::VertexLoopReference,
                     )
                     .ok_or(BuildError::Absent)?;
-                    if !vdefs
-                        .get(&vertex_step)
-                        .is_some_and(|vertex| point_positions.contains_key(vertex.point))
+                    if !match ctx.get_btree_map(vdefs, &vertex_step, "STEP topology vdefs lookup")? {
+                        Some(vertex) => point_positions.contains_key(vertex.point),
+                        None => false,
+                    }
                     {
                         note_failure(failure, vertex_step, CarrierKind::VertexPoint);
                         return Err(BuildError::Absent);
                     }
-                    ctx.push_vec(
-                        &mut loops,
+                    ctx.push_scoped_vec(&mut scratch, &mut loops,
                         Loop {
                             id: lid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                             face: fid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
@@ -3505,14 +3348,14 @@ fn build_one(
                         },
                         "step_brep_loops",
                     )?;
-                    ctx.push_vec(&mut loop_ids, (is_outer_bound, lid), "step_brep_loop_ids")?;
-                    ctx.insert_btree_set(
+                    ctx.push_scoped_vec(&mut face_scratch, &mut loop_ids, (is_outer_bound, lid), "step_brep_loop_ids")?;
+                    scratch.with_storage(|| ctx.insert_btree_set(
                         &mut used_v,
                         (shell_step, vertex_step),
                         "step_brep_used_vertices",
-                    )?;
+                    ))?;
                     for claim in [bound_step, loop_step] {
-                        ctx.insert_btree_set(&mut typed, claim, "step_brep_typed")?;
+                        built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, claim, "step_brep_typed"))?;
                     }
                     continue;
                 }
@@ -3542,22 +3385,22 @@ fn build_one(
                         .map_err(cadmpeg_core::CodecError::from)?
                         .filter_map(ValueExt::reference)
                     {
-                        ctx.push_vec(&mut points, point, "step_brep_poly_loop_points")?;
+                        ctx.push_scoped_vec(&mut bound_scratch, &mut points, point, "step_brep_poly_loop_points")?;
                     }
                     if points.first() == points.last() {
                         points.pop();
                     }
-                    points.dedup();
+                    ctx.dedup_vec(&mut points, "STEP topology point deduplication")?;
                     let mut distinct_points = BTreeSet::new();
                     for &point in ctx
                         .admit_iter(&points, "STEP body topology traversal")
                         .map_err(cadmpeg_core::CodecError::from)?
                     {
-                        ctx.insert_btree_set(
+                        bound_scratch.with_storage(|| ctx.insert_btree_set(
                             &mut distinct_points,
                             point,
                             "step_brep_poly_loop_distinct_points",
-                        )?;
+                        ))?;
                     }
                     if points.len() < 3
                         || distinct_points.len() != points.len()
@@ -3571,7 +3414,7 @@ fn build_one(
                         return Err(BuildError::Absent);
                     }
                     if !bound_forward {
-                        points.reverse();
+                        ctx.reverse(&mut points, "STEP topology reversal")?;
                     }
                     let mut coedge_ids = Vec::new();
                     for (index, &start_point) in ctx
@@ -3595,24 +3438,22 @@ fn build_one(
                         let lookup_edge = lookup_storage.with_storage(|| {
                             edge_id.try_clone_for_decode(ctx, "step poly edge lookup identity")
                         })?;
-                        if !poly_edges.contains_key(&(shell_step, lookup_edge)) {
-                            ctx.insert_btree_map(
+                        if !ctx.contains_key_btree_map(&poly_edges, &(shell_step, lookup_edge), "STEP topology poly edge lookup")? {
+                            let key = (shell_step, edge_id.try_clone_for_decode(ctx, "step_topology_identity_copy")?);
+                            scratch.with_storage(|| ctx.insert_btree_map(
                                 &mut poly_edges,
-                                (
-                                    shell_step,
-                                    edge_id
-                                        .try_clone_for_decode(ctx, "step_topology_identity_copy")?,
-                                ),
+                                key,
                                 (canonical_start, canonical_end),
                                 "step_brep_poly_edges",
-                            )?;
+                            ))?;
+                            ctx.push_scoped_vec(&mut shell_scratch, &mut shell_poly_edges, (canonical_start, canonical_end), "STEP shell poly edge keys")?;
                         }
                         for point in [start_point, end_point] {
-                            ctx.insert_btree_set(
+                            scratch.with_storage(|| ctx.insert_btree_set(
                                 &mut poly_points,
                                 (shell_step, point),
                                 "step_brep_poly_points",
-                            )?;
+                            ))?;
                         }
                         let cid = CoedgeId::from(ids::data(
                             kind!("coedge"),
@@ -3628,8 +3469,7 @@ fn build_one(
                             cid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                             "step_brep_coedge_ids",
                         )?;
-                        ctx.push_vec(
-                            &mut coedges,
+                        ctx.push_scoped_vec(&mut scratch, &mut coedges,
                             Coedge {
                                 id: cid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                                 owner_loop: lid
@@ -3649,14 +3489,14 @@ fn build_one(
                             },
                             "step_brep_coedges",
                         )?;
-                        ctx.push_btree_group(
+                        scratch.with_storage(|| ctx.push_btree_group(
                             &mut radial,
                             edge_id,
                             coedges.len() - 1,
                             "step_brep_radial_groups",
                             "step_brep_radial_members",
-                        )?;
-                        ctx.insert_btree_set(&mut typed, loop_step, "step_brep_typed")?;
+                        ))?;
+                        built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, loop_step, "step_brep_typed"))?;
                     }
                     let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
                         .map_err(cadmpeg_core::CodecError::from)?
@@ -3664,8 +3504,7 @@ fn build_one(
                         note_failure(failure, loop_step, CarrierKind::PolyLoopPointCarrier);
                         return Err(BuildError::Absent);
                     };
-                    ctx.push_vec(
-                        &mut loops,
+                    ctx.push_scoped_vec(&mut scratch, &mut loops,
                         Loop {
                             id: lid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                             face: fid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
@@ -3673,8 +3512,8 @@ fn build_one(
                         },
                         "step_brep_loops",
                     )?;
-                    ctx.push_vec(&mut loop_ids, (is_outer_bound, lid), "step_brep_loop_ids")?;
-                    ctx.insert_btree_set(&mut typed, bound_step, "step_brep_typed")?;
+                    ctx.push_scoped_vec(&mut face_scratch, &mut loop_ids, (is_outer_bound, lid), "step_brep_loop_ids")?;
+                    built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, bound_step, "step_brep_typed"))?;
                     continue;
                 }
                 if lr.partial(ctx, "EDGE_LOOP")?.is_none() {
@@ -3706,26 +3545,27 @@ fn build_one(
                     .map_err(cadmpeg_core::CodecError::from)?
                     .filter_map(ValueExt::reference)
                 {
-                    ctx.push_vec(&mut uses, use_step, "step_brep_edge_loop_uses")?;
+                    ctx.push_scoped_vec(&mut bound_scratch, &mut uses, use_step, "step_brep_edge_loop_uses")?;
                 }
                 if !bound_forward {
-                    uses.reverse();
+                    ctx.reverse(&mut uses, "STEP topology reversal")?;
                 }
                 if uses.is_empty() {
                     note_failure(failure, loop_step, CarrierKind::EdgeLoopMember);
                     return Err(BuildError::Absent);
                 }
                 let mut coedge_ids = vec![];
-                for use_step in uses {
+                for use_step in ctx.admit_iter(uses, "STEP topology collection traversal")? {
+                    let mut pcurve_scratch = ctx.reserve_scoped(0, "STEP edge pcurve scratch")?;
                     let o = require_carrier(
-                        odefs.get(&use_step),
+                        ctx.get_btree_map(odefs, &use_step, "STEP topology odefs lookup")?,
                         failure,
                         use_step,
                         CarrierKind::OrientedEdgeDefinition,
                     )
                     .ok_or(BuildError::Absent)?;
                     let edge = require_carrier(
-                        edefs.get(&o.edge),
+                        ctx.get_btree_map(edefs, &o.edge, "STEP topology edefs lookup")?,
                         failure,
                         o.edge,
                         CarrierKind::EdgeDefinition,
@@ -3742,25 +3582,20 @@ fn build_one(
                         pcurve,
                     } = o.kind
                     {
-                        let candidate = surface_step.and_then(|surface_step| {
-                            let pcurve_step = pcurve?;
-                            let pcurve = exchange.records().get(&pcurve_step)?;
-                            let pcurve_id = PcurveId::from(ids::data(kind!("pcurve"), pcurve_step));
-                            let edge_curve = edge.curve()?;
-                            Some((surface_step, pcurve_step, pcurve, pcurve_id, edge_curve))
-                        });
+                        let candidate = if let Some(((surface_step, pcurve_step), edge_curve)) = surface_step.zip(pcurve).zip(edge.curve()) {
+                            ctx.get_btree_map(exchange.records(), &pcurve_step, "STEP topology record lookup")?
+                                .map(|pcurve| (surface_step, pcurve_step, pcurve, edge_curve))
+                        } else { None };
                         let explicit_pcurve = if let Some((
                             surface_step,
                             pcurve_step,
                             pcurve,
-                            pcurve_id,
                             edge_curve,
                         )) = candidate
                         {
                             let associated =
-                                if let Some(curve_record) = exchange.records().get(&edge_curve) {
-                                    surface_curve_pcurves(ctx, curve_record)?
-                                        .any(|step| step == pcurve_step)
+                                if let Some(curve_record) = ctx.get_btree_map(exchange.records(), &edge_curve, "STEP topology record lookup")? {
+                                    ctx.any_by(surface_curve_pcurves(ctx, curve_record)?, |value| Ok(value.reference() == Some(pcurve_step)), "STEP explicit seam pcurve lookup")?
                                 } else {
                                     false
                                 };
@@ -3768,23 +3603,23 @@ fn build_one(
                                 && entity_parameter(ctx, pcurve, "PCURVE", 1)?
                                     .and_then(ValueExt::reference)
                                     == Some(surface_step)
-                                && decoded_pcurves.contains(&pcurve_step)
+                                && ctx.contains_btree_set(decoded_pcurves, &pcurve_step, "STEP topology decoded_pcurves membership")?
                                 && associated)
-                                .then_some(pcurve_id)
+                                .then(|| PcurveId::from(ids::data(kind!("pcurve"), pcurve_step)))
                         } else {
                             None
                         };
                         if let Some(pcurve) = explicit_pcurve {
-                            ctx.collect_vec([(pcurve, None)], "step_brep_pcurve_candidates")?
+                            { let mut values = Vec::new(); ctx.push_scoped_vec(&mut pcurve_scratch, &mut values, (pcurve, None), "step_brep_pcurve_candidates")?; values }
                         } else {
-                            ctx.push_vec(losses, StepLossCode::SeamEdgePcurveUnresolved.note(format!(
+                            ctx.push_scoped_vec(loss_storage, losses, StepLossCode::SeamEdgePcurveUnresolved.note(ctx.format_retained(format_args!(
                                     "SEAM_EDGE #{use_step} has no decoded pcurve reference that belongs to its edge curve and face surface; the coedge has no pcurve"
-                                )), "step_topology_losses")?;
+                                ), "STEP topology message")?), "step_topology_losses")?;
                             Vec::new()
                         }
                     } else if let (Some(surface), Some(curve)) = (surface_step, edge.curve()) {
                         let associated =
-                            associated_pcurves(curve, surface, exchange, decoded_pcurves, ctx)?;
+                            pcurve_scratch.with_storage(|| associated_pcurves(curve, surface, exchange, decoded_pcurves, ctx))?;
                         if associated.is_empty() {
                             Vec::new()
                         } else {
@@ -3804,8 +3639,7 @@ fn build_one(
                                 ctx,
                             ) {
                                 Ok(selected) => {
-                                    ctx.push_vec(
-                                        &mut admissions,
+                                    ctx.push_scoped_vec(&mut built_storage, &mut admissions,
                                         PcurveAdmission {
                                             curve,
                                             surface,
@@ -3813,10 +3647,9 @@ fn build_one(
                                         },
                                         "step_brep_pcurve_admissions",
                                     )?;
-                                    ctx.collect_vec(
-                                        [(selected.id, selected.parameter_range)],
-                                        "step_brep_pcurve_candidates",
-                                    )?
+                                    let mut values = Vec::new();
+                                    ctx.push_scoped_vec(&mut pcurve_scratch, &mut values, (selected.id, selected.parameter_range), "step_brep_pcurve_candidates")?;
+                                    values
                                 }
                                 Err(PcurveSelectionFailure::ResourceLimit(limit)) => {
                                     return Err(CodecError::ResourceLimit(limit).into());
@@ -3827,21 +3660,21 @@ fn build_one(
                                 Err(failure) => {
                                     let note = match failure {
                                         PcurveSelectionFailure::NotUnique { count } =>
-                                            StepLossCode::PcurveAssociationAmbiguous.note(format!(
+                                            StepLossCode::PcurveAssociationAmbiguous.note(ctx.format_retained(format_args!(
                                                 "curve #{curve} associates {count} pcurves with surface #{surface}; Part 42 provides no non-seam selector, so the coedge has no pcurve"
-                                            )),
+                                            ), "STEP topology message")?),
                                         PcurveSelectionFailure::Carrier =>
-                                            StepLossCode::PcurveCandidatesCarrierUnresolved.note(format!(
+                                            StepLossCode::PcurveCandidatesCarrierUnresolved.note(ctx.format_retained(format_args!(
                                                 "coedge use #{use_step} has one pcurve candidate but its decoded surface, pcurve, or vertex point carrier is unresolved; the coedge has no pcurve"
-                                            )),
+                                            ), "STEP topology message")?),
                                         PcurveSelectionFailure::Endpoint =>
-                                            StepLossCode::PcurveEndpointsDiscontinuous.note(format!(
+                                            StepLossCode::PcurveEndpointsDiscontinuous.note(ctx.format_retained(format_args!(
                                                 "curve #{curve} has one optional pcurve on surface #{surface} whose mapped endpoints are not continuous with the edge vertices; the pcurve is omitted"
-                                            )),
+                                            ), "STEP topology message")?),
                                         PcurveSelectionFailure::Locus =>
-                                            StepLossCode::PcurveLocusDiscontinuous.note(format!(
+                                            StepLossCode::PcurveLocusDiscontinuous.note(ctx.format_retained(format_args!(
                                                 "curve #{curve} has one endpoint-continuous pcurve on surface #{surface} whose bounded model-space locus or direction witness fails; the pcurve is omitted"
-                                            )),
+                                            ), "STEP topology message")?),
                                         PcurveSelectionFailure::ResourceLimit(limit) => {
                                             return Err(CodecError::ResourceLimit(limit).into());
                                         }
@@ -3849,30 +3682,29 @@ fn build_one(
                                             return Err(error.into());
                                         }
                                     };
-                                    ctx.push_vec(losses, note, "step_topology_losses")?;
+                                    ctx.push_scoped_vec(loss_storage, losses, note, "step_topology_losses")?;
                                     Vec::new()
                                 }
                             }
                         }
                     } else {
-                        ctx.push_vec(losses, StepLossCode::EdgeNoSurfaceOrCurveForPcurve.note(format!(
+                        ctx.push_scoped_vec(loss_storage, losses, StepLossCode::EdgeNoSurfaceOrCurveForPcurve.note(ctx.format_retained(format_args!(
                             "edge #{} has no decoded surface or curve carrier, so its coedge has no pcurve",
                             o.edge
-                        )), "step_topology_losses")?;
+                        ), "STEP topology message")?), "step_topology_losses")?;
                         Vec::new()
                     };
                     let mut pcurve_uses = Vec::new();
-                    for (pcurve, parameter_range) in pcurves {
+                    for (pcurve, parameter_range) in ctx.admit_iter(pcurves, "STEP topology collection traversal")? {
                         let parameter_range = match parameter_range
                             .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
                             .transpose()
                         {
                             Ok(range) => range,
                             Err(error) => {
-                                ctx.push_vec(
-                                    losses,
+                                ctx.push_scoped_vec(loss_storage, losses,
                                     StepLossCode::DecodeWarning
-                                        .note(format!("coedge pcurve parameter_range: {error}")),
+                                        .note(ctx.format_retained(format_args!("coedge pcurve parameter_range: {error}"), "STEP topology message")?),
                                     "step_topology_losses",
                                 )?;
                                 return Err(BuildError::Absent);
@@ -3893,8 +3725,7 @@ fn build_one(
                         cid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                         "step_brep_coedge_ids",
                     )?;
-                    ctx.push_vec(
-                        &mut coedges,
+                    ctx.push_scoped_vec(&mut scratch, &mut coedges,
                         Coedge {
                             id: cid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                             owner_loop: lid
@@ -3911,30 +3742,31 @@ fn build_one(
                         },
                         "step_brep_coedges",
                     )?;
-                    ctx.push_btree_group(
+                    scratch.with_storage(|| ctx.push_btree_group(
                         &mut radial,
                         scoped_edge_id(o.edge, id, shell_step, scope_edges, scope_root),
                         coedges.len() - 1,
                         "step_brep_radial_groups",
                         "step_brep_radial_members",
-                    )?;
-                    ctx.insert_btree_set(
+                    ))?;
+                    scratch.with_storage(|| ctx.insert_btree_set(
                         &mut used_e,
                         (shell_step, o.edge),
                         "step_brep_used_edges",
-                    )?;
+                    ))?;
+                    shell_scratch.with_storage(|| ctx.insert_btree_set(&mut shell_edges, o.edge, "STEP shell edge membership"))?;
                     for vertex in [edge.vertices().0, edge.vertices().1] {
-                        ctx.insert_btree_set(
+                        scratch.with_storage(|| ctx.insert_btree_set(
                             &mut used_v,
                             (shell_step, vertex),
                             "step_brep_used_vertices",
-                        )?;
+                        ))?;
                     }
                     for claim in [use_step, o.edge] {
-                        ctx.insert_btree_set(&mut typed, claim, "step_brep_typed")?;
+                        built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, claim, "step_brep_typed"))?;
                     }
                     if let Some(parent) = edge.parent() {
-                        ctx.insert_btree_set(&mut typed, parent, "step_brep_typed")?;
+                        built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, parent, "step_brep_typed"))?;
                     }
                 }
                 let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
@@ -3943,8 +3775,7 @@ fn build_one(
                     note_failure(failure, loop_step, CarrierKind::EdgeLoopCarrier);
                     return Err(BuildError::Absent);
                 };
-                ctx.push_vec(
-                    &mut loops,
+                ctx.push_scoped_vec(&mut scratch, &mut loops,
                     Loop {
                         id: lid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                         face: fid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
@@ -3952,9 +3783,9 @@ fn build_one(
                     },
                     "step_brep_loops",
                 )?;
-                ctx.push_vec(&mut loop_ids, (is_outer_bound, lid), "step_brep_loop_ids")?;
+                ctx.push_scoped_vec(&mut face_scratch, &mut loop_ids, (is_outer_bound, lid), "step_brep_loop_ids")?;
                 for claim in [bound_step, loop_step] {
-                    ctx.insert_btree_set(&mut typed, claim, "step_brep_typed")?;
+                    built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, claim, "step_brep_typed"))?;
                 }
             }
             // A face with more than one FACE_OUTER_BOUND is refused above, so
@@ -3962,7 +3793,7 @@ fn build_one(
             // outer bound states no classification.
             let mut outer = None;
             let mut inner = Vec::new();
-            for (is_outer, id) in loop_ids {
+            for (is_outer, id) in ctx.admit_iter(loop_ids, "STEP topology collection traversal")? {
                 if is_outer {
                     if outer.is_none() {
                         outer = Some(id);
@@ -3976,8 +3807,7 @@ fn build_one(
                 None => cadmpeg_ir::topology::FaceLoops::unspecified(inner),
             };
             let face_forward = face_same_sense == shell_forward;
-            ctx.push_vec(
-                &mut faces,
+            ctx.push_scoped_vec(&mut scratch, &mut faces,
                 Face {
                     id: fid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                     shell: sid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
@@ -3994,64 +3824,32 @@ fn build_one(
                 },
                 "step_brep_faces",
             )?;
-            ctx.push_vec(&mut face_ids, fid, "step_brep_face_ids")?;
-            ctx.insert_btree_set(&mut typed, face_step, "step_brep_typed")?;
+            shell_scratch.with_storage(|| ctx.push_vec(&mut face_ids, fid, "step_brep_face_ids"))?;
+            built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, face_step, "step_brep_typed"))?;
         }
-        let mut component_edge_text_storage =
-            ctx.reserve_scoped(0, "STEP component edge identity")?;
         let mut component_edge_vertices = BTreeMap::new();
-        for (used_shell, edge_id) in ctx
-            .admit_iter(&used_e, "STEP body topology traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
-            if *used_shell != shell_step {
-                continue;
-            }
-            let Some(edge) = edefs.get(edge_id) else {
-                continue;
-            };
+        for &edge_id in ctx.admit_iter(&shell_edges, "STEP shell edge traversal")? {
+            let Some(edge) = ctx.get_btree_map(edefs, &edge_id, "STEP topology edefs lookup")? else { continue; };
             let (start, end) = edge.curve_vertices();
-            ctx.insert_btree_map(
-                &mut component_edge_vertices,
-                scoped_edge_id(*edge_id, id, shell_step, scope_edges, scope_root).into_string(),
-                (
-                    scoped_vertex_id(start, id, shell_step, scope_edges, scope_root).into_string(),
-                    scoped_vertex_id(end, id, shell_step, scope_edges, scope_root).into_string(),
-                ),
-                "step_brep_component_edges",
-            )?;
+            shell_scratch.with_storage(|| ctx.insert_btree_map(&mut component_edge_vertices,
+                scoped_edge_id(edge_id, id, shell_step, scope_edges, scope_root).into_string(),
+                (scoped_vertex_id(start, id, shell_step, scope_edges, scope_root).into_string(), scoped_vertex_id(end, id, shell_step, scope_edges, scope_root).into_string()), "step_brep_component_edges"))?;
         }
-        for ((used_shell, edge_id), (start, end)) in ctx
-            .admit_iter(&poly_edges, "STEP body topology traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
-            if *used_shell != shell_step {
-                continue;
-            }
-            ctx.insert_btree_map(
-                &mut component_edge_vertices,
-                component_edge_text_storage.with_storage(|| {
-                    ctx.copy_retained_text(edge_id.as_str(), "STEP component edge identity")
-                })?,
-                (
-                    scoped_poly_vertex_id(*start, id, shell_step, scope_edges, scope_root)
-                        .into_string(),
-                    scoped_poly_vertex_id(*end, id, shell_step, scope_edges, scope_root)
-                        .into_string(),
-                ),
-                "step_brep_component_edges",
-            )?;
+        for (start, end) in ctx.admit_iter(shell_poly_edges, "STEP shell poly edge traversal")? {
+            shell_scratch.with_storage(|| ctx.insert_btree_map(&mut component_edge_vertices,
+                poly_edge_id(start, end, id, shell_step, scope_edges, scope_root).into_string(),
+                (scoped_poly_vertex_id(start, id, shell_step, scope_edges, scope_root).into_string(), scoped_poly_vertex_id(end, id, shell_step, scope_edges, scope_root).into_string()), "step_brep_component_edges"))?;
         }
         let components =
-            connected_face_components(&face_ids, &loops, &coedges, &component_edge_vertices, ctx)?;
+            shell_scratch.with_storage(|| connected_face_components(&face_ids, &loops[loop_start..], &coedges[coedge_start..], &component_edge_vertices, ctx))?;
         if components.len() > 1 {
             let note = StepLossCode::ShellDisconnectedFaces.note(ctx.format_retained(format_args!(
                     "source {shell_type} #{shell_step} contains {} disconnected face components across {} faces",
                     components.len(),
                     face_ids.len(),
                 ), "STEP disconnected shell message")?);
-            ctx.push_vec(
-                losses,
+            ctx.push_scoped_vec(
+                loss_storage, losses,
                 note.with_provenance(
                     cadmpeg_ir::SourceProvenance::root(
                         crate::dialect::FORMAT,
@@ -4062,7 +3860,7 @@ fn build_one(
                 "step_topology_losses",
             )?;
         }
-        for (component_index, component) in components.into_iter().enumerate() {
+        for (component_index, component) in ctx.admit_iter(components, "STEP shell component traversal")?.enumerate() {
             if root.partial(ctx, "BREP_WITH_VOIDS")?.is_some()
                 && shell_steps.first().copied() == Some(shell_reference)
                 && component_index > 0
@@ -4089,19 +3887,14 @@ fn build_one(
                 ))
             };
             let mut component_faces = Vec::new();
-            for face_index in component {
+            for face_index in ctx.admit_iter(component, "STEP topology collection traversal")? {
                 let face_id =
                     face_ids[face_index].try_clone_for_decode(ctx, "step_brep_component_faces")?;
                 faces[face_index].shell =
                     component_shell.try_clone_for_decode(ctx, "step_topology_identity_copy")?;
                 ctx.push_vec(&mut component_faces, face_id, "step_brep_component_faces")?;
             }
-            ctx.charge_collection_items(
-                u64_from_index(component_faces.len()),
-                "step_brep_shell_validation",
-            )?;
-            ctx.push_vec(
-                &mut shells,
+            ctx.push_scoped_vec(&mut scratch, &mut shells,
                 match Shell::new(
                     component_shell.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                     rid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
@@ -4111,8 +3904,7 @@ fn build_one(
                 ) {
                     Ok(shell) => shell,
                     Err(error) => {
-                        ctx.push_vec(
-                            losses,
+                        ctx.push_scoped_vec(loss_storage, losses,
                             StepLossCode::DecodeWarning.note(ctx.format_retained(
                                 format_args!("{shell_type} #{shell_step}: {error}"),
                                 "STEP shell failure message",
@@ -4130,23 +3922,22 @@ fn build_one(
                 "step_brep_region_shells",
             )?;
         }
-        ctx.insert_btree_set(&mut typed, shell_step, "step_brep_typed")?;
+        built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, shell_step, "step_brep_typed"))?;
     }
-    for (shell_step, edge_id) in used_e {
+    for (shell_step, edge_id) in ctx.admit_iter(used_e, "STEP topology collection traversal")? {
         let e = require_carrier(
-            edefs.get(&edge_id),
+            ctx.get_btree_map(edefs, &edge_id, "STEP topology edefs lookup")?,
             failure,
             edge_id,
             CarrierKind::EdgeDefinition,
         )
         .ok_or(BuildError::Absent)?;
         let (start, end) = e.curve_vertices();
-        ctx.push_vec(
-            &mut edges,
+        ctx.push_scoped_vec(&mut scratch, &mut edges,
             Edge {
                 id: scoped_edge_id(edge_id, id, shell_step, scope_edges, scope_root),
                 carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
-                    edge_id, e, exchange, losses, ctx,
+                    edge_id, e, exchange, (&mut *losses, &mut *loss_storage), ctx,
                 )?),
                 start: scoped_vertex_id(start, id, shell_step, scope_edges, scope_root),
                 end: scoped_vertex_id(end, id, shell_step, scope_edges, scope_root),
@@ -4155,9 +3946,8 @@ fn build_one(
             "step_brep_edges",
         )?;
     }
-    for ((shell_step, edge_identity), (start, end)) in poly_edges {
-        ctx.push_vec(
-            &mut edges,
+    for ((shell_step, edge_identity), (start, end)) in ctx.admit_iter(poly_edges, "STEP topology collection traversal")? {
+        ctx.push_scoped_vec(&mut scratch, &mut edges,
             Edge {
                 id: edge_identity,
                 carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
@@ -4168,23 +3958,22 @@ fn build_one(
             "step_brep_edges",
         )?;
     }
-    for (shell_step, vertex_id) in used_v {
+    for (shell_step, vertex_id) in ctx.admit_iter(used_v, "STEP topology collection traversal")? {
         let v = require_carrier(
-            vdefs.get(&vertex_id),
+            ctx.get_btree_map(vdefs, &vertex_id, "STEP topology vdefs lookup")?,
             failure,
             vertex_id,
             CarrierKind::VertexDefinition,
         )
         .ok_or(BuildError::Absent)?;
         require_carrier(
-            point_positions.get(v.point),
+            point_positions.get(v.point).copied(),
             failure,
             v.point,
             CarrierKind::VertexPoint,
         )
         .ok_or(BuildError::Absent)?;
-        ctx.push_vec(
-            &mut vertices,
+        ctx.push_scoped_vec(&mut scratch, &mut vertices,
             Vertex {
                 id: scoped_vertex_id(vertex_id, id, shell_step, scope_edges, scope_root),
                 point: PointId::from(ids::data(kind!("point"), v.point)),
@@ -4192,18 +3981,17 @@ fn build_one(
             },
             "step_brep_vertices",
         )?;
-        ctx.insert_btree_set(&mut typed, vertex_id, "step_brep_typed")?;
+        built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, vertex_id, "step_brep_typed"))?;
     }
-    for (shell_step, point_id) in poly_points {
+    for (shell_step, point_id) in ctx.admit_iter(poly_points, "STEP topology collection traversal")? {
         require_carrier(
-            point_positions.get(point_id),
+            point_positions.get(point_id).copied(),
             failure,
             point_id,
             CarrierKind::PolyVertexPoint,
         )
         .ok_or(BuildError::Absent)?;
-        ctx.push_vec(
-            &mut vertices,
+        ctx.push_scoped_vec(&mut scratch, &mut vertices,
             Vertex {
                 id: scoped_poly_vertex_id(point_id, id, shell_step, scope_edges, scope_root),
                 point: PointId::from(ids::data(kind!("point"), point_id)),
@@ -4211,7 +3999,7 @@ fn build_one(
             },
             "step_brep_vertices",
         )?;
-        ctx.insert_btree_set(&mut typed, point_id, "step_brep_typed")?;
+        built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, point_id, "step_brep_typed"))?;
     }
     for indices in ctx
         .admit_iter(&radial, "STEP body topology radial traversal")
@@ -4233,19 +4021,19 @@ fn build_one(
         .admit_iter(&edges, "STEP body topology traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
-        ctx.insert_btree_map(&mut edge_by_id, &edge.id, edge, "step_brep_edge_index")?;
+        scratch.with_storage(|| ctx.insert_btree_map(&mut edge_by_id, &edge.id, edge, "step_brep_edge_index"))?;
     }
     let mut coedge_by_id = BTreeMap::<&CoedgeId, &Coedge>::new();
     for coedge in ctx
         .admit_iter(&coedges, "STEP body topology traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
-        ctx.insert_btree_map(
+        scratch.with_storage(|| ctx.insert_btree_map(
             &mut coedge_by_id,
             &coedge.id,
             coedge,
             "step_brep_coedge_index",
-        )?;
+        ))?;
     }
     for loop_ in ctx
         .admit_iter(&loops, "STEP body topology traversal")
@@ -4262,28 +4050,28 @@ fn build_one(
         {
             let next_id = &loop_.coedges()[(index + 1) % loop_.coedges().len()];
             let current = require_carrier(
-                coedge_by_id.get(current_id),
+                ctx.get_btree_map(&coedge_by_id, current_id, "STEP topology coedge_by_id lookup")?,
                 failure,
                 loop_source,
                 CarrierKind::Coedge,
             )
             .ok_or(BuildError::Absent)?;
             let next = require_carrier(
-                coedge_by_id.get(next_id),
+                ctx.get_btree_map(&coedge_by_id, next_id, "STEP topology coedge_by_id lookup")?,
                 failure,
                 loop_source,
                 CarrierKind::Coedge,
             )
             .ok_or(BuildError::Absent)?;
             let current_edge = require_carrier(
-                edge_by_id.get(&current.edge),
+                ctx.get_btree_map(&edge_by_id, &current.edge, "STEP topology edge_by_id lookup")?,
                 failure,
                 loop_source,
                 CarrierKind::CoedgeEdge,
             )
             .ok_or(BuildError::Absent)?;
             let next_edge = require_carrier(
-                edge_by_id.get(&next.edge),
+                ctx.get_btree_map(&edge_by_id, &next.edge, "STEP topology edge_by_id lookup")?,
                 failure,
                 loop_source,
                 CarrierKind::CoedgeEdge,
@@ -4316,6 +4104,7 @@ fn build_one(
             region,
             body,
         },
+        built_storage,
         ctx,
     ) {
         Ok(built) => built,
@@ -4334,8 +4123,7 @@ fn build_one(
             shell_reference
         } else {
             require_carrier(
-                shell_definitions
-                    .get(&shell_reference)
+                ctx.get_btree_map(shell_definitions, &shell_reference, "STEP topology shell_definitions lookup")?
                     .map(|definition| (definition.base, definition.forward)),
                 failure,
                 shell_reference,
@@ -4344,11 +4132,11 @@ fn build_one(
             .ok_or(BuildError::Absent)?
             .0
         };
-        ctx.insert_btree_set(
+        built._storage.with_storage(|| ctx.insert_btree_set(
             &mut built.shell_sources,
             shell_step,
             "step_brep_shell_sources",
-        )?;
+        ))?;
     }
     Ok(built)
 }
@@ -4367,48 +4155,49 @@ fn connected_face_components(
     edge_vertices: &BTreeMap<String, (String, String)>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<Vec<usize>>, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "STEP connected face scratch")?;
     let mut neighbors =
-        ctx.collect_indexed_vec(face_ids.len(), "STEP connected-face neighbors", |_| {
+        scratch.with_storage(|| ctx.collect_indexed_vec(face_ids.len(), "STEP connected-face neighbors", |_| {
             Ok(BTreeSet::new())
-        })?;
+        }))?;
     let mut face_indices = BTreeMap::new();
     for (index, face) in ctx
         .admit_iter(&face_ids[..], "STEP connected face components traversal")?
         .enumerate()
     {
-        ctx.insert_btree_map(
+        scratch.with_storage(|| ctx.insert_btree_map(
             &mut face_indices,
             face.as_str(),
             index,
             "STEP connected-face indices",
-        )?;
+        ))?;
     }
     let mut coedge_edges = BTreeMap::new();
     for coedge in ctx.admit_iter(coedges, "STEP connected face components traversal")? {
-        ctx.insert_btree_map(
+        scratch.with_storage(|| ctx.insert_btree_map(
             &mut coedge_edges,
             coedge.id.as_str(),
             coedge.edge.as_str(),
             "STEP connected-face coedge edges",
-        )?;
+        ))?;
     }
     let mut faces_by_edge = BTreeMap::<&str, BTreeSet<usize>>::new();
     let mut faces_by_vertex = BTreeMap::<&str, BTreeSet<usize>>::new();
     for loop_ in ctx.admit_iter(loops, "STEP connected face components traversal")? {
-        let Some(&face_index) = face_indices.get(loop_.face.as_str()) else {
+        let Some(&face_index) = ctx.get_btree_map(&face_indices, loop_.face.as_str(), "STEP topology face_indices lookup")? else {
             continue;
         };
         for coedge_id in ctx.admit_iter(
             loop_.coedges(),
             "STEP connected face components view traversal",
         )? {
-            let Some(edge_id) = coedge_edges.get(coedge_id.as_str()) else {
+            let Some(edge_id) = ctx.get_btree_map(&coedge_edges, coedge_id.as_str(), "STEP topology coedge_edges lookup")? else {
                 continue;
             };
-            insert_connected_face_group(&mut faces_by_edge, edge_id, face_index, ctx)?;
-            if let Some((start, end)) = edge_vertices.get(*edge_id) {
-                insert_connected_face_group(&mut faces_by_vertex, start, face_index, ctx)?;
-                insert_connected_face_group(&mut faces_by_vertex, end, face_index, ctx)?;
+            scratch.with_storage(|| insert_connected_face_group(&mut faces_by_edge, edge_id, face_index, ctx))?;
+            if let Some((start, end)) = ctx.get_btree_map(edge_vertices, *edge_id, "STEP topology edge_vertices lookup")? {
+                scratch.with_storage(|| insert_connected_face_group(&mut faces_by_vertex, start, face_index, ctx))?;
+                scratch.with_storage(|| insert_connected_face_group(&mut faces_by_vertex, end, face_index, ctx))?;
             }
         }
         for vertex in loop_
@@ -4423,7 +4212,7 @@ fn connected_face_components(
                 .map(|use_| &use_.vertex),
             )
         {
-            insert_connected_face_group(&mut faces_by_vertex, vertex.as_str(), face_index, ctx)?;
+            scratch.with_storage(|| insert_connected_face_group(&mut faces_by_vertex, vertex.as_str(), face_index, ctx))?;
         }
     }
 
@@ -4441,32 +4230,35 @@ fn connected_face_components(
             .map(|(_, value)| value),
         )
     {
-        for &face in group {
-            for &other in group {
-                if other != face {
-                    ctx.insert_btree_set(&mut neighbors[face], other, "STEP connected-face links")?;
-                }
-            }
+        let mut first = None;
+        for &face in ctx.admit_iter(group, "STEP connected-face group traversal")? {
+            if let Some(first) = first {
+                scratch.with_storage(|| ctx.insert_btree_set(&mut neighbors[first], face, "STEP connected-face links"))?;
+                scratch.with_storage(|| ctx.insert_btree_set(&mut neighbors[face], first, "STEP connected-face links"))?;
+            } else { first = Some(face); }
         }
     }
-    let mut reached = ctx.alloc_filled(face_ids.len(), false, "STEP connected-face reached")?;
+    let mut reached = scratch.with_storage(|| ctx.alloc_filled(face_ids.len(), false, "STEP connected-face reached"))?;
     let mut components = Vec::new();
-    for start in 0..face_ids.len() {
+    for start in ctx.admit_iter(0..face_ids.len(), "STEP connected-face starts")? {
         if reached[start] {
             continue;
         }
         reached[start] = true;
         let mut component = Vec::new();
         let mut pending = Vec::new();
-        ctx.push_vec(&mut pending, start, "STEP connected-face pending")?;
-        while let Some(face) = pending.pop() {
+        let mut pending_storage = ctx.reserve_scoped(0, "STEP connected-face pending")?;
+        ctx.push_scoped_vec(&mut pending_storage, &mut pending, start, "STEP connected-face pending")?;
+        while !pending.is_empty() {
+            ctx.charge_work(1, "STEP connected-face pending traversal")?;
+            let Some(face) = pending.pop() else { break; };
             ctx.push_vec(&mut component, face, "STEP connected-face component")?;
             for &neighbor in
                 ctx.admit_iter(&neighbors[face], "STEP connected face components traversal")?
             {
                 if !reached[neighbor] {
                     reached[neighbor] = true;
-                    ctx.push_vec(&mut pending, neighbor, "STEP connected-face pending")?;
+                    ctx.push_scoped_vec(&mut pending_storage, &mut pending, neighbor, "STEP connected-face pending")?;
                 }
             }
         }
@@ -4487,8 +4279,7 @@ fn insert_connected_face_group<'a>(
     face: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    ctx.admit_btree_entry(groups, &key, "STEP connected-face groups")?;
-    let group = groups.entry(key).or_default();
+    let group = ctx.entry_btree_map(groups, key, "STEP connected-face groups")?.or_default();
     ctx.insert_btree_set(group, face, "STEP connected-face group faces")?;
     Ok(())
 }
@@ -4650,7 +4441,7 @@ fn implicit_face_points(
 ) -> Result<Option<Vec<Vec<Point3>>>, CodecError> {
     let mut loops = Vec::new();
     for &bound_step in ctx.admit_iter(bounds, "STEP implicit face points traversal")? {
-        let Some(bound) = exchange.records().get(&bound_step) else {
+        let Some(bound) = ctx.get_btree_map(exchange.records(), &bound_step, "STEP topology record lookup")? else {
             return Ok(None);
         };
         let Some(bound_type) = face_bound_attribute_type(ctx, bound)? else {
@@ -4659,7 +4450,7 @@ fn implicit_face_points(
         let Some(loop_step) = named_reference(ctx, bound, bound_type, 1, 0)? else {
             return Ok(None);
         };
-        let Some(loop_record) = exchange.records().get(&loop_step) else {
+        let Some(loop_record) = ctx.get_btree_map(exchange.records(), &loop_step, "STEP topology record lookup")? else {
             return Ok(None);
         };
         if loop_record.partial(ctx, "POLY_LOOP")?.is_none() {
@@ -4672,27 +4463,27 @@ fn implicit_face_points(
             return Ok(None);
         };
         let mut point_steps = Vec::new();
-        for point in point_values.iter().filter_map(ValueExt::reference) {
-            ctx.push_vec(&mut point_steps, point, "step_implicit_face_point_steps")?;
+        let mut scratch = ctx.reserve_scoped(0, "STEP implicit face point scratch")?;
+        for point in ctx.admit_iter(point_values, "STEP topology reference traversal")?.filter_map(ValueExt::reference) {
+            ctx.push_scoped_vec(&mut scratch, &mut point_steps, point, "step_implicit_face_point_steps")?;
         }
         if point_steps.first() == point_steps.last() {
             point_steps.pop();
         }
-        point_steps.dedup();
+        ctx.dedup_vec(&mut point_steps, "STEP topology point deduplication")?;
         let mut distinct = BTreeSet::new();
         for &point in ctx.admit_iter(&point_steps[..], "STEP implicit face points traversal")? {
-            ctx.insert_btree_set(&mut distinct, point, "step_implicit_face_distinct_points")?;
+            scratch.with_storage(|| ctx.insert_btree_set(&mut distinct, point, "step_implicit_face_distinct_points"))?;
         }
         if point_steps.len() < 3 || distinct.len() != point_steps.len() {
             return Ok(None);
         }
         if !bound_forward {
-            point_steps.reverse();
+            ctx.reverse(&mut point_steps, "STEP topology reversal")?;
         }
         let mut points = Vec::new();
-        for point_step in point_steps {
-            let point_step = vdefs
-                .get(&point_step)
+        for point_step in ctx.admit_iter(point_steps, "STEP topology collection traversal")? {
+            let point_step = ctx.get_btree_map(vdefs, &point_step, "STEP topology vdefs lookup")?
                 .map_or(point_step, |vertex| vertex.point);
             let Some(point) = point_positions.get(point_step).copied() else {
                 return Ok(None);
@@ -4723,7 +4514,9 @@ fn implicit_face_plane(
     point_positions: &CarrierIndex,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<SurfaceGeometry>, CodecError> {
-    let Some(loops) = implicit_face_points(bounds, exchange, vdefs, point_positions, ctx)? else {
+    let mut scratch = ctx.reserve_scoped(0, "STEP implicit plane scratch")?;
+    let (loops, _loop_storage) = ctx.with_scoped_storage("STEP implicit point loops", || implicit_face_points(bounds, exchange, vdefs, point_positions, ctx))?;
+    let Some(loops) = loops else {
         return Ok(None);
     };
     let mut points = Vec::new();
@@ -4737,7 +4530,7 @@ fn implicit_face_plane(
             )?
             .copied()
         {
-            ctx.push_vec(&mut points, point, "step_implicit_face_plane_points")?;
+            ctx.push_scoped_vec(&mut scratch, &mut points, point, "step_implicit_face_plane_points")?;
         }
     }
     ctx.stable_sort_by_key(
@@ -4777,7 +4570,7 @@ fn implicit_face_plane(
         return Ok(None);
     }
     let mut loop_normals = Vec::new();
-    for loop_points in &loops {
+    for loop_points in ctx.admit_iter(&loops, "STEP implicit face normal traversal")? {
         let Some(loop_count) = cadmpeg_core::convert::f64_from_index(loop_points.len()) else {
             return Ok(None);
         };
@@ -4799,11 +4592,7 @@ fn implicit_face_plane(
         for (current, next) in ctx
             .admit_iter(&loop_points[..], "STEP implicit face plane traversal")?
             .zip(
-                ctx.admit_iter(
-                    &(loop_points)[..],
-                    "STEP implicit face plane next-point traversal",
-                )?
-                .skip(1)
+                loop_points.iter().skip(1)
                 .chain(loop_points.first()),
             )
             .take(loop_points.len())
@@ -4820,8 +4609,7 @@ fn implicit_face_plane(
         let Some(normal) = UnitVector3::normalized(area_normal) else {
             return Ok(None);
         };
-        ctx.push_vec(
-            &mut loop_normals,
+        ctx.push_scoped_vec(&mut scratch, &mut loop_normals,
             (normal, area),
             "step_implicit_face_loop_normals",
         )?;
@@ -4844,11 +4632,8 @@ fn implicit_face_plane(
             largest_area = area;
         }
     }
-    for (candidate, _) in ctx.admit_iter(&loop_normals[..], "STEP implicit face plane traversal")? {
-        if candidate.as_raw().dot(*normal.as_raw()) < 1.0 - IMPLICIT_FACE_NORMAL_ALIGNMENT_TOLERANCE
-        {
-            return Ok(None);
-        }
+    if ctx.any_by(&loop_normals, |(candidate, _)| Ok(candidate.as_raw().dot(*normal.as_raw()) < 1.0 - IMPLICIT_FACE_NORMAL_ALIGNMENT_TOLERANCE), "STEP implicit face normal disagreement")? {
+        return Ok(None);
     }
     let planarity_tolerance =
         COINCIDENCE_TOLERANCE.max(IMPLICIT_FACE_PLANAR_RELATIVE_TOLERANCE * scale);
@@ -4896,7 +4681,7 @@ fn associated_pcurves(
     decoded_pcurves: &BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<PcurveId>, CodecError> {
-    let Some(curve) = exchange.records().get(&curve_step) else {
+    let Some(curve) = ctx.get_btree_map(exchange.records(), &curve_step, "STEP topology record lookup")? else {
         return Ok(Vec::new());
     };
     if !ctx.any_by(
@@ -4912,14 +4697,14 @@ fn associated_pcurves(
         return Ok(Vec::new());
     }
     let mut associated = Vec::new();
-    for pcurve_step in surface_curve_pcurves(ctx, curve)? {
-        let Some(pcurve) = exchange.records().get(&pcurve_step) else {
+    for pcurve_step in ctx.admit_iter(surface_curve_pcurves(ctx, curve)?, "STEP surface curve pcurve reference traversal")?.filter_map(Value::reference) {
+        let Some(pcurve) = ctx.get_btree_map(exchange.records(), &pcurve_step, "STEP topology record lookup")? else {
             continue;
         };
         if pcurve.partial(ctx, "PCURVE")?.is_some()
             && entity_parameter(ctx, pcurve, "PCURVE", 1)?.and_then(Value::reference)
                 == Some(surface_step)
-            && decoded_pcurves.contains(&pcurve_step)
+            && ctx.contains_btree_set(decoded_pcurves, &pcurve_step, "STEP topology decoded_pcurves membership")?
         {
             let pcurve_id = PcurveId::from(ids::data(kind!("pcurve"), pcurve_step));
             ctx.push_vec(&mut associated, pcurve_id, "step_associated_pcurves")?;
@@ -4960,7 +4745,7 @@ impl From<CodecError> for PcurveSelectionFailure {
     }
 }
 
-const PCURVE_ENDPOINT_GRID_DIVISIONS: usize = 64;
+const PCURVE_ENDPOINT_GRID_DIVISIONS: u32 = 64;
 
 #[derive(Clone, Copy)]
 struct PcurveEndpointFit {
@@ -4988,7 +4773,6 @@ struct PcurveSelectionIndex<'ctx, 'ir> {
 
 impl<'ctx, 'ir> PcurveSelectionIndex<'ctx, 'ir> {
     fn build(ir: &'ir CadIr, ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
-        use std::collections::btree_map::Entry;
         let mut owners_storage = ctx.reserve_scoped(0, "step_pcurve_surface_owners")?;
         let mut owners = BTreeMap::<&str, Option<&SurfaceId>>::new();
         for surface in ctx.admit_iter(&ir.model.surfaces, "STEP pcurve surface owners traversal")? {
@@ -5060,13 +4844,11 @@ fn select_associated_pcurve(
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let geometry = &pcurve.geometry;
     let bound = COINCIDENCE_TOLERANCE.max(index.ir().tolerances.linear.get());
-    let start = vdefs
-        .get(&edge.vertices().0)
+    let start = ctx.get_btree_map(vdefs, &edge.vertices().0, "STEP topology vdefs lookup")?
         .and_then(|vertex| point_positions.get(vertex.point))
         .copied()
         .ok_or(PcurveSelectionFailure::Carrier)?;
-    let end = vdefs
-        .get(&edge.vertices().1)
+    let end = ctx.get_btree_map(vdefs, &edge.vertices().1, "STEP topology vdefs lookup")?
         .and_then(|vertex| point_positions.get(vertex.point))
         .copied()
         .ok_or(PcurveSelectionFailure::Carrier)?;
@@ -5104,7 +4886,7 @@ fn select_associated_pcurve(
     )? {
         return Err(PcurveSelectionFailure::Locus);
     }
-    let parameter_range = if let Some(range) = pcurve_declared_parameter_range(geometry) {
+    let parameter_range = if let Some(range) = pcurve_declared_parameter_range(geometry, ctx)? {
         let declared = pcurve_declared_endpoint_fit_directed(
             ctx,
             &index,
@@ -5126,7 +4908,7 @@ fn select_associated_pcurve(
     })
 }
 
-const PCURVE_LOCUS_SAMPLE_COUNT: usize = 23;
+const PCURVE_LOCUS_SAMPLE_COUNT: u32 = 23;
 
 #[derive(Clone, Copy)]
 struct PcurveWitness {
@@ -5145,6 +4927,7 @@ fn pcurve_locus_witness(
     witness: PcurveWitness,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, PcurveSelectionFailure> {
+    let mut fraction_storage = ctx.reserve_scoped(0, "STEP locus fraction scratch")?;
     let PcurveWitness {
         endpoint,
         curve_start,
@@ -5192,35 +4975,32 @@ fn pcurve_locus_witness(
     };
     let mut fractions = Vec::new();
     for step in 0..PCURVE_LOCUS_SAMPLE_COUNT {
-        ctx.push_vec(
-            &mut fractions,
-            cadmpeg_core::convert::f64_from_index(step)
-                .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_locus_fractions", 0, 1))?
-                / cadmpeg_core::convert::f64_from_index(PCURVE_LOCUS_SAMPLE_COUNT - 1)
-                    .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_locus_fractions", 0, 1))?,
+        ctx.push_scoped_vec(&mut fraction_storage, &mut fractions,
+            f64::from(step) / f64::from(PCURVE_LOCUS_SAMPLE_COUNT - 1),
             "step_pcurve_locus_fractions",
         )?;
     }
     let mut break_fractions = Vec::new();
-    pcurve_parameter_break_fractions(
+    let mut break_storage = ctx.reserve_scoped(0, "STEP locus break scratch")?;
+    break_storage.with_storage(|| pcurve_parameter_break_fractions(
         geometry,
         [endpoint.start_parameter, endpoint.end_parameter],
         &mut break_fractions,
         ctx,
-    )?;
-    ctx.append_vec(
+    ))?;
+    fraction_storage.with_storage(|| ctx.append_vec(
         &mut fractions,
         &mut break_fractions,
         "step_pcurve_locus_fractions",
-    )?;
+    ))?;
     ctx.stable_sort_by(
         &mut fractions,
         |value| value,
         f64::total_cmp,
         "step_pcurve_locus_fractions_sort",
     )?;
-    fractions.dedup_by(|left, right| *left == *right);
-    for fraction in fractions {
+    ctx.dedup_by(&mut fractions, |left, right| Ok(*left == *right), "STEP pcurve fraction deduplication")?;
+    ctx.all_by(fractions, |fraction| {
         let pcurve_parameter = endpoint
             .start_parameter
             .mul_add(1.0 - fraction, endpoint.end_parameter * fraction);
@@ -5264,22 +5044,20 @@ fn pcurve_locus_witness(
         {
             return Ok(false);
         }
-    }
-    Ok(true)
+        Ok(true)
+    }, "STEP pcurve locus fraction traversal").map_err(PcurveSelectionFailure::from)
 }
 
-fn curve_parameter_near_point(
+fn curve_parameter_near_point<const N: usize>(
     ctx: &DecodeContext<'_>,
     index: &PcurveSelectionIndex<'_, '_>,
     curve_id: &CurveId,
     point: Point3,
-    seeds: &[f64],
+    seeds: &[f64; N],
     tolerance: f64,
 ) -> Result<Option<f64>, CodecError> {
     let mut best: Option<(f64, f64)> = None;
-    for &seed in ctx
-        .admit_iter(&seeds[..], "STEP curve parameter near point traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+    for &seed in seeds.iter()
         .filter(|seed| seed.is_finite())
     {
         let Some(parameter) = model_curve_parameter_near_point_in_index_with_tolerance(
@@ -5305,7 +5083,7 @@ fn pcurve_endpoint_fit(
     end: Point3,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PcurveEndpointFit>, PcurveSelectionFailure> {
-    if let Some(parameter_range) = pcurve_declared_parameter_range(geometry) {
+    if let Some(parameter_range) = pcurve_declared_parameter_range(geometry, ctx)? {
         let Some(declared_score) = pcurve_declared_endpoint_fit_directed(
             ctx,
             index,
@@ -5328,7 +5106,7 @@ fn pcurve_endpoint_fit(
         // A few producers retain a stale trim around an edge-local pcurve.
         // Search for an alternative interval, then use the evaluated residual
         // as the witness. The search does not establish a global minimum.
-        let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface, ctx)?;
+        let (seeds, _seed_storage) = ctx.with_scoped_storage("STEP pcurve unique seed scratch", || pcurve_selection_seeds(index, surface_id, geometry, surface, ctx))?;
         let Some(start) = pcurve_surface_closest(ctx, index, surface_id, geometry, start, &seeds)?
         else {
             return Ok(None);
@@ -5343,7 +5121,7 @@ fn pcurve_endpoint_fit(
             max_residual: start.0.max(end.0),
         }));
     }
-    let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface, ctx)?;
+    let (seeds, _seed_storage) = ctx.with_scoped_storage("STEP pcurve unique seed scratch", || pcurve_selection_seeds(index, surface_id, geometry, surface, ctx))?;
     let Some(start) = pcurve_surface_closest(ctx, index, surface_id, geometry, start, &seeds)?
     else {
         return Ok(None);
@@ -5358,17 +5136,19 @@ fn pcurve_endpoint_fit(
     }))
 }
 
-fn pcurve_declared_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
-    match geometry {
+fn pcurve_declared_parameter_range(mut geometry: &PcurveGeometry, ctx: &DecodeContext<'_>) -> Result<Option<[f64; 2]>, ResourceLimit> {
+    loop {
+        ctx.charge_work_limit(1, "STEP pcurve declared range traversal")?;
+        return Ok(match geometry {
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
             Some(parameter_range.endpoints())
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();
-            pcurve_declared_parameter_range(basis)
+            { geometry = basis; continue; }
         }
-        PcurveGeometry::Transformed(placed) => pcurve_declared_parameter_range(placed.basis()),
+        PcurveGeometry::Transformed(placed) => { geometry = placed.basis(); continue; },
         PcurveGeometry::Line(_)
         | PcurveGeometry::Circle(_)
         | PcurveGeometry::Ellipse(_)
@@ -5380,6 +5160,7 @@ fn pcurve_declared_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]
         | PcurveGeometry::PolarNurbs { .. }
         | PcurveGeometry::SphericalGreatCircle(_)
         | PcurveGeometry::Nurbs { .. } => None,
+        });
     }
 }
 
@@ -5522,8 +5303,7 @@ fn pcurve_surface_closest(
     // directly evaluated result as a witness and omits the optional relation
     // when no witness meets the tolerance.
     let mut best: Option<(f64, f64)> = None;
-    for &seed in seeds {
-        ctx.charge_work_limit(1, "step pcurve seed visit")?;
+    for &seed in ctx.admit_iter(seeds, "step pcurve seed visit")? {
         let Some(candidate) =
             mapped_pcurve_closest(ctx, index, surface_id, geometry, target, seed)?
         else {
@@ -5553,7 +5333,7 @@ fn mapped_pcurve_closest(
     if !seed.is_finite() {
         return Ok(None);
     }
-    let domain = pcurve_selection_parameter_domain(geometry);
+    let domain = pcurve_selection_parameter_domain(geometry, ctx)?;
     let clamp_to_domain =
         |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
     let evaluate_point = |parameter: f64| -> Result<Option<Point3>, CodecError> {
@@ -5598,7 +5378,6 @@ fn mapped_pcurve_closest(
     let mut best = f64::INFINITY;
     let mut best_parameter = parameter;
     for _ in 0..32 {
-        ctx.charge_work_limit(1, "step pcurve inverse step")?;
         let Some(point) = evaluate_point(parameter)? else {
             return Ok(None);
         };
@@ -5625,7 +5404,6 @@ fn mapped_pcurve_closest(
         };
         let mut candidate_error = candidate_point.distance(target);
         for _ in 0..12 {
-            ctx.charge_work_limit(1, "step pcurve inverse backtrack")?;
             if candidate_error < error {
                 break;
             }
@@ -5669,6 +5447,7 @@ fn pcurve_parameter_break_fractions(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("step_pcurve_break_recursion")?;
+    ctx.charge_work(1, "STEP pcurve break geometry traversal")?;
     match geometry {
         PcurveGeometry::Nurbs { nurbs } => {
             for parameter in ctx
@@ -5726,8 +5505,9 @@ fn pcurve_selection_seeds(
     surface: &SurfaceGeometry,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<f64>, CodecError> {
-    let mut seeds = ctx.collect_vec([0.0], "step_pcurve_selection_seeds")?;
-    if let Some([start, end]) = pcurve_selection_parameter_domain(geometry) {
+    let mut seed_storage = ctx.reserve_scoped(0, "STEP pcurve seed scratch")?;
+    let mut seeds = seed_storage.with_storage(|| ctx.collect_vec([0.0], "step_pcurve_selection_seeds"))?;
+    if let Some([start, end]) = pcurve_selection_parameter_domain(geometry, ctx)? {
         let at_fraction = |fraction: f64| {
             let ordinary = start + (end - start) * fraction;
             if ordinary.is_finite() {
@@ -5737,65 +5517,64 @@ fn pcurve_selection_seeds(
                     .map(cadmpeg_ir::scalar::FiniteReal::get)
             }
         };
-        ctx.push_vec(&mut seeds, start, "step_pcurve_selection_seeds")?;
+        ctx.push_scoped_vec(&mut seed_storage, &mut seeds, start, "step_pcurve_selection_seeds")?;
         if let Some(seed) = at_fraction(0.5) {
-            ctx.push_vec(&mut seeds, seed, "step_pcurve_selection_seeds")?;
+            ctx.push_scoped_vec(&mut seed_storage, &mut seeds, seed, "step_pcurve_selection_seeds")?;
         }
-        ctx.push_vec(&mut seeds, end, "step_pcurve_selection_seeds")?;
+        ctx.push_scoped_vec(&mut seed_storage, &mut seeds, end, "step_pcurve_selection_seeds")?;
         for step in 0..=PCURVE_ENDPOINT_GRID_DIVISIONS {
-            let fraction = cadmpeg_core::convert::f64_from_index(step)
-                .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_selection_seeds", 0, 1))?
-                / cadmpeg_core::convert::f64_from_index(PCURVE_ENDPOINT_GRID_DIVISIONS)
-                    .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_selection_seeds", 0, 1))?;
+            let fraction = f64::from(step) / f64::from(PCURVE_ENDPOINT_GRID_DIVISIONS);
             if let Some(seed) = at_fraction(fraction) {
-                ctx.push_vec(&mut seeds, seed, "step_pcurve_selection_seeds")?;
+                ctx.push_scoped_vec(&mut seed_storage, &mut seeds, seed, "step_pcurve_selection_seeds")?;
             }
         }
         let mut fractions = Vec::new();
+        let mut fraction_storage = ctx.reserve_scoped(0, "STEP pcurve fraction scratch")?;
         for fraction in [0.0, 1.0] {
-            ctx.push_vec(&mut fractions, fraction, "step_pcurve_selection_fractions")?;
+            ctx.push_scoped_vec(&mut fraction_storage, &mut fractions, fraction, "step_pcurve_selection_fractions")?;
         }
-        pcurve_parameter_break_fractions(geometry, [start, end], &mut fractions, ctx)?;
+        fraction_storage.with_storage(|| pcurve_parameter_break_fractions(geometry, [start, end], &mut fractions, ctx))?;
         ctx.stable_sort_by(
             &mut fractions,
             |value| value,
             f64::total_cmp,
             "step_pcurve_selection_fractions_sort",
         )?;
-        fractions.dedup_by(|left, right| *left == *right);
+        ctx.dedup_by(&mut fractions, |left, right| Ok(*left == *right), "STEP pcurve fraction deduplication")?;
         for seed in ctx
             .admit_iter(&fractions[..], "STEP pcurve selection seeds traversal")?
             .filter_map(|fraction| at_fraction(*fraction))
         {
-            ctx.push_vec(&mut seeds, seed, "step_pcurve_selection_seeds")?;
+            ctx.push_scoped_vec(&mut seed_storage, &mut seeds, seed, "step_pcurve_selection_seeds")?;
         }
-        for seed in fractions.windows(2).filter_map(|window| {
-            let lower = window[0];
-            let upper = window[1];
+        for seed in ctx.admit_iter(&fractions[1..], "STEP pcurve seed interval traversal")?.zip(&fractions).filter_map(|(upper, lower)| {
             at_fraction(lower + (upper - lower) * 0.5)
         }) {
-            ctx.push_vec(&mut seeds, seed, "step_pcurve_selection_seeds")?;
+            ctx.push_scoped_vec(&mut seed_storage, &mut seeds, seed, "step_pcurve_selection_seeds")?;
         }
     }
-    if pcurve_has_angular_parameterization(geometry) {
+    if pcurve_has_angular_parameterization(geometry, ctx)? {
         for seed in [
             std::f64::consts::FRAC_PI_2,
             std::f64::consts::PI,
             std::f64::consts::PI * 1.5,
         ] {
-            ctx.push_vec(&mut seeds, seed, "step_pcurve_selection_seeds")?;
+            ctx.push_scoped_vec(&mut seed_storage, &mut seeds, seed, "step_pcurve_selection_seeds")?;
         }
     }
     if let Some((origin, direction)) = geometry.line_parameters(ctx)? {
-        if let Some(domain) = surface
-            .solved()
-            .and_then(|surface| surface_periodic_domains(surface)[0])
+        let periodic_domains = if let Some(mut solved) = surface.solved() {
+            loop {
+                ctx.charge_work(1, "STEP surface periodic domain traversal")?;
+                if let SolvedSurfaceGeometry::Transformed(placed) = solved { solved = placed.basis(); } else { break surface_periodic_domains(solved); }
+            }
+        } else { [None, None] };
+        if let Some(domain) = periodic_domains[0]
         {
             if direction.u != 0.0 {
                 for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
                     if let Some(coordinate) = periodic_seed_coordinate(domain, fraction) {
-                        ctx.push_vec(
-                            &mut seeds,
+                        ctx.push_scoped_vec(&mut seed_storage, &mut seeds,
                             (coordinate - origin.u) / direction.u,
                             "step_pcurve_selection_seeds",
                         )?;
@@ -5803,15 +5582,12 @@ fn pcurve_selection_seeds(
                 }
             }
         }
-        if let Some(domain) = surface
-            .solved()
-            .and_then(|surface| surface_periodic_domains(surface)[1])
+        if let Some(domain) = periodic_domains[1]
         {
             if direction.v != 0.0 {
                 for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
                     if let Some(coordinate) = periodic_seed_coordinate(domain, fraction) {
-                        ctx.push_vec(
-                            &mut seeds,
+                        ctx.push_scoped_vec(&mut seed_storage, &mut seeds,
                             (coordinate - origin.v) / direction.v,
                             "step_pcurve_selection_seeds",
                         )?;
@@ -5824,8 +5600,7 @@ fn pcurve_selection_seeds(
         if let Some([u_lower, u_upper]) = u_domain {
             for boundary in [u_lower, u_lower.midpoint(u_upper), u_upper] {
                 if direction.u != 0.0 {
-                    ctx.push_vec(
-                        &mut seeds,
+                    ctx.push_scoped_vec(&mut seed_storage, &mut seeds,
                         (boundary - origin.u) / direction.u,
                         "step_pcurve_selection_seeds",
                     )?;
@@ -5835,8 +5610,7 @@ fn pcurve_selection_seeds(
         if let Some([v_lower, v_upper]) = v_domain {
             for boundary in [v_lower, v_lower.midpoint(v_upper), v_upper] {
                 if direction.v != 0.0 {
-                    ctx.push_vec(
-                        &mut seeds,
+                    ctx.push_scoped_vec(&mut seed_storage, &mut seeds,
                         (boundary - origin.v) / direction.v,
                         "step_pcurve_selection_seeds",
                     )?;
@@ -5845,8 +5619,11 @@ fn pcurve_selection_seeds(
         }
     }
     let mut unique = Vec::new();
-    for seed in seeds.into_iter().filter(|seed| seed.is_finite()) {
-        if !unique.contains(&seed) {
+    let mut seen = BTreeSet::new();
+    let mut seen_storage = ctx.reserve_scoped(0, "STEP pcurve seed membership")?;
+    for seed in ctx.admit_iter(seeds, "STEP pcurve seed deduplication traversal")?.filter(|seed| seed.is_finite()) {
+        let key = if seed == 0.0 { 0 } else { seed.to_bits() };
+        if seen_storage.with_storage(|| ctx.insert_btree_set(&mut seen, key, "STEP pcurve seed membership"))? {
             ctx.push_vec(&mut unique, seed, "step_pcurve_unique_seeds")?;
         }
     }
@@ -5863,20 +5640,22 @@ fn periodic_seed_coordinate([lower, upper]: [f64; 2], fraction: f64) -> Option<f
     }
 }
 
-fn pcurve_has_angular_parameterization(geometry: &PcurveGeometry) -> bool {
-    match geometry {
+fn pcurve_has_angular_parameterization(mut geometry: &PcurveGeometry, ctx: &DecodeContext<'_>) -> Result<bool, ResourceLimit> {
+    loop {
+        ctx.charge_work_limit(1, "STEP pcurve angular traversal")?;
+        return Ok(match geometry {
         PcurveGeometry::Circle(_)
         | PcurveGeometry::Ellipse(_)
         | PcurveGeometry::Harmonic(_)
         | PcurveGeometry::SphericalGreatCircle(_) => true,
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();
-            pcurve_has_angular_parameterization(basis)
+            { geometry = basis; continue; }
         }
-        PcurveGeometry::Transformed(placed) => pcurve_has_angular_parameterization(placed.basis()),
+        PcurveGeometry::Transformed(placed) => { geometry = placed.basis(); continue; },
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let basis = trimmed_pcurve.basis();
-            pcurve_has_angular_parameterization(basis)
+            { geometry = basis; continue; }
         }
         PcurveGeometry::Line(_)
         | PcurveGeometry::PolarHarmonic(_)
@@ -5885,11 +5664,14 @@ fn pcurve_has_angular_parameterization(geometry: &PcurveGeometry) -> bool {
         | PcurveGeometry::Parabola(_)
         | PcurveGeometry::Hyperbola(_)
         | PcurveGeometry::Hyperbolic(_) => false,
+        });
     }
 }
 
-fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
-    match geometry {
+fn pcurve_selection_parameter_domain(mut geometry: &PcurveGeometry, ctx: &DecodeContext<'_>) -> Result<Option<[f64; 2]>, ResourceLimit> {
+    loop {
+        ctx.charge_work_limit(1, "STEP pcurve parameter domain traversal")?;
+        return Ok(match geometry {
         PcurveGeometry::Nurbs { nurbs } => {
             nurbs_pcurve_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.pole_rows().count())
                 .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
@@ -5904,14 +5686,14 @@ fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 
             if parameter_range.endpoints()[0] < parameter_range.endpoints()[1] {
                 Some(parameter_range.endpoints())
             } else {
-                pcurve_selection_parameter_domain(basis)
+                { geometry = basis; continue; }
             }
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();
-            pcurve_selection_parameter_domain(basis)
+            { geometry = basis; continue; }
         }
-        PcurveGeometry::Transformed(placed) => pcurve_selection_parameter_domain(placed.basis()),
+        PcurveGeometry::Transformed(placed) => { geometry = placed.basis(); continue; },
         PcurveGeometry::Line(_)
         | PcurveGeometry::Circle(_)
         | PcurveGeometry::Ellipse(_)
@@ -5921,6 +5703,7 @@ fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 
         | PcurveGeometry::Parabola(_)
         | PcurveGeometry::Hyperbola(_)
         | PcurveGeometry::Hyperbolic(_) => None,
+        });
     }
 }
 
@@ -5968,17 +5751,14 @@ fn surface_selection_parameter_domains(
             }
             None => [None, None],
         },
-        _ => surface.solved().map_or(
-            [None, None],
-            surface_selection_parameter_domains_from_geometry,
-        ),
+        _ => if let Some(solved) = surface.solved() { surface_selection_parameter_domains_from_geometry(solved, ctx)? } else { [None, None] },
     })
 }
 
-fn surface_selection_parameter_domains_from_geometry(
-    surface: &SolvedSurfaceGeometry,
-) -> [Option<[f64; 2]>; 2] {
-    match surface {
+fn surface_selection_parameter_domains_from_geometry(mut surface: &SolvedSurfaceGeometry, ctx: &DecodeContext<'_>) -> Result<[Option<[f64; 2]>; 2], ResourceLimit> {
+    loop {
+        ctx.charge_work_limit(1, "STEP solved surface domain traversal")?;
+        return Ok(match surface {
         SolvedSurfaceGeometry::Nurbs(surface) => {
             let (u_count, v_count) = (surface.u_count(), surface.v_count());
             [
@@ -5989,7 +5769,7 @@ fn surface_selection_parameter_domains_from_geometry(
             ]
         }
         SolvedSurfaceGeometry::Transformed(placed) => {
-            surface_selection_parameter_domains_from_geometry(placed.basis())
+            { surface = placed.basis(); continue; }
         }
         SolvedSurfaceGeometry::Plane(_)
         | SolvedSurfaceGeometry::Cylinder(_)
@@ -5998,6 +5778,7 @@ fn surface_selection_parameter_domains_from_geometry(
         | SolvedSurfaceGeometry::Torus(_)
         | SolvedSurfaceGeometry::Polygonal(_)
         | SolvedSurfaceGeometry::Unknown { .. } => [None, None],
+        });
     }
 }
 
@@ -6014,31 +5795,27 @@ fn curve_selection_parameter_domain(
     let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
         return Ok(None);
     };
-    Ok(curve
-        .geometry
-        .solved()
-        .and_then(curve_selection_parameter_domain_from_geometry))
+    if let Some(geometry) = curve.geometry.solved() { curve_selection_parameter_domain_from_geometry(geometry, ctx) } else { Ok(None) }
 }
 
-fn curve_selection_parameter_domain_from_geometry(
-    geometry: &SolvedCurveGeometry,
-) -> Option<[f64; 2]> {
-    match geometry {
+fn curve_selection_parameter_domain_from_geometry(mut geometry: &SolvedCurveGeometry, ctx: &DecodeContext<'_>) -> Result<Option<[f64; 2]>, ResourceLimit> {
+    loop {
+        ctx.charge_work_limit(1, "STEP solved curve domain traversal")?;
+        return Ok(match geometry {
         SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
             Some([0.0, std::f64::consts::TAU])
         }
         SolvedCurveGeometry::Nurbs(curve) => nurbs_curve_parameter_domain(curve)
             .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),
         SolvedCurveGeometry::Polyline(polyline) => {
-            let mut parameters = polyline.parameters()?;
-            let lower = parameters.next()?.get();
-            let upper = parameters
-                .last()
-                .map_or(lower, cadmpeg_ir::scalar::FiniteReal::get);
-            (lower < upper).then_some([lower, upper])
+            polyline.parameters().and_then(|mut parameters| {
+                let lower = parameters.next()?.get();
+                let upper = parameters.last().map_or(lower, cadmpeg_ir::scalar::FiniteReal::get);
+                (lower < upper).then_some([lower, upper])
+            })
         }
         SolvedCurveGeometry::Transformed(placed) => {
-            curve_selection_parameter_domain_from_geometry(placed.basis())
+            { geometry = placed.basis(); continue; }
         }
         SolvedCurveGeometry::Line(_)
         | SolvedCurveGeometry::Parabola(_)
@@ -6046,13 +5823,15 @@ fn curve_selection_parameter_domain_from_geometry(
         | SolvedCurveGeometry::Degenerate(_)
         | SolvedCurveGeometry::Composite { .. }
         | SolvedCurveGeometry::Unknown { .. } => None,
+        });
     }
 }
 
+#[derive(Clone, Copy)]
 struct ShellDef {
     base: u64,
     forward: bool,
-    typed: BTreeSet<u64>,
+    parent: Option<u64>,
 }
 
 fn shell_defs(
@@ -6060,6 +5839,7 @@ fn shell_defs(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, ShellDef>, CodecError> {
     let mut cache = BTreeMap::<u64, Option<ShellDef>>::new();
+    let mut cache_storage = ctx.reserve_scoped(0, "STEP shell cache storage")?;
     let mut active = BTreeSet::new();
     for entity in exchange.entities_any(
         ctx,
@@ -6071,10 +5851,10 @@ fn shell_defs(
         ],
     )? {
         let (id, _) = entity?;
-        shell_def_cached(id, exchange, &mut active, &mut cache, ctx)?;
+        shell_def_cached(id, exchange, &mut active, &mut cache, &mut cache_storage, ctx)?;
     }
     let mut shells = BTreeMap::new();
-    for (id, definition) in cache {
+    for (id, definition) in ctx.admit_iter(cache, "STEP topology collection traversal")? {
         if let Some(definition) = definition {
             ctx.insert_btree_map(&mut shells, id, definition, "step_shell_definitions")?;
         }
@@ -6082,37 +5862,24 @@ fn shell_defs(
     Ok(shells)
 }
 
-fn copy_shell_def(definition: &ShellDef, ctx: &DecodeContext<'_>) -> Result<ShellDef, CodecError> {
-    let typed = ctx.collect_btree_set(
-        definition.typed.iter().copied(),
-        "step_shell_definition_typed_copy",
-    )?;
-    Ok(ShellDef {
-        base: definition.base,
-        forward: definition.forward,
-        typed,
-    })
-}
-
 fn shell_def_cached(
     reference: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     cache: &mut BTreeMap<u64, Option<ShellDef>>,
+    cache_storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<ShellDef>, CodecError> {
-    if let Some(definition) = cache.get(&reference) {
-        return definition
-            .as_ref()
-            .map(|definition| copy_shell_def(definition, ctx))
-            .transpose();
+    if let Some(definition) = ctx.get_btree_map(cache, &reference, "STEP topology cache lookup")? {
+        return Ok(*definition);
     }
     let _depth = ctx.enter_nested("step_shell_definition_recursion")?;
-    if active.contains(&reference) {
+    if ctx.contains_btree_set(active, &reference, "STEP topology active membership")? {
         return Ok(None);
     }
-    ctx.insert_btree_set(active, reference, "step_shell_definition_active")?;
-    let result = if let Some(record) = exchange.records().get(&reference) {
+    let mut active_storage = ctx.reserve_scoped(0, "step_shell_definition_active")?;
+    active_storage.with_storage(|| ctx.insert_btree_set(active, reference, "step_shell_definition_active"))?;
+    let result = if let Some(record) = ctx.get_btree_map(exchange.records(), &reference, "STEP topology record lookup")? {
         match most_specific(
             ctx,
             record,
@@ -6126,7 +5893,7 @@ fn shell_def_cached(
             Some("OPEN_SHELL" | "CLOSED_SHELL") => Some(ShellDef {
                 base: reference,
                 forward: true,
-                typed: BTreeSet::new(),
+                parent: None,
             }),
             Some("ORIENTED_OPEN_SHELL" | "ORIENTED_CLOSED_SHELL") => {
                 let shell_type = most_specific(
@@ -6160,14 +5927,10 @@ fn shell_def_cached(
                 };
                 if let Some((element, orientation)) = element.zip(orientation) {
                     if let Some(mut definition) =
-                        shell_def_cached(element, exchange, active, cache, ctx)?
+                        shell_def_cached(element, exchange, active, cache, cache_storage, ctx)?
                     {
                         definition.forward = definition.forward == orientation;
-                        ctx.insert_btree_set(
-                            &mut definition.typed,
-                            reference,
-                            "step_shell_definition_typed",
-                        )?;
+                        definition.parent = Some(element);
                         Some(definition)
                     } else {
                         None
@@ -6181,12 +5944,9 @@ fn shell_def_cached(
     } else {
         None
     };
-    active.remove(&reference);
-    let cached = result
-        .as_ref()
-        .map(|definition| copy_shell_def(definition, ctx))
-        .transpose()?;
-    ctx.insert_btree_map(cache, reference, cached, "step_shell_definition_cache")?;
+    ctx.remove_btree_set(active, &reference, "STEP topology active removal")?;
+    drop(active_storage);
+    cache_storage.with_storage(|| ctx.insert_btree_map(cache, reference, result, "step_shell_definition_cache"))?;
     Ok(result)
 }
 
@@ -6196,18 +5956,22 @@ fn shell_def_for(
     typed: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(u64, bool)>, CodecError> {
-    let Some(definition) = shells.get(&reference) else {
+    let Some(definition) = ctx.get_btree_map(shells, &reference, "STEP topology shells lookup")? else {
         return Ok(None);
     };
-    for &id in ctx.admit_iter(&definition.typed, "STEP shell def for traversal")? {
-        ctx.insert_btree_set(typed, id, "step_shell_definition_claims")?;
+    let mut current = reference;
+    loop {
+        ctx.charge_work(1, "STEP shell ancestor traversal")?;
+        let Some(parent) = ctx.get_btree_map(shells, &current, "STEP shell ancestor lookup")?.and_then(|shell| shell.parent) else { break; };
+        ctx.insert_btree_set(typed, current, "step_shell_definition_claims")?;
+        current = parent;
     }
     Ok(Some((definition.base, definition.forward)))
 }
 
 #[derive(Default)]
 struct FaceInfo<'a> {
-    bounds: Vec<u64>,
+    bounds: &'a [Value],
     name: Option<&'a Value>,
     surface: Option<u64>,
     same_sense: bool,
@@ -6238,12 +6002,14 @@ fn face_attributes<'a>(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<FaceInfo<'a>>, CodecError> {
     let _depth = ctx.enter_nested("step_face_attribute_recursion")?;
-    if active.contains(&id) {
+    if ctx.contains_btree_set(active, &id, "STEP topology active membership")? {
         return Ok(None);
     }
-    ctx.insert_btree_set(active, id, "step_face_attribute_active")?;
+    let mut active_storage = ctx.reserve_scoped(0, "step_face_attribute_active")?;
+    active_storage.with_storage(|| ctx.insert_btree_set(active, id, "step_face_attribute_active"))?;
     let result = face_attributes_inner(id, record, exchange, active, ctx);
-    active.remove(&id);
+    ctx.remove_btree_set(active, &id, "STEP topology active removal")?;
+    drop(active_storage);
     result
 }
 
@@ -6273,7 +6039,7 @@ fn face_attributes_inner<'a>(
             let Some(face_element) = oriented_face_element(ctx, record)? else {
                 return Ok(None);
             };
-            let Some(element_record) = exchange.records().get(&face_element) else {
+            let Some(element_record) = ctx.get_btree_map(exchange.records(), &face_element, "STEP topology record lookup")? else {
                 return Ok(None);
             };
             let Some(mut base) =
@@ -6298,7 +6064,7 @@ fn face_attributes_inner<'a>(
             let Some(parent) = subface_parent(ctx, record)? else {
                 return Ok(None);
             };
-            let Some(parent_record) = exchange.records().get(&parent) else {
+            let Some(parent_record) = ctx.get_btree_map(exchange.records(), &parent, "STEP topology record lookup")? else {
                 return Ok(None);
             };
             let Some(mut parent_info) =
@@ -6343,7 +6109,7 @@ fn face_attributes_inner<'a>(
             else {
                 return Ok(None);
             };
-            let Some(surface) = direct_face_surface(ctx, record, &bounds, governing)? else {
+            let Some(surface) = direct_face_surface(ctx, record, bounds, governing)? else {
                 return Ok(None);
             };
             let Some(same_sense) = direct_face_same_sense(ctx, record, governing)? else {
@@ -6392,77 +6158,50 @@ fn face_name_value<'a>(
     Ok(value.filter(|value| !matches!(value, Value::String(bytes) if bytes.is_empty())))
 }
 
-fn direct_face_bounds(
-    record: &RawRecord,
+fn direct_face_bounds<'a>(
+    record: &'a RawRecord,
     exchange: &Exchange,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<u64>>, CodecError> {
+) -> Result<Option<&'a [Value]>, CodecError> {
     let simple_value = if record.partials.len() == 1 {
-        let Some(name) = record.simple_name() else {
+        let Some(_name) = record.simple_name() else {
             return Ok(None);
         };
-        let Some(value) = entity_parameter(ctx, record, name, 1)? else {
+        let Some(value) = record.parameter(1) else {
             return Ok(None);
         };
         Some(value)
     } else {
         None
     };
-    let decode_bounds = |value: &Value| -> Result<Option<Vec<u64>>, CodecError> {
+    let decode_bounds = |value: &'a Value| -> Result<Option<&'a [Value]>, CodecError> {
         let Some(items) = value.list() else {
             return Ok(None);
         };
         if items.is_empty() {
             return Ok(None);
         }
-        for item in ctx.admit_iter(items, "STEP face bound list validation")? {
-            let Some(id) = item.reference() else {
-                return Ok(None);
-            };
-            let Some(bound) = exchange.records().get(&id) else {
-                return Ok(None);
-            };
-            if bound.partial(ctx, "FACE_BOUND")?.is_none()
-                && bound.partial(ctx, "FACE_OUTER_BOUND")?.is_none()
-            {
-                return Ok(None);
-            }
-        }
-        let mut bounds = Vec::new();
-        for id in ctx
-            .admit_iter(items, "STEP direct face bounds traversal")?
-            .filter_map(ValueExt::reference)
-        {
-            ctx.push_vec(&mut bounds, id, "step_face_attribute_bounds")?;
-        }
-        Ok(Some(bounds))
+        if !ctx.all_by(items, |item| {
+            let Some(id) = item.reference() else { return Ok(false); };
+            let Some(bound) = ctx.get_btree_map(exchange.records(), &id, "STEP topology record lookup")? else { return Ok(false); };
+            Ok(bound.partial(ctx, "FACE_BOUND")?.is_some() || bound.partial(ctx, "FACE_OUTER_BOUND")?.is_some())
+        }, "STEP face bound list validation")? { return Ok(None); }
+        Ok(Some(items))
     };
     if let Some(value) = simple_value {
         if let Some(bounds) = decode_bounds(value)? {
             return Ok(Some(bounds));
         }
     }
-    for partial in ctx.admit_iter(&record.partials[..], "STEP face bound partial traversal")? {
-        if record.partials.len() == 1 {
-            continue;
-        }
-        for value in ctx.admit_iter(
-            partial.parameters.as_slice(),
-            "STEP face bound parameter traversal",
-        )? {
-            if let Some(bounds) = decode_bounds(value)? {
-                return Ok(Some(bounds));
-            }
-        }
-    }
-    Ok(None)
+    if record.partials.len() == 1 { return Ok(None); }
+    ctx.find_map(&record.partials[..], |partial| ctx.find_map(partial.parameters.as_slice(), decode_bounds, "STEP face bound parameter traversal"), "STEP face bound partial traversal")
 }
 
 fn direct_face_surface(
     ctx: &DecodeContext<'_>,
     record: &RawRecord,
-    bounds: &[u64],
-    governing: &str,
+    bounds: &[Value],
+    governing: &'static str,
 ) -> Result<Option<u64>, CodecError> {
     if record.partials.len() > 1 {
         if let Some(value) = named_reference(ctx, record, governing, 2, 0)? {
@@ -6474,27 +6213,22 @@ fn direct_face_surface(
             Ok(None)
         };
     }
-    for partial in ctx.admit_iter(&record.partials[..], "STEP direct face partial traversal")? {
-        if let Some(value) = ctx.find_map(
-            partial.parameters.as_slice(),
-            |raw| {
-                let Some(reference) = ValueExt::reference(raw) else {
-                    return Ok(None);
-                };
-                Ok((!bounds.contains(&reference)).then_some(reference))
-            },
-            "STEP direct face parameter traversal",
-        )? {
-            return Ok(Some(value));
-        }
-    }
-    Ok(None)
+    let (bound_ids, _storage) = ctx.with_scoped_storage("STEP direct face bound index", || {
+        let mut ids = BTreeSet::new();
+        for reference in ctx.admit_iter(bounds, "STEP direct face bound index traversal")?.filter_map(Value::reference) { ctx.insert_btree_set(&mut ids, reference, "STEP direct face bound index")?; }
+        Ok::<_, CodecError>(ids)
+    })?;
+    let partial = record.partials.first();
+    ctx.find_map(partial.parameters.as_slice(), |raw| {
+        let Some(reference) = raw.reference() else { return Ok(None); };
+        Ok((!ctx.contains_btree_set(&bound_ids, &reference, "STEP direct face bound membership")?).then_some(reference))
+    }, "STEP direct face parameter traversal")
 }
 
 fn direct_face_same_sense(
     ctx: &DecodeContext<'_>,
     record: &RawRecord,
-    governing: &str,
+    governing: &'static str,
 ) -> Result<Option<bool>, CodecError> {
     if record.partials.len() > 1 {
         if let Some(value) = named_logical(ctx, record, governing, 3, 0)? {
@@ -6506,16 +6240,7 @@ fn direct_face_same_sense(
             Ok(None)
         };
     }
-    for partial in ctx.admit_iter(&record.partials[..], "STEP direct face partial traversal")? {
-        if let Some(value) = ctx.find_map(
-            partial.parameters.as_slice(),
-            |value| Ok(ValueExt::logical(value)),
-            "STEP direct face parameter traversal",
-        )? {
-            return Ok(Some(value));
-        }
-    }
-    Ok(None)
+    ctx.find_map(record.partials.first().parameters.as_slice(), |value| Ok(ValueExt::logical(value)), "STEP direct face parameter traversal")
 }
 
 fn oriented_face_element(
@@ -6529,22 +6254,7 @@ fn oriented_face_element(
             "STEP oriented face element traversal",
         );
     }
-    for partial in ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP oriented face fallback partial traversal",
-        )?
-        .rev()
-    {
-        if let Some(element) = ctx.find_map(
-            partial.parameters.as_slice().iter().rev(),
-            |value| Ok(ValueExt::reference(value)),
-            "STEP oriented face fallback element traversal",
-        )? {
-            return Ok(Some(element));
-        }
-    }
-    Ok(None)
+    ctx.find_map(record.partials.iter().rev(), |partial| ctx.find_map(partial.parameters.as_slice().iter().rev(), |value| Ok(ValueExt::reference(value)), "STEP oriented face fallback element traversal"), "STEP oriented face fallback partial traversal")
 }
 
 fn oriented_face_orientation(
@@ -6573,22 +6283,7 @@ fn subface_parent(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<
             return Ok(Some(parent));
         }
     }
-    for partial in ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP subface fallback partial traversal",
-        )?
-        .rev()
-    {
-        if let Some(parent) = ctx.find_map(
-            partial.parameters.as_slice().iter().rev(),
-            |value| Ok(ValueExt::reference(value)),
-            "STEP subface fallback parent traversal",
-        )? {
-            return Ok(Some(parent));
-        }
-    }
-    Ok(None)
+    ctx.find_map(record.partials.iter().rev(), |partial| ctx.find_map(partial.parameters.as_slice().iter().rev(), |value| Ok(ValueExt::reference(value)), "STEP subface fallback parent traversal"), "STEP subface fallback partial traversal")
 }
 
 /// Selects the partial that carries inherited `FACE_BOUND` attributes.
@@ -6617,18 +6312,18 @@ fn face_bound_attribute_type(
 /// Returns the first partial name present in a subtype-first dispatch chain.
 /// Complex STEP instances carry every inherited partial, so the first hit is
 /// the governing subtype and its attributes must drive decoding.
-fn most_specific<'a>(
+fn most_specific(
     ctx: &DecodeContext<'_>,
     record: &RawRecord,
-    chain: &[&'a str],
-) -> Result<Option<&'a str>, CodecError> {
-    for name in ctx.admit_iter(chain, "STEP topology subtype dispatch traversal")? {
+    chain: &[&'static str],
+) -> Result<Option<&'static str>, CodecError> {
+    for name in chain {
         if ctx
             .find_map(
                 &record.partials[..],
                 |partial| -> Result<Option<_>, CodecError> {
                     Ok(
-                        (ctx.equal(partial.name.as_str(), name, "STEP most specific equality")?)
+                        (partial.name.as_str() == *name)
                             .then_some(()),
                     )
                 },
@@ -6674,9 +6369,10 @@ fn validate_subset_parent(
     record: &RawRecord,
     subset_type: &'static str,
     exchange: &Exchange,
-    losses: &mut Vec<LossNote>,
+    losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    let (losses, loss_storage) = losses;
     let base_type = match subset_type {
         "CONNECTED_EDGE_SUB_SET" => "CONNECTED_EDGE_SET",
         "CONNECTED_FACE_SUB_SET" => "CONNECTED_FACE_SET",
@@ -6698,8 +6394,7 @@ fn validate_subset_parent(
             .flatten()
     };
     let Some(parent) = parent else {
-        ctx.push_vec(
-            losses,
+        ctx.push_scoped_vec(loss_storage, losses,
             StepLossCode::DecodeWarning.note(ctx.format_retained(
                 format_args!("{subset_type} #{id} has no resolvable parent {base_type}"),
                 "STEP validate_subset_parent text",
@@ -6708,20 +6403,15 @@ fn validate_subset_parent(
         )?;
         return Ok(false);
     };
-    let valid_parent = if let Some(parent_record) = exchange.records().get(&parent) {
-        ctx.equal(
-            &most_specific(ctx, parent_record, &[base_type])?,
-            &Some(base_type),
-            "STEP subset parent type equality",
-        )?
+    let valid_parent = if let Some(parent_record) = ctx.get_btree_map(exchange.records(), &parent, "STEP topology record lookup")? {
+        most_specific(ctx, parent_record, &[base_type])?.is_some()
     } else {
         false
     };
     if valid_parent {
         Ok(true)
     } else {
-        ctx.push_vec(
-            losses,
+        ctx.push_scoped_vec(loss_storage, losses,
             StepLossCode::DecodeWarning.note(ctx.format_retained(
                 format_args!(
                     "{subset_type} #{id} parent #{parent} does not resolve to {base_type}"
@@ -6737,22 +6427,18 @@ fn validate_subset_parent(
 fn entity_parameter<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a RawRecord,
-    name: &str,
+    name: &'static str,
     index: usize,
 ) -> Result<Option<&'a Value>, CodecError> {
+    if record.partials.len() == 1 { return Ok(record.parameter(index)); }
     Ok(ctx
         .find_map(
             &record.partials[..],
             |partial| -> Result<Option<_>, CodecError> {
-                Ok((ctx.equal(
-                    partial.name.as_str(),
-                    name,
-                    "STEP entity parameter equality",
-                )?)
+                Ok((partial.name.as_str() == name)
                 .then_some(partial))
             },
             "STEP topology entity parameter partial traversal",
         )?
-        .or_else(|| (record.partials.len() == 1).then(|| &record.partials[0]))
         .and_then(|partial| partial.parameters.get(index)))
 }

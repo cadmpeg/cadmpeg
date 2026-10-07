@@ -31,7 +31,7 @@ fn topology_commit_error_text_refuses_retained_limit() {
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let error = cadmpeg_ir::draft::DraftError::IdentityCollision("step:data:body#1".into());
     assert!(matches!(
-        super::super::topology_commit_error("topology root", &error, &ctx),
+        super::super::topology_commit_error(format_args!("topology root"), &error, &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_topology_commit_error_text"
@@ -179,8 +179,9 @@ fn built_outcome_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let mut outcome = super::super::BuildOutcome::Built(Vec::new());
+    let mut outcome = super::super::BuildOutcome::new(&ctx).expect("empty outcome");
     let built = super::super::Built {
+        _storage: ctx.reserve_scoped(0, "test staged metadata").expect("empty metadata"),
         typed: std::collections::BTreeSet::new(),
         draft: cadmpeg_ir::draft::ModelDraft::new(),
         body_id: body_id(),
@@ -213,7 +214,7 @@ fn connected_wire_typed_claims_refuse_collection_limit() {
             3, 1, &exchange,
             super::super::WireSources { vdefs: &BTreeMap::new(), edefs: &BTreeMap::new(), point_positions: &carriers },
             false,
-            &mut Vec::new(), &ctx,
+            (&mut Vec::new(), &mut ctx.reserve_scoped(0, "test loss slots").expect("empty loss storage")), &ctx,
         ),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
@@ -239,7 +240,7 @@ fn shell_wire_typed_claims_refuse_collection_limit() {
             3, 1, &exchange,
             super::super::WireSources { vdefs: &BTreeMap::new(), edefs: &BTreeMap::new(), point_positions: &carriers },
             super::super::WireScope { scoped: false, root: false },
-            &mut Vec::new(), &ctx,
+            (&mut Vec::new(), &mut ctx.reserve_scoped(0, "test loss slots").expect("empty loss storage")), &ctx,
         ),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
@@ -259,7 +260,7 @@ fn subset_parent_loss_refuses_collection_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     assert!(matches!(
-        super::super::validate_subset_parent(1, exchange.records().get(&1).expect("subset"), "CONNECTED_EDGE_SUB_SET", &exchange, &mut Vec::new(), &ctx),
+        super::super::validate_subset_parent(1, exchange.records().get(&1).expect("subset"), "CONNECTED_EDGE_SUB_SET", &exchange, (&mut Vec::new(), &mut ctx.reserve_scoped(0, "test loss slots").expect("empty loss storage")), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_topology_losses"
@@ -279,7 +280,7 @@ fn curve_less_wire_edge_loss_refuses_collection_limit() {
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     let edge = super::super::EdgeDef::Bare { start: 1, end: 2 };
     assert!(matches!(
-        super::super::edge_curve_id_reported(1, &edge, &exchange, &mut Vec::new(), &ctx),
+        super::super::edge_curve_id_reported(1, &edge, &exchange, (&mut Vec::new(), &mut ctx.reserve_scoped(0, "test loss slots").expect("empty loss storage")), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_topology_losses"
@@ -436,24 +437,6 @@ fn shell_definitions_refuse_collection_limit() {
 }
 
 #[test]
-fn shell_definition_typed_copy_refuses_collection_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let definition = super::super::ShellDef {
-        base: 1,
-        forward: true,
-        typed: std::collections::BTreeSet::from([2]),
-    };
-    assert!(matches!(super::super::copy_shell_def(&definition, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_shell_definition_typed_copy"));
-}
-
-#[test]
 fn shell_definition_claims_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -463,11 +446,11 @@ fn shell_definition_claims_refuse_collection_limit() {
     let definition = super::super::ShellDef {
         base: 1,
         forward: true,
-        typed: std::collections::BTreeSet::from([2]),
+        parent: Some(1),
     };
-    let shells = BTreeMap::from([(1, definition)]);
+    let shells = BTreeMap::from([(2, definition), (1, super::super::ShellDef { base: 1, forward: true, parent: None })]);
     assert!(
-        matches!(super::super::shell_def_for(1, &shells, &mut std::collections::BTreeSet::new(), &ctx),
+        matches!(super::super::shell_def_for(2, &shells, &mut std::collections::BTreeSet::new(), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_shell_definition_claims")
@@ -486,7 +469,7 @@ fn shell_definition_recursion_refuses_depth_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     assert!(
-        matches!(super::super::shell_def_cached(2, &exchange, &mut std::collections::BTreeSet::new(), &mut BTreeMap::new(), &ctx),
+        matches!(super::super::shell_def_cached(2, &exchange, &mut std::collections::BTreeSet::new(), &mut BTreeMap::new(), &mut ctx.reserve_scoped(0, "test shell cache").expect("empty cache storage"), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_shell_definition_recursion")
@@ -509,7 +492,7 @@ fn topology_root_refusal(collection_limit: u64, include_distinct: bool) -> Codec
         super::super::ShellDef {
             base: 1,
             forward: true,
-            typed: std::collections::BTreeSet::new(),
+            parent: None,
         },
     )]);
     let key = super::super::root_key(root, &exchange, &shells, &ctx)
@@ -569,12 +552,13 @@ fn geometric_set_refusal(collection_limit: u64, has_surface: bool) -> CodecError
             .surfaces
             .insert(4, crate::reader::index::SurfaceIndex(0));
     }
+    let mut loss_storage = ctx.reserve_scoped(0, "test loss slots").expect("empty loss storage");
     super::super::build_geometric_set(
         1,
         exchange.records().get(&1).expect("representation"),
         &exchange,
         &carriers,
-        &mut Vec::new(),
+        (&mut Vec::new(), &mut loss_storage),
         &ctx,
     )
     .err()
@@ -605,15 +589,17 @@ fn geometric_set_faces_refuse_collection_limit() {
                 && refusal.operation == "step_geometric_set_faces"));
 }
 
-fn staged_topology_refusal(
+fn staged_topology_attempt(
     collection_limit: u64,
     retained_limit: u64,
     surface_count: usize,
-) -> super::super::StageError {
+    materialized_limit: u64,
+) -> Result<(), super::super::StageError> {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
     policy.limits.max_retained_bytes = retained_limit;
+    policy.limits.max_materialized_bytes = materialized_limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let body_id = body_id();
@@ -654,10 +640,14 @@ fn staged_topology_refusal(
                 visible: None,
             },
         },
+        ctx.reserve_scoped(0, "test staged metadata").expect("empty staged storage"),
         &ctx,
     )
-    .err()
-    .expect("staging exceeds limit")
+    .map(|_| ())
+}
+
+fn staged_topology_refusal(collection_limit: u64, retained_limit: u64, surface_count: usize) -> super::super::StageError {
+    staged_topology_attempt(collection_limit, retained_limit, surface_count, u64::MAX).expect_err("staging exceeds limit")
 }
 
 #[test]
@@ -669,11 +659,15 @@ fn staged_surface_ids_refuse_collection_limit() {
 }
 
 #[test]
-fn staged_surface_ids_refuse_retained_limit() {
-    assert!(matches!(staged_topology_refusal(u64::MAX, 0, 1),
-        super::super::StageError::Resource(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_staged_surface_ids"));
+fn staged_surface_ids_refuse_materialized_limit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "step_staged_surface_ids", |cap| {
+        staged_topology_attempt(u64::MAX, u64::MAX, 1, cap).map_err(|error| match error {
+            super::super::StageError::Resource(error) => error,
+            super::super::StageError::Draft(error) => panic!("unexpected draft error: {error}"),
+        })
+    });
+    // The identity text and the index node are live scratch, not retained output.
+    assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == "step_staged_surface_ids"));
 }
 
 #[test]
@@ -717,11 +711,12 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
         super::super::ShellDef {
             base: 1,
             forward: true,
-            typed: std::collections::BTreeSet::new(),
+            parent: None,
         },
     )]);
     let region =
         cadmpeg_ir::ids::RegionId::mint("step:data:region#3").expect("valid region identity");
+    let mut loss_storage = ctx.reserve_scoped(0, "test loss slots").expect("empty loss storage");
     super::super::build_one(
         3,
         exchange.records().get(&3).expect("model"),
@@ -746,7 +741,7 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
             edges: false,
             root: false,
         },
-        &mut Vec::new(),
+        (&mut Vec::new(), &mut loss_storage),
         &mut None,
     )
     .err()
@@ -785,7 +780,7 @@ fn brep_used_faces_refuse_collection_limit() {
                 && refusal.operation == "step_brep_used_faces"));
 }
 
-fn face_attribute_refusal(collection_limit: u64, depth_limit: u64, face_id: u64) -> CodecError {
+fn face_attribute_attempt(collection_limit: u64, depth_limit: u64, face_id: u64) -> Result<(), CodecError> {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=FACE('',(#2));#2=FACE_BOUND('',#3,.T.);#3=EDGE_LOOP('',());#4=ORIENTED_FACE('',*,#1,.T.);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
@@ -803,8 +798,11 @@ fn face_attribute_refusal(collection_limit: u64, depth_limit: u64, face_id: u64)
         &mut std::collections::BTreeSet::new(),
         &ctx,
     )
-    .err()
-    .expect("face attributes exceed limit")
+    .map(|_| ())
+}
+
+fn face_attribute_refusal(collection_limit: u64, depth_limit: u64, face_id: u64) -> CodecError {
+    face_attribute_attempt(collection_limit, depth_limit, face_id).expect_err("face attributes exceed limit")
 }
 
 #[test]
@@ -816,16 +814,9 @@ fn face_attribute_active_refuses_collection_limit() {
 }
 
 #[test]
-fn face_attribute_bounds_refuse_collection_limit() {
-    assert!(matches!(face_attribute_refusal(1, u64::MAX, 1),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_face_attribute_bounds"));
-}
-
-#[test]
 fn face_attribute_typed_refuses_collection_limit() {
-    assert!(matches!(face_attribute_refusal(3, u64::MAX, 4),
+    // Two active recursion nodes precede the typed claim; ancestor bounds are borrowed.
+    assert!(matches!(cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "step_face_attribute_typed", |cap| face_attribute_attempt(cap, u64::MAX, 4)),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_face_attribute_typed"));

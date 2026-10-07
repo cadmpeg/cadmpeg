@@ -7,7 +7,7 @@
 
 use std::fmt;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -35,13 +35,6 @@ pub(super) fn pcurve_admission_note(
     if admissions.is_empty() {
         return Ok(None);
     }
-    let named = admissions.iter().take(PCURVE_UNPROVED_NOTE_EXEMPLARS).len();
-    ctx.charge_work(
-        u64_from_index(named).checked_mul(2).ok_or_else(|| {
-            ctx.refuse_codec_limit("step_pcurve_admission_note", u64::MAX, u64::MAX)
-        })?,
-        "step_pcurve_admission_note",
-    )?;
     let message = ctx.format_retained(
         format_args!("{}", AdmissionWarning(admissions)),
         "step_pcurve_admission_note",
