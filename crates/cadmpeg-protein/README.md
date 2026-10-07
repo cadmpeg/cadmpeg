@@ -64,10 +64,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 record order. `DecodedRecord::ordinal` remains the zero-based position from
 the paged stream, including rejected records.
 
-Use [`has_schemas`][has-schemas] as a cheap non-throwing probe before decoding
-an archive. It returns `false` for invalid ZIP bytes and for valid archives
-that contain no recognized schema XML; it is a probe, not a replacement for
-`decode` validation.
+[`has_schemas`][has-schemas] takes the caller's decode context and returns a
+fallible schema probe. It returns `Ok(false)` for invalid ZIP bytes and for
+valid archives that contain no recognized schema XML. Resource refusals
+propagate as errors. Full archive validation remains part of decoding.
 
 ## Input framing
 

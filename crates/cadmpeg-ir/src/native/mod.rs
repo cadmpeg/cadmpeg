@@ -150,6 +150,14 @@ pub enum NativeConvertError {
         #[source]
         source: serde_json::Error,
     },
+    /// A codec-owned reader refused a stored record after charged conversion.
+    #[error("native record {id}: {message}")]
+    ReadRecordMessage {
+        /// Identity of the refused stored record.
+        id: crate::ids::Identity,
+        /// Codec-owned validation detail whose storage is admitted by the caller.
+        message: String,
+    },
     /// A producer's record cannot enter a native arena.
     #[error("native input record at ordinal {ordinal}: {source}")]
     WriteRecord {
@@ -420,6 +428,15 @@ impl NativeRecord {
     #[must_use]
     pub fn id(&self) -> &str {
         self.id.as_str()
+    }
+
+    /// Copy the validated record identity within the caller's decode budget.
+    pub fn identity_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<crate::ids::Identity, CodecError> {
+        self.id.try_clone_for_decode(ctx, operation)
     }
 
     /// Borrow the codec-owned fields, excluding `id`.
