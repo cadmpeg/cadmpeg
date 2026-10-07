@@ -97,7 +97,7 @@ fn dependency_note_text_refuses_retained_limit() {
 }
 
 #[test]
-fn dependency_string_text_refuses_retained_limit() {
+fn dependency_string_text_refuses_materialized_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -106,17 +106,15 @@ fn dependency_string_text_refuses_retained_limit() {
         crate::parse::parse_inner,
     )
     .expect("valid exchange");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(DEPENDENCY_LIMIT_SOURCE, &arena, &policy)
-        .expect("root fits retained policy");
-    assert!(matches!(
-        super::decode(&exchange, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_string_text"
-    ));
+    // The boundary includes source bytes and preceding scratch allocations.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "step_string_text", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(DEPENDENCY_LIMIT_SOURCE, &arena, &policy).expect("root");
+        super::decode(&exchange, &ctx)
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == "step_string_text"));
 }
 
 #[test]

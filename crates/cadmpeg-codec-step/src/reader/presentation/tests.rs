@@ -5,6 +5,7 @@ use super::{find_color, style_application_order, ColorResolution, StyleDomain};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod collection_limits;
+mod style_indices;
 mod string_limits;
 mod surface_styles;
 
@@ -26,18 +27,20 @@ ENDSEC;END-ISO-10303-21;",
         crate::parse::parse_inner)
     .expect("parse style graph");
         let graph_limit = 64;
+        let mut cache = BTreeMap::new();
+        let mut storage = ctx.reserve_scoped(0, "test style cache").unwrap();
 
         assert_eq!(
-            style_application_order(5, &exchange, graph_limit, ctx).expect("local style depth"),
+            style_application_order(5, &exchange, graph_limit, &mut cache, &mut storage, ctx).expect("local style depth"),
             (false, Some(0))
         );
         assert_eq!(
-            style_application_order(6, &exchange, graph_limit, ctx).expect("local style depth"),
+            style_application_order(6, &exchange, graph_limit, &mut cache, &mut storage, ctx).expect("local style depth"),
             (true, None)
         );
         let mut styles = vec![6_u64, 5_u64];
         styles.sort_by_key(|id| {
-            style_application_order(*id, &exchange, graph_limit, ctx).expect("local style depth")
+            style_application_order(*id, &exchange, graph_limit, &mut cache, &mut storage, ctx).expect("local style depth")
         });
         assert_eq!(styles, [5, 6]);
     });

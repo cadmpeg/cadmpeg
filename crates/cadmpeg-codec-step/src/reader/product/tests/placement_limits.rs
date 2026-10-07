@@ -141,9 +141,10 @@ fn fallback_occurrence_placements_refuse_collection_limit() {
 }
 
 #[test]
-fn ambiguous_placement_source_text_refuses_retained_limit() {
+fn ambiguous_placement_source_text_refuses_work_limit() {
+    // Detail text is scratch; its byte work is cumulative even below an earlier storage peak.
     let source = duplicate_context_source();
-    super::product_retained_refuses_source(
+    super::product_text_work_refuses_source(
         source.as_bytes(),
         "step_ambiguous_placement_source_text",
     );
@@ -156,9 +157,10 @@ fn ambiguous_placement_loss_text_refuses_retained_limit() {
 }
 
 #[test]
-fn competing_placement_source_text_refuses_retained_limit() {
+fn competing_placement_source_text_refuses_work_limit() {
+    // Detail text is scratch; its byte work is cumulative even below an earlier storage peak.
     let source = competing_source();
-    super::product_retained_refuses_source(
+    super::product_text_work_refuses_source(
         source.as_bytes(),
         "step_competing_placement_source_text",
     );

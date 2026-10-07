@@ -4,7 +4,7 @@
 use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -83,9 +83,9 @@ impl<'a> DrawingParameters<'a> {
     }
 }
 
-enum TargetResolution {
+enum TargetResolution<'ctx> {
     Resolved(ReferenceSelection),
-    Ambiguous(BTreeSet<String>),
+    Ambiguous((BTreeSet<String>, ScopedReservation<'ctx>)),
     Unresolved,
 }
 
@@ -139,7 +139,7 @@ fn visit_drawing_references(
 }
 
 impl TargetContext<'_> {
-    fn resolve(&self, id: u64) -> Result<TargetResolution, CodecError> {
+    fn resolve(&self, id: u64) -> Result<TargetResolution<'_>, CodecError> {
         target_resolution(
             id,
             self.target_identities,
@@ -179,7 +179,7 @@ pub(super) fn decode(
             );
             continue;
         }
-        ctx.reserve_vec(&mut candidates, 1, "step_drawing_candidates")?;
+        scratch_storage.with_storage(|| ctx.reserve_vec(&mut candidates, 1, "step_drawing_candidates"))?;
         candidates.push(DrawingCandidate {
             id,
             name,
@@ -227,18 +227,17 @@ pub(super) fn decode(
         })?;
     }
 
-    let mut target_identities =
-        record_targets(ir, |record_id| ctx.contains_hash_set(&known_typed, &record_id, "STEP drawing known_typed contains"), ctx)?;
+    let (mut target_identities, mut target_storage) = ctx.with_scoped_storage("STEP drawing target index scratch", || record_targets(ir, |record_id| ctx.contains_hash_set(&known_typed, &record_id, "STEP drawing known_typed contains"), ctx))?;
     for candidate in ctx.admit_iter(&candidates[..], "STEP decode traversal")? {
 
-        let targets = ctx.entry_btree_map(&mut target_identities, candidate.id, "step_drawing_target_groups")?.or_default();
-        ctx.insert_btree_set(targets,
+        let targets = target_storage.with_storage(|| ctx.entry_btree_map(&mut target_identities, candidate.id, "step_drawing_target_groups"))?.or_default();
+        target_storage.with_storage(|| ctx.insert_btree_set(targets,
             ctx.copy_retained_text(
                 candidate.identity.as_str(),
                 "step_drawing_target_member_text",
             )?,
             "step_drawing_target_members",
-        )?;
+        ))?;
     }
     // DR-01: a drawing association scoped by PRODUCT_DEFINITION_SHAPE targets
     // that shape's one owning product-definition view, not a product-wide
@@ -247,22 +246,23 @@ pub(super) fn decode(
         ctx.admit_iter(product_definition_ids_by_shape, "STEP decode traversal")?
     {
 
-        let targets = ctx.entry_btree_map(&mut target_identities, shape_id, "step_drawing_target_groups")?.or_default();
-        ctx.insert_btree_set(targets,
+        let targets = target_storage.with_storage(|| ctx.entry_btree_map(&mut target_identities, shape_id, "step_drawing_target_groups"))?.or_default();
+        target_storage.with_storage(|| ctx.insert_btree_set(targets,
             ctx.copy_retained_text(
                 product_definition_id.as_str(),
                 "step_drawing_target_member_text",
             )?,
             "step_drawing_target_members",
-        )?;
+        ))?;
     }
-    let drawing_target_ids = referenced_target_ids(exchange, &candidates, ctx)?;
+    let (drawing_target_ids, _target_id_storage) = ctx.with_scoped_storage("STEP drawing referenced target scratch", || referenced_target_ids(exchange, &candidates, ctx))?;
     add_source_typed_targets(
         ir,
         exchange,
         known_typed,
         &drawing_target_ids,
         &mut target_identities,
+        &mut target_storage,
         ctx,
     )?;
     let mut external_documents = BTreeMap::new();
@@ -333,9 +333,7 @@ pub(super) fn decode(
             &mut losses,
         )?;
 
-        ctx.insert_btree_map(&mut drawings,
-            id,
-            Drawing {
+        let drawing = Drawing {
                 id: DrawingId::from(
                     identity.try_clone_for_decode(ctx, "step_drawing_identity_copy")?,
                 ),
@@ -353,7 +351,8 @@ pub(super) fn decode(
                 parameters: stored_parameters,
                 assets: Vec::new(),
                 native_ref: identity.into_string(),
-            }, "step_drawing_entries")?;
+            };
+        scratch_storage.with_storage(|| ctx.insert_btree_map(&mut drawings, id, drawing, "step_drawing_entries"))?;
     }
 
     add_sheet_revision_usages(exchange, &mut drawings, &target_context, &mut losses, ctx)?;
@@ -468,9 +467,10 @@ fn add_source_typed_targets(
     known_typed: &HashSet<u64>,
     referenced_ids: &BTreeSet<u64>,
     target_identities: &mut BTreeMap<u64, BTreeSet<String>>,
+    storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let mut native_targets = Vec::new();
+    let (mut native_targets, mut native_storage) = ctx.temporary_vec(0, "step_drawing_native_target_items")?;
     for &id in ctx.admit_iter(referenced_ids, "STEP add source typed targets traversal")? {
         if !ctx.contains_hash_set(&known_typed, &id, "STEP drawing known_typed contains")? || ctx.contains_key_btree_map(&target_identities, &id, "STEP drawing target_identities contains_key")? {
             continue;
@@ -482,16 +482,16 @@ fn add_source_typed_targets(
             continue;
         }
         let identity = opaque_record_id(id, record, ctx)?;
-        let copied_identity = ctx.copy_retained_text(
+        let copied_identity = storage.with_storage(|| ctx.copy_retained_text(
             identity.as_str(),
             "step_drawing_native_target_identity_copy",
-        )?;
+        ))?;
         let source_type = ctx.join_display_retained(
             record.partials.iter().map(|partial| partial.name.as_str()),
             "+",
             "step_drawing_source_type_text",
         )?;
-        ctx.reserve_vec(&mut native_targets, 1, "step_drawing_native_target_items")?;
+        ctx.reserve_scoped_vec(&mut native_storage, &mut native_targets, 1, "step_drawing_native_target_items")?;
         native_targets.push(NativeRecord::from_identity(
             identity,
             [
@@ -500,8 +500,9 @@ fn add_source_typed_targets(
             ],
         ));
 
-        ctx.charge_collection_items(1, "step_drawing_native_target_members")?;
-        ctx.insert_btree_map(target_identities, id, BTreeSet::from([copied_identity]), "step_drawing_native_target_groups")?;
+        let mut members = BTreeSet::new();
+        storage.with_storage(|| ctx.insert_btree_set(&mut members, copied_identity, "step_drawing_native_target_members"))?;
+        storage.with_storage(|| ctx.insert_btree_map(target_identities, id, members, "step_drawing_native_target_groups"))?;
     }
     if native_targets.is_empty() {
         return Ok(());
@@ -666,7 +667,7 @@ fn add_reference_fields(
                         "step_drawing_relationship_members",
                     )?;
                 }
-                TargetResolution::Ambiguous(identities) => {
+                TargetResolution::Ambiguous((identities, _storage)) => {
                     let (source, _source_storage) = target_context.ctx.format_scoped(
                         format_args!("drawing #{source_id} {name}"),
                         "STEP drawing source label",
@@ -740,7 +741,7 @@ fn add_sheet_revision_usages(
                     "step_drawing_relationship_groups",
                     "step_drawing_relationship_members",
                 )?,
-                TargetResolution::Ambiguous(identities) => note_ambiguous_target(
+                TargetResolution::Ambiguous((identities, _storage)) => note_ambiguous_target(
                     losses,
                     &format!("drawing sheet #{sheet_id} usage #{usage_id}"),
                     "drawing_revision",
@@ -786,7 +787,7 @@ fn add_sheet_revision_usages(
                     "step_drawing_relationship_groups",
                     "step_drawing_relationship_members",
                 )?,
-                TargetResolution::Ambiguous(identities) => note_ambiguous_target(
+                TargetResolution::Ambiguous((identities, _storage)) => note_ambiguous_target(
                     losses,
                     &format!("drawing revision #{revision_id} usage #{usage_id}"),
                     "sheet_revision",
@@ -838,7 +839,7 @@ fn add_draughting_model_associations(
         let definition_target = if let Some(definition_id) = definition_id {
             match target_context.resolve(definition_id)? {
                 TargetResolution::Resolved(definition) => Some(definition),
-                TargetResolution::Ambiguous(identities) => {
+                TargetResolution::Ambiguous((identities, _storage)) => {
                     note_ambiguous_target(
                         losses,
                         &format!("draughting model #{model_id} association #{association_id}"),
@@ -887,7 +888,7 @@ fn add_draughting_model_associations(
                         "step_drawing_relationship_groups",
                         "step_drawing_relationship_members",
                     )?,
-                    TargetResolution::Ambiguous(identities) => {
+                    TargetResolution::Ambiguous((identities, _storage)) => {
                         note_ambiguous_target(
                             losses,
                             &format!("draughting model #{model_id} association #{association_id}"),
@@ -924,7 +925,7 @@ fn add_draughting_model_associations(
             match association_placeholder_reference(ctx, record, parameters)? {
                 Some(placeholder_id) => match target_context.resolve(placeholder_id)? {
                     TargetResolution::Resolved(placeholder) => Some(placeholder),
-                    TargetResolution::Ambiguous(identities) => {
+                    TargetResolution::Ambiguous((identities, _storage)) => {
                         note_ambiguous_target(
                             losses,
                             &format!("draughting model #{model_id} association #{association_id}"),
@@ -1020,14 +1021,14 @@ fn association_placeholder_reference(
         .and_then(ValueExt::reference))
 }
 
-fn target_resolution(
+fn target_resolution<'ctx>(
     id: u64,
     target_identities: &BTreeMap<u64, BTreeSet<String>>,
     known_typed: &HashSet<u64>,
     exchange: &Exchange,
     external_documents: &BTreeMap<u64, &str>,
-    ctx: &DecodeContext<'_>,
-) -> Result<TargetResolution, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<TargetResolution<'ctx>, CodecError> {
     if let Some(identity) = ctx.get_btree_map(&target_identities, &id, "STEP drawing target_identities get")?
         .filter(|identities| identities.len() == 1)
         .and_then(|identities| identities.first())
@@ -1068,35 +1069,36 @@ fn target_resolution(
     }
     let ambiguity = ctx.get_btree_map(&target_identities, &id, "STEP drawing target_identities get")?
         .filter(|identities| identities.len() > 1)
-        .map(|identities| clone_drawing_identities(identities, ctx))
+        .map(|identities| ctx.with_scoped_storage("STEP drawing ambiguity scratch", || clone_drawing_identities(identities, ctx)))
         .transpose()?
         .or(wrapper_ambiguity);
     Ok(ambiguity.map_or(TargetResolution::Unresolved, TargetResolution::Ambiguous))
 }
 
-enum WrapperTargetResolution {
+enum WrapperTargetResolution<'ctx> {
     Singleton(String),
-    Ambiguous(BTreeSet<String>),
+    Ambiguous((BTreeSet<String>, ScopedReservation<'ctx>)),
 }
 
-fn wrapper_target_resolution(
+fn wrapper_target_resolution<'ctx>(
     id: u64,
     target_identities: &BTreeMap<u64, BTreeSet<String>>,
     exchange: &Exchange,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<WrapperTargetResolution>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<Option<WrapperTargetResolution<'ctx>>, CodecError> {
     if ctx.contains_key_btree_map(&target_identities, &id, "STEP drawing target_identities contains_key")? {
         return Ok(None);
     }
+    let mut storage = ctx.reserve_scoped(0, "STEP drawing wrapper scratch")?;
     let mut identities = BTreeSet::new();
     let mut active = BTreeSet::new();
     let mut complete = BTreeSet::new();
-    let mut pending = ctx.alloc_filled(1, (id, false), "step_drawing_wrapper_pending")?;
+    let mut pending = storage.with_storage(|| ctx.alloc_filled(1, (id, false), "step_drawing_wrapper_pending"))?;
     while let Some((id, leaving)) = pending.pop() {
         ctx.charge_work(1, "STEP drawing worklist step")?;
         if leaving {
             ctx.remove_btree_set(&mut active, &id, "STEP drawing active remove")?;
-            ctx.insert_btree_set(&mut complete, id, "step_drawing_wrapper_complete")?;
+            storage.with_storage(|| ctx.insert_btree_set(&mut complete, id, "step_drawing_wrapper_complete"))?;
             continue;
         }
         if ctx.contains_btree_set(&complete, &id, "STEP drawing complete contains")? {
@@ -1105,15 +1107,15 @@ fn wrapper_target_resolution(
         if ctx.contains_btree_set(&active, &id, "STEP drawing active contains")? {
             return Ok(None);
         }
-        ctx.insert_btree_set(&mut active, id, "step_drawing_wrapper_active")?;
-        ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending")?;
+        storage.with_storage(|| ctx.insert_btree_set(&mut active, id, "step_drawing_wrapper_active"))?;
+        storage.with_storage(|| ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending"))?;
         pending.push((id, true));
         if let Some(targets) = ctx.get_btree_map(&target_identities, &id, "STEP drawing target_identities get")? {
             for target in ctx.admit_iter(targets, "STEP drawing targets traversal")? {
                 if !ctx.contains_btree_set(&identities, target, "STEP identities membership")? {
                     let copy =
-                        ctx.copy_retained_text(target, "step_drawing_wrapper_identity_text")?;
-                    ctx.insert_btree_set(&mut identities, copy, "step_drawing_wrapper_identities")?;
+                        storage.with_storage(|| ctx.copy_retained_text(target, "step_drawing_wrapper_identity_text"))?;
+                    storage.with_storage(|| ctx.insert_btree_set(&mut identities, copy, "step_drawing_wrapper_identities"))?;
                 }
             }
             continue;
@@ -1126,7 +1128,7 @@ fn wrapper_target_resolution(
             .and_then(|partial| partial.parameters.get(2))
             .and_then(ValueExt::reference)
         {
-            ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending")?;
+            storage.with_storage(|| ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending"))?;
             pending.push((plane, false));
         } else if let Some(representation) = mapped_representation(ctx, record, exchange)?
             .map(|representation| ctx.get_btree_map(exchange.records(), &representation, "STEP drawing record get"))
@@ -1135,7 +1137,7 @@ fn wrapper_target_resolution(
         {
             if let Some(items) = representation::items(ctx, representation)? {
                 for item in items.rev() {
-                    ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending")?;
+                    storage.with_storage(|| ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending"))?;
                     pending.push((item, false));
                 }
             }
@@ -1145,12 +1147,12 @@ fn wrapper_target_resolution(
         let Some(identity) = ctx.admit_iter(identities, "STEP drawing singleton target traversal")?.next() else {
             return Ok(None);
         };
-        return Ok(Some(WrapperTargetResolution::Singleton(identity)));
+        return Ok(Some(WrapperTargetResolution::Singleton(ctx.copy_retained_text(&identity, "step_drawing_wrapper_identity_text")?)));
     }
     if identities.is_empty() {
         Ok(None)
     } else {
-        Ok(Some(WrapperTargetResolution::Ambiguous(identities)))
+        Ok(Some(WrapperTargetResolution::Ambiguous((identities, storage))))
     }
 }
 

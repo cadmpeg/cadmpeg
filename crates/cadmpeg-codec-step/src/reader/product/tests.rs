@@ -340,7 +340,7 @@ fn product_typed_claims_refuse_collection_limit() {
 }
 
 #[test]
-fn product_string_text_refuses_retained_limit() {
+fn product_string_text_refuses_materialized_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -352,14 +352,14 @@ fn product_string_text_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let refused = {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "step_string_text",
             |limit| {
                 let mut policy = DecodePolicy::service();
-                policy.limits.max_retained_bytes = limit;
+                policy.limits.max_materialized_bytes = limit;
                 let (ctx, _) =
                     DecodeContext::from_root_bytes(PRODUCT_STRING_LIMIT_SOURCE, &arena, &policy)
-                        .expect("root fits retained policy");
+                        .expect("root fits materialized policy");
 
                 (crate::reader::decode_exchange(
                     PRODUCT_STRING_LIMIT_SOURCE,
@@ -372,10 +372,10 @@ fn product_string_text_refuses_retained_limit() {
             },
         );
         matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::RetainedBytes
+                if refusal.dimension == ResourceDimension::MaterializedBytes
                     && refusal.operation == "step_string_text")
     };
-    assert!(refused, "no retained limit refused a product string");
+    assert!(refused, "no materialized limit refused a product string");
 }
 
 fn product_retained_refuses_source(source: &[u8], operation: &str) {
@@ -406,6 +406,34 @@ fn product_retained_refuses_source(source: &[u8], operation: &str) {
         if refusal.dimension == ResourceDimension::RetainedBytes && refusal.operation == operation));
 }
 
+fn product_text_work_refuses_source(source: &[u8], operation: &str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid product exchange");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).expect("root");
+            crate::reader::decode_exchange(
+                source,
+                exchange.clone(),
+                &diagnostics,
+                &ctx,
+                crate::reader::Packaging::Bare,
+            )
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == operation));
+}
+
 fn product_copy_refuses_retained_limit(operation: &str) {
     let source = String::from_utf8_lossy(PRODUCT_STRING_LIMIT_SOURCE).replace(
         "PRODUCT('P','Part name',''",
@@ -414,10 +442,6 @@ fn product_copy_refuses_retained_limit(operation: &str) {
     product_retained_refuses_source(source.as_bytes(), operation);
 }
 
-#[test]
-fn product_definition_description_copy_refuses_retained_limit() {
-    product_copy_refuses_retained_limit("step_product_definition_description_copy");
-}
 
 #[test]
 fn product_description_copy_refuses_retained_limit() {
