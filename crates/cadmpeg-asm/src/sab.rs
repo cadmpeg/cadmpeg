@@ -49,7 +49,7 @@ pub(crate) fn exact_identifier_at(bytes: &[u8], at: usize, expected: &str) -> bo
 }
 
 /// Scan record boundaries and exact names without constructing a record table.
-/// The caller admits the complete token walk before scanning.
+/// Each record, token and text validation is admitted before it runs.
 pub(crate) fn scan_history_boundary(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -61,7 +61,6 @@ pub(crate) fn scan_history_boundary(
         return Ok(None);
     }
     // Token validation and loop work are charged at each operation.
-    let _errors = ctx.reserve_scoped(128, "SAB history scanner error text")?;
     let mut pos = start;
     while pos < bytes.len() {
         ctx.charge_work(1, "scan SAB history record")?;
@@ -352,7 +351,7 @@ pub fn payload_token(
             Lexed::Str(value) => {
                 name_done = true;
                 if payload_index == token_index {
-                    return Ok(Some((token_offset, Token::Str(value.to_owned()))));
+                    return Ok(Some((token_offset, Token::Str(ctx.copy_retained_text(value, "retain SAB payload token string")?))));
                 }
                 payload_index += 1;
             }
@@ -597,7 +596,7 @@ fn frame_impl(
         let mut scratch = ctx
             .reserve_scoped(0, "frame SAB record")
             .map_err(StreamFailure::from_operation)?;
-        let mut name_parts: Vec<String> = Vec::new();
+        let mut name_parts: Vec<&str> = Vec::new();
         let mut tokens: Vec<Token> = Vec::new();
         let mut depth_guards = Vec::new();
         let mut name_done = false;
@@ -633,22 +632,16 @@ fn frame_impl(
                 Lexed::SubIdent(s) if !name_done => {
                     ctx.reserve_scoped_vec(&mut scratch, &mut name_parts, 1, "frame SAB name part")
                         .map_err(StreamFailure::from_operation)?;
-                    let part = ctx
-                        .copy_scoped_text(s, &mut scratch, "frame SAB name part")
-                        .map_err(StreamFailure::from_operation)?;
-                    name_parts.push(part);
+                    name_parts.push(s);
                 }
                 Lexed::Ident(s) if !name_done => {
                     ctx.reserve_scoped_vec(&mut scratch, &mut name_parts, 1, "frame SAB name part")
                         .map_err(StreamFailure::from_operation)?;
-                    let part = ctx
-                        .copy_scoped_text(s, &mut scratch, "frame SAB name part")
-                        .map_err(StreamFailure::from_operation)?;
-                    name_parts.push(part);
+                    name_parts.push(s);
                     name_done = true;
                     // The history partition opens with the delta_state record.
                     // Stop at its name; the active slice ends before its payload.
-                    if name_parts.first().is_some_and(|n| n == "delta_state") {
+                    if name_parts.first().is_some_and(|n| *n == "delta_state") {
                         is_delta = true;
                         break;
                     }
@@ -661,10 +654,7 @@ fn frame_impl(
                     // marker chain; its following identifier is the wrapped
                     // record's dispatch name.
                     if payload_start
-                        && name_parts
-                            .iter()
-                            .map(String::as_str)
-                            .eq(["End", "of", "ASM", "History", "Section"])
+                        && name_parts.as_slice() == ["End", "of", "ASM", "History", "Section"]
                         && identifier == "edge"
                     {
                         embedded_history_edge = true;

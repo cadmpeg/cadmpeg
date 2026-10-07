@@ -219,26 +219,20 @@ pub fn unverified_message(
         Admission::Residual => None,
         Admission::Admitted | Admission::Refused => return Ok(None),
     };
-    let declared = match (
-        matched.declared().get(DECLARED_SAVE_FORMAT_MAJOR),
-        matched.declared().get(DECLARED_SAVE_FORMAT_MINOR),
+    let mut scratch = ctx.reserve_scoped(0, "kernel recovery declaration text")?;
+    let declared = scratch.with_storage(|| match (
+        ctx.get_btree_map(matched.declared(), DECLARED_SAVE_FORMAT_MAJOR, "read kernel recovery declarations")?,
+        ctx.get_btree_map(matched.declared(), DECLARED_SAVE_FORMAT_MINOR, "read kernel recovery declarations")?,
     ) {
-        (Some(major), Some(minor)) => format!("save format {major}.{minor}"),
-        (Some(major), None) => format!("save format major {major}"),
-        (None, _) => "no save format".to_owned(),
+        (Some(major), Some(minor)) => ctx.format_retained(format_args!("save format {major}.{minor}"), "kernel recovery declaration text"),
+        (Some(major), None) => ctx.format_retained(format_args!("save format major {major}"), "kernel recovery declaration text"),
+        (None, _) => ctx.copy_retained_text("no save format", "kernel recovery declaration text"),
+    })?;
+    let message = match using.as_ref() {
+        None => ctx.format_retained(format_args!("{subject} declares {declared}; its recovery names no declared save-band grammar as a substitute"), "retain kernel recovery message")?,
+        Some(using) => ctx.format_retained(format_args!("{subject} declares {declared}, which no verified Spatial ACIS band declares; its records were read with the grammar `{using}` declares, and what they decoded is reported as it decoded"), "retain kernel recovery message")?,
     };
-    Ok(Some(using.as_ref().map_or_else(
-        || {
-            format!(
-                "{subject} declares {declared}; its recovery names no declared save-band grammar as a substitute"
-            )
-        },
-        |using| {
-            format!(
-                "{subject} declares {declared}, which no verified Spatial ACIS band declares; its records were read with the grammar `{using}` declares, and what they decoded is reported as it decoded"
-            )
-        },
-    )))
+    Ok(Some(message))
 }
 
 /// The `acis:` binary row one save format satisfies.
