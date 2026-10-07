@@ -69,7 +69,7 @@ fn geometric_scratch_releases_consumed_storage_without_retained_copies() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut scratch = super::Scratch::new(&ctx).unwrap();
-    scratch.extend([1u64, 2]).unwrap();
+    scratch.extend(&[1u64, 2], |value| *value).unwrap();
     assert_eq!(scratch.into_iter().collect::<Vec<_>>(), [1, 2]);
     drop(ctx.reserve_scoped(64, "scratch storage released").unwrap());
     ctx.finish_session().unwrap();

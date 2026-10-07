@@ -6794,6 +6794,19 @@ impl From<PcurveGeometry> for SupportPcurve {
 #[serde(transparent)]
 pub struct DirectedParameterRange([f64; 2]);
 
+impl cadmpeg_core::decode::cost::DecodeCost for DirectedParameterRange {
+    const FIXED_BYTES: Option<u64> =
+        <[f64; 2] as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
+
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        self.0.decode_cost(ctx, operation)
+    }
+}
+
 /// Error returned when a directed parameter range cannot be admitted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParameterRangeError;
