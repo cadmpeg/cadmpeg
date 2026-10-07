@@ -8,7 +8,7 @@ use super::trimming::pcurve_geometry;
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::eval::{finite_or_refusal, EvaluationFailure};
@@ -18,7 +18,7 @@ use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
     CurveGeometry,
 };
-use cadmpeg_ir::ids::{CoedgeId, EdgeId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{EdgeId, SurfaceId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundary, PcurveUse, Point,
@@ -93,11 +93,11 @@ struct SurfaceSupport<'a> {
     factor: f64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 enum SourceEdgeSelectionError {
     NoMatch,
     Ambiguous,
-    ResourceLimit(cadmpeg_core::decode::ResourceLimit),
+    Codec(CodecError),
 }
 
 #[derive(Debug)]
@@ -127,20 +127,18 @@ fn list_index(record: &ParameterRecord, index: usize) -> Option<usize> {
         .and_then(|value| value.checked_sub(1))
 }
 
-fn topology_vertex(
+fn topology_vertex<'ids>(
     candidate: &mut ModelDraft,
-    vertex_ids: &mut BTreeMap<(u32, usize), VertexId>,
+    (vertex_ids, storage): (&'ids mut BTreeMap<(u32, usize), VertexId>, &mut ScopedReservation<'_>),
     vertex_lists: &BTreeMap<u32, Vec<Point3>>,
     stem: &crate::ids::Stem,
     vertex_key: (u32, usize),
     sequences: &mut super::geometry::SourceSequences,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<VertexId>, CodecError> {
+) -> Result<Option<&'ids VertexId>, CodecError> {
     let (list, index) = vertex_key;
-    if let Some(existing) = vertex_ids.get(&(list, index)) {
-        return Ok(Some(
-            existing.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
-        ));
+    if vertex_ids.contains_key(&(list, index)) {
+        return Ok(vertex_ids.get(&(list, index)));
     }
     let Some(position) = FinitePoint3::new(vertex_lists[&list][index]) else {
         return Ok(None);
@@ -155,11 +153,7 @@ fn topology_vertex(
         1,
         "iges B-rep topology vertices",
     )?;
-    ctx.admit_btree_entry(
-        vertex_ids,
-        &(list, index),
-        "iges B-rep topology vertex index",
-    )?;
+    storage.with_storage(|| ctx.admit_btree_entry(vertex_ids, &(list, index), "iges B-rep topology vertex index"))?;
     let point_id = crate::ids::point_admitted(&stem.child(list).slot(index + 1), ctx)?;
     let point = Point::new(
         point_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
@@ -171,16 +165,16 @@ fn topology_vertex(
     ctx.charge_entities(1, "iges_geometry_brep")?;
     candidate.model_mut().points.push(point);
     ctx.charge_entities(1, "iges_geometry_brep")?;
+    let stored_id = storage.with_storage(|| vertex_id.try_clone_for_decode(ctx, "iges B-rep identity copy"))?;
     candidate.model_mut().vertices.push(Vertex {
-        id: vertex_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+        id: vertex_id,
         point: point_id,
         tolerance: None,
     });
     Ok(Some(
         vertex_ids
             .entry((list, index))
-            .or_insert(vertex_id)
-            .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+            .or_insert(stored_id),
     ))
 }
 
@@ -194,10 +188,11 @@ fn source_edge_for_vertices<'a>(
     tolerance: f64,
 ) -> Result<&'a Edge, SourceEdgeSelectionError> {
     let mut matching = None;
-    for edge in candidates
-        .iter()
-        .filter_map(|position| ir.model.edges.get(*position))
+    let mut positions = candidates.iter();
+    while let Some(position) = ctx.next_charged(&mut positions, "iges B-rep source edge candidates")
+        .map_err(SourceEdgeSelectionError::Codec)?
     {
+        let Some(edge) = ir.model.edges.get(*position) else { continue; };
         let Some(range) = edge.param_range() else {
             continue;
         };
@@ -207,9 +202,9 @@ fn source_edge_for_vertices<'a>(
                 curve_geometry,
                 range[0],
             ))
-            .map_err(SourceEdgeSelectionError::ResourceLimit)?,
+            .map_err(|limit| SourceEdgeSelectionError::Codec(limit.into()))?,
         )
-        .map_err(SourceEdgeSelectionError::ResourceLimit)?
+        .map_err(|limit| SourceEdgeSelectionError::Codec(limit.into()))?
         else {
             continue;
         };
@@ -224,9 +219,9 @@ fn source_edge_for_vertices<'a>(
                 curve_geometry,
                 range[1],
             ))
-            .map_err(SourceEdgeSelectionError::ResourceLimit)?,
+            .map_err(|limit| SourceEdgeSelectionError::Codec(limit.into()))?,
         )
-        .map_err(SourceEdgeSelectionError::ResourceLimit)?
+        .map_err(|limit| SourceEdgeSelectionError::Codec(limit.into()))?
         else {
             continue;
         };
@@ -251,7 +246,7 @@ fn project_pcurve_uses(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<PcurveUse>, PcurveProjectionError> {
     let mut projected = ctx.collection_vec(resolved.len(), "iges B-rep projected pcurve uses")?;
-    for (index, ((isoparametric, _), (geometry, range))) in uses.iter().zip(resolved).enumerate() {
+    for (index, ((isoparametric, _), (geometry, range))) in ctx.admit_iter(uses, "iges B-rep pcurve projection traversal").map_err(CodecError::from)?.zip(resolved).enumerate() {
         let parameter_range = cadmpeg_ir::units::FiniteVector::new(range).ok_or(
             PcurveProjectionError::Invalid(PcurveMetadata::NON_FINITE_PARAMETER_RANGE),
         )?;
@@ -322,15 +317,25 @@ fn resolve_pcurve_uses<'a>(
     if uses.is_empty() {
         return Ok(Some(Vec::new()));
     }
-    if model_index.is_none() {
+    // A model without procedural surface records evaluates the support directly.
+    if !source.model.procedural_surfaces.is_empty() && model_index.is_none() {
         *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(source, ctx)?);
     }
-    let Some(index) = model_index.as_ref() else {
-        return Ok(None);
+    let index = model_index.as_ref();
+    let point_on_surface = |u, v| {
+        let evaluation = if let Some(index) = index {
+            cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                index, support.id, u, v,
+            )
+        } else {
+            cadmpeg_ir::eval::decode::surface_point(ctx, support.geometry, u, v)
+        };
+        surface_point_or_refusal(evaluation)
     };
     let mut resolved = ctx.collection_vec(uses.len(), "iges B-rep resolved pcurves")?;
-    let mut mapped = ctx.collection_vec(uses.len(), "iges B-rep mapped pcurves")?;
-    for (_, sequence) in uses {
+    let (mut mapped, _mapped_storage) = ctx.temporary_vec(uses.len(), "iges B-rep mapped pcurves")?;
+    for (_, sequence) in ctx.admit_iter(uses, "iges B-rep pcurve resolution traversal")? {
         let Some((geometry, range)) = pcurve_geometry(
             source,
             *sequence,
@@ -351,30 +356,14 @@ fn resolve_pcurve_uses<'a>(
                 cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[0]),
             )?)
             .map_err(CodecError::from)?
-            .map(|uv| {
-                surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
-                    index,
-                    support.id,
-                    uv.u,
-                    uv.v,
-                ))
-            })
+            .map(|uv| point_on_surface(uv.u, uv.v))
             .transpose()?
             .flatten(),
             finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
                 cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[1]),
             )?)
             .map_err(CodecError::from)?
-            .map(|uv| {
-                surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
-                    index,
-                    support.id,
-                    uv.u,
-                    uv.v,
-                ))
-            })
+            .map(|uv| point_on_surface(uv.u, uv.v))
             .transpose()?
             .flatten(),
         ) else {
@@ -387,9 +376,7 @@ fn resolve_pcurve_uses<'a>(
         (cadmpeg_ir::math::Point3::distance(mapped[0].0, expected_start) <= tolerance
             && cadmpeg_ir::math::Point3::distance(mapped[mapped.len() - 1].1, expected_end)
                 <= tolerance
-            && mapped
-                .windows(2)
-                .all(|pair| cadmpeg_ir::math::Point3::distance(pair[0].1, pair[1].0) <= tolerance))
+            && ctx.all_by(mapped.windows(2), |pair| Ok(cadmpeg_ir::math::Point3::distance(pair[0].1, pair[1].0) <= tolerance), "iges B-rep pcurve continuity")?)
         .then_some(resolved),
     )
 }
@@ -406,13 +393,13 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let factor = global.length_factor_mm();
     let tolerance = global.minimum_resolution_mm();
+    let mut definition_storage = ctx.reserve_scoped(0, "iges B-rep definitions")?;
     let mut vertex_lists = BTreeMap::<u32, Vec<Point3>>::new();
     let mut edge_lists = BTreeMap::<u32, Vec<EdgeDefinition>>::new();
     let mut loops = BTreeMap::<u32, Vec<LoopUse>>::new();
     let mut faces = BTreeMap::<u32, FaceDefinition>::new();
 
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges B-rep directory traversal")?
         .filter(|entry| entry.entity_type == 502 && entry.form == 1)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -442,8 +429,8 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut points = ctx.collection_vec(count, "iges B-rep vertex-list points")?;
-        for index in 0..count {
+        let mut points = definition_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep vertex-list points"))?;
+        for index in ctx.admit_iter(0..count, "iges B-rep definition tuples")? {
             let start = 2 + index * 3;
             let values = [
                 record.number(start),
@@ -469,16 +456,15 @@ pub(super) fn project(
             )?;
             continue;
         }
-        ctx.insert_btree_map(
+        definition_storage.with_storage(|| ctx.insert_btree_map(
             &mut vertex_lists,
             entry.sequence,
             points,
             "iges B-rep vertex-list nodes",
-        )?;
+        ))?;
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges B-rep directory traversal")?
         .filter(|entry| entry.entity_type == 504 && entry.form == 1)
     {
         if entry.transform != 0 {
@@ -508,8 +494,8 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut edges = ctx.collection_vec(count, "iges B-rep edge-list edges")?;
-        for item in 0..count {
+        let mut edges = definition_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep edge-list edges"))?;
+        for item in ctx.admit_iter(0..count, "iges B-rep definition tuples")? {
             let start = 2 + item * 5;
             let Some(edge) = pointer(record, start)
                 .zip(pointer(record, start + 1))
@@ -550,16 +536,15 @@ pub(super) fn project(
             )?;
             continue;
         }
-        ctx.insert_btree_map(
+        definition_storage.with_storage(|| ctx.insert_btree_map(
             &mut edge_lists,
             entry.sequence,
             edges,
             "iges B-rep edge-list nodes",
-        )?;
+        ))?;
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges B-rep directory traversal")?
         .filter(|entry| entry.entity_type == 508 && entry.form == 1)
     {
         if entry.transform != 0 {
@@ -590,8 +575,8 @@ pub(super) fn project(
             continue;
         };
         let mut index = 2;
-        let mut uses = ctx.collection_vec(count, "iges B-rep loop uses")?;
-        for _ in 0..count {
+        let mut uses = definition_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep loop uses"))?;
+        for _ in ctx.admit_iter(0..count, "iges B-rep definition tuples")? {
             let Some(use_type) = record.integer(index) else {
                 uses.clear();
                 break;
@@ -608,8 +593,8 @@ pub(super) fn project(
                 uses.clear();
                 break;
             };
-            let mut pcurves = ctx.collection_vec(pcurve_count, "iges B-rep use pcurves")?;
-            for pcurve_index in 0..pcurve_count {
+            let mut pcurves = definition_storage.with_storage(|| ctx.collection_vec(pcurve_count, "iges B-rep use pcurves"))?;
+            for pcurve_index in ctx.admit_iter(0..pcurve_count, "iges B-rep definition tuples")? {
                 let isoparametric = match record.integer(index + 5 + pcurve_index * 2) {
                     Some(1) => true,
                     Some(0) => false,
@@ -689,11 +674,10 @@ pub(super) fn project(
             )?;
             continue;
         }
-        ctx.insert_btree_map(&mut loops, entry.sequence, uses, "iges B-rep loop nodes")?;
+        definition_storage.with_storage(|| ctx.insert_btree_map(&mut loops, entry.sequence, uses, "iges B-rep loop nodes"))?;
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges B-rep directory traversal")?
         .filter(|entry| entry.entity_type == 510 && entry.form == 1)
     {
         if entry.transform != 0 {
@@ -754,9 +738,9 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut rest = ctx.collection_vec(count - 1, "iges B-rep face loop pointers")?;
+        let mut rest = definition_storage.with_storage(|| ctx.collection_vec(count - 1, "iges B-rep face loop pointers"))?;
         let mut valid_pointers = true;
-        for index in 1..count {
+        for index in ctx.admit_iter(1..count, "iges B-rep definition tuples")? {
             let Some(sequence) = pointer(record, 4 + index) else {
                 valid_pointers = false;
                 break;
@@ -780,9 +764,7 @@ pub(super) fn project(
         } else {
             FaceLoopPointers::Unclassified { first, rest }
         };
-        if face_loops
-            .iter()
-            .any(|sequence| !loops.contains_key(&sequence))
+        if ctx.any_by(face_loops.iter(), |sequence| Ok(!loops.contains_key(&sequence)), "iges B-rep face loop references")?
         {
             super::push_entity_loss(
                 ctx,
@@ -792,7 +774,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        ctx.insert_btree_map(
+        definition_storage.with_storage(|| ctx.insert_btree_map(
             &mut faces,
             entry.sequence,
             FaceDefinition {
@@ -800,12 +782,11 @@ pub(super) fn project(
                 loops: face_loops,
             },
             "iges B-rep face nodes",
-        )?;
+        ))?;
     }
 
     let mut shell_definitions = BTreeMap::new();
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges B-rep directory traversal")?
         .filter(|entry| entry.entity_type == 514 && matches!(entry.form, 1 | 2))
     {
         if entry.transform != 0 {
@@ -835,8 +816,8 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut face_uses = ctx.collection_vec(count, "iges B-rep shell face uses")?;
-        for index in 0..count {
+        let mut face_uses = definition_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep shell face uses"))?;
+        for index in ctx.admit_iter(0..count, "iges B-rep definition tuples")? {
             let Some(face) = pointer(record, 2 + index * 2) else {
                 face_uses.clear();
                 break;
@@ -864,7 +845,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        ctx.insert_btree_map(
+        definition_storage.with_storage(|| ctx.insert_btree_map(
             &mut shell_definitions,
             entry.sequence,
             ShellDefinition {
@@ -872,18 +853,17 @@ pub(super) fn project(
                 faces: face_uses,
             },
             "iges B-rep shell nodes",
-        )?;
+        ))?;
     }
 
     let mut body_definitions = Vec::new();
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges B-rep directory traversal")?
         .filter(|entry| entry.entity_type == 514 && entry.form == 2)
     {
         if shell_definitions.contains_key(&entry.sequence) {
-            let mut shells = ctx.collection_vec(1, "iges B-rep sheet shell uses")?;
+            let mut shells = definition_storage.with_storage(|| ctx.collection_vec(1, "iges B-rep sheet shell uses"))?;
             shells.push((entry.sequence, Sense::Forward));
-            ctx.reserve_vec(&mut body_definitions, 1, "iges B-rep body definitions")?;
+            definition_storage.with_storage(|| ctx.reserve_vec(&mut body_definitions, 1, "iges B-rep body definitions"))?;
             body_definitions.push(BodyDefinition {
                 entry,
                 kind: BodyKind::Sheet,
@@ -894,8 +874,7 @@ pub(super) fn project(
         }
     }
     let mut referenced_closed_shells = BTreeSet::new();
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges B-rep directory traversal")?
         .filter(|entry| entry.entity_type == 186 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -941,10 +920,10 @@ pub(super) fn project(
         let shell_count = void_count.checked_add(1).ok_or_else(|| {
             cadmpeg_core::decode::refuse_local_limit("iges B-rep solid shell uses", u64::MAX, 1)
         })?;
-        let mut shell_uses = ctx.collection_vec(shell_count, "iges B-rep solid shell uses")?;
+        let mut shell_uses = definition_storage.with_storage(|| ctx.collection_vec(shell_count, "iges B-rep solid shell uses"))?;
         shell_uses.push((outer, outer_sense));
         let mut valid = true;
-        for index in 0..void_count {
+        for index in ctx.admit_iter(0..void_count, "iges B-rep definition tuples")? {
             let Some(shell) = pointer(record, 4 + index * 2) else {
                 valid = false;
                 break;
@@ -960,11 +939,11 @@ pub(super) fn project(
             shell_uses.push((shell, sense));
         }
         if !valid
-            || shell_uses.iter().any(|(sequence, _)| {
-                shell_definitions
+            || ctx.any_by(&shell_uses, |(sequence, _)| {
+                Ok(shell_definitions
                     .get(sequence)
-                    .is_none_or(|shell| shell.form != 1)
-            })
+                    .is_none_or(|shell| shell.form != 1))
+            }, "iges B-rep solid shell references")?
         {
             super::push_entity_loss(
                 ctx,
@@ -974,14 +953,15 @@ pub(super) fn project(
             )?;
             continue;
         }
-        for (sequence, _) in &shell_uses {
-            ctx.insert_btree_set(
+        for (sequence, _) in ctx.admit_iter(&shell_uses, "iges B-rep shell reference traversal")? {
+            definition_storage.with_storage(|| ctx.insert_btree_set(
                 &mut referenced_closed_shells,
                 *sequence,
                 "iges B-rep referenced closed shells",
-            )?;
+            ))?;
         }
-        let transform = match resolve_transform(
+        let mut transform_storage = ctx.reserve_scoped(0, "iges B-rep transform scratch")?;
+        let transform = match transform_storage.with_storage(|| resolve_transform(
             entry.transform,
             entries,
             records,
@@ -989,7 +969,7 @@ pub(super) fn project(
             global.real_precision(),
             &mut BTreeSet::new(),
             ctx,
-        ) {
+        )) {
             Ok(transform) => (entry.transform != 0).then_some(transform),
             Err(error) => {
                 let message = error.non_resource()?;
@@ -997,7 +977,7 @@ pub(super) fn project(
                 continue;
             }
         };
-        ctx.reserve_vec(&mut body_definitions, 1, "iges B-rep body definitions")?;
+        definition_storage.with_storage(|| ctx.reserve_vec(&mut body_definitions, 1, "iges B-rep body definitions"))?;
         body_definitions.push(BodyDefinition {
             entry,
             kind: BodyKind::Solid,
@@ -1006,16 +986,15 @@ pub(super) fn project(
             transform,
         });
     }
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges B-rep directory traversal")?
         .filter(|entry| entry.entity_type == 514 && entry.form == 1)
     {
         if shell_definitions.contains_key(&entry.sequence)
             && !referenced_closed_shells.contains(&entry.sequence)
         {
-            let mut shells = ctx.collection_vec(1, "iges B-rep sheet shell uses")?;
+            let mut shells = definition_storage.with_storage(|| ctx.collection_vec(1, "iges B-rep sheet shell uses"))?;
             shells.push((entry.sequence, Sense::Forward));
-            ctx.reserve_vec(&mut body_definitions, 1, "iges B-rep body definitions")?;
+            definition_storage.with_storage(|| ctx.reserve_vec(&mut body_definitions, 1, "iges B-rep body definitions"))?;
             body_definitions.push(BodyDefinition {
                 entry,
                 kind: BodyKind::Sheet,
@@ -1032,33 +1011,30 @@ pub(super) fn project(
     // position map per arena therefore serves the whole call, replacing a
     // linear scan per face. The emptiness guard keeps files without
     // explicit B-rep from paying for either map.
+    let mut index_storage = ctx.reserve_scoped(0, "iges B-rep geometry indexes")?;
     let mut surface_positions = BTreeMap::<String, usize>::new();
     let mut curve_positions = BTreeMap::<String, usize>::new();
     if !body_definitions.is_empty() {
-        for (position, surface) in ir.model.surfaces.iter().enumerate() {
-            if !surface_positions.contains_key(surface.id.as_str()) {
-                let key = ctx.format_retained(
-                    format_args!("{}", surface.id),
-                    "iges B-rep surface index keys",
-                )?;
-                ctx.insert_btree_map(
+        for (position, surface) in ctx.admit_iter(&ir.model.surfaces, "iges B-rep surface index traversal")?.enumerate() {
+            if !ctx.contains_key_btree_map(&surface_positions, surface.id.as_str(), "iges B-rep surface index lookup")? {
+                let key = ctx.copy_scoped_text(surface.id.as_str(), &mut index_storage, "iges B-rep surface index keys")?;
+                index_storage.with_storage(|| ctx.insert_btree_map(
                     &mut surface_positions,
                     key,
                     position,
                     "iges B-rep surface index nodes",
-                )?;
+                ))?;
             }
         }
-        for (position, curve) in ir.model.curves.iter().enumerate() {
-            if !curve_positions.contains_key(curve.id.as_str()) {
-                let key = ctx
-                    .format_retained(format_args!("{}", curve.id), "iges B-rep curve index keys")?;
-                ctx.insert_btree_map(
+        for (position, curve) in ctx.admit_iter(&ir.model.curves, "iges B-rep curve index traversal")?.enumerate() {
+            if !ctx.contains_key_btree_map(&curve_positions, curve.id.as_str(), "iges B-rep curve index lookup")? {
+                let key = ctx.copy_scoped_text(curve.id.as_str(), &mut index_storage, "iges B-rep curve index keys")?;
+                index_storage.with_storage(|| ctx.insert_btree_map(
                     &mut curve_positions,
                     key,
                     position,
                     "iges B-rep curve index nodes",
-                )?;
+                ))?;
             }
         }
     }
@@ -1066,16 +1042,16 @@ pub(super) fn project(
     // The session holds the document's exclusive borrow. Its identity index
     // remains unbuilt until the first body reaches commit admission.
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
-    for definition in body_definitions {
+    let mut edges_by_curve = BTreeMap::<String, Vec<usize>>::new();
+    let mut indexed_edge_count = 0;
+    for definition in ctx.admit_iter(body_definitions, "iges B-rep body traversal")? {
         let ir = commit_session.document();
         let entry = definition.entry;
         let mut model_index = None;
-        // The edge arena does grow — every committed body appends to it —
-        // so this index lives for one body and is built on first use, where
-        // it replaces a full-arena scan per distinct edge. Its `&str` keys
-        // borrow from `ir`; the borrow must stay dead by the time the body
-        // commits below, or the session's exclusive commit will not compile.
-        let mut edges_by_curve: Option<BTreeMap<&str, Vec<usize>>> = None;
+        // Extend the source index only over edges appended since the last body.
+        // Keys own their text because a successful body commit changes the arena.
+        let mut body_storage = ctx.reserve_scoped(0, "iges B-rep body indexes")?;
+        let mut radial_identity_storage = ctx.reserve_scoped(0, "iges B-rep radial identities")?;
         let mut candidate = ModelDraft::new();
         let stem = crate::ids::Stem::directory(entry.sequence);
         let body_id = crate::ids::body_admitted(&stem, ctx)?;
@@ -1083,12 +1059,12 @@ pub(super) fn project(
         let region_id = crate::ids::region_admitted(&stem, ctx)?;
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
-        let mut radial = BTreeMap::<(u32, u32, usize), Vec<CoedgeId>>::new();
+        let mut radial = BTreeMap::<(u32, u32, usize), Vec<usize>>::new();
         let mut region_shells =
             ctx.collection_vec(definition.shells.len(), "iges B-rep region shell ids")?;
         let mut consumed = BTreeSet::new();
         let mut valid = true;
-        for (shell_sequence, shell_sense) in definition.shells.iter().copied() {
+        for (shell_sequence, shell_sense) in ctx.admit_iter(&definition.shells, "iges B-rep body shell traversal")?.copied() {
             let shell_definition = &shell_definitions[&shell_sequence];
             let shell_stem = if shell_sequence == entry.sequence && definition.shells.len() == 1 {
                 std::borrow::Cow::Borrowed(&stem)
@@ -1098,15 +1074,14 @@ pub(super) fn project(
             let shell_id = crate::ids::shell_admitted(&shell_stem, ctx)?;
             let mut shell_faces =
                 ctx.collection_vec(shell_definition.faces.len(), "iges B-rep shell face ids")?;
-            for &(face_sequence, native_face_sense) in &shell_definition.faces {
+            for &(face_sequence, native_face_sense) in ctx.admit_iter(&shell_definition.faces, "iges B-rep shell face traversal")? {
                 let face_sense = compose_sense(native_face_sense, shell_sense);
                 let face_definition = &faces[&face_sequence];
                 let surface_id = crate::ids::surface_admitted(
                     &crate::ids::Stem::directory(face_definition.surface),
                     ctx,
                 )?;
-                let Some(support_geometry) = surface_positions
-                    .get(surface_id.as_str())
+                let Some(support_geometry) = ctx.get_btree_map(&surface_positions, surface_id.as_str(), "iges B-rep surface lookup")?
                     .and_then(|position| ir.model.surfaces.get(*position))
                     .map(|surface| &surface.geometry)
                 else {
@@ -1117,38 +1092,24 @@ pub(super) fn project(
                 sequences.record_face(&face_id, face_sequence, ctx)?;
                 let loop_id_for =
                     |sequence| crate::ids::loop_admitted(&shell_stem.child(sequence), ctx);
-                for loop_sequence in face_definition.loops.iter() {
+                let mut loop_sequences = face_definition.loops.iter();
+                while let Some(loop_sequence) = ctx.next_charged(&mut loop_sequences, "iges B-rep face loop traversal")? {
                     let uses = &loops[&loop_sequence];
                     let loop_id = loop_id_for(loop_sequence)?;
-                    let edge_use_count = uses
-                        .iter()
+                    let edge_use_count = ctx.admit_iter(uses, "iges B-rep edge use count")?
                         .filter(|use_| matches!(use_, LoopUse::Edge { .. }))
                         .count();
-                    let mut edge_use_indices =
-                        ctx.collection_vec(edge_use_count, "iges B-rep edge-use positions")?;
-                    let mut coedge_ids =
-                        ctx.collection_vec(edge_use_count, "iges B-rep coedge ids")?;
-                    let mut coedge_by_use = BTreeMap::new();
-                    for (index, use_) in uses.iter().enumerate() {
+                    let mut coedge_ids = ctx.collection_vec(edge_use_count, "iges B-rep coedge ids")?;
+                    for (index, use_) in ctx.admit_iter(uses, "iges B-rep coedge identity traversal")?.enumerate() {
                         if matches!(use_, LoopUse::Edge { .. }) {
-                            edge_use_indices.push(index);
-                            let coedge_id = crate::ids::coedge_admitted(
-                                &shell_stem.child(loop_sequence).slot(index),
-                                ctx,
-                            )?;
-                            ctx.insert_btree_map(
-                                &mut coedge_by_use,
-                                index,
-                                coedge_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
-                                "iges B-rep coedge use nodes",
-                            )?;
-                            coedge_ids.push(coedge_id);
+                            coedge_ids.push(crate::ids::coedge_admitted(&shell_stem.child(loop_sequence).slot(index), ctx)?);
                         }
                     }
+                    let mut coedge_position = 0;
+                    let mut predecessor = coedge_ids.last();
                     let vertex_use_count = uses.len() - edge_use_count;
-                    let mut loop_vertex_uses =
-                        ctx.collection_vec(vertex_use_count, "iges B-rep loop vertex uses")?;
-                    for (use_index, use_) in uses.iter().enumerate() {
+                    let (mut loop_vertex_uses, vertex_use_storage) = ctx.temporary_vec(vertex_use_count, "iges B-rep loop vertex uses")?;
+                    for (use_index, use_) in ctx.admit_iter(uses, "iges B-rep loop use traversal")?.enumerate() {
                         let LoopUse::Edge {
                             edge_list,
                             edge_index,
@@ -1166,7 +1127,7 @@ pub(super) fn project(
                             };
                             let Some(vertex) = topology_vertex(
                                 &mut candidate,
-                                &mut vertex_ids,
+                                (&mut vertex_ids, &mut body_storage),
                                 &vertex_lists,
                                 &stem,
                                 (*vertex_list, *vertex_index),
@@ -1176,18 +1137,7 @@ pub(super) fn project(
                             else {
                                 continue;
                             };
-                            let after = if coedge_ids.is_empty() {
-                                None
-                            } else {
-                                (1..=uses.len()).find_map(|distance| {
-                                    let prior = (use_index + uses.len() - distance) % uses.len();
-                                    coedge_by_use.get(&prior)
-                                })
-                            }
-                            .map(|id| {
-                                id.try_clone_for_decode(ctx, "iges loop predecessor identity")
-                            })
-                            .transpose()?;
+                            let after = predecessor.map(|id| id.try_clone_for_decode(ctx, "iges loop predecessor identity")).transpose()?;
                             let expected = vertex_lists[vertex_list][*vertex_index];
                             let Some(resolved) = (match resolve_pcurve_uses(
                                 ir,
@@ -1253,7 +1203,7 @@ pub(super) fn project(
                                 }
                                 Err(PcurveProjectionError::Resource(error)) => return Err(error),
                             };
-                            loop_vertex_uses.push((vertex, after, projected));
+                            loop_vertex_uses.push((vertex.try_clone_for_decode(ctx, "iges B-rep identity copy")?, after, projected));
                             continue;
                         };
                         let edge_definition = edge_lists[edge_list][*edge_index];
@@ -1264,7 +1214,7 @@ pub(super) fn project(
                         ] {
                             placed = topology_vertex(
                                 &mut candidate,
-                                &mut vertex_ids,
+                                (&mut vertex_ids, &mut body_storage),
                                 &vertex_lists,
                                 &stem,
                                 (list, index),
@@ -1347,37 +1297,24 @@ pub(super) fn project(
                                 &crate::ids::Stem::directory(edge_definition.curve),
                                 ctx,
                             )?;
-                            if edges_by_curve.is_none() {
-                                let mut positions = BTreeMap::<&str, Vec<usize>>::new();
-                                for (position, edge) in ir.model.edges.iter().enumerate() {
-                                    if let Some(curve) = edge.curve() {
-                                        ctx.admit_btree_entry(
-                                            &positions,
-                                            &curve.as_str(),
-                                            "iges B-rep source edge index nodes",
-                                        )?;
-                                        let indexed = positions.entry(curve.as_str()).or_default();
-                                        ctx.reserve_vec(
-                                            indexed,
-                                            1,
-                                            "iges B-rep source edge positions",
-                                        )?;
-                                        indexed.push(position);
+                            let positions = &mut edges_by_curve;
+                            for (offset, edge) in ctx.admit_iter(&ir.model.edges[indexed_edge_count..], "iges B-rep source edge index traversal")?.enumerate() {
+                                if let Some(curve) = edge.curve() {
+                                    if !ctx.contains_key_btree_map(positions, curve.as_str(), "iges B-rep source edge lookup")? {
+                                        let key = ctx.copy_scoped_text(curve.as_str(), &mut index_storage, "iges B-rep source edge index keys")?;
+                                        index_storage.with_storage(|| ctx.insert_btree_map(positions, key, Vec::new(), "iges B-rep source edge index nodes"))?;
                                     }
+                                    let indexed = ctx.get_mut_btree_map(positions, curve.as_str(), "iges B-rep source edge lookup")?.ok_or_else(|| CodecError::malformed("IGES B-rep source edge index is absent"))?;
+                                    index_storage.with_storage(|| ctx.reserve_vec(indexed, 1, "iges B-rep source edge positions"))?;
+                                    indexed.push(indexed_edge_count + offset);
                                 }
-                                edges_by_curve = Some(positions);
                             }
-                            let curve_edges = edges_by_curve.as_ref().ok_or_else(|| {
-                                CodecError::Malformed(
-                                    "IGES B-rep source edge index is absent".into(),
-                                )
-                            })?;
-                            let Some(candidates) = curve_edges.get(curve_id.as_str()) else {
+                            indexed_edge_count = ir.model.edges.len();
+                            let Some(candidates) = ctx.get_btree_map(positions, curve_id.as_str(), "iges B-rep source edge lookup")? else {
                                 valid = false;
                                 break;
                             };
-                            let Some(curve) = curve_positions
-                                .get(curve_id.as_str())
+                            let Some(curve) = ctx.get_btree_map(&curve_positions, curve_id.as_str(), "iges B-rep curve lookup")?
                                 .and_then(|position| ir.model.curves.get(*position))
                             else {
                                 super::push_entity_loss(
@@ -1412,8 +1349,8 @@ pub(super) fn project(
                                     valid = false;
                                     break;
                                 }
-                                Err(SourceEdgeSelectionError::ResourceLimit(limit)) => {
-                                    return Err(limit.into());
+                                Err(SourceEdgeSelectionError::Codec(error)) => {
+                                    return Err(error);
                                 }
                             };
                             let id = crate::ids::edge_admitted(
@@ -1455,12 +1392,12 @@ pub(super) fn project(
                                     .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                                 tolerance: None,
                             });
-                            ctx.insert_btree_map(
+                            body_storage.with_storage(|| ctx.insert_btree_map(
                                 &mut edge_ids,
                                 edge_key,
                                 id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                                 "iges B-rep topology edge index",
-                            )?;
+                            ))?;
                             id
                         };
                         let projected = match project_pcurve_uses(
@@ -1484,37 +1421,27 @@ pub(super) fn project(
                             }
                             Err(PcurveProjectionError::Resource(error)) => return Err(error),
                         };
-                        let Some(coedge_position) = edge_use_indices
-                            .iter()
-                            .position(|index| *index == use_index)
-                        else {
-                            valid = false;
-                            break;
-                        };
-                        let coedge_id = coedge_ids[coedge_position]
-                            .try_clone_for_decode(ctx, "iges B-rep identity copy")?;
+                        let coedge_id = coedge_ids[coedge_position].try_clone_for_decode(ctx, "iges B-rep identity copy")?;
+                        predecessor = Some(&coedge_ids[coedge_position]);
+                        coedge_position += 1;
                         let radial_key = (shell_sequence, edge_key.0, edge_key.1);
-                        ctx.admit_btree_entry(
-                            &radial,
-                            &radial_key,
-                            "iges B-rep radial index nodes",
-                        )?;
+                        body_storage.with_storage(|| ctx.admit_btree_entry(&radial, &radial_key, "iges B-rep radial index nodes"))?;
                         let ring = radial.entry(radial_key).or_default();
-                        ctx.reserve_vec(ring, 1, "iges B-rep radial coedge ids")?;
-                        ring.push(coedge_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?);
+                        body_storage.with_storage(|| ctx.reserve_vec(ring, 1, "iges B-rep radial coedge ids"))?;
+                        ring.push(candidate.model().coedges.len());
                         ctx.reserve_vec(
                             &mut candidate.model_mut().coedges,
                             1,
                             "iges B-rep topology coedges",
                         )?;
                         ctx.charge_entities(1, "iges_geometry_brep")?;
+                        let initial_radial = radial_identity_storage.with_storage(|| coedge_id.try_clone_for_decode(ctx, "iges B-rep identity copy"))?;
                         candidate.model_mut().coedges.push(Coedge {
-                            id: coedge_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                            id: coedge_id,
                             owner_loop: loop_id
                                 .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                             edge: edge_id,
-                            radial_next: coedge_id
-                                .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                            radial_next: initial_radial,
                             sense: *sense,
                             pcurves: projected,
                             use_curve: None,
@@ -1535,6 +1462,8 @@ pub(super) fn project(
                             valid = false;
                             break;
                         }
+                        drop(uses);
+                        drop(vertex_use_storage);
                         LoopBoundary::Vertex { vertex, pcurves }
                     } else {
                         let Some(vertex_uses) = ctx.collect_options(
@@ -1542,11 +1471,7 @@ pub(super) fn project(
                                 .into_iter()
                                 .map(|(vertex, after, pcurves)| {
                                     let after = after?;
-                                    coedge_ids.contains(&after).then_some(AnchoredVertexUse {
-                                        vertex,
-                                        after,
-                                        pcurves,
-                                    })
+                                    Some(AnchoredVertexUse { vertex, after, pcurves })
                                 }),
                             "iges B-rep anchored vertex uses",
                         )?
@@ -1560,6 +1485,7 @@ pub(super) fn project(
                             valid = false;
                             break;
                         };
+                        drop(vertex_use_storage);
                         let Ok(ring) =
                             cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, vertex_uses)
                                 .map_err(cadmpeg_core::CodecError::from)?
@@ -1586,11 +1512,11 @@ pub(super) fn project(
                         face: face_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                         boundary,
                     });
-                    ctx.insert_btree_set(
+                    body_storage.with_storage(|| ctx.insert_btree_set(
                         &mut consumed,
                         loop_sequence,
                         "iges B-rep consumed loop nodes",
-                    )?;
+                    ))?;
                 }
                 if !valid {
                     break;
@@ -1599,7 +1525,7 @@ pub(super) fn project(
                     FaceLoopPointers::OuterFirst { outer, inner } => {
                         let mut inner_ids =
                             ctx.collection_vec(inner.len(), "iges B-rep face inner loop ids")?;
-                        for sequence in inner.iter().copied() {
+                        for sequence in ctx.admit_iter(inner, "iges B-rep inner loop traversal")?.copied() {
                             inner_ids.push(loop_id_for(sequence)?);
                         }
                         cadmpeg_ir::topology::FaceLoops::classified(loop_id_for(*outer)?, inner_ids)
@@ -1615,7 +1541,7 @@ pub(super) fn project(
                         let mut loop_ids =
                             ctx.collection_vec(count, "iges B-rep face unspecified loop ids")?;
                         loop_ids.push(loop_id_for(*first)?);
-                        for sequence in rest.iter().copied() {
+                        for sequence in ctx.admit_iter(rest, "iges B-rep unspecified loop traversal")?.copied() {
                             loop_ids.push(loop_id_for(sequence)?);
                         }
                         cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids)
@@ -1638,11 +1564,11 @@ pub(super) fn project(
                     tolerance: None,
                 });
                 shell_faces.push(face_id);
-                ctx.insert_btree_set(
+                body_storage.with_storage(|| ctx.insert_btree_set(
                     &mut consumed,
                     face_sequence,
                     "iges B-rep consumed face nodes",
-                )?;
+                ))?;
             }
             if !valid {
                 break;
@@ -1669,11 +1595,11 @@ pub(super) fn project(
                 },
             );
             region_shells.push(shell_id);
-            ctx.insert_btree_set(
+            body_storage.with_storage(|| ctx.insert_btree_set(
                 &mut consumed,
                 shell_sequence,
                 "iges B-rep consumed shell nodes",
-            )?;
+            ))?;
         }
         if !valid {
             super::push_entity_loss(
@@ -1684,49 +1610,19 @@ pub(super) fn project(
             )?;
             continue;
         }
-        if definition.closed
-            && radial.values().any(|ring| {
-                if ring.len() != 2 {
-                    return true;
-                }
-                let mut senses = ring.iter().filter_map(|id| {
-                    candidate
-                        .model()
-                        .coedges
-                        .iter()
-                        .find(|coedge| coedge.id == *id)
-                        .map(|coedge| coedge.sense)
-                });
-                match (senses.next(), senses.next()) {
-                    (Some(first), Some(second)) => first == second,
-                    _ => true,
-                }
-            })
-        {
-            super::push_entity_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!(
-                    "{}",
-                    "closed shell does not use every edge exactly twice with opposite senses"
-                ),
-            )?;
+        if definition.closed && ctx.any_by(&radial, |(_, ring)| {
+            Ok(ring.len() != 2 || candidate.model().coedges[ring[0]].sense == candidate.model().coedges[ring[1]].sense)
+        }, "iges B-rep radial closure")? {
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("closed shell does not use every edge exactly twice with opposite senses"))?;
             continue;
         }
-        for ring in radial.values() {
-            for (index, id) in ring.iter().enumerate() {
-                if let Some(coedge) = candidate
-                    .model_mut()
-                    .coedges
-                    .iter_mut()
-                    .find(|coedge| coedge.id == *id)
-                {
-                    coedge.radial_next = ring[(index + 1) % ring.len()]
-                        .try_clone_for_decode(ctx, "iges B-rep identity copy")?;
-                }
+        for (_, ring) in ctx.admit_iter(&radial, "iges B-rep radial ring traversal")? {
+            for (index, position) in ctx.admit_iter(ring, "iges B-rep radial member traversal")?.enumerate() {
+                let next = candidate.model().coedges[ring[(index + 1) % ring.len()]].id.try_clone_for_decode(ctx, "iges B-rep identity copy")?;
+                candidate.model_mut().coedges[*position].radial_next = next;
             }
         }
+        drop(radial_identity_storage);
         ctx.reserve_vec(
             &mut candidate.model_mut().regions,
             1,
@@ -1767,10 +1663,9 @@ pub(super) fn project(
             continue;
         }
         ctx.insert_btree_set(&mut decoded, entry.sequence, "iges brep decoded sequences")?;
-        for sequence in consumed
-            .into_iter()
-            .chain(edge_ids.keys().map(|key| key.0))
-            .chain(vertex_ids.keys().map(|key| key.0))
+        for sequence in ctx.admit_iter(consumed, "iges B-rep consumed traversal")?
+            .chain(ctx.admit_iter(&edge_ids, "iges B-rep edge list traversal")?.map(|(key, _)| key.0))
+            .chain(ctx.admit_iter(&vertex_ids, "iges B-rep vertex list traversal")?.map(|(key, _)| key.0))
         {
             ctx.insert_btree_set(
                 &mut decoded,
