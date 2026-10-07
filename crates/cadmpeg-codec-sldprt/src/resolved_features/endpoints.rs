@@ -2216,12 +2216,13 @@ pub(super) fn inferred_point_coordinates_by_index(
             )
         })?;
     }
-    let graph = PointDistanceGraph::new(ctx, &constraints)?;
-    let domains = PointDomains::arc_consistent(ctx, &graph, &candidates)?;
+    let (graph, _graph_storage) = ctx.with_scoped_storage(POINT_SOLVER_OPERATION, || PointDistanceGraph::new(ctx, &constraints))?;
+    let (domains, _domains_storage) = ctx.with_scoped_storage(POINT_SOLVER_OPERATION, || PointDomains::arc_consistent(ctx, &graph, &candidates))?;
+    let mut traversal_storage = ctx.reserve_scoped(0, POINT_SOLVER_OPERATION)?;
 
     // Connected components, each a contiguous range of `order`.
     let unvisited = usize::MAX;
-    let mut component = ctx.alloc_filled(graph.points.len(), unvisited, POINT_SOLVER_OPERATION)?;
+    let mut component = traversal_storage.with_storage(|| ctx.alloc_filled(graph.points.len(), unvisited, POINT_SOLVER_OPERATION))?;
     let mut order = Vec::new();
     let mut ranges = Vec::new();
     for seed in ctx.admit_iter(0..graph.points.len(), POINT_SOLVER_OPERATION)? {
@@ -2231,23 +2232,26 @@ pub(super) fn inferred_point_coordinates_by_index(
         let id = ranges.len();
         let start = order.len();
         component[seed] = id;
-        ctx.push_vec(&mut order, seed, POINT_SOLVER_OPERATION)?;
+        traversal_storage.with_storage(|| ctx.push_vec(&mut order, seed, POINT_SOLVER_OPERATION))?;
+        let mut positions = start..graph.points.len();
         let mut cursor = start;
-        while let Some(&position) = order.get(cursor) {
-            cursor += 1;
+        while cursor < order.len() {
+            let Some(next) = ctx.next_charged(&mut positions, POINT_SOLVER_OPERATION)? else { break; };
+            let position = order[next];
+            cursor = next + 1;
             for &(_, other, _) in ctx.admit_iter(graph.edges(position), POINT_SOLVER_OPERATION)? {
                 if component[other] == unvisited {
                     component[other] = id;
-                    ctx.push_vec(&mut order, other, POINT_SOLVER_OPERATION)?;
+                    traversal_storage.with_storage(|| ctx.push_vec(&mut order, other, POINT_SOLVER_OPERATION))?;
                 }
             }
         }
-        ctx.push_vec(&mut ranges, start..order.len(), POINT_SOLVER_OPERATION)?;
+        traversal_storage.with_storage(|| ctx.push_vec(&mut ranges, start..order.len(), POINT_SOLVER_OPERATION))?;
     }
 
-    let mut solvable = ctx.alloc_filled(ranges.len(), None::<bool>, POINT_SOLVER_OPERATION)?;
+    let mut solvable = traversal_storage.with_storage(|| ctx.alloc_filled(ranges.len(), None::<bool>, POINT_SOLVER_OPERATION))?;
     let mut assigned =
-        ctx.alloc_filled(graph.points.len(), None::<[f64; 2]>, POINT_SOLVER_OPERATION)?;
+        traversal_storage.with_storage(|| ctx.alloc_filled(graph.points.len(), None::<[f64; 2]>, POINT_SOLVER_OPERATION))?;
     let mut result = HashMap::new();
     for position in ctx.admit_iter(0..graph.points.len(), POINT_SOLVER_OPERATION)? {
         if domains.sizes[position] != 1 {
@@ -2302,6 +2306,7 @@ fn point_distance_assignment_exists(
     members: &[usize],
     assigned: &mut [Option<[f64; 2]>],
 ) -> Result<bool, CodecError> {
+    let (result, _storage) = ctx.with_scoped_storage(POINT_SOLVER_OPERATION, || -> Result<_, CodecError> {
     if members.is_empty() {
         return Ok(true);
     }
@@ -2355,6 +2360,8 @@ fn point_distance_assignment_exists(
         }
         next[depth] = 0;
     }
+    })?;
+    Ok(result)
 }
 
 pub(super) fn implicit_coordinate_roster_curve_endpoints<'a>(ctx: &DecodeContext<'_>,
@@ -2409,6 +2416,7 @@ pub(super) fn implicit_profile_chain_closure_endpoints<'a>(
     geometry: &MarkerGeometryIndex<'a, '_>,
 ) -> Result<Option<[[f64; 2]; 2]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT implicit profile chain";
+    let (result, _storage) = ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
     let profile_curve_at = |marker: &SketchInputEntity| {
         usize::try_from(marker.offset()).ok().is_some_and(|offset| {
             packed_compact_legacy_curve_endpoint_indices(payload, offset).is_some()
@@ -2561,6 +2569,8 @@ geometry,
         [first, second]
     };
     Ok((first != second).then_some(pair))
+    })?;
+    Ok(result)
 }
 
 pub(super) fn extended_declared_inline_line_endpoints(

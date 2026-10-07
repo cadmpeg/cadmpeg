@@ -2104,24 +2104,20 @@ pub(crate) fn surface_reference_matches_at(
     expected: &[FeatureInputComponentPathEntry],
 ) -> Result<bool, CodecError> {
     const OPERATION: &str = "compare SLDPRT surface reference candidates";
-    let candidates = [
-        compact_surface_selection_at(ctx, payload, marker)?,
-        component_vector_path_at(ctx, payload, marker, "decode SLDPRT component vector path")?,
-        flatten_surface_references(
-            ctx,
-            compact_component_reference_list_at(ctx, payload, marker)?,
-        )?,
-        flatten_surface_references(
-            ctx,
-            compact_component_reference_list(ctx, payload, marker, false)?,
-        )?,
-        counted_surface_component_path_at(ctx, payload, marker)?,
-        compact_termination_reference_path_at(ctx, payload, marker)?,
-        compact_sketch_surface_component_path_at(ctx, payload, marker)?,
-        inline_surface_reference_at(ctx, payload, marker)?,
-    ];
-    for components in candidates.into_iter().flatten() {
-        if ctx.equal(components.as_slice(), expected, OPERATION)? { return Ok(true); }
+    for kind in 0..8 {
+        let (components, _storage) = ctx.with_scoped_storage(OPERATION, || match kind {
+            0 => compact_surface_selection_at(ctx, payload, marker),
+            1 => component_vector_path_at(ctx, payload, marker, "decode SLDPRT component vector path"),
+            2 => flatten_surface_references(ctx, compact_component_reference_list_at(ctx, payload, marker)?),
+            3 => flatten_surface_references(ctx, compact_component_reference_list(ctx, payload, marker, false)?),
+            4 => counted_surface_component_path_at(ctx, payload, marker),
+            5 => compact_termination_reference_path_at(ctx, payload, marker),
+            6 => compact_sketch_surface_component_path_at(ctx, payload, marker),
+            _ => inline_surface_reference_at(ctx, payload, marker),
+        })?;
+        if let Some(components) = components {
+            if ctx.equal(components.as_slice(), expected, OPERATION)? { return Ok(true); }
+        }
     }
     Ok(false)
 }
@@ -2250,79 +2246,37 @@ pub(super) fn component_vector_path_at(
     let Some(cell_count) = count else {
         return Ok(None);
     };
-    let mut candidate_results = [
-        compact_heterogeneous_component_path(
-            ctx,
-            payload,
-            marker + 18,
-            cell_count - 1,
-            reserve_operation,
-        )?,
-        if cell_count > 2 {
-            compact_heterogeneous_component_path(
-                ctx,
-                payload,
-                marker + 18,
-                cell_count - 2,
-                reserve_operation,
-            )?
-        } else {
-            None
-        },
-        compact_mixed_component_path(
-            ctx,
-            payload,
-            marker + 18,
-            cell_count,
-            true,
-            reserve_operation,
-        )?,
-        compact_mixed_component_path(
-            ctx,
-            payload,
-            marker + 18,
-            cell_count - 1,
-            true,
-            reserve_operation,
-        )?,
-        if cell_count > 2 {
-            compact_mixed_component_path(
-                ctx,
-                payload,
-                marker + 18,
-                cell_count - 2,
-                true,
-                reserve_operation,
-            )?
-        } else {
-            None
-        },
-        if cell_count % 2 == 1 {
-            compact_mixed_component_path(
-                ctx,
-                payload,
-                marker + 18,
-                cell_count.div_ceil(2),
-                true,
-                reserve_operation,
-            )?
-        } else {
-            None
-        },
-    ];
-    // An exact count states the vector boundary. Continuation checks only
-    // disambiguate shorter paths with root slots.
-    if let Some((components, _)) = candidate_results[2].take() {
+    let (exact, exact_storage) = ctx.with_scoped_storage(OPERATION, || compact_mixed_component_path(ctx, payload, marker + 18, cell_count, true, reserve_operation))?;
+    if let Some((components, _)) = exact {
+        exact_storage.commit()?;
         return Ok(Some(components));
     }
+    drop(exact_storage);
+    // An exact count states the boundary; shorter root-slot paths need continuation checks.
+    let layouts = [
+        (true, Some(cell_count - 1)),
+        (true, (cell_count > 2).then(|| cell_count - 2)),
+        (false, Some(cell_count - 1)),
+        (false, (cell_count > 2).then(|| cell_count - 2)),
+        (false, (cell_count % 2 == 1).then(|| cell_count.div_ceil(2))),
+    ];
     let mut unique = None;
-    for candidate in candidate_results.into_iter().flatten() {
+    for (heterogeneous, count) in layouts {
+        let Some(count) = count else { continue; };
+        let (candidate, storage) = ctx.with_scoped_storage(OPERATION, || {
+            if heterogeneous { compact_heterogeneous_component_path(ctx, payload, marker + 18, count, reserve_operation) }
+            else { compact_mixed_component_path(ctx, payload, marker + 18, count, true, reserve_operation) }
+        })?;
+        let Some(candidate) = candidate else { continue; };
         if component_path_continues(payload, candidate.1, true) { continue; }
-        if let Some(first) = &unique {
+        if let Some((first, _)) = &unique {
             if !ctx.equal(first, &candidate, OPERATION)? { return Ok(None); }
-        } else { unique = Some(candidate); }
+        } else { unique = Some((candidate, storage)); }
     }
-    Ok(unique.map(|(components, _)| components))
+    match unique {
+        Some(((components, _), storage)) => { storage.commit()?; Ok(Some(components)) }
+        None => Ok(None),
+    }
 }
 
 fn component_path_continues(payload: &[u8], end: usize, root_separators: bool) -> bool {
@@ -2461,36 +2415,20 @@ fn counted_surface_component_path_at(
     let Some(count) = count else {
         return Ok(None);
     };
-    let candidates = [
-        compact_mixed_component_path(
-            ctx,
-            payload,
-            marker + 18,
-            count,
-            false,
-            "decode SLDPRT mixed component path",
-        )?,
-        if count > 1 {
-            compact_mixed_component_path(
-                ctx,
-                payload,
-                marker + 18,
-                count - 1,
-                false,
-                "decode SLDPRT mixed component path",
-            )?
-        } else {
-            None
-        },
-    ];
     let mut unique = None;
-    for candidate in candidates.into_iter().flatten() {
+    for count in [Some(count), (count > 1).then(|| count - 1)] {
+        let Some(count) = count else { continue; };
+        let (candidate, storage) = ctx.with_scoped_storage(OPERATION, || compact_mixed_component_path(ctx, payload, marker + 18, count, false, "decode SLDPRT mixed component path"))?;
+        let Some(candidate) = candidate else { continue; };
         if component_path_continues(payload, candidate.1, false) { continue; }
-        if let Some(first) = &unique {
+        if let Some((first, _)) = &unique {
             if !ctx.equal(first, &candidate, OPERATION)? { return Ok(None); }
-        } else { unique = Some(candidate); }
+        } else { unique = Some((candidate, storage)); }
     }
-    Ok(unique.map(|(components, _)| components))
+    match unique {
+        Some(((components, _), storage)) => { storage.commit()?; Ok(Some(components)) }
+        None => Ok(None),
+    }
 }
 
 fn mirror_surface_type_prefix(ctx: &DecodeContext<'_>, lane: &FeatureInputLane) -> Result<Option<[u8; 4]>, CodecError> {
@@ -2896,44 +2834,45 @@ pub(crate) fn compact_edge_selection_at(
     let Some(count) = count else {
         return Ok(None);
     };
-    if let Some(references) = compact_component_reference_list_at(ctx, payload, marker)? {
+    let (references, _references_storage) = ctx.with_scoped_storage(OPERATION, || compact_component_reference_list_at(ctx, payload, marker))?;
+    if let Some(references) = references {
         let mut ids = Vec::new();
         for reference in ctx.admit_iter(references, OPERATION)? {
             if let Some(id) = reference.last().and_then(|entry| entry.local_id) {
-                ctx.reserve_vec(&mut ids, 1, OPERATION)?;
-                ids.push(id);
+                ctx.push_vec(&mut ids, id, OPERATION)?;
             }
         }
         return Ok(Some(ids));
     }
-    let mut candidate: Option<Vec<u32>> = None;
-    let mut ambiguous = false;
-    let mut consider = |ids: Vec<u32>| {
-        if let Some(candidate) = &candidate {
-            if !ctx.equal(candidate, &ids, OPERATION)? { ambiguous = true; }
-        } else { candidate = Some(ids); }
-        Ok::<_, CodecError>(())
+    let mut candidate = None;
+    let mut consider = |ids: Vec<u32>, storage| {
+        if let Some((candidate, _)) = &candidate {
+            ctx.equal(candidate, &ids, OPERATION)
+        } else { candidate = Some((ids, storage)); Ok(true) }
     };
-    if let Some(ids) = compact_homogeneous_edge_ids(ctx, payload, marker + 18, count)? {
-        consider(ids)?;
+    let (homogeneous, homogeneous_storage) = ctx.with_scoped_storage(OPERATION, || compact_homogeneous_edge_ids(ctx, payload, marker + 18, count))?;
+    if let Some(ids) = homogeneous {
+        if !consider(ids, homogeneous_storage)? { return Ok(None); }
     }
-    for ComponentPathReference(components, _) in ctx.admit_iter(
-        compact_edge_component_path_candidates(ctx, payload, marker, count)?, OPERATION)? {
-        let mut ids = Vec::new();
-        for component in ctx.admit_iter(components, OPERATION)? {
-            if let Some(id) = component.local_id {
-                ctx.reserve_vec(&mut ids, 1, OPERATION)?;
-                ids.push(id);
+    let (paths, _paths_storage) = ctx.with_scoped_storage(OPERATION, || compact_edge_component_path_candidates(ctx, payload, marker, count))?;
+    for ComponentPathReference(components, _) in ctx.admit_iter(paths, OPERATION)? {
+        let (ids, ids_storage) = ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
+            let mut ids = Vec::new();
+            for component in ctx.admit_iter(components, OPERATION)? {
+                if let Some(id) = component.local_id { ctx.push_vec(&mut ids, id, OPERATION)?; }
             }
-        }
-        if !ids.is_empty() {
-            consider(ids)?;
-        }
+            Ok(ids)
+        })?;
+        if !ids.is_empty() && !consider(ids, ids_storage)? { return Ok(None); }
     }
-    if let Some(ids) = compact_u16_edge_ids(ctx, payload, marker + 18, count)? {
-        consider(ids)?;
+    let (short, short_storage) = ctx.with_scoped_storage(OPERATION, || compact_u16_edge_ids(ctx, payload, marker + 18, count))?;
+    if let Some(ids) = short {
+        if !consider(ids, short_storage)? { return Ok(None); }
     }
-    Ok(if ambiguous { None } else { candidate })
+    match candidate {
+        Some((ids, storage)) => { storage.commit()?; Ok(Some(ids)) }
+        None => Ok(None),
+    }
 }
 
 pub(crate) fn compact_edge_component_path_at(
@@ -3117,6 +3056,7 @@ pub(super) fn variable_fillet_control_references(
     ) else {
         return Ok(None);
     };
+    let mut controls_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut controls = Vec::new();
     for marker in ctx.admit_iter(marker_start..marker_end, OPERATION)? {
         if lane
@@ -3126,14 +3066,12 @@ pub(super) fn variable_fillet_control_references(
         {
             continue;
         }
-        let Some(references) =
-            compact_component_reference_list(ctx, &lane.native_payload, marker, false)?
-        else {
+        let (references, references_storage) = ctx.with_scoped_storage(OPERATION, || compact_component_reference_list(ctx, &lane.native_payload, marker, false))?;
+        let Some(references) = references else {
             continue;
         };
         if references.len() == 3 {
-            ctx.reserve_vec(&mut controls, 1, OPERATION)?;
-            controls.push((marker, references));
+            controls_storage.with_storage(|| ctx.push_vec(&mut controls, (marker, references, references_storage), OPERATION))?;
         }
     }
     ctx.sort_unstable_by(
@@ -3145,9 +3083,10 @@ pub(super) fn variable_fillet_control_references(
     let mut names_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut names = names_storage.with_storage(|| ctx.collect_vec(&lane.names, OPERATION))?;
     ctx.sort_unstable_by_key(&mut names, |name| name.offset, Ord::cmp, OPERATION)?;
+    let mut result_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut result = Vec::new();
     let mut start = control_start;
-    for (marker, references) in ctx.admit_iter(controls, OPERATION)? {
+    for (marker, references, references_storage) in ctx.admit_iter(controls, OPERATION)? {
         let first = ctx.partition_point(&names, |name| Ok(name.offset <= u64_from_index(start)), OPERATION)?;
         let end = ctx.partition_point(&names, |name| Ok(name.offset < u64_from_index(marker)), OPERATION)?;
         let mut name = None;
@@ -3156,12 +3095,18 @@ pub(super) fn variable_fillet_control_references(
             Ok(name.replace(*candidate).is_some())
         }, OPERATION)?;
         let Some(name) = name.filter(|_| !ambiguous) else { return Ok(None); };
-        let name_text = ctx.copy_retained_text(&name.value, OPERATION)?;
-        ctx.push_vec(&mut result, VariableFilletControl(name_text, references), OPERATION)?;
+        result_storage.with_storage(|| -> Result<_, CodecError> {
+            let name_text = ctx.copy_retained_text(&name.value, OPERATION)?;
+            ctx.push_vec(&mut result, VariableFilletControl(name_text, references), OPERATION)?;
+            references_storage.commit()?;
+            Ok(())
+        })?;
         start = marker;
     }
 
-    Ok((!result.is_empty()).then_some(result))
+    if result.is_empty() { return Ok(None); }
+    result_storage.commit()?;
+    Ok(Some(result))
 }
 
 pub(crate) fn variable_fillet_dimension_index_for_feature(
@@ -4031,19 +3976,20 @@ pub(super) fn component_reference_curve_path_at(
             }
             Ok(Some((components, cursor)))
         };
-    if let Some((components, _)) = parse(count)? {
+    let (exact, exact_storage) = ctx.with_scoped_storage(OPERATION, || parse(count))?;
+    if let Some((components, _)) = exact {
+        exact_storage.commit()?;
         return Ok(Some(components));
     }
+    drop(exact_storage);
     if count <= 1 {
         return Ok(None);
     }
-    let Some((components, end)) = parse(count - 1)? else {
-        return Ok(None);
-    };
-    Ok(
-        (payload.get(end..end + 12) == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0xf8, 0x2a, 0, 0]))
-            .then_some(components),
-    )
+    let (shorter, shorter_storage) = ctx.with_scoped_storage(OPERATION, || parse(count - 1))?;
+    let Some((components, end)) = shorter else { return Ok(None); };
+    if payload.get(end..end + 12) != Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0xf8, 0x2a, 0, 0]) { return Ok(None); }
+    shorter_storage.commit()?;
+    Ok(Some(components))
 }
 
 pub(super) fn unique_marker_candidate<'a>(ctx: &DecodeContext<'_>, candidates: &'a [(String, bool)]) -> Result<Option<&'a str>, CodecError> {
