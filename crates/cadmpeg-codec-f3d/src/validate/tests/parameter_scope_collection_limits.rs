@@ -126,7 +126,11 @@ fn scope_error(case: Case, max_items: u64) -> cadmpeg_core::CodecError {
 
 #[test]
 fn standard_thread_group_refuses_collection_limit() {
-    let error = scope_error(Case::Standard, 1);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D standard thread face groups",
+        |cap| Err::<(), cadmpeg_core::CodecError>(scope_error(Case::Standard, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D standard thread face groups")
@@ -135,7 +139,11 @@ fn standard_thread_group_refuses_collection_limit() {
 
 #[test]
 fn compact_thread_group_refuses_collection_limit() {
-    let error = scope_error(Case::Compact, 1);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D compact thread face groups",
+        |cap| Err::<(), cadmpeg_core::CodecError>(scope_error(Case::Compact, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D compact thread face groups")
@@ -144,7 +152,11 @@ fn compact_thread_group_refuses_collection_limit() {
 
 #[test]
 fn edge_flange_claimed_reference_refuses_collection_limit() {
-    let error = scope_error(Case::Flange, 1);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D edge flange claimed references",
+        |cap| Err::<(), cadmpeg_core::CodecError>(scope_error(Case::Flange, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D edge flange claimed references")
@@ -153,7 +165,11 @@ fn edge_flange_claimed_reference_refuses_collection_limit() {
 
 #[test]
 fn edge_flange_target_reference_refuses_collection_limit() {
-    let error = scope_error(Case::ToObject, 13);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D edge flange target references",
+        |cap| Err::<(), cadmpeg_core::CodecError>(scope_error(Case::ToObject, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D edge flange target references")
@@ -162,7 +178,11 @@ fn edge_flange_target_reference_refuses_collection_limit() {
 
 #[test]
 fn edge_flange_claimed_index_refuses_collection_limit() {
-    let error = scope_error(Case::Flange, 13);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D edge flange claimed references",
+        |cap| Err::<(), cadmpeg_core::CodecError>(scope_error(Case::Flange, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D edge flange claimed references")

@@ -30,7 +30,11 @@ fn scope_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
 
 #[test]
 fn parameter_scope_index_refuses_collection_limit() {
-    let error = scope_error(0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D parameter scope records",
+        |cap| Err::<(), cadmpeg_core::CodecError>(scope_error(cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D parameter scope records")
@@ -39,7 +43,11 @@ fn parameter_scope_index_refuses_collection_limit() {
 
 #[test]
 fn parameter_scope_finding_refuses_collection_limit() {
-    let error = scope_error(1, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(scope_error(cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -131,17 +139,17 @@ fn component_pattern_occurrence_checks_preserve_work_refusal() {
         seed: row(1, seed_guid),
         generated: vec![row(2, generated_guid)],
     };
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     crate::test_support::with_decode_context(|decode| {
+        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
         assert!(super::super::valid_component_pattern_occurrences(
-            decode,
-            &native,
+            &ctx,
             "f3d:Design/BulkStream.dat",
             &instances
         )
         .unwrap());
         assert!(!super::super::valid_component_pattern_occurrences(
-            decode,
-            &native,
+            &ctx,
             "f3d:Other/BulkStream.dat",
             &instances
         )
@@ -149,23 +157,19 @@ fn component_pattern_occurrence_checks_preserve_work_refusal() {
     });
     for operation in [
         "find F3D pattern seed occurrence",
-        "compare F3D pattern seed occurrence stream",
-        "compare F3D pattern seed component GUID",
-        "compare F3D pattern seed occurrence GUID",
+        "find F3D pattern seed occurrence group",
         "validate F3D generated component occurrences",
         "find F3D generated component occurrence",
-        "compare F3D generated occurrence stream",
-        "compare F3D generated component GUID",
-        "compare F3D generated occurrence GUID",
+        "find F3D generated component occurrence group",
     ] {
         let error = crate::test_support::resource_refusal_at(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
             operation,
             0,
             |decode| {
+                let ctx = super::super::Ctx::new(&ir, &native, decode)?;
                 super::super::valid_component_pattern_occurrences(
-                    decode,
-                    &native,
+                    &ctx,
                     "f3d:Design/BulkStream.dat",
                     &instances,
                 )

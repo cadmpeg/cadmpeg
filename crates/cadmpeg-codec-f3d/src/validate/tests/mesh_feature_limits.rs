@@ -154,7 +154,11 @@ fn projected_body_feature() -> crate::records::mesh::DesignMeshFeature {
 
 #[test]
 fn mesh_asset_id_refuses_collection_limit() {
-    let error = mesh_error(true, true, false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D mesh asset IDs",
+        |cap| Err::<(), cadmpeg_core::CodecError>(mesh_error(true, true, false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D mesh asset IDs")
@@ -163,7 +167,11 @@ fn mesh_asset_id_refuses_collection_limit() {
 
 #[test]
 fn mesh_tessellation_id_refuses_collection_limit() {
-    let error = mesh_error(true, false, true, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D mesh tessellation IDs",
+        |cap| Err::<(), cadmpeg_core::CodecError>(mesh_error(true, false, true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D mesh tessellation IDs")
@@ -172,7 +180,11 @@ fn mesh_tessellation_id_refuses_collection_limit() {
 
 #[test]
 fn mesh_feature_id_refuses_collection_limit() {
-    let error = mesh_error(true, false, false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D mesh feature IDs",
+        |cap| Err::<(), cadmpeg_core::CodecError>(mesh_error(true, false, false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D mesh feature IDs")
@@ -181,7 +193,11 @@ fn mesh_feature_id_refuses_collection_limit() {
 
 #[test]
 fn mesh_scope_record_refuses_collection_limit() {
-    let error = mesh_error(true, false, false, 1, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D mesh scope records",
+        |cap| Err::<(), cadmpeg_core::CodecError>(mesh_error(true, false, false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D mesh scope records")
@@ -190,7 +206,11 @@ fn mesh_scope_record_refuses_collection_limit() {
 
 #[test]
 fn mesh_collection_record_refuses_collection_limit() {
-    let error = mesh_error(true, false, false, 2, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D mesh collection records",
+        |cap| Err::<(), cadmpeg_core::CodecError>(mesh_error(true, false, false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D mesh collection records")
@@ -199,7 +219,11 @@ fn mesh_collection_record_refuses_collection_limit() {
 
 #[test]
 fn mesh_texture_table_refuses_collection_limit() {
-    let error = mesh_error(true, false, false, 3, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D mesh texture tables",
+        |cap| Err::<(), cadmpeg_core::CodecError>(mesh_error(true, false, false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D mesh texture tables")
@@ -208,7 +232,11 @@ fn mesh_texture_table_refuses_collection_limit() {
 
 #[test]
 fn mesh_collection_owner_refuses_collection_limit() {
-    let error = mesh_error(true, false, false, 4, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D mesh collection owners",
+        |cap| Err::<(), cadmpeg_core::CodecError>(mesh_error(true, false, false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D mesh collection owners")
@@ -217,7 +245,11 @@ fn mesh_collection_owner_refuses_collection_limit() {
 
 #[test]
 fn mesh_invalid_finding_refuses_collection_limit() {
-    let error = mesh_error(true, false, false, 5, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(mesh_error(true, false, false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -238,10 +270,13 @@ fn mesh_invalid_entity_refuses_retained_limit() {
 }
 
 macro_rules! body_limit {
-    ($name:ident, $limit:expr, $operation:literal) => {
+    ($name:ident, $operation:literal) => {
         #[test]
         fn $name() {
-            let error = mesh_error_with_feature(Some(body_feature), false, false, $limit, u64::MAX);
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+    cadmpeg_core::decode::ResourceDimension::CollectionItems, $operation,
+    |cap| Err::<(), cadmpeg_core::CodecError>(mesh_error_with_feature(Some(body_feature), false, false, cap, u64::MAX)),
+);
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == $operation));
         }
@@ -250,48 +285,52 @@ macro_rules! body_limit {
 
 body_limit!(
     mesh_body_owner_refuses_collection_limit,
-    5,
     "index F3D mesh body owner records"
 );
 body_limit!(
     mesh_body_record_refuses_collection_limit,
-    6,
     "index F3D mesh body records"
 );
 body_limit!(
     mesh_entry_record_refuses_collection_limit,
-    7,
     "index F3D mesh entry records"
 );
 body_limit!(
     mesh_guid_record_refuses_collection_limit,
-    8,
     "index F3D mesh GUID records"
 );
 body_limit!(
     mesh_wrapper_record_refuses_collection_limit,
-    9,
     "index F3D mesh wrapper records"
 );
 body_limit!(
     mesh_scene_state_refuses_collection_limit,
-    10,
     "index F3D mesh scene states"
 );
 body_limit!(
     mesh_scene_node_refuses_collection_limit,
-    11,
     "index F3D mesh scene nodes"
 );
 body_limit!(
     mesh_scene_auxiliary_refuses_collection_limit,
-    12,
     "index F3D mesh scene auxiliary records"
 );
 
 #[test]
 fn mesh_projected_tessellation_refuses_collection_limit() {
-    let error = mesh_error_with_feature(Some(projected_body_feature), false, true, 14, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D mesh projected tessellations",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(mesh_error_with_feature(
+                Some(projected_body_feature),
+                false,
+                true,
+                cap,
+                u64::MAX,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D mesh projected tessellations")
@@ -300,8 +339,19 @@ fn mesh_projected_tessellation_refuses_collection_limit() {
 
 #[test]
 fn mesh_texture_resource_refuses_collection_limit() {
-    let error =
-        mesh_error_with_feature(Some(mesh_feature_with_textures), false, false, 5, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D mesh texture resources",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(mesh_error_with_feature(
+                Some(mesh_feature_with_textures),
+                false,
+                false,
+                cap,
+                u64::MAX,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D mesh texture resources")
@@ -310,10 +360,75 @@ fn mesh_texture_resource_refuses_collection_limit() {
 
 #[test]
 fn mesh_filename_record_refuses_collection_limit() {
-    let error =
-        mesh_error_with_feature(Some(mesh_feature_with_textures), false, false, 7, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D mesh filename records",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(mesh_error_with_feature(
+                Some(mesh_feature_with_textures),
+                false,
+                false,
+                cap,
+                u64::MAX,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D mesh filename records")
     );
+}
+
+#[test]
+fn mesh_projected_body_filter_refuses_before_visit() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    };
+    crate::test_support::with_decode_context(|service| {
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let scope_id = "f3d:design:design-parameter-scope#104";
+        ir.model.features.push(Feature {
+            id: FeatureId::mint("test:model:feature#mesh-import").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::MeshImport {
+                    tessellations: vec!["f3d:model:tessellation#one".into()]
+                        .try_into()
+                        .unwrap(),
+                },
+            )),
+            native_ref: Some(scope_id.into()),
+        });
+        let native = crate::native::F3dNative {
+            design_parameter_scopes: vec![DesignParameterScope::empty(
+                scope_id,
+                DesignFeatureKind::BaseMeshFeature,
+                104,
+            )],
+            design_mesh_features: vec![projected_body_feature()],
+            ..Default::default()
+        };
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D projected mesh bodies",
+            0,
+            |decode| {
+                let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
+                ctx.decode = decode;
+                super::super::validate_mesh_features(&ctx, &mut Vec::new())
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "scan F3D projected mesh bodies")
+        );
+    });
 }

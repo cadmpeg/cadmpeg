@@ -94,7 +94,11 @@ fn act_error(
 fn act_stream_index_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_entities.push(act_entity());
-    let error = act_error(native, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D ACT streams",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ACT streams")
@@ -105,7 +109,11 @@ fn act_stream_index_refuses_collection_limit() {
 fn act_record_index_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_entities.push(act_entity());
-    let error = act_error(native, 1, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D ACT record indices",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ACT record indices")
@@ -116,7 +124,11 @@ fn act_record_index_refuses_collection_limit() {
 fn act_guid_stream_index_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_guids.push(act_guid(0));
-    let error = act_error(native, 1, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D ACT GUID streams",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ACT GUID streams")
@@ -127,7 +139,11 @@ fn act_guid_stream_index_refuses_collection_limit() {
 fn act_guid_ordinal_index_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_guids.push(act_guid(0));
-    let error = act_error(native, 2, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D ACT GUID ordinals",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ACT GUID ordinals")
@@ -138,7 +154,11 @@ fn act_guid_ordinal_index_refuses_collection_limit() {
 fn act_guid_offset_index_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_guids.push(act_guid(0));
-    let error = act_error(native, 3, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D ACT GUID offsets",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ACT GUID offsets")
@@ -149,7 +169,11 @@ fn act_guid_offset_index_refuses_collection_limit() {
 fn act_table_stream_index_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_table_references.push(act_table_reference(0));
-    let error = act_error(native, 1, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D ACT table streams",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ACT table streams")
@@ -160,7 +184,11 @@ fn act_table_stream_index_refuses_collection_limit() {
 fn act_table_ordinal_index_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_table_references.push(act_table_reference(0));
-    let error = act_error(native, 2, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D ACT table ordinals",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ACT table ordinals")
@@ -171,7 +199,11 @@ fn act_table_ordinal_index_refuses_collection_limit() {
 fn act_table_offset_index_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_table_references.push(act_table_reference(0));
-    let error = act_error(native, 3, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D ACT table offsets",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ACT table offsets")
@@ -182,7 +214,11 @@ fn act_table_offset_index_refuses_collection_limit() {
 fn act_registry_stream_index_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_registry_channels.push(act_registry_channel(0));
-    let error = act_error(native, 1, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D ACT registry streams",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ACT registry streams")
@@ -193,7 +229,11 @@ fn act_registry_stream_index_refuses_collection_limit() {
 fn act_registry_ordinal_index_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_registry_channels.push(act_registry_channel(0));
-    let error = act_error(native, 2, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D ACT registry ordinals",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ACT registry ordinals")
@@ -204,7 +244,11 @@ fn act_registry_ordinal_index_refuses_collection_limit() {
 fn act_registry_offset_index_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_registry_channels.push(act_registry_channel(0));
-    let error = act_error(native, 3, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D ACT registry offsets",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ACT registry offsets")
@@ -215,7 +259,11 @@ fn act_registry_offset_index_refuses_collection_limit() {
 fn act_registry_name_index_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_registry_channels.push(act_registry_channel(0));
-    let error = act_error(native, 4, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D ACT registry names",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ACT registry names")
@@ -226,7 +274,11 @@ fn act_registry_name_index_refuses_collection_limit() {
 fn act_root_count_index_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_root_components.push(act_root());
-    let error = act_error(native, 1, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D ACT root counts",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ACT root counts")
@@ -237,7 +289,11 @@ fn act_root_count_index_refuses_collection_limit() {
 fn act_missing_root_finding_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_guids.push(act_guid(0));
-    let error = act_error(native, 4, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -264,7 +320,11 @@ fn act_noncontiguous_guid_ordinal_finding_refuses_collection_limit() {
     let mut native = crate::native::F3dNative::default();
     native.act_guids.push(act_guid(1));
     native.act_root_components.push(act_root());
-    let error = act_error(native, 6, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(act_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
