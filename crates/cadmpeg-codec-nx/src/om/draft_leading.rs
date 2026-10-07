@@ -230,7 +230,7 @@ mod tests {
                     scan(ctx, OperationPayload::new(&bytes, 0, "DRAFT").unwrap())
                         .unwrap()
                         .is_none()
-                )
+                );
             },
         );
     }

@@ -241,7 +241,7 @@ mod tests {
             |ctx| {
                 assert!(super::CsysDescriptor::read_charged(ctx, b"??")
                     .unwrap()
-                    .is_none())
+                    .is_none());
             },
         );
     }

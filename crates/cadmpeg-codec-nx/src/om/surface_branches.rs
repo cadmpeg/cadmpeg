@@ -558,7 +558,7 @@ mod tests {
                     super::OperationPayload::new(&bytes, 0, "SKIN").unwrap()
                 )
                 .unwrap()
-                .is_none())
+                .is_none());
             },
         );
     }

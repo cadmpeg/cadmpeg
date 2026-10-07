@@ -22,7 +22,7 @@ impl OperationTerminalDiscriminator {
         flags: [u8; 4],
         trailing_indices: Vec<CompactIndexAtom>,
     ) -> Result<Self, &'static str> {
-        let end = match Self::extent(origin, &type_indices, &trailing_indices, |tokens| {
+        let end = match Self::extent(origin, type_indices, &trailing_indices, |tokens| {
             Ok::<_, std::convert::Infallible>(tokens.iter())
         }) {
             Ok(end) => end?,
@@ -45,7 +45,7 @@ impl OperationTerminalDiscriminator {
         trailing_indices: Vec<CompactIndexAtom>,
     ) -> Result<Result<Self, &'static str>, CodecError> {
         Ok(
-            Self::extent(origin, &type_indices, &trailing_indices, |tokens| {
+            Self::extent(origin, type_indices, &trailing_indices, |tokens| {
                 ctx.admit_iter(tokens, "NX terminal discriminator token widths")
             })?
             .map(|end| Self {
@@ -60,7 +60,7 @@ impl OperationTerminalDiscriminator {
 
     fn extent<'a, E, I: Iterator<Item = &'a CompactIndexAtom>>(
         origin: u64,
-        type_indices: &[CompactIndexAtom; 2],
+        type_indices: [CompactIndexAtom; 2],
         trailing_indices: &'a [CompactIndexAtom],
         admit: impl FnOnce(&'a [CompactIndexAtom]) -> Result<I, E>,
     ) -> Result<Result<u64, &'static str>, E> {
@@ -75,9 +75,10 @@ impl OperationTerminalDiscriminator {
         ) else {
             return Ok(Err("source_offset: terminal discriminator end overflows"));
         };
-        let end = admit(trailing_indices)?.fold(Some(start), |at, token| {
-            at.and_then(|at| at.checked_add(u64_from_index(token.raw().len())))
-        });
+        let mut end = Some(start);
+        for token in admit(trailing_indices)? {
+            end = end.and_then(|at| at.checked_add(u64_from_index(token.raw().len())));
+        }
         Ok(end.ok_or("source_offset: terminal discriminator end overflows"))
     }
     pub(crate) fn origin(&self) -> u64 {
