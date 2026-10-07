@@ -1123,6 +1123,8 @@ struct MeshStream {
     bytes: Vec<u8>,
 }
 
+type NamedStreams<'a> = std::collections::HashMap<&'a str, Option<&'a MeshStream>>;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StreamDescriptorValue {
     Integer(u64),
@@ -2012,8 +2014,7 @@ fn decode_corner_normals(
 fn registry_feature_edges(
     ctx: &DecodeContext<'_>,
     message: &[u8],
-    name_table: &[(String, u64)],
-    streams: &[MeshStream],
+    streams: &NamedStreams<'_>,
     triangles: &[[u32; 3]],
     vertices: usize,
 ) -> Result<Vec<[u32; 2]>, CodecError> {
@@ -2059,18 +2060,9 @@ fn registry_feature_edges(
         CodecError::malformed("paramesh feature-edge declaration has no stream name")
     })?;
     let stream = ctx
-        .position_by(
-            name_table,
-            |(name, _)| {
-                ctx.equal(
-                    name.as_str(),
-                    stream_name,
-                    "compare paramesh feature-edge stream names",
-                )
-            },
-            "find paramesh feature-edge stream",
-        )?
-        .and_then(|position| streams.get(position))
+        .get_hash_map(streams, stream_name, "find paramesh feature-edge stream")?
+        .and_then(Option::as_ref)
+        .copied()
         .ok_or_else(|| {
             CodecError::malformed("paramesh feature-edge declaration names no stream")
         })?;
@@ -2267,14 +2259,17 @@ pub(crate) fn decode_mesh_container(
         Ord::cmp,
         "sort paramesh name table",
     )?;
+    let (named_streams, _named_streams_storage) = ctx.unique_index(
+        ctx.admit_iter(&name_table, "index paramesh named streams")?
+            .zip(ctx.admit_iter(&streams, "index paramesh stream positions")?)
+            .map(|((name, _), stream)| (name.as_str(), stream)),
+        "index paramesh named streams",
+    )?;
     let named = |name: &str| -> Result<Option<&MeshStream>, CodecError> {
         Ok(ctx
-            .position_by(
-                &name_table,
-                |(entry, _)| ctx.equal(entry.as_str(), name, "compare paramesh stream names"),
-                "find paramesh named stream",
-            )?
-            .and_then(|position| streams.get(position)))
+            .get_hash_map(&named_streams, name, "find paramesh named stream")?
+            .and_then(Option::as_ref)
+            .copied())
     };
     let vertex_stream = named(&registry.vertex_stream)?
         .ok_or_else(|| CodecError::malformed("paramesh registry names no vertex stream"))?;
@@ -2301,20 +2296,13 @@ pub(crate) fn decode_mesh_container(
     let attributes = registry_attributes(
         ctx,
         message,
-        &name_table,
-        &streams,
+        &named_streams,
         &attribute_names,
         vertices.len(),
         corner_count,
     )?;
-    let feature_edges = registry_feature_edges(
-        ctx,
-        message,
-        &name_table,
-        &streams,
-        &triangles,
-        vertices.len(),
-    )?;
+    let feature_edges =
+        registry_feature_edges(ctx, message, &named_streams, &triangles, vertices.len())?;
     let corner_normals = decode_corner_normals(ctx, &attributes, vertices.len(), &triangles)?;
     let triangle_groups = registry_triangle_groups(ctx, &attributes, registry.face_group_count)?;
     let texture_ids = registry_texture_ids(ctx, &attributes)?;
@@ -2338,20 +2326,16 @@ pub(crate) fn decode_mesh_container(
 fn registry_attributes(
     ctx: &DecodeContext<'_>,
     message: &[u8],
-    name_table: &[(String, u64)],
-    streams: &[MeshStream],
+    streams: &NamedStreams<'_>,
     attribute_names: &std::collections::BTreeMap<String, RegisteredAttributeName>,
     vertices: usize,
     corners: usize,
 ) -> Result<Vec<MeshAttribute>, CodecError> {
     let named = |name: &str| -> Result<Option<&MeshStream>, CodecError> {
         Ok(ctx
-            .position_by(
-                name_table,
-                |(entry, _)| ctx.equal(entry.as_str(), name, "compare paramesh stream names"),
-                "find paramesh named stream",
-            )?
-            .and_then(|position| streams.get(position)))
+            .get_hash_map(streams, name, "find paramesh named stream")?
+            .and_then(Option::as_ref)
+            .copied())
     };
     let mut attributes = Vec::new();
     let fields = protobuf_fields(ctx, message)?;

@@ -3,8 +3,6 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use cadmpeg_core::container::ContainerRole;
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -192,36 +190,23 @@ pub(crate) fn decode(
             continue;
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let meta_name = sibling_meta_name(ctx, &entry.name)?.ok_or_else(|| {
+        let (meta_name, _meta_name_storage) = ctx
+            .with_scoped_storage("name F3D ACT MetaStream", || {
+                sibling_meta_name(ctx, &entry.name)
+            })?;
+        let meta_name = meta_name.ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "F3D ACT BulkStream has no sibling MetaStream name: {}",
                 entry.name
             ))
         })?;
-        let mut meta_entry = None;
-        for candidate in ctx.admit_iter(&scan.entries, "find F3D ACT sibling MetaStream")? {
-            if candidate.role == ContainerRole::Metastream
-                && ctx.equal(
-                    &candidate.name,
-                    &meta_name,
-                    "compare F3D ACT MetaStream names",
-                )?
-            {
-                meta_entry = Some(candidate);
-                break;
-            }
-        }
-        let meta_entry = meta_entry.ok_or_else(|| {
+        let meta_bytes = scan.entry_view(ctx, &meta_name)?.ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "F3D ACT BulkStream has no sibling MetaStream: {}",
                 entry.name
             ))
         })?;
-        let meta = crate::metastream::parse(
-            ctx,
-            scan.entry_bytes(ctx, &meta_entry.name)?,
-            &meta_entry.name,
-        )?;
+        let meta = crate::metastream::parse(ctx, meta_bytes.window(), &meta_name)?;
         let frames = decode_record_frames(ctx, bytes, &meta, &entry.name)?;
         let mut selected_table = None;
         let mut table_count = 0usize;
