@@ -1729,14 +1729,7 @@ pub(crate) fn install(
                 };
                 match parse_named_cplanes(ctx, scan.data, record, scan.archive, scale) {
                     Ok(values) => {
-                        ctx.reserve_vec(
-                            &mut cplanes,
-                            values.len(),
-                            "Rhino document construction planes",
-                        )
-                        .map_err(crate::chunks::FramingError::from)
-                        .or_else(|error| Err(codec_error(ctx, error)?))?;
-                        cplanes.extend(values);
+                        ctx.extend_vec(&mut cplanes, values, "Rhino document construction planes")?;
                     }
                     Err(FramingError::Resource(limit)) => {
                         return Err(CodecError::ResourceLimit(limit));
@@ -1790,12 +1783,8 @@ pub(crate) fn install(
                     ViewListKind::Named,
                 )?;
                 let has_parse_losses = !parse_losses.is_empty();
-                ctx.reserve_vec(&mut views, parsed.len(), "Rhino document views")
-                    .map_err(crate::chunks::FramingError::from)
-                    .or_else(|error| Err(codec_error(ctx, error)?))?;
-                views.extend(parsed);
-                ctx.reserve_vec(&mut losses, parse_losses.len(), "Rhino view setting losses")?;
-                losses.append(&mut parse_losses);
+                ctx.extend_vec(&mut views, parsed, "Rhino document views")?;
+                ctx.append_vec(&mut losses, &mut parse_losses, "Rhino view setting losses")?;
                 if has_parse_losses {
                     ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque view records")?;
                     opaque_records.push(OpaqueRecord {
@@ -1826,12 +1815,8 @@ pub(crate) fn install(
                     ViewListKind::Active,
                 )?;
                 let has_parse_losses = !parse_losses.is_empty();
-                ctx.reserve_vec(&mut views, parsed.len(), "Rhino document views")
-                    .map_err(crate::chunks::FramingError::from)
-                    .or_else(|error| Err(codec_error(ctx, error)?))?;
-                views.extend(parsed);
-                ctx.reserve_vec(&mut losses, parse_losses.len(), "Rhino view setting losses")?;
-                losses.append(&mut parse_losses);
+                ctx.extend_vec(&mut views, parsed, "Rhino document views")?;
+                ctx.append_vec(&mut losses, &mut parse_losses, "Rhino view setting losses")?;
                 if has_parse_losses {
                     ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque view records")?;
                     opaque_records.push(OpaqueRecord {

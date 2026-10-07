@@ -1385,11 +1385,10 @@ pub(crate) fn parse_attributes(
     ))
 }
 
-pub(crate) fn read_uuid_list(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    reader: &mut BoundedReader<'_>,
+fn uuid_list_payload<'a>(
+    reader: &BoundedReader<'a>,
     archive: ArchiveVersion,
-) -> Result<Vec<Uuid>, FramingError> {
+) -> Result<(BoundedReader<'a>, usize, usize), FramingError> {
     let chunk = chunk_at(
         reader.backing_bytes(),
         reader.position(),
@@ -1414,15 +1413,33 @@ pub(crate) fn read_uuid_list(
     }
     let count = payload.i32()?;
     let bytes = bounded_count(&payload, count, 16)?;
+    Ok((payload, bytes / 16, chunk.next_offset()))
+}
+
+
+pub(crate) fn skip_uuid_list(
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<(), FramingError> {
+    let (_, _, next) = uuid_list_payload(reader, archive)?;
+    reader.skip(next - reader.position())
+}
+
+pub(crate) fn read_uuid_list(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<Vec<Uuid>, FramingError> {
+    let (mut payload, count, next) = uuid_list_payload(reader, archive)?;
     let mut values = ctx
-        .collection_vec(bytes / 16, "Rhino UUID list")
+        .collection_vec(count, "Rhino UUID list")
         .map_err(crate::chunks::FramingError::from)?;
-    for _ in 0..bytes / 16 {
+    for _ in 0..count {
         ctx.charge_work(1, "Rhino objects cursor traversal")?;
         values.push(uuid(&mut payload)?);
     }
     payload.skip_remaining()?;
-    reader.skip(chunk.next_offset() - reader.position())?;
+    reader.skip(next - reader.position())?;
     Ok(values)
 }
 
@@ -1800,6 +1817,7 @@ fn resolve_identity(
 /// Parses one bounded object record and returns identity plus child ranges.
 pub(crate) fn parse_object_record(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     bytes: &[u8],
     record: &Record,
     archive: ArchiveVersion,
@@ -1960,7 +1978,10 @@ pub(crate) fn parse_object_record(
             writer_version,
             &mut warnings,
         ) {
-            Ok(value) => AttributeState::Parsed(Box::new(value)),
+            Ok(value) => {
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectAttributes>()), "Rhino object attribute box")?;
+                AttributeState::Parsed(Box::new(value))
+            },
             Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
             Err(error) => {
                 warnings.push_admitted(
@@ -2004,6 +2025,7 @@ pub(crate) fn parse_object_record(
             &mut warnings,
         )?;
     }
+    workspace.with_storage(|| ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectDescriptor<()>>()), "Rhino framed object box"))?;
     Ok(ObjectRecord::Framed(Box::new(ObjectDescriptor {
         range: record.range.clone(),
         object_type,
@@ -2080,6 +2102,7 @@ pub(crate) fn resolve_identities(
                     )?;
                 }
                 object.warnings.append_admitted(ctx, &mut local_warnings)?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectDescriptor>()), "Rhino resolved object box")?;
                 ObjectRecord::Framed(Box::new(ObjectDescriptor {
                     identity,
                     range: object.range,

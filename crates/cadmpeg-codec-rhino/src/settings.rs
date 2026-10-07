@@ -16,7 +16,7 @@ use serde::Serialize;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{OpaqueRecord, Record, Table};
 use crate::objects::{
-    parse_class_wrapper_with_userdata, read_uuid_list, ClassUserdata, UserdataDescriptor,
+    parse_class_wrapper_with_userdata, skip_uuid_list, ClassUserdata, UserdataDescriptor,
 };
 use crate::wire::{finite, read_finite, uuid, Uuid};
 
@@ -1116,12 +1116,9 @@ pub(crate) fn utf16_deferred<'a>(
 ) -> Result<DeferredUtf16<'a>, FramingError> {
     let bytes = utf16_payload(reader)?;
     let error_offset = reader.position();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len() / 2),
-        "validate Rhino deferred UTF-16",
-    )?;
     let mut view = View::over_retained(bytes);
-    for character in char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
+    let mut characters = char::decode_utf16(std::iter::from_fn(|| view.u16_le()));
+    while let Some(character) = ctx.next_charged(&mut characters, "validate Rhino deferred UTF-16")? {
         character.map_err(|_| {
             FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence")
         })?;
@@ -2679,7 +2676,7 @@ fn parse_layer(
         if item == 28 {
             push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
             layer.no_clipping_planes = Some(reader.bool_with_writer_version(writer_version)?);
-            read_uuid_list(ctx, &mut reader, archive)?;
+            skip_uuid_list(&mut reader, archive)?;
             item = reader.u8()?;
         }
         if version.1 > 10 {
@@ -2745,7 +2742,8 @@ fn parse_layer(
             }
             if item == 37 {
                 push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
-                let mut description = utf16_retained(ctx, &mut reader, "Rhino layer description")?;
+                let mut description_workspace = ctx.reserve_scoped(0, "Rhino layer description workspace")?;
+                let description = description_workspace.with_storage(|| utf16_retained(ctx, &mut reader, "Rhino layer description"))?;
                 let trim = |character: char| {
                     matches!(
                         u32::from(character),
@@ -2759,12 +2757,13 @@ fn parse_layer(
                             | 0x2066..=0x2069
                     )
                 };
-                let trimmed = description.trim_matches(trim);
-                let prefix = description.len() - description.trim_start_matches(trim).len();
-                let end = prefix + trimmed.len();
-                description.truncate(end);
-                description.drain(..prefix);
-                layer.description = (!description.is_empty()).then_some(description);
+                layer.description = match ctx.find_map(description.char_indices(), |(index, character)| Ok((!trim(character)).then_some(index)), "Rhino layer description prefix")? {
+                    None => None,
+                    Some(start) => {
+                        let end = ctx.find_map(description[start..].char_indices().rev(), |(index, character)| Ok((!trim(character)).then_some(start + index + character.len_utf8())), "Rhino layer description suffix")?.unwrap_or(start);
+                        Some(ctx.copy_retained_text(&description[start..end], "Rhino layer trimmed description")?)
+                    }
+                };
                 let _next_item = reader.u8()?;
             }
         }

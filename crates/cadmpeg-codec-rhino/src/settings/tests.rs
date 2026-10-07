@@ -1837,7 +1837,8 @@ fn layer_description_refuses_retained_limit() {
         else {
             panic!("expected a retained resource refusal at limit {limit}");
         };
-        if refusal.operation == "Rhino layer description" {
+        // Eleven trimmed UTF-8 bytes stay retained; the two spaces stay in scratch storage.
+        if refusal.operation == "Rhino layer trimmed description" {
             found_description = true;
             break;
         }

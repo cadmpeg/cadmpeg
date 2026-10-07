@@ -239,8 +239,11 @@ pub(crate) fn install(
             external.push(value);
         }
         let mut links = Vec::new();
+        let mut member_seen = HashSet::new();
+        let mut member_workspace = ctx.reserve_scoped(0, "Rhino definition member workspace")?;
         for member in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
             if let Some(Some(source_order)) = ctx.get_hash_map(&object_records, member, "Rhino definition member lookup")? {
+                if !member_workspace.with_storage(|| ctx.insert_hash_set(&mut member_seen, *source_order, "Rhino definition member identities"))? { continue; }
                 ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
                 links.push(ctx.format_retained(format_args!("rhino:object:record#{source_order:06}"), "Rhino definition member link")?);
             }
@@ -255,7 +258,6 @@ pub(crate) fn install(
             Ord::cmp,
             "Rhino definition links sort",
         )?;
-        ctx.dedup_vec(&mut links, "Rhino definition link deduplication")?;
         let mut member_object_ids = Vec::new();
         for id in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
             ctx.reserve_vec(&mut member_object_ids, 1, "Rhino definition member UUIDs")?;
@@ -369,7 +371,6 @@ pub(crate) fn install(
             }
         };
         let transform = OccurrenceTransform::from_source(reference.transform(), binding);
-        let definition = definition_id(ctx, reference.definition_id())?;
         let object_record = ctx.format_retained(
             format_args!("rhino:object:record#{source_order:06}"),
             "Rhino occurrence object ID",
@@ -391,16 +392,16 @@ pub(crate) fn install(
                 );
             }
         }
-        let key = if identity.object_id.is_nil()
+        let (key, _key_workspace) = if identity.object_id.is_nil()
             || ctx.get_hash_map(&object_records, &identity.object_id, "Rhino occurrence identity lookup")?
                 .is_some_and(Option::is_none)
         {
-            ctx.format_retained(
+            ctx.format_scoped(
                 format_args!("record-{source_order:06}"),
                 "Rhino occurrence key",
             )?
         } else {
-            ctx.format_retained(
+            ctx.format_scoped(
                 format_args!("{}", identity.object_id),
                 "Rhino occurrence key",
             )?
@@ -413,7 +414,7 @@ pub(crate) fn install(
             "Rhino occurrence definition lookup",
         )? {
             ctx.reserve_vec(&mut links, 1, "Rhino occurrence links")?;
-            links.push(definition);
+            links.push(definition_id(ctx, reference.definition_id())?);
         }
         ctx.stable_sort_by(
             &mut links,
@@ -1008,4 +1009,32 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn definition_member_links_format_each_unique_object_once() {
+        use crate::chunks::ArchiveVersion;
+        use crate::test_support::test_dump as support;
+        use crate::wire::Uuid;
+        let archive = ArchiveVersion::V5;
+        let member = [0x62; 16];
+        let payload = support::v5_definition_payload(archive, 6, [0x51; 16], &[member, member], false);
+        let definition = support::definition_record(archive, &payload);
+        let mut scan = crate::container::scan_owned(support::document_with_definitions("50", archive, &[definition], &[])).expect("definition framing");
+        let bytes = support::fixed_attributes(1, 0, None);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut attributes = crate::objects::parse_attributes(&ctx, &bytes, 0..bytes.len(), 0..bytes.len(), archive, None, &mut crate::loss::Diagnostics::new()).expect("member attributes");
+        attributes.object_id = Uuid::from_wire(member);
+        scan.objects = crate::objects::resolve_identities(&ctx, vec![crate::objects::ObjectRecord::Framed(Box::new(support::descriptor(attributes, 0)))], &scan.metadata, &mut crate::loss::Diagnostics::new()).expect("member identity");
+        for operation in ["Rhino definition member identities", "Rhino definition links"] {
+            // One object key and one distinct source-position entry precede the link slot.
+            cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, operation, |cap| with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty())));
+        }
+        let mut ir = CadIr::empty();
+        install(&ctx, &scan, &mut ir).expect("product projection");
+        let records = &ir.native.namespace("rhino").unwrap().arenas()["product_definitions"];
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].field("links"), Some(serde_json::json!(["rhino:object:record#000000"])));
+        let uuid = Uuid::from_wire(member).to_string();
+        assert_eq!(records[0].field("member_object_ids"), Some(serde_json::json!([uuid, uuid])));
+    }
+
 }

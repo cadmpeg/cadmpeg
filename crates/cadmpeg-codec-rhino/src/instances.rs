@@ -1290,6 +1290,7 @@ fn extract_member_ids(
 
 fn parse_idef_alternative_path(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     data: &[u8],
     userdata: &ClassUserdata,
     archive: ArchiveVersion,
@@ -1315,7 +1316,7 @@ fn parse_idef_alternative_path(
             "unsupported instance-definition alternate-path version",
         ));
     }
-    let path = utf16_retained(ctx, &mut payload, "Rhino instance alternate path")?;
+    let path = workspace.with_storage(|| utf16_retained(ctx, &mut payload, "Rhino instance alternate path"))?;
     let relative = payload.bool()?;
     payload.skip_remaining()?;
     reader.skip_remaining()?;
@@ -1352,7 +1353,8 @@ fn apply_idef_alternative_path(
                     || item.application_uuid == Some(OPENNURBS5_APPLICATION))
         })
     {
-        let (path, relative) = match parse_idef_alternative_path(ctx, data, item, archive, warnings)
+        let mut path_workspace = ctx.reserve_scoped(0, "Rhino instance alternate path workspace")?;
+        let (path, relative) = match parse_idef_alternative_path(ctx, &mut path_workspace, data, item, archive, warnings)
         {
             Ok(value) => value,
             Err(error @ FramingError::Resource(_)) => return Err(error),
@@ -1368,62 +1370,26 @@ fn apply_idef_alternative_path(
                 continue;
             }
         };
-        let Some(path) = NonBlankString::for_decode(
-            ctx,
-            ctx.trim_text(path.as_str(), "Rhino instance alternative path trim")?,
-            "validate nonblank text",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-        else {
-            continue;
+        let path = ctx.trim_text(path.as_str(), "Rhino instance alternative path trim")?;
+        if path.is_empty() { continue; }
+        let copy_path = || NonBlankString::for_decode(ctx, path, "validate nonblank text")
+            .map_err(FramingError::Resource)?
+            .ok_or_else(|| FramingError::structural(item.range.start, "alternate path is blank"));
+        definition.link = match std::mem::replace(&mut definition.link, LinkSource::None) {
+            LinkSource::Structured(mut reference) => {
+                if relative && reference.relative_path.is_empty() {
+                    reference.relative_path = ctx.copy_retained_text(path, "Rhino instance relative path")?;
+                } else if !relative && reference.full_path.is_empty() {
+                    reference.full_path = ctx.copy_retained_text(path, "Rhino instance full path")?;
+                }
+                LinkSource::Structured(reference)
+            }
+            LinkSource::LegacyFull(full_path) if relative => LinkSource::LegacyRelative { relative_path: copy_path()?, full_path: Some(full_path) },
+            LinkSource::LegacyRelative { relative_path, full_path: None } if !relative => LinkSource::LegacyRelative { relative_path, full_path: Some(copy_path()?) },
+            LinkSource::None if relative => LinkSource::LegacyRelative { relative_path: copy_path()?, full_path: None },
+            LinkSource::None => LinkSource::LegacyFull(copy_path()?),
+            link => link,
         };
-        match &mut definition.link {
-            LinkSource::Structured(reference) => {
-                if relative {
-                    if reference.relative_path.is_empty() {
-                        reference.relative_path =
-                            ctx.copy_retained_text(path.as_str(), "Rhino instance relative path")?;
-                    }
-                } else if reference.full_path.is_empty() {
-                    reference.full_path =
-                        ctx.copy_retained_text(path.as_str(), "Rhino instance full path")?;
-                }
-            }
-            LinkSource::LegacyFull(full_path) => {
-                if relative {
-                    let copied_full_path =
-                        ctx.copy_retained_text(full_path.as_str(), "Rhino instance full path")?;
-                    let copied_full_path =
-                        NonBlankString::for_decode(ctx, copied_full_path, "validate nonblank text")
-                            .map_err(cadmpeg_core::CodecError::from)?
-                            .ok_or_else(|| {
-                                FramingError::structural(
-                                    item.range.start,
-                                    "invalid copied instance full path",
-                                )
-                            })?;
-                    definition.link = LinkSource::LegacyRelative {
-                        relative_path: path,
-                        full_path: Some(copied_full_path),
-                    };
-                }
-            }
-            LinkSource::LegacyRelative { full_path, .. } => {
-                if !relative && full_path.is_none() {
-                    *full_path = Some(path);
-                }
-            }
-            LinkSource::None => {
-                definition.link = if relative {
-                    LinkSource::LegacyRelative {
-                        relative_path: path,
-                        full_path: None,
-                    }
-                } else {
-                    LinkSource::LegacyFull(path)
-                };
-            }
-        }
     }
     Ok(degraded)
 }

@@ -1295,6 +1295,7 @@ fn scan_with_record_limit<'a>(
             {
                 let descriptor = match parse_object_record(
                     ctx,
+                    &mut object_storage,
                     data,
                     &record,
                     archive,
