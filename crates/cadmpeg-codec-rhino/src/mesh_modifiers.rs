@@ -306,7 +306,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_displacement(ctx, bytes, descriptor.payload_range.clone(), archive),
+            || parse_displacement(ctx, bytes, descriptor.payload_range.clone(), archive),
             "displacement",
             descriptor.range.start,
         )?
@@ -317,7 +317,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_edge_softening(ctx, bytes, descriptor.payload_range.clone()),
+            || parse_edge_softening(ctx, bytes, descriptor.payload_range.clone()),
             "edge-softening",
             descriptor.range.start,
         )?
@@ -328,7 +328,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_thickening(ctx, bytes, descriptor.payload_range.clone()),
+            || parse_thickening(ctx, bytes, descriptor.payload_range.clone()),
             "thickening",
             descriptor.range.start,
         )?
@@ -339,7 +339,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_curve_piping(ctx, bytes, descriptor.payload_range.clone()),
+            || parse_curve_piping(ctx, bytes, descriptor.payload_range.clone()),
             "curve-piping",
             descriptor.range.start,
         )?
@@ -350,7 +350,7 @@ pub(crate) fn parse_attribute_userdata(
         optional_modifier(
             ctx,
             warnings,
-            parse_shut_lining(ctx, bytes, descriptor.payload_range.clone()),
+            || parse_shut_lining(ctx, bytes, descriptor.payload_range.clone()),
             "shut-lining",
             descriptor.range.start,
         )?
@@ -374,12 +374,13 @@ pub(crate) fn parse_attribute_userdata(
 fn optional_modifier<T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     warnings: &mut Diagnostics,
-    parsed: Result<T, FramingError>,
+    parse: impl FnOnce() -> Result<T, FramingError>,
     label: &str,
     offset: usize,
 ) -> Result<Option<T>, FramingError> {
-    match parsed {
-        Ok(value) => Ok(Some(value)),
+    let mut storage = ctx.reserve_scoped(0, "Rhino optional modifier output")?;
+    match storage.with_storage(parse) {
+        Ok(value) => { storage.commit()?; Ok(Some(value)) },
         Err(error @ FramingError::Resource(_)) => Err(error),
         Err(error) => {
             warnings.push_admitted(
