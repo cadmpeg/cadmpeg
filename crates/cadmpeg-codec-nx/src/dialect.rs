@@ -100,44 +100,24 @@ pub(crate) fn classify_layers(
     ctx: &DecodeContext<'_>,
     scan: &crate::decode::Scan<'_>,
 ) -> Result<LayerClassification, CodecError> {
-    let schema_count = ctx
-        .admit_iter(&scan.streams, "count NX schema streams")?
-        .filter(|stream| stream.schema_token().is_some())
-        .count();
-    let (mut streams, _streams_storage) = ctx.with_scoped_storage("nx schema streams", || {
-        ctx.collection_vec(schema_count, "nx schema streams")
-    })?;
-    for stream in ctx.admit_iter(&scan.streams, "scan NX schema streams")? {
-        if let Some(schema) = stream.schema_token() {
-            streams.push((stream, schema));
-        }
-    }
-    let mut carriers = ctx.collection_vec(schema_count, "nx schema carriers")?;
-    for (stream, schema) in ctx
-        .admit_iter(&streams, "scan NX schema carriers")?
-        .copied()
-    {
-        let mut digits = 1usize;
-        let mut value = stream.file_offset;
-        while value >= 10 {
-            value /= 10;
-            digits += 1;
-        }
-        let label_len = 7usize.checked_add(digits).ok_or_else(|| {
-            ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(digits))
-        })?;
-
+    let mut carriers_storage = ctx.reserve_scoped(0, "NX schema carrier scratch")?;
+    let mut carriers = Vec::new();
+    for stream in ctx.admit_iter(&scan.streams, "scan NX schema carriers")? {
+        let Some(schema) = stream.schema_token() else {
+            continue;
+        };
+        let label = ctx.format_retained(
+            format_args!("stream@{}", stream.file_offset),
+            "nx schema carrier labels",
+        )?;
+        ctx.charge_work(u64_from_index(schema.value().len()), "copy NX schema token")?;
         ctx.charge_retained(
             u64_from_index(schema.value().len()),
-            "retain NX schema carrier labels",
+            "retain NX schema token",
         )?;
-        let mut label = String::new();
-        ctx.try_reserve_retained_text(&mut label, label_len, "nx schema carrier labels")?;
-        std::fmt::Write::write_fmt(&mut label, format_args!("stream@{}", stream.file_offset))
-            .map_err(|_| {
-                ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(label_len))
-            })?;
-        carriers.push((schema.clone(), cadmpeg_parasolid::Carrier::new(label)));
+        let carrier = (schema.clone(), cadmpeg_parasolid::Carrier::new(label));
+        carriers_storage
+            .with_storage(|| ctx.push_vec(&mut carriers, carrier, "nx schema carriers"))?;
     }
     let extra = cadmpeg_parasolid::extra_layers(
         ctx,
@@ -148,7 +128,10 @@ pub(crate) fn classify_layers(
     let host = NxDialect::of_container(&scan.container);
     let mut layers = DialectLayers::of(host.matched(scan.container.layout.version()));
     let mut losses = Vec::new();
-    for message in cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)? {
+    for message in ctx.admit_iter(
+        cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)?,
+        "scan NX dialect collision messages",
+    )? {
         ctx.push_vec(
             &mut losses,
             NxLossCode::DialectLayerCollision.note(message),

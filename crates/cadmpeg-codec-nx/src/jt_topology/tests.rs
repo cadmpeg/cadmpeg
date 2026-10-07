@@ -233,7 +233,7 @@ fn jt_active_face_window_admits_large_unchanged_frontier() {
     let mut decoder = active_frontier(10_000);
     crate::test_support::with_decode_context_over(
         &[],
-        |policy| policy.limits.max_work_units = 17,
+        |policy| policy.limits.max_work_units = 1,
         |ctx| {
             assert_eq!(decoder.next_active_face(ctx).unwrap(), Some(9_999));
             assert_eq!(decoder.active.len(), 10_000);
@@ -266,7 +266,7 @@ fn jt_active_shift_refuses_before_moving_the_lane() {
     decoder.removed[1] = true;
     crate::test_support::with_decode_context_over(
         &[],
-        |policy| policy.limits.max_work_units = 3,
+        |policy| policy.limits.max_work_units = 1,
         |ctx| {
             let error = decoder.next_active_face(ctx).unwrap_err();
             assert!(
@@ -276,5 +276,36 @@ fn jt_active_shift_refuses_before_moving_the_lane() {
             );
             assert_eq!(decoder.active, [0, 1, 2]);
         },
+    );
+}
+#[test]
+fn jt_reconstruction_refuses_unfilled_slot_search_before_visit() {
+    // Admit reconstruction before the first unfilled-slot search.
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan JT unfilled face slots",
+        |ctx| {
+            super::decode(
+                ctx,
+                [&[3, 3, 3], &[3], &[], &[], &[], &[], &[], &[]],
+                &[3, 3, 3, 3],
+                &[10, 12, 11, 13],
+                &[0; 4],
+                super::SplitLanes {
+                    faces: &[],
+                    positions: &[],
+                },
+                super::AttributeMaskLanes {
+                    small: [&[], &[1; 4], &[], &[], &[], &[], &[], &[]],
+                    context_7_next_30: &[],
+                    context_7_upper_4: &[],
+                    large_words: &[],
+                },
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "scan JT unfilled face slots" && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }

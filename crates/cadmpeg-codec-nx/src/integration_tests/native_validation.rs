@@ -88,3 +88,26 @@ fn native_validation_propagates_namespace_admission_refusal() {
         |ctx| crate::NxCodec::validate_native(ctx, &ir),
     );
 }
+
+#[test]
+fn native_validation_findings_refuse_output_storage() {
+    let ir = incomplete_native_segment();
+    for (dimension, additional) in [
+        (ResourceDimension::CollectionItems, 1),
+        (
+            ResourceDimension::RetainedBytes,
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Finding>()),
+        ),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            dimension,
+            "NX native validation findings",
+            |ctx| crate::NxCodec::validate_native(ctx, &ir),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension
+                && limit.operation == "NX native validation findings"
+                && limit.additional == additional));
+    }
+}
