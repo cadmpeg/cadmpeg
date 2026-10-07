@@ -105,9 +105,19 @@ fn distinct_sketch_members<'id, T>(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut storage = ctx.reserve_scoped(0, operation)?;
     let mut members = std::collections::BTreeSet::new();
-    ctx.all_by(values, |value| {
-        ctx.insert_scoped_btree_set(&mut storage, &mut members, identity(value), operation, operation)
-    }, operation)
+    ctx.all_by(
+        values,
+        |value| {
+            ctx.insert_scoped_btree_set(
+                &mut storage,
+                &mut members,
+                identity(value),
+                operation,
+                operation,
+            )
+        },
+        operation,
+    )
 }
 
 pub mod scaling;
@@ -559,10 +569,13 @@ impl SketchProfiles {
         mut keep: impl FnMut(&SketchEntityUse) -> bool,
     ) -> Result<(), cadmpeg_core::CodecError> {
         const OPERATION: &str = "filter sketch profile uses";
-        let count = ctx.admit_iter(&self.0, OPERATION)?.try_fold(0usize, |count, profile| {
-            count.checked_add(profile.len())
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
-        })?;
+        let count = ctx
+            .admit_iter(&self.0, OPERATION)?
+            .try_fold(0usize, |count, profile| {
+                count
+                    .checked_add(profile.len())
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
+            })?;
         let (mut decisions, _decision_storage) = ctx.temporary_vec(count, OPERATION)?;
         for profile in ctx.admit_iter(&self.0, OPERATION)? {
             for usage in ctx.admit_iter(profile, OPERATION)? {
@@ -1851,12 +1864,7 @@ impl SpatialSketchProfile {
                 "spatial profile boundary must be nonempty and contain distinct entities",
             ));
         }
-        if !distinct_sketch_members(
-            ctx,
-            &boundary,
-            |use_| use_.entity.as_str(),
-            operation,
-        )? {
+        if !distinct_sketch_members(ctx, &boundary, |use_| use_.entity.as_str(), operation)? {
             return Ok(Err(
                 "spatial profile boundary must be nonempty and contain distinct entities",
             ));

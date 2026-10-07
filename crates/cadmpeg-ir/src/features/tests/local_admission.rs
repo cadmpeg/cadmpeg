@@ -346,8 +346,10 @@ fn selection_reference_constructors_admit_text_before_validation() {
                 _ => unreachable!(),
             }
         };
-        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits,
-            "selection reference complete", |cap| {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "selection reference complete",
+            |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 policy.limits.max_materialized_bytes = 0;
@@ -358,8 +360,11 @@ fn selection_reference_constructors_admit_text_before_validation() {
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 construct(&ctx)?.unwrap();
                 ctx.charge_work(1, "selection reference complete")
-            });
-        let cadmpeg_core::CodecError::ResourceLimit(complete) = error else { panic!("completion boundary"); };
+            },
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(complete) = error else {
+            panic!("completion boundary");
+        };
         let need = complete.used;
         for allowance in 0..=8 {
             let mut policy = DecodePolicy::service();
@@ -374,7 +379,9 @@ fn selection_reference_constructors_admit_text_before_validation() {
             if allowance < need {
                 let limit = result.unwrap_err();
                 assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
+                assert!(
+                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
+                );
             } else {
                 result.unwrap().unwrap();
                 ctx.finish_session().unwrap();
@@ -1441,7 +1448,12 @@ fn operand_constructors_preserve_each_overlap_refusal_in_the_caller_session() {
 #[test]
 fn persistent_selection_reference_preserves_owned_text_and_wire() {
     use crate::features::SelectionReference;
-    for text in [String::new(), " \t\r\n\u{2003}".into(), "\u{2003}x  ".into(), format!("  f{}", " ".repeat(1024))] {
+    for text in [
+        String::new(),
+        " \t\r\n\u{2003}".into(),
+        "\u{2003}x  ".into(),
+        format!("  f{}", " ".repeat(1024)),
+    ] {
         let expected = SelectionReference::try_from(text.clone());
         let pointer = text.as_ptr();
         let ctx = cadmpeg_test_support::service_decode_context();
@@ -1450,8 +1462,15 @@ fn persistent_selection_reference_preserves_owned_text_and_wire() {
         let moved = SelectionReference::new(text, &ctx).unwrap();
         if let Ok(value) = moved {
             assert_eq!(value.as_str().as_ptr(), pointer);
-            assert_eq!(serde_json::to_value(&value).unwrap(), serde_json::Value::String(value.as_str().into()));
-            assert_eq!(serde_json::from_value::<SelectionReference>(serde_json::to_value(&value).unwrap()).unwrap(), value);
+            assert_eq!(
+                serde_json::to_value(&value).unwrap(),
+                serde_json::Value::String(value.as_str().into())
+            );
+            assert_eq!(
+                serde_json::from_value::<SelectionReference>(serde_json::to_value(&value).unwrap())
+                    .unwrap(),
+                value
+            );
         }
         ctx.finish_session().unwrap();
     }

@@ -977,7 +977,10 @@ impl<P: Copy, N: Copy> TessellationMesh<P, N> {
                 Ok(triangles.len())
             }
             Self::CornerShadedList { triangles, .. } => {
-                require_triangle_indices(vertex_count, triangles.iter().map(|triangle| &triangle.corners))?;
+                require_triangle_indices(
+                    vertex_count,
+                    triangles.iter().map(|triangle| &triangle.corners),
+                )?;
                 Ok(triangles.len())
             }
             // Strip constructors prove that all generated indices fit the vertex span.

@@ -52,23 +52,32 @@ fn cage_validation_admits_each_topology_and_grip_walk_before_visiting() {
         "SubD validation members",
         "SubD validation member search",
     ] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
-            let cage = gripped_cage();
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries, &ctx);
-            if let Err(CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(limit.operation, operation);
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit));
-            }
-            result
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let cage = gripped_cage();
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result =
+                    SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries, &ctx);
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(limit.operation, operation);
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit)
+                    );
+                }
+                result
+            },
+        );
     }
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits,
-        "SubD cage validation complete", |cap| {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "SubD cage validation complete",
+        |cap| {
             let cage = gripped_cage();
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -76,15 +85,23 @@ fn cage_validation_admits_each_topology_and_grip_walk_before_visiting() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries, &ctx)?.unwrap();
             ctx.charge_work(1, "SubD cage validation complete")
-        });
-    let CodecError::ResourceLimit(limit) = error else { panic!("validation completion boundary"); };
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("validation completion boundary");
+    };
     let cage = gripped_cage();
     let expected = cage.clone();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = limit.used;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries, &ctx).unwrap().unwrap(), expected);
+    assert_eq!(
+        SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries, &ctx)
+            .unwrap()
+            .unwrap(),
+        expected
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -255,11 +272,31 @@ fn subdivision_symmetry_and_layout_constructors_use_the_caller_session() {
 #[test]
 fn subdivision_vertex_edit_refusals_are_atomic_and_release_candidates() {
     for (dimension, operation, edited) in [
-        (ResourceDimension::MaterializedBytes, "copy SubD edit vertices", false),
-        (ResourceDimension::CollectionItems, "copy SubD edit vertices", false),
-        (ResourceDimension::WorkUnits, "copy SubD edit vertices", false),
-        (ResourceDimension::WorkUnits, "validate SubD vertex rows", true),
-        (ResourceDimension::RetainedBytes, "SubD vertex edit storage", true),
+        (
+            ResourceDimension::MaterializedBytes,
+            "copy SubD edit vertices",
+            false,
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "copy SubD edit vertices",
+            false,
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            "copy SubD edit vertices",
+            false,
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            "validate SubD vertex rows",
+            true,
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "SubD vertex edit storage",
+            true,
+        ),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let mut cage = gripped_cage();
@@ -275,16 +312,21 @@ fn subdivision_vertex_edit_refusals_are_atomic_and_release_candidates() {
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut invoked = false;
-            let result = cage.edit_vertices(|vertices| {
-                invoked = true;
-                vertices[0].tag = crate::subd::SubdVertexTag::Corner;
-                Ok(())
-            }, &ctx);
+            let result = cage.edit_vertices(
+                |vertices| {
+                    invoked = true;
+                    vertices[0].tag = crate::subd::SubdVertexTag::Corner;
+                    Ok(())
+                },
+                &ctx,
+            );
             if let Err(CodecError::ResourceLimit(limit)) = &result {
                 assert_eq!(limit.dimension, dimension);
                 assert_eq!(invoked, edited);
                 assert_eq!(cage, expected);
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit)
+                );
             }
             result
         });
