@@ -158,6 +158,15 @@ impl UnresolvedCause {
     }
 }
 
+/// The graphics faces that share one face key.
+enum FaceKeyMatch<'a> {
+    One(&'a Located<PmGraphicsFace>),
+    /// Several faces; `styled` records whether any of them names a style.
+    Many {
+        styled: bool,
+    },
+}
+
 pub(crate) struct PresentationProjection {
     pub(crate) appearances: Vec<Appearance>,
     pub(crate) bindings: Vec<AppearanceBinding>,
@@ -340,7 +349,6 @@ fn project_default_bindings(
             cadmpeg_core::decode::u64_from_index("inventor:presentation:body-default#".len() + 16),
             "retain Inventor default binding id",
         )?;
-        ctx.charge_retained(4, "retain Inventor body binding object type")?;
         let binding_id = {
             let mut digest_storage =
                 ctx.reserve_scoped(0, "compose Inventor default binding key")?;
@@ -374,7 +382,9 @@ fn project_default_bindings(
                     ),
                     "retain Inventor presentation binding source id",
                 )?),
-                object_type: Some("Body".into()),
+                object_type: Some(
+                    ctx.copy_retained_text("Body", "retain Inventor body binding object type")?,
+                ),
                 visible: None,
                 channels: BTreeMap::default(),
             },
@@ -411,39 +421,91 @@ fn project_face_bindings(
             Ok::<_, CodecError>(())
         })?;
     }
-    let mut appearance_copy_storage =
-        ctx.reserve_scoped(0, "Inventor temporary face appearance identities")?;
-    let mut appearance_ids = std::collections::HashMap::<(&str, u32), AppearanceId>::new();
-    for (face_id, key) in ctx.admit_iter(face_keys, "visit Inventor ordered faces")? {
-        let mut matching_faces_storage = ctx.reserve_scoped(0, "match Inventor graphics face")?;
-        let mut matching_faces = Vec::new();
-        for face in ctx.admit_iter(
-            &inventory.graphics_faces,
-            "scan Inventor graphics faces for presentation",
+    // Each record set is indexed once, so every model face resolves its
+    // graphics face, style collection and colour style by lookup.
+    let mut index_storage = ctx.reserve_scoped(0, "index Inventor presentation records")?;
+    let mut faces_by_key = std::collections::HashMap::<u32, FaceKeyMatch<'_>>::new();
+    for face in ctx.admit_iter(
+        &inventory.graphics_faces,
+        "index Inventor graphics faces by key",
+    )? {
+        let styled = face.styles.index() != 0;
+        match ctx.get_mut_hash_map(
+            &mut faces_by_key,
+            &face.key,
+            "index Inventor graphics faces by key",
         )? {
-            if u64::from(face.key) == *key {
-                matching_faces_storage.with_storage(|| {
-                    ctx.push_vec(&mut matching_faces, face, "match Inventor graphics face")
+            Some(entry) => {
+                let earlier_styled = match entry {
+                    FaceKeyMatch::One(first) => first.styles.index() != 0,
+                    FaceKeyMatch::Many { styled } => *styled,
+                };
+                *entry = FaceKeyMatch::Many {
+                    styled: earlier_styled || styled,
+                };
+            }
+            None => {
+                index_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut faces_by_key,
+                        face.key,
+                        FaceKeyMatch::One(face),
+                        "index Inventor graphics faces by key",
+                    )
                 })?;
             }
         }
-        if matching_faces.is_empty() {
+    }
+    let (collections_by_identity, _collections_storage) = ctx.unique_index(
+        inventory
+            .graphics_style_collections
+            .iter()
+            .map(|collection| {
+                (
+                    (
+                        collection.identity.segment_token.as_str(),
+                        collection.identity.record_ordinal,
+                    ),
+                    collection,
+                )
+            }),
+        "index Inventor graphics style collections",
+    )?;
+    let (color_styles_by_identity, _color_styles_storage) = ctx.unique_index(
+        inventory.graphics_primary_color_styles.iter().map(|style| {
+            (
+                (
+                    style.identity.segment_token.as_str(),
+                    style.identity.record_ordinal,
+                ),
+                style,
+            )
+        }),
+        "index Inventor primary color styles",
+    )?;
+    // Each colour style's appearance is projected once; later faces bound to
+    // the same style copy its id from the projected appearance.
+    let mut appearance_storage = ctx.reserve_scoped(0, "index Inventor face appearances")?;
+    let mut appearance_indices = std::collections::HashMap::<(&str, u32), usize>::new();
+    for (face_id, key) in ctx.admit_iter(face_keys, "visit Inventor ordered faces")? {
+        let Ok(graphics_key) = u32::try_from(*key) else {
             continue;
-        }
-        if matching_faces.len() != 1 {
-            if ctx
-                .admit_iter(&matching_faces, "visit Inventor matching faces")?
-                .any(|face| face.styles.index() != 0)
-            {
-                count_unresolved(
-                    ctx,
-                    &mut projection.unresolved_face_overrides,
-                    UnresolvedCause::GraphicsFace,
-                )?;
-            }
-            continue;
-        }
-        let graphics_face = matching_faces[0];
+        };
+        let graphics_face =
+            match ctx.get_hash_map(&faces_by_key, &graphics_key, "match Inventor graphics face")? {
+                None => continue,
+                Some(FaceKeyMatch::Many { styled }) => {
+                    if *styled {
+                        count_unresolved(
+                            ctx,
+                            &mut projection.unresolved_face_overrides,
+                            UnresolvedCause::GraphicsFace,
+                        )?;
+                    }
+                    continue;
+                }
+                Some(FaceKeyMatch::One(face)) => *face,
+            };
         let Some(collection_ordinal) = graphics_face.styles.index().checked_sub(1) else {
             continue;
         };
@@ -459,40 +521,25 @@ fn project_face_bindings(
             )?;
             continue;
         }
-        let mut collections_storage =
-            ctx.reserve_scoped(0, "match Inventor graphics style collection")?;
-        let mut collections = Vec::new();
-        for collection in ctx.admit_iter(
-            &inventory.graphics_style_collections,
-            "visit Inventor presentation records",
-        )? {
-            if ctx.equal(
-                &collection.identity.segment_token,
-                &graphics_face.identity.segment_token,
-                "match Inventor graphics collection token",
-            )? && collection.identity.record_ordinal == collection_ordinal
-            {
-                collections_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut collections,
-                        collection,
-                        "match Inventor graphics style collection",
-                    )
-                })?;
-            }
-        }
-        if collections.len() != 1 {
+        let Some(&Some(collection)) = ctx.get_hash_map(
+            &collections_by_identity,
+            &(
+                graphics_face.identity.segment_token.as_str(),
+                collection_ordinal,
+            ),
+            "match Inventor graphics style collection",
+        )?
+        else {
             count_unresolved(
                 ctx,
                 &mut projection.unresolved_face_overrides,
                 UnresolvedCause::StyleCollection,
             )?;
             continue;
-        }
-        let collection = collections[0];
-        let mut color_styles_storage =
-            ctx.reserve_scoped(0, "match Inventor primary color style")?;
-        let mut color_styles = Vec::new();
+        };
+        // The collection must name exactly one colour style in all: `named`
+        // is the one style named so far, or `Some(None)` once a second is.
+        let mut named = None;
         for ordinal in ctx
             .admit_iter(
                 collection.style_references.references(),
@@ -500,35 +547,24 @@ fn project_face_bindings(
             )?
             .filter_map(|reference| reference.index().checked_sub(1))
         {
-            for style in ctx.admit_iter(
-                &inventory.graphics_primary_color_styles,
-                "visit Inventor presentation records",
+            match ctx.get_hash_map(
+                &color_styles_by_identity,
+                &(collection.identity.segment_token.as_str(), ordinal),
+                "match Inventor primary color style",
             )? {
-                if ctx.equal(
-                    &style.identity.segment_token,
-                    &collection.identity.segment_token,
-                    "match Inventor graphics style token",
-                )? && style.identity.record_ordinal == ordinal
-                {
-                    color_styles_storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut color_styles,
-                            style,
-                            "match Inventor primary color style",
-                        )
-                    })?;
-                }
+                None => {}
+                Some(Some(style)) if named.is_none() => named = Some(Some(*style)),
+                Some(_) => named = Some(None),
             }
         }
-        if color_styles.len() != 1 {
+        let Some(Some(style)) = named else {
             count_unresolved(
                 ctx,
                 &mut projection.unresolved_face_overrides,
                 UnresolvedCause::ColorStyle,
             )?;
             continue;
-        }
-        let style = color_styles[0];
+        };
         let [r, g, b, a] = style.colors[1].map(cadmpeg_ir::scalar::FiniteBinary32::get);
         let Some(color) = Color::new(r, g, b, a) else {
             count_unresolved(
@@ -542,12 +578,19 @@ fn project_face_bindings(
             style.identity.segment_token.as_str(),
             style.identity.record_ordinal,
         );
-        let appearance_id = if let Some(id) = ctx.get_hash_map(
-            &appearance_ids,
+        let appearance_id = if let Some(&index) = ctx.get_hash_map(
+            &appearance_indices,
             &appearance_key,
             "access Inventor presentation records",
         )? {
-            id.try_clone_for_decode(ctx, "copy Inventor face appearance id")?
+            projection
+                .appearances
+                .get(index)
+                .ok_or_else(|| {
+                    CodecError::Malformed("Inventor face appearance index is stale".into())
+                })?
+                .id
+                .try_clone_for_decode(ctx, "copy Inventor face appearance id")?
         } else {
             ctx.charge_entities(1, "project Inventor face appearance")?;
             let digits =
@@ -586,10 +629,6 @@ fn project_face_bindings(
                 cadmpeg_core::decode::u64_from_index(id_len),
                 "retain Inventor face appearance ids",
             )?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index("InventorPrimaryColorStyle".len()),
-                "retain Inventor face appearance schema",
-            )?;
             let id = {
                 let mut copied_storage =
                     ctx.reserve_scoped(0, "compose Inventor face appearance key")?;
@@ -609,7 +648,10 @@ fn project_face_bindings(
                     library_id: None,
                     visual_guid: None,
                     physical_token: None,
-                    schema: Some("InventorPrimaryColorStyle".into()),
+                    schema: Some(ctx.copy_retained_text(
+                        "InventorPrimaryColorStyle",
+                        "retain Inventor face appearance schema",
+                    )?),
                     category: None,
                     base_color: Some(color),
                     properties: BTreeMap::new(),
@@ -617,14 +659,12 @@ fn project_face_bindings(
                 },
                 "project Inventor face appearance",
             )?;
-            let copied_id = appearance_copy_storage.with_storage(|| {
-                id.try_clone_for_decode(ctx, "retain Inventor face appearance ids")
-            })?;
-            appearance_copy_storage.with_storage(|| {
+            let index = projection.appearances.len() - 1;
+            appearance_storage.with_storage(|| {
                 ctx.insert_hash_map(
-                    &mut appearance_ids,
+                    &mut appearance_indices,
                     appearance_key,
-                    copied_id,
+                    index,
                     "access Inventor presentation records",
                 )
             })?;
@@ -646,7 +686,6 @@ fn project_face_bindings(
             cadmpeg_core::decode::u64_from_index("inventor:presentation:face-override#".len() + 16),
             "retain Inventor face binding id",
         )?;
-        ctx.charge_retained(4, "retain Inventor face binding object type")?;
         let mut channels = BTreeMap::new();
         ctx.insert_btree_map(
             &mut channels,
@@ -685,7 +724,9 @@ fn project_face_bindings(
                     ),
                     "retain Inventor presentation binding source id",
                 )?),
-                object_type: Some("Face".into()),
+                object_type: Some(
+                    ctx.copy_retained_text("Face", "retain Inventor face binding object type")?,
+                ),
                 visible: None,
                 channels,
             },
@@ -718,6 +759,7 @@ pub(crate) fn inventory<'a>(
         let RecordFrameState::Framed(table) = &bulk.records else {
             continue;
         };
+        let is_graphics = matches!(segment.kind, SegmentKind::PmGraphics);
         for record in ctx.admit_iter(&table.records, "visit Inventor presentation items")? {
             let token = segment.pair.token.key();
             let ordinal = record.ordinal;
@@ -747,13 +789,7 @@ pub(crate) fn inventory<'a>(
                             "admit Inventor rendering style record",
                         )
                     }),
-                GRAPHICS_FACE_TYPE
-                    if ctx.equal(
-                        &segment.kind,
-                        &SegmentKind::PmGraphics,
-                        "match Inventor graphics segment kind",
-                    )? =>
-                {
+                GRAPHICS_FACE_TYPE if is_graphics => {
                     parse_graphics_face(ctx, record.payload, version).and_then(|value| {
                         push_presentation_record(
                             ctx,
@@ -766,13 +802,7 @@ pub(crate) fn inventory<'a>(
                         )
                     })
                 }
-                GRAPHICS_STYLE_COLLECTION_TYPE
-                    if ctx.equal(
-                        &segment.kind,
-                        &SegmentKind::PmGraphics,
-                        "match Inventor graphics segment kind",
-                    )? =>
-                {
+                GRAPHICS_STYLE_COLLECTION_TYPE if is_graphics => {
                     parse_graphics_style_collection(ctx, record.payload, version).and_then(
                         |value| {
                             push_presentation_record(
@@ -787,13 +817,7 @@ pub(crate) fn inventory<'a>(
                         },
                     )
                 }
-                GRAPHICS_PRIMARY_COLOR_STYLE_TYPE
-                    if ctx.equal(
-                        &segment.kind,
-                        &SegmentKind::PmGraphics,
-                        "match Inventor graphics segment kind",
-                    )? =>
-                {
+                GRAPHICS_PRIMARY_COLOR_STYLE_TYPE if is_graphics => {
                     parse_graphics_primary_color_style(record.payload, version).and_then(|value| {
                         push_presentation_record(
                             ctx,
@@ -1205,10 +1229,7 @@ impl<'a> Cursor<'a> {
         len: usize,
         field: &'static str,
     ) -> Result<(), CodecError> {
-        if ctx
-            .admit_iter(self.take(len, field)?, field)?
-            .any(|byte| *byte != 0)
-        {
+        if ctx.any_by(self.take(len, field)?, |byte| Ok(*byte != 0), field)? {
             return Err(CodecError::malformed(format_args!(
                 "Inventor presentation {field} is not zero-filled"
             )));
@@ -2195,8 +2216,8 @@ mod tests {
             .contains("graphics primary-color component is not finite"));
     }
 
-    fn face_override_inventory() -> PresentationInventory<'static> {
-        let face = Located::new(
+    fn graphics_face(key: u32, ordinal: u32) -> Located<PmGraphicsFace> {
+        Located::new(
             PmGraphicsFace {
                 segment_version_major: 26,
                 header_value: 0,
@@ -2209,7 +2230,7 @@ mod tests {
                 edge_references: PmDcPairedReferenceList::default(),
                 visibility_state: 0,
                 bounds: [FiniteReal::ZERO; 6],
-                key: 42,
+                key,
                 values: [0; 2],
             },
             crate::record_identity::RecordTypeId::from_bytes(
@@ -2224,8 +2245,12 @@ mod tests {
                     "Inventor located fixture token",
                 )
                 .expect("service fixture token"),
-            2,
-        );
+            ordinal,
+        )
+    }
+
+    fn face_override_inventory() -> PresentationInventory<'static> {
+        let face = graphics_face(42, 2);
         let collection = Located::new(
             PmGraphicsStyleCollection {
                 segment_version_major: 26,
@@ -2324,6 +2349,75 @@ mod tests {
         );
     }
 
+    fn project_faces(
+        inventory: &PresentationInventory<'_>,
+        keys: &[(&str, u64)],
+    ) -> super::PresentationProjection {
+        let face_keys = keys
+            .iter()
+            .map(|(id, key)| (FaceId::mint(*id).expect("identity grammar"), *key))
+            .collect::<BTreeMap<_, _>>();
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        project_bindings(&ctx, inventory, &[], &[], &face_keys).expect("face binding projection")
+    }
+
+    #[test]
+    fn face_overrides_report_each_ambiguous_join_through_the_record_indexes() {
+        let face = [("inventor:test:face#1", 42)];
+        let mut inventory = face_override_inventory();
+        inventory.graphics_faces.push(graphics_face(42, 3));
+        let projection = project_faces(&inventory, &face);
+        assert!(projection.bindings.is_empty());
+        assert_eq!(
+            projection
+                .unresolved_face_overrides
+                .get(&super::UnresolvedCause::GraphicsFace)
+                .map(|count| count.get()),
+            Some(1)
+        );
+
+        let mut inventory = face_override_inventory();
+        inventory
+            .graphics_style_collections
+            .extend(face_override_inventory().graphics_style_collections);
+        let projection = project_faces(&inventory, &face);
+        assert!(projection.bindings.is_empty());
+        assert!(projection
+            .unresolved_face_overrides
+            .contains_key(&super::UnresolvedCause::StyleCollection));
+
+        let mut inventory = face_override_inventory();
+        inventory
+            .graphics_primary_color_styles
+            .extend(face_override_inventory().graphics_primary_color_styles);
+        let projection = project_faces(&inventory, &face);
+        assert!(projection.bindings.is_empty());
+        assert!(projection
+            .unresolved_face_overrides
+            .contains_key(&super::UnresolvedCause::ColorStyle));
+    }
+
+    #[test]
+    fn faces_sharing_a_color_style_share_its_one_appearance() {
+        let mut inventory = face_override_inventory();
+        inventory.graphics_faces.push(graphics_face(43, 3));
+        let projection = project_faces(
+            &inventory,
+            &[("inventor:test:face#1", 42), ("inventor:test:face#2", 43)],
+        );
+        assert!(projection.unresolved_face_overrides.is_empty());
+        let [appearance] = projection.appearances.as_slice() else {
+            panic!("one primary-color appearance must be projected");
+        };
+        let [first, second] = projection.bindings.as_slice() else {
+            panic!("two face bindings must be projected");
+        };
+        assert_eq!(first.appearance, appearance.id);
+        assert_eq!(second.appearance, appearance.id);
+    }
+
     #[test]
     fn face_binding_projection_refuses_entity_limits_before_creations() {
         let inventory = face_override_inventory();
@@ -2357,25 +2451,25 @@ mod tests {
     }
 
     #[test]
-    fn face_binding_projection_refuses_work_limit_before_graph_scan() {
+    fn face_binding_projection_refuses_work_limit_before_graphics_face_index() {
         let inventory = face_override_inventory();
         let face_id = FaceId::mint("inventor:test:face#1").expect("identity grammar");
         let face_keys = BTreeMap::from([(face_id, 42)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Two face-key traversals, an eight-byte hash key and the key-count table's growth
+        // One face-key traversal, an eight-byte hash key and the key-count table's growth
         // bound (four buckets, their control bytes, alignment and trailing controls) precede
-        // the scan.
+        // the graphics-face index.
         let key_count_table = 4 * std::mem::size_of::<(&u64, usize)>() + 15 + 4 + 16;
         policy.limits.max_work_units =
-            cadmpeg_core::decode::u64_from_index(2 * face_keys.len() + 8 + key_count_table);
+            cadmpeg_core::decode::u64_from_index(face_keys.len() + 8 + key_count_table);
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(
             project_bindings(&ctx, &inventory, &[], &[], &face_keys),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "scan Inventor graphics faces for presentation"
+                    && limit.operation == "index Inventor graphics faces by key"
         ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("service projection context");
