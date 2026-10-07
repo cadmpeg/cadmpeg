@@ -2,7 +2,7 @@
 //! One membership algorithm with decode and standard allocation policies.
 
 use std::collections::{HashSet, TryReserveError};
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher};
 
 use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
@@ -62,16 +62,23 @@ pub(super) struct Index<'scope, T, S: Admission> {
 
 impl<T: Eq + Hash, S: Admission> Index<'_, T, S> {
     pub(super) fn insert(&mut self, value: T) -> Result<bool, S::Error> {
-        let mut measure = HashedBytes {
+        // The member is hashed once here, with the set's own keys, and the
+        // set rehashes only the finished hash.
+        let mut state = self.values.hasher().build_hasher();
+        let mut hasher = MemberHasher {
+            state: &mut state,
             admission: self.admission,
-            bytes: 0,
+            written: 0,
         };
-        value.hash(&mut measure);
+        value.hash(&mut hasher);
+        let hashed = hasher.written;
+        let hash = hasher.finish();
         self.admission.work(0)?;
         let inserted = self.values.insert(MemberKey {
             value,
             admission: self.admission,
-            hashed: measure.bytes,
+            hashed,
+            hash,
         });
         // Callback refusal fuses the policy; no insertion result escapes before this check.
         self.admission.work(0)?;
@@ -79,12 +86,13 @@ impl<T: Eq + Hash, S: Admission> Index<'_, T, S> {
     }
 }
 
-/// A member and the bytes its hash writes. Comparing two members reads no
-/// more than the bytes both of them hash.
+/// A member, the bytes its hash wrote and the finished hash. Comparing two
+/// members reads no more than the bytes both of them hashed.
 struct MemberKey<'scope, T, S> {
     value: T,
     admission: &'scope S,
     hashed: usize,
+    hash: u64,
 }
 
 impl<T: PartialEq, S: Admission> PartialEq for MemberKey<'_, T, S> {
@@ -96,43 +104,18 @@ impl<T: PartialEq, S: Admission> PartialEq for MemberKey<'_, T, S> {
 }
 impl<T: Eq, S: Admission> Eq for MemberKey<'_, T, S> {}
 
-impl<T: Hash, S: Admission> Hash for MemberKey<'_, T, S> {
+impl<T, S> Hash for MemberKey<'_, T, S> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        if self.admission.work(1).is_err() {
-            return;
-        }
-        self.value.hash(&mut MemberHasher {
-            state,
-            admission: self.admission,
-        });
+        state.write_u64(self.hash);
     }
 }
 
-/// Measures the bytes a member's hash writes, admitting each chunk it visits.
-struct HashedBytes<'scope, S> {
-    admission: &'scope S,
-    bytes: usize,
-}
-
-impl<S: Admission> Hasher for HashedBytes<'_, S> {
-    fn finish(&self) -> u64 {
-        0
-    }
-    fn write(&mut self, bytes: &[u8]) {
-        if self.admission.work(bytes.len()).is_err() {
-            return;
-        }
-        // Every measured byte was admitted first, so the count stays within
-        // the work counter.
-        if let Some(measured) = self.bytes.checked_add(bytes.len()) {
-            self.bytes = measured;
-        }
-    }
-}
-
+/// Hashes a member, admitting each chunk before it is hashed and counting the
+/// bytes written.
 struct MemberHasher<'scope, H, S> {
     state: &'scope mut H,
     admission: &'scope S,
+    written: usize,
 }
 
 impl<H: Hasher, S: Admission> Hasher for MemberHasher<'_, H, S> {
@@ -145,6 +128,11 @@ impl<H: Hasher, S: Admission> Hasher for MemberHasher<'_, H, S> {
     fn write(&mut self, bytes: &[u8]) {
         if self.admission.work(bytes.len()).is_err() {
             return;
+        }
+        // Every written byte was admitted first, so the count stays within
+        // the work counter.
+        if let Some(written) = self.written.checked_add(bytes.len()) {
+            self.written = written;
         }
         self.state.write(bytes);
     }

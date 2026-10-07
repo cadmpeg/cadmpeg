@@ -37,10 +37,10 @@ fn membership_hash_callbacks_admit_once_and_release_the_index() {
             + 8
             + 16;
     let scoped_peak = 2 * table;
-    // Past the table, three scan steps; each member is measured (one byte)
-    // and hashed (one callback, one byte); three collision comparisons each
-    // read both one-byte members.
-    for allowance in 0..=18 {
+    // Past the table, three scan steps; each member is hashed once (one byte
+    // and the finish); three collision comparisons each read both one-byte
+    // members.
+    for allowance in 0..=15 {
         let hashes = Rc::new(Cell::new(0));
         let comparisons = Rc::new(Cell::new(0));
         let values: Vec<_> = (0..3)
@@ -67,7 +67,7 @@ fn membership_hash_callbacks_admit_once_and_release_the_index() {
             values.len(),
             |_| true,
         );
-        if allowance < 18 {
+        if allowance < 15 {
             let limit = result.unwrap_err();
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
             assert_eq!(limit.operation, "collision admission");
@@ -79,7 +79,7 @@ fn membership_hash_callbacks_admit_once_and_release_the_index() {
             );
         } else {
             assert!(result.unwrap());
-            assert_eq!(hashes.get(), 6);
+            assert_eq!(hashes.get(), 3);
             assert_eq!(comparisons.get(), 3);
             let storage = ctx
                 .reserve_scoped_limit(
@@ -93,7 +93,7 @@ fn membership_hash_callbacks_admit_once_and_release_the_index() {
                 .unwrap_err();
             assert_eq!(
                 limit.used,
-                u64::try_from(table).expect("table fits u64") + 18
+                u64::try_from(table).expect("table fits u64") + 15
             );
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
@@ -128,6 +128,7 @@ fn membership_hasher_refuses_before_copying_each_byte_chunk() {
         let mut state = MemberHasher {
             state: &mut written,
             admission: &admission,
+            written: 0,
         };
         state.write(&[1, 2, 3, 4]);
         if allowance == 4 {
@@ -161,6 +162,7 @@ fn member_comparison_pays_for_both_hashed_extents() {
             value: long.as_str(),
             admission: &admission,
             hashed: 1000,
+            hash: 0,
         };
         let equal = key() == key();
         assert_eq!(equal, allowance == 2000);
