@@ -83,7 +83,14 @@ fn tessellated_curve_name_refuses_materialized_limit() {
                 angle: std::collections::BTreeMap::new(),
             };
             // The geometry-wide index peak does not define the local name boundary.
-            super::super::decode_tessellated_curve_sets(&exchange, &units, &mut ir, &mut std::collections::BTreeSet::new(), &mut Vec::new(), &ctx)
+            super::super::decode_tessellated_curve_sets(
+                &exchange,
+                &units,
+                &mut ir,
+                &mut std::collections::BTreeSet::new(),
+                &mut Vec::new(),
+                &ctx,
+            )
         },
     );
     assert!(
@@ -1267,8 +1274,19 @@ fn non_finite_scaled_offset_keeps_the_unresolved_carrier() {
 #8=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#9)) REPRESENTATION_CONTEXT('',''));
 #9=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.EXA.,.METRE.));",
     );
-    let curve = result.ir().model.curves.iter().find(|curve| curve.id.as_str() == "step:data:curve#5").expect("unresolved offset carrier");
-    assert!(matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Unknown { .. })));
+    let curve = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#5")
+        .expect("unresolved offset carrier");
+    assert!(matches!(
+        curve.geometry.solved(),
+        Some(SolvedCurveGeometry::Unknown { .. })
+    ));
     assert!(result.ir().model.procedural_curves.is_empty());
-    assert!(result.report().losses.iter().any(|loss| loss.message.contains("SpatialOffset.distance is not finite")));
+    assert!(result.report().losses.iter().any(|loss| loss
+        .message
+        .contains("SpatialOffset.distance is not finite")));
 }

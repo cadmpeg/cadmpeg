@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Allocation admission for tessellation coordinate and index lanes.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use super::{
+    assert_tessellation_collection_refusal, decode_tessellation_under_policy, ONE_TRIANGLE,
+    ONE_TRIANGLE_IN_CONTAINER, ONE_TRIANGLE_WITH_PNINDEX,
+};
 use crate::parse::Value;
-use super::{assert_tessellation_collection_refusal, decode_tessellation_under_policy, ONE_TRIANGLE, ONE_TRIANGLE_IN_CONTAINER, ONE_TRIANGLE_WITH_PNINDEX};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
+use cadmpeg_core::CodecError;
 
 #[test]
 fn tessellation_coordinate_rows_charge_before_collection() {
@@ -22,7 +27,9 @@ fn tessellation_coordinate_rows_reserve_temporary_bytes_before_collection() {
     decode_tessellation_under_policy(ONE_TRIANGLE, service)
         .expect("service admits coordinate rows");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes, "step_tessellation_coordinate_rows", |cap| {
+        ResourceDimension::MaterializedBytes,
+        "step_tessellation_coordinate_rows",
+        |cap| {
             let mut limited = service;
             limited.limits.max_materialized_bytes = cap;
             decode_tessellation_under_policy(ONE_TRIANGLE, limited)
@@ -72,10 +79,7 @@ fn tessellation_container_items_reserve_temporary_bytes_before_collection() {
 
 #[test]
 fn tessellation_pnindex_charges_before_collection() {
-    assert_tessellation_collection_refusal(
-        ONE_TRIANGLE_WITH_PNINDEX,
-        "step_tessellation_pnindex",
-    );
+    assert_tessellation_collection_refusal(ONE_TRIANGLE_WITH_PNINDEX, "step_tessellation_pnindex");
 }
 
 #[test]
@@ -137,10 +141,7 @@ fn tessellation_shaded_rows_charge_before_pairing() {
 
 #[test]
 fn tessellation_validation_triangles_charge_before_copy() {
-    assert_tessellation_collection_refusal(
-        ONE_TRIANGLE,
-        "step_tessellation_validation_triangles",
-    );
+    assert_tessellation_collection_refusal(ONE_TRIANGLE, "step_tessellation_validation_triangles");
 }
 
 #[test]
@@ -253,11 +254,14 @@ fn tessellation_pnindex_reserves_temporary_bytes_before_collection() {
         .is_some());
     // The probe uses the backing capacity allocated for three indices.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes, "step_tessellation_pnindex", |cap| {
+        ResourceDimension::MaterializedBytes,
+        "step_tessellation_pnindex",
+        |cap| {
             let arena = DecodeArena::new();
             let mut limited = service;
             limited.limits.max_materialized_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &limited).expect("limited root admission");
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &limited)
+                .expect("limited root admission");
             super::super::index_list(Some(&values), &ctx).map(|_| ())
         },
     );
@@ -291,12 +295,22 @@ fn complex_tessellation_rows_reserve_temporary_bytes_before_collection() {
     .expect("service admits strip row");
     // The outer row buffer is allocated after the three-index child lane.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes, "step_complex_tessellation_rows", |cap| {
+        ResourceDimension::MaterializedBytes,
+        "step_complex_tessellation_rows",
+        |cap| {
             let arena = DecodeArena::new();
             let mut limited = service;
             limited.limits.max_materialized_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &limited).expect("limited root admission");
-            super::super::index_rows(Some(&strips), "COMPLEX_TRIANGULATED_SURFACE_SET", 1, "strip", &ctx).map(|_| ())
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &limited)
+                .expect("limited root admission");
+            super::super::index_rows(
+                Some(&strips),
+                "COMPLEX_TRIANGULATED_SURFACE_SET",
+                1,
+                "strip",
+                &ctx,
+            )
+            .map(|_| ())
         },
     );
     assert!(
@@ -321,12 +335,22 @@ fn complex_tessellation_indices_reserve_temporary_bytes_before_collection() {
     .expect("service admits three strip indices");
     // The index buffer is allocated before the outer strip row.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes, "step_complex_tessellation_indices", |cap| {
+        ResourceDimension::MaterializedBytes,
+        "step_complex_tessellation_indices",
+        |cap| {
             let arena = DecodeArena::new();
             let mut limited = service;
             limited.limits.max_materialized_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &limited).expect("limited root admission");
-            super::super::index_rows(Some(&strips), "COMPLEX_TRIANGULATED_SURFACE_SET", 1, "strip", &ctx).map(|_| ())
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &limited)
+                .expect("limited root admission");
+            super::super::index_rows(
+                Some(&strips),
+                "COMPLEX_TRIANGULATED_SURFACE_SET",
+                1,
+                "strip",
+                &ctx,
+            )
+            .map(|_| ())
         },
     );
     assert!(
@@ -352,16 +376,25 @@ fn complex_tessellation_triangles_reserve_temporary_bytes_before_collection() {
     .is_some());
     // The triangle buffer is allocated after the three-index strip and row.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes, "step_complex_tessellation_triangles", |cap| {
+        ResourceDimension::MaterializedBytes,
+        "step_complex_tessellation_triangles",
+        |cap| {
             let arena = DecodeArena::new();
             let mut limited = service;
             limited.limits.max_materialized_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &limited).expect("limited root admission");
-            super::super::complex_triangles(Some(&strips), None, "COMPLEX_TRIANGULATED_SURFACE_SET", 1, &ctx).map(|_| ())
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &limited)
+                .expect("limited root admission");
+            super::super::complex_triangles(
+                Some(&strips),
+                None,
+                "COMPLEX_TRIANGULATED_SURFACE_SET",
+                1,
+                &ctx,
+            )
+            .map(|_| ())
         },
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_complex_tessellation_triangles")
     );
 }
-

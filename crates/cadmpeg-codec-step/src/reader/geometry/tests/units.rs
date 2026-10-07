@@ -506,9 +506,17 @@ fn uncertainty_name_refuses_materialized_limit() {
             policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
                 .expect("root fits materialized policy");
-            let name = exchange.records().get(&2).expect("uncertainty measure").parameter(2).expect("uncertainty name");
+            let name = exchange
+                .records()
+                .get(&2)
+                .expect("uncertainty measure")
+                .parameter(2)
+                .expect("uncertainty name");
             // Unit-resolution scratch is released before the name boundary.
-            ctx.with_scoped_storage("test uncertainty name storage", || super::super::string_value(name, &exchange, &ctx)).map(|_| ())
+            ctx.with_scoped_storage("test uncertainty name storage", || {
+                super::super::string_value(name, &exchange, &ctx)
+            })
+            .map(|_| ())
         },
     );
     assert!(
@@ -731,9 +739,18 @@ fn resolve_unit_scales_for_test(
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default())
         .expect("empty root fits policy");
-    let mut storage = ctx.reserve_scoped(0, "test selected units").expect("empty scope");
-    super::super::resolve_unit_scales(exchange, PositiveReal::ONE, PositiveReal::ONE, losses, &mut storage, &ctx)
-        .expect("unit scales fit policy")
+    let mut storage = ctx
+        .reserve_scoped(0, "test selected units")
+        .expect("empty scope");
+    super::super::resolve_unit_scales(
+        exchange,
+        PositiveReal::ONE,
+        PositiveReal::ONE,
+        losses,
+        &mut storage,
+        &ctx,
+    )
+    .expect("unit scales fit policy")
 }
 
 #[test]
@@ -815,5 +832,3 @@ fn shared_representation_items_reject_conflicting_context_units() {
         .iter()
         .any(|loss| { loss.code == StepLossCode::ConflictingRepresentationUnits.kind() }));
 }
-
-

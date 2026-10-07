@@ -17,7 +17,7 @@ fn distinct_placement_comparisons_refuse_before_keyed_insertion() {
             crate::test_support::with_policy_context(&[], &policy, |_, ctx| {
                 let result = super::super::distinct_placement_count(&placements, ctx);
                 if let Err(CodecError::ResourceLimit(limit)) = &result {
-                    assert_eq!(Some(limit.clone()), ctx.resource_refusal());
+                    assert_eq!(Some(*limit), ctx.resource_refusal());
                 }
                 result
             })
@@ -39,10 +39,15 @@ fn distinct_placements_preserve_signed_zero_equality() {
         let identity = cadmpeg_ir::transform::Transform::identity();
         let mut negative_zero = identity.affine_rows();
         negative_zero[0][1] = -0.0;
-        let negative_zero = cadmpeg_ir::transform::Transform::affine(negative_zero).expect("affine");
+        let negative_zero =
+            cadmpeg_ir::transform::Transform::affine(negative_zero).expect("affine");
         let mut shifted = identity.affine_rows();
         shifted[0][3] = 1.0;
         let shifted = cadmpeg_ir::transform::Transform::affine(shifted).expect("affine");
-        assert_eq!(super::super::distinct_placement_count(&[identity, negative_zero, shifted], ctx).expect("count"), 2);
+        assert_eq!(
+            super::super::distinct_placement_count(&[identity, negative_zero, shifted], ctx)
+                .expect("count"),
+            2
+        );
     });
 }
