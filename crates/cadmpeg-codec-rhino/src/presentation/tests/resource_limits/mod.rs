@@ -935,13 +935,34 @@ fn dimension_child_digest_refuses_retained_limit() {
     assert_eq!(admitted["sha256"], cadmpeg_ir::hash::sha256_hex(&bytes));
 }
 
-fn presentation_install_scan() -> &'static crate::container::Scan<'static> {
-    static SCAN: OnceLock<crate::container::Scan<'static>> = OnceLock::new();
-    SCAN.get_or_init(|| {
+/// Which record families the install fixture carries. Each hash-backed count
+/// charges a transient bound that outlasts later, smaller workspace charges, so
+/// a workspace is the first refusal at some limit only when no earlier family
+/// has charged a larger bound.
+#[derive(Clone, Copy)]
+enum InstallFixture {
+    Full,
+    GroupsOnly,
+    LayersOnly,
+}
+
+fn presentation_install_scan(fixture: InstallFixture) -> &'static crate::container::Scan<'static> {
+    static FULL: OnceLock<crate::container::Scan<'static>> = OnceLock::new();
+    static GROUPS: OnceLock<crate::container::Scan<'static>> = OnceLock::new();
+    static LAYERS: OnceLock<crate::container::Scan<'static>> = OnceLock::new();
+    let cell = match fixture {
+        InstallFixture::Full => &FULL,
+        InstallFixture::GroupsOnly => &GROUPS,
+        InstallFixture::LayersOnly => &LAYERS,
+    };
+    cell.get_or_init(|| {
         use crate::test_support::test_dump::{
             class_wrapper, crc_chunk, minimal_document, object_record_with_attribute_userdata,
             table, tagged_attributes,
         };
+        let with_groups = !matches!(fixture, InstallFixture::LayersOnly);
+        let with_objects = matches!(fixture, InstallFixture::Full);
+        let with_layers = !matches!(fixture, InstallFixture::GroupsOnly);
         let archive = ArchiveVersion::V5;
         let mut groups = vec![0x1f];
         groups.extend(7_i32.to_le_bytes());
@@ -962,13 +983,19 @@ fn presentation_install_scan() -> &'static crate::container::Scan<'static> {
             &attributes,
             &[],
         );
+        let groups_in_table = if with_groups { vec![group] } else { Vec::new() };
+        let objects_in_table = if with_objects {
+            vec![object]
+        } else {
+            Vec::new()
+        };
         let bytes = minimal_document(
             "50",
             &[
                 table(archive, 0x1000_0014, &[]),
                 table(archive, 0x1000_0015, &[]),
-                table(archive, 0x1000_0018, &[group]),
-                table(archive, 0x1000_0013, &[object]),
+                table(archive, 0x1000_0018, &groups_in_table),
+                table(archive, 0x1000_0013, &objects_in_table),
             ],
         );
         let mut scan = crate::container::scan_owned(bytes).expect("presentation fixture scan");
@@ -977,64 +1004,69 @@ fn presentation_install_scan() -> &'static crate::container::Scan<'static> {
             .iter()
             .find(|table| table.typecode == 0x1000_0018)
             .expect("group table retained");
-        let group_record = group_table.records.first().expect("group record retained");
-        let group_range = crate::presentation::class_data(
-            &cadmpeg_test_support::service_decode_context(),
-            scan.data,
-            group_record,
-            archive,
-            crate::presentation::GROUP,
-        )
-        .expect("group class admitted");
-        crate::presentation::parse_group(
-            &cadmpeg_test_support::service_decode_context(),
-            scan.data,
-            group_range,
-            group_record.range.start,
-        )
-        .expect("group payload admitted");
+        if with_groups {
+            let group_record = group_table.records.first().expect("group record retained");
+            let group_range = crate::presentation::class_data(
+                &cadmpeg_test_support::service_decode_context(),
+                scan.data,
+                group_record,
+                archive,
+                crate::presentation::GROUP,
+            )
+            .expect("group class admitted");
+            crate::presentation::parse_group(
+                &cadmpeg_test_support::service_decode_context(),
+                scan.data,
+                group_range,
+                group_record.range.start,
+            )
+            .expect("group payload admitted");
+        }
         crate::test_support::test_dump::set_test_units(&mut scan, 1.0);
-        scan.metadata.layers.push(settings::LayerRecord {
-            source: settings::SourceRange { range: 0..1 },
-            index: 3,
-            iges_level: None,
-            render_material_index: -1,
-            color: [1, 2, 3, 255],
-            name: "Layer".to_owned(),
-            description: Some("Description".to_owned()),
-            visible: true,
-            locked: false,
-            id: Some(Uuid::from_wire([1; 16])),
-            hierarchy: None,
-            linetype_index: None,
-            plot: None,
-            display_material_id: Some(Uuid::from_wire([2; 16])),
-            no_clipping_planes: None,
-            visible_in_new_details: None,
-            rendering_range: None,
-            extension_items: Vec::new(),
-            embedded_linetype: None,
-            embedded_section_style: None,
-            per_viewport_settings: vec![settings::LayerPerViewportSettings {
-                viewport_id: Uuid::from_wire([3; 16]),
-                color: None,
-                plot_color: None,
-                plot_weight_mm: None,
-                visible: None,
-                persistent_visibility: None,
-            }],
-        });
+        if with_layers {
+            scan.metadata.layers.push(settings::LayerRecord {
+                source: settings::SourceRange { range: 0..1 },
+                index: 3,
+                iges_level: None,
+                render_material_index: -1,
+                color: [1, 2, 3, 255],
+                name: "Layer".to_owned(),
+                description: Some("Description".to_owned()),
+                visible: true,
+                locked: false,
+                id: Some(Uuid::from_wire([1; 16])),
+                hierarchy: None,
+                linetype_index: None,
+                plot: None,
+                display_material_id: Some(Uuid::from_wire([2; 16])),
+                no_clipping_planes: None,
+                visible_in_new_details: None,
+                rendering_range: None,
+                extension_items: Vec::new(),
+                embedded_linetype: None,
+                embedded_section_style: None,
+                per_viewport_settings: vec![settings::LayerPerViewportSettings {
+                    viewport_id: Uuid::from_wire([3; 16]),
+                    color: None,
+                    plot_color: None,
+                    plot_weight_mm: None,
+                    visible: None,
+                    persistent_visibility: None,
+                }],
+            });
+        }
         scan
     })
 }
 
 fn presentation_install_limit_operations(
     dimension: cadmpeg_core::decode::ResourceDimension,
+    fixture: InstallFixture,
 ) -> Vec<&'static str> {
-    let scan = presentation_install_scan();
+    let scan = presentation_install_scan(fixture);
     let mut limit = 0_u64;
     let mut operations = Vec::new();
-    for _ in 0..256 {
+    for _ in 0..8192 {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         match dimension {
@@ -1058,9 +1090,17 @@ fn presentation_install_limit_operations(
                 if refusal.dimension == dimension =>
             {
                 operations.push(refusal.operation);
-                let next = refusal.used + refusal.additional;
-                assert!(next > limit, "limit ladder must advance at {limit}");
-                limit = next;
+                if dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes {
+                    // A hash table's growth is charged as a transient bound that
+                    // is released after the insertion, so jumping to the refused
+                    // total would step over later, smaller refusals; advance one
+                    // byte.
+                    limit += 1;
+                } else {
+                    let next = refusal.used + refusal.additional;
+                    assert!(next > limit, "limit ladder must advance at {limit}");
+                    limit = next;
+                }
             }
             Err(error) => panic!("unexpected presentation install failure: {error}"),
         }
@@ -1073,6 +1113,7 @@ fn presentation_install_collection_operations() -> &'static [&'static str] {
     OPERATIONS.get_or_init(|| {
         presentation_install_limit_operations(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            InstallFixture::Full,
         )
     })
 }
@@ -1082,6 +1123,7 @@ fn presentation_install_retained_operations() -> &'static [&'static str] {
     OPERATIONS.get_or_init(|| {
         presentation_install_limit_operations(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            InstallFixture::Full,
         )
     })
 }
@@ -1089,9 +1131,19 @@ fn presentation_install_retained_operations() -> &'static [&'static str] {
 fn presentation_install_materialized_operations() -> &'static [&'static str] {
     static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
     OPERATIONS.get_or_init(|| {
-        presentation_install_limit_operations(
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        )
+        [
+            InstallFixture::Full,
+            InstallFixture::GroupsOnly,
+            InstallFixture::LayersOnly,
+        ]
+        .into_iter()
+        .flat_map(|fixture| {
+            presentation_install_limit_operations(
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                fixture,
+            )
+        })
+        .collect()
     })
 }
 
@@ -1195,11 +1247,37 @@ presentation_install_limit_test!(
     presentation_install_materialized_operations,
     "Rhino object identity workspace"
 );
-presentation_install_limit_test!(
-    group_member_workspace_refuses_materialized_limit,
-    presentation_install_materialized_operations,
-    "Rhino group member workspace"
-);
+/// Each new group grows its workspace before its key table; the table's growth
+/// bound always outweighs one entry, so the membership step is driven alone.
+#[test]
+fn group_member_workspace_refuses_materialized_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let entry = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(i32, Vec<String>)>());
+    for limit in 0..=entry {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut workspace =
+            crate::presentation::group_member_workspace(&ctx).expect("empty workspace");
+        let mut members = HashMap::new();
+        let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) =
+            crate::presentation::admit_group_member(&ctx, &mut workspace, &mut members, 7, 0)
+        else {
+            panic!("the membership must refuse at {limit} bytes");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+        if limit < entry {
+            assert_eq!(refusal.operation, "Rhino group member workspace");
+            assert_eq!((refusal.used, refusal.additional), (0, entry));
+        } else {
+            // The workspace entry fits; the key table's growth refuses next.
+            assert_eq!(refusal.operation, "Rhino group member keys");
+            assert_eq!(refusal.used, entry);
+        }
+        assert!(members.is_empty());
+    }
+}
 presentation_install_limit_test!(
     layer_identity_workspace_refuses_materialized_limit,
     presentation_install_materialized_operations,

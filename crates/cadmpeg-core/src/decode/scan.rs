@@ -481,13 +481,32 @@ impl DecodeContext<'_> {
     pub fn partition_point<T>(
         &self,
         values: &[T],
-        mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        predicate: impl FnMut(&T) -> Result<bool, CodecError>,
         operation: &'static str,
     ) -> Result<usize, CodecError> {
+        self.partition_point_with(values, predicate, operation)
+    }
+
+    /// `partition_point` for resource-only callers.
+    pub fn partition_point_limit<T>(
+        &self,
+        values: &[T],
+        predicate: impl FnMut(&T) -> Result<bool, super::ResourceLimit>,
+        operation: &'static str,
+    ) -> Result<usize, super::ResourceLimit> {
+        self.partition_point_with(values, predicate, operation)
+    }
+
+    fn partition_point_with<T, E: From<super::ResourceLimit>>(
+        &self,
+        values: &[T],
+        mut predicate: impl FnMut(&T) -> Result<bool, E>,
+        operation: &'static str,
+    ) -> Result<usize, E> {
         let mut lower = 0;
         let mut upper = values.len();
         while lower < upper {
-            self.charge_work(1, operation)?;
+            self.charge_work_limit(1, operation)?;
             let middle = lower + (upper - lower) / 2;
             if predicate(&values[middle])? {
                 lower = middle + 1;
@@ -556,11 +575,38 @@ impl DecodeContext<'_> {
         right: &[u8],
         operation: &'static str,
     ) -> Result<bool, CodecError> {
+        Ok(self.equal_bytes_limit(left, right, operation)?)
+    }
+
+    /// `equal_bytes` for resource-only callers; text compares its bytes.
+    pub fn equal_bytes_limit(
+        &self,
+        left: &[u8],
+        right: &[u8],
+        operation: &'static str,
+    ) -> Result<bool, super::ResourceLimit> {
         if left.len() != right.len() {
             return Ok(false);
         }
-        self.charge_work(u64_from_index(left.len()), operation)?;
+        self.charge_work_limit(u64_from_index(left.len()), operation)?;
         Ok(left == right)
+    }
+
+    /// Tests every slice value until a resource-only predicate fails, charging
+    /// each visited slot before its predicate.
+    pub fn all_by_limit<T>(
+        &self,
+        values: &[T],
+        mut predicate: impl FnMut(&T) -> Result<bool, super::ResourceLimit>,
+        operation: &'static str,
+    ) -> Result<bool, super::ResourceLimit> {
+        for value in values {
+            self.charge_work_limit(1, operation)?;
+            if !predicate(value)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 }
 
@@ -1448,5 +1494,30 @@ mod tests {
         };
         assert_eq!(child.operation, "child");
         assert_eq!(ctx.resource_refusal(), Some(child));
+    }
+
+    #[test]
+    fn resource_only_searches_charge_visited_slots() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Two partition probes, two visited slots and three compared bytes.
+        policy.limits.max_work_units = 7;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert_eq!(
+            ctx.partition_point_limit(&[1, 2, 3], |value| Ok(*value < 3), "partition")
+                .expect("partition"),
+            2
+        );
+        assert!(!ctx
+            .all_by_limit(&[1, 5, 1], |value| Ok(*value < 3), "all")
+            .expect("all"));
+        assert!(ctx
+            .equal_bytes_limit(b"abc", b"abc", "equal")
+            .expect("equal"));
+        assert!(!ctx
+            .equal_bytes_limit(b"abc", b"ab", "unequal length")
+            .expect("unequal"));
+        let limit = ctx.charge_work_limit(1, "probe").expect_err("exact work");
+        assert_eq!(limit.used, 7);
     }
 }

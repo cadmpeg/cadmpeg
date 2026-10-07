@@ -9,6 +9,12 @@ use crate::features::{
 };
 use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalVertexId};
 
+/// Scoped-byte limit that admits every membership index here. An index's growth peaks at
+/// twice its table bound while the table is filled; the largest table is 16 buckets of
+/// slots under 64 bytes, so the peak stays below this limit. Reserving all of it afterwards
+/// shows the index released.
+const INDEX_ROOM: u64 = 4096;
+
 #[test]
 fn invalid_membership_constructors_preserve_an_existing_refusal() {
     use crate::features::{
@@ -76,7 +82,7 @@ fn membership_constructors_preserve_refusals_and_release_scoped_indexes() {
     use cadmpeg_core::CodecError;
 
     fn retain_output<T>(ctx: &DecodeContext<'_>, output: T) -> Result<(), CodecError> {
-        let storage = ctx.reserve_scoped_limit(200, "membership index released")?;
+        let storage = ctx.reserve_scoped_limit(INDEX_ROOM, "membership index released")?;
         drop(storage);
         drop(output);
         Ok(())
@@ -90,7 +96,7 @@ fn membership_constructors_preserve_refusals_and_release_scoped_indexes() {
             None,
         ] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = 200;
+            policy.limits.max_materialized_bytes = INDEX_ROOM;
             policy.limits.max_retained_bytes = 0;
             policy.limits.max_recursion_depth = 0;
             policy.limits.max_collection_items = 8;
@@ -375,7 +381,7 @@ fn feature_result_members_admit_each_arena_and_release_the_index() {
             None,
         ] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = 200;
+            policy.limits.max_materialized_bytes = INDEX_ROOM;
             policy.limits.max_collection_items = 2;
             policy.limits.max_retained_bytes = 0;
             policy.limits.max_recursion_depth = 0;
@@ -433,7 +439,7 @@ fn feature_result_members_admit_each_arena_and_release_the_index() {
                     vec!["second", "first"]
                 );
                 let storage = ctx
-                    .reserve_scoped_limit(200, "result membership index released")
+                    .reserve_scoped_limit(INDEX_ROOM, "result membership index released")
                     .unwrap();
                 drop(storage);
                 ctx.finish_session().unwrap();

@@ -139,13 +139,23 @@ scoped_storage_case!(
         Ok((values, reservation))
     }
 );
-scoped_storage_case!(temporary_set_storage, 67, 103, HashSet<u64>, ctx, count, {
-    ctx.temporary_set(count, "temporary set storage")
-});
+// A set sized for one or five values holds the storage for twice that length
+// while it is allocated, then retains its real capacity.
+scoped_storage_case!(
+    temporary_set_storage,
+    67,
+    103,
+    peak = (67, 175),
+    HashSet<u64>,
+    ctx,
+    count,
+    { ctx.temporary_set(count, "temporary set storage") }
+);
 scoped_storage_case!(
     temporary_set_limit_storage,
     67,
     103,
+    peak = (67, 175),
     HashSet<u64>,
     ctx,
     count,
@@ -297,6 +307,7 @@ scoped_storage_case!(
     collect_scoped_string_set_storage,
     99,
     167,
+    peak = (99, 303),
     HashSet<&'static str>,
     ctx,
     count,
@@ -312,6 +323,7 @@ scoped_storage_case!(
     collect_scoped_string_map_storage,
     131,
     231,
+    peak = (131, 431),
     HashMap<&'static str, u64>,
     ctx,
     count,
