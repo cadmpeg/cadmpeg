@@ -83,7 +83,10 @@ fn decode_surfaces(
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Result<Vec<Surface>, CodecError> {
     let mut records = Vec::new();
-    for node in graph.of_kind_charged(ctx, NodeKind::BSurface)? {
+    for node in ctx.admit_iter(
+        graph.of_kind(NodeKind::BSurface),
+        "NX NURBS surface records",
+    )? {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(descriptors.len()),
             "resolve NX NURBS descriptor",
@@ -290,7 +293,7 @@ fn decode_pcurves(
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Result<Vec<Pcurve>, CodecError> {
     let mut records = Vec::new();
-    for node in graph.of_kind_charged(ctx, NodeKind::BCurve)? {
+    for node in ctx.admit_iter(graph.of_kind(NodeKind::BCurve), "NX NURBS curve records")? {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(descriptors.len()),
             "resolve NX NURBS descriptor",
@@ -441,7 +444,7 @@ fn decode_curves(
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Result<Vec<Curve>, CodecError> {
     let mut records = Vec::new();
-    for node in graph.of_kind_charged(ctx, NodeKind::BCurve)? {
+    for node in ctx.admit_iter(graph.of_kind(NodeKind::BCurve), "NX NURBS curve records")? {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(descriptors.len()),
             "resolve NX NURBS descriptor",

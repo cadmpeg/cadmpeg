@@ -591,24 +591,43 @@ fn scan_with_auxiliaries(
             )?;
         }
     }
-    let mut constructions = constructions;
-    constructions.retain(|construction| {
-        if !cross_form_xmts.contains(&construction.xmt) {
-            return true;
-        }
-        match cross_form_collision {
-            CrossFormCollision::Reject => {
-                result.rejected.add(Rejection::DuplicateIdentity);
-                false
+    let mut kept = Vec::new();
+    for construction in ctx.admit_iter(constructions, "NX intersection cross-form selection")? {
+        if ctx.contains_btree_set(
+            &cross_form_xmts,
+            &construction.xmt,
+            "NX intersection cross-form selection",
+        )? {
+            match cross_form_collision {
+                CrossFormCollision::Reject => {
+                    result.rejected.add(Rejection::DuplicateIdentity);
+                    continue;
+                }
+                CrossFormCollision::PreferDeltaTwin if !construction.delta_twin => continue,
+                CrossFormCollision::PreferDeltaTwin => {}
             }
-            CrossFormCollision::PreferDeltaTwin => construction.delta_twin,
         }
-    });
+        ctx.push_vec(
+            &mut kept,
+            construction,
+            "NX intersection cross-form selection",
+        )?;
+    }
+    let constructions = kept;
     for construction in ctx
         .admit_iter(&constructions, "NX intersection construction traversal")?
         .copied()
     {
-        match enrich(ctx, construction, charts, terms, uv, bridges, graph) {
+        let enriched = enrich(ctx, construction, charts, terms, uv, bridges, graph);
+        let referenced = match &enriched {
+            Err(EnrichError::Rejected(_)) => ctx.contains_btree_set(
+                &referenced_curves,
+                &construction.xmt,
+                "NX referenced intersection curves",
+            )?,
+            _ => false,
+        };
+        match enriched {
             Ok(curve) => {
                 ctx.push_vec(
                     &mut result.constructions,
@@ -618,8 +637,8 @@ fn scan_with_auxiliaries(
                 ctx.push_vec(&mut result.curves, curve, "NX intersection solved curves")?;
             }
             Err(EnrichError::Rejected(rejection))
-                if referenced_curves.contains(&construction.xmt)
-                    && construction_supports(construction, uv, bridges, graph).is_some()
+                if referenced
+                    && construction_supports(ctx, construction, uv, bridges, graph)?.is_some()
                     && construction_has_endpoint_witnesses(ctx, construction, terms, graph)? =>
             {
                 ctx.push_vec(
@@ -629,11 +648,11 @@ fn scan_with_auxiliaries(
                 )?;
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some((endpoints, tolerance))) = (
-                        construction_supports(construction, uv, bridges, graph).and_then(
+                        construction_supports(ctx, construction, uv, bridges, graph)?.and_then(
                             |(primary, secondary)| DistinctSupports::new(primary, secondary?),
                         ),
                         graph
-                            .unique_curve_edge_witness(construction.xmt)
+                            .unique_curve_edge_witness(ctx, construction.xmt)?
                             .and_then(|witness| {
                                 Some((
                                     witness.endpoints,
@@ -655,9 +674,7 @@ fn scan_with_auxiliaries(
                 }
                 result.rejected.add(rejection);
             }
-            Err(EnrichError::Rejected(Rejection::MissingSupport))
-                if referenced_curves.contains(&construction.xmt) =>
-            {
+            Err(EnrichError::Rejected(Rejection::MissingSupport)) if referenced => {
                 result.rejected.add(Rejection::MissingSupport);
             }
             Err(EnrichError::Rejected(_)) => {}
@@ -677,17 +694,24 @@ fn enrich(
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> Result<IntersectionCurve, EnrichError> {
-    let chart = construction.references[2]
-        .and_then(|target| charts.get(&u32::from(target)))
-        .ok_or(Rejection::MissingChart)?;
+    const OPERATION: &str = "NX intersection construction records";
+    let chart = match construction.references[2] {
+        Some(target) => ctx.get_btree_map(charts, &u32::from(target), OPERATION)?,
+        None => None,
+    }
+    .ok_or(Rejection::MissingChart)?;
     let chart_endpoints = chart.samples.endpoints();
+    let term = |reference: Option<XmtTarget>| -> Result<Option<Point3>, CodecError> {
+        match reference {
+            Some(target) => Ok(ctx
+                .get_btree_map(terms, &u32::from(target), OPERATION)?
+                .copied()),
+            None => Ok(None),
+        }
+    };
     let serialized_terms = [
-        construction.references[3]
-            .and_then(|target| terms.get(&u32::from(target)))
-            .copied(),
-        construction.references[4]
-            .and_then(|target| terms.get(&u32::from(target)))
-            .copied(),
+        term(construction.references[3])?,
+        term(construction.references[4])?,
     ];
     if serialized_terms
         .iter()
@@ -700,7 +724,7 @@ fn enrich(
     }
     if serialized_terms.iter().any(Option::is_none) {
         let topology_endpoints = graph
-            .unique_curve_edge_witness(construction.xmt)
+            .unique_curve_edge_witness(ctx, construction.xmt)?
             .map(|witness| witness.endpoints)
             .ok_or_else(|| {
                 if serialized_terms[0].is_none() {
@@ -709,12 +733,8 @@ fn enrich(
                     Rejection::MissingEndTerm
                 }
             })?;
-        let matching_permutations = ctx
-            .admit_iter(
-                &[[0usize, 1usize], [1usize, 0usize]],
-                "NX endpoint permutation traversal",
-            )
-            .map_err(CodecError::from)?
+        let matching_permutations = [[0usize, 1usize], [1usize, 0usize]]
+            .iter()
             .filter(|permutation| {
                 permutation.iter().enumerate().all(|(ordinal, topology)| {
                     Point3::distance(
@@ -734,9 +754,13 @@ fn enrich(
         }
     }
     let (primary_support, secondary_support) =
-        construction_supports(construction, uv, bridges, graph).ok_or(Rejection::MissingSupport)?;
-    let support_uv = match construction.references[5].and_then(|target| uv.get(&u32::from(target)))
-    {
+        construction_supports(ctx, construction, uv, bridges, graph)?
+            .ok_or(Rejection::MissingSupport)?;
+    let support_values = match construction.references[5] {
+        Some(target) => ctx.get_btree_map(uv, &u32::from(target), OPERATION)?,
+        None => None,
+    };
+    let support_uv = match support_values {
         Some(values) => values.support_uv_charged(ctx, chart.samples.len())?,
         None => [None, None],
     };
@@ -776,21 +800,26 @@ fn enrich(
 }
 
 fn construction_supports(
+    ctx: &DecodeContext<'_>,
     construction: CompositeCurve,
     uv: &BTreeMap<u32, SupportUvValues>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
-) -> Option<(NonNullXmt, Option<NonNullXmt>)> {
+) -> Result<Option<(NonNullXmt, Option<NonNullXmt>)>, CodecError> {
+    const OPERATION: &str = "NX intersection supports";
     let (primary, bridge) = if construction.delta_twin {
         (construction.references[0], construction.references[1])
     } else {
         // A present marker-3 values array explicitly reverses the serialized
         // support order. Without that array, retain the type-38 references'
         // order; no alternate order was serialized.
-        match construction.references[5]
-            .and_then(|target| uv.get(&u32::from(target)))
-            .map(SupportUvValues::packing)
-        {
+        let packing = match construction.references[5] {
+            Some(target) => ctx
+                .get_btree_map(uv, &u32::from(target), OPERATION)?
+                .map(SupportUvValues::packing),
+            None => None,
+        };
+        match packing {
             Some(SupportUvPacking::Form3) => {
                 (construction.references[1], construction.references[0])
             }
@@ -799,19 +828,25 @@ fn construction_supports(
             }
         }
     };
-    let primary = u32::from(primary?);
-    is_surface(graph, primary).then_some(())?;
-    let secondary = bridge
-        .map(u32::from)
-        .and_then(|bridge| {
-            bridges
-                .get(&bridge)
-                .copied()
-                .or_else(|| is_surface(graph, bridge).then_some(bridge))
-        })
+    let Some(primary) = primary.map(u32::from) else {
+        return Ok(None);
+    };
+    if !is_surface(ctx, graph, primary)? {
+        return Ok(None);
+    }
+    let secondary = match bridge.map(u32::from) {
+        Some(bridge) => match ctx.get_btree_map(bridges, &bridge, OPERATION)? {
+            Some(&secondary) => Some(secondary),
+            None => is_surface(ctx, graph, bridge)?.then_some(bridge),
+        },
+        None => None,
+    };
+    let secondary = secondary
         .filter(|secondary| *secondary != primary)
         .and_then(|secondary| NonNullXmt::try_from(secondary).ok());
-    Some((NonNullXmt::try_from(primary).ok()?, secondary))
+    Ok(NonNullXmt::try_from(primary)
+        .ok()
+        .map(|primary| (primary, secondary)))
 }
 
 fn construction_has_endpoint_witnesses(
@@ -820,21 +855,28 @@ fn construction_has_endpoint_witnesses(
     terms: &BTreeMap<u32, Point3>,
     graph: &topology::Graph,
 ) -> Result<bool, CodecError> {
-    Ok(ctx
-        .admit_iter(
-            &construction.references[2..=4],
-            "NX construction endpoint absence",
-        )?
-        .all(Option::is_none)
-        || ctx
-            .admit_iter(
-                &construction.references[3..=4],
+    if construction.references[2..=4].iter().all(Option::is_none) {
+        return Ok(true);
+    }
+    let mut witnessed = true;
+    for reference in &construction.references[3..=4] {
+        let present = match reference {
+            Some(target) => ctx.contains_key_btree_map(
+                terms,
+                &u32::from(*target),
                 "NX construction endpoint witnesses",
-            )?
-            .all(|reference| {
-                reference.is_some_and(|target| terms.contains_key(&u32::from(target)))
-            })
-        || graph.unique_curve_edge_witness(construction.xmt).is_some())
+            )?,
+            None => false,
+        };
+        if !present {
+            witnessed = false;
+            break;
+        }
+    }
+    Ok(witnessed
+        || graph
+            .unique_curve_edge_witness(ctx, construction.xmt)?
+            .is_some())
 }
 
 fn blend_bound_records(
@@ -980,8 +1022,12 @@ fn blend_bound_layout(
     ))
 }
 
-fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {
-    [
+fn is_surface(
+    ctx: &DecodeContext<'_>,
+    graph: &topology::Graph,
+    xmt: u32,
+) -> Result<bool, CodecError> {
+    for kind in [
         NodeKind::Plane,
         NodeKind::Cylinder,
         NodeKind::Cone,
@@ -990,9 +1036,12 @@ fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {
         NodeKind::BlendSurface,
         NodeKind::OffsetSurface,
         NodeKind::BSurface,
-    ]
-    .into_iter()
-    .any(|kind| graph.get(kind, xmt).is_some())
+    ] {
+        if graph.get(ctx, kind, xmt)?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn chart_records(

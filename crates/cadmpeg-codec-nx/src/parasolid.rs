@@ -1128,7 +1128,7 @@ fn structural_stream_candidate(
         NodeKind::Vertex,
         NodeKind::Region,
     ] {
-        if graph.of_kind(kind).next().is_some() {
+        if !graph.of_kind(kind).is_empty() {
             return Ok(true);
         }
     }

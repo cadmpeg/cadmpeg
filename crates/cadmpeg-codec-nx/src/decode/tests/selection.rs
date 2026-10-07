@@ -751,13 +751,13 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
             .unwrap();
     assert!(matches!(
         graph
-            .get(NodeKind::Plane, 6)
+            .node(NodeKind::Plane, 6)
             .and_then(crate::topology::Node::surface_geometry),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)))
     ));
     assert!(matches!(
         graph
-            .get(NodeKind::Line, 9)
+            .node(NodeKind::Line, 9)
             .and_then(crate::topology::Node::curve_geometry),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
