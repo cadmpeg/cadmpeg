@@ -1,6 +1,6 @@
 //! Native lane validation findings.
 
-use super::assembly::is_supplemental_config_lane;
+use super::assembly::is_supplemental_config_lane_charged;
 use crate::records::charged_clone::CloneCharged;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -206,13 +206,12 @@ pub(crate) fn validate_native(
                 |record| record.clone_charged(ctx, "validate SLDPRT expected histories"),
             )
         })?;
-    let history_lanes = temporary.with_storage(|| {
-        ctx.collect_vec(
-            ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT validation lanes")?
-                .filter(|lane| !is_supplemental_config_lane(lane)),
-            "validate SLDPRT history lanes",
-        )
-    })?;
+    let mut history_lanes = Vec::new();
+    for lane in ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT validation lanes")? {
+        if !is_supplemental_config_lane_charged(ctx, lane)? {
+            temporary.with_storage(|| ctx.push_vec(&mut history_lanes, lane, "validate SLDPRT history lanes"))?;
+        }
+    }
     history_reservation.with_storage(|| {
         crate::resolved_features::classes::bind_history_classes(
             ctx,

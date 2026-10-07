@@ -1292,12 +1292,17 @@ fn unclaimed_seeded_bore_axes_refuse_collection_growth() {
         origin: cadmpeg_ir::features::FinitePoint3::ZERO,
         axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    let error = unclaimed_seeded_hole_candidates(&ctx, &[model_hole()], &[0], 4.0, vec![placement])
-        .expect_err("one available bore axis requires collection admission");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "collect SLDPRT unclaimed bore axes",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+            unclaimed_seeded_hole_candidates(&ctx, &[model_hole()], &[0], 4.0, vec![placement.clone()])
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "collect SLDPRT unclaimed bore axes"));

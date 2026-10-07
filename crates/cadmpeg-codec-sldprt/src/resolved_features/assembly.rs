@@ -17,6 +17,15 @@ pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
     lane.id.contains(":config-objects#")
 }
 
+/// Whether a lane carries supplemental configuration objects.
+pub(crate) fn is_supplemental_config_lane_charged(
+    ctx: &DecodeContext<'_>, lane: &FeatureInputLane,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const MARKER: &[u8] = b":config-objects#";
+    ctx.any_by(lane.id.as_bytes().windows(MARKER.len()), |window| Ok(window == MARKER),
+        "classify SLDPRT supplemental configuration lane")
+}
+
 pub(crate) fn lanes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -187,12 +196,6 @@ fn legacy_feature_input_section(
             |byte| Ok(byte.is_ascii_digit()),
             "check SLDPRT legacy configuration section",
         )?)
-}
-
-pub(super) fn contains_ascii_case_insensitive(text: &str, needle: &str) -> bool {
-    text.as_bytes()
-        .windows(needle.len())
-        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
 }
 
 fn legacy_sketch_object_stream(

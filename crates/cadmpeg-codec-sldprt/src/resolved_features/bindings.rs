@@ -1,6 +1,6 @@
 //! Pattern, sweep and scalar operand lane binding.
 
-use super::assembly::is_supplemental_config_lane;
+use super::assembly::is_supplemental_config_lane_charged;
 use super::axes::{
     compact_line_reference_directions, declared_line_reference_directions,
     linear_pattern_display_directions, temporary_axis_reference, typed_linear_pattern_dimensions,
@@ -68,7 +68,7 @@ pub(super) fn history_metadata_ids<'a>(
 const PATTERN_INPUTS: &str = "index SLDPRT pattern inputs";
 
 /// Appends a candidate to an index's group unless an equal one is present.
-fn push_distinct_candidate<T: PartialEq>(
+fn push_distinct_candidate<T: PartialEq + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     groups: &mut BTreeMap<usize, Vec<T>>,
@@ -78,7 +78,7 @@ fn push_distinct_candidate<T: PartialEq>(
     if let Some(group) = ctx.get_mut_btree_map(groups, &index, PATTERN_INPUTS)? {
         if !ctx.any_by(
             &*group,
-            |existing| Ok(*existing == candidate),
+            |existing| ctx.equal(existing, &candidate, PATTERN_INPUTS),
             PATTERN_INPUTS,
         )? {
             storage.with_storage(|| ctx.push_vec(group, candidate, PATTERN_INPUTS))?;
@@ -104,6 +104,8 @@ pub(crate) fn bind_pattern_inputs(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const DIRECTIONS: &str = "collect SLDPRT pattern line directions";
+    const DEPENDENCIES: &str = "collect SLDPRT pattern dependencies";
     let mut storage = ctx.reserve_scoped(0, PATTERN_INPUTS)?;
     let metadata_ids = storage.with_storage(|| history_metadata_ids(ctx, histories))?;
     let mut history_features = Vec::new();
@@ -294,10 +296,7 @@ pub(crate) fn bind_pattern_inputs(
                     continue;
                 }
                 let mut seeds = Vec::<cadmpeg_ir::features::FeatureId>::new();
-                let scan_end = object
-                    .len()
-                    .checked_sub(COMPACT_EDGE_VECTOR_MARKER.len())
-                    .unwrap_or_default();
+                let scan_end = object.len().saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len());
                 for offset in
                     ctx.admit_iter(&(0..scan_end), "scan SLDPRT mirror pattern seed paths")?
                 {
@@ -550,7 +549,6 @@ pub(crate) fn bind_pattern_inputs(
                 if !needs_direction {
                     continue;
                 }
-                const DIRECTIONS: &str = "collect SLDPRT pattern line directions";
                 let declarations = classes_within(
                     ctx,
                     &line_refs,
@@ -730,7 +728,6 @@ pub(crate) fn bind_pattern_inputs(
     for (index, seed) in ctx.admit_iter(curve_seeds, PATTERN_INPUTS)? {
         push_distinct_candidate(ctx, &mut storage, &mut seeds_by_pattern, index, seed)?;
     }
-    const DEPENDENCIES: &str = "collect SLDPRT pattern dependencies";
     for (index, candidates) in ctx.admit_iter(seeds_by_pattern, PATTERN_INPUTS)? {
         let Ok([seed]) = <[_; 1]>::try_from(candidates) else {
             continue;
@@ -1087,7 +1084,7 @@ pub(crate) fn bind_mirror_surface_planes(
     }
     let mut selections_by_owner = HashMap::<&str, Vec<_>>::new();
     for lane in ctx.admit_iter(lanes, INDEX)? {
-        if is_supplemental_config_lane(lane) {
+        if is_supplemental_config_lane_charged(ctx, lane)? {
             continue;
         }
         for selection in ctx.admit_iter(&lane.surface_selections, INDEX)? {
@@ -1196,6 +1193,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const DEPENDENCIES: &str = "collect SLDPRT sweep profile dependencies";
     const INDEX: &str = "index SLDPRT sweep adjacent profiles";
     let mut storage = ctx.reserve_scoped(0, INDEX)?;
     let metadata_ids = storage.with_storage(|| history_metadata_ids(ctx, histories))?;
@@ -1322,7 +1320,6 @@ pub(crate) fn bind_sweep_adjacent_profiles(
             }
         }
     }
-    const DEPENDENCIES: &str = "collect SLDPRT sweep profile dependencies";
     for (index, candidates) in ctx.admit_iter(assignments, INDEX)? {
         let Ok([(profile_dependency, sketch, path)]) = <[_; 1]>::try_from(candidates) else {
             continue;
@@ -1439,6 +1436,7 @@ pub(crate) fn bind_scalar_operands(
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const OWNER: &str = "bind SLDPRT scalar operand owners";
     const CANDIDATES: &str = "collect SLDPRT scalar binding candidates";
     let represented_sketches = represented_sketch_features(ctx, histories, lanes)?;
     let metadata_ids = history_metadata_ids(ctx, histories)?;
@@ -1484,7 +1482,6 @@ pub(crate) fn bind_scalar_operands(
             Ord::cmp,
             "sort SLDPRT scalar operand features",
         )?;
-        const OWNER: &str = "bind SLDPRT scalar operand owners";
         for entity in ctx.admit_iter(&mut lane.sketch_entities, OWNER)? {
             if let Some(owner) = object_owner(ctx, &starts, entity.offset(), OWNER)? {
                 entity.feature_ref = Some(copy_binding_text(ctx, owner)?);
@@ -1763,7 +1760,7 @@ fn represented_sketch_features(
     }
     let mut represented = HashSet::new();
     for lane in ctx.admit_iter(lanes, OPERATION)? {
-        if is_supplemental_config_lane(lane) {
+        if is_supplemental_config_lane_charged(ctx, lane)? {
             continue;
         }
         let mut objects = lane_feature_objects(
@@ -1842,7 +1839,7 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
         }
     }
     for lane in ctx.admit_iter(lanes, SCALAR_BINDING_INDEX)? {
-        if !is_supplemental_config_lane(lane) {
+        if !is_supplemental_config_lane_charged(ctx, lane)? {
             continue;
         }
         bind_detached_legacy_sketch_objects(ctx, histories, &represented, lane)?;
@@ -1887,7 +1884,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     const OBJECT_GAP: u64 = 4096;
     const OPERATION: &str = "collect SLDPRT detached sketch starts";
 
-    if !is_supplemental_config_lane(lane) {
+    if !is_supplemental_config_lane_charged(ctx, lane)? {
         return Ok(());
     }
     let limit = ctx
@@ -2046,6 +2043,7 @@ fn bind_detached_spatial_relation_objects(
     represented: &HashSet<String>,
     lane: &mut FeatureInputLane,
 ) -> Result<Vec<(u64, u64, String)>, cadmpeg_core::CodecError> {
+    const DISAMBIGUATE: &str = "disambiguate SLDPRT spatial sketch ranges";
     const OWNERS: &str = "scan SLDPRT spatial sketch owners";
     const MATCH: &str = "match SLDPRT spatial sketch names";
     let ranges = spatial_relation_manager_ranges_charged(ctx, lane)?;
@@ -2157,7 +2155,6 @@ fn bind_detached_spatial_relation_objects(
     }
     // A range binds when exactly one owner matches it and that owner matches
     // no other range.
-    const DISAMBIGUATE: &str = "disambiguate SLDPRT spatial sketch ranges";
     let mut range_counts = BTreeMap::<(u64, u64), usize>::new();
     let mut owner_counts = HashMap::<&str, usize>::new();
     for &(start, end, owner) in ctx.admit_iter(&candidates, DISAMBIGUATE)? {

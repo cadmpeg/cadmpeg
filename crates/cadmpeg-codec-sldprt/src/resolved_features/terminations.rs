@@ -302,11 +302,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
         let lane_key = ctx
             .rsplit_once(&lane.id, "#", OPERATION)?
             .map_or(lane.id.as_str(), |(_, key)| key);
-        let scan_end = lane
-            .native_payload
-            .len()
-            .checked_sub(103)
-            .unwrap_or_default();
+        let scan_end = lane.native_payload.len().saturating_sub(103);
         let mut grouped_blind = HashMap::<String, Vec<()>>::new();
         for offset in ctx.admit_iter(&(0..scan_end), OPERATION)? {
             if !compact_extrusion_blind_at(&lane.native_payload, offset) {

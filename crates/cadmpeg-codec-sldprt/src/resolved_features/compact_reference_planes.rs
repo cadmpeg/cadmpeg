@@ -57,7 +57,7 @@ impl SourceRecords {
         let count = self.records.len();
         self.run_ends = storage.with_storage(|| ctx.alloc_filled(count, count, operation))?;
         for index in ctx
-            .admit_iter(&(0..count.checked_sub(1).unwrap_or_default()), operation)?
+            .admit_iter(&(0..count.saturating_sub(1)), operation)?
             .rev()
         {
             if self.records[index].1 == self.records[index + 1].1 {

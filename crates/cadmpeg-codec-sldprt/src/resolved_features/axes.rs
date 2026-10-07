@@ -397,12 +397,20 @@ pub(super) fn compact_line_reference_directions(
                 && record.get(104..112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
                 && record.get(112..136) == Some(&[0; 24]);
             if record.get(16..32) == Some(&[0; 16]) && unshifted_termination {
-                directions.extend(direction_at(64));
+                if let Some(direction) = direction_at(64) {
+
+                    direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "hold SLDPRT compact line directions"))?;
+
+                }
             }
             let terminated =
                 record.get(80..84) == Some(&[0; 4]) && (tagged_token(84) || record.len() == 84);
             if record.get(16..24) == Some(&[0; 8]) && terminated {
-                directions.extend(direction_at(56));
+                if let Some(direction) = direction_at(56) {
+
+                    direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "hold SLDPRT compact line directions"))?;
+
+                }
             }
             directions.dedup();
             if let [candidate] = directions.as_slice() {
@@ -554,7 +562,11 @@ pub(super) fn compact_line_reference_directions(
                     })?;
                 }
             } else {
-                directions.extend(direction_at(56));
+                if let Some(direction) = direction_at(56) {
+
+                    direction_storage.with_storage(|| ctx.push_vec(&mut directions, direction, "hold SLDPRT compact line directions"))?;
+
+                }
             }
         }
         // A record is usable only when every matching layout agrees.  Never
@@ -579,6 +591,8 @@ fn revolution_line_reference_inputs(
     object_end: usize,
     profile_sources: &HashSet<u32>,
 ) -> Result<Option<(u32, cadmpeg_ir::features::FinitePoint3, UnitVector3)>, CodecError> {
+    const OPERATION: &str = "collect SLDPRT revolution line references";
+    const RANKS: &str = "index SLDPRT revolution line reference ranks";
     const HANDLE: [u8; 4] = [0xc7, 0xcf, 0xff, 0xff];
     const NATIVE_TO_IR: f64 = 1000.0;
 
@@ -590,15 +604,18 @@ fn revolution_line_reference_inputs(
         let value = View::f64_le_at(payload, offset)?;
         (value.is_finite() && value.abs() <= 1.0e6).then_some(value)
     };
-    let source_cell = |offset: usize| {
-        let source = View::u32_le_at(payload, offset)?;
-        let identity = View::u32_le_at(payload, offset + 4)?;
-        let token = View::u16_le_at(payload, offset + 8)?;
-        (profile_sources.contains(&source)
-            && identity != 0
-            && is_class_token(token)
-            && payload.get(offset + 12..offset + 16) == Some(&[0xff; 4]))
-        .then_some(source)
+    let source_cell = |offset: usize| -> Result<Option<u32>, CodecError> {
+        let source = (|| {
+            let source = View::u32_le_at(payload, offset)?;
+            let identity = View::u32_le_at(payload, offset + 4)?;
+            let token = View::u16_le_at(payload, offset + 8)?;
+            (identity != 0 && is_class_token(token)
+                && payload.get(offset + 12..offset + 16) == Some(&[0xff; 4])).then_some(source)
+        })();
+        match source {
+            Some(source) if ctx.contains_hash_set(profile_sources, &source, "find SLDPRT revolution profile source")? => Ok(Some(source)),
+            _ => Ok(None),
+        }
     };
     let axis_record = |frame: usize, scalar_count: usize| {
         let x = scalar(frame)?;
@@ -628,7 +645,6 @@ fn revolution_line_reference_inputs(
     let Some(scan_end) = search_end.checked_sub(64) else {
         return Ok(None);
     };
-    const OPERATION: &str = "collect SLDPRT revolution line references";
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut candidates = Vec::new();
     // The profile-source cells of the object in offset order, found on first
@@ -652,7 +668,7 @@ fn revolution_line_reference_inputs(
             && payload.get(handle_start + 8..handle_start + 24) == Some(&[0; 16])
         {
             let source_offset = handle_start - 44;
-            if let Some(source) = source_cell(source_offset) {
+            if let Some(source) = source_cell(source_offset)? {
                 let handles_end = handle_start + 8;
                 let frame_gap = 16;
                 let frame = handles_end + frame_gap;
@@ -707,7 +723,7 @@ fn revolution_line_reference_inputs(
             && payload.get(handle_start - 12..handle_start) == Some(&[0; 12])
         {
             let source_offset = handle_start - 48;
-            if let Some(source) = source_cell(source_offset) {
+            if let Some(source) = source_cell(source_offset)? {
                 let handles_end = handle_start + 12;
                 let compact_frame = handles_end + 4;
                 let compact_end = compact_frame + 9 * 8;
@@ -757,7 +773,7 @@ fn revolution_line_reference_inputs(
             let source_offset = handle_start - 48;
             let frame = handle_start + 8;
             let record_end = frame + 8 * 8;
-            if let Some(source) = source_cell(source_offset) {
+            if let Some(source) = source_cell(source_offset)? {
                 if payload.get(frame..frame + 8) == Some(&[0; 8])
                     && next_class_after_zeros(record_end, 24).is_some()
                 {
@@ -789,7 +805,7 @@ fn revolution_line_reference_inputs(
         {
             let source_offset = handle_start - 44;
             if let (Some(source), Some(axis)) = (
-                source_cell(source_offset),
+                source_cell(source_offset)?,
                 axis_record(handle_start + 24, 7),
             ) {
                 storage.with_storage(|| {
@@ -811,7 +827,7 @@ fn revolution_line_reference_inputs(
             && payload.get(handle_start - 12..handle_start) == Some(&[0; 12])
         {
             let source_offset = handle_start - 48;
-            if let Some(source) = source_cell(source_offset) {
+            if let Some(source) = source_cell(source_offset)? {
                 let two_handles = payload.get(handle_start + 4..handle_start + 8)
                     == Some(HANDLE.as_slice())
                     && payload.get(handle_start + 8..handle_start + 12) == Some(&[0; 4])
@@ -879,7 +895,7 @@ fn revolution_line_reference_inputs(
                     &(object_start..scan_end),
                     "scan SLDPRT revolution profile sources",
                 )? {
-                    if let Some(source) = source_cell(offset) {
+                    if let Some(source) = source_cell(offset)? {
                         storage.with_storage(|| {
                             ctx.push_vec(
                                 &mut cells,
@@ -970,7 +986,6 @@ fn revolution_line_reference_inputs(
             }
         }
     }
-    const RANKS: &str = "index SLDPRT revolution line reference ranks";
     let mut ranks = HashMap::<usize, usize>::new();
     for (handle, rank, _) in ctx.admit_iter(&candidates, RANKS)? {
         if let Some(current) = ctx.get_mut_hash_map(&mut ranks, handle, RANKS)? {
@@ -1113,6 +1128,7 @@ pub(crate) fn enrich_history_revolution_inputs(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
+    const RESOLVE: &str = "resolve SLDPRT revolution votes";
     const SOURCES: &str = "index SLDPRT revolution profile sources";
     let mut storage = ctx.reserve_scoped(0, "SLDPRT revolution input workspace")?;
     let unique_names = super::unique_feature_names(ctx, &mut storage, histories, true)?;
@@ -1305,7 +1321,6 @@ pub(crate) fn enrich_history_revolution_inputs(
             }
         }
     }
-    const RESOLVE: &str = "resolve SLDPRT revolution votes";
     for history in ctx.admit_iter(&mut *histories, RESOLVE)? {
         for feature in ctx.admit_iter(&mut history.features, RESOLVE)? {
             if !ctx.contains_key_btree_map(&feature.properties, "Profile", RESOLVE)? {
@@ -1526,7 +1541,7 @@ pub(crate) fn bind_profile_revolution_axes(
         };
         if ctx.all_by(
             rest,
-            |axis| Ok(axis == first),
+            |axis| ctx.equal(axis, first, "collect SLDPRT revolution axis candidates"),
             "collect SLDPRT revolution axis candidates",
         )? {
             let axis = first.try_clone_for_decode(ctx, "SLDPRT revolution axis assignment copy")?;
@@ -1623,13 +1638,13 @@ fn profile_roster_construction_axis_in(
     let mut remaining = owned.iter();
     let first_axis = ctx.find_map(
         &mut remaining,
-        |marker| construction_axis(&marker),
+        |marker| construction_axis(marker),
         OPERATION,
     )?;
     let second_axis = match first_axis {
         Some(_) => ctx.find_map(
             &mut remaining,
-            |marker| construction_axis(&marker),
+            |marker| construction_axis(marker),
             OPERATION,
         )?,
         None => None,
