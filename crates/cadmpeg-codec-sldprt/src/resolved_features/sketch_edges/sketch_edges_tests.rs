@@ -534,35 +534,19 @@ fn projected_rational_sketch_nurbs_weights_refuse_work_limit() {
         u_axis: Vector3::new(0.0, 1.0, 0.0),
         v_axis: Vector3::new(0.0, 0.0, 1.0),
     };
-    // Prefix work counts five map keys, six copied knots and three projected poles.
-    let prefix_work = [
-        start_vertex.as_str().len(),
-        start_point.as_str().len(),
-        end_vertex.as_str().len(),
-        end_point.as_str().len(),
-        curve_id.as_str().len(),
-        knots.len(),
-        source_points.len(),
-    ]
-    .into_iter()
-    .fold(0_usize, |total, amount| {
-        total.checked_add(amount).expect("fixture work count fits")
-    });
-    assert_eq!(prefix_work, 146);
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = u64::try_from(prefix_work).expect("fixture work count fits u64");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits work policy");
-    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = super::project_edge(
-        &ctx,
-        &edge,
-        &vertices,
-        &points,
-        &curves,
-        frame,
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    ) else {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "project SLDPRT sketch NURBS weights",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits work policy");
+            super::project_edge(&ctx, &edge, &vertices, &points, &curves, frame,
+                &mut crate::lane_refusal::LaneRefusals::new())
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
         panic!("first projected weight exceeds the remaining work units")
     };
     assert_eq!(
@@ -571,7 +555,7 @@ fn projected_rational_sketch_nurbs_weights_refuse_work_limit() {
     );
     assert_eq!(limit.used, 146);
     assert_eq!(limit.additional, 1);
-    assert_eq!(limit.operation, "project SLDPRT sketch NURBS edge");
+    assert_eq!(limit.operation, "project SLDPRT sketch NURBS weights");
 }
 
 fn shared_endpoint_constraints(
@@ -747,4 +731,47 @@ fn sketch_projection_refuses_opaque_curve_retained_limit() {
     )
     .expect("service budget")
     .is_some());
+}
+
+#[test]
+fn projected_nurbs_retains_only_returned_lanes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::pcurve::WeightedPole2;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier};
+    use cadmpeg_ir::units::FinitePoint2;
+    let curve_id = CurveId::mint("test:model:curve#curve").unwrap();
+    let start_vertex = VertexId::mint("test:model:vertex#start").unwrap();
+    let end_vertex = VertexId::mint("test:model:vertex#end").unwrap();
+    let start_point = PointId::mint("test:model:point#start").unwrap();
+    let end_point = PointId::mint("test:model:point#end").unwrap();
+    let edge = Edge { id: EdgeId::mint("test:model:edge#edge").unwrap(),
+        carrier: EdgeCarrier::unbounded(Some(curve_id.clone())), start: start_vertex.clone(), end: end_vertex.clone(), tolerance: None };
+    let source_points = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 2.0, 0.0)];
+    let knots = [0.0, 0.0, 1.0, 1.0];
+    let vertices = HashMap::from([(&start_vertex, &start_point), (&end_vertex, &end_point)]);
+    let points = HashMap::from([(&start_point, source_points[0]), (&end_point, source_points[1])]);
+    for weights in [None, Some(vec![2.0, 3.0])] {
+        let pole_bytes = if weights.is_some() { std::mem::size_of::<WeightedPole2<FinitePoint2>>() }
+            else { std::mem::size_of::<FinitePoint2>() };
+        let retained_output_bytes = knots.len() * std::mem::size_of::<f64>() + source_points.len() * pole_bytes;
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(&cadmpeg_test_support::service_decode_context(), 1, knots.to_vec(), source_points.to_vec(), weights.clone(), false).unwrap().unwrap()));
+        let curves = HashMap::from([(&curve_id, &geometry)]);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(retained_output_bytes).unwrap();
+        policy.limits.max_materialized_bytes = 1024;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let output = super::project_edge(&ctx, &edge, &vertices, &points, &curves,
+            super::SketchPlaneFrame { origin: Point3::new(0.0, 0.0, 0.0), u_axis: Vector3::new(1.0, 0.0, 0.0), v_axis: Vector3::new(0.0, 1.0, 0.0) },
+            &mut crate::lane_refusal::LaneRefusals::new()).unwrap().unwrap();
+        let cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { curve } = output.definition() else { panic!("projected NURBS"); };
+        assert_eq!(curve.knots().as_slice(), knots);
+        assert_eq!(curve.pole_rows().raw_points(), [Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)]);
+        assert_eq!(curve.pole_rows().weights(), weights);
+    }
 }
