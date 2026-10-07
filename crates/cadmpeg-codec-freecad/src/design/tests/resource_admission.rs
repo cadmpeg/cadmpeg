@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Design feature and spreadsheet admission tests.
+//! Design feature history and scalar admission tests.
 
 use cadmpeg_ir::topology::BodyKind;
 use std::collections::BTreeMap;
@@ -257,4 +257,50 @@ fn design_operation_parameters_require_numeric_scalar_carriers() {
         assert_eq!(parameters.len(), 1);
         assert_eq!(parameters[0].expression, "3");
     });
+}
+
+#[test]
+fn feature_ordering_releases_scratch_identity_indexes() {
+    let marker = "probe".repeat(8192);
+    let operation = "test after feature ordering";
+    let used = |length| {
+        let name = "F".repeat(length);
+        let object = crate::native::ObjectRecord {
+            identity: crate::native::object_identity::ObjectIdentity::try_new(
+                format!("fcstd:native:object#{name}"),
+                name,
+            )
+            .expect("object identity"),
+            type_name: "Part::Feature".into(),
+            persistent_id: None,
+            view_type: None,
+            attributes: BTreeMap::new(),
+            dependencies: Vec::new(),
+            dependency_allow_partial: None,
+            order: 0,
+            data: None,
+        };
+        let error = crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            &[],
+            operation,
+            |ctx| {
+                let (ordinals, cycles, _storage) = super::super::feature_ordinals(
+                    ctx,
+                    std::slice::from_ref(&object),
+                    &BTreeMap::new(),
+                    &std::collections::HashMap::new(),
+                )?;
+                assert_eq!(ordinals.len(), 1);
+                assert!(cycles.is_empty());
+                ctx.format_scoped(format_args!("{marker}"), operation)
+                    .map(|(text, _storage)| text)
+            },
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("materialized refusal required");
+        };
+        limit.used
+    };
+    assert_eq!(used(1), used(4096));
 }

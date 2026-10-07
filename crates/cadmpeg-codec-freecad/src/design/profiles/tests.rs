@@ -459,3 +459,40 @@ fn ambiguous_profile_junctions_remain_separate() {
     assert_eq!(profiles.len(), 3);
     assert!(profiles.iter().all(|profile| profile.len() == 1));
 }
+
+#[test]
+fn empty_profile_relations_release_entity_index_storage() {
+    let entities = [entity(
+        "test:test:entity#profile-storage",
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(1.0, 0.0),
+        })
+        .expect("line geometry"),
+    )];
+    let marker = "probe".repeat(4096);
+    let operation = "test after profile relation construction";
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        &[],
+        operation,
+        |ctx| {
+            let (_storage, relations) = super::explicit_endpoint_relations(
+                ctx,
+                &std::collections::BTreeSet::new(),
+                &entities,
+                &[],
+            )?;
+            assert!(relations.is_empty());
+            ctx.format_scoped(format_args!("{marker}"), operation)
+                .map(|(text, _storage)| text)
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("materialized refusal required");
+    };
+    assert_eq!(
+        limit.used, 0,
+        "empty relations hold no temporary index storage"
+    );
+}

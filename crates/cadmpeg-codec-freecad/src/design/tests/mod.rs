@@ -1345,18 +1345,26 @@ fn design_body_output_prefix_refuses_at_materialized_limit() {
         entry: "shape.brp".into(),
         payload: crate::brep::ShapePayload::Empty,
     };
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let cycles = super::transfer(
+            ctx,
+            &mut ir,
+            std::slice::from_ref(&object),
+            std::slice::from_ref(&property),
+            std::slice::from_ref(&payload),
+            &[],
+            None,
+        )
+        .expect("body transfer");
+        assert!(cycles.is_empty());
+        assert_eq!(ir.model.features.len(), 1);
+        let prefix = super::BodyOutputPrefix::new(ctx, &payload).expect("body output prefix");
+        assert_eq!(prefix.text, "fcstd:model:body#Body:Shape:");
+    });
     let _error =
         crate::test_support::materialized_refusal_at("fcstd design body output prefix", |ctx| {
-            let mut ir = cadmpeg_ir::document::CadIr::empty();
-            super::transfer(
-                ctx,
-                &mut ir,
-                std::slice::from_ref(&object),
-                std::slice::from_ref(&property),
-                std::slice::from_ref(&payload),
-                &[],
-                None,
-            )
+            super::BodyOutputPrefix::new(ctx, &payload).map(drop)
         });
 }
 
@@ -1769,4 +1777,20 @@ fn parse_constraints(
             .as_ref()
             .map(|(property, tree)| (*property, tree.document())),
     )
+}
+
+#[test]
+fn body_output_prefix_admits_identity_search_before_copy() {
+    let payload = crate::brep::ShapePayloadRecord {
+        id: "fcstd:native:shape-payload#Body:Shape".into(),
+        property: "fcstd:native:property#Body:Shape".into(),
+        entry: "shape.brp".into(),
+        payload: crate::brep::ShapePayload::Empty,
+    };
+    let _error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "fcstd design body output identity key",
+        |ctx| super::BodyOutputPrefix::new(ctx, &payload).map(drop),
+    );
 }

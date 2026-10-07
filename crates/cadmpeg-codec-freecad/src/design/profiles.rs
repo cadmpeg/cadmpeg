@@ -441,13 +441,16 @@ fn explicit_endpoint_relations<'ctx>(
 > {
     let mut storage = ctx.reserve_scoped(0, "FCStd explicit profile relations")?;
     let relations = storage.with_storage(|| {
-        let entity_indices = ctx.collect_hash_map(
-            entities
-                .iter()
-                .enumerate()
-                .map(|(index, entity)| (entity.id().as_str(), index)),
-            "FCStd profile entity lookup",
-        )?;
+        let (entity_indices, _entity_index_storage) =
+            ctx.with_scoped_storage("FCStd profile entity lookup storage", || {
+                ctx.collect_hash_map(
+                    entities
+                        .iter()
+                        .enumerate()
+                        .map(|(index, entity)| (entity.id().as_str(), index)),
+                    "FCStd profile entity lookup",
+                )
+            })?;
         let mut relations = BTreeMap::new();
         for constraint in ctx.admit_iter(constraints, "FCStd profile constraint scan")? {
             if constraint.active == Some(false) {
