@@ -1005,27 +1005,41 @@ fn brep_mesh_cache_retention_refusal_reaches_the_caller() {
     })
     .expect("mesh cache fits service limits");
     assert_eq!(staged.draft.model().tessellations.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 35;
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
-        .expect("source bytes fit the root limit");
-    let refused = stage_brep(BrepTransferInput {
-        expand: crate::mesh::MeshExpand::new(&ctx, root),
-        data: &data,
-        archive: ArchiveVersion::V5,
-        writer_version: Some(200_206_180),
-        brep: &brep,
-        key: "plane",
-        association: &association,
-        unknown: &unknown,
-        scale: MillimeterScale::IDENTITY,
-        mesh_budget: &mut crate::mesh::MeshBudget::new(),
-    })
-    .expect_err("36 mesh bytes exceed the 35-byte retention limit");
+    let refused = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "rhino_mesh_buffer",
+        |limit| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+                .expect("source bytes fit the root limit");
+            let result = stage_brep(BrepTransferInput {
+                expand: crate::mesh::MeshExpand::new(&ctx, root),
+                data: &data,
+                archive: ArchiveVersion::V5,
+                writer_version: Some(200_206_180),
+                brep: &brep,
+                key: "plane",
+                association: &association,
+                unknown: &unknown,
+                scale: MillimeterScale::IDENTITY,
+                mesh_budget: &mut crate::mesh::MeshBudget::new(),
+            });
+            result.map_err(|error| match error {
+                crate::curves::GeometryError::Codec(error) => {
+                    if let cadmpeg_core::CodecError::ResourceLimit(ref refusal) = error {
+                        assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+                    }
+                    error
+                }
+                error => panic!("mesh cache must preserve the codec refusal: {error}"),
+            })
+        },
+    );
     assert!(matches!(
         refused,
-        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "rhino_mesh_buffer"
     ));
 }

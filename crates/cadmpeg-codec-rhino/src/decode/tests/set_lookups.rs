@@ -17,25 +17,28 @@ fn fallback_emitted_identity_lookup_preserves_work_refusal() {
         geometry: geometry.clone(),
         source_object: None,
     });
-    // Two carrier visits, the first ID copy, and four empty-tree node passes precede the lookup.
-    let node_bytes = 11 * std::mem::size_of::<String>()
-        + 16 * std::mem::size_of::<usize>()
-        + 2 * std::mem::align_of::<String>().max(std::mem::align_of::<usize>());
-    let limit = u64::try_from(2 + curves[0].id.as_str().len() + 4 * node_bytes).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let mut draft = super::super::BrepDraft::default();
-    draft.draft.model_mut().curves.extend(curves);
-    let Err(CodecError::ResourceLimit(refusal)) =
-        draft.free_carrier_fallback(&ctx, "test fallback")
-    else {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "Rhino emitted fallback identity lookup",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let mut draft = super::super::BrepDraft::default();
+            draft.draft.model_mut().curves.extend(curves.clone());
+            let result = draft.free_carrier_fallback(&ctx, "test fallback");
+            if let Err(CodecError::ResourceLimit(ref refusal)) = result {
+                assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+            }
+            result
+        },
+    );
+    let CodecError::ResourceLimit(refusal) = error else {
         panic!("fallback identity lookup must propagate its refusal");
     };
     assert_eq!(refusal.operation, "Rhino emitted fallback identity lookup");
     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
 
 #[test]
