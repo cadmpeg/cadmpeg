@@ -319,13 +319,7 @@ fn parse_stream_grammar<'a>(
     let model_states = if schema == 15 {
         parse_model_states(ctx, source, &mut cursor, lod_count)?
     } else if lod_count != 0 {
-        ctx.charge_formatted_retained(
-            format_args!("UFRxDoc contains {lod_count} unframed LOD records"),
-            "retain UFRx unframed LOD diagnostic",
-        )?;
-        return Err(CodecError::NotImplemented(format!(
-            "UFRxDoc contains {lod_count} unframed LOD records"
-        )));
+        return Err(CodecError::NotImplemented(ctx.format_retained(format_args!("UFRxDoc contains {lod_count} unframed LOD records"), "retain UFRx unframed LOD diagnostic")?));
     } else {
         Vec::new()
     };
@@ -722,13 +716,7 @@ fn parse_occurrence_value(
             cursor.take(16, "occurrence property id")?;
         }
         _ => {
-            ctx.charge_formatted_retained(
-                format_args!("UFRxDoc occurrence property tag {tag:#04x} is not implemented"),
-                "retain UFRx occurrence property diagnostic",
-            )?;
-            return Err(CodecError::NotImplemented(format!(
-                "UFRxDoc occurrence property tag {tag:#04x} is not implemented"
-            )));
+            return Err(CodecError::NotImplemented(ctx.format_retained(format_args!("UFRxDoc occurrence property tag {tag:#04x} is not implemented"), "retain UFRx occurrence property diagnostic")?));
         }
     }
     Ok(())
@@ -750,13 +738,7 @@ fn parse_occurrence_item_value(
             cursor.take(16, "occurrence export item id")?;
         }
         _ => {
-            ctx.charge_formatted_retained(
-                format_args!("UFRxDoc occurrence export item tag {tag:#04x} is not implemented"),
-                "retain UFRx occurrence export diagnostic",
-            )?;
-            return Err(CodecError::NotImplemented(format!(
-                "UFRxDoc occurrence export item tag {tag:#04x} is not implemented"
-            )));
+            return Err(CodecError::NotImplemented(ctx.format_retained(format_args!("UFRxDoc occurrence export item tag {tag:#04x} is not implemented"), "retain UFRx occurrence export diagnostic")?));
         }
     }
     Ok(())
