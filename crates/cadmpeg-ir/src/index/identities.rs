@@ -414,12 +414,12 @@ mod tests {
         };
         use cadmpeg_core::CodecError;
         let fixture = cadmpeg_test_support::service_decode_context();
-        for (stored, query, expected) in [
-            ("alpha", "longer", None),
-            ("alpha", "blope", None),
-            ("é", "ê", None),
-            ("same", "same", Some(&7)),
-            ("", "", Some(&7)),
+        for (stored, query, comparison_work, expected) in [
+            ("alpha", "longer", 1, None),
+            ("alpha", "blope", 2, None),
+            ("é", "ê", 3, None),
+            ("same", "same", 5, Some(&7)),
+            ("", "", 1, Some(&7)),
         ] {
             let mut index =
                 super::BorrowedIdentities::build(&fixture, |add| add(stored, 7)).unwrap();
@@ -433,6 +433,16 @@ mod tests {
                 ctx.charge_work(1, "borrowed lookup complete")
             });
             let CodecError::ResourceLimit(boundary) = boundary else { panic!("work refusal"); };
+            let comparison = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "compare validation identity", |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                index.get(&ctx, query).map(|_| ())
+            });
+            let CodecError::ResourceLimit(comparison) = comparison else { panic!("comparison refusal"); };
+            // The collision source pays one final next probe after equality.
+            assert_eq!(boundary.used - comparison.used, comparison_work + 1);
             let work = boundary.used;
             for allowance in 0..=work {
                 let mut policy = DecodePolicy::service();

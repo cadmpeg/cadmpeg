@@ -55,6 +55,16 @@ impl Sha256Digest {
         Self(text)
     }
 
+    fn validate_text(text: &str) -> Result<(), InvalidSha256Digest> {
+        if text.len() == 64
+            && text.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        {
+            Ok(())
+        } else {
+            Err(InvalidSha256Digest)
+        }
+    }
+
     /// Copy the canonical spelling through the decode budget.
     pub fn try_clone_for_decode(
         &self,
@@ -83,15 +93,8 @@ impl TryFrom<String> for Sha256Digest {
     type Error = InvalidSha256Digest;
 
     fn try_from(text: String) -> Result<Self, Self::Error> {
-        if text.len() == 64
-            && text
-                .bytes()
-                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
-        {
-            Ok(Self(text))
-        } else {
-            Err(InvalidSha256Digest)
-        }
+        Self::validate_text(&text)?;
+        Ok(Self(text))
     }
 }
 
@@ -99,7 +102,8 @@ impl TryFrom<&str> for Sha256Digest {
     type Error = InvalidSha256Digest;
 
     fn try_from(text: &str) -> Result<Self, Self::Error> {
-        Self::try_from(text.to_owned())
+        Self::validate_text(text)?;
+        Ok(Self(text.to_owned()))
     }
 }
 
@@ -212,6 +216,7 @@ mod tests {
             String::new(),
             "a".repeat(63),
             "a".repeat(65),
+            "a".repeat(8192),
             "A".repeat(64),
             "g".repeat(64),
             " ".repeat(64),
