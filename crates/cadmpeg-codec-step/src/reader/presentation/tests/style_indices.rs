@@ -91,7 +91,7 @@ fn style_depth_index_preserves_keyed_lookup_refusal() {
             let result =
                 style_application_order(3, &exchange, 64, &mut BTreeMap::new(), &mut storage, &ctx);
             if let Err(CodecError::ResourceLimit(ref refusal)) = result {
-                assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(*refusal));
             }
             result
         },

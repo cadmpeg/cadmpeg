@@ -292,7 +292,7 @@ pub(super) fn decode<'ctx>(
         let definition_iter = std::iter::once(None)
             .filter(|_| product_definitions.is_empty())
             .chain(
-                ctx.admit_iter(&product_definitions[..], "STEP decode chain traversal")?
+                ctx.admit_iter(product_definitions, "STEP decode chain traversal")?
                     .map(|(id, _)| Some(*id)),
             );
         for definition in definition_iter {
@@ -1010,8 +1010,7 @@ pub(super) fn decode<'ctx>(
         ]
         .iter()
         .map(|name| record.partial(ctx, name))
-        .filter_map(Result::transpose)
-        .next()
+        .find_map(Result::transpose)
         .transpose()?
         .is_some()
             || record
@@ -1428,16 +1427,16 @@ fn shape_binding<'a>(
 ) -> Result<Option<(u64, super::topology::AdmittedRepresentationBodies<'a>)>, CodecError> {
     let Some(shape) = record
         .partial(ctx, "SHAPE_DEFINITION_REPRESENTATION")?
-        .and_then(|partial| partial.parameters.get(0))
+        .and_then(|partial| partial.parameters.first())
         .and_then(ValueExt::reference)
     else {
         return Ok(None);
     };
-    let Some(&definition) = ctx.get_btree_map(&pds, &shape, "STEP product pds get")? else {
+    let Some(&definition) = ctx.get_btree_map(pds, &shape, "STEP product pds get")? else {
         return Ok(None);
     };
     if !ctx.contains_key_btree_map(
-        &definitions,
+        definitions,
         &definition,
         "STEP product definitions contains_key",
     )? {
@@ -1470,12 +1469,12 @@ fn definition_representations(
     for (_, record) in exchange.entities(ctx, "SHAPE_DEFINITION_REPRESENTATION")? {
         let Some(shape) = record
             .partial(ctx, "SHAPE_DEFINITION_REPRESENTATION")?
-            .and_then(|partial| partial.parameters.get(0))
+            .and_then(|partial| partial.parameters.first())
             .and_then(ValueExt::reference)
         else {
             continue;
         };
-        let Some(&definition) = ctx.get_btree_map(&pds, &shape, "STEP product pds get")? else {
+        let Some(&definition) = ctx.get_btree_map(pds, &shape, "STEP product pds get")? else {
             continue;
         };
         let Some(representation) = record
@@ -1502,6 +1501,8 @@ fn definition_representations(
     Ok(result)
 }
 
+type PlacementSourceIds = BTreeMap<u64, Vec<u64>>;
+
 fn occurrence_placements(
     exchange: &Exchange,
     geometry: &GeometryData,
@@ -1510,7 +1511,7 @@ fn occurrence_placements(
         &mut Vec<LossNote>,
         &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>,
     ),
-    (ambiguous, competing): (&mut BTreeMap<u64, Vec<u64>>, &mut BTreeMap<u64, Vec<u64>>),
+    (ambiguous, competing): (&mut PlacementSourceIds, &mut PlacementSourceIds),
     scratch_storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Transform>, CodecError> {
@@ -1571,11 +1572,7 @@ fn occurrence_placements(
             &definition_representations,
         )? {
             Ok(Some((usage, transform))) => {
-                if ctx.contains_key_btree_map(
-                    &usages,
-                    &usage,
-                    "STEP product usages contains_key",
-                )? {
+                if ctx.contains_key_btree_map(usages, &usage, "STEP product usages contains_key")? {
                     let grouped = scratch_storage
                         .with_storage(|| {
                             ctx.entry_btree_map(
@@ -1650,7 +1647,7 @@ fn occurrence_placements(
     for (record_id, record) in exchange.entities(ctx, "SHAPE_DEFINITION_REPRESENTATION")? {
         let Some(shape) = record
             .partial(ctx, "SHAPE_DEFINITION_REPRESENTATION")?
-            .and_then(|partial| partial.parameters.get(0))
+            .and_then(|partial| partial.parameters.first())
             .and_then(ValueExt::reference)
         else {
             continue;
@@ -1658,7 +1655,7 @@ fn occurrence_placements(
         let Some(&usage) = ctx.get_btree_map(&pds, &shape, "STEP product pds get")? else {
             continue;
         };
-        if !ctx.contains_key_btree_map(&usages, &usage, "STEP product usages contains_key")? {
+        if !ctx.contains_key_btree_map(usages, &usage, "STEP product usages contains_key")? {
             continue;
         }
         let Some(representation) = record
@@ -1687,7 +1684,7 @@ fn occurrence_placements(
         &occurrence_representations,
         "STEP occurrence placements traversal",
     )? {
-        let Some(usage) = ctx.get_btree_map(&usages, &usage_id, "STEP product usages get")? else {
+        let Some(usage) = ctx.get_btree_map(usages, &usage_id, "STEP product usages get")? else {
             continue;
         };
         let Some(child_representations) = ctx.get_btree_map(
@@ -1740,7 +1737,7 @@ fn occurrence_placements(
                         Err(error) => return Err(placement_error(error)),
                     };
                 if ctx.contains_btree_set(
-                    &child_representations,
+                    child_representations,
                     &mapped_representation,
                     "STEP product child_representations contains",
                 )? {
@@ -1956,7 +1953,7 @@ fn occurrence_placements(
                 };
                 if mapped_definitions.len() == 1
                     && ctx.contains_btree_set(
-                        &mapped_definitions,
+                        mapped_definitions,
                         &usage.child_definition,
                         "STEP product mapped_definitions contains",
                     )?
@@ -2052,9 +2049,9 @@ fn is_two_dimensional_mapping(
         };
         let placement = record.partial(ctx, "AXIS2_PLACEMENT_2D")?.is_some();
         if !placement
-            && !record
+            && record
                 .partial(ctx, "CARTESIAN_TRANSFORMATION_OPERATOR_2D")?
-                .is_some()
+                .is_none()
         {
             return Ok(false);
         }
@@ -2079,7 +2076,7 @@ fn mapped_item_definition(
     };
     let Some(origin) = map
         .partial(ctx, "REPRESENTATION_MAP")?
-        .and_then(|partial| partial.parameters.get(0))
+        .and_then(|partial| partial.parameters.first())
         .and_then(ValueExt::reference)
     else {
         return Ok(None);
@@ -2135,7 +2132,7 @@ fn occurrence_placement_definition(
 ) -> Result<Option<(u64, u64, u64)>, CodecError> {
     let Some(relation) = record
         .partial(ctx, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")?
-        .and_then(|partial| partial.parameters.get(0))
+        .and_then(|partial| partial.parameters.first())
         .and_then(ValueExt::reference)
         .map(|id| ctx.get_btree_map(exchange.records(), &id, "STEP product record get"))
         .transpose()?
@@ -2147,18 +2144,18 @@ fn occurrence_placement_definition(
         .partial(ctx, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")?
         .and_then(|partial| partial.parameters.get(1))
         .and_then(ValueExt::reference)
-        .map(|id| ctx.get_btree_map(&pds, &id, "STEP product pds get"))
+        .map(|id| ctx.get_btree_map(pds, &id, "STEP product pds get"))
         .transpose()?
         .flatten()
         .copied()
     else {
         return Ok(None);
     };
-    let Some(usage_data) = ctx.get_btree_map(&usages, &usage, "STEP product usages get")? else {
+    let Some(usage_data) = ctx.get_btree_map(usages, &usage, "STEP product usages get")? else {
         return Ok(None);
     };
     let Some(child_representations) = ctx.get_btree_map(
-        &definition_representations,
+        definition_representations,
         &usage_data.child_definition,
         "STEP product definition_representations get",
     )?
@@ -2166,7 +2163,7 @@ fn occurrence_placement_definition(
         return Ok(None);
     };
     let Some(parent_representations) = ctx.get_btree_map(
-        &definition_representations,
+        definition_representations,
         &usage_data.parent_definition,
         "STEP product definition_representations get",
     )?
@@ -2204,20 +2201,20 @@ fn occurrence_placement_definition(
         return Ok(None);
     };
     let child_to_parent = ctx.contains_btree_set(
-        &child_representations,
+        child_representations,
         &relation_representations.0,
         "STEP product child_representations contains",
     )? && ctx.contains_btree_set(
-        &parent_representations,
+        parent_representations,
         &relation_representations.1,
         "STEP product parent_representations contains",
     )?;
     let parent_to_child = ctx.contains_btree_set(
-        &parent_representations,
+        parent_representations,
         &relation_representations.0,
         "STEP product parent_representations contains",
     )? && ctx.contains_btree_set(
-        &child_representations,
+        child_representations,
         &relation_representations.1,
         "STEP product child_representations contains",
     )?;

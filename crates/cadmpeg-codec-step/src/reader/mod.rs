@@ -1099,7 +1099,7 @@ fn associate_unowned_direct_carriers(
         let Some(id) = step_instance_id(ctx, point.id.as_str())? else {
             continue;
         };
-        if ctx.contains_btree_set(&ids, &id, "STEP mod ids contains")?
+        if ctx.contains_btree_set(ids, &id, "STEP mod ids contains")?
             && point.source_object.is_none()
         {
             point.source_object = Some(step_source_association(ctx, id, None)?);
@@ -1112,7 +1112,7 @@ fn associate_unowned_direct_carriers(
         let Some(id) = step_instance_id(ctx, curve.id.as_str())? else {
             continue;
         };
-        if ctx.contains_btree_set(&ids, &id, "STEP mod ids contains")?
+        if ctx.contains_btree_set(ids, &id, "STEP mod ids contains")?
             && curve.source_object.is_none()
         {
             curve.source_object = Some(step_source_association(ctx, id, None)?);
@@ -1125,7 +1125,7 @@ fn associate_unowned_direct_carriers(
         let Some(id) = step_instance_id(ctx, surface.id.as_str())? else {
             continue;
         };
-        if ctx.contains_btree_set(&ids, &id, "STEP mod ids contains")?
+        if ctx.contains_btree_set(ids, &id, "STEP mod ids contains")?
             && surface.source_object.is_none()
         {
             surface.source_object = Some(step_source_association(ctx, id, None)?);
@@ -1303,10 +1303,7 @@ fn opaque_record_id(
         if index > 0 {
             kind.push('_');
         }
-        for byte in ctx
-            .admit_iter(partial.name.as_bytes(), "STEP opaque record id traversal")?
-            .copied()
-        {
+        for byte in ctx.admit_iter(partial.name.as_bytes(), "STEP opaque record id traversal")? {
             // The admitted byte iteration writes one ASCII byte into reserved capacity.
             kind.push(char::from(byte.to_ascii_lowercase()));
         }
@@ -1391,7 +1388,7 @@ fn byte_accounting(
     })?;
     for (&id, record) in ctx.admit_iter(exchange.records(), "STEP byte accounting traversal")? {
         let class =
-            if ctx.contains_hash_set(&typed_records, &id, "STEP mod typed_records contains")? {
+            if ctx.contains_hash_set(typed_records, &id, "STEP mod typed_records contains")? {
                 ByteClass::Typed
             } else {
                 ByteClass::Opaque
@@ -1846,7 +1843,7 @@ fn inspect_opaque_offsets(
     for (id, record) in
         ctx.admit_iter(exchange.records(), "STEP inspect opaque offsets traversal")?
     {
-        if ctx.contains_hash_set(&typed_records, id, "STEP mod typed_records contains")?
+        if ctx.contains_hash_set(typed_records, id, "STEP mod typed_records contains")?
             || ctx.contains_btree_set(&offsets, &record.span.start, "STEP mod offsets contains")?
         {
             continue;

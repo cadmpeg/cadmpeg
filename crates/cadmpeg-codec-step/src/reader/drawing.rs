@@ -75,7 +75,10 @@ impl<'a> DrawingParameters<'a> {
         self.get(0)
     }
 
-    fn iter(self, ctx: &DecodeContext<'_>) -> Result<impl Iterator<Item = &'a Value>, CodecError> {
+    fn values(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<impl Iterator<Item = &'a Value>, CodecError> {
         Ok(self
             .inherited_name
             .into_iter()
@@ -95,7 +98,7 @@ fn ensure_drawing_relationship_group(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if !ctx.contains_key_btree_map(
-        &relationships,
+        relationships,
         &role,
         "STEP drawing relationships contains_key",
     )? {
@@ -253,7 +256,7 @@ pub(super) fn decode<'ctx>(
                 ir,
                 |record_id| {
                     ctx.contains_hash_set(
-                        &known_typed,
+                        known_typed,
                         &record_id,
                         "STEP drawing known_typed contains",
                     )
@@ -367,7 +370,7 @@ pub(super) fn decode<'ctx>(
             ctx.copy_retained_text(name, "STEP drawing source type")?,
             "step_drawing_stored_parameters",
         )?;
-        for (index, value) in parameters.iter(ctx)?.enumerate() {
+        for (index, value) in parameters.values(ctx)?.enumerate() {
             if let Some(value) = value_text(
                 exchange,
                 value,
@@ -574,9 +577,9 @@ fn add_source_typed_targets(
     let (mut native_targets, mut native_storage) =
         ctx.temporary_vec(0, "step_drawing_native_target_items")?;
     for &id in ctx.admit_iter(referenced_ids, "STEP add source typed targets traversal")? {
-        if !ctx.contains_hash_set(&known_typed, &id, "STEP drawing known_typed contains")?
+        if !ctx.contains_hash_set(known_typed, &id, "STEP drawing known_typed contains")?
             || ctx.contains_key_btree_map(
-                &target_identities,
+                target_identities,
                 &id,
                 "STEP drawing target_identities contains_key",
             )?
@@ -1212,11 +1215,7 @@ fn target_resolution<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<TargetResolution<'ctx>, CodecError> {
     if let Some(identity) = ctx
-        .get_btree_map(
-            &target_identities,
-            &id,
-            "STEP drawing target_identities get",
-        )?
+        .get_btree_map(target_identities, &id, "STEP drawing target_identities get")?
         .filter(|identities| identities.len() == 1)
         .and_then(|identities| identities.first())
     {
@@ -1228,7 +1227,7 @@ fn target_resolution<'ctx>(
         )));
     }
     if let Some(uri) = ctx.get_btree_map(
-        &external_documents,
+        external_documents,
         &id,
         "STEP drawing external_documents get",
     )? {
@@ -1250,7 +1249,7 @@ fn target_resolution<'ctx>(
         Some(WrapperTargetResolution::Ambiguous(identities)) => Some(identities),
         None => None,
     };
-    if !ctx.contains_hash_set(&known_typed, &id, "STEP drawing known_typed contains")? {
+    if !ctx.contains_hash_set(known_typed, &id, "STEP drawing known_typed contains")? {
         if let Some(record) =
             ctx.get_btree_map(exchange.records(), &id, "STEP drawing record get")?
         {
@@ -1261,11 +1260,7 @@ fn target_resolution<'ctx>(
         }
     }
     let ambiguity = ctx
-        .get_btree_map(
-            &target_identities,
-            &id,
-            "STEP drawing target_identities get",
-        )?
+        .get_btree_map(target_identities, &id, "STEP drawing target_identities get")?
         .filter(|identities| identities.len() > 1)
         .map(|identities| {
             ctx.with_scoped_storage("STEP drawing ambiguity scratch", || {
@@ -1289,7 +1284,7 @@ fn wrapper_target_resolution<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<Option<WrapperTargetResolution<'ctx>>, CodecError> {
     if ctx.contains_key_btree_map(
-        &target_identities,
+        target_identities,
         &id,
         "STEP drawing target_identities contains_key",
     )? {
@@ -1322,11 +1317,9 @@ fn wrapper_target_resolution<'ctx>(
         storage
             .with_storage(|| ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending"))?;
         pending.push((id, true));
-        if let Some(targets) = ctx.get_btree_map(
-            &target_identities,
-            &id,
-            "STEP drawing target_identities get",
-        )? {
+        if let Some(targets) =
+            ctx.get_btree_map(target_identities, &id, "STEP drawing target_identities get")?
+        {
             for target in ctx.admit_iter(targets, "STEP drawing targets traversal")? {
                 if !ctx.contains_btree_set(&identities, target, "STEP identities membership")? {
                     let copy = storage.with_storage(|| {
@@ -1457,7 +1450,7 @@ fn value_text(
         ctx.temporary_vec(parts.len(), "STEP drawing text join fragments")?;
     text_parts.extend(
         ctx.admit_iter(&parts, "STEP drawing text join fragment traversal")?
-            .map(|part| part.as_ref()),
+            .map(std::convert::AsRef::as_ref),
     );
     Ok(Some(ctx.join_retained(
         &text_parts,

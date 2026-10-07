@@ -84,7 +84,7 @@ fn invalid_scratch_text_keeps_its_loss_retained() {
                 &mut storage,
             );
             if let Err(CodecError::ResourceLimit(ref refusal)) = result {
-                assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(*refusal));
             }
             result
         },

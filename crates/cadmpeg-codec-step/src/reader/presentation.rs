@@ -116,7 +116,7 @@ pub(super) fn decode<'ctx>(
         }
         let Some(items) = record
             .partial(ctx, "INVISIBILITY")?
-            .and_then(|partial| partial.parameters.get(0))
+            .and_then(|partial| partial.parameters.first())
             .and_then(ValueExt::list)
         else {
             ctx.push_scoped_vec(
@@ -271,7 +271,7 @@ pub(super) fn decode<'ctx>(
         }
         let Some(name) = layer
             .partial(ctx, "PRESENTATION_LAYER_ASSIGNMENT")?
-            .and_then(|partial| partial.parameters.get(0))
+            .and_then(|partial| partial.parameters.first())
             .map(|value| {
                 decode_output_text(
                     exchange,
@@ -565,50 +565,49 @@ pub(super) fn decode<'ctx>(
             ..
         } = color;
         let appearance_key = (color_id, color.a().to_bits());
-        let appearance_id = if let Some(appearance_id) = ctx.get_btree_map(
-            &appearance_ids,
-            &appearance_key,
-            "STEP presentation appearance_ids get",
-        )? {
-            appearance_id.try_clone_for_decode(ctx, "step_presentation_identity_copy")?
-        } else {
-            let key = if color.a() == 1.0 {
-                IdentityKey::from(color_id)
-            } else {
-                IdentityKey::from(color_id)
-                    .dash(key_word!("alpha"))
-                    .dash(color.a().to_bits())
-            };
-            let id = AppearanceId::from(ids::presentation(kind!("appearance"), key));
-            ctx.push_vec(
-                &mut ir.model.appearances,
-                Appearance {
-                    id: id.try_clone_for_decode(ctx, "step_presentation_identity_copy")?,
-                    name: name
-                        .as_deref()
-                        .map(|name| ctx.copy_retained_text(name, "step_string_text"))
-                        .transpose()?,
-                    asset_guid: None,
-                    library_id: None,
-                    visual_guid: None,
-                    physical_token: None,
-                    schema: Some("step_surface_style".into()),
-                    category: None,
-                    base_color: Some(color),
-                    textures: Vec::new(),
-                    properties: BTreeMap::new(),
-                },
-                "step_presentation_appearance_records",
-            )?;
-            scratch_storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut appearance_ids,
-                    appearance_key,
-                    id.try_clone_for_decode(ctx, "step_presentation_identity_copy")?,
-                    "step_presentation_appearance_ids",
-                )
-            })?;
-            id
+        let appearance_entry = scratch_storage.with_storage(|| {
+            ctx.entry_btree_map(
+                &mut appearance_ids,
+                appearance_key,
+                "step_presentation_appearance_ids",
+            )
+        })?;
+        let appearance_id = match appearance_entry {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                let key = if color.a() == 1.0 {
+                    IdentityKey::from(color_id)
+                } else {
+                    IdentityKey::from(color_id)
+                        .dash(key_word!("alpha"))
+                        .dash(color.a().to_bits())
+                };
+                let id = AppearanceId::from(ids::presentation(kind!("appearance"), key));
+                ctx.push_vec(
+                    &mut ir.model.appearances,
+                    Appearance {
+                        id: id.try_clone_for_decode(ctx, "step_presentation_identity_copy")?,
+                        name: name
+                            .as_deref()
+                            .map(|name| ctx.copy_retained_text(name, "step_string_text"))
+                            .transpose()?,
+                        asset_guid: None,
+                        library_id: None,
+                        visual_guid: None,
+                        physical_token: None,
+                        schema: Some("step_surface_style".into()),
+                        category: None,
+                        base_color: Some(color),
+                        textures: Vec::new(),
+                        properties: BTreeMap::new(),
+                    },
+                    "step_presentation_appearance_records",
+                )?;
+                let stored = scratch_storage.with_storage(|| {
+                    id.try_clone_for_decode(ctx, "step_presentation_identity_copy")
+                })?;
+                entry.insert(stored)
+            }
         };
         let (mut target_steps, mut target_storage) =
             ctx.temporary_vec(0, "step_presentation_style_target_items")?;
@@ -806,7 +805,7 @@ pub(super) fn decode<'ctx>(
                             || existing.g() != color.g()
                             || existing.b() != color.b() =>
                     {
-                        conflicting = true
+                        conflicting = true;
                     }
                     Some(existing) if color.a() < existing.a() => selected = Some(*color),
                     Some(_) => {}
@@ -883,7 +882,7 @@ fn collect_invisible_body_ids(
     body_ids: &mut BTreeSet<BodyId>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if ctx.contains_btree_set(&active, &id, "STEP presentation active contains")? {
+    if ctx.contains_btree_set(active, &id, "STEP presentation active contains")? {
         return Ok(false);
     }
     let _nested = ctx.enter_nested("step_presentation_invisible_body_walk")?;
@@ -908,7 +907,7 @@ fn collect_invisible_body_ids(
     }
     let fallback = BodyId::from(ids::data(kind!("body"), id));
     if ctx.contains_key_btree_map(
-        &body_indices,
+        body_indices,
         fallback.as_str(),
         "STEP presentation body_indices contains_key",
     )? {
@@ -976,7 +975,7 @@ fn expand_style_targets(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if depth >= graph_limit
-        || ctx.contains_btree_set(&active, &id, "STEP presentation active contains")?
+        || ctx.contains_btree_set(active, &id, "STEP presentation active contains")?
     {
         return Ok(());
     }
@@ -1062,7 +1061,7 @@ fn appearance_targets(
     )? {
         for body in ctx.admit_iter(bodies, "STEP presentation bodies traversal")? {
             if ctx.contains_key_btree_map(
-                &indices.bodies,
+                indices.bodies,
                 body.as_str(),
                 "STEP presentation indices.bodies contains_key",
             )? {
@@ -1085,7 +1084,7 @@ fn appearance_targets(
     )? {
         for face in ctx.admit_iter(faces, "STEP presentation faces traversal")? {
             if ctx.contains_key_btree_map(
-                &indices.faces,
+                indices.faces,
                 face.as_str(),
                 "STEP presentation indices.faces contains_key",
             )? {
@@ -1151,13 +1150,13 @@ fn appearance_targets(
     let point_id = ids::data(kind!("point"), id);
     let tessellation_id = ids::tessellation(kind!("mesh"), id);
     let target = if ctx.contains_key_btree_map(
-        &indices.faces,
+        indices.faces,
         face_id.as_str(),
         "STEP presentation indices.faces contains_key",
     )? {
         Some(AppearanceTarget::Face(FaceId::from(face_id)))
     } else if ctx.contains_key_btree_map(
-        &indices.bodies,
+        indices.bodies,
         body_id.as_str(),
         "STEP presentation indices.bodies contains_key",
     )? {
@@ -1232,7 +1231,7 @@ fn append_presentation_items(
     )? {
         for body in ctx.admit_iter(bodies, "STEP presentation bodies traversal")? {
             if ctx.contains_key_btree_map(
-                &indices.bodies,
+                indices.bodies,
                 body.as_str(),
                 "STEP presentation indices.bodies contains_key",
             )? {
@@ -1254,7 +1253,7 @@ fn append_presentation_items(
     )? {
         for face in ctx.admit_iter(faces, "STEP presentation faces traversal")? {
             if ctx.contains_key_btree_map(
-                &indices.faces,
+                indices.faces,
                 face.as_str(),
                 "STEP presentation indices.faces contains_key",
             )? {
@@ -1310,7 +1309,7 @@ fn append_presentation_items(
         return Ok(());
     }
     if let Some(products) = ctx.get_btree_map(
-        &entity_ids.products,
+        entity_ids.products,
         &id,
         "STEP presentation entity_ids.products get",
     )? {
@@ -1342,7 +1341,7 @@ fn presentation_item_one(
     let candidate = |kind: &crate::ids::IdentityKind| ids::data(kind, id);
     let body = candidate(kind!("body"));
     if ctx.contains_key_btree_map(
-        &indices.bodies,
+        indices.bodies,
         body.as_str(),
         "STEP presentation indices.bodies contains_key",
     )? {
@@ -1352,7 +1351,7 @@ fn presentation_item_one(
     }
     let face = candidate(kind!("face"));
     if ctx.contains_key_btree_map(
-        &indices.faces,
+        indices.faces,
         face.as_str(),
         "STEP presentation indices.faces contains_key",
     )? {
@@ -1892,7 +1891,7 @@ fn find_color(
     if depth >= 256 {
         return Ok(None);
     }
-    if let Some(result) = ctx.get_btree_map(&cache, &(id, domain), "STEP presentation cache get")? {
+    if let Some(result) = ctx.get_btree_map(cache, &(id, domain), "STEP presentation cache get")? {
         return storage.borrow_mut().with_storage(|| {
             clone_color_resolution(result, ctx, "step_presentation_color_cache_copy")
         });
@@ -1905,7 +1904,7 @@ fn find_color(
     if is_presentation_style_by_context(ctx, record)? {
         return Ok(None);
     }
-    if ctx.contains_btree_set(&active, &id, "STEP presentation active contains")? {
+    if ctx.contains_btree_set(active, &id, "STEP presentation active contains")? {
         return Ok(None);
     }
     let _nested = ctx.enter_nested("step_presentation_color_walk")?;
@@ -2321,7 +2320,7 @@ fn style_domain_at(
     active: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<StyleDomain, CodecError> {
-    if ctx.contains_btree_set(&active, &id, "STEP presentation active contains")? {
+    if ctx.contains_btree_set(active, &id, "STEP presentation active contains")? {
         return Ok(StyleDomain::Any);
     }
     let _nested = ctx.enter_nested("step_presentation_style_domain_walk")?;
@@ -2546,7 +2545,7 @@ fn contains_null_style(
             "STEP contains null style value traversal",
         ),
         Value::Reference(id)
-            if !ctx.contains_btree_set(&visited, id, "STEP presentation visited contains")? =>
+            if !ctx.contains_btree_set(visited, id, "STEP presentation visited contains")? =>
         {
             ctx.insert_btree_set(visited, *id, "step_presentation_null_style_visited")?;
             if let Some(record) =

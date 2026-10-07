@@ -43,7 +43,7 @@ fn pmi_presentation_predicate_preserves_lookup_refusal() {
             let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
             let result = presentation_item_one(1, &exchange, &entity_ids, indices, &ctx);
             if let Err(CodecError::ResourceLimit(ref refusal)) = result {
-                assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(*refusal));
             }
             result
         },

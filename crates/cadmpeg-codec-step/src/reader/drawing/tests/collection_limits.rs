@@ -286,7 +286,7 @@ fn drawing_ambiguous_identities_text_refuses_materialized_limit() {
                 &ctx,
             );
             if let Err(CodecError::ResourceLimit(ref refusal)) = result {
-                assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(*refusal));
             }
             result
         },

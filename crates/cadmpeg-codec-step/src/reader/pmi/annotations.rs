@@ -174,7 +174,7 @@ mod tests {
                 let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root");
                 let result = annotations.get(&ctx, 1);
                 if let Err(CodecError::ResourceLimit(ref refusal)) = result {
-                    assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+                    assert_eq!(ctx.resource_refusal(), Some(*refusal));
                 }
                 result
             },
