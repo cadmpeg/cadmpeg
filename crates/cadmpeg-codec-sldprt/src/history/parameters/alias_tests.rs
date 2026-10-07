@@ -187,7 +187,7 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
     };
     let ctx = cadmpeg_test_support::service_decode_context();
     let tokens = expression_identifier_tokens(&ctx, "\"\" + Width")
-        .unwrap()
+        .unwrap().0
         .expect("closed quotes");
     assert_eq!(
         tokens
@@ -201,7 +201,7 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
         .any(|identifier| definite_parameter_reference(&ctx, identifier).unwrap()));
 
     let named = expression_identifier_tokens(&ctx, "\"D1@Sketch1\"")
-        .unwrap()
+        .unwrap().0
         .expect("closed quotes");
     assert_eq!(
         named
@@ -695,4 +695,22 @@ fn parameter_value_states_refuse_scoped_limit() {
         },
     );
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn reverse_parameter_dependency_chain_evaluates_all_values() {
+    let mut owner = feature("chain", Some("1"), 0);
+    for index in 0..40 {
+        let name = cadmpeg_core::text::NonBlankString::try_from(format!("D{index:02}")).unwrap();
+        let expression = if index == 39 { "1".to_owned() } else { format!("D{:02}+1", index + 1) };
+        owner.parameters.insert(name, expression);
+    }
+    let histories = [FeatureHistory {
+        id: "history".into(), part_name: None, properties: BTreeMap::new(), content: Vec::new(), configurations: Vec::new(), features: vec![owner],
+    }];
+    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+    for (index, parameter) in parameters.iter().enumerate() {
+        assert_eq!(parameter.value, Some(ParameterValue::Integer(40 - i64::try_from(index).unwrap())));
+        assert_eq!(parameter.ordinal, 39 - u32::try_from(index).unwrap());
+    }
 }

@@ -129,7 +129,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             return Ok(left);
         };
         self.offset += operator.len();
-        compare_parameter_values(&left, &self.sum()?, operator)
+        compare_parameter_values(self.ctx, &left, &self.sum()?, operator)?
             .map(ParameterValue::Boolean)
             .ok_or(ExpressionFailure::NoValue)
     }
@@ -203,7 +203,8 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             if self.take('(') {
                 let function =
                     ParameterFunction::parse(token.as_str()).ok_or(ExpressionFailure::NoValue)?;
-                let mut arguments = Vec::with_capacity(function.argument_count());
+                let mut argument_storage = self.ctx.reserve_scoped(0, "SLDPRT parameter function arguments")?;
+                let mut arguments = Vec::new();
                 for index in 0..function.argument_count() {
                     if index != 0 {
                         self.skip_space()?;
@@ -211,11 +212,8 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                             return Err(ExpressionFailure::NoValue);
                         }
                     }
-                    self.ctx.push_vec(
-                        &mut (arguments),
-                        self.comparison()?,
-                        "collect SLDPRT decoded vector items",
-                    )?;
+                    let value = self.comparison()?;
+                    self.ctx.push_scoped_vec(&mut argument_storage, &mut arguments, value, "collect SLDPRT decoded vector items")?;
                 }
                 self.skip_space()?;
                 if !self.take(')') {
@@ -270,25 +268,9 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             let Token::Bare(value) = self.token()? else {
                 return Err(ExpressionFailure::NoValue);
             };
-            let bytes = prefix
-                .len()
-                .checked_add(value.as_str().len())
-                .ok_or_else(|| {
-                    self.ctx.refuse_codec_limit(
-                        "normalize SLDPRT parameter token",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            self.ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "normalize SLDPRT parameter token",
+            let (text, reservation) = self.ctx.format_scoped(
+                format_args!("{prefix}{}", value.as_str()), "normalize SLDPRT parameter token",
             )?;
-            let (mut text, reservation) = self
-                .ctx
-                .scoped_string(bytes, "normalize SLDPRT parameter token")?;
-            text.push_str(prefix);
-            text.push_str(value.as_str());
             return Ok(Token::Bare(ParameterTokenText::Owned {
                 value: text,
                 _reservation: reservation,
@@ -320,34 +302,10 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                 self.offset = end;
                 return Err(ExpressionFailure::NoValue);
             }
-            let (mut value, reservation) = self
-                .ctx
-                .scoped_string(end - start, "retain SLDPRT quoted parameter token")?;
-            let mut cursor = start;
-            while cursor < end {
-                let rest = &self.input[cursor..end];
-                if rest.starts_with("\"\"") {
-                    self.ctx.push_retained_char(
-                        &mut value,
-                        '"',
-                        "append SLDPRT decoded character",
-                    )?;
-                    cursor += 2;
-                } else {
-                    let character = rest.chars().next().ok_or(ExpressionFailure::NoValue)?;
-                    self.ctx.push_retained_char(
-                        &mut value,
-                        character,
-                        "append SLDPRT decoded character",
-                    )?;
-                    cursor += character.len_utf8();
-                }
-            }
             self.offset = end + 1;
-            return Ok(Token::Quoted(ParameterTokenText::Owned {
-                value,
-                _reservation: reservation,
-            }));
+            let identifier = super::ExpressionIdentifier::quoted(self.ctx, self.input, start - 1, self.offset)?
+                .ok_or(ExpressionFailure::NoValue)?;
+            return Ok(Token::Quoted(identifier.value));
         }
         let start = self.offset;
         let numeric = self.input[start..]
@@ -377,14 +335,11 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
     }
 
     fn skip_space(&mut self) -> Result<(), ExpressionFailure> {
-        while let Some(character) = self.input[self.offset..].chars().next() {
-            self.ctx
-                .charge_work(1, "scan SLDPRT parameter whitespace")?;
-            if !character.is_whitespace() {
-                break;
-            }
-            self.offset += character.len_utf8();
-        }
+        let rest = &self.input[self.offset..];
+        let end = self.ctx.find_map(rest.char_indices(), |(at, character)| {
+            Ok((!character.is_whitespace()).then_some(at))
+        }, "scan SLDPRT parameter whitespace")?.unwrap_or(rest.len());
+        self.offset += end;
         Ok(())
     }
 
@@ -444,41 +399,43 @@ fn add_parameter_values(
 }
 
 pub(super) fn compare_parameter_values(
+    ctx: &DecodeContext<'_>,
     left: &ParameterValue,
     right: &ParameterValue,
     operator: &str,
-) -> Option<bool> {
+) -> Result<Option<bool>, CodecError> {
     if matches!(
         (left, right),
         (ParameterValue::Boolean(_), ParameterValue::Boolean(_))
     ) && !matches!(operator, "=" | "<>")
     {
-        return None;
+        return Ok(None);
     }
     let ordering = match (left, right) {
-        (ParameterValue::Length(left), ParameterValue::Length(right)) => left.partial_cmp(right)?,
-        (ParameterValue::Angle(left), ParameterValue::Angle(right)) => left.partial_cmp(right)?,
-        (ParameterValue::Real(left), ParameterValue::Real(right)) => left.partial_cmp(right)?,
-        (ParameterValue::Integer(left), ParameterValue::Integer(right)) => left.cmp(right),
+        (ParameterValue::Length(left), ParameterValue::Length(right)) => left.partial_cmp(right),
+        (ParameterValue::Angle(left), ParameterValue::Angle(right)) => left.partial_cmp(right),
+        (ParameterValue::Real(left), ParameterValue::Real(right)) => left.partial_cmp(right),
+        (ParameterValue::Integer(left), ParameterValue::Integer(right)) => Some(left.cmp(right)),
         (ParameterValue::Real(left), ParameterValue::Integer(right)) => {
-            compare_integer_real(*right, left.get())?.reverse()
+            compare_integer_real(*right, left.get()).map(std::cmp::Ordering::reverse)
         }
         (ParameterValue::Integer(left), ParameterValue::Real(right)) => {
-            compare_integer_real(*left, right.get())?
+            compare_integer_real(*left, right.get())
         }
-        (ParameterValue::Boolean(left), ParameterValue::Boolean(right)) => left.cmp(right),
-        (ParameterValue::String(left), ParameterValue::String(right)) => left.cmp(right),
-        _ => return None,
+        (ParameterValue::Boolean(left), ParameterValue::Boolean(right)) => Some(left.cmp(right)),
+        (ParameterValue::String(left), ParameterValue::String(right)) => Some(ctx.compare(left.as_str(), right.as_str(), "compare SLDPRT parameter text")?),
+        _ => return Ok(None),
     };
-    Some(match operator {
+    let Some(ordering) = ordering else { return Ok(None); };
+    Ok(Some(match operator {
         "=" => ordering.is_eq(),
         "<>" => !ordering.is_eq(),
         "<" => ordering.is_lt(),
         ">" => ordering.is_gt(),
         "<=" => !ordering.is_gt(),
         ">=" => !ordering.is_lt(),
-        _ => return None,
-    })
+        _ => return Ok(None),
+    }))
 }
 
 fn compare_integer_real(integer: i64, real: f64) -> Option<std::cmp::Ordering> {

@@ -357,28 +357,28 @@ fn mixed_numeric_comparisons_preserve_integer_identity() {
     let rounded_real =
         ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(2_f64.powi(53)).unwrap());
     assert_eq!(
-        compare_parameter_values(&integer, &rounded_real, "="),
+        compare_parameter_values(&cadmpeg_test_support::service_decode_context(), &integer, &rounded_real, "=").unwrap(),
         Some(false)
     );
     assert_eq!(
-        compare_parameter_values(&integer, &rounded_real, ">"),
+        compare_parameter_values(&cadmpeg_test_support::service_decode_context(), &integer, &rounded_real, ">").unwrap(),
         Some(true)
     );
     assert_eq!(
-        compare_parameter_values(&rounded_real, &integer, "<"),
+        compare_parameter_values(&cadmpeg_test_support::service_decode_context(), &rounded_real, &integer, "<").unwrap(),
         Some(true)
     );
 
     assert_eq!(
-        compare_parameter_values(
+        compare_parameter_values(&cadmpeg_test_support::service_decode_context(),
             &ParameterValue::Integer(-3),
             &ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(-3.5).unwrap()),
             ">",
-        ),
+        ).unwrap(),
         Some(true)
     );
     assert_eq!(
-        compare_parameter_values(
+        compare_parameter_values(&cadmpeg_test_support::service_decode_context(),
             &ParameterValue::Integer(i64::MAX),
             &ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(
@@ -387,7 +387,7 @@ fn mixed_numeric_comparisons_preserve_integer_identity() {
                 .unwrap()
             ),
             "<",
-        ),
+        ).unwrap(),
         Some(true)
     );
 }
@@ -422,4 +422,44 @@ fn integer_without_exact_real_value_has_no_real_arithmetic_result() {
         exponentiate_parameter_value(&ParameterValue::Integer(2), &ParameterValue::Integer(-1)),
         Some(ParameterValue::Real(real(0.5)))
     );
+}
+
+#[test]
+fn parameter_text_comparison_admits_both_operands() {
+    let left = ParameterValue::String("abcdefgh".repeat(256));
+    let right = left.clone();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(compare_parameter_values(&ctx, &left, &right, "=").unwrap(), Some(true));
+    let error = crate::test_support::work_refusal_at("compare SLDPRT parameter text", |ctx| {
+        compare_parameter_values(ctx, &left, &right, "=")
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "compare SLDPRT parameter text"));
+}
+
+#[test]
+fn parameter_identifier_storage_is_scoped_and_quotes_match() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (tokens, storage) = super::expression_identifier_tokens(&ctx, "Width + \"D1@a\" + \"a\"\"b\"").unwrap();
+    let tokens = tokens.unwrap();
+    assert_eq!(tokens.iter().map(super::ExpressionIdentifier::value).collect::<Vec<_>>(), ["Width", "D1@a", "a\"b"]);
+    drop((tokens, storage));
+    ctx.reserve_scoped(policy.limits.max_materialized_bytes, "released token storage").unwrap();
+}
+
+#[test]
+fn xml_name_rejection_leaves_unvisited_suffix_unpaid() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let name = format!("-{}", "a".repeat(4096));
+    assert!(!crate::history::write::xml::valid_xml_name(&ctx, &name).unwrap());
+    assert!(ctx.resource_refusal().is_none());
 }

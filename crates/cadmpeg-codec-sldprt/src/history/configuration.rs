@@ -762,6 +762,7 @@ pub(crate) fn project_configuration_sketch_states(
                 };
                 let copied = value.try_clone_for_decode(ctx, OPERATION)?;
                 saved_storage.with_storage(|| ctx.reserve_vec(&mut saved_values, 1, OPERATION))?;
+                ctx.charge_work(1, "restore SLDPRT configuration parameter values")?;
                 saved_values.push((index, parameter.value.replace(copied)));
             }
             crate::resolved_features::profiles::bind_sketch_profiles(
@@ -1096,9 +1097,6 @@ fn inherit_configuration_hole_semantics(
     else {
         return Ok(());
     };
-    let mut construction = shape.construction().try_clone_for_decode(ctx, OPERATION)?;
-    let mut exit_kind = *shape.exit_kind();
-    let mut diameter = shape.diameter();
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: base_profile,
         profile_filter: base_profile_filter,
@@ -1115,6 +1113,9 @@ fn inherit_configuration_hole_semantics(
     else {
         return Ok(());
     };
+    let mut construction = shape.construction().try_clone_for_decode(ctx, OPERATION)?;
+    let mut exit_kind = *shape.exit_kind();
+    let mut diameter = shape.diameter();
     let base_construction = base_shape.construction();
     let base_exit_kind = base_shape.exit_kind();
     let base_diameter = &base_shape.diameter();
@@ -1630,15 +1631,8 @@ pub(crate) fn align_configuration_parameter_kinds(
             })?;
         }
     }
-    let values = ir
-        .model
-        .configurations
-        .iter_mut()
-        .flat_map(|configuration| &mut configuration.parameter_values);
-    let mut values = values.into_iter();
-    while let Some((parameter, value)) =
-        ctx.next_charged(&mut values, "align SLDPRT configuration parameter kinds")?
-    {
+    for configuration in ctx.admit_iter(&mut ir.model.configurations, "align SLDPRT configuration parameter kinds")? {
+        for (parameter, value) in ctx.admit_iter(&mut configuration.parameter_values, "align SLDPRT configuration parameter kinds")? {
         let Some(canonical) =
             ctx.get_hash_map(&(parameter_kinds), parameter, "look up SLDPRT hash key")?
         else {
@@ -1693,6 +1687,7 @@ pub(crate) fn align_configuration_parameter_kinds(
         if let Some(aligned) = aligned {
             *value = aligned;
         }
+    }
     }
     for configuration in ctx.admit_iter(
         &mut ir.model.configurations,

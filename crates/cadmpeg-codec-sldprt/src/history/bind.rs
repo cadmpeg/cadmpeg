@@ -194,14 +194,14 @@ pub(crate) fn bind_unique_sketch_feature(
             sketch_alias_matches(ctx, &native_features, alias, &features[*candidate])
         };
         let Some(first) =
-            ctx.position_by(candidates, |candidate| matches(candidate), BIND_OPERATION)?
+            ctx.position_by(candidates, &matches, BIND_OPERATION)?
         else {
             continue;
         };
         if ctx
             .position_by(
                 &candidates[first + 1..],
-                |candidate| matches(candidate),
+                &matches,
                 BIND_OPERATION,
             )?
             .is_some()
@@ -255,11 +255,11 @@ pub(crate) fn bind_unique_sketch_feature(
     workspace.with_storage(|| ctx.append_vec(&mut bindings, &mut aliases, BIND_OPERATION))?;
     let index = BindingIndex::new(ctx, &mut workspace, &bindings)?;
     for feature in ctx.admit_iter(&mut *features, BIND_OPERATION)? {
-        let mut bound = Ok(Vec::new());
+        let mut bound = Ok((Vec::new(), ctx.reserve_scoped(0, BIND_OPERATION)?));
         feature.evaluation.edit(|definition, _| {
             bound = index.bind(ctx, definition);
         });
-        let mut bound = bound?;
+        let (mut bound, _bound_storage) = bound?;
         ctx.sort_unstable_by(&mut bound, |position| position, Ord::cmp, BIND_OPERATION)?;
         ctx.dedup_vec(&mut bound, BIND_OPERATION)?;
         for &position in ctx.admit_iter(&bound, BIND_OPERATION)? {
@@ -370,6 +370,7 @@ impl<'b, 's> BindingIndex<'b, 's> {
         ctx: &DecodeContext<'_>,
         profile: &mut PlanarProfileRef,
         bound: &mut Vec<usize>,
+        storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ) -> Result<(), CodecError> {
         let position = match profile {
             PlanarProfileRef::Unresolved(native_ref) | PlanarProfileRef::Native(native_ref) => {
@@ -382,7 +383,7 @@ impl<'b, 's> BindingIndex<'b, 's> {
         };
         if let Some(&position) = position {
             *profile = self.sketch(ctx, position)?.into();
-            ctx.push_vec(bound, position, BIND_OPERATION)?;
+            ctx.push_scoped_vec(storage, bound, position, BIND_OPERATION)?;
         }
         Ok(())
     }
@@ -392,9 +393,10 @@ impl<'b, 's> BindingIndex<'b, 's> {
         ctx: &DecodeContext<'_>,
         profile: &mut ProfileRef,
         bound: &mut Vec<usize>,
+        storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ) -> Result<(), CodecError> {
         match profile {
-            ProfileRef::Planar(profile) => self.bind_planar_profile(ctx, profile, bound),
+            ProfileRef::Planar(profile) => self.bind_planar_profile(ctx, profile, bound, storage),
             _ => Ok(()),
         }
     }
@@ -406,6 +408,7 @@ impl<'b, 's> BindingIndex<'b, 's> {
         path: &mut PathRef,
         occurrence: usize,
         bound: &mut Vec<usize>,
+        storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ) -> Result<(), CodecError> {
         let PathRef::Native(native_ref) = path else {
             return Ok(());
@@ -417,43 +420,44 @@ impl<'b, 's> BindingIndex<'b, 's> {
             return Ok(());
         };
         *path = PathRef::Sketch(self.sketch(ctx, position)?);
-        ctx.push_vec(bound, position, BIND_OPERATION)
+        ctx.push_scoped_vec(storage, bound, position, BIND_OPERATION)
     }
 
     /// Resolve every reference of `definition` that a binding names, returning
     /// the positions of the bindings used.
-    fn bind(
+    fn bind<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'_>,
         definition: &mut FeatureDefinition,
-    ) -> Result<Vec<usize>, CodecError> {
+    ) -> Result<(Vec<usize>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, BIND_OPERATION)?;
         let mut bound = Vec::new();
         let FeatureDefinition::Operation(operation) = definition else {
-            return Ok(bound);
+            return Ok((bound, storage));
         };
         match operation {
             FeatureOperation::Extrude { profile, .. } => {
-                self.bind_profile(ctx, profile, &mut bound)?;
+                self.bind_profile(ctx, profile, &mut bound, &mut storage)?;
             }
             FeatureOperation::Wrap { profile, .. } => {
-                self.bind_planar_profile(ctx, profile, &mut bound)?;
+                self.bind_planar_profile(ctx, profile, &mut bound, &mut storage)?;
             }
             FeatureOperation::Rib { construction, .. } => {
                 if let Some(profile) = construction.profile.as_mut() {
-                    self.bind_planar_profile(ctx, profile, &mut bound)?;
+                    self.bind_planar_profile(ctx, profile, &mut bound, &mut storage)?;
                 }
             }
             FeatureOperation::Revolve { construction, .. } => {
                 if let Some(profile) = construction.profile_mut() {
-                    self.bind_planar_profile(ctx, profile, &mut bound)?;
+                    self.bind_planar_profile(ctx, profile, &mut bound, &mut storage)?;
                 }
             }
             FeatureOperation::Sweep { shape, path, .. } => {
                 if let Some(profile) = shape.referenced_profile_mut() {
-                    self.bind_planar_profile(ctx, profile, &mut bound)?;
+                    self.bind_planar_profile(ctx, profile, &mut bound, &mut storage)?;
                 }
                 if let Some(path) = path.as_mut() {
-                    self.bind_path(ctx, path, 0, &mut bound)?;
+                    self.bind_path(ctx, path, 0, &mut bound, &mut storage)?;
                 }
             }
             FeatureOperation::TrimSurface { tool, .. }
@@ -462,7 +466,7 @@ impl<'b, 's> BindingIndex<'b, 's> {
                 ..
             }
             | FeatureOperation::ProjectedCurve { source: tool, .. } => {
-                self.bind_path(ctx, tool, 0, &mut bound)?;
+                self.bind_path(ctx, tool, 0, &mut bound, &mut storage)?;
             }
             FeatureOperation::CompositeCurve { segments, .. } => {
                 // Each binding resolves the first segment still naming it, so the
@@ -491,7 +495,7 @@ impl<'b, 's> BindingIndex<'b, 's> {
                         })?;
                         Ok::<_, CodecError>(occurrence)
                     })?;
-                    self.bind_path(ctx, segment, occurrence, &mut bound)?;
+                    self.bind_path(ctx, segment, occurrence, &mut bound, &mut storage)?;
                 }
             }
             FeatureOperation::Loft {
@@ -499,23 +503,23 @@ impl<'b, 's> BindingIndex<'b, 's> {
             } => {
                 for section in ctx.admit_iter(&mut sections[..], BIND_OPERATION)? {
                     if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
-                        self.bind_profile(ctx, profile, &mut bound)?;
+                        self.bind_profile(ctx, profile, &mut bound, &mut storage)?;
                     }
                 }
                 match guidance {
                     cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
                         for path in ctx.admit_iter(&mut guides[..], BIND_OPERATION)? {
-                            self.bind_path(ctx, path, 0, &mut bound)?;
+                            self.bind_path(ctx, path, 0, &mut bound, &mut storage)?;
                         }
                     }
                     cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
-                        self.bind_path(ctx, centerline, 0, &mut bound)?;
+                        self.bind_path(ctx, centerline, 0, &mut bound, &mut storage)?;
                     }
                 }
             }
             _ => {}
         }
-        Ok(bound)
+        Ok((bound, storage))
     }
 }
 
@@ -538,7 +542,7 @@ pub(super) fn bind_definition_sketch(
     }];
     let mut workspace = ctx.reserve_scoped(0, BIND_OPERATION)?;
     let index = BindingIndex::new(ctx, &mut workspace, &bindings)?;
-    Ok(!index.bind(ctx, definition)?.is_empty())
+    Ok(!index.bind(ctx, definition)?.0.is_empty())
 }
 
 /// Assign stable neutral regeneration ordinals with every structural parent and

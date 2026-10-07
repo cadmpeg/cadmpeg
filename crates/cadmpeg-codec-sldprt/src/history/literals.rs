@@ -173,7 +173,7 @@ impl std::fmt::Display for LengthLiteral {
     }
 }
 
-struct FiniteLiteral(f64);
+pub(super) struct FiniteLiteral(pub(super) f64);
 
 impl std::fmt::Display for FiniteLiteral {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -388,13 +388,22 @@ pub(super) fn parse_neutral_parameter_literal(
 }
 
 pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
-    match value {
-        ParameterValue::Length(value) => format_length_mm(*value),
-        ParameterValue::Angle(value) => format_angle_rad(*value),
-        ParameterValue::Real(value) => format_f64_literal(*value),
-        ParameterValue::Integer(value) => value.to_string(),
-        ParameterValue::Boolean(value) => value.to_string(),
-        ParameterValue::String(value) => value.clone(),
+    ParameterLiteral(value).to_string()
+}
+
+/// The canonical literal of a parameter, written directly into the text sink.
+pub(super) struct ParameterLiteral<'a>(pub(super) &'a ParameterValue);
+
+impl std::fmt::Display for ParameterLiteral<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            ParameterValue::Length(value) => write!(formatter, "{}", LengthLiteral(*value)),
+            ParameterValue::Angle(value) => write!(formatter, "{}rad", FiniteLiteral(value.get())),
+            ParameterValue::Real(value) => write!(formatter, "{}", FiniteLiteral(value.get())),
+            ParameterValue::Integer(value) => write!(formatter, "{value}"),
+            ParameterValue::Boolean(value) => write!(formatter, "{value}"),
+            ParameterValue::String(value) => formatter.write_str(value),
+        }
     }
 }
 

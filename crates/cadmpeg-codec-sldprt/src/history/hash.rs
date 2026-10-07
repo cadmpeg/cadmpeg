@@ -107,10 +107,7 @@ pub(crate) fn configuration_hash(
     configurations: &[DesignConfiguration],
 ) -> Result<String, CodecError> {
     let views = ctx.with_scoped_storage("SLDPRT canonical hash views", || {
-        let mut configurations = collect_hash_views(
-            ctx,
-            ctx.admit_iter(configurations, "scan SLDPRT canonical hash views")?,
-        )?;
+        let mut configurations = ctx.collect_vec(configurations, "retain SLDPRT canonical hash views")?;
         ctx.stable_sort_by(
             &mut configurations,
             |value| &value.id,
@@ -183,10 +180,7 @@ pub(crate) fn parameter_hash(
     parameters: &[DesignParameter],
 ) -> Result<String, CodecError> {
     let views = ctx.with_scoped_storage("SLDPRT canonical hash views", || {
-        let mut parameters = collect_hash_views(
-            ctx,
-            ctx.admit_iter(parameters, "scan SLDPRT canonical hash views")?,
-        )?;
+        let mut parameters = ctx.collect_vec(parameters, "retain SLDPRT canonical hash views")?;
         ctx.stable_sort_by(
             &mut parameters,
             |value| &value.id,
@@ -207,13 +201,13 @@ pub(crate) fn native_parameter_hash(
         let mut parameters = Vec::new();
         for history in ctx.admit_iter(histories, "scan SLDPRT native hash histories")? {
             for feature in ctx.admit_iter(&history.features, "scan SLDPRT hash features")? {
-                let dimensions = collect_hash_views(
-                    ctx,
+                let dimensions = ctx.collect_vec(
                     ctx.admit_iter(&feature.content, "scan SLDPRT hash dimensions")?
                         .filter_map(|item| match item {
                             FeatureContent::Dimension(name) => Some(name),
                             _ => None,
                         }),
+                    "retain SLDPRT canonical hash views",
                 )?;
                 ctx.reserve_vec(
                     &mut parameters,
@@ -244,7 +238,7 @@ fn hash_keyed_records<'id, V: Serialize>(
     records: impl Iterator<Item = (&'id cadmpeg_ir::features::ConfigurationId, V)>,
 ) -> Result<String, CodecError> {
     let views = ctx.with_scoped_storage("SLDPRT canonical hash views", || {
-        let mut records = collect_hash_views(ctx, records)?;
+        let mut records = ctx.collect_vec(records, "retain SLDPRT canonical hash views")?;
         ctx.stable_sort_by(
             &mut records,
             |value| &value.0,
@@ -254,18 +248,6 @@ fn hash_keyed_records<'id, V: Serialize>(
         Ok::<_, CodecError>(records)
     })?;
     hash_records(ctx, &views.0)
-}
-
-/// Collect the views an admitted traversal yields.
-fn collect_hash_views<T>(
-    ctx: &DecodeContext<'_>,
-    values: impl Iterator<Item = T>,
-) -> Result<Vec<T>, CodecError> {
-    let mut views = Vec::new();
-    for value in values {
-        ctx.push_vec(&mut views, value, "retain SLDPRT canonical hash views")?;
-    }
-    Ok(views)
 }
 
 #[cfg(test)]
