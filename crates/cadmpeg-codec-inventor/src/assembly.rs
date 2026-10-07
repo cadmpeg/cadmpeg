@@ -248,26 +248,14 @@ pub(crate) fn project_occurrences(
         };
 
         ctx.charge_entities(1, "project Inventor occurrence")?;
-        let mut key_storage = ctx.reserve_scoped(0, "compose projected Inventor occurrence key")?;
-        let key = key_storage.with_storage(|| {
-            ctx.format_retained(
-                format_args!("{}", source.occurrence_id),
-                "compose projected Inventor occurrence key",
-            )
-        })?;
+        // A decimal occurrence id is always a valid key, so the id is written
+        // whole; its identity grammar scan is charged before it is minted.
         let id_text = ctx.format_retained(
-            format_args!("inventor:assembly:instance#{key}"),
+            format_args!("inventor:assembly:instance#{}", source.occurrence_id),
             "retain projected Inventor occurrence id",
         )?;
-        let validation_work = id_text.len().checked_add(key.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "validate projected Inventor occurrence id",
-                u64::MAX,
-                u64::MAX,
-            )
-        })?;
         ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(validation_work),
+            cadmpeg_core::decode::u64_from_index(id_text.len()),
             "validate projected Inventor occurrence id",
         )?;
         let id = OccurrenceId::mint(id_text).map_err(CodecError::malformed)?;
@@ -327,13 +315,9 @@ pub(crate) fn inventory<'a>(
         let RecordFrameState::Framed(table) = &bulk.records else {
             continue;
         };
+        let is_definition = matches!(segment.kind, SegmentKind::AmDc);
         for record in ctx.admit_iter(&table.records, "visit Inventor assembly items")? {
-            let result = if ctx.equal(
-                &segment.kind,
-                &SegmentKind::AmDc,
-                "match Inventor assembly segment kind",
-            )? && record.type_id == OCCURRENCE_TYPE
-            {
+            let result = if is_definition && record.type_id == OCCURRENCE_TYPE {
                 parse_occurrence(ctx, record.payload).and_then(|mut occurrence| {
                     occurrence.segment_token = ctx.copy_retained_text(
                         segment.pair.token.as_str(),
@@ -347,11 +331,8 @@ pub(crate) fn inventory<'a>(
                     )?;
                     Ok(())
                 })
-            } else if ctx.equal(
-                &segment.kind,
-                &SegmentKind::AmGraphics,
-                "match Inventor graphics segment kind",
-            )? && matches!(record.type_id, PLACEMENT_TYPE_CA | PLACEMENT_TYPE_B9)
+            } else if !is_definition
+                && matches!(record.type_id, PLACEMENT_TYPE_CA | PLACEMENT_TYPE_B9)
             {
                 parse_placement(ctx, record.payload).and_then(|mut placement| {
                     placement.segment_token = ctx.copy_retained_text(
@@ -432,13 +413,25 @@ fn parse_occurrence<'a>(
         "occurrence related-list marker",
     )?;
     let related_count = cursor.count32("occurrence related-list count", 65_536)?;
-    let mut related_references = ctx.vector_storage(
-        related_count,
-        "admit Inventor occurrence related references",
-    )?;
+    let mut related_references = Vec::new();
     if related_count != 0 {
         cursor.u32("occurrence related-list metadata")?;
         cursor.u32("occurrence related-list metadata")?;
+        // Each related reference is four bytes: a count the payload cannot
+        // hold is malformed before its storage or traversal is admitted.
+        if cursor
+            .source
+            .counted(cadmpeg_core::decode::u64_from_index(related_count), 4)
+            .is_none()
+        {
+            return Err(CodecError::malformed(
+                "Inventor occurrence related-list count exceeds remaining payload",
+            ));
+        }
+        related_references = ctx.vector_storage(
+            related_count,
+            "admit Inventor occurrence related references",
+        )?;
         for _ in ctx.admit_iter(
             &(0..related_count),
             "visit Inventor occurrence related references",

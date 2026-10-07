@@ -195,7 +195,7 @@ fn parse_stream_grammar<'a>(
     cursor.take(8, "save FILETIME")?;
     cursor.take(8, "secondary version")?;
     cursor.take(8, "secondary FILETIME")?;
-    cursor.utf16(ctx, "comment", 65_536)?;
+    cursor.skip_utf16(ctx, "comment", 65_536)?;
     cursor.take(8, "creation version")?;
     cursor.take(8, "creation FILETIME")?;
     cursor.take(8, "origin version")?;
@@ -207,25 +207,17 @@ fn parse_stream_grammar<'a>(
     cursor.u16("original file-name state")?;
 
     let lod_toc_count = cursor.count32("LOD table count", 65_536)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(lod_toc_count),
-        "admit UFRxDoc LOD table entries",
-    )?;
     for _ in ctx.admit_iter(&(0..lod_toc_count), "admit UFRxDoc LOD table entries")? {
         cursor.u16("LOD entry kind")?;
         cursor.u16("LOD entry state")?;
-        cursor.utf16(ctx, "LOD name", 65_536)?;
+        cursor.skip_utf16(ctx, "LOD name", 65_536)?;
         cursor.take(2, "LOD state")?;
     }
 
     let pair_count = cursor.count32("header pair count", 65_536)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(pair_count),
-        "admit UFRxDoc header pairs",
-    )?;
     for _ in ctx.admit_iter(&(0..pair_count), "admit UFRxDoc header pairs")? {
-        cursor.utf16(ctx, "header pair key", 65_536)?;
-        cursor.utf16(ctx, "header pair value", 65_536)?;
+        cursor.skip_utf16(ctx, "header pair key", 65_536)?;
+        cursor.skip_utf16(ctx, "header pair value", 65_536)?;
     }
     cursor.take(4, "active LOD state")?;
     let assembly_representation = if schema == 15 {
@@ -274,7 +266,7 @@ fn parse_stream_grammar<'a>(
         })
     } else {
         if section_versions[2] >= 12 {
-            cursor.utf16(ctx, "active design view", 65_536)?;
+            cursor.skip_utf16(ctx, "active design view", 65_536)?;
         }
         if section_versions[2] >= 7 {
             cursor.take(4, "secondary active LOD state")?;
@@ -577,10 +569,6 @@ fn parse_occurrence_section(
 ) -> Result<(), CodecError> {
     cursor.u32("occurrence section state")?;
     let count = cursor.count32("occurrence section property count", 65_536)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit UFRxDoc occurrence properties",
-    )?;
     for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc occurrence properties")? {
         cursor.boolean("occurrence property presence")?;
         let tag = cursor.u8("occurrence property tag")?;
@@ -597,14 +585,10 @@ fn parse_occurrence_settings(
     cursor: &mut Cursor<'_>,
 ) -> Result<(), CodecError> {
     let count = cursor.count32("occurrence setting count", 65_536)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit UFRxDoc occurrence settings",
-    )?;
     for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc occurrence settings")? {
-        cursor.utf16(ctx, "occurrence setting name", 65_536)?;
+        cursor.skip_utf16(ctx, "occurrence setting name", 65_536)?;
         cursor.take(16, "occurrence setting id")?;
-        cursor.utf8(ctx, "occurrence setting value", 65_536)?;
+        cursor.skip_utf8(ctx, "occurrence setting value", 65_536)?;
     }
     Ok(())
 }
@@ -629,17 +613,13 @@ fn parse_occurrence_export(
         }
     } else if count > 1 || (count == 1 && next > 1) {
         if next > 0xffff {
-            cursor.utf16(ctx, "occurrence export name", 65_536)?;
+            cursor.skip_utf16(ctx, "occurrence export name", 65_536)?;
             cursor.take(16, "occurrence export id")?;
-            cursor.utf8(ctx, "occurrence export value", 65_536)?;
+            cursor.skip_utf8(ctx, "occurrence export value", 65_536)?;
         } else {
             let count = cursor.count32("occurrence export count", 65_536)?;
-            ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(count),
-                "admit UFRxDoc occurrence exports",
-            )?;
             for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc occurrence exports")? {
-                cursor.utf16(ctx, "occurrence export name", 65_536)?;
+                cursor.skip_utf16(ctx, "occurrence export name", 65_536)?;
                 parse_occurrence_items(ctx, cursor)?;
                 cursor.take(12, "occurrence export trailer")?;
                 if save_year >= 2018 {
@@ -664,18 +644,10 @@ fn parse_occurrence_items(
             "UFRxDoc occurrence export item counts differ: {count} and {repeated}"
         )));
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit UFRxDoc occurrence export items",
-    )?;
     for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc occurrence export items")? {
         cursor.boolean("occurrence export item presence")?;
         let tag = cursor.u8("occurrence export item tag")?;
         let value_count = cursor.count32("occurrence export item value count", 65_536)?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(value_count),
-            "admit UFRxDoc occurrence export values",
-        )?;
         for _ in ctx.admit_iter(&(0..value_count), "admit UFRxDoc occurrence export values")? {
             require_tag(cursor.u8("occurrence export repeated tag")?, tag)?;
             parse_occurrence_item_value(ctx, cursor, tag)?;
@@ -692,7 +664,7 @@ fn parse_occurrence_value(
 ) -> Result<(), CodecError> {
     match tag {
         0x05 | 0x1e => {
-            cursor.utf16(ctx, "occurrence property string", 65_536)?;
+            cursor.skip_utf16(ctx, "occurrence property string", 65_536)?;
         }
         0x07 | 0x0d | 0x0f | 0x10 | 0x1d => {
             cursor.u8("occurrence property byte")?;
@@ -940,18 +912,48 @@ impl<'a> Cursor<'a> {
         crate::reader::utf16_text(ctx, &mut self.view, count, field, "retain UFRxDoc string")
     }
 
-    fn utf8(
+    /// Validates a counted UTF-16 string the decode does not keep, without
+    /// copying it; each decoded character is charged as it is read.
+    fn skip_utf16(
         &mut self,
         ctx: &DecodeContext<'_>,
         field: &'static str,
         maximum: usize,
-    ) -> Result<String, CodecError> {
+    ) -> Result<(), CodecError> {
+        let count = self.count32(field, maximum)?;
+        let len = count.checked_mul(2).ok_or_else(|| {
+            CodecError::malformed(format_args!("UFRxDoc {field} length overflows"))
+        })?;
+        let bytes = self.take(len, field)?;
+        let units = bytes
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]));
+        if ctx.all_by(
+            char::decode_utf16(units),
+            |character| Ok(character.is_ok()),
+            "validate unretained UFRxDoc string",
+        )? {
+            Ok(())
+        } else {
+            Err(CodecError::malformed(format_args!(
+                "UFRxDoc {field} is not UTF-16"
+            )))
+        }
+    }
+
+    /// Validates a counted UTF-8 string the decode does not keep, without
+    /// copying it.
+    fn skip_utf8(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        field: &'static str,
+        maximum: usize,
+    ) -> Result<(), CodecError> {
         let count = self.count32(field, maximum)?;
         let value = self.take(count, field)?;
-        let text = ctx
-            .validate_utf8(value, "validate UFRxDoc UTF-8 string")?
-            .map_err(|_| CodecError::malformed(format_args!("UFRxDoc {field} is not UTF-8")))?;
-        ctx.copy_retained_text(text, "retain UFRxDoc string")
+        ctx.validate_utf8(value, "validate UFRxDoc UTF-8 string")?
+            .map(|_| ())
+            .map_err(|_| CodecError::malformed(format_args!("UFRxDoc {field} is not UTF-8")))
     }
 
     fn boolean(&mut self, field: &'static str) -> Result<bool, CodecError> {
