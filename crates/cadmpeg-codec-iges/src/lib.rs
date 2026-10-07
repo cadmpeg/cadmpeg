@@ -172,11 +172,18 @@ impl CodecBackend for IgesCodec {
                 reader::inspect(ctx, root.window(), representation, root.window().len())
             }
             representation::Representation::CompressedAscii => {
-                let normalized = compressed::normalize(root.window(), ctx)?;
+                // The normalized card image is dropped with this call.
+                let mut normalized_storage =
+                    ctx.reserve_scoped(0, "iges compressed ASCII normalization")?;
+                let normalized = normalized_storage
+                    .with_storage(|| compressed::normalize(root.window(), ctx))?;
                 reader::inspect(ctx, &normalized, representation, root.window().len())
             }
             representation::Representation::Binary => {
-                let normalized = binary::normalize(root.window(), ctx)?;
+                // The normalized card image is dropped with this call.
+                let mut normalized_storage = ctx.reserve_scoped(0, "iges Binary normalization")?;
+                let normalized =
+                    normalized_storage.with_storage(|| binary::normalize(root.window(), ctx))?;
                 reader::inspect(ctx, &normalized, representation, root.window().len())
             }
         }
@@ -191,11 +198,18 @@ impl CodecBackend for IgesCodec {
                 reader::decode(root.window(), root.window(), representation, ctx)
             }
             representation::Representation::CompressedAscii => {
-                let normalized = compressed::normalize(root.window(), ctx)?;
+                // The normalized card image is dropped with this call.
+                let mut normalized_storage =
+                    ctx.reserve_scoped(0, "iges compressed ASCII normalization")?;
+                let normalized = normalized_storage
+                    .with_storage(|| compressed::normalize(root.window(), ctx))?;
                 reader::decode(&normalized, root.window(), representation, ctx)
             }
             representation::Representation::Binary => {
-                let normalized = binary::normalize(root.window(), ctx)?;
+                // The normalized card image is dropped with this call.
+                let mut normalized_storage = ctx.reserve_scoped(0, "iges Binary normalization")?;
+                let normalized =
+                    normalized_storage.with_storage(|| binary::normalize(root.window(), ctx))?;
                 reader::decode(&normalized, root.window(), representation, ctx)
             }
         }

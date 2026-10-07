@@ -88,10 +88,11 @@ impl DirectoryFields {
 }
 
 #[derive(Debug, Clone)]
-struct DataEntity {
+struct DataEntity<'a> {
     sequence: u32,
     fields: DirectoryFields,
-    parameter_lines: Vec<Vec<u8>>,
+    /// The entity's Parameter Data lines, borrowed from the source.
+    parameter_lines: &'a [&'a [u8]],
 }
 
 #[derive(Debug)]
@@ -122,6 +123,12 @@ fn split_lines<'a>(source: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Vec<&'a 
     if source.is_empty() {
         return Err(malformed("source is empty"));
     }
+    // Each line-ending search reads the bytes up to the next terminator once,
+    // so one visit per source byte pays for every search.
+    ctx.charge_work(
+        u64_from_index(source.len()),
+        "iges compressed ASCII line endings",
+    )?;
     let mut lines = Vec::new();
     let mut start = 0_usize;
     while start < source.len() {
@@ -148,20 +155,27 @@ fn split_lines<'a>(source: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Vec<&'a 
 }
 
 fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
-    let length = cards.iter().try_fold(0_usize, |length, card| {
-        if card.len() != CARD_WIDTH {
-            return Err(malformed("Start and Global records must be 80 columns"));
-        }
-        length.checked_add(CARD_DATA_WIDTH).ok_or_else(|| {
-            CodecError::NotImplemented("IGES Compressed ASCII Global stream exceeds usize".into())
-        })
-    })?;
+    let length = ctx.fold(
+        cards,
+        0_usize,
+        |length, card| {
+            if card.len() != CARD_WIDTH {
+                return Err(malformed("Start and Global records must be 80 columns"));
+            }
+            length.checked_add(CARD_DATA_WIDTH).ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "IGES Compressed ASCII Global stream exceeds usize".into(),
+                )
+            })
+        },
+        "iges compressed Global card widths",
+    )?;
     let (mut stream, _stream_storage) =
         ctx.scoped_vector_storage(length, "iges_compressed_global_stream")?;
     let (mut pending_digits, _digits_storage) =
         ctx.scoped_vector_storage(length, "iges_compressed_global_digits")?;
     let mut hollerith_remaining = 0_usize;
-    for card in cards {
+    for card in ctx.admit_iter(cards, "iges_compressed_global_stream")? {
         for byte in card[..CARD_DATA_WIDTH].iter().copied() {
             if hollerith_remaining > 0 {
                 stream.push(byte);
@@ -180,10 +194,7 @@ fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec
                     .validate_utf8(&pending_digits, "iges compressed Global Hollerith count")?
                     .map_err(|_| malformed("Global Hollerith count is not ASCII"))?;
                 let count = ctx
-                    .parse_text::<usize>(
-                        count_text,
-                        "iges compressed Global Hollerith number",
-                    )?
+                    .parse_text::<usize>(count_text, "iges compressed Global Hollerith number")?
                     .map_err(|_| malformed("Global Hollerith count is out of range"))?;
                 stream.extend_from_slice(&pending_digits);
                 stream.push(byte);
@@ -219,7 +230,10 @@ fn hollerith_at(
         return Ok(None);
     }
     let count_text = ctx
-        .validate_utf8(&bytes[start..cursor], "iges compressed Global Hollerith count")?
+        .validate_utf8(
+            &bytes[start..cursor],
+            "iges compressed Global Hollerith count",
+        )?
         .map_err(|_| malformed("Global Hollerith count is not ASCII"))?;
     let count = ctx
         .parse_text::<usize>(count_text, "iges compressed Global Hollerith number")?
@@ -273,7 +287,12 @@ fn compressed_delimiters(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<(u8
     Ok((parameter_delimiter, record_delimiter))
 }
 
-fn parse_sequence(bytes: &[u8], start: usize, label: &str, ctx: &DecodeContext<'_>) -> Result<(u32, usize), CodecError> {
+fn parse_sequence(
+    bytes: &[u8],
+    start: usize,
+    label: &str,
+    ctx: &DecodeContext<'_>,
+) -> Result<(u32, usize), CodecError> {
     let mut end = start;
     loop {
         ctx.charge_work(1, "iges compressed sequence digits")?;
@@ -327,7 +346,10 @@ fn parse_field_specs(
             return Err(malformed("Directory field specifier lacks an underscore"));
         }
         let field_text = ctx
-            .validate_utf8(&bytes[field_start..cursor], "iges compressed Directory field number")?
+            .validate_utf8(
+                &bytes[field_start..cursor],
+                "iges compressed Directory field number",
+            )?
             .map_err(|_| malformed("Directory field number is not ASCII"))?;
         let field = ctx
             .parse_text::<usize>(field_text, "iges compressed Directory field index")?
@@ -361,10 +383,11 @@ fn parse_field_specs(
             cursor += 1;
         }
         let value = &bytes[value_start..cursor];
-        if value
-            .iter()
-            .any(|byte| !byte.is_ascii() || byte.is_ascii_control())
-        {
+        if ctx.any_by(
+            value,
+            |byte| Ok(!byte.is_ascii() || byte.is_ascii_control()),
+            "iges compressed Directory field bytes",
+        )? {
             return Err(malformed(format!(
                 "Directory field {field} contains a non-printable byte"
             )));
@@ -441,7 +464,8 @@ fn parse_directory_record(
         spec_bytes.extend_from_slice(&first[cursor..cursor + delimiter_offset]);
     } else {
         spec_bytes.extend_from_slice(&first[cursor..]);
-        for continuation in lines.iter().take(line_index).skip(start + 1) {
+        let continuations = lines.get(start + 1..line_index).unwrap_or_default();
+        for continuation in ctx.admit_iter(continuations, "iges_compressed_directory_spec_bytes")? {
             spec_bytes.extend_from_slice(continuation);
         }
         spec_bytes.extend_from_slice(&lines[line_index][..delimiter_offset]);
@@ -488,8 +512,8 @@ fn field_i64(
     let field = field.number();
     let text = ctx
         .validate_utf8(bytes, "iges compressed Directory field text")?
-        .map_err(|_| malformed(format!("Directory field {field} ({name}) is not ASCII")))?
-        .trim();
+        .map_err(|_| malformed(format!("Directory field {field} ({name}) is not ASCII")))?;
+    let text = ctx.trim_text(text, "iges compressed Directory field text")?;
     if text.is_empty() {
         return Err(malformed(format!(
             "Directory field {field} ({name}) is blank"
@@ -546,7 +570,7 @@ fn append_source_card(output: &mut Vec<u8>, line: &[u8], section: u8) -> Result<
 
 fn append_directory_cards(
     output: &mut Vec<u8>,
-    entity: &DataEntity,
+    entity: &DataEntity<'_>,
     parameter_start: u32,
 ) -> Result<(), CodecError> {
     let entity_type = entity
@@ -708,14 +732,14 @@ fn parameter_record_terminator(
     Ok(false)
 }
 
-fn parse_data_entity(
-    lines: &[&[u8]],
+fn parse_data_entity<'a>(
+    lines: &'a [&'a [u8]],
     start: usize,
     previous: Option<&DirectoryFields>,
     parameter_delimiter: u8,
     record_delimiter: u8,
     ctx: &DecodeContext<'_>,
-) -> Result<(DataEntity, usize), CodecError> {
+) -> Result<(DataEntity<'a>, usize), CodecError> {
     let directory = parse_directory_record(lines, start, record_delimiter, ctx)?;
     let fields = apply_field_specs(previous, directory.specs)?;
     let sequence = directory.sequence;
@@ -734,7 +758,7 @@ fn parse_data_entity(
     )?;
     let line_count = usize::try_from(line_count)
         .map_err(|_| malformed("Parameter Data line count is negative or out of range"))?;
-    let mut parameter_lines = Vec::new();
+    let mut parameter_lines: &[&[u8]] = &[];
     if line_count == 0 {
         if entity_type != 0 {
             return Err(malformed("a non-null entity has zero Parameter Data lines"));
@@ -746,24 +770,9 @@ fn parse_data_entity(
         let source_lines = lines
             .get(cursor..end)
             .ok_or_else(|| malformed("Parameter Data lines end before the declared count"))?;
-        let headers = line_count
-            .checked_mul(std::mem::size_of::<Vec<u8>>())
-            .ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "IGES Compressed ASCII Parameter Data line storage exceeds usize".into(),
-                )
-            })?;
-        ctx.charge_retained(
-            u64_from_index(headers),
-            "iges_compressed_parameter_line_headers",
-        )?;
-        parameter_lines =
-            ctx.collect_indexed_vec(line_count, "iges_compressed_parameter_lines", |_| {
-                Ok(Vec::<u8>::new())
-            })?;
         let mut state = ParameterLexState::default();
         let mut terminated = false;
-        for (index, line) in source_lines.iter().enumerate() {
+        for line in ctx.admit_iter(source_lines, "iges_compressed_parameter_lines")? {
             if line.len() > PARAMETER_DATA_WIDTH {
                 return Err(malformed("Parameter Data line exceeds 64 columns"));
             }
@@ -777,13 +786,13 @@ fn parse_data_entity(
             {
                 terminated = true;
             }
-            parameter_lines[index] = ctx.copy_retained(line, "iges_compressed_parameter_line")?;
         }
         if !terminated {
             return Err(malformed(
                 "Parameter Data record has no record delimiter in its declared lines",
             ));
         }
+        parameter_lines = source_lines;
         cursor = end;
     }
     Ok((
@@ -798,10 +807,18 @@ fn parse_data_entity(
 
 fn append_parameter_cards(
     output: &mut Vec<u8>,
-    entity: &DataEntity,
+    entity: &DataEntity<'_>,
     first_parameter_sequence: u32,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    for (index, line) in entity.parameter_lines.iter().enumerate() {
+    for (index, line) in ctx
+        .admit_iter(
+            entity.parameter_lines,
+            "iges compressed Parameter Data cards",
+        )?
+        .copied()
+        .enumerate()
+    {
         let sequence = first_parameter_sequence
             .checked_add(
                 u32::try_from(index)
@@ -883,12 +900,12 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         return Err(malformed("Global section is missing"));
     }
     let data_begin = cursor;
-    let terminate_index = lines
-        .get(data_begin..)
-        .and_then(|tail| {
-            tail.iter()
-                .position(|line| line.len() == CARD_WIDTH && line.get(72) == Some(&b'T'))
-        })
+    let terminate_index = ctx
+        .position_by(
+            lines.get(data_begin..).unwrap_or_default(),
+            |line| Ok(line.len() == CARD_WIDTH && line.get(72) == Some(&b'T')),
+            "iges compressed Terminate search",
+        )?
         .map(|index| data_begin + index)
         .ok_or_else(|| malformed("Terminate section is missing"))?;
 
@@ -925,15 +942,20 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         data_cursor = next;
     }
 
-    let parameter_count = entities.iter().try_fold(0_usize, |count, entity| {
-        count
-            .checked_add(entity.parameter_lines.len())
-            .ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "IGES Compressed ASCII Parameter Data section exceeds usize".into(),
-                )
-            })
-    })?;
+    let parameter_count = ctx.fold(
+        &entities,
+        0_usize,
+        |count, entity| {
+            count
+                .checked_add(entity.parameter_lines.len())
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "IGES Compressed ASCII Parameter Data section exceeds usize".into(),
+                    )
+                })
+        },
+        "iges compressed Parameter Data census",
+    )?;
     let directory_count = entities.len().checked_mul(2).ok_or_else(|| {
         CodecError::NotImplemented("IGES Compressed ASCII Directory section exceeds usize".into())
     })?;
@@ -949,19 +971,30 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
                 "IGES Compressed ASCII normalized output exceeds usize".into(),
             )
         })?;
-    ctx.charge_work(u64_from_index(output_estimate), "iges_compressed_ascii_normalization")?;
+    ctx.charge_work(
+        u64_from_index(output_estimate),
+        "iges_compressed_ascii_normalization",
+    )?;
     let mut output = ctx.vector_storage(output_estimate, "iges_compressed_normalized_output")?;
 
-    for line in &lines[start_begin..global_begin] {
+    // The output charge above pays every byte the card writers below copy;
+    // each loop also admits its own steps.
+    for line in ctx.admit_iter(
+        &lines[start_begin..global_begin],
+        "iges compressed Start cards",
+    )? {
         append_source_card(&mut output, line, b'S')?;
     }
-    for line in &lines[global_begin..data_begin] {
+    for line in ctx.admit_iter(
+        &lines[global_begin..data_begin],
+        "iges compressed Global cards",
+    )? {
         append_source_card(&mut output, line, b'G')?;
     }
     let mut parameter_starts =
         ctx.collection_vec(entities.len(), "iges_compressed_parameter_starts")?;
     let mut parameter_sequence = 1_u32;
-    for entity in &entities {
+    for entity in ctx.admit_iter(&entities, "iges_compressed_parameter_starts")? {
         let parameter_start = if entity.parameter_lines.is_empty() {
             0
         } else {
@@ -975,12 +1008,15 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
             )
             .ok_or_else(|| malformed("Parameter Data sequence overflows"))?;
     }
-    for (entity, parameter_start) in entities.iter().zip(parameter_starts) {
+    for (entity, parameter_start) in ctx
+        .admit_iter(&entities, "iges compressed Directory cards")?
+        .zip(parameter_starts)
+    {
         append_directory_cards(&mut output, entity, parameter_start)?;
     }
     let mut parameter_sequence = 1_u32;
-    for entity in &entities {
-        append_parameter_cards(&mut output, entity, parameter_sequence)?;
+    for entity in ctx.admit_iter(&entities, "iges compressed Parameter Data cards")? {
+        append_parameter_cards(&mut output, entity, parameter_sequence, ctx)?;
         parameter_sequence = parameter_sequence
             .checked_add(
                 u32::try_from(entity.parameter_lines.len())
@@ -995,7 +1031,10 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         directory_count,
         parameter_count,
     )?;
-    for line in lines.get(terminate_index + 1..).unwrap_or_default() {
+    for line in ctx.admit_iter(
+        lines.get(terminate_index + 1..).unwrap_or_default(),
+        "iges compressed trailing records",
+    )? {
         output.extend_from_slice(line);
         output.push(b'\n');
     }
