@@ -67,16 +67,24 @@ impl PayloadFamily {
 ///
 /// Each word matches anywhere in the text, ignoring ASCII case. One admitted
 /// pass finds every word, so a text is classified once, when it is admitted,
-/// and each later test reads a field.
+/// and each later test reads one bit.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct NameWords {
-    pub(crate) partition: bool,
-    pub(crate) deltas: bool,
-    pub(crate) ghost: bool,
-    pub(crate) resolved_features: bool,
-}
+pub(crate) struct NameWords(u8);
 
 impl NameWords {
+    const PARTITION: u8 = 1;
+    const DELTAS: u8 = 2;
+    const GHOST: u8 = 4;
+    const RESOLVED_FEATURES: u8 = 8;
+
+    /// A text that contains only the word `partition`.
+    #[cfg(test)]
+    pub(crate) const PARTITION_ONLY: Self = Self(Self::PARTITION);
+
+    /// A text that contains only the word `resolvedfeatures`.
+    #[cfg(test)]
+    pub(crate) const RESOLVED_FEATURES_ONLY: Self = Self(Self::RESOLVED_FEATURES);
+
     /// Classify `text` in one pass. Each position compares a fixed number of
     /// bytes against each word.
     pub(crate) fn of(
@@ -85,22 +93,45 @@ impl NameWords {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         let bytes = text.as_bytes();
-        let mut words = Self::default();
+        let mut words = 0;
         for start in ctx.admit_iter(0..bytes.len(), operation)? {
             let rest = &bytes[start..];
-            words.partition |= starts_with_word(rest, b"partition");
-            words.deltas |= starts_with_word(rest, b"deltas");
-            words.ghost |= starts_with_word(rest, b"ghost");
-            words.resolved_features |= starts_with_word(rest, b"resolvedfeatures");
+            for (word, bit) in [
+                (&b"partition"[..], Self::PARTITION),
+                (b"deltas", Self::DELTAS),
+                (b"ghost", Self::GHOST),
+                (b"resolvedfeatures", Self::RESOLVED_FEATURES),
+            ] {
+                if starts_with_word(rest, word) {
+                    words |= bit;
+                }
+            }
         }
-        Ok(words)
+        Ok(Self(words))
+    }
+
+    pub(crate) fn partition(self) -> bool {
+        self.0 & Self::PARTITION != 0
+    }
+
+    pub(crate) fn deltas(self) -> bool {
+        self.0 & Self::DELTAS != 0
+    }
+
+    pub(crate) fn ghost(self) -> bool {
+        self.0 & Self::GHOST != 0
+    }
+
+    pub(crate) fn resolved_features(self) -> bool {
+        self.0 & Self::RESOLVED_FEATURES != 0
     }
 }
 
 /// Whether `bytes` begins with `word`, ignoring ASCII case.
-fn starts_with_word<const N: usize>(bytes: &[u8], word: &[u8; N]) -> bool {
+/// Each word is a literal of at most sixteen bytes, so the test is fixed work.
+fn starts_with_word(bytes: &[u8], word: &[u8]) -> bool {
     bytes
-        .first_chunk::<N>()
+        .get(..word.len())
         .is_some_and(|prefix| prefix.eq_ignore_ascii_case(word))
 }
 
@@ -1265,7 +1296,7 @@ pub(crate) fn select_active_parasolid_site<'a>(
     let mut sections = scan.section_steps();
     while let Some(section) = ctx.next_charged(&mut sections, "scan SLDPRT block sections")? {
         let name = section.name_words();
-        if name.ghost || name.deltas || name.resolved_features {
+        if name.ghost() || name.deltas() || name.resolved_features() {
             continue;
         }
         let sole_body_stream = ctx
@@ -1280,9 +1311,9 @@ pub(crate) fn select_active_parasolid_site<'a>(
         while let Some(stream) = ctx.next_charged(&mut streams, OPERATION)? {
             let description = stream.header.words;
             if !stream.header.is_body_stream()
-                || description.ghost
-                || description.deltas
-                || !(description.partition || sole_body_stream && name.partition)
+                || description.ghost()
+                || description.deltas()
+                || !(description.partition() || sole_body_stream && name.partition())
             {
                 continue;
             }
@@ -1473,19 +1504,21 @@ fn explicit_active_configuration_index(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    let active = match active_configuration_name_ref(scan) {
-        Some(value) => value,
-        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    let Some(active) = active_configuration_name_ref(scan) else {
+        return Ok(None);
     };
-    let indices = match ctx.get_btree_map(
-        &(scan.solidworks.configuration_source_indices),
+    let Some(indices) = ctx.get_btree_map(
+        &scan.solidworks.configuration_source_indices,
         active,
         "look up SLDPRT ordered key",
-    )? {
-        Some(value) => value,
-        None => return Ok::<_, cadmpeg_core::CodecError>(None),
+    )?
+    else {
+        return Ok(None);
     };
-    Ok::<_, cadmpeg_core::CodecError>((indices.len() == 1).then(|| indices[0]))
+    Ok(match indices.as_slice() {
+        [index] => Some(*index),
+        _ => None,
+    })
 }
 
 pub(crate) fn active_configuration_name_ref<'a>(scan: &'a ContainerScan<'_>) -> Option<&'a str> {
