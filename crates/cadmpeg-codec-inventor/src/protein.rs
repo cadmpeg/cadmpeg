@@ -580,8 +580,10 @@ mod tests {
         };
         // A key search compares at most eleven keys per level and at most every key.
         let tree_comparisons = |len: usize| (11 * tree_height(len)).min(len);
-        // Core charges four mutation passes over the search path and a new
-        // root, and two key searches, per new B-tree key.
+        // A tree of n entries holds at most (n - 1) / 5 + 1 nodes. Each new
+        // B-tree key shifts one node, pays two passes for each node its length
+        // adds to that bound, and makes two key searches.
+        let node_bound = |len: usize| if len == 0 { 0 } else { (len - 1) / 5 + 1 };
         let btree_insert_work =
             |key_size: usize, value_size: usize, key_alignment: usize, value_alignment: usize| {
                 archive_name_lengths
@@ -591,11 +593,11 @@ mod tests {
                         let alignment = key_alignment
                             .max(value_alignment)
                             .max(std::mem::align_of::<usize>());
-                        let nodes = tree_height(len) + 1;
+                        let passes = 1 + 2 * (node_bound(len + 1) - node_bound(len));
                         let node_bytes = (key_size + value_size) * 11
                             + 16 * std::mem::size_of::<usize>()
                             + 2 * alignment;
-                        let tree_mutation_work = 4 * node_bytes * nodes;
+                        let tree_mutation_work = node_bytes * passes;
                         let key_comparison_work = 2 * *key_bytes * tree_comparisons(len);
                         tree_mutation_work + key_comparison_work
                     })
@@ -632,8 +634,10 @@ mod tests {
                 .map(|key_bytes| *key_bytes * archive_map_comparisons)
                 .sum::<usize>(),
         );
+        // Each of the three names is searched twice for a one-byte pattern,
+        // name bytes plus one each, and scanned once for path components.
         let archive_name_validation_work =
-            cadmpeg_core::decode::u64_from_index(5 * archive_name_bytes + 3 * 4);
+            cadmpeg_core::decode::u64_from_index(3 * archive_name_bytes + 3 * 2);
         // Calibrate one complete schema load followed by both exact framing
         // and decode calls, using the same catalog as the production path.
         let schema_and_instance_decode_succeeds = |limit| {

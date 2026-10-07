@@ -4942,6 +4942,39 @@ fn retain_unbound_presentation_record(
     Ok(())
 }
 
+/// Opens the workspace that counts each group's key entry while members are
+/// gathered.
+fn group_member_workspace<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<cadmpeg_core::decode::ScopedReservation<'ctx>, CodecError> {
+    ctx.reserve_scoped(0, "Rhino group member workspace")
+}
+
+/// Records one object's membership in a group: a new group grows the
+/// workspace and the key table before the member link is copied.
+fn admit_group_member(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    group_members: &mut HashMap<i32, Vec<String>>,
+    group: i32,
+    source_order: usize,
+) -> Result<(), CodecError> {
+    if !group_members.contains_key(&group) {
+        workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+            i32,
+            Vec<String>,
+        )>()))?;
+        ctx.reserve_map(group_members, 1, "Rhino group member keys")?;
+    }
+    let members = group_members.entry(group).or_default();
+    ctx.reserve_vec(members, 1, "Rhino group member links")?;
+    members.push(ctx.format_retained(
+        format_args!("rhino:object:record#{source_order:06}"),
+        "Rhino group member link",
+    )?);
+    Ok(())
+}
+
 pub(crate) fn install(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
@@ -5462,25 +5495,20 @@ pub(crate) fn install(
         }
     }
     let mut group_members = HashMap::<i32, Vec<String>>::new();
-    let mut group_member_workspace = ctx.reserve_scoped(0, "Rhino group member workspace")?;
+    let mut group_member_workspace = group_member_workspace(ctx)?;
     for (source_order, object) in scan.objects.iter().enumerate() {
         let Some(object) = object.framed() else {
             continue;
         };
         if let Some(attributes) = object.attributes.parsed() {
             for group in &attributes.groups {
-                if !group_members.contains_key(group) {
-                    group_member_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<(i32, Vec<String>)>(),
-                    ))?;
-                    ctx.reserve_map(&mut group_members, 1, "Rhino group member keys")?;
-                }
-                let members = group_members.entry(*group).or_default();
-                ctx.reserve_vec(members, 1, "Rhino group member links")?;
-                members.push(ctx.format_retained(
-                    format_args!("rhino:object:record#{source_order:06}"),
-                    "Rhino group member link",
-                )?);
+                admit_group_member(
+                    ctx,
+                    &mut group_member_workspace,
+                    &mut group_members,
+                    *group,
+                    source_order,
+                )?;
             }
         }
         if object.class_uuid == LIGHT {

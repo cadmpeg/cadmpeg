@@ -412,7 +412,9 @@ A search that can stop early (`any`, `all`, `find`, `find_map`, `position`,
 every visit. `any_by`, `all_by`, `find_by`, `find_map` and `position_by`
 step a fixed-step source and charge each step as it is made, including the
 end probe of a search that finds nothing; `rposition_by`
-searches a slice from the end the same way.
+searches a slice from the end the same way. Code whose errors are
+`ResourceLimit` uses `all_by_limit`, `partition_point_limit` and
+`equal_bytes_limit`, which charge the same way.
 
 The standard reflexive `From<T> for T` and its `Into<T>` forwarding move the
 value. They require no byte scan or allocation admission. A conversion between
@@ -443,10 +445,8 @@ Range receipts identify the range kind and each bound. A move receipt for a
 vector's suffix from an index pays for `Vec::insert` at that index.
 Truncating or clearing a collection needs no receipt.
 
-Decode code uses `HashMap` and `HashSet` only for keyed lookup and
-insertion. A removal leaves a deleted slot that `capacity()` no longer
-counts, and core charges growth from `capacity()`, so a removal is reported;
-a collection that shrinks is a `BTreeMap` or `BTreeSet`. Iteration order is unspecified, so decoded output must not
+Decode code uses `HashMap` and `HashSet` only for keyed lookup, insertion
+and removal. Iteration order is unspecified, so decoded output must not
 depend on it, and a scan walks the allocated table, which has no exact public
 bound once removals leave deleted slots. Traversal (`iter`, `keys`, `values`,
 `values_mut`, `into_keys`, `into_values`, `IntoIterator`, `for` loops), the
@@ -469,10 +469,19 @@ standard key, a key whose `Ord` comes from a derive expansion, or
 `serde_value::Value`, which orders by variant and then by content.
 Probing is not charged per probe, so the table must use `RandomState`; a
 fixed-key builder such as `BuildHasherDefault<DefaultHasher>` lets an input
-choose colliding keys and retains a finding. Hash growth charges the old
-table's bytes first, which pays for walking its buckets because an
-insert-only table's `capacity()` counts all of them, and then
-the rehash of every stored key: length times a fixed key cost, or one visit
+choose colliding keys and retains a finding. A removal leaves a deleted slot
+that `capacity()` no longer counts, so a table can hold more buckets than
+`capacity()` implies. Hashbrown reallocates only when the new length exceeds
+half the real capacity, to at most twice the new length, so hash growth
+charges the storage for twice the new length as work, which bounds the old
+table it walks, and holds it as a scoped reservation while the table grows,
+which bounds the new table before it is allocated. Right after growing, the
+table has no deleted slots, so growth then charges the storage of its new
+`capacity()` less that of the old one as retained bytes. An in-place rehash
+allocates nothing; the charged removals and insertions since the last rehash
+pay for its walk, so a raw removal is reported with `remove_hash_map`,
+`remove_entry_hash_map` or `remove_hash_set`. Growth then
+charges the rehash of every stored key: length times a fixed key cost, or one visit
 per key plus the sum of each variable key's `DecodeCost`, charged as one
 amount so that the visit order cannot move a refusal. `unique_index` maps a
 key that occurred once to `Some` and keeps a `None` tombstone for a repeated
@@ -554,7 +563,7 @@ or exhausted bound retains an unproven finding.
 | `serialize` | `parse_json` for derived decode trees; `parse_json_value` for value trees. Rebuild serialized owned fields with `collect_vec` and `format_retained`; custom Serde calls remain unproven |
 | `deserialize` | `parse_json` for derived decode trees; `parse_json_value` for value trees. Rebuild serialized owned fields with `collect_vec` and `format_retained`; custom Serde calls remain unproven |
 | `Clone element layout unresolved` | `collect_vec` with a concrete charged child factory |
-| `remove` | `remove_btree_map` or `remove_btree_set`; hash tables are insert-only |
+| `remove` | `remove_hash_map`, `remove_btree_map`, `remove_hash_set` or `remove_btree_set` |
 | `vector collection storage reuse` | `collect_vec` |
 | `nth` | `admit_iter` |
 | `copy_from_slice` | `copy_into` |
@@ -632,7 +641,7 @@ or exhausted bound retains an unproven finding.
 | `rfind` | `rfind_text` or `rfind_bytes`; `admit_iter` before reverse iterator search |
 | `resize` | `resize_with` |
 | `to_str` | `validate_utf8` |
-| `remove_entry` | `remove_entry_btree_map`; hash tables are insert-only |
+| `remove_entry` | `remove_entry_hash_map` or `remove_entry_btree_map` |
 | `try_for_each` | `admit_iter` |
 | `binary_search_by` | `binary_search_by` |
 | `decompress` | `begin_expand` and `charge_work` for compressed bytes; shared container inflate operations own the scan |
@@ -815,11 +824,32 @@ Heap sifts charge the maximum `DecodeCost` of all stored operands and the incomi
 value. With `n` operands, the work bound is `n` measuring visits plus
 `(bit_length(n) + 1) * 4 * (maximum_operand_bytes + size_of::<T>())`.
 Heap capacity growth has its own retained, scoped and movement charges.
-Hash growth charges the old bucket storage as movement work, in addition to the
-rehash of stored keys. A B-tree of h levels holds at least 2 * 6^(h-1) - 1
-entries. A tree lookup charges the key's cost for at most eleven comparisons
-per level, and never more comparisons than stored keys. Tree insertion and
-removal charge four passes over the nodes of the search path plus a new root
-for shifts, splits, merges and parent-link repair. Insertion charges no work
-proportional to the stored length. Truncating, clearing, filling or
+Hash growth charges the storage for twice the new length as movement work and
+holds it as a transient scoped bound, in addition to the rehash of stored keys,
+and charges retained storage from the table's real capacity once it has grown.
+
+A B-tree of h levels holds at least 2 * 6^(h-1) - 1 entries. A tree lookup
+charges the key's cost for at most eleven comparisons per level, and never more
+comparisons than stored keys. Mutation work is counted in node passes, one
+pass being the node byte bound. A split, a merge and a steal each cost at most
+two passes. Every split creates a node, and a tree of n entries holds at most
+(n - 1) / 5 + 1 nodes, so the splits so far are at most the increases of that
+bound over the insertions so far plus the nodes that merges have freed. An
+insertion therefore charges one shift and two passes for each node its length
+adds to the bound. A removal charges one shift, one steal and, for every level
+of the tree, a merge and the split that may later recreate its node; a tree of
+at most ten entries is one node and a removal only shifts it. Std merges an
+underfull node whenever the result fits, so alternating insertions and
+removals can split and merge a whole path each time; the per-level removal
+charge pays for that. Insertion charges no work proportional to the stored
+length.
+
+A sort's charge does not depend on the input's order, so a decode that sorts
+values gathered in an unspecified order still charges deterministically.
+`is_sorted_by` compares neighbours, each comparison charged one step and both
+operands' key costs, and stops at the first pair out of order; code whose input
+order is deterministic uses it to skip a sort. A stable sort of more than twenty
+values sorts an index array, whose sort admits the comparisons and index moves
+once, and then moves each value along its permutation cycle, admitting two
+value moves per value. Truncating, clearing, filling or
 compacting a vector charges nothing for the values it releases.
