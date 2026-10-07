@@ -210,7 +210,7 @@ pub(in crate::native) fn feature_fset_reference_graphs(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let Some(graph) = FsetReferences::read(record.payload_view()) else {
+            let Some(graph) = FsetReferences::read(ctx, record.payload_view())? else {
                 continue;
             };
             let Some(references) = graph.resolve(entry_offset, |index| {

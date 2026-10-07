@@ -129,8 +129,8 @@ pub fn topology(data: &[u8]) {
         return;
     };
     if let Ok(graph) = crate::topology::Graph::parse(&ctx, data) {
-        if let Ok(nodes) = graph.of_kind(&ctx, NodeKind::Body) {
-        for node in nodes {
+        {
+        for node in graph.of_kind(NodeKind::Body) {
             // discarded-value: fuzz this bounded node read without using its value.
             let _ = node.byte_at(0);
             // discarded-value: fuzz this bounded scalar read without using its value.

@@ -433,7 +433,7 @@ pub(super) fn boolean_participant_writer<'a>(
             .get(&object_index)
             .copied()
             .unwrap_or(object_index),
-    ))
+    )
 }
 
 /// Register a Boolean's target in the namespace established by its complete

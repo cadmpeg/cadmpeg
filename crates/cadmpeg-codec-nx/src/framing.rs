@@ -67,79 +67,74 @@ type FixedRecordCandidates = [Option<FixedRecordFrame>; 2];
 
 /// Build all complete direct and escaped interpretations at one fixed-record tag.
 pub(crate) fn fixed_record_candidates(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     stream: &[u8],
     pos: usize,
     kind: NodeKind,
-) -> Result<FixedRecordCandidates, cadmpeg_core::CodecError> {
+) -> FixedRecordCandidates {
     let mut candidates = [None; 2];
     let len = fixed_len(kind);
     let Some(identity_at) = pos.checked_add(2) else {
-        return Ok(candidates);
+        return candidates;
     };
     if stream.get(pos..identity_at) != Some(&[0, kind.code()]) {
-        return Ok(candidates);
+        return candidates;
     }
     if let Some((xmt, shift)) = read_xmt(stream, identity_at) {
-        candidates[0] = complete_frame(ctx, stream, pos, kind, len, xmt, shift)?;
+        candidates[0] = complete_frame(stream, pos, kind, len, xmt, shift);
     }
     if stream.get(identity_at) == Some(&0xff) {
         let Some(escaped_at) = identity_at.checked_add(1) else {
-            return Ok(candidates);
+            return candidates;
         };
         if let Some((xmt, shift)) = read_xmt(stream, escaped_at) {
-            candidates[1] = complete_frame(ctx, stream, pos, kind, len, xmt, shift + 1)?;
+            candidates[1] = complete_frame(stream, pos, kind, len, xmt, shift + 1);
         }
     }
-    Ok(candidates)
+    candidates
 }
 
-fn complete_frame(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn complete_frame(
     stream: &[u8],
     pos: usize,
     kind: NodeKind,
     len: usize,
     xmt: u32,
     shift: usize,
-) -> Result<Option<FixedRecordFrame>, cadmpeg_core::CodecError> {
-    let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
+) -> Option<FixedRecordFrame> {
     let xmt = NonNullXmt::try_from(xmt).ok()?;
-    let payload_shift = propagate_resource!(payload_shift(ctx, stream, pos, kind, shift))?;
+    let payload_shift = payload_shift(stream, pos, kind, shift)?;
     let end = pos
         .checked_add(len)?
         .checked_add(shift)?
         .checked_add(payload_shift)?;
     stream.get(pos..end)?;
-    (Some(FixedRecordFrame {
+    Some(FixedRecordFrame {
         xmt,
         shift,
         payload_shift,
         end,
-    })).map(Ok)
-
-    })();
-    parsed.transpose()
+    })
 }
 
 /// Return whether `end` is the stream boundary or a complete fixed-record start.
-pub(crate) fn fixed_record_boundary(ctx: &cadmpeg_core::decode::DecodeContext<'_>, stream: &[u8], end: usize) -> Result<bool, cadmpeg_core::CodecError> {
+pub(crate) fn fixed_record_boundary(stream: &[u8], end: usize) -> bool {
     if end == stream.len() {
-        return Ok(true);
+        return true;
     }
     if stream.get(end) != Some(&0) {
-        return Ok(false);
+        return false;
     }
     let Some(&kind) = end.checked_add(1).and_then(|at| stream.get(at)) else {
-        return Ok(false);
+        return false;
     };
     let Ok(kind) = NodeKind::try_from(kind) else {
-        return Ok(false);
+        return false;
     };
-    Ok(fixed_record_candidates(ctx, stream, end, kind)?
+    fixed_record_candidates(stream, end, kind)
         .iter()
         .flatten()
         .next()
-        .is_some())
+        .is_some()
 }
 
 pub(crate) fn read_and_advance(stream: &[u8], at: &mut usize) -> Option<u32> {
@@ -161,15 +156,11 @@ pub(crate) fn read_sequence_at<const N: usize>(stream: &[u8], at: &mut usize) ->
 /// Fixed-record probing uses a reference sequence only to establish the shifted
 /// field boundary. Keeping that validation allocation-free prevents rejected
 /// byte candidates from creating temporary vectors during a whole-stream scan.
-pub(crate) fn skip_sequence_at(ctx: &cadmpeg_core::decode::DecodeContext<'_>, stream: &[u8], at: &mut usize, count: usize) -> Result<Option<()>, cadmpeg_core::CodecError> {
-    let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
-    for _ in propagate_resource!(ctx.admit_iter(&(0..count), "NX XMT sequence traversal").map_err(cadmpeg_core::CodecError::from)) {
+pub(crate) fn skip_sequence_at(stream: &[u8], at: &mut usize, count: usize) -> Option<()> {
+    for _ in 0..count {
         read_and_advance(stream, at)?;
     }
-    (Some(())).map(Ok)
-
-    })();
-    parsed.transpose()
+    Some(())
 }
 
 /// Decode the compact and extended XMT forms. The extended form uses a negative
@@ -213,25 +204,24 @@ pub(crate) fn insert_unique<T>(
     }
 }
 
-fn payload_shift(ctx: &cadmpeg_core::decode::DecodeContext<'_>, stream: &[u8], pos: usize, kind: NodeKind, header_shift: usize) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
+fn payload_shift(stream: &[u8], pos: usize, kind: NodeKind, header_shift: usize) -> Option<usize> {
     if kind == NodeKind::Face {
         let mut at = pos + face::ATTRIBUTES + header_shift;
         let start = at;
         read_and_advance(stream, &mut at)?;
         at += 8;
-        propagate_resource!(skip_sequence_at(ctx, stream, &mut at, 5))?;
+        skip_sequence_at(stream, &mut at, 5)?;
         at += 1;
-        propagate_resource!(skip_sequence_at(ctx, stream, &mut at, 5))?;
-        return (Some(at - start - 31)).map(Ok);
+        skip_sequence_at(stream, &mut at, 5)?;
+        return Some(at - start - 31);
     }
     if kind == NodeKind::Edge {
         let mut at = pos + edge::ATTRIBUTES + header_shift;
         let start = at;
         read_and_advance(stream, &mut at)?;
         at += 8;
-        propagate_resource!(skip_sequence_at(ctx, stream, &mut at, 7))?;
-        return (Some(at - start - 24)).map(Ok);
+        skip_sequence_at(stream, &mut at, 7)?;
+        return Some(at - start - 24);
     }
     let (offset, before, trailing_bytes, after) = match kind {
         NodeKind::Shell => (shell::ATTRIBUTES, 8, 0, 0),
@@ -244,11 +234,11 @@ fn payload_shift(ctx: &cadmpeg_core::decode::DecodeContext<'_>, stream: &[u8], p
     if before != 0 {
         let mut at = pos + offset + header_shift;
         let start = at;
-        propagate_resource!(skip_sequence_at(ctx, stream, &mut at, before))?;
+        skip_sequence_at(stream, &mut at, before)?;
         at += trailing_bytes;
-        propagate_resource!(skip_sequence_at(ctx, stream, &mut at, after))?;
+        skip_sequence_at(stream, &mut at, after)?;
         let compact = before * 2 + trailing_bytes + after * 2;
-        return (Some(at - start - compact)).map(Ok);
+        return Some(at - start - compact);
     }
     let compact_kind = matches!(
         kind,
@@ -269,35 +259,35 @@ fn payload_shift(ctx: &cadmpeg_core::decode::DecodeContext<'_>, stream: &[u8], p
             | NodeKind::SpCurve
     );
     if !compact_kind {
-        return (Some(0)).map(Ok);
+        return Some(0);
     }
     let mut at = pos + analytic::ATTRIBUTES + header_shift;
     let start = at;
-    propagate_resource!(skip_sequence_at(ctx, stream, &mut at, 5))?;
+    skip_sequence_at(stream, &mut at, 5)?;
     matches!(stream.get(at), Some(b'+' | b'-')).then_some(())?;
     at += 1;
     let common_extra = at - start - 11;
     let tail_start = at;
     match kind {
         NodeKind::Intersection => {
-            propagate_resource!(skip_sequence_at(ctx, stream, &mut at, 6))?;
+            skip_sequence_at(stream, &mut at, 6)?;
         }
         NodeKind::BlendSurface => {
             at += 1;
-            propagate_resource!(skip_sequence_at(ctx, stream, &mut at, 3))?;
+            skip_sequence_at(stream, &mut at, 3)?;
         }
         NodeKind::OffsetSurface => {
             at += 2;
             read_and_advance(stream, &mut at)?;
         }
         NodeKind::BSurface | NodeKind::BCurve => {
-            propagate_resource!(skip_sequence_at(ctx, stream, &mut at, 2))?;
+            skip_sequence_at(stream, &mut at, 2)?;
         }
         NodeKind::TrimmedCurve => {
             read_and_advance(stream, &mut at)?;
         }
         NodeKind::SpCurve => {
-            propagate_resource!(skip_sequence_at(ctx, stream, &mut at, 3))?;
+            skip_sequence_at(stream, &mut at, 3)?;
         }
         _ => {}
     }
@@ -310,10 +300,7 @@ fn payload_shift(ctx: &cadmpeg_core::decode::DecodeContext<'_>, stream: &[u8], p
         NodeKind::SpCurve => 6,
         _ => 0,
     };
-    (Some(common_extra + at - tail_start - compact_tail_len)).map(Ok)
-
-    })();
-    parsed.transpose()
+    Some(common_extra + at - tail_start - compact_tail_len)
 }
 
 pub(crate) fn fixed_len(kind: NodeKind) -> usize {
@@ -352,7 +339,7 @@ mod tests {
     fn skip_sequence_tracks_compact_and_extended_xmt_widths() {
         let bytes = [0xff, 0xfe, 0x00, 0x02, 0x00, 0x03];
         let mut skipped_at = 0;
-        assert_eq!(crate::test_support::with_decode_context(|ctx| skip_sequence_at(ctx, &bytes, &mut skipped_at, 2)).unwrap(), Some(()));
+        assert_eq!(skip_sequence_at(&bytes, &mut skipped_at, 2), Some(()));
         assert_eq!(skipped_at, bytes.len());
 
         let mut read_at = 0;
@@ -366,7 +353,7 @@ mod tests {
     #[test]
     fn skip_sequence_rejects_truncated_xmt() {
         let mut at = 0;
-        assert_eq!(crate::test_support::with_decode_context(|ctx| skip_sequence_at(ctx, &[0xff, 0xfe, 0x00], &mut at, 1)).unwrap(), None);
+        assert_eq!(skip_sequence_at(&[0xff, 0xfe, 0x00], &mut at, 1), None);
         assert_eq!(at, 0);
     }
     #[test]
@@ -374,52 +361,27 @@ mod tests {
         let mut bytes = vec![0xff; 9];
         bytes.extend_from_slice(&[0; 40]);
         bytes[9..13].copy_from_slice(&[0, 29, 0, 2]);
-        let frame = crate::test_support::with_decode_context(|ctx| super::fixed_record_candidates(ctx, &bytes, 9, super::NodeKind::Point)).unwrap()[0].unwrap();
+        let frame = super::fixed_record_candidates(&bytes, 9, super::NodeKind::Point)[0].unwrap();
         assert_eq!(u32::from(frame.xmt()), 2);
         assert_eq!(frame.end(), bytes.len());
         assert_eq!((frame.shift(), frame.payload_shift()), (0, 0));
         assert!(
-            crate::test_support::with_decode_context(|ctx| super::fixed_record_candidates(ctx, &bytes[..48], 9, super::NodeKind::Point)).unwrap()
+            super::fixed_record_candidates(&bytes[..48], 9, super::NodeKind::Point)
                 .iter()
                 .all(Option::is_none)
         );
         assert!(
-            crate::test_support::with_decode_context(|ctx| super::fixed_record_candidates(ctx, &bytes, usize::MAX, super::NodeKind::Point)).unwrap()
+            super::fixed_record_candidates(&bytes, usize::MAX, super::NodeKind::Point)
                 .iter()
                 .all(Option::is_none)
         );
         for identity in [0_u16, 1] {
             bytes[11..13].copy_from_slice(&identity.to_be_bytes());
             assert!(
-                crate::test_support::with_decode_context(|ctx| super::fixed_record_candidates(ctx, &bytes, 9, super::NodeKind::Point)).unwrap()
+                super::fixed_record_candidates(&bytes, 9, super::NodeKind::Point)
                     .iter()
                     .all(Option::is_none)
             );
         }
     }
-    #[test]
-    fn xmt_sequence_range_refusal_precedes_truncated_input() {
-        for bytes in [&[0, 2, 0, 3][..], &[0xff][..]] {
-            crate::test_support::with_decode_context_over(bytes, |policy| policy.limits.max_work_units = 1, |ctx| {
-                let mut at = 0;
-                let error = skip_sequence_at(ctx, bytes, &mut at, 2).unwrap_err();
-                assert!(matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                        && limit.operation == "NX XMT sequence traversal" && limit.additional == 2));
-                assert_eq!(at, 0);
-            });
-        }
-    }
-
-    #[test]
-    fn fixed_frame_range_refusal_propagates_before_candidate_rejection() {
-        let bytes = [0, 29, 0, 2, 0, 0, 0, 1];
-        crate::test_support::with_decode_context_over(&bytes, |policy| policy.limits.max_work_units = 0, |ctx| {
-            let error = super::fixed_record_candidates(ctx, &bytes, 0, super::NodeKind::Point).unwrap_err();
-            assert!(matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "NX XMT sequence traversal" && limit.additional == 4));
-        });
-    }
-
 }

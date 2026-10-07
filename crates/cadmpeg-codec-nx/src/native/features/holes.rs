@@ -1476,7 +1476,8 @@ pub(in crate::native) fn feature_hole_package_construction_group_lanes(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let Some(lane) = crate::om::hole_package_construction_group_lane(record.payload_view())
+            let Some(lane) =
+                crate::om::hole_package_construction_group_lane(ctx, record.payload_view())?
             else {
                 continue;
             };

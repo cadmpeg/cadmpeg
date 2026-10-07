@@ -252,8 +252,13 @@ impl<'a> Container<'a> {
         ctx: &DecodeContext<'_>,
         region: Region,
     ) -> Result<usize, CodecError> {
-        Ok(ctx
-            .admit_iter(&self.entries, "count NX directory entries")?
+        ctx.charge_work(
+            u64_from_index(self.entries.len()),
+            "count NX directory entries",
+        )?;
+        Ok(self
+            .entries
+            .iter()
             .filter(|entry| entry.region == region)
             .count())
     }
@@ -339,13 +344,10 @@ impl<'a> Container<'a> {
     }
 
     /// Decode the self-bounded segment index in `/Root/UG_PART/UG_PART`.
-    pub(crate) fn segment_index(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<(&DirEntry, SegmentIndex<'_>)>, CodecError> {
-        let mut entries = ctx.admit_iter(&self.entries, "NX segment index directory traversal")?;
-        (|| {
-        let entry = entries
+    pub(crate) fn segment_index(&self) -> Option<(&DirEntry, SegmentIndex<'_>)> {
+        let entry = self
+            .entries
+            .iter()
             .find(|entry| entry.name == "/Root/UG_PART/UG_PART" && entry.file_span().is_some())?;
         let (offset, size) = entry.file_span()?;
         let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
@@ -362,29 +364,24 @@ impl<'a> Container<'a> {
         }
         let complete_len = byte_len / index_row::LEN * index_row::LEN;
         let rows = &payload[..complete_len];
-        let width = std::num::NonZeroUsize::new(index_row::LEN)?;
-        propagate_resource!(ctx.admit_iter(rows, "NX segment index row validation").map_err(CodecError::from))
-            .chunks(width)
+        rows.chunks_exact(index_row::LEN)
             .try_for_each(|row| SegmentIndex::parse_row(row).map(|_| ()))?;
-        Some(Ok((
+        Some((
             entry,
             SegmentIndex {
                 rows,
                 padding: &payload[complete_len..byte_len],
             },
-        )))
-        })().transpose()
+        ))
     }
 
     /// Resolve every in-bounds compressed-stream wrapper addressed by the
     /// canonical segment index, preserving row and word order.
     pub(crate) fn segment_stream_wrappers(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<impl Iterator<Item = SegmentStreamWrapper> + '_, CodecError> {
-        let index = self.segment_index(ctx)?;
+    ) -> impl Iterator<Item = SegmentStreamWrapper> + '_ {
         let source = (|| {
-            let (entry, index) = index?;
+            let (entry, index) = self.segment_index()?;
             let (entry_offset, entry_size) = entry.file_span()?;
             let entry_start = usize::try_from(entry_offset).ok()?;
             let entry_size = usize::try_from(entry_size).ok()?;
@@ -392,7 +389,7 @@ impl<'a> Container<'a> {
             let payload = self.data.get(entry_start..entry_end)?;
             Some((index, payload, entry_start))
         })();
-        Ok(source
+        source
             .into_iter()
             .flat_map(|(index, payload, entry_start)| {
                 index
@@ -422,7 +419,7 @@ impl<'a> Container<'a> {
                                 })
                             })
                     })
-            }))
+            })
     }
 
     /// Locate independently size-framed NX object-model sections.
@@ -461,14 +458,14 @@ impl<'a> Container<'a> {
         )?;
         match framed_cache {
             FramedSectionCache::Borrowed { sections } => {
-                for (entry_index, section) in ctx.admit_iter(sections, "NX cached section traversal")? {
+                for (entry_index, section) in sections {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, section.clone()));
                     }
                 }
             }
             FramedSectionCache::Owned { layouts } => {
-                for (entry_index, layout) in ctx.admit_iter(layouts, "NX cached layout traversal")? {
+                for (entry_index, layout) in layouts {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, layout.materialize(ctx)?));
                     }
@@ -491,7 +488,7 @@ impl<'a> Container<'a> {
                     let (sections, _) =
                         parse_indexed_section_cache(ctx, bytes, &self.entries, false)?;
                     let mut blocks = BTreeMap::new();
-                    for (section_ordinal, (entry_index, section)) in ctx.admit_iter(&sections, "NX indexed section traversal")?.enumerate() {
+                    for (section_ordinal, (entry_index, section)) in sections.iter().enumerate() {
                         let Some((control, _, records)) = section.as_offset_only() else {
                             continue;
                         };
@@ -560,14 +557,14 @@ impl<'a> Container<'a> {
         )?;
         match cache {
             IndexedSectionCache::Borrowed { sections, .. } => {
-                for (entry_index, section) in ctx.admit_iter(sections, "NX cached section traversal")? {
+                for (entry_index, section) in sections {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, section.clone()));
                     }
                 }
             }
             IndexedSectionCache::Owned { layouts } => {
-                for (entry_index, layout) in ctx.admit_iter(layouts, "NX cached layout traversal")? {
+                for (entry_index, layout) in layouts {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
                         result.push((entry, layout.materialize(ctx)?));
                     }
@@ -600,9 +597,9 @@ impl<'a> Container<'a> {
         let strings = self.external_reference_strings(ctx)?;
         let count = strings.len();
         let mut paths = ctx.collection_vec(count, "nx external reference paths")?;
-        for (_, _, path) in ctx.admit_iter(&strings, "NX external reference path traversal")? {
+        for (_, _, path) in strings {
             let mut copy = ctx.retained_string(path.len(), "nx external reference path")?;
-            ctx.append_retained(&mut copy, &path, "NX admitted text append")?;
+            copy.push_str(&path);
             paths.push(copy);
         }
         Ok(paths)
@@ -734,9 +731,8 @@ impl<'a> Container<'a> {
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<(usize, RmFastLoadObjectIdTable)>, CodecError> {
         const REGISTRY_MARKER: &[u8] = b"UGS::Solid::Topol";
-        let mut entries = ctx.admit_iter(&self.entries, "NX FastLoad directory traversal")?;
         let Some((entry_index, bytes)) = (|| {
-            let entry_index = entries.position(|entry| {
+            let entry_index = self.entries.iter().position(|entry| {
                 entry.name == "/Root/FastLoad/RMFastLoad" && entry.file_span().is_some()
             })?;
             let (offset, size) = self.entries[entry_index].file_span()?;
@@ -760,21 +756,24 @@ impl<'a> Container<'a> {
         };
         for count_offset in search_start..search_end {
             ctx.charge_work(1, "scan NX FastLoad table candidates")?;
-            let Some((count, ids_start, id_bytes)) = (|| {
+            let Some((count, ids_start, id_bytes, tail)) = (|| {
                 let count = usize::try_from(View::u32_le_at(bytes, count_offset)?).ok()?;
                 let id_bytes = count.checked_mul(4)?;
                 let ids_start = count_offset.checked_add(4)?;
                 let ids_end = ids_start.checked_add(id_bytes)?;
-                propagate_resource!(crate::om::product::ProductRecord::read(
-                    ctx,
-                    bytes.get(ids_end..)?,
-                    crate::om::product::ProductRecordForm::Modern,
-                ))
-                .is_some()
-                .then_some(Ok((count, ids_start, id_bytes)))
-            })().transpose()? else {
+                Some((count, ids_start, id_bytes, bytes.get(ids_end..)?))
+            })() else {
                 continue;
             };
+            if crate::om::product::ProductRecord::read(
+                ctx,
+                tail,
+                crate::om::product::ProductRecordForm::Modern,
+            )?
+            .is_none()
+            {
+                continue;
+            }
             candidate = Some((count_offset, count, ids_start, id_bytes));
             break;
         }
@@ -786,19 +785,15 @@ impl<'a> Container<'a> {
         ctx.charge_collection_items(count_u64, "admit NX FastLoad object IDs")?;
         let mut object_ids = Vec::new();
         ctx.reserve_capacity(&mut object_ids, count, "retain NX FastLoad object IDs")?;
-        for ordinal in ctx.admit_iter(&(0..count), "NX parse rmfastload object id table range traversal")? {
+        for ordinal in 0..count {
             let offset = ids_start + ordinal * 4;
             let object_id = View::u32_le_at(bytes, offset).ok_or_else(|| {
                 CodecError::Malformed("FastLoad object ID span is inconsistent".into())
             })?;
             object_ids.push(object_id);
         }
-        let object_ids = match ObjectIdMembers::new(object_ids) {
-            Ok(members) => members,
-            Err(message) => return Err(CodecError::Malformed(
-                ctx.copy_retained_text(message, "NX object ID member error")?,
-            )),
-        };
+        let object_ids = ObjectIdMembers::new(object_ids)
+            .map_err(|message| CodecError::Malformed(message.into()))?;
         Ok(Some((
             entry_index,
             RmFastLoadObjectIdTable {
@@ -854,9 +849,13 @@ fn locate_extref_string_table(
         let Some(count) = bounded_len(u64::from(count), 3, remaining) else {
             continue;
         };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(count),
+            "nx external reference string table entries",
+        )?;
         let valid = (|| -> Result<Option<usize>, CodecError> {
             let mut pos = start;
-            for _ in ctx.admit_iter(&(0..count), "nx external reference string table entries")? {
+            for _ in 0..count {
                 let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
                     return Ok(None);
                 };
@@ -876,8 +875,11 @@ fn locate_extref_string_table(
                 let Ok(value) = std::str::from_utf8(raw) else {
                     return Ok(None);
                 };
-                let mut characters = ctx.admit_iter(value, "validate NX external reference controls")?;
-                if value.is_empty() || characters.any(char::is_control) {
+                ctx.charge_work(
+                    u64_from_index(raw.len()),
+                    "validate NX external reference controls",
+                )?;
+                if value.is_empty() || value.chars().any(char::is_control) {
                     return Ok(None);
                 }
                 pos = end;
@@ -903,7 +905,7 @@ fn parse_extref_string_table(
     };
     let mut out = ctx.collection_vec(count, "nx external reference string table")?;
     let mut pos = start;
-    for _ in ctx.admit_iter(&(0..count), "NX parse extref string table range traversal")? {
+    for _ in 0..count {
         let Some(length) = View::u16_le_at(payload, pos).map(usize::from) else {
             return Ok(None);
         };
@@ -969,7 +971,7 @@ fn parse_extref_records(
             return Ok(None);
         }
         let handle_token_count = count - 1;
-        for handle_index in ctx.admit_iter(&(0..handle_token_count), "NX parse extref records range traversal")? {
+        for handle_index in 0..handle_token_count {
             let token = handle_set::LEN + handle_index * 5;
             if bytes.get(token) != Some(&0xe0) || View::u32_be_at(bytes, token + 1).is_none() {
                 return Ok(None);
@@ -977,14 +979,14 @@ fn parse_extref_records(
         }
         let mut handles =
             ctx.collection_vec(handle_token_count, "nx external reference handles")?;
-        for handle_index in ctx.admit_iter(&(0..handle_token_count), "NX parse extref records range traversal")? {
+        for handle_index in 0..handle_token_count {
             let token = handle_set::LEN + handle_index * 5;
             let Some(handle) = View::u32_be_at(bytes, token + 1) else {
                 return Ok(None);
             };
             handles.push(handle);
         }
-        let Ok(handles) = ExtrefHandles::from_wire(ctx, handles)? else {
+        let Ok(handles) = ExtrefHandles::new(handles) else {
             return Ok(None);
         };
         let prefix_byte_len = handles.prefix_byte_len();
@@ -1063,23 +1065,15 @@ fn parse_extref_record_index(
         ctx.reserve_vec(&mut directory, 1, "nx external reference directory")?;
         directory.push((record_id, offset));
     }
-    let mut previous_offset = None;
     if directory.is_empty()
-        || !ctx.admit_iter(&directory, "NX external reference offset ordering")?.all(|(_, offset)| {
-            let ascending = match previous_offset {
-                Some(previous) => previous < *offset,
-                None => true,
-            };
-            previous_offset = Some(*offset);
-            ascending
-        })
+        || !directory.windows(2).all(|pair| pair[0].1 < pair[1].1)
         || at > directory[0].1
     {
         return Ok(None);
     }
     let count = directory.len();
     let mut records = ctx.collection_vec(count, "nx external reference index")?;
-    for (index, (record_id, offset)) in ctx.admit_iter(&directory, "NX external reference directory traversal")?.copied().enumerate() {
+    for (index, (record_id, offset)) in directory.iter().copied().enumerate() {
         let end = directory
             .get(index + 1)
             .map_or(string_table, |(_, offset)| *offset);
@@ -1263,7 +1257,7 @@ fn parse_framed_section_cache<'bytes>(
 ) -> Result<(FramedSections<'bytes>, FramedSectionLayouts), CodecError> {
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
-    for (entry_index, entry) in ctx.admit_iter(entries, "NX section directory traversal")?.enumerate() {
+    for (entry_index, entry) in entries.iter().enumerate() {
         let Some((offset, size)) = entry.file_span() else {
             continue;
         };
@@ -1315,7 +1309,7 @@ fn parse_indexed_section_cache<'bytes>(
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
-    for (entry_index, entry) in ctx.admit_iter(entries, "NX section directory traversal")?.enumerate() {
+    for (entry_index, entry) in entries.iter().enumerate() {
         let Some((offset, size)) = entry.file_span() else {
             continue;
         };
@@ -1386,7 +1380,7 @@ pub(crate) fn looks_like_legacy_nx(
     let CompoundPrefixProbe::DirectoryEvidence(paths) = probe else {
         return Ok(false);
     };
-    for path in ctx.admit_iter(&paths, "NX legacy directory path traversal")? {
+    for path in &paths {
         ctx.charge_work(u64_from_index(path.len()), "compare NX directory evidence")?;
         if path.eq_ignore_ascii_case("UG_PART/UG_PART") {
             return Ok(true);
@@ -1473,7 +1467,8 @@ pub(crate) fn scan_bytes<'a>(
             "HEADER directory overlaps the FOOTER region".to_string(),
         ));
     }
-    if ctx.admit_iter(&entries, "NX directory file span traversal")?
+    if entries
+        .iter()
         .filter_map(crate::container::DirEntry::file_span)
         .any(|(offset, size)| {
             offset
@@ -1576,7 +1571,7 @@ pub(crate) fn scan_legacy<'a>(
     }
     let logical_data = ctx.concat_views(&stream_views)?;
     let mut entries = Vec::new();
-    for entry in ctx.admit_iter(snapshot.entries(), "NX legacy directory traversal")? {
+    for entry in snapshot.entries() {
         ctx.charge_collection_items(1, "retain legacy NX directory entry")?;
 
         let body = match entry {
@@ -1594,8 +1589,8 @@ pub(crate) fn scan_legacy<'a>(
             .ok_or_else(|| ctx.refuse_codec_limit("retain legacy NX directory entry", 0, 1))?;
         let mut name = String::new();
         ctx.try_reserve_retained_text(&mut name, name_len, "retain legacy NX directory entry")?;
-        ctx.append_retained(&mut name, "/Root/", "NX admitted text append")?;
-        ctx.append_retained(&mut name, entry.path(), "NX admitted text append")?;
+        name.push_str("/Root/");
+        name.push_str(entry.path());
         entries.push(DirEntry {
             name,
             region: Region::Header,
@@ -1652,7 +1647,7 @@ fn directory_region(
     let mut entries = Vec::new();
     ctx.reserve_capacity(&mut entries, capacity, "retain NX directory entries")?;
     let mut at = entries_offset;
-    for ordinal in ctx.admit_iter(&(0..count), "NX directory region range traversal")? {
+    for ordinal in 0..count {
         let Some((entry, next)) = try_entry(ctx, data, at, region, region_end, ordinal)? else {
             return Err(CodecError::malformed(format_args!(
                 "directory entry {ordinal} is truncated or malformed"
@@ -1691,7 +1686,7 @@ fn try_entry(
     let Some(raw) = data.get(name_start..name_end) else {
         return Ok(None);
     };
-    if !raw.starts_with(b"/Root") || !ctx.admit_iter(raw, "NX directory name ASCII validation")?.all(|&b| (0x20..0x7f).contains(&b)) {
+    if !raw.starts_with(b"/Root") || !raw.iter().all(|&b| (0x20..0x7f).contains(&b)) {
         return Ok(None);
     }
     let payload = name_end;
@@ -1704,12 +1699,12 @@ fn try_entry(
         )));
     }
 
-    let Ok(value) = ctx.validate_utf8(raw, "NX directory name UTF-8 validation")? else {
+    let Ok(value) = std::str::from_utf8(raw) else {
         return Ok(None);
     };
     let mut name = String::new();
     ctx.try_reserve_retained_text(&mut name, name_len, "retain NX directory name")?;
-    ctx.append_retained(&mut name, value, "NX admitted text append")?;
+    name.push_str(value);
     // Interpret the 16-byte payload as a file span when it lands within the file.
     let body = match (
         View::u64_le_at(data, payload),

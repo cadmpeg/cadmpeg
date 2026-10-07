@@ -2,9 +2,6 @@
 //! Ordered EXTREFSTREAM handle tokens and their derived prefix fields.
 
 use serde::{Deserialize, Serialize};
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
-use std::convert::Infallible;
 
 use crate::layout::extrefstream_handle_set_record;
 
@@ -33,20 +30,13 @@ impl Serialize for ExtrefHandles {
 
 impl ExtrefHandles {
     pub(crate) fn new(tokens: Vec<u32>) -> Result<Self, &'static str> {
-        match validate_tokens(&tokens, |tokens| Ok::<_, Infallible>(tokens.iter())) {
-            Ok(validation) => validation.map(|()| Self(tokens)),
-            Err(never) => match never {},
+        if !(1..=254).contains(&tokens.len()) {
+            return Err("handles: encoded token count must be in 1..=254");
         }
-    }
-
-    pub(crate) fn from_wire(
-        ctx: &DecodeContext<'_>,
-        tokens: Vec<u32>,
-    ) -> Result<Result<Self, &'static str>, CodecError> {
-        let validation = validate_tokens(&tokens, |tokens| {
-            ctx.admit_iter(tokens, "NX external reference handle ordering")
-        })?;
-        Ok(validation.map(|()| Self(tokens)))
+        if !tokens.windows(2).all(|pair| pair[0] <= pair[1]) {
+            return Err("handles: must be non-decreasing");
+        }
+        Ok(Self(tokens))
     }
 
     pub(crate) fn serialized(&self) -> &[u32] {
@@ -64,27 +54,6 @@ impl ExtrefHandles {
     pub(crate) fn prefix_byte_len(&self) -> usize {
         extrefstream_handle_set_record::LEN + self.0.len() * 5 + 1
     }
-}
-
-fn validate_tokens<'tokens, E, I: Iterator<Item = &'tokens u32>>(
-    tokens: &'tokens [u32],
-    admit: impl FnOnce(&'tokens [u32]) -> Result<I, E>,
-) -> Result<Result<(), &'static str>, E> {
-    if !(1..=254).contains(&tokens.len()) {
-        return Ok(Err("handles: encoded token count must be in 1..=254"));
-    }
-    let mut previous = None;
-    if !admit(tokens)?.all(|token| {
-        let ordered = match previous {
-            Some(previous) => previous <= token,
-            None => true,
-        };
-        previous = Some(token);
-        ordered
-    }) {
-        return Ok(Err("handles: must be non-decreasing"));
-    }
-    Ok(Ok(()))
 }
 
 #[derive(Deserialize)]
@@ -137,32 +106,6 @@ impl TryFrom<HandlesWire> for ExtrefHandles {
 #[cfg(test)]
 mod tests {
     use super::{ExtrefHandles, HANDLES_INTO_WIRE_COUNT};
-
-    #[test]
-    fn extref_handles_decode_admission_preserves_validation() {
-        for tokens in [vec![], vec![7; 255], vec![9, 7], vec![7], vec![7, 7, 9], vec![7; 254]] {
-            let decoded = crate::test_support::with_decode_context(|ctx| {
-                ExtrefHandles::from_wire(ctx, tokens.clone()).unwrap()
-            });
-            assert_eq!(decoded, ExtrefHandles::new(tokens));
-        }
-    }
-
-    #[test]
-    fn extref_handles_ordering_refusal_propagates() {
-        use cadmpeg_core::decode::ResourceDimension;
-        use cadmpeg_core::CodecError;
-
-        let error = crate::test_support::resource_refusal_at(
-            &[],
-            ResourceDimension::WorkUnits,
-            "NX external reference handle ordering",
-            |ctx| ExtrefHandles::from_wire(ctx, vec![7, 7, 9]).map(|value| value.unwrap()),
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "NX external reference handle ordering"));
-    }
 
     #[test]
     fn wire_preserves_handle_occurrences_and_derived_fields() {

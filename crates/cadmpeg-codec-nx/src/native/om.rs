@@ -207,7 +207,7 @@ pub(super) fn om_record_areas(
         let Some((_, section)) = linked_section(ctx, &sections, &link)? else {
             continue;
         };
-        let Some(header) = section.record_area_header() else {
+        let Some(header) = section.record_area_header(ctx)? else {
             continue;
         };
         let Some(area) = section.record_area else {
@@ -510,8 +510,9 @@ pub(super) fn operation_state_statuses(
         };
         let entry_offset = history_section.entry_offset;
         let mut matched = 0_usize;
-        for (offset, entry_row) in table.into_entries() {
+        for table_entry in table.into_entries(ctx) {
             ctx.charge_work(1, "NX operation state statuses")?;
+            let (offset, entry_row) = table_entry?;
             let StateTableEntry::Status(row) = entry_row else {
                 continue;
             };
@@ -573,8 +574,9 @@ pub(super) fn operation_state_slot_lanes(
         };
         let entry_offset = history_section.entry_offset;
         let mut matched = 0_usize;
-        for (offset, entry_row) in table.into_entries() {
+        for table_entry in table.into_entries(ctx) {
             ctx.charge_work(1, "NX operation state slot lanes")?;
+            let (offset, entry_row) = table_entry?;
             let StateTableEntry::Slots(slots) = entry_row else {
                 continue;
             };
@@ -5737,19 +5739,19 @@ pub(super) fn store_headers(
             IndexedStore::Fixed { records } => ctx.find_map(
                 records.as_ref(),
                 |record| {
-                    Ok(crate::om::store_version(record.bytes, record.offset)
+                    Ok(crate::om::store_version(ctx, record.bytes, record.offset)?
                         .map(|version| (Some(record.object_id.0), version)))
                 },
                 "NX fixed store version records",
             )?,
             IndexedStore::OffsetOnly {
                 control, records, ..
-            } => match crate::om::store_version(control.bytes, control.offset) {
+            } => match crate::om::store_version(ctx, control.bytes, control.offset)? {
                 Some(version) => Some((None, version)),
                 None => ctx.find_map(
                     records.as_ref(),
                     |record| {
-                        Ok(crate::om::store_version(record.bytes, record.offset)
+                        Ok(crate::om::store_version(ctx, record.bytes, record.offset)?
                             .map(|version| (None, version)))
                     },
                     "NX offset store version records",

@@ -912,10 +912,10 @@ pub(crate) fn extract_streams<'a>(
     let part = part_view.window();
 
     let mut streams = Vec::new();
-    if container.segment_index(ctx)?.is_some() {
+    if container.segment_index().is_some() {
         let mut seen = BTreeSet::new();
         let mut seen_guard = ctx.reserve_scoped(0, "NX indexed stream offsets")?;
-        for wrapper in container.segment_stream_wrappers(ctx)? {
+        for wrapper in container.segment_stream_wrappers() {
             ctx.charge_work(1, "scan NX indexed stream wrappers")?;
             let Some(offset) = wrapper.zlib_offset.checked_sub(start) else {
                 continue;
@@ -1068,7 +1068,7 @@ fn structural_stream_candidate(
         NodeKind::Vertex,
         NodeKind::Region,
     ] {
-        if graph.of_kind(ctx, kind)?.next().is_some() { return Ok(true); }
+        if graph.of_kind(kind).next().is_some() { return Ok(true); }
     }
     Ok(false)
 }

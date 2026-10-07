@@ -27,8 +27,7 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file)).unwrap();
-    let (_, index) = crate::test_support::with_decode_context(|ctx| container.segment_index(ctx))
-        .unwrap().expect("segment index");
+    let (_, index) = container.segment_index().expect("segment index");
     assert_eq!(index.rows().count() * 12 + index.padding.len(), 28);
     assert_eq!(index.rows().count(), 2);
     assert_eq!(index.row(0).expect("first validated row").type_code, 7);

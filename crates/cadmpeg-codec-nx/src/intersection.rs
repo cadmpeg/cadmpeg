@@ -622,7 +622,7 @@ fn scan_with_auxiliaries(
                             |(primary, secondary)| DistinctSupports::new(primary, secondary?),
                         ),
                         graph
-                            .unique_curve_edge_witness(ctx, construction.xmt)?
+                            .unique_curve_edge_witness(construction.xmt)
                             .and_then(|witness| {
                                 Some((
                                     witness.endpoints,
@@ -689,7 +689,7 @@ fn enrich(
     }
     if serialized_terms.iter().any(Option::is_none) {
         let topology_endpoints = graph
-            .unique_curve_edge_witness(ctx, construction.xmt)?
+            .unique_curve_edge_witness(construction.xmt)
             .map(|witness| witness.endpoints)
             .ok_or_else(|| {
                 if serialized_terms[0].is_none() {
@@ -807,7 +807,7 @@ fn construction_has_endpoint_witnesses(
     Ok(ctx.admit_iter(&construction.references[2..=4], "NX construction endpoint absence")?.all(Option::is_none)
         || ctx.admit_iter(&construction.references[3..=4], "NX construction endpoint witnesses")?
             .all(|reference| reference.is_some_and(|target| terms.contains_key(&u32::from(target))))
-        || graph.unique_curve_edge_witness(ctx, construction.xmt)?.is_some())
+        || graph.unique_curve_edge_witness(construction.xmt).is_some())
 }
 
 fn blend_bound_records(
