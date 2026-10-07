@@ -398,27 +398,55 @@ fn scalar_lane_byte_comparison_refusal_propagates() {
     bytes.extend_from_slice(&shifted_f32);
     bytes.push(0x00);
 
-    let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX sketch scalar lane discriminator equality", |ctx| crate::om::sketch_payload_scalar_lanes(ctx, &bytes));
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == cadmpeg_core::decode::u64_from_index(crate::om::sketch_scalar::SketchScalarLaneForm::Form03.discriminator().len())));
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX sketch scalar lane discriminator equality",
+        |ctx| crate::om::sketch_payload_scalar_lanes(ctx, &bytes),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == cadmpeg_core::decode::u64_from_index(crate::om::sketch_scalar::SketchScalarLaneForm::Form03.discriminator().len()))
+    );
 }
 
 #[test]
 fn fixed_pair_byte_equality_refusal_propagates() {
     let bytes = [0_u8; 64];
-    let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX sketch fixed pair discriminator equality", |ctx| crate::om::sketch_payload_fixed_pairs(ctx, &bytes));
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "NX sketch fixed pair discriminator equality"));
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX sketch fixed pair discriminator equality",
+        |ctx| crate::om::sketch_payload_fixed_pairs(ctx, &bytes),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "NX sketch fixed pair discriminator equality")
+    );
 }
 
 #[test]
 fn mixed_pair_byte_equality_refusal_propagates() {
     let bytes = [0_u8; 64];
-    let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX sketch mixed pair discriminator equality", |ctx| crate::om::sketch_payload_mixed_pairs(ctx, &bytes));
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "NX sketch mixed pair discriminator equality"));
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX sketch mixed pair discriminator equality",
+        |ctx| crate::om::sketch_payload_mixed_pairs(ctx, &bytes),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "NX sketch mixed pair discriminator equality")
+    );
 }
 
 #[test]
 fn datum_csys_pair_byte_equality_refusal_propagates() {
     let bytes = [0_u8; 64];
-    let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX datum CSYS pair discriminator equality", |ctx| crate::om::datum_csys_payload_fixed_pairs(ctx, &bytes));
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "NX datum CSYS pair discriminator equality"));
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX datum CSYS pair discriminator equality",
+        |ctx| crate::om::datum_csys_payload_fixed_pairs(ctx, &bytes),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "NX datum CSYS pair discriminator equality")
+    );
 }

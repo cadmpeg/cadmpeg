@@ -177,7 +177,11 @@ fn operation_state_journal_start_accepts_count_token_runs() {
     let mut bytes = prefix.to_vec();
     bytes.extend(group);
 
-    let start = crate::test_support::with_decode_context(|ctx| operation_state_journal_start(ctx, &bytes, 0)).unwrap().expect("journal prefix");
+    let start = crate::test_support::with_decode_context(|ctx| {
+        operation_state_journal_start(ctx, &bytes, 0)
+    })
+    .unwrap()
+    .expect("journal prefix");
     assert_eq!(start, prefix.len());
     let groups = crate::test_support::with_decode_context(|ctx| {
         operation_state_journal_groups_before_boundary(ctx, &bytes, start, bytes.len(), 0)
@@ -319,6 +323,13 @@ fn audit_trail_rows_refuse_work_limit() {
 #[test]
 fn state_group_path_reversal_refusal_propagates() {
     let bytes = [0x01, 0x00, 0x00, 0x01, 0x00, 0x00];
-    let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX operation-state group path reversal", |ctx| operation_state_group_table_before_counter_map(ctx, &bytes, bytes.len(), 0));
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "NX operation-state group path reversal" && limit.additional == 2 + 3 * 2 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>())));
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX operation-state group path reversal",
+        |ctx| operation_state_group_table_before_counter_map(ctx, &bytes, bytes.len(), 0),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "NX operation-state group path reversal" && limit.additional == 2 + 3 * 2 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()))
+    );
 }

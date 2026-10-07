@@ -18,7 +18,10 @@ impl<S: crate::immutable_text::ImmutableText> StateMessageText<S> {
         Self::from_printable(text)
     }
 
-    pub(super) fn from_wire(ctx: &DecodeContext<'_>, text: S) -> Result<Result<Self, &'static str>, CodecError> {
+    pub(super) fn from_wire(
+        ctx: &DecodeContext<'_>,
+        text: S,
+    ) -> Result<Result<Self, &'static str>, CodecError> {
         Ok(PrintableString::from_wire(ctx, text)?
             .map_err(|_| "text: must be nonempty printable ASCII")
             .and_then(Self::from_printable))
@@ -98,7 +101,9 @@ mod tests {
             |policy| policy.limits.max_work_units = 2,
             |ctx| {
                 let error = text.into_owned(ctx).unwrap_err();
-                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("text validation must refuse"); };
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                    panic!("text validation must refuse");
+                };
                 assert_eq!(limit.operation, "NX printable string syntax");
                 assert_eq!(ctx.resource_refusal(), Some(limit));
             },
@@ -118,7 +123,10 @@ mod tests {
                     }
                 },
                 |ctx| {
-                    let error = StateMessageText::new("NX").unwrap().into_owned(ctx).unwrap_err();
+                    let error = StateMessageText::new("NX")
+                        .unwrap()
+                        .into_owned(ctx)
+                        .unwrap_err();
                     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
                         panic!("text copy must return the resource refusal");
                     };

@@ -143,7 +143,13 @@ fn attach_container_payloads(
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
-    for (ordinal, entry) in ctx.admit_iter(&scan.container.entries, "NX opaque container entry traversal")?.enumerate() {
+    for (ordinal, entry) in ctx
+        .admit_iter(
+            &scan.container.entries,
+            "NX opaque container entry traversal",
+        )?
+        .enumerate()
+    {
         let content = entry.content();
         if !content.retains_opaque_payload()
             || (typed_native == TypedNative::Available
@@ -196,11 +202,17 @@ fn attach_indexed_om_unknowns(
         "allocate annotation stream handle",
     )?;
     let object_sections = scan.container.indexed_om_sections(ctx)?;
-    for (section_index, (entry, section)) in ctx.admit_iter(&object_sections, "NX indexed unknown section traversal")?.enumerate() {
+    for (section_index, (entry, section)) in ctx
+        .admit_iter(&object_sections, "NX indexed unknown section traversal")?
+        .enumerate()
+    {
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         match &section.store {
             crate::om::IndexedStore::Fixed { records } => {
-                for (record_index, record) in ctx.admit_iter(records.as_ref(), "NX fixed unknown record traversal")?.enumerate() {
+                for (record_index, record) in ctx
+                    .admit_iter(records.as_ref(), "NX fixed unknown record traversal")?
+                    .enumerate()
+                {
                     let id: UnknownId = IdScope::native(
                         cadmpeg_ir::identity_component!("om-section-").then(section_index),
                     )
@@ -232,8 +244,13 @@ fn attach_indexed_om_unknowns(
             crate::om::IndexedStore::OffsetOnly {
                 control, records, ..
             } => {
-                for (record_index, record) in
-                    ctx.admit_iter(std::slice::from_ref(control), "NX unknown control traversal")?.chain(ctx.admit_iter(records.as_ref(), "NX offset unknown record traversal")?).enumerate()
+                for (record_index, record) in ctx
+                    .admit_iter(
+                        std::slice::from_ref(control),
+                        "NX unknown control traversal",
+                    )?
+                    .chain(ctx.admit_iter(records.as_ref(), "NX offset unknown record traversal")?)
+                    .enumerate()
                 {
                     let id: UnknownId = IdScope::native(
                         cadmpeg_ir::identity_component!("om-section-").then(section_index),
@@ -338,7 +355,8 @@ pub(super) fn attach(
     attach_part_attributes(
         ctx,
         ir,
-        &model.om.part_attributes, |attribute| {
+        &model.om.part_attributes,
+        |attribute| {
             (
                 attribute.id.as_str(),
                 attribute.title.as_str(),
@@ -397,13 +415,24 @@ pub(super) fn attach(
     attach_configurations(
         ctx,
         ir,
-        &model.om.configurations, |configuration| {
+        &model.om.configurations,
+        |configuration| {
             Ok((
                 configuration.id.as_str(),
                 configuration.name.as_str(),
                 configuration.source_offset,
-                ctx.find_by(&model.om.configuration_attribute_uses, |relation| Ok(ctx.equal(&(relation.configuration), &(configuration.id), "NX attach equality")?), "NX configuration relation lookup")?
-                    .map(|relation| relation.id.as_str()),
+                ctx.find_by(
+                    &model.om.configuration_attribute_uses,
+                    |relation| {
+                        Ok(ctx.equal(
+                            &(relation.configuration),
+                            &(configuration.id),
+                            "NX attach equality",
+                        )?)
+                    },
+                    "NX configuration relation lookup",
+                )?
+                .map(|relation| relation.id.as_str()),
             ))
         },
         annotations,
@@ -497,12 +526,16 @@ fn attach_part_attributes<'a, T: 'a>(
         ctx.charge_collection_items(1, "NX part attribute values")?;
         let mut values = Vec::new();
         ctx.reserve_capacity(&mut values, 1, "NX part attribute values")?;
-        values.push(AttributeValue::String(ctx.format_retained(format_args!("{attribute_value}"), "NX part attribute values")?));
+        values.push(AttributeValue::String(ctx.format_retained(
+            format_args!("{attribute_value}"),
+            "NX part attribute values",
+        )?));
         ctx.reserve_capacity(&mut ir.model.attributes, 1, "NX attached part attributes")?;
         ir.model.attributes.push(SourceAttribute {
             id,
             target: AttributeTarget::Document,
-            name: ctx.format_retained(format_args!("{attribute_title}"), "NX part attribute name")?,
+            name: ctx
+                .format_retained(format_args!("{attribute_title}"), "NX part attribute name")?,
             values,
         });
     }
@@ -517,8 +550,12 @@ fn attach_configurations<'a, T: 'a>(
     annotations: &mut AnnotationBuilder,
     annotation_stream: &StreamHandle,
 ) -> Result<(), CodecError> {
-    for (ordinal, configuration) in ctx.admit_iter(configurations, "NX configuration traversal")?.enumerate() {
-        let (configuration_id, configuration_name, source_offset, active_attribute_use) = fields(configuration)?;
+    for (ordinal, configuration) in ctx
+        .admit_iter(configurations, "NX configuration traversal")?
+        .enumerate()
+    {
+        let (configuration_id, configuration_name, source_offset, active_attribute_use) =
+            fields(configuration)?;
         let id: ConfigurationId = IdScope::native(cadmpeg_ir::identity_component!("arrangements"))
             .id(&cadmpeg_ir::identity_component!("configuration"), ordinal);
         let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
@@ -535,7 +572,9 @@ fn attach_configurations<'a, T: 'a>(
                 ir.model.bodies.len(),
                 "NX active configuration bodies",
             )?;
-            for body in ctx.admit_iter(&ir.model.bodies, "NX active configuration body traversal")? {
+            for body in
+                ctx.admit_iter(&ir.model.bodies, "NX active configuration body traversal")?
+            {
                 selected.push(
                     body.id
                         .try_clone_for_decode(ctx, "NX decoded IR value copy")?,
@@ -590,7 +629,10 @@ fn attach_configurations<'a, T: 'a>(
             ctx.insert_btree_map(
                 &mut properties,
                 cadmpeg_core::nonblank_literal!("active_attribute_use"),
-                ctx.format_retained(format_args!("{relation}"), "NX active configuration property")?,
+                ctx.format_retained(
+                    format_args!("{relation}"),
+                    "NX active configuration property",
+                )?,
                 "NX active configuration property",
             )?;
         }
@@ -611,7 +653,10 @@ fn attach_configurations<'a, T: 'a>(
             bodies,
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::new(),
-            native_ref: Some(ctx.format_retained(format_args!("{configuration_id}"), "NX configuration native reference")?),
+            native_ref: Some(ctx.format_retained(
+                format_args!("{configuration_id}"),
+                "NX configuration native reference",
+            )?),
         });
     }
     Ok(())
@@ -638,7 +683,17 @@ fn attach_rm_face_colors(
             )
         })?;
     for (face_id, color) in ctx.admit_iter(&bindings, "NX RM face color bindings")? {
-        let Some(index) = ctx.rposition_by(&ir.model.faces, |face| Ok(ctx.equal(face.id.as_str(), face_id.as_str(), "NX attach rm face colors equality")?), "NX RM face color target lookup")?
+        let Some(index) = ctx.rposition_by(
+            &ir.model.faces,
+            |face| {
+                Ok(ctx.equal(
+                    face.id.as_str(),
+                    face_id.as_str(),
+                    "NX attach rm face colors equality",
+                )?)
+            },
+            "NX RM face color target lookup",
+        )?
         else {
             continue;
         };
@@ -728,7 +783,19 @@ fn attach_rm_appearances(
     let mut appearances = BTreeMap::<String, AppearanceId>::new();
     let mut appearances_reservation = ctx.reserve_scoped(0, "NX RM appearance identity lookup")?;
     for binding in source_bindings {
-        let Some(definition) = ctx.rposition_by(&model.om.part_color_definitions, |definition| Ok(ctx.equal(&(definition.id), &(binding.color_definition), "NX attach rm appearances equality")?), "NX RM appearance definition lookup")?.and_then(|index| (&model.om.part_color_definitions).get(index))
+        let Some(definition) = ctx
+            .rposition_by(
+                &model.om.part_color_definitions,
+                |definition| {
+                    Ok(ctx.equal(
+                        &(definition.id),
+                        &(binding.color_definition),
+                        "NX attach rm appearances equality",
+                    )?)
+                },
+                "NX RM appearance definition lookup",
+            )?
+            .and_then(|index| (&model.om.part_color_definitions).get(index))
         else {
             continue;
         };
@@ -800,7 +867,8 @@ fn attach_rm_appearances(
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id,
             target: AppearanceTarget::Source {
-                source_id: ctx.copy_retained_text(&binding.source_id, "NX RM source appearance binding")?,
+                source_id: ctx
+                    .copy_retained_text(&binding.source_id, "NX RM source appearance binding")?,
             },
             appearance: appearance_id,
             source_entity_id: Some(binding.source_id),
@@ -810,11 +878,33 @@ fn attach_rm_appearances(
         });
     }
     for binding in face_bindings {
-        let Some(definition) = ctx.rposition_by(&model.om.part_color_definitions, |definition| Ok(ctx.equal(&(definition.id), &(binding.color_definition), "NX attach rm appearances equality")?), "NX RM appearance definition lookup")?.and_then(|index| (&model.om.part_color_definitions).get(index))
+        let Some(definition) = ctx
+            .rposition_by(
+                &model.om.part_color_definitions,
+                |definition| {
+                    Ok(ctx.equal(
+                        &(definition.id),
+                        &(binding.color_definition),
+                        "NX attach rm appearances equality",
+                    )?)
+                },
+                "NX RM appearance definition lookup",
+            )?
+            .and_then(|index| (&model.om.part_color_definitions).get(index))
         else {
             continue;
         };
-        let Some(face) = ctx.find_by(&ir.model.faces, |face| Ok(ctx.equal(face.id.as_str(), binding.face_id.as_str(), "NX attach rm appearances equality")?), "NX RM appearance face lookup")?
+        let Some(face) = ctx.find_by(
+            &ir.model.faces,
+            |face| {
+                Ok(ctx.equal(
+                    face.id.as_str(),
+                    binding.face_id.as_str(),
+                    "NX attach rm appearances equality",
+                )?)
+            },
+            "NX RM appearance face lookup",
+        )?
         else {
             continue;
         };
@@ -927,11 +1017,9 @@ fn ensure_rm_color_appearance(
         1.0,
     )
     .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
-    if let Some(id) = ctx.get_btree_map(
-        appearances,
-        &definition.id,
-        "NX RM appearance reuse lookup",
-    )? {
+    if let Some(id) =
+        ctx.get_btree_map(appearances, &definition.id, "NX RM appearance reuse lookup")?
+    {
         return id.try_clone_for_decode(ctx, "NX decoded IR value copy");
     }
     let identity_reservation = ctx.reserve_scoped(
@@ -1020,13 +1108,21 @@ impl<'a> RmColorChoice<'a> {
         }
     }
 
-    fn observe(&mut self, ctx: &DecodeContext<'_>, assignment: &'a RmDisplayColorAssignment) -> Result<(), CodecError> {
+    fn observe(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        assignment: &'a RmDisplayColorAssignment,
+    ) -> Result<(), CodecError> {
         if let Self::Unique {
             definition,
             source_offset,
         } = self
         {
-            if ctx.equal(*definition, assignment.color_definition.as_str(), "NX observe equality")? {
+            if ctx.equal(
+                *definition,
+                assignment.color_definition.as_str(),
+                "NX observe equality",
+            )? {
                 *source_offset = (*source_offset).min(assignment.frame.offset());
             } else {
                 *self = Self::Conflicting;
@@ -1057,7 +1153,9 @@ fn resolve_rm_source_color_bindings(
         }
         match choices.entry(source_id) {
             Entry::Occupied(mut entry) => entry.get_mut().observe(ctx, assignment)?,
-            Entry::Vacant(entry) => { entry.insert(RmColorChoice::new(assignment)); }
+            Entry::Vacant(entry) => {
+                entry.insert(RmColorChoice::new(assignment));
+            }
         }
     }
     let mut bindings = Vec::new();
@@ -1115,8 +1213,19 @@ fn resolve_rm_face_colors(
         })?;
     let mut colors = Vec::new();
     for binding in ctx.admit_iter(&bindings, "NX resolved face color traversal")? {
-        
-        let Some(definition) = ctx.rposition_by(&(definitions), |definition| Ok(ctx.equal(&(definition.id.as_str()), &(binding.color_definition.as_str()), "NX resolve rm face colors equality")?), "NX RM face color definition lookup")?.and_then(|index| (definitions).get(index))
+        let Some(definition) = ctx
+            .rposition_by(
+                &(definitions),
+                |definition| {
+                    Ok(ctx.equal(
+                        &(definition.id.as_str()),
+                        &(binding.color_definition.as_str()),
+                        "NX resolve rm face colors equality",
+                    )?)
+                },
+                "NX RM face color definition lookup",
+            )?
+            .and_then(|index| (definitions).get(index))
         else {
             continue;
         };
@@ -1143,18 +1252,27 @@ fn resolve_rm_face_color_bindings(
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
 ) -> Result<Vec<RmFaceColorBinding>, CodecError> {
     let mut bindings = Vec::new();
-    for (position, assignment) in ctx.admit_iter(assignments, "NX linked color assignment traversal")?.enumerate() {
+    for (position, assignment) in ctx
+        .admit_iter(assignments, "NX linked color assignment traversal")?
+        .enumerate()
+    {
         let RmDisplayColorAssignmentEncoding::Linked(row) = assignment.frame.encoding() else {
             continue;
         };
         let object_index = row.first_index().atom.value();
-        if ctx.admit_iter(&assignments[..position], "NX RM face color assignment identity")?.any(|earlier| {
-            matches!(
-                earlier.frame.encoding(),
-                RmDisplayColorAssignmentEncoding::Linked(previous)
-                    if previous.first_index().atom.value() == object_index
-            )
-        }) {
+        if ctx
+            .admit_iter(
+                &assignments[..position],
+                "NX RM face color assignment identity",
+            )?
+            .any(|earlier| {
+                matches!(
+                    earlier.frame.encoding(),
+                    RmDisplayColorAssignmentEncoding::Linked(previous)
+                        if previous.first_index().atom.value() == object_index
+                )
+            })
+        {
             continue;
         }
         let mut choice = RmColorChoice::new(assignment);
@@ -1174,8 +1292,17 @@ fn resolve_rm_face_color_bindings(
         else {
             continue;
         };
-        if !ctx.any_by(definitions, |candidate| Ok(ctx.equal(&(candidate.id.as_str()), &(definition), "NX resolve rm face color bindings equality")?), "NX RM face color definitions")?
-        {
+        if !ctx.any_by(
+            definitions,
+            |candidate| {
+                Ok(ctx.equal(
+                    &(candidate.id.as_str()),
+                    &(definition),
+                    "NX resolve rm face color bindings equality",
+                )?)
+            },
+            "NX RM face color definitions",
+        )? {
             continue;
         }
 
@@ -1195,7 +1322,9 @@ fn resolve_rm_face_color_bindings(
             }
             let mut partition = None;
             let mut multiple_partitions = false;
-            for (raw_partition, deltas) in ctx.admit_iter(delta_pairs, "NX RM delta pair traversal")? {
+            for (raw_partition, deltas) in
+                ctx.admit_iter(delta_pairs, "NX RM delta pair traversal")?
+            {
                 let work = deltas.len();
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(work),
@@ -1280,7 +1409,8 @@ fn attach_jpeg_preview_assets(
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
-    for (ordinal, entry) in ctx.admit_iter(&scan.container.entries, "NX JPEG preview entry traversal")?
+    for (ordinal, entry) in ctx
+        .admit_iter(&scan.container.entries, "NX JPEG preview entry traversal")?
         .filter(|entry| entry.content() == EntryContent::PreviewImage)
         .enumerate()
     {
@@ -1399,7 +1529,11 @@ fn attach_material_texture_assets(
                     "NX material texture hash",
                 )
             })?;
-        if !ctx.equal(digest.as_str(), texture.sha256.as_str(), "NX attach material texture assets equality")? {
+        if !ctx.equal(
+            digest.as_str(),
+            texture.sha256.as_str(),
+            "NX attach material texture assets equality",
+        )? {
             return Ok(());
         }
         ctx.reserve_scoped_vec(
@@ -1412,7 +1546,10 @@ fn attach_material_texture_assets(
     }
 
     let mut assets = Vec::new();
-    for (texture, bytes) in ctx.admit_iter(&sources, "NX material texture source traversal")?.copied() {
+    for (texture, bytes) in ctx
+        .admit_iter(&sources, "NX material texture source traversal")?
+        .copied()
+    {
         let id_bytes = texture
             .id
             .len()
@@ -1453,7 +1590,10 @@ fn attach_material_texture_assets(
         "allocate annotation stream handle",
     )?;
     drop(source_reservation);
-    for (texture, asset) in ctx.admit_iter(textures, "NX material texture annotations")?.zip(ctx.admit_iter(&assets, "NX material asset annotations")?) {
+    for (texture, asset) in ctx
+        .admit_iter(textures, "NX material texture annotations")?
+        .zip(ctx.admit_iter(&assets, "NX material asset annotations")?)
+    {
         annotations.note(
             ctx,
             asset.id.as_str(),
@@ -1498,32 +1638,69 @@ fn attach_active_configuration_parameter_values(
     {
         return Ok(());
     }
-    for (index, parameter) in ctx.admit_iter(&ir.model.parameters, "NX configuration parameter traversal")?.enumerate() {
-        if ctx.any_by(&ir.model.parameters[..index], |previous| Ok(ctx.equal(&(previous.id), &(parameter.id), "NX attach active configuration parameter values equality")?), "NX configuration parameter identity uniqueness")?
-        {
+    for (index, parameter) in ctx
+        .admit_iter(&ir.model.parameters, "NX configuration parameter traversal")?
+        .enumerate()
+    {
+        if ctx.any_by(
+            &ir.model.parameters[..index],
+            |previous| {
+                Ok(ctx.equal(
+                    &(previous.id),
+                    &(parameter.id),
+                    "NX attach active configuration parameter values equality",
+                )?)
+            },
+            "NX configuration parameter identity uniqueness",
+        )? {
             return Ok(());
         }
     }
-    for parameter in ctx.admit_iter(&ir.model.parameters, "NX configuration parameter projection")? {
-        for dependency in ctx.admit_iter(&*parameter.dependencies, "NX configuration dependency traversal")? {
-            let Some(preceding) = ctx.find_by(&ir.model.parameters, |candidate| Ok(ctx.equal(&(candidate.id), &(*dependency), "NX attach active configuration parameter values equality")?), "NX configuration parameter dependencies")?
+    for parameter in ctx.admit_iter(
+        &ir.model.parameters,
+        "NX configuration parameter projection",
+    )? {
+        for dependency in ctx.admit_iter(
+            &*parameter.dependencies,
+            "NX configuration dependency traversal",
+        )? {
+            let Some(preceding) = ctx.find_by(
+                &ir.model.parameters,
+                |candidate| {
+                    Ok(ctx.equal(
+                        &(candidate.id),
+                        &(*dependency),
+                        "NX attach active configuration parameter values equality",
+                    )?)
+                },
+                "NX configuration parameter dependencies",
+            )?
             else {
                 return Ok(());
             };
-            if !ctx.equal(&(preceding.owner), &(parameter.owner), "NX attach active configuration parameter values equality")? || preceding.ordinal >= parameter.ordinal {
+            if !ctx.equal(
+                &(preceding.owner),
+                &(parameter.owner),
+                "NX attach active configuration parameter values equality",
+            )? || preceding.ordinal >= parameter.ordinal
+            {
                 return Ok(());
             }
         }
     }
     // A parameter with no evaluated value leaves the configuration untouched,
     // which is what the dependency guard above does for its own case.
-    if ctx.admit_iter(&ir.model.parameters, "NX configuration parameter values")?
+    if ctx
+        .admit_iter(&ir.model.parameters, "NX configuration parameter values")?
         .any(|parameter| parameter.value.is_none())
     {
         return Ok(());
     }
     let mut values = BTreeMap::new();
-    for parameter in ctx.admit_iter(&ir.model.parameters, "NX configuration parameter projection")? {
+    for parameter in ctx.admit_iter(
+        &ir.model.parameters,
+        "NX configuration parameter projection",
+    )? {
         let Some(value) = parameter.value.as_ref() else {
             return Ok(());
         };
@@ -1692,9 +1869,14 @@ fn attach_initial_segment_bodies(
     let body_count = ir.model.bodies.len();
     let mut has_binding = false;
     for body in ctx.admit_iter(&ir.model.bodies, "NX retained-history body traversal")? {
-        if ctx.admit_iter(body_bindings, "NX retained-history binding traversal")?.any(|binding| {
-            body.id.as_str().starts_with(&format!("nx:s{}:", binding.stream_ordinal))
-        }) {
+        if ctx
+            .admit_iter(body_bindings, "NX retained-history binding traversal")?
+            .any(|binding| {
+                body.id
+                    .as_str()
+                    .starts_with(&format!("nx:s{}:", binding.stream_ordinal))
+            })
+        {
             has_binding = true;
             break;
         }
@@ -1721,16 +1903,25 @@ fn attach_initial_segment_bodies(
     let mut feature_outputs = Vec::new();
     let mut source_properties = BTreeMap::new();
     let mut binding_ordinal = 0usize;
-    for (position, body) in ctx.admit_iter(&sorted_bodies, "NX retained-history sorted body traversal")?.enumerate() {
+    for (position, body) in ctx
+        .admit_iter(&sorted_bodies, "NX retained-history sorted body traversal")?
+        .enumerate()
+    {
         if match sorted_bodies.get(position + 1) {
-            Some(next) => ctx.equal(&next.id, &body.id, "NX attach initial segment bodies equality")?,
+            Some(next) => ctx.equal(
+                &next.id,
+                &body.id,
+                "NX attach initial segment bodies equality",
+            )?,
             None => false,
-        }
-        {
+        } {
             continue;
         }
         let mut matched = false;
-        for binding in ctx.admit_iter(body_bindings, "NX retained-history selected binding traversal")? {
+        for binding in ctx.admit_iter(
+            body_bindings,
+            "NX retained-history selected binding traversal",
+        )? {
             if !body
                 .id
                 .as_str()
@@ -2036,7 +2227,11 @@ fn attach_feature_operations(
     )?;
     let mut offset_store_bodies_by_operation = BTreeMap::<&str, Vec<(u32, String)>>::new();
     for body_use in ctx.admit_iter(body_data_block_uses, "NX feature record traversal")? {
-        let Some(reference) = ctx.get_btree_map(&body_references_by_id, body_use.feature_body_reference.as_str(), "NX admitted map lookup")?
+        let Some(reference) = ctx.get_btree_map(
+            &body_references_by_id,
+            body_use.feature_body_reference.as_str(),
+            "NX admitted map lookup",
+        )?
         else {
             continue;
         };
@@ -2068,7 +2263,15 @@ fn attach_feature_operations(
     let mut body_writer_history = BodyWriterHistory::default();
     if let Some(feature) = initial_body_id
         .as_ref()
-        .map(|id| ctx.find_by(&ir.model.features, |feature| Ok(ctx.equal(&feature.id, id, "NX attach feature operations equality")?), "NX initial body feature search"))
+        .map(|id| {
+            ctx.find_by(
+                &ir.model.features,
+                |feature| {
+                    Ok(ctx.equal(&feature.id, id, "NX attach feature operations equality")?)
+                },
+                "NX initial body feature search",
+            )
+        })
         .transpose()?
         .flatten()
     {
@@ -2113,9 +2316,13 @@ fn attach_feature_operations(
         "NX operation record index",
     )?;
     let mut input_block_identity_group_by_input = BTreeMap::new();
-    let mut _input_block_identity_group_by_input_reservation = ctx.reserve_scoped(0, "NX last-record index")?;
+    let mut _input_block_identity_group_by_input_reservation =
+        ctx.reserve_scoped(0, "NX last-record index")?;
     _input_block_identity_group_by_input_reservation.with_storage(|| {
-        for group in ctx.admit_iter(input_block_identity_groups, "NX input block group traversal")? {
+        for group in ctx.admit_iter(
+            input_block_identity_groups,
+            "NX input block group traversal",
+        )? {
             for member in ctx.admit_iter(&*group.members, "NX input block group members")? {
                 ctx.insert_btree_map(
                     &mut input_block_identity_group_by_input,
@@ -2258,7 +2465,10 @@ fn attach_feature_operations(
         )?;
     let mut datum_identity_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneCsysIdentityUse>>::new();
-    for identity_use in ctx.admit_iter(datum_plane_csys_identity_uses, "NX feature record traversal")? {
+    for identity_use in ctx.admit_iter(
+        datum_plane_csys_identity_uses,
+        "NX feature record traversal",
+    )? {
         ctx.push_scoped_btree_group(
             &mut group_reservation,
             &mut datum_identity_uses_by_operation,
@@ -2573,7 +2783,10 @@ fn attach_feature_operations(
     }
     let mut sketch_preceding_named_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPrecedingNamedPointUse>>::new();
-    for point_use in ctx.admit_iter(sketch_preceding_named_point_uses, "NX feature record traversal")? {
+    for point_use in ctx.admit_iter(
+        sketch_preceding_named_point_uses,
+        "NX feature record traversal",
+    )? {
         ctx.push_scoped_btree_group(
             &mut group_reservation,
             &mut sketch_preceding_named_point_uses_by_operation,
@@ -2642,7 +2855,8 @@ fn attach_feature_operations(
     }
     let mut segment_body_operands_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyOperand>>::new();
-    for operand in ctx.admit_iter(operation_body_operands, "NX segment operand traversal")?
+    for operand in ctx
+        .admit_iter(operation_body_operands, "NX segment operand traversal")?
         .filter(|operand| !operand.segment_body_bindings.is_empty())
     {
         ctx.push_scoped_btree_group(
@@ -2854,7 +3068,10 @@ fn attach_feature_operations(
     }
     let mut operation_body_11_continuations_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBody11Continuation>>::new();
-    for continuation in ctx.admit_iter(operation_body_11_continuations, "NX feature continuation traversal")? {
+    for continuation in ctx.admit_iter(
+        operation_body_11_continuations,
+        "NX feature continuation traversal",
+    )? {
         ctx.push_scoped_btree_group(
             &mut group_reservation,
             &mut operation_body_11_continuations_by_operation,
@@ -2866,7 +3083,10 @@ fn attach_feature_operations(
     }
     let mut operation_body_reference_lanes_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyReferenceLane>>::new();
-    for lane in ctx.admit_iter(operation_body_reference_lanes, "NX feature record traversal")? {
+    for lane in ctx.admit_iter(
+        operation_body_reference_lanes,
+        "NX feature record traversal",
+    )? {
         ctx.push_scoped_btree_group(
             &mut group_reservation,
             &mut operation_body_reference_lanes_by_operation,
@@ -3031,7 +3251,12 @@ fn attach_feature_operations(
             .id
             .strip_prefix("nx:feature-history:operation-label#")
             .unwrap_or(label.id.as_str());
-        if key.is_empty() || key.contains('#') || ctx.admit_iter(key, "NX feature identity whitespace scan")?.any(char::is_whitespace) {
+        if key.is_empty()
+            || key.contains('#')
+            || ctx
+                .admit_iter(key, "NX feature identity whitespace scan")?
+                .any(char::is_whitespace)
+        {
             continue;
         }
         let id_len = PREFIX.len().checked_add(key.len()).ok_or_else(|| {
@@ -3094,7 +3319,8 @@ fn attach_feature_operations(
         )?;
     let mut body_writes_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyWrite>>::new();
-    for (write, operation_label) in ctx.admit_iter(operation_body_writes, "NX body writer traversal")?
+    for (write, operation_label) in ctx
+        .admit_iter(operation_body_writes, "NX body writer traversal")?
         .filter_map(|write| write.operation_label.as_deref().map(|label| (write, label)))
     {
         ctx.push_scoped_btree_group(
@@ -3111,7 +3337,11 @@ fn attach_feature_operations(
     let mut payload_strings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeaturePayloadString>>::new();
     for value in ctx.admit_iter(payload_strings, "NX feature record traversal")? {
-        let Some(operation) = ctx.get_btree_map(&operation_labels_by_record, value.operation_record.as_str(), "NX admitted map lookup")?
+        let Some(operation) = ctx.get_btree_map(
+            &operation_labels_by_record,
+            value.operation_record.as_str(),
+            "NX admitted map lookup",
+        )?
         else {
             continue;
         };
@@ -3151,11 +3381,17 @@ fn attach_feature_operations(
         })?;
     }
     let annotation_base_order = id_from_index(ir.model.semantic_annotations.len());
-    for (annotation_ordinal, label) in ctx.admit_iter(labels, "NX text annotation label traversal")?
+    for (annotation_ordinal, label) in ctx
+        .admit_iter(labels, "NX text annotation label traversal")?
         .filter(|label| label.value == "TEXT")
         .enumerate()
     {
-        let payload_strings = ctx.get_btree_map(&payload_strings_by_operation, label.id.as_str(), "NX admitted map lookup")?
+        let payload_strings = ctx
+            .get_btree_map(
+                &payload_strings_by_operation,
+                label.id.as_str(),
+                "NX admitted map lookup",
+            )?
             .map_or([].as_slice(), Vec::as_slice);
         let order = annotation_base_order.and_then(|base| {
             id_from_index(annotation_ordinal).and_then(|ordinal| base.checked_add(ordinal))
@@ -3214,19 +3450,32 @@ fn attach_feature_operations(
         )?;
         ir.model.semantic_annotations.push(annotation);
     }
-    for (ordinal, label) in ctx.admit_iter(&chronological_labels, "NX chronological operation traversal")?.copied().enumerate() {
+    for (ordinal, label) in ctx
+        .admit_iter(
+            &chronological_labels,
+            "NX chronological operation traversal",
+        )?
+        .copied()
+        .enumerate()
+    {
         if !projects_neutral_feature(&label.value)
             || hole_packages.internal_operations.contains(&label.id)
         {
             continue;
         }
-        let Some(source_id) = ctx.get_btree_map(&feature_ids_by_operation, label.id.as_str(), "NX admitted map lookup")? else {
+        let Some(source_id) = ctx.get_btree_map(
+            &feature_ids_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )?
+        else {
             continue;
         };
         let mut feature_copy_storage = ctx.reserve_scoped(0, "NX current feature identity")?;
         let id = feature_copy_storage
             .with_storage(|| source_id.try_clone_for_decode(ctx, "NX current feature identity"))?;
-        let boolean_offset_store_resolution = ctx.get_btree_map(&booleans, label.id.as_str(), "NX admitted map lookup")?
+        let boolean_offset_store_resolution = ctx
+            .get_btree_map(&booleans, label.id.as_str(), "NX admitted map lookup")?
             .map(|operation| {
                 crate::native::segments::boolean_offset_store_resolution(
                     ctx,
@@ -3235,7 +3484,8 @@ fn attach_feature_operations(
                 )
             })
             .transpose()?;
-        let boolean_definition = ctx.get_btree_map(&booleans, label.id.as_str(), "NX admitted map lookup")?
+        let boolean_definition = ctx
+            .get_btree_map(&booleans, label.id.as_str(), "NX admitted map lookup")?
             .zip(boolean_offset_store_resolution.as_ref())
             .map(|(operation, resolution)| {
                 boolean_feature_definition(
@@ -3248,18 +3498,27 @@ fn attach_feature_operations(
             })
             .transpose()?;
         let mut dependencies = Vec::new();
-        let retained_operation_body_writes = ctx.get_btree_map(&body_writes_by_operation, label.id.as_str(), "NX admitted map lookup")?
+        let retained_operation_body_writes = ctx
+            .get_btree_map(
+                &body_writes_by_operation,
+                label.id.as_str(),
+                "NX admitted map lookup",
+            )?
             .map_or([].as_slice(), Vec::as_slice);
         let operation_body_writes = if body_writes_match_boolean_target(
             ctx,
             retained_operation_body_writes,
-            ctx.get_btree_map(&booleans, label.id.as_str(), "NX admitted map lookup")?.copied(),
+            ctx.get_btree_map(&booleans, label.id.as_str(), "NX admitted map lookup")?
+                .copied(),
         )? {
             retained_operation_body_writes
         } else {
             &[]
         };
-        for write in ctx.admit_iter(operation_body_writes, "NX operation writer dependency traversal")? {
+        for write in ctx.admit_iter(
+            operation_body_writes,
+            "NX operation writer dependency traversal",
+        )? {
             if let Some(writer) = body_identity_writers.get(&write.frame.body_identity()) {
                 push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
             }
@@ -3291,7 +3550,9 @@ fn attach_feature_operations(
                 )? {
                     push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
                 }
-                for body in ctx.admit_iter(&operation.tools, "NX boolean tool dependency traversal")? {
+                for body in
+                    ctx.admit_iter(&operation.tools, "NX boolean tool dependency traversal")?
+                {
                     if let Some(writer) = boolean_participant_writer(
                         ctx,
                         tools,
@@ -3305,17 +3566,31 @@ fn attach_feature_operations(
                 }
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&segment_body_operands_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for operand in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
-                if let Some(writer) =
-                    body_writer_history.native_writer(ctx, canonical_body(operand.operand.atom.value()))?
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &segment_body_operands_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for operand in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
+                if let Some(writer) = body_writer_history
+                    .native_writer(ctx, canonical_body(operand.operand.atom.value()))?
                 {
                     push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
                 }
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&operation_body_operands_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for operand in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &operation_body_operands_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for operand in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 let Some(data_block) = operand.operand_data_block.as_deref() else {
                     continue;
                 };
@@ -3325,37 +3600,64 @@ fn attach_feature_operations(
                 push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&datum_plane_uses_by_input_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for block_use in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &datum_plane_uses_by_input_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for block_use in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 let Some(dependency) = preceding_operation_dependency(
                     ctx,
                     block_use.construction_operation_label.as_str(),
                     ordinal,
                     &operation_positions,
                     &feature_ids_by_operation,
-                )? else {
+                )?
+                else {
                     continue;
                 };
                 push_unique_feature_dependency(ctx, &mut dependencies, dependency)?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&datum_csys_uses_by_input_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for block_use in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &datum_csys_uses_by_input_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for block_use in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 let Some(dependency) = preceding_operation_dependency(
                     ctx,
                     block_use.construction_operation_label.as_str(),
                     ordinal,
                     &operation_positions,
                     &feature_ids_by_operation,
-                )? else {
+                )?
+                else {
                     continue;
                 };
                 push_unique_feature_dependency(ctx, &mut dependencies, dependency)?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&datum_identity_uses_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for identity_use in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
-                let other = if ctx.equal(&(identity_use.datum_plane_operation_label), &(label.id), "NX attach feature operations equality")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &datum_identity_uses_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for identity_use in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
+                let other = if ctx.equal(
+                    &(identity_use.datum_plane_operation_label),
+                    &(label.id),
+                    "NX attach feature operations equality",
+                )? {
                     identity_use.datum_csys_operation_label.as_str()
                 } else {
                     identity_use.datum_plane_operation_label.as_str()
@@ -3366,21 +3668,31 @@ fn attach_feature_operations(
                     ordinal,
                     &operation_positions,
                     &feature_ids_by_operation,
-                )? else {
+                )?
+                else {
                     continue;
                 };
                 push_unique_feature_dependency(ctx, &mut dependencies, dependency)?;
             }
         }
-        if let Some(dependency) = ctx.get_btree_map(&sketch_datum_csys_dependencies, label.id.as_str(), "NX admitted map lookup")? {
-            if let Some(feature) =
-                ctx.get_btree_map(&feature_ids_by_operation, dependency.sketch_operation_label.as_str(), "NX admitted map lookup")?
-            {
+        if let Some(dependency) = ctx.get_btree_map(
+            &sketch_datum_csys_dependencies,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            if let Some(feature) = ctx.get_btree_map(
+                &feature_ids_by_operation,
+                dependency.sketch_operation_label.as_str(),
+                "NX admitted map lookup",
+            )? {
                 push_unique_feature_dependency(ctx, &mut dependencies, feature)?;
             }
         }
         let mut source_properties = BTreeMap::new();
-        for write in ctx.admit_iter(retained_operation_body_writes, "NX retained operation writer traversal")? {
+        for write in ctx.admit_iter(
+            retained_operation_body_writes,
+            "NX retained operation writer traversal",
+        )? {
             let ordinal = write.ordinal;
             insert_source_property(
                 ctx,
@@ -3412,8 +3724,17 @@ fn attach_feature_operations(
                 format_args!("body_write.{ordinal}.body_image_object_index"),
                 format_args!("{}", write.frame.body_image().value()),
             )?;
-            if let Some(use_) = ctx.find_by(operation_body_image_segment_uses, |use_| Ok(ctx.equal(&(use_.operation_body_write), &(write.id), "NX attach feature operations equality")?), "NX operation writer use search")?
-            {
+            if let Some(use_) = ctx.find_by(
+                operation_body_image_segment_uses,
+                |use_| {
+                    Ok(ctx.equal(
+                        &(use_.operation_body_write),
+                        &(write.id),
+                        "NX attach feature operations equality",
+                    )?)
+                },
+                "NX operation writer use search",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3427,8 +3748,17 @@ fn attach_feature_operations(
                     format_args!("{}", use_.segment_body_binding),
                 )?;
             }
-            if let Some(use_) = ctx.find_by(operation_body_identity_segment_uses, |use_| Ok(ctx.equal(&(use_.operation_body_write), &(write.id), "NX attach feature operations equality")?), "NX operation writer use search")?
-            {
+            if let Some(use_) = ctx.find_by(
+                operation_body_identity_segment_uses,
+                |use_| {
+                    Ok(ctx.equal(
+                        &(use_.operation_body_write),
+                        &(write.id),
+                        "NX attach feature operations equality",
+                    )?)
+                },
+                "NX operation writer use search",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3442,8 +3772,17 @@ fn attach_feature_operations(
                     format_args!("{}", use_.segment_body_binding),
                 )?;
             }
-            if let Some(use_) = ctx.find_by(operation_body_partition_uses, |use_| Ok(ctx.equal(&(use_.operation_body_write), &(write.id), "NX attach feature operations equality")?), "NX operation writer use search")?
-            {
+            if let Some(use_) = ctx.find_by(
+                operation_body_partition_uses,
+                |use_| {
+                    Ok(ctx.equal(
+                        &(use_.operation_body_write),
+                        &(write.id),
+                        "NX attach feature operations equality",
+                    )?)
+                },
+                "NX operation writer use search",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3456,7 +3795,13 @@ fn attach_feature_operations(
                     format_args!("body_write.{ordinal}.partition_stream_ordinal"),
                     format_args!("{}", use_.partition_stream_ordinal),
                 )?;
-                for (group_ordinal, group) in ctx.admit_iter(&use_.parasolid_group_records, "NX partition group record traversal")?.enumerate() {
+                for (group_ordinal, group) in ctx
+                    .admit_iter(
+                        &use_.parasolid_group_records,
+                        "NX partition group record traversal",
+                    )?
+                    .enumerate()
+                {
                     insert_source_property(
                         ctx,
                         &mut source_properties,
@@ -3464,7 +3809,13 @@ fn attach_feature_operations(
                         format_args!("{group}"),
                     )?;
                 }
-                for (member_ordinal, member) in ctx.admit_iter(&use_.parasolid_group_members, "NX partition group member traversal")?.enumerate() {
+                for (member_ordinal, member) in ctx
+                    .admit_iter(
+                        &use_.parasolid_group_members,
+                        "NX partition group member traversal",
+                    )?
+                    .enumerate()
+                {
                     insert_source_property(
                         ctx,
                         &mut source_properties,
@@ -3475,8 +3826,17 @@ fn attach_feature_operations(
                     )?;
                 }
             }
-            if let Some(use_) = ctx.find_by(body_write_group_partition_uses, |use_| Ok(ctx.equal(&(use_.body_write), &(write.id), "NX attach feature operations equality")?), "NX operation writer use search")?
-            {
+            if let Some(use_) = ctx.find_by(
+                body_write_group_partition_uses,
+                |use_| {
+                    Ok(ctx.equal(
+                        &(use_.body_write),
+                        &(write.id),
+                        "NX attach feature operations equality",
+                    )?)
+                },
+                "NX operation writer use search",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3501,9 +3861,18 @@ fn attach_feature_operations(
                 format_args!("{stable_identity}"),
             )?;
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&datum_csys_uses_by_input_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (use_ordinal, block_use) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &datum_csys_uses_by_input_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (use_ordinal, block_use) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3512,7 +3881,11 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(dependency) = ctx.get_btree_map(&sketch_datum_csys_dependencies, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(dependency) = ctx.get_btree_map(
+            &sketch_datum_csys_dependencies,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
@@ -3554,7 +3927,13 @@ fn attach_feature_operations(
                 format_args!("sketch_datum_csys_dependency"),
                 format_args!("{}", dependency.id),
             )?;
-            for (alias_ordinal, alias) in ctx.admit_iter(&dependency.scalar_aliases, "NX datum scalar alias traversal")?.enumerate() {
+            for (alias_ordinal, alias) in ctx
+                .admit_iter(
+                    &dependency.scalar_aliases,
+                    "NX datum scalar alias traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3573,7 +3952,11 @@ fn attach_feature_operations(
         let mut outputs = if deletes_body {
             Vec::new()
         } else {
-            match ctx.get_btree_map(&body_references, label.id.as_str(), "NX admitted map lookup")? {
+            match ctx.get_btree_map(
+                &body_references,
+                label.id.as_str(),
+                "NX admitted map lookup",
+            )? {
                 Some(body) => {
                     feature_body_outputs(ctx, *body, body_bindings, &bodies_by_object_index)?
                 }
@@ -3588,12 +3971,19 @@ fn attach_feature_operations(
             )?;
         }
         if outputs.is_empty() {
-            let hole_bodies = match ctx.get_btree_map(&hole_outputs, label.id.as_str(), "NX admitted map lookup")? {
+            let hole_bodies = match ctx.get_btree_map(
+                &hole_outputs,
+                label.id.as_str(),
+                "NX admitted map lookup",
+            )? {
                 Some(bodies) => Some(bodies),
-                None => ctx.get_btree_map(&hole_packages.outputs, label.id.as_str(), "NX admitted map lookup")?,
+                None => ctx.get_btree_map(
+                    &hole_packages.outputs,
+                    label.id.as_str(),
+                    "NX admitted map lookup",
+                )?,
             };
-            if let Some(bodies) = hole_bodies
-            {
+            if let Some(bodies) = hole_bodies {
                 outputs = ctx.collection_vec(bodies.len(), "NX feature output bodies")?;
                 for body in bodies {
                     outputs.push(body.try_clone_for_decode(ctx, "NX feature output body")?);
@@ -3606,15 +3996,29 @@ fn attach_feature_operations(
                 outputs.push(body.try_clone_for_decode(ctx, "NX feature output body")?);
             }
         }
-        let native_primary_body = ctx.get_btree_map(&body_references, label.id.as_str(), "NX admitted map lookup")?
+        let native_primary_body = ctx
+            .get_btree_map(
+                &body_references,
+                label.id.as_str(),
+                "NX admitted map lookup",
+            )?
             .copied()
             .map(canonical_body);
-        let offset_store_primary_body = ctx.get_btree_map(&offset_store_bodies_by_operation, label.id.as_str(), "NX admitted map lookup")?
+        let offset_store_primary_body = ctx
+            .get_btree_map(
+                &offset_store_bodies_by_operation,
+                label.id.as_str(),
+                "NX admitted map lookup",
+            )?
             .and_then(|uses| match uses.as_slice() {
                 [(_, data_block)] => Some(data_block.as_str()),
                 _ => None,
             });
-        if let Some(body) = ctx.get_btree_map(&body_references, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(body) = ctx.get_btree_map(
+            &body_references,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
@@ -3622,14 +4026,22 @@ fn attach_feature_operations(
                 format_args!("{body}"),
             )?;
         }
-        if let Some(reference) = ctx.get_btree_map(&body_writer_references_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(reference) = ctx.get_btree_map(
+            &body_writer_references_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
                 format_args!("primary_body_reference"),
                 format_args!("{}", reference.id),
             )?;
-            if let Some(uses) = ctx.get_btree_map(&body_segment_uses_by_reference, reference.id.as_str(), "NX admitted map lookup")? {
+            if let Some(uses) = ctx.get_btree_map(
+                &body_segment_uses_by_reference,
+                reference.id.as_str(),
+                "NX admitted map lookup",
+            )? {
                 if let [use_] = uses.as_slice() {
                     insert_source_property(
                         ctx,
@@ -3645,7 +4057,11 @@ fn attach_feature_operations(
                     )?;
                 }
             }
-            if let Some(uses) = ctx.get_btree_map(&body_data_block_uses_by_reference, reference.id.as_str(), "NX admitted map lookup")? {
+            if let Some(uses) = ctx.get_btree_map(
+                &body_data_block_uses_by_reference,
+                reference.id.as_str(),
+                "NX admitted map lookup",
+            )? {
                 if let [use_] = uses.as_slice() {
                     insert_source_property(
                         ctx,
@@ -3662,8 +4078,16 @@ fn attach_feature_operations(
                 }
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&body_reference_occurrences_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (reference, ordinal) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &body_reference_occurrences_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (reference, ordinal) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
                 .filter_map(|reference| reference.ordinal.map(|ordinal| (reference, ordinal)))
             {
                 insert_source_property(
@@ -3680,7 +4104,11 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(inputs) = ctx.get_btree_map(&sketch_construction_inputs_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(inputs) = ctx.get_btree_map(
+            &sketch_construction_inputs_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
@@ -3688,9 +4116,18 @@ fn attach_feature_operations(
                 format_args!("{}", inputs.id),
             )?;
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&sketch_records_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, record) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &sketch_records_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, record) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3699,9 +4136,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&sketch_construction_payloads_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, payload) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &sketch_construction_payloads_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, payload) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3710,8 +4156,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&sketch_coordinate_pairs_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for pair in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &sketch_coordinate_pairs_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for pair in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3720,8 +4173,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&sketch_fixed_pairs_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for pair in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &sketch_fixed_pairs_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for pair in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3730,8 +4190,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&sketch_mixed_pairs_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for pair in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &sketch_mixed_pairs_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for pair in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3740,8 +4207,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&sketch_payload_scalar_lanes_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for lane in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &sketch_payload_scalar_lanes_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for lane in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3750,9 +4224,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&sketch_fixed_points_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, point) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &sketch_fixed_points_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, point) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3761,7 +4244,11 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(construction) = ctx.get_btree_map(&block_constructions_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(construction) = ctx.get_btree_map(
+            &block_constructions_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
@@ -3769,9 +4256,18 @@ fn attach_feature_operations(
                 format_args!("{}", construction.id),
             )?;
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&block_construction_payloads_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, payload) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &block_construction_payloads_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, payload) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3780,7 +4276,11 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(dimensions) = ctx.get_btree_map(&block_dimensions_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(dimensions) = ctx.get_btree_map(
+            &block_dimensions_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
@@ -3802,9 +4302,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&block_payload_points_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, point) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &block_payload_points_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, point) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3813,9 +4322,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&block_payload_point_groups_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, group) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &block_payload_point_groups_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, group) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3824,7 +4342,11 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(construction) = ctx.get_btree_map(&extrude_32_constructions_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(construction) = ctx.get_btree_map(
+            &extrude_32_constructions_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
@@ -3832,7 +4354,11 @@ fn attach_feature_operations(
                 format_args!("{}", construction.id),
             )?;
         }
-        if let Some(header) = ctx.get_btree_map(&extrude_payload_headers_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(header) = ctx.get_btree_map(
+            &extrude_payload_headers_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
@@ -3840,7 +4366,11 @@ fn attach_feature_operations(
                 format_args!("{}", header.id),
             )?;
         }
-        if let Some(lane) = ctx.get_btree_map(&operation_terminal_discriminators_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(lane) = ctx.get_btree_map(
+            &operation_terminal_discriminators_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
@@ -3848,9 +4378,18 @@ fn attach_feature_operations(
                 format_args!("{}", lane.id),
             )?;
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&extrude_payload_32_branches_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, branch) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &extrude_payload_32_branches_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, branch) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3859,8 +4398,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&operation_body_scalar_triples_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for triple in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &operation_body_scalar_triples_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for triple in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3872,8 +4418,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&operation_body_members_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for member in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &operation_body_members_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for member in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3885,8 +4438,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&operation_body_11_continuations_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for continuation in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &operation_body_11_continuations_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for continuation in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3898,8 +4458,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&operation_body_reference_lanes_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for lane in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &operation_body_reference_lanes_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for lane in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3911,7 +4478,11 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(construction) = ctx.get_btree_map(&datum_csys_constructions_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(construction) = ctx.get_btree_map(
+            &datum_csys_constructions_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
@@ -3919,9 +4490,18 @@ fn attach_feature_operations(
                 format_args!("{}", construction.id),
             )?;
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&datum_csys_column_row_uses_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, use_) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &datum_csys_column_row_uses_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, use_) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3930,9 +4510,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&datum_csys_payloads_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, payload) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &datum_csys_payloads_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, payload) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3941,9 +4530,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&datum_csys_payload_scalar_pairs_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, pair) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &datum_csys_payload_scalar_pairs_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, pair) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3952,9 +4550,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&datum_csys_payload_fixed_pairs_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, pair) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &datum_csys_payload_fixed_pairs_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, pair) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3963,9 +4570,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&datum_csys_payload_scalars_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, scalar) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &datum_csys_payload_scalars_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, scalar) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3974,9 +4590,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&datum_csys_descriptors_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, descriptor) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &datum_csys_descriptors_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, descriptor) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -3985,7 +4610,11 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(header) = ctx.get_btree_map(&datum_plane_headers_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(header) = ctx.get_btree_map(
+            &datum_plane_headers_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
@@ -3993,7 +4622,11 @@ fn attach_feature_operations(
                 format_args!("{}", header.id),
             )?;
         }
-        if let Some(payload) = ctx.get_btree_map(&datum_plane_payloads_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(payload) = ctx.get_btree_map(
+            &datum_plane_payloads_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
@@ -4001,9 +4634,18 @@ fn attach_feature_operations(
                 format_args!("{}", payload.id),
             )?;
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&datum_plane_payload_scalar_pairs_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, pair) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &datum_plane_payload_scalar_pairs_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, pair) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4012,9 +4654,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&datum_plane_descriptors_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, descriptor) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &datum_plane_descriptors_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, descriptor) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4023,9 +4674,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&datum_identity_uses_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, identity_use) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &datum_identity_uses_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, identity_use) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4034,9 +4694,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&datum_plane_uses_by_input_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (use_ordinal, block_use) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &datum_plane_uses_by_input_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (use_ordinal, block_use) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4054,9 +4723,17 @@ fn attach_feature_operations(
             simple_hole_repeated_scalar_lane_block_references,
             simple_hole_construction_groups,
         )?;
-        for lane in ctx.admit_iter(hole_package_construction_group_lanes, "NX hole package construction lane traversal")?
-        {
-        if !(ctx.equal(&(lane.operation_label), &(label.id), "NX attach feature operations equality")?) { continue; }
+        for lane in ctx.admit_iter(
+            hole_package_construction_group_lanes,
+            "NX hole package construction lane traversal",
+        )? {
+            if !(ctx.equal(
+                &(lane.operation_label),
+                &(label.id),
+                "NX attach feature operations equality",
+            )?) {
+                continue;
+            }
 
             insert_source_property(
                 ctx,
@@ -4065,9 +4742,26 @@ fn attach_feature_operations(
                 format_args!("{}", lane.id),
             )?;
         }
-        for group_use in ctx.admit_iter(hole_package_construction_group_uses, "NX hole package construction use traversal")? {
-            let group = ctx.find_by(simple_hole_construction_groups, |group| Ok(ctx.equal(&(group.id), &(group_use.simple_hole_construction_group), "NX attach feature operations equality")?), "NX hole package construction group search")?;
-            if ctx.equal(&(group_use.operation_label), &(label.id), "NX attach feature operations equality")? {
+        for group_use in ctx.admit_iter(
+            hole_package_construction_group_uses,
+            "NX hole package construction use traversal",
+        )? {
+            let group = ctx.find_by(
+                simple_hole_construction_groups,
+                |group| {
+                    Ok(ctx.equal(
+                        &(group.id),
+                        &(group_use.simple_hole_construction_group),
+                        "NX attach feature operations equality",
+                    )?)
+                },
+                "NX hole package construction group search",
+            )?;
+            if ctx.equal(
+                &(group_use.operation_label),
+                &(label.id),
+                "NX attach feature operations equality",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4080,9 +4774,23 @@ fn attach_feature_operations(
                     format_args!("simple_hole_construction_group"),
                     format_args!("{}", group_use.simple_hole_construction_group),
                 )?;
-            } else if group.map(|group| {
-                ctx.any_by(&*group.members, |member| Ok(ctx.equal(&member.operation_label, &label.id, "NX attach feature operations equality")?), "NX hole package group operation membership")
-            }).transpose()?.is_some_and(|matches| matches) {
+            } else if group
+                .map(|group| {
+                    ctx.any_by(
+                        &*group.members,
+                        |member| {
+                            Ok(ctx.equal(
+                                &member.operation_label,
+                                &label.id,
+                                "NX attach feature operations equality",
+                            )?)
+                        },
+                        "NX hole package group operation membership",
+                    )
+                })
+                .transpose()?
+                .is_some_and(|matches| matches)
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4114,8 +4822,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&input_blocks_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for input in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &input_blocks_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for input in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4128,7 +4843,11 @@ fn attach_feature_operations(
                     format_args!("input_block.{}", input.input_slot),
                     format_args!("{}", input.data_block),
                 )?;
-                if let Some(group) = ctx.get_btree_map(&input_block_identity_group_by_input, input.id.as_str(), "NX admitted map lookup")? {
+                if let Some(group) = ctx.get_btree_map(
+                    &input_block_identity_group_by_input,
+                    input.id.as_str(),
+                    "NX admitted map lookup",
+                )? {
                     insert_source_property(
                         ctx,
                         &mut source_properties,
@@ -4138,9 +4857,18 @@ fn attach_feature_operations(
                 }
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&input_column_row_uses_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, use_) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &input_column_row_uses_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, use_) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4149,9 +4877,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&input_column_targets_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, target) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &input_column_targets_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, target) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4160,8 +4897,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&sketch_references_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for reference in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &sketch_references_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for reference in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4177,8 +4921,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&projected_curve_references_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for reference in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &projected_curve_references_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for reference in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4194,8 +4945,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&projected_curve_construction_payloads_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for payload in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &projected_curve_construction_payloads_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for payload in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4204,8 +4962,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&projected_curve_construction_strings_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for value in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &projected_curve_construction_strings_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for value in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4214,8 +4979,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&fset_reference_graphs_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for graph in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &fset_reference_graphs_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for graph in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4224,8 +4996,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&fset_construction_payloads_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for payload in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &fset_construction_payloads_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for payload in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 let crate::native::features::FeatureConstructionOwner::Fset { group, .. } =
                     &payload.owner
                 else {
@@ -4243,8 +5022,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&delete_reference_fields_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for field in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &delete_reference_fields_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for field in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4253,8 +5039,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&delete_construction_payloads_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for payload in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &delete_construction_payloads_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for payload in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4263,8 +5056,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&pattern_references_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for reference in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &pattern_references_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for reference in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4280,8 +5080,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&pattern_construction_payloads_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for payload in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &pattern_construction_payloads_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for payload in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4290,8 +5097,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&pattern_counted_reference_lanes_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for lane in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &pattern_counted_reference_lanes_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for lane in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4300,8 +5114,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&pattern_construction_strings_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for value in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &pattern_construction_strings_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for value in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4310,8 +5131,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&pattern_construction_fixed_lanes_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for lane in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &pattern_construction_fixed_lanes_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for lane in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4320,8 +5148,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&pattern_transform_lanes_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for lane in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &pattern_transform_lanes_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for lane in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4330,8 +5165,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&multi_instance_output_lanes_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for lane in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &multi_instance_output_lanes_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for lane in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4340,8 +5182,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&identical_instance_output_lanes_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for lane in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &identical_instance_output_lanes_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for lane in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4350,7 +5199,11 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(header) = ctx.get_btree_map(&point_construction_headers_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(header) = ctx.get_btree_map(
+            &point_construction_headers_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
@@ -4371,7 +5224,11 @@ fn attach_feature_operations(
                 format_args!("{:02x}", u8::from(header.mode)),
             )?;
         }
-        if let Some(lane) = ctx.get_btree_map(&point_construction_scalar_lanes_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(lane) = ctx.get_btree_map(
+            &point_construction_scalar_lanes_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
@@ -4379,8 +5236,15 @@ fn attach_feature_operations(
                 format_args!("{}", lane.id),
             )?;
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&draft_construction_references_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for reference in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &draft_construction_references_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for reference in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4396,8 +5260,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&draft_construction_index_lanes_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for lane in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &draft_construction_index_lanes_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for lane in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4406,8 +5277,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&draft_construction_payloads_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for payload in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &draft_construction_payloads_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for payload in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4416,8 +5294,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&draft_construction_graph_payloads_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for payload in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &draft_construction_graph_payloads_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for payload in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4426,8 +5311,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&draft_construction_fixed_lanes_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for lane in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &draft_construction_fixed_lanes_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for lane in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4436,8 +5328,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&draft_construction_binary32_lanes_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for lane in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &draft_construction_binary32_lanes_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for lane in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4446,8 +5345,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&draft_construction_graph_strings_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for value in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &draft_construction_graph_strings_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for value in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4456,8 +5362,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&draft_construction_identity_frames_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for frame in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &draft_construction_identity_frames_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for frame in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4466,8 +5379,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&draft_construction_terminal_lanes_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for lane in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &draft_construction_terminal_lanes_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for lane in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4476,8 +5396,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&surface_construction_references_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for reference in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &surface_construction_references_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for reference in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4496,8 +5423,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&surface_construction_payloads_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for payload in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &surface_construction_payloads_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for payload in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4506,8 +5440,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&surface_construction_scalar_pairs_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for pair in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &surface_construction_scalar_pairs_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for pair in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4516,8 +5457,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&surface_construction_strings_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for value in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &surface_construction_strings_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for value in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4526,10 +5474,21 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&surface_construction_branches_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for branch in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
-                for (ordinal, (token, data_block)) in
-                    ctx.admit_iter(branch.references.members().as_slice(), "NX surface branch member traversal")?.enumerate()
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &surface_construction_branches_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for branch in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
+                for (ordinal, (token, data_block)) in ctx
+                    .admit_iter(
+                        branch.references.members().as_slice(),
+                        "NX surface branch member traversal",
+                    )?
+                    .enumerate()
                 {
                     insert_source_property_reference(
                         ctx,
@@ -4553,9 +5512,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&sketch_named_point_uses_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, block_use) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &sketch_named_point_uses_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, block_use) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4564,9 +5532,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&sketch_preceding_named_point_uses_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, point_use) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &sketch_preceding_named_point_uses_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, point_use) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4575,9 +5552,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&sketch_point_uses_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, point_use) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &sketch_point_uses_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, point_use) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4586,9 +5572,18 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&sketch_point_groups_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, group) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &sketch_point_groups_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, group) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4597,8 +5592,15 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&extrude_profile_references_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for reference in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &extrude_profile_references_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for reference in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4614,7 +5616,11 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        if let Some(profile) = ctx.get_btree_map(&extrude_construction_profiles_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(profile) = ctx.get_btree_map(
+            &extrude_construction_profiles_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             insert_source_property(
                 ctx,
                 &mut source_properties,
@@ -4622,8 +5628,15 @@ fn attach_feature_operations(
                 format_args!("{}", profile.id),
             )?;
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&operation_body_operands_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for operand in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &operation_body_operands_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for operand in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property_reference(
                     ctx,
                     &mut source_properties,
@@ -4643,7 +5656,13 @@ fn attach_feature_operations(
                     ),
                     format_args!("{}", operand.id),
                 )?;
-                for (binding_ordinal, binding) in ctx.admit_iter(&operand.segment_body_bindings, "NX operand segment binding traversal")?.enumerate() {
+                for (binding_ordinal, binding) in ctx
+                    .admit_iter(
+                        &operand.segment_body_bindings,
+                        "NX operand segment binding traversal",
+                    )?
+                    .enumerate()
+                {
                     insert_source_property(
                         ctx,
                         &mut source_properties,
@@ -4656,8 +5675,15 @@ fn attach_feature_operations(
                 }
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&parameter_bindings_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for binding in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &parameter_bindings_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for binding in ctx.admit_iter(
+                feature_property_records,
+                "NX feature property record traversal",
+            )? {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4680,9 +5706,18 @@ fn attach_feature_operations(
                 }
             }
         }
-        if let Some(feature_property_records) = ctx.get_btree_map(&parameter_uses_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-            for (ordinal, parameter_use) in ctx.admit_iter(feature_property_records, "NX feature property record traversal")?
-                .enumerate() {
+        if let Some(feature_property_records) = ctx.get_btree_map(
+            &parameter_uses_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
+            for (ordinal, parameter_use) in ctx
+                .admit_iter(
+                    feature_property_records,
+                    "NX feature property record traversal",
+                )?
+                .enumerate()
+            {
                 insert_source_property(
                     ctx,
                     &mut source_properties,
@@ -4691,7 +5726,12 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        let operation_payload_string_records = ctx.get_btree_map(&payload_strings_by_operation, label.id.as_str(), "NX admitted map lookup")?
+        let operation_payload_string_records = ctx
+            .get_btree_map(
+                &payload_strings_by_operation,
+                label.id.as_str(),
+                "NX admitted map lookup",
+            )?
             .map_or([].as_slice(), Vec::as_slice);
 
         let (mut operation_payload_strings, _payload_reservation) = ctx.temporary_vec(
@@ -4703,14 +5743,18 @@ fn attach_feature_operations(
                 .iter()
                 .map(|value| value.value.as_str()),
         );
-        let block_dimension_values =
-            ctx.get_btree_map(&block_dimensions_by_operation, label.id.as_str(), "NX admitted map lookup")?
-                .map(|dimensions| {
-                    dimensions
-                        .dimensions
-                        .each_ref()
-                        .map(|dimension| dimension.value.get())
-                });
+        let block_dimension_values = ctx
+            .get_btree_map(
+                &block_dimensions_by_operation,
+                label.id.as_str(),
+                "NX admitted map lookup",
+            )?
+            .map(|dimensions| {
+                dimensions
+                    .dimensions
+                    .each_ref()
+                    .map(|dimension| dimension.value.get())
+            });
         let block_projection = if label.value == "BLOCK" {
             match block_dimension_values {
                 Some(dimensions) => block_placement(ctx, ir, dimensions, &outputs)?,
@@ -4737,16 +5781,38 @@ fn attach_feature_operations(
         } else {
             outputs.as_slice()
         };
-        let body_reference_count = ctx.get_btree_map(&body_reference_occurrences_by_operation, label.id.as_str(), "NX admitted map lookup")?
+        let body_reference_count = ctx
+            .get_btree_map(
+                &body_reference_occurrences_by_operation,
+                label.id.as_str(),
+                "NX admitted map lookup",
+            )?
             .map_or(0, Vec::len);
         let block_op = new_body_boolean_op(
             ctx,
             &NewBodyEvidence {
                 has_complete_projection: block_projection.is_some(),
-                has_complete_primitive_construction: match ctx.get_btree_map(&block_constructions_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-                    Some(construction) => match ctx.get_btree_map(&block_construction_payloads_by_operation, label.id.as_str(), "NX admitted map lookup")?.map(Vec::as_slice) {
+                has_complete_primitive_construction: match ctx.get_btree_map(
+                    &block_constructions_by_operation,
+                    label.id.as_str(),
+                    "NX admitted map lookup",
+                )? {
+                    Some(construction) => match ctx
+                        .get_btree_map(
+                            &block_construction_payloads_by_operation,
+                            label.id.as_str(),
+                            "NX admitted map lookup",
+                        )?
+                        .map(Vec::as_slice)
+                    {
                         Some([payload]) => match &payload.owner {
-                            crate::native::features::FeatureConstructionOwner::Block { construction: owner } => ctx.equal(owner, &construction.id, "NX block construction payload owner equality")?,
+                            crate::native::features::FeatureConstructionOwner::Block {
+                                construction: owner,
+                            } => ctx.equal(
+                                owner,
+                                &construction.id,
+                                "NX block construction payload owner equality",
+                            )?,
                             _ => false,
                         },
                         _ => false,
@@ -4785,9 +5851,24 @@ fn attach_feature_operations(
             }
         }
         if block_op == BooleanOp::NewBody || sphere_op == BooleanOp::NewBody {
-            if let Some(initial_feature_index) = initial_body_id.as_ref().map(|id| {
-                ctx.position_by(&ir.model.features, |feature| Ok(ctx.equal(&feature.id, id, "NX attach feature operations equality")?), "NX primitive initial feature search")
-            }).transpose()?.flatten() {
+            if let Some(initial_feature_index) = initial_body_id
+                .as_ref()
+                .map(|id| {
+                    ctx.position_by(
+                        &ir.model.features,
+                        |feature| {
+                            Ok(ctx.equal(
+                                &feature.id,
+                                id,
+                                "NX attach feature operations equality",
+                            )?)
+                        },
+                        "NX primitive initial feature search",
+                    )
+                })
+                .transpose()?
+                .flatten()
+            {
                 let initial_feature = &mut ir.model.features[initial_feature_index];
                 initial_feature
                     .evaluation
@@ -4824,11 +5905,24 @@ fn attach_feature_operations(
         let sew_projection = if label.value == "SEW" {
             sew_body_feature_definition(
                 ctx,
-                ctx.get_btree_map(&body_references, label.id.as_str(), "NX admitted map lookup")?.copied(),
-                ctx.get_btree_map(&offset_store_bodies_by_operation, label.id.as_str(), "NX admitted map lookup")?
-                    .map_or([].as_slice(), Vec::as_slice),
-                ctx.get_btree_map(&operation_body_operands_by_operation, label.id.as_str(), "NX admitted map lookup")?
-                    .map_or([].as_slice(), Vec::as_slice),
+                ctx.get_btree_map(
+                    &body_references,
+                    label.id.as_str(),
+                    "NX admitted map lookup",
+                )?
+                .copied(),
+                ctx.get_btree_map(
+                    &offset_store_bodies_by_operation,
+                    label.id.as_str(),
+                    "NX admitted map lookup",
+                )?
+                .map_or([].as_slice(), Vec::as_slice),
+                ctx.get_btree_map(
+                    &operation_body_operands_by_operation,
+                    label.id.as_str(),
+                    "NX admitted map lookup",
+                )?
+                .map_or([].as_slice(), Vec::as_slice),
                 &body_alias_roots,
                 &bodies_by_object_index,
             )?
@@ -4836,22 +5930,38 @@ fn attach_feature_operations(
             None
         };
         let trim_body_projection = if label.value == "TRIM BODY" {
-            if let Some(primary) = ctx.get_btree_map(&body_references, label.id.as_str(), "NX admitted map lookup")? {
+            if let Some(primary) = ctx.get_btree_map(
+                &body_references,
+                label.id.as_str(),
+                "NX admitted map lookup",
+            )? {
                 Some(trim_body_feature_definition(
                     ctx,
                     *primary,
-                    ctx.get_btree_map(&operation_body_operands_by_operation, label.id.as_str(), "NX admitted map lookup")?
-                        .map_or([].as_slice(), Vec::as_slice),
+                    ctx.get_btree_map(
+                        &operation_body_operands_by_operation,
+                        label.id.as_str(),
+                        "NX admitted map lookup",
+                    )?
+                    .map_or([].as_slice(), Vec::as_slice),
                     &body_alias_roots,
                     &bodies_by_object_index,
                 )?)
             } else {
                 offset_store_trim_body_feature_definition(
                     ctx,
-                    ctx.get_btree_map(&offset_store_bodies_by_operation, label.id.as_str(), "NX admitted map lookup")?
-                        .map_or([].as_slice(), Vec::as_slice),
-                    ctx.get_btree_map(&operation_body_operands_by_operation, label.id.as_str(), "NX admitted map lookup")?
-                        .map_or([].as_slice(), Vec::as_slice),
+                    ctx.get_btree_map(
+                        &offset_store_bodies_by_operation,
+                        label.id.as_str(),
+                        "NX admitted map lookup",
+                    )?
+                    .map_or([].as_slice(), Vec::as_slice),
+                    ctx.get_btree_map(
+                        &operation_body_operands_by_operation,
+                        label.id.as_str(),
+                        "NX admitted map lookup",
+                    )?
+                    .map_or([].as_slice(), Vec::as_slice),
                 )?
             }
         } else {
@@ -4912,7 +6022,18 @@ fn attach_feature_operations(
             let mut output_kind_reservation =
                 ctx.reserve_scoped(0, "NX extrude output body kinds")?;
             for output in ctx.admit_iter(&outputs, "NX extrude output traversal")? {
-                let Some(body) = ctx.find_by(&ir.model.bodies, |body| Ok(ctx.equal(&(body.id), &(*output), "NX attach feature operations equality")?), "NX extrude output body lookup")? else {
+                let Some(body) = ctx.find_by(
+                    &ir.model.bodies,
+                    |body| {
+                        Ok(ctx.equal(
+                            &(body.id),
+                            &(*output),
+                            "NX attach feature operations equality",
+                        )?)
+                    },
+                    "NX extrude output body lookup",
+                )?
+                else {
                     output_kinds.clear();
                     break;
                 };
@@ -4931,9 +6052,19 @@ fn attach_feature_operations(
                 offset_store_primary_body,
                 &output_kinds,
             )?;
-            let construction_profile = ctx.get_btree_map(&extrude_construction_profiles_by_operation, label.id.as_str(), "NX admitted map lookup")?
+            let construction_profile = ctx
+                .get_btree_map(
+                    &extrude_construction_profiles_by_operation,
+                    label.id.as_str(),
+                    "NX admitted map lookup",
+                )?
                 .map(|profile| profile.id.as_str());
-            let structured_construction = ctx.get_btree_map(&extrude_32_constructions_by_operation, label.id.as_str(), "NX admitted map lookup")?
+            let structured_construction = ctx
+                .get_btree_map(
+                    &extrude_32_constructions_by_operation,
+                    label.id.as_str(),
+                    "NX admitted map lookup",
+                )?
                 .map(|construction| construction.id.as_str());
             Some(extrude_feature_definition(
                 ctx,
@@ -4946,9 +6077,18 @@ fn attach_feature_operations(
             None
         };
         let delete_projection = if deletes_body {
-            let field = match ctx.get_btree_map(&body_references, label.id.as_str(), "NX admitted map lookup")? {
+            let field = match ctx.get_btree_map(
+                &body_references,
+                label.id.as_str(),
+                "NX admitted map lookup",
+            )? {
                 Some(body) => Some(DeleteBodyField::Native(*body)),
-                None => ctx.get_btree_map(&offset_store_bodies_by_operation, label.id.as_str(), "NX admitted map lookup")?
+                None => ctx
+                    .get_btree_map(
+                        &offset_store_bodies_by_operation,
+                        label.id.as_str(),
+                        "NX admitted map lookup",
+                    )?
                     .and_then(|uses| match uses.as_slice() {
                         [(object_index, data_block)] => Some(DeleteBodyField::OffsetStore {
                             object_index: *object_index,
@@ -4973,16 +6113,30 @@ fn attach_feature_operations(
         let extract_body_projection = if label.value == "EXTRACT_BODY" {
             Some(extract_body_feature_definition(
                 ctx,
-                ctx.get_btree_map(&body_references, label.id.as_str(), "NX admitted map lookup")?.copied(),
-                ctx.get_btree_map(&offset_store_bodies_by_operation, label.id.as_str(), "NX admitted map lookup")?
-                    .map_or([].as_slice(), Vec::as_slice),
+                ctx.get_btree_map(
+                    &body_references,
+                    label.id.as_str(),
+                    "NX admitted map lookup",
+                )?
+                .copied(),
+                ctx.get_btree_map(
+                    &offset_store_bodies_by_operation,
+                    label.id.as_str(),
+                    "NX admitted map lookup",
+                )?
+                .map_or([].as_slice(), Vec::as_slice),
                 &body_alias_roots,
                 &bodies_by_object_index,
             )?)
         } else {
             None
         };
-        let operation_parameter_uses = ctx.get_btree_map(&parameter_uses_by_operation, label.id.as_str(), "NX admitted map lookup")?
+        let operation_parameter_uses = ctx
+            .get_btree_map(
+                &parameter_uses_by_operation,
+                label.id.as_str(),
+                "NX admitted map lookup",
+            )?
             .map_or([].as_slice(), Vec::as_slice);
         let native_parameters =
             native_feature_parameters(ctx, operation_parameter_uses, expressions)?;
@@ -4992,14 +6146,29 @@ fn attach_feature_operations(
                 ir,
                 label,
                 &SketchSources {
-                    point_uses: ctx.get_btree_map(&sketch_point_uses_by_operation, label.id.as_str(), "NX admitted map lookup")?
+                    point_uses: ctx
+                        .get_btree_map(
+                            &sketch_point_uses_by_operation,
+                            label.id.as_str(),
+                            "NX admitted map lookup",
+                        )?
                         .map_or([].as_slice(), Vec::as_slice),
                     point_groups: sketch_point_groups,
                     points: sketch_points,
                     payload_scalars: sketch_payload_scalars,
-                    fixed_points: ctx.get_btree_map(&sketch_fixed_points_by_operation, label.id.as_str(), "NX admitted map lookup")?
+                    fixed_points: ctx
+                        .get_btree_map(
+                            &sketch_fixed_points_by_operation,
+                            label.id.as_str(),
+                            "NX admitted map lookup",
+                        )?
                         .map_or([].as_slice(), Vec::as_slice),
-                    coordinate_pairs: ctx.get_btree_map(&sketch_coordinate_pairs_by_operation, label.id.as_str(), "NX admitted map lookup")?
+                    coordinate_pairs: ctx
+                        .get_btree_map(
+                            &sketch_coordinate_pairs_by_operation,
+                            label.id.as_str(),
+                            "NX admitted map lookup",
+                        )?
                         .map_or([].as_slice(), Vec::as_slice),
                 },
                 annotations,
@@ -5035,10 +6204,18 @@ fn attach_feature_operations(
                 &label.value,
                 &label.objects.values(),
                 &outputs,
-                ctx.get_btree_map(&body_reference_occurrences_by_operation, label.id.as_str(), "NX admitted map lookup")?
-                    .map_or(0, Vec::len),
-                ctx.get_btree_map(&operation_body_operands_by_operation, label.id.as_str(), "NX admitted map lookup")?
-                    .map_or(0, Vec::len),
+                ctx.get_btree_map(
+                    &body_reference_occurrences_by_operation,
+                    label.id.as_str(),
+                    "NX admitted map lookup",
+                )?
+                .map_or(0, Vec::len),
+                ctx.get_btree_map(
+                    &operation_body_operands_by_operation,
+                    label.id.as_str(),
+                    "NX admitted map lookup",
+                )?
+                .map_or(0, Vec::len),
                 operation_payload_string_records.len(),
                 &source_properties,
             )?;
@@ -5055,14 +6232,30 @@ fn attach_feature_operations(
             } else {
                 let mut placements = Vec::new();
                 for source in [
-                    ctx.get_btree_map(&simple_hole_placements, label.id.as_str(), "NX admitted map lookup")?
-                        .map_or([].as_slice(), std::slice::from_ref),
-                    ctx.get_btree_map(&counterbore_hole_placements, label.id.as_str(), "NX admitted map lookup")?
-                        .map_or([].as_slice(), std::slice::from_ref),
-                    ctx.get_btree_map(&blind_hole_placements, label.id.as_str(), "NX admitted map lookup")?
-                        .map_or([].as_slice(), std::slice::from_ref),
-                    ctx.get_btree_map(&hole_packages.placements, label.id.as_str(), "NX admitted map lookup")?
-                        .map_or([].as_slice(), Vec::as_slice),
+                    ctx.get_btree_map(
+                        &simple_hole_placements,
+                        label.id.as_str(),
+                        "NX admitted map lookup",
+                    )?
+                    .map_or([].as_slice(), std::slice::from_ref),
+                    ctx.get_btree_map(
+                        &counterbore_hole_placements,
+                        label.id.as_str(),
+                        "NX admitted map lookup",
+                    )?
+                    .map_or([].as_slice(), std::slice::from_ref),
+                    ctx.get_btree_map(
+                        &blind_hole_placements,
+                        label.id.as_str(),
+                        "NX admitted map lookup",
+                    )?
+                    .map_or([].as_slice(), std::slice::from_ref),
+                    ctx.get_btree_map(
+                        &hole_packages.placements,
+                        label.id.as_str(),
+                        "NX admitted map lookup",
+                    )?
+                    .map_or([].as_slice(), Vec::as_slice),
                 ] {
                     for placement in ctx.admit_iter(source, "NX hole placement traversal")? {
                         ctx.reserve_vec(&mut placements, 1, "NX feature hole placements")?;
@@ -5078,19 +6271,54 @@ fn attach_feature_operations(
                     block_placement,
                     HoleProjection {
                         placements,
-                        diameter: match ctx.get_btree_map(&simple_hole_diameters, label.id.as_str(), "NX admitted map lookup")? {
+                        diameter: match ctx.get_btree_map(
+                            &simple_hole_diameters,
+                            label.id.as_str(),
+                            "NX admitted map lookup",
+                        )? {
                             Some(value) => Some(*value),
-                            None => ctx.get_btree_map(&hole_packages.diameters, label.id.as_str(), "NX admitted map lookup")?.copied(),
+                            None => ctx
+                                .get_btree_map(
+                                    &hole_packages.diameters,
+                                    label.id.as_str(),
+                                    "NX admitted map lookup",
+                                )?
+                                .copied(),
                         },
-                        extent: ctx.get_btree_map(&blind_hole_depths, label.id.as_str(), "NX admitted map lookup")?
+                        extent: ctx
+                            .get_btree_map(
+                                &blind_hole_depths,
+                                label.id.as_str(),
+                                "NX admitted map lookup",
+                            )?
                             .copied()
                             .map(|length| LinearTermination::Blind { length }),
-                        counterbore: ctx.get_btree_map(&counterbore_dimensions, label.id.as_str(), "NX admitted map lookup")?.copied(),
-                        chamfer: match ctx.get_btree_map(&simple_hole_chamfers, label.id.as_str(), "NX admitted map lookup")? {
+                        counterbore: ctx
+                            .get_btree_map(
+                                &counterbore_dimensions,
+                                label.id.as_str(),
+                                "NX admitted map lookup",
+                            )?
+                            .copied(),
+                        chamfer: match ctx.get_btree_map(
+                            &simple_hole_chamfers,
+                            label.id.as_str(),
+                            "NX admitted map lookup",
+                        )? {
                             Some(value) => Some(*value),
-                            None => ctx.get_btree_map(&hole_packages.chamfers, label.id.as_str(), "NX admitted map lookup")?.copied(),
+                            None => ctx
+                                .get_btree_map(
+                                    &hole_packages.chamfers,
+                                    label.id.as_str(),
+                                    "NX admitted map lookup",
+                                )?
+                                .copied(),
                         },
-                        grouped_simple_through: ctx.contains_key_btree_map(&hole_packages.outputs, label.id.as_str(), "NX admitted map membership")?,
+                        grouped_simple_through: ctx.contains_key_btree_map(
+                            &hole_packages.outputs,
+                            label.id.as_str(),
+                            "NX admitted map membership",
+                        )?,
                     },
                     cadmpeg_core::text::named_entries_for_decode(
                         ctx,
@@ -5117,7 +6345,10 @@ fn attach_feature_operations(
         let source_content = feature_source_content(ctx, operation_payload_string_records)?;
         let mut referenced_parameters = Vec::new();
         let mut parameter_reservation = ctx.reserve_scoped(0, "NX referenced parameters")?;
-        for parameter_use in ctx.admit_iter(operation_parameter_uses, "NX operation parameter use traversal")? {
+        for parameter_use in ctx.admit_iter(
+            operation_parameter_uses,
+            "NX operation parameter use traversal",
+        )? {
             push_referenced_parameter(
                 ctx,
                 &mut parameter_reservation,
@@ -5125,7 +6356,11 @@ fn attach_feature_operations(
                 &parameter_use.expression,
             )?;
         }
-        if let Some(dimensions) = ctx.get_btree_map(&block_dimensions_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+        if let Some(dimensions) = ctx.get_btree_map(
+            &block_dimensions_by_operation,
+            label.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             for dimension in &dimensions.dimensions {
                 push_referenced_parameter(
                     ctx,
@@ -5135,7 +6370,10 @@ fn attach_feature_operations(
                 )?;
             }
         }
-        for owner in ctx.admit_iter(&parameter_owner_dependencies(ctx, &parameter_owners, &referenced_parameters)?, "NX parameter owner dependency traversal")? {
+        for owner in ctx.admit_iter(
+            &parameter_owner_dependencies(ctx, &parameter_owners, &referenced_parameters)?,
+            "NX parameter owner dependency traversal",
+        )? {
             push_unique_feature_dependency(ctx, &mut dependencies, &owner)?;
         }
         if !source_content.is_empty() {
@@ -5233,7 +6471,9 @@ fn attach_feature_operations(
                 .id
                 .strip_prefix("nx:feature-history:operation-label#")
                 .unwrap_or(label.id.as_str());
-            for write in ctx.admit_iter(operation_body_writes, "NX operation body writer traversal")? {
+            for write in
+                ctx.admit_iter(operation_body_writes, "NX operation body writer traversal")?
+            {
                 const BODY_PREFIX: &str = "nx:feature-history:body-identity#";
                 let result_members = operation_body_write_result_group_members(
                     ctx,
@@ -5279,9 +6519,14 @@ fn attach_feature_operations(
         } else if !deletes_body {
             let result_body = native_result_body_identity(
                 ctx,
-                ctx.get_btree_map(&body_writer_references_by_operation, label.id.as_str(), "NX admitted map lookup")?
+                ctx.get_btree_map(
+                    &body_writer_references_by_operation,
+                    label.id.as_str(),
+                    "NX admitted map lookup",
+                )?
+                .copied(),
+                ctx.get_btree_map(&booleans, label.id.as_str(), "NX admitted map lookup")?
                     .copied(),
-                ctx.get_btree_map(&booleans, label.id.as_str(), "NX admitted map lookup")?.copied(),
             )?;
             if let Some((local_id, native_ref)) = result_body {
                 let key = label
@@ -5307,8 +6552,17 @@ fn attach_feature_operations(
     // native evidence without becoming current-body state roots.
     if !body_references.is_empty() {
         if let Some(initial_body_id) = initial_body_id.as_ref() {
-            if let Some(initial_feature_index) = ctx.position_by(&ir.model.features, |feature| Ok(ctx.equal(&(feature.id), &(*initial_body_id), "NX attach feature operations equality")?), "NX primary body closure feature lookup")?
-            {
+            if let Some(initial_feature_index) = ctx.position_by(
+                &ir.model.features,
+                |feature| {
+                    Ok(ctx.equal(
+                        &(feature.id),
+                        &(*initial_body_id),
+                        "NX attach feature operations equality",
+                    )?)
+                },
+                "NX primary body closure feature lookup",
+            )? {
                 let initial_feature = &mut ir.model.features[initial_feature_index];
                 const WITNESS_VALUE: &str = "primary-body-relations";
 
@@ -5346,7 +6600,18 @@ fn attach_feature_operations(
         }
     }
     if let Some(initial_body_id) = initial_body_id {
-        let has_outputs = ctx.find_by(&ir.model.features, |feature| Ok(ctx.equal(&(feature.id), &(initial_body_id), "NX attach feature operations equality")?), "NX initial body output lookup")?
+        let has_outputs = ctx
+            .find_by(
+                &ir.model.features,
+                |feature| {
+                    Ok(ctx.equal(
+                        &(feature.id),
+                        &(initial_body_id),
+                        "NX attach feature operations equality",
+                    )?)
+                },
+                "NX initial body output lookup",
+            )?
             .is_some_and(|feature| !feature.evaluation.outputs().is_empty());
         if has_outputs {
             annotations
@@ -5364,7 +6629,11 @@ struct FeatureResultGroupMembers {
     vertices: Vec<cadmpeg_core::text::NonBlankString>,
 }
 impl DecodeCost for FeatureResultGroupMembers {
-    fn decode_cost(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<u64, CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
         (&self.faces, &self.edges, &self.vertices).decode_cost(ctx, operation)
     }
 }
@@ -5434,10 +6703,12 @@ fn append_feature_result_topology(
         "NX result topology member validation",
     )? {
         Ok(members) => members,
-        Err(error) => return Err(CodecError::Malformed(ctx.format_retained(
-            format_args!("{error}"),
-            "NX result topology member error",
-        )?)),
+        Err(error) => {
+            return Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("{error}"),
+                "NX result topology member error",
+            )?))
+        }
     };
     ctx.reserve_vec_limit(
         &mut ir.model.feature_result_topologies,
@@ -5463,8 +6734,14 @@ fn operation_body_write_result_group_members(
 ) -> Result<FeatureResultGroupMembers, CodecError> {
     let mut image_use = None;
     for use_ in ctx.admit_iter(image_partition_uses, "NX result image partition use lookup")? {
-        if ctx.equal(use_.operation_body_write.as_str(), body_write, "NX operation body write result group members equality")? {
-            if image_use.is_some() { return Ok(FeatureResultGroupMembers::default()); }
+        if ctx.equal(
+            use_.operation_body_write.as_str(),
+            body_write,
+            "NX operation body write result group members equality",
+        )? {
+            if image_use.is_some() {
+                return Ok(FeatureResultGroupMembers::default());
+            }
             image_use = Some(use_);
         }
     }
@@ -5480,8 +6757,14 @@ fn operation_body_write_result_group_members(
         .transpose()?;
     let mut group_use = None;
     for use_ in ctx.admit_iter(group_partition_uses, "NX result group partition use lookup")? {
-        if ctx.equal(use_.body_write.as_str(), body_write, "NX operation body write result group members equality")? {
-            if group_use.is_some() { return Ok(FeatureResultGroupMembers::default()); }
+        if ctx.equal(
+            use_.body_write.as_str(),
+            body_write,
+            "NX operation body write result group members equality",
+        )? {
+            if group_use.is_some() {
+                return Ok(FeatureResultGroupMembers::default());
+            }
             group_use = Some(use_);
         }
     }
@@ -5496,7 +6779,15 @@ fn operation_body_write_result_group_members(
         })
         .transpose()?;
     Ok(match (image_members, group_members) {
-        (Some(image), Some(group)) if ctx.equal(&(image), &(group), "NX operation body write result group members equality")? => image,
+        (Some(image), Some(group))
+            if ctx.equal(
+                &(image),
+                &(group),
+                "NX operation body write result group members equality",
+            )? =>
+        {
+            image
+        }
         (Some(_), Some(_)) => FeatureResultGroupMembers::default(),
         (Some(image), None) => image,
         (None, Some(group)) => group,
@@ -5516,13 +6807,24 @@ fn feature_result_group_members(
         let mut matching_member = None;
         let mut multiple_members = false;
         for member in ctx.admit_iter(members, "NX feature result group member lookup")? {
-            if ctx.equal(&member.id, member_id, "NX feature result group members equality")? {
-                if matching_member.is_some() { multiple_members = true; break; }
+            if ctx.equal(
+                &member.id,
+                member_id,
+                "NX feature result group members equality",
+            )? {
+                if matching_member.is_some() {
+                    multiple_members = true;
+                    break;
+                }
                 matching_member = Some(member);
             }
         }
-        let Some(member) = matching_member else { continue; };
-        if multiple_members { continue; }
+        let Some(member) = matching_member else {
+            continue;
+        };
+        if multiple_members {
+            continue;
+        }
         if member.partition_stream_ordinal != partition_stream_ordinal {
             continue;
         }
@@ -5656,7 +6958,9 @@ fn native_primary_body_references<'a>(
         })?;
     }
     let mut output = BTreeMap::new();
-    for (&operation, reference) in ctx.admit_iter(&unique_references, "NX primary unique references")? {
+    for (&operation, reference) in
+        ctx.admit_iter(&unique_references, "NX primary unique references")?
+    {
         if !bridged_segment_references.contains(reference.id.as_str())
             && (offset_store_references.contains(reference.id.as_str())
                 || offset_store_operations.contains(reference.operation_label.as_str()))
@@ -5687,9 +6991,14 @@ fn attach_sketch_graph(
 ) -> Result<Option<SketchId>, CodecError> {
     let mut reservation = ctx.reserve_scoped(0, "NX sketch projection")?;
     let mut operation_groups = Vec::new();
-    for group in ctx.admit_iter(sources.point_groups, "NX sketch point groups")?
-    {
-        if !(ctx.equal(&(group.operation_label), &(label.id), "NX attach sketch graph equality")?) { continue; }
+    for group in ctx.admit_iter(sources.point_groups, "NX sketch point groups")? {
+        if !(ctx.equal(
+            &(group.operation_label),
+            &(label.id),
+            "NX attach sketch graph equality",
+        )?) {
+            continue;
+        }
 
         ctx.reserve_scoped_vec(
             &mut reservation,
@@ -5738,9 +7047,14 @@ fn attach_sketch_graph(
         return Ok(None);
     };
     let mut operation_fixed_points = Vec::new();
-    for &point in ctx.admit_iter(sources.fixed_points, "NX sketch fixed-point candidates")?
-    {
-        if !(ctx.equal(&(point.operation_label), &(label.id), "NX attach sketch graph equality")?) { continue; }
+    for &point in ctx.admit_iter(sources.fixed_points, "NX sketch fixed-point candidates")? {
+        if !(ctx.equal(
+            &(point.operation_label),
+            &(label.id),
+            "NX attach sketch graph equality",
+        )?) {
+            continue;
+        }
 
         ctx.reserve_scoped_vec(
             &mut reservation,
@@ -5752,9 +7066,17 @@ fn attach_sketch_graph(
     }
     if operation_groups.is_empty() {
         let mut coordinate_pairs = Vec::new();
-        for &pair in ctx.admit_iter(sources.coordinate_pairs, "NX sketch coordinate-pair candidates")?
-        {
-        if !(ctx.equal(&(pair.operation_label), &(label.id), "NX attach sketch graph equality")?) { continue; }
+        for &pair in ctx.admit_iter(
+            sources.coordinate_pairs,
+            "NX sketch coordinate-pair candidates",
+        )? {
+            if !(ctx.equal(
+                &(pair.operation_label),
+                &(label.id),
+                "NX attach sketch graph equality",
+            )?) {
+                continue;
+            }
 
             ctx.reserve_scoped_vec(
                 &mut reservation,
@@ -5771,7 +7093,10 @@ fn attach_sketch_graph(
         let mut pair_ids = BTreeSet::new();
         let mut pair_entity_keys = BTreeSet::new();
         let mut pair_ordinals = BTreeSet::new();
-        for pair in ctx.admit_iter(&coordinate_pairs, "NX sketch coordinate pairs")?.copied() {
+        for pair in ctx
+            .admit_iter(&coordinate_pairs, "NX sketch coordinate pairs")?
+            .copied()
+        {
             if !ctx.insert_scoped_btree_set(
                 &mut reservation,
                 &mut pair_ids,
@@ -5792,7 +7117,9 @@ fn attach_sketch_graph(
                 .rsplit_once('#')
                 .map_or(pair.id.as_str(), |(_, key)| key);
             if pair_key.is_empty()
-                || ctx.admit_iter(pair_key, "NX sketch pair identity characters")?.any(char::is_whitespace)
+                || ctx
+                    .admit_iter(pair_key, "NX sketch pair identity characters")?
+                    .any(char::is_whitespace)
                 || !ctx.insert_scoped_btree_set(
                     &mut reservation,
                     &mut pair_entity_keys,
@@ -5895,16 +7222,18 @@ fn attach_sketch_graph(
     let mut point_uses_by_group =
         BTreeMap::<&str, &crate::native::features::FeatureSketchPointUse>::new();
     for point_use in ctx.admit_iter(sources.point_uses, "NX sketch point uses")? {
-        if !ctx.equal(&(point_use.operation_label), &(label.id), "NX attach sketch graph equality")?
-            || !ctx.insert_scoped_btree_map_if_vacant(
-                &mut reservation,
-                &mut point_uses_by_group,
-                point_use.sketch_point_group.as_str(),
-                point_use,
-                "NX sketch record uniqueness",
-                "NX sketch record index",
-            )?
-        {
+        if !ctx.equal(
+            &(point_use.operation_label),
+            &(label.id),
+            "NX attach sketch graph equality",
+        )? || !ctx.insert_scoped_btree_map_if_vacant(
+            &mut reservation,
+            &mut point_uses_by_group,
+            point_use.sketch_point_group.as_str(),
+            point_use,
+            "NX sketch record uniqueness",
+            "NX sketch record index",
+        )? {
             return Ok(None);
         }
     }
@@ -5940,8 +7269,17 @@ fn attach_sketch_graph(
         }
     }
     let mut entities = Vec::new();
-    for group in ctx.admit_iter(&operation_groups, "NX sketch operation groups")?.copied() {
-        let point_use = ctx.get_btree_map(&point_uses_by_group, group.id.as_str(), "NX admitted map lookup")?.copied();
+    for group in ctx
+        .admit_iter(&operation_groups, "NX sketch operation groups")?
+        .copied()
+    {
+        let point_use = ctx
+            .get_btree_map(
+                &point_uses_by_group,
+                group.id.as_str(),
+                "NX admitted map lookup",
+            )?
+            .copied();
         let Some(source_offset) = sketch_group_source_offset(
             ctx,
             label,
@@ -6077,14 +7415,24 @@ fn sketch_group_source_offset(
     }
     let mut minimum = None::<u64>;
     for point_id in ctx.admit_iter(&group.points, "NX sketch group points")? {
-        let Some(point) = ctx.get_btree_map(points_by_id, point_id.as_str(), "NX sketch point lookup")?.copied() else {
+        let Some(point) = ctx
+            .get_btree_map(points_by_id, point_id.as_str(), "NX sketch point lookup")?
+            .copied()
+        else {
             return Ok(None);
         };
-        if !ctx.equal(&(point.operation_label), &(label.id), "NX sketch group source offset equality")?
-            || !ctx.equal(&(point.name), &(group.name), "NX sketch group source offset equality")?
-            || ctx.admit_iter(&*point.coordinates, "NX sketch point coordinates")?
-                .zip(ctx.admit_iter(&*group.coordinates, "NX sketch group coordinates")?)
-                .any(|(first, second)| first.to_bits() != second.to_bits())
+        if !ctx.equal(
+            &(point.operation_label),
+            &(label.id),
+            "NX sketch group source offset equality",
+        )? || !ctx.equal(
+            &(point.name),
+            &(group.name),
+            "NX sketch group source offset equality",
+        )? || ctx
+            .admit_iter(&*point.coordinates, "NX sketch point coordinates")?
+            .zip(ctx.admit_iter(&*group.coordinates, "NX sketch group coordinates")?)
+            .any(|(first, second)| first.to_bits() != second.to_bits())
         {
             return Ok(None);
         }
@@ -6092,11 +7440,17 @@ fn sketch_group_source_offset(
             return Ok(None);
         };
         for (scalar_id, coordinate) in [first, second].into_iter().zip(group.coordinates) {
-            let Some(scalar) = ctx.get_btree_map(scalars_by_id, scalar_id.as_str(), "NX sketch scalar lookup")?.copied() else {
+            let Some(scalar) = ctx
+                .get_btree_map(scalars_by_id, scalar_id.as_str(), "NX sketch scalar lookup")?
+                .copied()
+            else {
                 return Ok(None);
             };
-            if !ctx.equal(&(scalar.operation_label), &(label.id), "NX sketch group source offset equality")?
-                || scalar.scalar.value().get().to_bits() != coordinate.to_bits()
+            if !ctx.equal(
+                &(scalar.operation_label),
+                &(label.id),
+                "NX sketch group source offset equality",
+            )? || scalar.scalar.value().get().to_bits() != coordinate.to_bits()
             {
                 return Ok(None);
             }
@@ -6201,15 +7555,17 @@ fn native_fixed_point_entities(
     let mut entity_keys = BTreeSet::new();
     let mut entities = Vec::new();
     for point in ctx.admit_iter(points, "NX sketch fixed-point entities")? {
-        if !ctx.equal(&(point.operation_label), &(label.id), "NX native fixed point entities equality")?
-            || !ctx.insert_scoped_btree_set(
-                reservation,
-                &mut point_ids,
-                point.id.as_str(),
-                "NX sketch key uniqueness",
-                "NX sketch key index",
-            )?
-        {
+        if !ctx.equal(
+            &(point.operation_label),
+            &(label.id),
+            "NX native fixed point entities equality",
+        )? || !ctx.insert_scoped_btree_set(
+            reservation,
+            &mut point_ids,
+            point.id.as_str(),
+            "NX sketch key uniqueness",
+            "NX sketch key index",
+        )? {
             return Ok(None);
         }
         let point_key = point
@@ -6217,7 +7573,9 @@ fn native_fixed_point_entities(
             .rsplit_once('#')
             .map_or(point.id.as_str(), |(_, key)| key);
         if point_key.is_empty()
-            || ctx.admit_iter(point_key, "NX sketch point identity characters")?.any(char::is_whitespace)
+            || ctx
+                .admit_iter(point_key, "NX sketch point identity characters")?
+                .any(char::is_whitespace)
             || !ctx.insert_scoped_btree_set(
                 reservation,
                 &mut entity_keys,
@@ -6350,7 +7708,11 @@ fn segment_binding_body_indexes<'a, 'ctx>(
             }
         }
         ctx.charge_work(1, "NX segment binding identity index")?;
-        if !ctx.contains_key_btree_map(&by_binding, binding.id.as_str(), "NX admitted map membership")? {
+        if !ctx.contains_key_btree_map(
+            &by_binding,
+            binding.id.as_str(),
+            "NX admitted map membership",
+        )? {
             reservation.with_storage(|| {
                 ctx.admit_btree_entry(
                     &by_binding,
@@ -6368,7 +7730,11 @@ fn segment_binding_body_indexes<'a, 'ctx>(
     })
 }
 
-fn stream_prefix(ctx: &DecodeContext<'_>, ordinal: u32, body_marker: bool) -> Result<([u8; 20], usize), CodecError> {
+fn stream_prefix(
+    ctx: &DecodeContext<'_>,
+    ordinal: u32,
+    body_marker: bool,
+) -> Result<([u8; 20], usize), CodecError> {
     let mut decimal = [0u8; 10];
     let mut digit_count = 0;
     let mut ordinal = ordinal;
@@ -6384,7 +7750,11 @@ fn stream_prefix(ctx: &DecodeContext<'_>, ordinal: u32, body_marker: bool) -> Re
     }
     let mut prefix = [0u8; 20];
     prefix[..4].copy_from_slice(b"nx:s");
-    for (index, digit) in ctx.admit_iter(&decimal[..digit_count], "NX stream prefix digits")?.rev().enumerate() {
+    for (index, digit) in ctx
+        .admit_iter(&decimal[..digit_count], "NX stream prefix digits")?
+        .rev()
+        .enumerate()
+    {
         prefix[4 + index] = *digit;
     }
     let suffix = if body_marker {
@@ -6408,24 +7778,48 @@ fn operation_source_properties(
 ) -> Result<(), CodecError> {
     let mut matching_record = None;
     for record in ctx.admit_iter(records, "NX operation source record lookup")? {
-        if ctx.equal(record.operation_label.as_str(), operation_label, "NX operation source properties equality")? {
-            if matching_record.is_some() { return Ok(()); }
+        if ctx.equal(
+            record.operation_label.as_str(),
+            operation_label,
+            "NX operation source properties equality",
+        )? {
+            if matching_record.is_some() {
+                return Ok(());
+            }
             matching_record = Some(record);
         }
     }
-    let Some(record) = matching_record else { return Ok(()); };
+    let Some(record) = matching_record else {
+        return Ok(());
+    };
     insert_operation_source_property(ctx, properties, "operation_record", &record.id)?;
     let mut contiguous_common_frames = true;
     let mut ordinal = 0_u64;
     for frame in ctx.admit_iter(common_frames, "NX operation common frame order")? {
-        if !ctx.equal(&frame.operation_record, &record.id, "NX operation source properties equality")? { continue; }
-        if u64::from(frame.ordinal) != ordinal { contiguous_common_frames = false; break; }
-        ordinal = ordinal.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("NX operation common frame ordinal", ordinal, 1))?;
+        if !ctx.equal(
+            &frame.operation_record,
+            &record.id,
+            "NX operation source properties equality",
+        )? {
+            continue;
+        }
+        if u64::from(frame.ordinal) != ordinal {
+            contiguous_common_frames = false;
+            break;
+        }
+        ordinal = ordinal.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("NX operation common frame ordinal", ordinal, 1)
+        })?;
     }
     if contiguous_common_frames {
-        for frame in ctx.admit_iter(common_frames, "NX operation common frame properties")?
-        {
-        if !(ctx.equal(&(frame.operation_record), &(record.id), "NX operation source properties equality")?) { continue; }
+        for frame in ctx.admit_iter(common_frames, "NX operation common frame properties")? {
+            if !(ctx.equal(
+                &(frame.operation_record),
+                &(record.id),
+                "NX operation source properties equality",
+            )?) {
+                continue;
+            }
 
             const PREFIX: &str = "operation_common_frame.";
             let key_len = PREFIX
@@ -6453,12 +7847,20 @@ fn operation_source_properties(
     }
     let mut matching_frame = None;
     for frame in ctx.admit_iter(terminal_frames, "NX operation terminal frame lookup")? {
-        if ctx.equal(&frame.operation_record, &record.id, "NX operation source properties equality")? {
-            if matching_frame.is_some() { return Ok(()); }
+        if ctx.equal(
+            &frame.operation_record,
+            &record.id,
+            "NX operation source properties equality",
+        )? {
+            if matching_frame.is_some() {
+                return Ok(());
+            }
             matching_frame = Some(frame);
         }
     }
-    let Some(frame) = matching_frame else { return Ok(()); };
+    let Some(frame) = matching_frame else {
+        return Ok(());
+    };
     insert_operation_source_property(ctx, properties, "operation_terminal_frame", &frame.id)?;
     Ok(())
 }
@@ -6595,9 +7997,18 @@ fn attach_parasolid_topology_string_attributes(
     for context in ctx.admit_iter(&attribute_index.contexts, "NX string attribute contexts")? {
         let reference = context.reference;
         let entity = context.entity;
-        if let Some(feature_property_records) = ctx.get_btree_map(&uses_by_entity, entity, "NX admitted map lookup")? {
-            for string_use in ctx.admit_iter(feature_property_records, "NX string attribute uses")? {
-                let Some(string) = ctx.get_btree_map(&strings_by_id, string_use.string_record.as_str(), "NX admitted map lookup")? else {
+        if let Some(feature_property_records) =
+            ctx.get_btree_map(&uses_by_entity, entity, "NX admitted map lookup")?
+        {
+            for string_use in
+                ctx.admit_iter(feature_property_records, "NX string attribute uses")?
+            {
+                let Some(string) = ctx.get_btree_map(
+                    &strings_by_id,
+                    string_use.string_record.as_str(),
+                    "NX admitted map lookup",
+                )?
+                else {
                     continue;
                 };
                 let id = topology_attribute_id(
@@ -6637,9 +8048,13 @@ fn attach_parasolid_topology_string_attributes(
                 let name = topology_attribute_name(
                     ctx,
                     field_name,
-                    ctx.get_btree_map(&attribute_index.class_names, reference.id.as_str(), "NX admitted map lookup")?
-                        .and_then(Option::as_ref)
-                        .copied(),
+                    ctx.get_btree_map(
+                        &attribute_index.class_names,
+                        reference.id.as_str(),
+                        "NX admitted map lookup",
+                    )?
+                    .and_then(Option::as_ref)
+                    .copied(),
                     "84",
                     string_use.position.reference_ordinal(),
                 )?;
@@ -6746,25 +8161,46 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
         topology_reference: &crate::native::parasolid::ParasolidTopologyAttributeListReference,
         value_use: &str,
     ) -> Result<Option<String>, CodecError> {
-        let Some(field_use) = ctx.get_btree_map(&self.fields_by_value_use, value_use, "NX admitted map lookup")?
+        let Some(field_use) = ctx
+            .get_btree_map(
+                &self.fields_by_value_use,
+                value_use,
+                "NX admitted map lookup",
+            )?
             .and_then(Option::as_ref)
         else {
             return Ok(None);
         };
-        let Some(class_use) = ctx.get_btree_map(&self.classes_by_entity, &(
-                topology_reference.id.as_str(),
-                field_use.entity_51_record.as_str(),
-            ), "NX admitted map lookup")?
+        let Some(class_use) = ctx
+            .get_btree_map(
+                &self.classes_by_entity,
+                &(
+                    topology_reference.id.as_str(),
+                    field_use.entity_51_record.as_str(),
+                ),
+                "NX admitted map lookup",
+            )?
             .and_then(Option::as_ref)
         else {
             return Ok(None);
         };
-        if !ctx.equal(&(field_use.attribute_class_use), &(class_use.attribute_class_use), "NX field name equality")?
-            || !ctx.equal(&(field_use.attribute_definition), &(class_use.attribute_definition), "NX field name equality")?
-        {
+        if !ctx.equal(
+            &(field_use.attribute_class_use),
+            &(class_use.attribute_class_use),
+            "NX field name equality",
+        )? || !ctx.equal(
+            &(field_use.attribute_definition),
+            &(class_use.attribute_definition),
+            "NX field name equality",
+        )? {
             return Ok(None);
         }
-        let Some(definition) = ctx.get_btree_map(&self.definitions_by_id, class_use.attribute_definition.as_str(), "NX admitted map lookup")?
+        let Some(definition) = ctx
+            .get_btree_map(
+                &self.definitions_by_id,
+                class_use.attribute_definition.as_str(),
+                "NX admitted map lookup",
+            )?
             .and_then(Option::as_ref)
         else {
             return Ok(None);
@@ -6773,11 +8209,21 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
         let field_name = match (definition.name.as_str(), field_use.position.field_ordinal()) {
             ("SDL/TYSA_DENSITY", 0) => std::borrow::Cow::Borrowed("density"),
             ("SDL/TYSA_DENSITY", 1) => std::borrow::Cow::Borrowed("units"),
-            _ if ctx.get_btree_map(&self.field_names_by_definition, definition.id.as_str(), "NX admitted map lookup")?
+            _ if ctx
+                .get_btree_map(
+                    &self.field_names_by_definition,
+                    definition.id.as_str(),
+                    "NX admitted map lookup",
+                )?
                 .and_then(Option::as_ref)
                 .is_some() =>
             {
-                let Some(name) = ctx.get_btree_map(&self.field_names_by_definition, definition.id.as_str(), "NX admitted map lookup")?
+                let Some(name) = ctx
+                    .get_btree_map(
+                        &self.field_names_by_definition,
+                        definition.id.as_str(),
+                        "NX admitted map lookup",
+                    )?
                     .and_then(Option::as_ref)
                     .and_then(|names| {
                         names.fields.get(cadmpeg_core::decode::index_from_u32(
@@ -6827,7 +8273,11 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
                 )
             })?;
         let mut name = ctx.retained_string(name_len, "NX Parasolid attribute field name")?;
-        ctx.append_retained(&mut name, definition.name.as_str(), "NX admitted text append")?;
+        ctx.append_retained(
+            &mut name,
+            definition.name.as_str(),
+            "NX admitted text append",
+        )?;
         ctx.push_retained_char(&mut name, '.', "NX Parasolid attribute field separator")?;
         ctx.append_retained(&mut name, &field_name, "NX admitted text append")?;
         Ok(Some(name))
@@ -6874,17 +8324,22 @@ fn topology_attribute_name(
         })?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(
-            name_len.checked_sub(class_name.map_or(0, str::len))
+            name_len
+                .checked_sub(class_name.map_or(0, str::len))
                 .and_then(|bytes| bytes.checked_sub(usize::from(class_name.is_some())))
                 .ok_or_else(|| {
-                ctx.refuse_codec_limit("NX Parasolid attribute fallback name", 0, 1)
-            })?,
+                    ctx.refuse_codec_limit("NX Parasolid attribute fallback name", 0, 1)
+                })?,
         ),
         "NX Parasolid attribute fallback name",
     )?;
     let mut name = ctx.retained_string(name_len, "NX Parasolid attribute fallback name")?;
     if let Some(class_name) = class_name {
-        ctx.append_retained(&mut name, class_name, "NX Parasolid attribute fallback name")?;
+        ctx.append_retained(
+            &mut name,
+            class_name,
+            "NX Parasolid attribute fallback name",
+        )?;
         ctx.push_retained_char(&mut name, '.', "NX Parasolid attribute class separator")?;
     }
     std::fmt::Write::write_fmt(
@@ -6929,10 +8384,14 @@ fn parasolid_topology_attribute_class_names<'a>(
 ) -> Result<BTreeMap<&'a str, Option<&'a str>>, CodecError> {
     let mut classes_by_reference = BTreeMap::<&str, Option<&str>>::new();
     for class_use in ctx.admit_iter(class_uses, "NX topology attribute class uses")? {
-        
-        for definition in ctx.admit_iter(definitions, "NX Parasolid class name lookup")?
-        {
-        if !(ctx.equal(&(definition.id), &(class_use.attribute_definition), "NX parasolid topology attribute class names equality")?) { continue; }
+        for definition in ctx.admit_iter(definitions, "NX Parasolid class name lookup")? {
+            if !(ctx.equal(
+                &(definition.id),
+                &(class_use.attribute_definition),
+                "NX parasolid topology attribute class names equality",
+            )?) {
+                continue;
+            }
 
             let key = class_use.topology_attribute_reference.as_str();
             let name = definition.name.as_str();
@@ -6949,7 +8408,11 @@ fn parasolid_topology_attribute_class_names<'a>(
                 }
                 Entry::Occupied(mut entry) => {
                     if match entry.get() {
-                        Some(existing) => !ctx.equal(*existing, name, "NX parasolid topology attribute class names equality")?,
+                        Some(existing) => !ctx.equal(
+                            *existing,
+                            name,
+                            "NX parasolid topology attribute class names equality",
+                        )?,
                         None => false,
                     } {
                         entry.insert(None);
@@ -7204,11 +8667,18 @@ fn parasolid_topology_attribute_contexts<'a>(
     }
     let emitted_targets = parasolid_topology_attribute_targets(ctx, reservation, ir)?;
     let mut contexts = Vec::new();
-    for (target_key, references) in ctx.admit_iter(&references_by_target, "NX attribute reference targets")? {
+    for (target_key, references) in
+        ctx.admit_iter(&references_by_target, "NX attribute reference targets")?
+    {
         let Some(&reference) = references.first().filter(|_| references.len() == 1) else {
             continue;
         };
-        let Some(target) = ctx.get_btree_map(&emitted_targets, target_key.as_str(), "NX admitted map lookup")? else {
+        let Some(target) = ctx.get_btree_map(
+            &emitted_targets,
+            target_key.as_str(),
+            "NX admitted map lookup",
+        )?
+        else {
             continue;
         };
         let mut entities = BTreeSet::new();
@@ -7217,7 +8687,11 @@ fn parasolid_topology_attribute_contexts<'a>(
                 ctx.insert_btree_set(&mut entities, entity, "NX Parasolid reference entity")
             })?;
         }
-        if let Some(class_entities) = ctx.get_btree_map(&entities_by_reference, reference.id.as_str(), "NX admitted map lookup")? {
+        if let Some(class_entities) = ctx.get_btree_map(
+            &entities_by_reference,
+            reference.id.as_str(),
+            "NX admitted map lookup",
+        )? {
             for entity in class_entities {
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(entities.len()),
@@ -7442,11 +8916,20 @@ fn attach_parasolid_topology_numeric_attributes(
     for context in ctx.admit_iter(&attribute_index.contexts, "NX numeric attribute contexts")? {
         let reference = context.reference;
         let entity = context.entity;
-        if let Some(feature_property_records) = ctx.get_btree_map(&uses_by_entity, entity, "NX admitted map lookup")? {
-            for numeric_use in ctx.admit_iter(feature_property_records, "NX numeric attribute uses")? {
+        if let Some(feature_property_records) =
+            ctx.get_btree_map(&uses_by_entity, entity, "NX admitted map lookup")?
+        {
+            for numeric_use in
+                ctx.admit_iter(feature_property_records, "NX numeric attribute uses")?
+            {
                 let (values, source_offset, tag, lane) = match numeric_use.kind {
                     crate::native::parasolid::ParasolidEntity51NumericKind::UnsignedIntegers => {
-                        let Some(record) = ctx.get_btree_map(&integers_by_id, numeric_use.value_record.as_str(), "NX admitted map lookup")? else {
+                        let Some(record) = ctx.get_btree_map(
+                            &integers_by_id,
+                            numeric_use.value_record.as_str(),
+                            "NX admitted map lookup",
+                        )?
+                        else {
                             continue;
                         };
                         (
@@ -7459,7 +8942,12 @@ fn attach_parasolid_topology_numeric_attributes(
                         )
                     }
                     crate::native::parasolid::ParasolidEntity51NumericKind::Doubles => {
-                        let Some(record) = ctx.get_btree_map(&doubles_by_id, numeric_use.value_record.as_str(), "NX admitted map lookup")? else {
+                        let Some(record) = ctx.get_btree_map(
+                            &doubles_by_id,
+                            numeric_use.value_record.as_str(),
+                            "NX admitted map lookup",
+                        )?
+                        else {
                             continue;
                         };
                         (
@@ -7503,9 +8991,13 @@ fn attach_parasolid_topology_numeric_attributes(
                 let name = topology_attribute_name(
                     ctx,
                     field_name,
-                    ctx.get_btree_map(&attribute_index.class_names, reference.id.as_str(), "NX admitted map lookup")?
-                        .and_then(Option::as_ref)
-                        .copied(),
+                    ctx.get_btree_map(
+                        &attribute_index.class_names,
+                        reference.id.as_str(),
+                        "NX admitted map lookup",
+                    )?
+                    .and_then(Option::as_ref)
+                    .copied(),
                     lane,
                     numeric_use.position.reference_ordinal(),
                 )?;
@@ -7580,53 +9072,83 @@ fn attach_parasolid_topology_structured_attributes(
             "NX Parasolid structured attribute ordering",
         )?;
     }
-    for context in ctx.admit_iter(&attribute_index.contexts, "NX structured attribute contexts")? {
+    for context in ctx.admit_iter(
+        &attribute_index.contexts,
+        "NX structured attribute contexts",
+    )? {
         let reference = context.reference;
         let entity = context.entity;
-        if let Some(feature_property_records) = ctx.get_btree_map(&uses_by_entity, entity, "NX admitted map lookup")? {
-            for structured_use in ctx.admit_iter(feature_property_records, "NX structured attribute uses")? {
+        if let Some(feature_property_records) =
+            ctx.get_btree_map(&uses_by_entity, entity, "NX admitted map lookup")?
+        {
+            for structured_use in
+                ctx.admit_iter(feature_property_records, "NX structured attribute uses")?
+            {
                 use crate::native::parasolid::structured_value_kind::StructuredValueKind as Kind;
                 use crate::native::parasolid::ParasolidVectorValueKind;
                 let (values, source_offset, tag, family) = match structured_use.kind {
                     Kind::Points | Kind::Vectors | Kind::Directions => {
-                        let Some(record) = ctx.get_btree_map(&vectors_by_id, structured_use.value_record.as_str(), "NX admitted map lookup")?
+                        let Some(record) = ctx.get_btree_map(
+                            &vectors_by_id,
+                            structured_use.value_record.as_str(),
+                            "NX admitted map lookup",
+                        )?
                         else {
                             continue;
                         };
                         let family = match (structured_use.kind, record.kind) {
                             (Kind::Points, ParasolidVectorValueKind::Points) => "85_point",
                             (Kind::Vectors, ParasolidVectorValueKind::Vectors) => "86_vector",
-                            (Kind::Directions, ParasolidVectorValueKind::Directions) => "89_direction",
+                            (Kind::Directions, ParasolidVectorValueKind::Directions) => {
+                                "89_direction"
+                            }
                             _ => continue,
                         };
                         (
-                            mapped_vector_attribute_values(ctx, record.values.as_slice(), |value| {
-                                value.finite_components()
-                            })?,
+                            mapped_vector_attribute_values(
+                                ctx,
+                                record.values.as_slice(),
+                                |value| value.finite_components(),
+                            )?,
                             record.inflated_offset,
                             "PARASOLID_VECTOR_ATTRIBUTE",
                             family,
                         )
                     }
                     Kind::Axes => {
-                        let Some(record) = ctx.get_btree_map(&axes_by_id, structured_use.value_record.as_str(), "NX admitted map lookup")? else {
+                        let Some(record) = ctx.get_btree_map(
+                            &axes_by_id,
+                            structured_use.value_record.as_str(),
+                            "NX admitted map lookup",
+                        )?
+                        else {
                             continue;
                         };
                         (
-                            mapped_vector_attribute_values(ctx, record.values.as_slice(), |axis| {
-                                let first = axis[0].finite_components();
-                                let second = axis[1].finite_components();
-                                [
-                                    first[0], first[1], first[2], second[0], second[1], second[2],
-                                ]
-                            })?,
+                            mapped_vector_attribute_values(
+                                ctx,
+                                record.values.as_slice(),
+                                |axis| {
+                                    let first = axis[0].finite_components();
+                                    let second = axis[1].finite_components();
+                                    [
+                                        first[0], first[1], first[2], second[0], second[1],
+                                        second[2],
+                                    ]
+                                },
+                            )?,
                             record.inflated_offset,
                             "ENTITY_57_AXIS_ATTRIBUTE",
                             "87_axis",
                         )
                     }
                     Kind::Tags => {
-                        let Some(record) = ctx.get_btree_map(&tags_by_id, structured_use.value_record.as_str(), "NX admitted map lookup")? else {
+                        let Some(record) = ctx.get_btree_map(
+                            &tags_by_id,
+                            structured_use.value_record.as_str(),
+                            "NX admitted map lookup",
+                        )?
+                        else {
                             continue;
                         };
                         (
@@ -7639,7 +9161,11 @@ fn attach_parasolid_topology_structured_attributes(
                         )
                     }
                     Kind::Unicode => {
-                        let Some(record) = ctx.get_btree_map(&unicode_by_id, structured_use.value_record.as_str(), "NX admitted map lookup")?
+                        let Some(record) = ctx.get_btree_map(
+                            &unicode_by_id,
+                            structured_use.value_record.as_str(),
+                            "NX admitted map lookup",
+                        )?
                         else {
                             continue;
                         };
@@ -7682,9 +9208,13 @@ fn attach_parasolid_topology_structured_attributes(
                 let name = topology_attribute_name(
                     ctx,
                     field_name,
-                    ctx.get_btree_map(&attribute_index.class_names, reference.id.as_str(), "NX admitted map lookup")?
-                        .and_then(Option::as_ref)
-                        .copied(),
+                    ctx.get_btree_map(
+                        &attribute_index.class_names,
+                        reference.id.as_str(),
+                        "NX admitted map lookup",
+                    )?
+                    .and_then(Option::as_ref)
+                    .copied(),
                     family,
                     structured_use.position.reference_ordinal(),
                 )?;
@@ -7747,13 +9277,22 @@ fn preceding_operation_dependency<'a>(
     operation_positions: &BTreeMap<&str, usize>,
     feature_ids: &'a BTreeMap<&str, FeatureId>,
 ) -> Result<Option<&'a FeatureId>, CodecError> {
-    let Some(position) = ctx.get_btree_map(operation_positions, operation, "NX preceding operation position lookup")? else {
+    let Some(position) = ctx.get_btree_map(
+        operation_positions,
+        operation,
+        "NX preceding operation position lookup",
+    )?
+    else {
         return Ok(None);
     };
     if *position >= consumer_position {
         return Ok(None);
     }
-    ctx.get_btree_map(feature_ids, operation, "NX preceding operation feature lookup")
+    ctx.get_btree_map(
+        feature_ids,
+        operation,
+        "NX preceding operation feature lookup",
+    )
 }
 
 fn projects_neutral_feature(label: &str) -> bool {
@@ -7853,7 +9392,10 @@ pub(super) fn parameter_owner_dependencies(
             cadmpeg_core::decode::u64_from_index(work),
             "NX parameter owner dependency scan",
         )?;
-        let Some(owner) = ctx.get_btree_map(parameter_owners, parameter_id, "NX admitted map lookup")?.and_then(Option::as_ref) else {
+        let Some(owner) = ctx
+            .get_btree_map(parameter_owners, parameter_id, "NX admitted map lookup")?
+            .and_then(Option::as_ref)
+        else {
             continue;
         };
         if !dependencies.contains(owner) {
@@ -7874,19 +9416,24 @@ fn extrude_feature_definition(
 ) -> Result<FeatureDefinition, CodecError> {
     let profile = match (construction_profile, structured_construction) {
         (Some(construction), None) | (None, Some(construction)) => {
-            ProfileRef::Planar(PlanarProfileRef::Native(ctx.format_retained(format_args!("{construction}"), "NX extrude construction profile")?))
+            ProfileRef::Planar(PlanarProfileRef::Native(ctx.format_retained(
+                format_args!("{construction}"),
+                "NX extrude construction profile",
+            )?))
         }
         _ => ProfileRef::Planar(PlanarProfileRef::Unresolved("EXTRUDE".to_string())),
     };
     let solid = match output_kinds {
         [cadmpeg_ir::topology::BodyKind::Solid, rest @ ..]
-            if ctx.admit_iter(rest, "NX extrude output kinds")?
+            if ctx
+                .admit_iter(rest, "NX extrude output kinds")?
                 .all(|kind| *kind == cadmpeg_ir::topology::BodyKind::Solid) =>
         {
             Some(true)
         }
         [cadmpeg_ir::topology::BodyKind::Sheet, rest @ ..]
-            if ctx.admit_iter(rest, "NX extrude output kinds")?
+            if ctx
+                .admit_iter(rest, "NX extrude output kinds")?
                 .all(|kind| *kind == cadmpeg_ir::topology::BodyKind::Sheet) =>
         {
             Some(false)
@@ -8180,34 +9727,61 @@ fn offset_store_trim_body_feature_definition(
             "NX trim offset uniqueness",
         )?;
         let mut distinct_operand_indices = true;
-        for (index, operand) in ctx.admit_iter(operands, "NX trim operand uniqueness")?.enumerate() {
-            if ctx.admit_iter(&operands[..index], "NX trim preceding operand indices")?
+        for (index, operand) in ctx
+            .admit_iter(operands, "NX trim operand uniqueness")?
+            .enumerate()
+        {
+            if ctx
+                .admit_iter(&operands[..index], "NX trim preceding operand indices")?
                 .any(|other| other.operand.atom.value() == operand.operand.atom.value())
             {
                 distinct_operand_indices = false;
                 break;
             }
         }
-        let same_store = ctx.all_by(&tool_data_blocks, |block| {
-            match block.rsplit_once(":block#") {
-                Some((store, _)) => ctx.equal(store, primary_store, "NX offset store trim body feature definition equality"),
+        let same_store = ctx.all_by(
+            &tool_data_blocks,
+            |block| match block.rsplit_once(":block#") {
+                Some((store, _)) => ctx.equal(
+                    store,
+                    primary_store,
+                    "NX offset store trim body feature definition equality",
+                ),
                 None => Ok(false),
-            }
-        }, "NX trim tool block validation")?;
-        let distinct_tool_blocks = ctx.admit_iter(&tool_data_blocks, "NX trim tool block uniqueness")?
+            },
+            "NX trim tool block validation",
+        )?;
+        let distinct_tool_blocks = ctx
+            .admit_iter(&tool_data_blocks, "NX trim tool block uniqueness")?
             .enumerate()
             .all(|(index, block)| !tool_data_blocks[..index].contains(block));
-        let no_target_alias = ctx.all_by(&tool_data_blocks, |block| Ok(!ctx.equal(*block, data_block.as_str(), "NX offset store trim body feature definition equality")?), "NX trim tool block validation")?;
-        if ctx.admit_iter(operands, "NX trim operand body validation")?.all(|operand| {
-            operand.body_object_index == *object_index
-                && operand.operand.atom.value() != *object_index
-        }) && distinct_operand_indices
+        let no_target_alias = ctx.all_by(
+            &tool_data_blocks,
+            |block| {
+                Ok(!ctx.equal(
+                    *block,
+                    data_block.as_str(),
+                    "NX offset store trim body feature definition equality",
+                )?)
+            },
+            "NX trim tool block validation",
+        )?;
+        if ctx
+            .admit_iter(operands, "NX trim operand body validation")?
+            .all(|operand| {
+                operand.body_object_index == *object_index
+                    && operand.operand.atom.value() != *object_index
+            })
+            && distinct_operand_indices
             && same_store
             && distinct_tool_blocks
             && no_target_alias
         {
             let mut bodies = Vec::new();
-            for block in ctx.admit_iter(&tool_data_blocks, "NX trim local tool bodies")?.copied() {
+            for block in ctx
+                .admit_iter(&tool_data_blocks, "NX trim local tool bodies")?
+                .copied()
+            {
                 ctx.reserve_scoped_vec(
                     &mut reservation,
                     &mut bodies,
@@ -8220,9 +9794,9 @@ fn offset_store_trim_body_feature_definition(
                     "NX body selection text",
                 )?);
             }
-            let native = selection_indices_native(
-                ctx, None, operands, |operand| operand.operand.atom.value(),
-            )?;
+            let native = selection_indices_native(ctx, None, operands, |operand| {
+                operand.operand.atom.value()
+            })?;
             local_body_selection(ctx, &bodies, native)?
         } else {
             BodySelection::Unresolved
@@ -8279,10 +9853,23 @@ fn sew_body_feature_definition(
     else {
         return Ok(None);
     };
-    let native = selection_indices_native(ctx, Some(&primary_body_object_index), operands, |operand| operand.operand.atom.value())?;
+    let native =
+        selection_indices_native(ctx, Some(&primary_body_object_index), operands, |operand| {
+            operand.operand.atom.value()
+        })?;
     let mut object_indices = Vec::new();
     let mut reservation = ctx.reserve_scoped(0, "NX sew body indices")?;
-    for index in ctx.admit_iter(std::slice::from_ref(&primary_body_object_index), "NX sew primary body index")?.copied().chain(ctx.admit_iter(operands, "NX sew operand body indices")?.map(|operand| operand.operand.atom.value())) {
+    for index in ctx
+        .admit_iter(
+            std::slice::from_ref(&primary_body_object_index),
+            "NX sew primary body index",
+        )?
+        .copied()
+        .chain(
+            ctx.admit_iter(operands, "NX sew operand body indices")?
+                .map(|operand| operand.operand.atom.value()),
+        )
+    {
         ctx.reserve_scoped_vec(
             &mut reservation,
             &mut object_indices,
@@ -8292,7 +9879,8 @@ fn sew_body_feature_definition(
         object_indices.push(index);
     }
     let bodies = if primary_segment_body_object_index.is_some() {
-        if ctx.admit_iter(operands, "NX sew segment operands")?
+        if ctx
+            .admit_iter(operands, "NX sew segment operands")?
             .all(|operand| !operand.segment_body_bindings.is_empty())
         {
             feature_body_set_selection(
@@ -8331,21 +9919,36 @@ fn sew_body_feature_definition(
             "NX sew offset uniqueness",
         )?;
         let valid = complete
-            && ctx.admit_iter(operands, "NX sew offset operands")?
+            && ctx
+                .admit_iter(operands, "NX sew offset operands")?
                 .all(|operand| operand.body_object_index == primary_object_index)
-            && ctx.all_by(&blocks, |block| {
-                match block.rsplit_once(":block#") {
-                    Some((store, _)) => ctx.equal(&Some(store), &primary_store, "NX sew body feature definition equality"),
+            && ctx.all_by(
+                &blocks,
+                |block| match block.rsplit_once(":block#") {
+                    Some((store, _)) => ctx.equal(
+                        &Some(store),
+                        &primary_store,
+                        "NX sew body feature definition equality",
+                    ),
                     None => Ok(false),
-                }
-            }, "NX sew block stores")?
-            && ctx.admit_iter(&blocks, "NX sew block uniqueness")?
+                },
+                "NX sew block stores",
+            )?
+            && ctx
+                .admit_iter(&blocks, "NX sew block uniqueness")?
                 .enumerate()
                 .all(|(index, block)| !blocks[..index].contains(block))
             && !blocks.contains(&primary_data_block);
         if valid {
             let mut bodies = Vec::new();
-            for block in ctx.admit_iter(std::slice::from_ref(&primary_data_block), "NX sew primary block")?.copied().chain(ctx.admit_iter(&blocks, "NX sew tool blocks")?.copied()) {
+            for block in ctx
+                .admit_iter(
+                    std::slice::from_ref(&primary_data_block),
+                    "NX sew primary block",
+                )?
+                .copied()
+                .chain(ctx.admit_iter(&blocks, "NX sew tool blocks")?.copied())
+            {
                 ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX sew local bodies")?;
                 bodies.push(ctx.format_scoped_text(
                     &mut reservation,
@@ -8401,9 +10004,8 @@ fn trim_body_feature_definition(
             keep: BodyTrimSide::Unresolved,
         }));
     }
-    let native_tools = selection_indices_native(
-        ctx, None, operands, |operand| operand.operand.atom.value(),
-    )?;
+    let native_tools =
+        selection_indices_native(ctx, None, operands, |operand| operand.operand.atom.value())?;
     let mut tool_object_indices = Vec::new();
     let mut reservation = ctx.reserve_scoped(0, "NX trim tool indices")?;
     for operand in ctx.admit_iter(operands, "NX trim tool operands")? {
@@ -8415,9 +10017,12 @@ fn trim_body_feature_definition(
         )?;
         tool_object_indices.push(operand.operand.atom.value());
     }
-    if ctx.admit_iter(operands, "NX trim operand completeness")?.any(|operand| {
-        operand.operand_data_block.is_some() || operand.segment_body_bindings.is_empty()
-    }) {
+    if ctx
+        .admit_iter(operands, "NX trim operand completeness")?
+        .any(|operand| {
+            operand.operand_data_block.is_some() || operand.segment_body_bindings.is_empty()
+        })
+    {
         return Ok(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Native(native_target),
@@ -8508,7 +10113,12 @@ fn operation_body_image_outputs_by_write<'a, 'ctx>(
         let Some(use_) = use_ else {
             continue;
         };
-        let Some([body]) = ctx.get_btree_map(bodies_by_segment_binding, use_.segment_body_binding.as_str(), "NX admitted map lookup")?
+        let Some([body]) = ctx
+            .get_btree_map(
+                bodies_by_segment_binding,
+                use_.segment_body_binding.as_str(),
+                "NX admitted map lookup",
+            )?
             .map(Vec::as_slice)
         else {
             continue;
@@ -8546,7 +10156,12 @@ fn merge_operation_body_outputs<'a>(
                         body.try_clone_for_decode(ctx, "NX merged body output")
                     })?);
             }
-            Entry::Occupied(entry) if ctx.equal(&(entry.get()), &(body), "NX merge operation body outputs equality")? => {}
+            Entry::Occupied(entry)
+                if ctx.equal(
+                    &(entry.get()),
+                    &(body),
+                    "NX merge operation body outputs equality",
+                )? => {}
             Entry::Occupied(entry) => {
                 entry.remove();
 
@@ -8574,7 +10189,12 @@ fn operation_body_identity_outputs_by_write<'a, 'ctx>(
     let mut reservation = ctx.reserve_scoped(0, "NX body identity output index")?;
     for use_ in uses {
         ctx.charge_work(1, "NX body identity output lookup")?;
-        let Some([body]) = ctx.get_btree_map(bodies_by_segment_binding, use_.segment_body_binding.as_str(), "NX admitted map lookup")?
+        let Some([body]) = ctx
+            .get_btree_map(
+                bodies_by_segment_binding,
+                use_.segment_body_binding.as_str(),
+                "NX admitted map lookup",
+            )?
             .map(Vec::as_slice)
         else {
             continue;
@@ -8589,7 +10209,12 @@ fn operation_body_identity_outputs_by_write<'a, 'ctx>(
                     body.try_clone_for_decode(ctx, "NX body identity output index")
                 })?);
             }
-            Entry::Occupied(entry) if ctx.equal(&(entry.get()), &(body), "NX operation body identity outputs by write equality")? => {}
+            Entry::Occupied(entry)
+                if ctx.equal(
+                    &(entry.get()),
+                    &(body),
+                    "NX operation body identity outputs by write equality",
+                )? => {}
             Entry::Occupied(entry) => {
                 entry.remove();
             }
@@ -8636,7 +10261,9 @@ fn operation_body_group_partition_outputs_by_write<'a, 'ctx>(
         }
     }
     let mut unique_bodies = BTreeMap::new();
-    for (&identity, &partition) in ctx.admit_iter(&partitions_by_identity, "NX body partition identities")? {
+    for (&identity, &partition) in
+        ctx.admit_iter(&partitions_by_identity, "NX body partition identities")?
+    {
         let Some(partition) = partition else {
             continue;
         };
@@ -8700,7 +10327,12 @@ fn complete_operation_body_image_outputs(
     let mut outputs = Vec::new();
     for write in writes {
         ctx.charge_work(1, "NX complete body image output lookup")?;
-        let Some(body) = ctx.get_btree_map(outputs_by_write, write.id.as_str(), "NX admitted map lookup")? else {
+        let Some(body) = ctx.get_btree_map(
+            outputs_by_write,
+            write.id.as_str(),
+            "NX admitted map lookup",
+        )?
+        else {
             return Ok(Vec::new());
         };
         ctx.charge_work(
@@ -8731,9 +10363,12 @@ fn body_writes_match_boolean_target(
     let [write] = writes else {
         return Ok(false);
     };
-    Ok(write.frame.body_image().value() == boolean.target.token.value()
-        && !ctx.admit_iter(&boolean.tools, "NX Boolean body-write target tools")?
-            .any(|token| token.token.value() == write.frame.body_image().value()))
+    Ok(
+        write.frame.body_image().value() == boolean.target.token.value()
+            && !ctx
+                .admit_iter(&boolean.tools, "NX Boolean body-write target tools")?
+                .any(|token| token.token.value() == write.frame.body_image().value()),
+    )
 }
 
 #[cfg(test)]

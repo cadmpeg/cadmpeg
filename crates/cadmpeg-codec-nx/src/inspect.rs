@@ -74,7 +74,10 @@ pub(super) fn summarize(
 
     let mut storage_notes_storage = ctx.reserve_scoped(0, "nx temporary storage notes")?;
     let mut storage_notes: Vec<String> = Vec::new();
-    for (si, stream) in ctx.admit_iter(&scan.streams, "NX summary stream traversal")?.enumerate() {
+    for (si, stream) in ctx
+        .admit_iter(&scan.streams, "NX summary stream traversal")?
+        .enumerate()
+    {
         let mut attributes = BTreeMap::new();
         insert_summary_attribute(
             ctx,
@@ -249,7 +252,9 @@ pub(super) fn summarize(
                         )),
                     )?;
                 }
-                for (&family, &count) in ctx.admit_iter(&census.full_counts(ctx)?, "NX summary full record counts")? {
+                for (&family, &count) in
+                    ctx.admit_iter(&census.full_counts(ctx)?, "NX summary full record counts")?
+                {
                     insert_summary_attribute(
                         ctx,
                         &mut attributes,
@@ -259,7 +264,10 @@ pub(super) fn summarize(
                         SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
                     )?;
                 }
-                for (&family, &count) in ctx.admit_iter(&census.tombstone_counts(ctx)?, "NX summary tombstone counts")? {
+                for (&family, &count) in ctx.admit_iter(
+                    &census.tombstone_counts(ctx)?,
+                    "NX summary tombstone counts",
+                )? {
                     insert_summary_attribute(
                         ctx,
                         &mut attributes,
@@ -376,7 +384,9 @@ fn insert_summary_attribute(
     let mut rendered = String::new();
     ctx.try_reserve_retained_text(&mut rendered, value_len, "nx summary attribute text")?;
     match value {
-        SummaryValue::Text(text) => ctx.append_retained(&mut rendered, text, "NX admitted text append")?,
+        SummaryValue::Text(text) => {
+            ctx.append_retained(&mut rendered, text, "NX admitted text append")?
+        }
         SummaryValue::Number(number) => write!(&mut rendered, "{number}")
             .map_err(|_| ctx.refuse_codec_limit("nx summary attribute text", 0, 1))?,
     }
@@ -390,7 +400,8 @@ mod tests {
     fn summary_suffix_character_refusal_precedes_attribute_insertion() {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
-        for (suffix, expected, character_bytes) in [("AB", "prefix:ab", 1), ("ÅB", "prefix:Åb", 2)] {
+        for (suffix, expected, character_bytes) in [("AB", "prefix:ab", 1), ("ÅB", "prefix:Åb", 2)]
+        {
             let error = crate::test_support::resource_refusal_at(
                 &[],
                 ResourceDimension::WorkUnits,
@@ -398,7 +409,12 @@ mod tests {
                 |ctx| {
                     let mut attributes = std::collections::BTreeMap::new();
                     let result = super::insert_summary_attribute(
-                        ctx, &mut attributes, "prefix:", suffix, true, super::SummaryValue::Text("text"),
+                        ctx,
+                        &mut attributes,
+                        "prefix:",
+                        suffix,
+                        true,
+                        super::SummaryValue::Text("text"),
                     );
                     if result.is_err() {
                         assert!(attributes.is_empty());
@@ -414,8 +430,14 @@ mod tests {
             crate::test_support::with_decode_context(|ctx| {
                 let mut attributes = std::collections::BTreeMap::new();
                 super::insert_summary_attribute(
-                    ctx, &mut attributes, "prefix:", suffix, true, super::SummaryValue::Text("text"),
-                ).unwrap();
+                    ctx,
+                    &mut attributes,
+                    "prefix:",
+                    suffix,
+                    true,
+                    super::SummaryValue::Text("text"),
+                )
+                .unwrap();
                 assert_eq!(attributes.get(expected).map(String::as_str), Some("text"));
             });
         }

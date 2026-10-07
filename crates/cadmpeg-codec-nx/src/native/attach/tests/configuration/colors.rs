@@ -83,8 +83,12 @@ fn rm_appearance_result(
 
 #[test]
 fn rm_appearance_refuses_collection_limit() {
-    let error =
-        rm_appearance_result(|policy| policy.limits.max_collection_items = 0, false, "Iron Gray").unwrap_err();
+    let error = rm_appearance_result(
+        |policy| policy.limits.max_collection_items = 0,
+        false,
+        "Iron Gray",
+    )
+    .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
@@ -93,8 +97,12 @@ fn rm_appearance_refuses_collection_limit() {
 
 #[test]
 fn rm_appearance_refuses_retained_limit() {
-    let error =
-        rm_appearance_result(|policy| policy.limits.max_retained_bytes = 0, false, "Iron Gray").unwrap_err();
+    let error = rm_appearance_result(
+        |policy| policy.limits.max_retained_bytes = 0,
+        false,
+        "Iron Gray",
+    )
+    .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
@@ -103,8 +111,12 @@ fn rm_appearance_refuses_retained_limit() {
 
 #[test]
 fn rm_appearance_refuses_scoped_limit() {
-    let error =
-        rm_appearance_result(|policy| policy.limits.max_materialized_bytes = 0, false, "Iron Gray").unwrap_err();
+    let error = rm_appearance_result(
+        |policy| policy.limits.max_materialized_bytes = 0,
+        false,
+        "Iron Gray",
+    )
+    .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
@@ -113,7 +125,8 @@ fn rm_appearance_refuses_scoped_limit() {
 
 #[test]
 fn rm_appearance_refuses_work_limit() {
-    let error = rm_appearance_result(|policy| policy.limits.max_work_units = 0, true, "Iron Gray").unwrap_err();
+    let error = rm_appearance_result(|policy| policy.limits.max_work_units = 0, true, "Iron Gray")
+        .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
@@ -130,11 +143,20 @@ fn rm_appearance_reuse_lookup_refuses_work() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "NX RM appearance reuse lookup",
-        |cap| rm_appearance_result(|policy| policy.limits.max_work_units = cap, true, "Iron Gray"),
+        |cap| {
+            rm_appearance_result(
+                |policy| policy.limits.max_work_units = cap,
+                true,
+                "Iron Gray",
+            )
+        },
     );
-    assert!(matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-        && limit.operation == "NX RM appearance reuse lookup"), "{error:?}");
+        && limit.operation == "NX RM appearance reuse lookup"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -145,9 +167,12 @@ fn rm_appearance_name_copy_refuses_work() {
         "NX RM color appearance",
         |cap| rm_appearance_result(|policy| policy.limits.max_work_units = cap, false, &name),
     );
-    assert!(matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-        && limit.operation == "NX RM color appearance"), "{error:?}");
+        && limit.operation == "NX RM color appearance"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -156,11 +181,20 @@ fn rm_appearance_name_copy_refuses_retained_bytes() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "NX RM color appearance",
-        |cap| rm_appearance_result(|policy| policy.limits.max_retained_bytes = cap, false, &name),
+        |cap| {
+            rm_appearance_result(
+                |policy| policy.limits.max_retained_bytes = cap,
+                false,
+                &name,
+            )
+        },
     );
-    assert!(matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-        && limit.operation == "NX RM color appearance"), "{error:?}");
+        && limit.operation == "NX RM color appearance"),
+        "{error:?}"
+    );
 }
 
 fn rm_face_identity_lookup_result(
@@ -394,9 +428,15 @@ fn rm_source_color_bindings_require_one_palette_per_source_identity() {
             },
         ]
     );
-    let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX observe equality", |ctx| resolve_rm_source_color_bindings(ctx, &assignments));
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 7));
-
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX observe equality",
+        |ctx| resolve_rm_source_color_bindings(ctx, &assignments),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 7)
+    );
 }
 
 fn source_color_binding_result(

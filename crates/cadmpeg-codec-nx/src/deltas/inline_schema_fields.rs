@@ -63,16 +63,27 @@ pub(crate) enum InlineSchemaFields {
 }
 
 impl DecodeCost for InlineSchemaFields {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
         match self {
             Self::BodyHeader | Self::Type101Compact => Ok(1),
-            Self::Region { xmt, state_word, references } => (1_u8, u32::from(*xmt), state_word, references).decode_cost(ctx, operation),
+            Self::Region {
+                xmt,
+                state_word,
+                references,
+            } => (1_u8, u32::from(*xmt), state_word, references).decode_cost(ctx, operation),
             Self::AttdefList { state } => (1_u8, state).decode_cost(ctx, operation),
             Self::Type70 { state } => (1_u8, state).decode_cost(ctx, operation),
             Self::Type100 { state } => (1_u8, state).decode_cost(ctx, operation),
             Self::Type101 { state } => (1_u8, state).decode_cost(ctx, operation),
             Self::Type38 { state } => (1_u8, state).decode_cost(ctx, operation),
-            Self::Type41 { reference, numeric_values } => (1_u8, u32::from(*reference), numeric_values.as_raw()).decode_cost(ctx, operation),
+            Self::Type41 {
+                reference,
+                numeric_values,
+            } => (1_u8, u32::from(*reference), numeric_values.as_raw()).decode_cost(ctx, operation),
         }
     }
 }
@@ -112,32 +123,107 @@ mod tests {
         let xmt = |value| NonNullXmt::try_from(value).unwrap();
         let links = [xmt(4), xmt(5)];
         let descending = [xmt(13), xmt(12), xmt(11)];
-        let state38 = |numeric_values| Type38State::new(&Type38StateParts {
-            xmt: xmt(10), node_id: 7, leading_references: [2, 3, 4, 5, 6],
-            leading_statuses: [1; 5], marker: IntersectionMarker::Type2b,
-            linked_references: &links, state_references: &descending, numeric_values,
-        }).unwrap();
+        let state38 = |numeric_values| {
+            Type38State::new(&Type38StateParts {
+                xmt: xmt(10),
+                node_id: 7,
+                leading_references: [2, 3, 4, 5, 6],
+                leading_statuses: [1; 5],
+                marker: IntersectionMarker::Type2b,
+                linked_references: &links,
+                state_references: &descending,
+                numeric_values,
+            })
+            .unwrap()
+        };
         // Costs count the enum tag and stored scalars, references, and numeric lanes.
         let cases = [
             (InlineSchemaFields::BodyHeader, 1),
             (InlineSchemaFields::Type101Compact, 1),
-            (InlineSchemaFields::Region { xmt: xmt(10), state_word: 3, references: [2; 4] }, 1 + 4 + 4 + 4 * 4),
-            (InlineSchemaFields::AttdefList { state: AttdefState::new(10, 4, 2, vec![5, 6, 1, 1]).unwrap() }, 1 + 4 + 4 * 4 + 4 + 4),
-            (InlineSchemaFields::Type70 { state: Type70State::new(10, 7, [2; 4], 3, 8).unwrap() }, 1 + 4 + 4 + 4 * 4 + 2 + 4),
-            (InlineSchemaFields::Type100 { state: PrecisionState::new(10, [2, 11, 1], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 1.0]).unwrap() }, 1 + 4 + 3 * 8),
-            (InlineSchemaFields::Type101 { state: Type101State::new([2; 4], None, [0, 0, 7], 3).unwrap() }, 1 + 4 * 4 + 1 + 1 + 4 + 8),
-            (InlineSchemaFields::Type101 { state: Type101State::new([2; 4], Some(10), [19, 9, 7], 3).unwrap() }, 1 + 4 * 4 + 1 + 4 + 1 + 4 + 8),
-            (InlineSchemaFields::Type38 { state: state38(None) }, 1 + 4 + 4 + 5 * 4 + 1 + 1 + 2 * 4 + 1),
-            (InlineSchemaFields::Type38 { state: state38(FiniteVector::new([0.5; 11])) }, 1 + 4 + 4 + 5 * 4 + 1 + 1 + 2 * 4 + 1 + 11 * 8),
-            (InlineSchemaFields::Type41 { reference: xmt(10), numeric_values: FiniteVector::new([0.5; 11]).unwrap() }, 1 + 4 + 11 * 8),
+            (
+                InlineSchemaFields::Region {
+                    xmt: xmt(10),
+                    state_word: 3,
+                    references: [2; 4],
+                },
+                1 + 4 + 4 + 4 * 4,
+            ),
+            (
+                InlineSchemaFields::AttdefList {
+                    state: AttdefState::new(10, 4, 2, vec![5, 6, 1, 1]).unwrap(),
+                },
+                1 + 4 + 4 * 4 + 4 + 4,
+            ),
+            (
+                InlineSchemaFields::Type70 {
+                    state: Type70State::new(10, 7, [2; 4], 3, 8).unwrap(),
+                },
+                1 + 4 + 4 + 4 * 4 + 2 + 4,
+            ),
+            (
+                InlineSchemaFields::Type100 {
+                    state: PrecisionState::new(
+                        10,
+                        [2, 11, 1],
+                        [
+                            1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 1.0,
+                        ],
+                    )
+                    .unwrap(),
+                },
+                1 + 4 + 3 * 8,
+            ),
+            (
+                InlineSchemaFields::Type101 {
+                    state: Type101State::new([2; 4], None, [0, 0, 7], 3).unwrap(),
+                },
+                1 + 4 * 4 + 1 + 1 + 4 + 8,
+            ),
+            (
+                InlineSchemaFields::Type101 {
+                    state: Type101State::new([2; 4], Some(10), [19, 9, 7], 3).unwrap(),
+                },
+                1 + 4 * 4 + 1 + 4 + 1 + 4 + 8,
+            ),
+            (
+                InlineSchemaFields::Type38 {
+                    state: state38(None),
+                },
+                1 + 4 + 4 + 5 * 4 + 1 + 1 + 2 * 4 + 1,
+            ),
+            (
+                InlineSchemaFields::Type38 {
+                    state: state38(FiniteVector::new([0.5; 11])),
+                },
+                1 + 4 + 4 + 5 * 4 + 1 + 1 + 2 * 4 + 1 + 11 * 8,
+            ),
+            (
+                InlineSchemaFields::Type41 {
+                    reference: xmt(10),
+                    numeric_values: FiniteVector::new([0.5; 11]).unwrap(),
+                },
+                1 + 4 + 11 * 8,
+            ),
         ];
         for (fields, expected) in cases {
             crate::test_support::with_decode_context(|ctx| {
-                assert_eq!(fields.decode_cost(ctx, "NX schema equality cost").unwrap(), expected);
-                assert!(ctx.equal(&fields, &fields, "NX schema equality cost").unwrap());
+                assert_eq!(
+                    fields.decode_cost(ctx, "NX schema equality cost").unwrap(),
+                    expected
+                );
+                assert!(ctx
+                    .equal(&fields, &fields, "NX schema equality cost")
+                    .unwrap());
             });
-            let error = crate::test_support::resource_refusal_at(&[], ResourceDimension::WorkUnits, "NX schema equality cost", |ctx| ctx.equal(&fields, &fields, "NX schema equality cost"));
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == expected));
+            let error = crate::test_support::resource_refusal_at(
+                &[],
+                ResourceDimension::WorkUnits,
+                "NX schema equality cost",
+                |ctx| ctx.equal(&fields, &fields, "NX schema equality cost"),
+            );
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == expected)
+            );
         }
     }
 

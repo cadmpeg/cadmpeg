@@ -63,13 +63,21 @@ pub(crate) fn counted_lanes(
             let anchor = LocatedCompactIndex::read(bytes, start + usize::from(COUNTED_PREFIX))?;
             let members_start = anchor.offset + anchor.atom.raw().len();
             let mut at = members_start;
-            for _ in propagate_resource!(ctx.admit_iter(&(0..usize::from(declared_count) - 2), "NX counted lanes row validation").map_err(CodecError::from)) {
+            for _ in propagate_resource!(ctx
+                .admit_iter(
+                    &(0..usize::from(declared_count) - 2),
+                    "NX counted lanes row validation"
+                )
+                .map_err(CodecError::from))
+            {
                 at += LocatedCompactIndex::read(bytes, at)?.atom.raw().len();
             }
             let end = at.checked_add(COUNTED_TERMINATOR.len())?;
             (bytes.get(at..end) == Some(&COUNTED_TERMINATOR)).then_some(())?;
             (Some((anchor, members_start, usize::from(declared_count) - 2, end))).map(Ok)
-        })().transpose()? else {
+        })()
+        .transpose()?
+        else {
             return Ok(None);
         };
         let operation = "NX counted index lane members";
@@ -82,9 +90,13 @@ pub(crate) fn counted_lanes(
             at += token.atom.raw().len();
             members.push(token.atom.into());
         }
-        let Ok(members) = CountedIndexMembers::new(members) else { return Ok(None); };
-        Ok(CountedLane::<(), usize>::from_wire(ctx, anchor.atom.into(), members, start)?
-            .map(|lane| (lane, end)))
+        let Ok(members) = CountedIndexMembers::new(members) else {
+            return Ok(None);
+        };
+        Ok(
+            CountedLane::<(), usize>::from_wire(ctx, anchor.atom.into(), members, start)?
+                .map(|lane| (lane, end)),
+        )
     };
     let mut lanes = Vec::new();
     ctx.charge_work(u64_from_index(bytes.len()), "scan NX counted index lanes")?;

@@ -23,12 +23,14 @@ impl<T, O> DraftLeadingLane<T, O> {
     fn extent<'a, E, I: Iterator<Item = &'a CompactIndexTarget<T>>>(
         indices: &'a [CompactIndexTarget<T>],
         admit: impl FnOnce(&'a [CompactIndexTarget<T>]) -> Result<I, E>,
-    ) -> Result<Option<u16>, E> where T: 'a {
+    ) -> Result<Option<u16>, E>
+    where
+        T: 'a,
+    {
         Ok(admit(indices)?.try_fold(26_u16, |length, token| {
             length.checked_add(u16::from(token.atom.byte_len()))
         }))
     }
-
 }
 
 impl<T, O: Copy + Add<Output = O> + From<u16>> DraftLeadingLane<T, O> {
@@ -54,9 +56,16 @@ impl<T> DraftLeadingLane<T, usize> {
     ) -> Result<Option<Self>, CodecError> {
         let byte_len = Self::extent(indices.as_slice(), |indices| {
             ctx.admit_iter(indices, "NX draft leading token widths")
-        })?.ok_or_else(|| ctx.refuse_codec_limit("NX draft leading extent", u64::MAX, u64::MAX))?;
-        if offset.checked_add(usize::from(byte_len)).is_none() { return Ok(None); }
-        Ok(Some(Self { offset, indices, byte_len }))
+        })?
+        .ok_or_else(|| ctx.refuse_codec_limit("NX draft leading extent", u64::MAX, u64::MAX))?;
+        if offset.checked_add(usize::from(byte_len)).is_none() {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            offset,
+            indices,
+            byte_len,
+        }))
     }
 }
 
@@ -72,7 +81,11 @@ impl<T> DraftLeadingLane<T, u64> {
             Err(error) => match error {},
         };
         offset.checked_add(u64::from(byte_len))?;
-        Some(Self { offset, indices, byte_len })
+        Some(Self {
+            offset,
+            indices,
+            byte_len,
+        })
     }
 }
 
@@ -80,7 +93,11 @@ impl DraftLeadingLane<(), usize> {
     pub(crate) fn into_absolute(self, base: u64) -> Option<DraftLeadingLane<(), u64>> {
         let offset = base.checked_add(u64_from_index(self.offset))?;
         offset.checked_add(u64::from(self.byte_len))?;
-        Some(DraftLeadingLane { offset, indices: self.indices, byte_len: self.byte_len })
+        Some(DraftLeadingLane {
+            offset,
+            indices: self.indices,
+            byte_len: self.byte_len,
+        })
     }
 }
 
@@ -163,7 +180,9 @@ pub(crate) fn scan(
         indices.push(token.atom.into());
     }
 
-    let Ok(indices) = CountedIndexMembers::new(indices) else { return Ok(None); };
+    let Ok(indices) = CountedIndexMembers::new(indices) else {
+        return Ok(None);
+    };
     DraftLeadingLane::from_wire(ctx, indices, record.payload_offset())
 }
 
@@ -299,9 +318,18 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
         let error = crate::test_support::resource_refusal_at(
-            &[], ResourceDimension::WorkUnits, "NX draft leading token widths",
-            |ctx| { let indices = crate::om::compact::CountedIndexMembers::new(vec![crate::om::compact::CompactIndexAtom::from_wire(1, &[1]).unwrap().into()]).unwrap();
-        super::DraftLeadingLane::<()>::from_wire(ctx, indices, 0) },
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX draft leading token widths",
+            |ctx| {
+                let indices = crate::om::compact::CountedIndexMembers::new(vec![
+                    crate::om::compact::CompactIndexAtom::from_wire(1, &[1])
+                        .unwrap()
+                        .into(),
+                ])
+                .unwrap();
+                super::DraftLeadingLane::<()>::from_wire(ctx, indices, 0)
+            },
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX draft leading token widths"));

@@ -28,24 +28,50 @@ impl OperationTerminalDiscriminator {
             Ok(end) => end?,
             Err(error) => match error {},
         };
-        Ok(Self { origin, end, type_indices, flags, trailing_indices })
+        Ok(Self {
+            origin,
+            end,
+            type_indices,
+            flags,
+            trailing_indices,
+        })
     }
 
-    fn from_wire(ctx: &DecodeContext<'_>, origin: u64, type_indices: [CompactIndexAtom; 2], flags: [u8; 4], trailing_indices: Vec<CompactIndexAtom>) -> Result<Result<Self, &'static str>, CodecError> {
-        Ok(Self::extent(origin, &type_indices, &trailing_indices, |tokens| {
-            ctx.admit_iter(tokens, "NX terminal discriminator token widths")
-        })?.map(|end| Self { origin, end, type_indices, flags, trailing_indices }))
+    fn from_wire(
+        ctx: &DecodeContext<'_>,
+        origin: u64,
+        type_indices: [CompactIndexAtom; 2],
+        flags: [u8; 4],
+        trailing_indices: Vec<CompactIndexAtom>,
+    ) -> Result<Result<Self, &'static str>, CodecError> {
+        Ok(
+            Self::extent(origin, &type_indices, &trailing_indices, |tokens| {
+                ctx.admit_iter(tokens, "NX terminal discriminator token widths")
+            })?
+            .map(|end| Self {
+                origin,
+                end,
+                type_indices,
+                flags,
+                trailing_indices,
+            }),
+        )
     }
 
     fn extent<'a, E, I: Iterator<Item = &'a CompactIndexAtom>>(
-        origin: u64, type_indices: &'a [CompactIndexAtom], trailing_indices: &'a [CompactIndexAtom],
+        origin: u64,
+        type_indices: &'a [CompactIndexAtom],
+        trailing_indices: &'a [CompactIndexAtom],
         mut admit: impl FnMut(&'a [CompactIndexAtom]) -> Result<I, E>,
     ) -> Result<Result<u64, &'static str>, E> {
         let Some(start) = origin.checked_add(17) else {
             return Ok(Err("source_offset: terminal discriminator overflows"));
         };
-        let end = admit(type_indices)?.chain(admit(trailing_indices)?)
-            .try_fold(start, |at, token| at.checked_add(u64_from_index(token.raw().len())));
+        let end = admit(type_indices)?
+            .chain(admit(trailing_indices)?)
+            .try_fold(start, |at, token| {
+                at.checked_add(u64_from_index(token.raw().len()))
+            });
         Ok(end.ok_or("source_offset: terminal discriminator end overflows"))
     }
     pub(crate) fn origin(&self) -> u64 {
@@ -83,7 +109,6 @@ impl OperationTerminalDiscriminator {
         self.end = base.checked_add(self.end)?;
         Some(self)
     }
-
 }
 
 /// Decode the unique terminal discriminator lane in a bounded operation payload.
@@ -148,26 +173,23 @@ pub(crate) fn operation_terminal_discriminator(
     };
 
     let mut found = None;
-    if let Some(range_end) = record
-        .payload()
-        .len()
-        .checked_sub(18) {
-            for start in ctx.admit_iter(&(0..range_end), "scan NX terminal discriminator")? {
-        if record.payload().get(start..start + 3) == Some(&[0x01, 0x01, 0x02]) {
-            ctx.charge_work(
-                u64_from_index(record.payload().len() - start),
-                "scan NX terminal discriminator candidate",
-            )?;
+    if let Some(range_end) = record.payload().len().checked_sub(18) {
+        for start in ctx.admit_iter(&(0..range_end), "scan NX terminal discriminator")? {
+            if record.payload().get(start..start + 3) == Some(&[0x01, 0x01, 0x02]) {
+                ctx.charge_work(
+                    u64_from_index(record.payload().len() - start),
+                    "scan NX terminal discriminator candidate",
+                )?;
+            }
+            let Some(candidate) = decode(start) else {
+                continue;
+            };
+            if found.is_some() {
+                return Ok(None);
+            }
+            found = Some(candidate);
         }
-        let Some(candidate) = decode(start) else {
-            continue;
-        };
-        if found.is_some() {
-            return Ok(None);
-        }
-        found = Some(candidate);
     }
-        }
     let Some((origin, indices, flags, trailing_bytes, trailing_count)) = found else {
         return Ok(None);
     };
@@ -184,7 +206,10 @@ pub(crate) fn operation_terminal_discriminator(
         scan += token.raw().len();
         trailing_indices.push(token);
     }
-    Ok(OperationTerminalDiscriminator::from_wire(ctx, origin, indices, flags, trailing_indices)?.ok())
+    Ok(
+        OperationTerminalDiscriminator::from_wire(ctx, origin, indices, flags, trailing_indices)?
+            .ok(),
+    )
 }
 
 #[cfg(test)]

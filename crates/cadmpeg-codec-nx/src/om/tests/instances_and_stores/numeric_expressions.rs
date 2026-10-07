@@ -451,10 +451,14 @@ fn printable_string_value_iteration_refusal_propagates() {
     crate::test_support::with_decode_context_over(
         bytes,
         // The marker scan reads six bytes; UTF-8 validation reads the one-byte value.
-        |policy| policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(bytes.len()) + 1,
+        |policy| {
+            policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(bytes.len()) + 1
+        },
         |ctx| {
             let error = crate::om::string_values(ctx, bytes, 0).unwrap_err();
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("value validation must refuse"); };
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("value validation must refuse");
+            };
             assert_eq!(limit.operation, "NX printable string syntax");
             assert_eq!(ctx.resource_refusal(), Some(limit));
         },
@@ -548,24 +552,49 @@ fn expression_declaration_propagates_expression_limit() {
 fn store_version_text_iteration_refusal_propagates() {
     let bytes = b"\xff\x04\x01\x05NX \0";
     let error = crate::test_support::resource_refusal_at(
-        bytes, cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "NX printable string syntax", |ctx| crate::om::store_version(ctx, bytes, 0),
+        bytes,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX printable string syntax",
+        |ctx| crate::om::store_version(ctx, bytes, 0),
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "NX printable string syntax"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "NX printable string syntax")
+    );
 }
 
 #[test]
 fn constant_decimal_parse_refusal_propagates() {
     for (text, expected) in [("1.25", Some(1.25)), ("1e309", None)] {
-        assert_eq!(crate::test_support::with_decode_context(|ctx| crate::om::evaluate_constant_expression(ctx, text)).unwrap().map(cadmpeg_ir::scalar::FiniteReal::get), expected);
-        let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX constant expression decimal parse", |ctx| crate::om::evaluate_constant_expression(ctx, text));
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == cadmpeg_core::decode::u64_from_index(text.len())));
+        assert_eq!(
+            crate::test_support::with_decode_context(
+                |ctx| crate::om::evaluate_constant_expression(ctx, text)
+            )
+            .unwrap()
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+            expected
+        );
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX constant expression decimal parse",
+            |ctx| crate::om::evaluate_constant_expression(ctx, text),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == cadmpeg_core::decode::u64_from_index(text.len()))
+        );
     }
 }
 
 #[test]
 fn constant_decimal_utf8_refusal_propagates() {
-    let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX constant expression UTF-8 validation", |ctx| crate::om::evaluate_constant_expression(ctx, "1.25"));
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 4));
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX constant expression UTF-8 validation",
+        |ctx| crate::om::evaluate_constant_expression(ctx, "1.25"),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 4)
+    );
 }

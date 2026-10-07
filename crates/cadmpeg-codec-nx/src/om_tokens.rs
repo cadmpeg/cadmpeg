@@ -19,17 +19,20 @@ pub(crate) fn unit_for(
     ctx: &DecodeContext<'_>,
     token: &str,
 ) -> Result<Option<ExpressionUnit>, CodecError> {
-    if token.is_empty() || !ctx.admit_iter(token, "NX expression unit syntax")?.all(|ch| ch.is_ascii_graphic()) {
+    if token.is_empty()
+        || !ctx
+            .admit_iter(token, "NX expression unit syntax")?
+            .all(|ch| ch.is_ascii_graphic())
+    {
         return Ok(None);
     }
     Ok(Some(match token {
         "mm" => ExpressionUnit::Millimeter,
         "in" => ExpressionUnit::Inch,
         "degrees" => ExpressionUnit::Degree,
-        token => ExpressionUnit::Native(ctx.format_retained(
-            format_args!("{token}"),
-            "NX native expression unit",
-        )?),
+        token => ExpressionUnit::Native(
+            ctx.format_retained(format_args!("{token}"), "NX native expression unit")?,
+        ),
     }))
 }
 
@@ -41,9 +44,15 @@ mod tests {
     #[test]
     fn resolves_known_and_native_units() {
         crate::test_support::with_decode_context(|ctx| {
-            assert_eq!(unit_for(ctx, "mm").unwrap(), Some(ExpressionUnit::Millimeter));
+            assert_eq!(
+                unit_for(ctx, "mm").unwrap(),
+                Some(ExpressionUnit::Millimeter)
+            );
             assert_eq!(unit_for(ctx, "in").unwrap(), Some(ExpressionUnit::Inch));
-            assert_eq!(unit_for(ctx, "degrees").unwrap(), Some(ExpressionUnit::Degree));
+            assert_eq!(
+                unit_for(ctx, "degrees").unwrap(),
+                Some(ExpressionUnit::Degree)
+            );
             assert_eq!(
                 unit_for(ctx, "custom/unit").unwrap(),
                 Some(ExpressionUnit::Native("custom/unit".into()))
@@ -55,7 +64,9 @@ mod tests {
 
     fn native_unit_format_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
         let error = crate::test_support::resource_refusal_at(
-            &[], dimension, "NX native expression unit",
+            &[],
+            dimension,
+            "NX native expression unit",
             |ctx| unit_for(ctx, "custom/unit"),
         );
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {

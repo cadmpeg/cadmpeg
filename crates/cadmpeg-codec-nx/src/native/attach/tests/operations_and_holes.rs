@@ -890,20 +890,97 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
 #[test]
 fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
     crate::test_support::with_decode_context(|ctx| {
-    let object_indices = [None; 4];
-    let source_properties = BTreeMap::from([
-        ("object_index.0".to_string(), "null".to_string()),
-        ("object_index.1".to_string(), "null".to_string()),
-        ("object_index.2".to_string(), "null".to_string()),
-        ("object_index.3".to_string(), "null".to_string()),
-        ("operation_record".to_string(), "record".to_string()),
-        (
-            "operation_terminal_frame".to_string(),
-            "terminal".to_string(),
-        ),
-    ]);
-    assert!(matches!(
-        non_modeling_history_definition(
+        let object_indices = [None; 4];
+        let source_properties = BTreeMap::from([
+            ("object_index.0".to_string(), "null".to_string()),
+            ("object_index.1".to_string(), "null".to_string()),
+            ("object_index.2".to_string(), "null".to_string()),
+            ("object_index.3".to_string(), "null".to_string()),
+            ("operation_record".to_string(), "record".to_string()),
+            (
+                "operation_terminal_frame".to_string(),
+                "terminal".to_string(),
+            ),
+        ]);
+        assert!(matches!(
+            non_modeling_history_definition(
+                ctx,
+                "EXTRACT_STRING",
+                &object_indices,
+                &[],
+                0,
+                0,
+                0,
+                &source_properties,
+            ).unwrap(),
+            Some(FeatureDefinition::Operation(FeatureOperation::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children,
+            })) if children.is_empty() && children.active_child().is_none()
+        ));
+
+        let rejected = [
+            (
+                [Some(7), None, None, None],
+                Vec::new(),
+                0,
+                0,
+                0,
+                source_properties.clone(),
+            ),
+            (
+                object_indices,
+                vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
+                0,
+                0,
+                0,
+                source_properties.clone(),
+            ),
+            (
+                object_indices,
+                Vec::new(),
+                1,
+                0,
+                0,
+                source_properties.clone(),
+            ),
+            (
+                object_indices,
+                Vec::new(),
+                0,
+                1,
+                0,
+                source_properties.clone(),
+            ),
+            (
+                object_indices,
+                Vec::new(),
+                0,
+                0,
+                1,
+                source_properties.clone(),
+            ),
+        ];
+        for (object_indices, outputs, body_references, body_operands, strings, properties) in
+            rejected
+        {
+            assert!(non_modeling_history_definition(
+                ctx,
+                "EXTRACT_STRING",
+                &object_indices,
+                &outputs,
+                body_references,
+                body_operands,
+                strings,
+                &properties,
+            )
+            .unwrap()
+            .is_none());
+        }
+
+        let mut extra_property = source_properties.clone();
+        extra_property.insert("input_block.0".into(), "block".into());
+        assert!(non_modeling_history_definition(
             ctx,
             "EXTRACT_STRING",
             &object_indices,
@@ -911,83 +988,10 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
             0,
             0,
             0,
-            &source_properties,
-        ).unwrap(),
-        Some(FeatureDefinition::Operation(FeatureOperation::TreeNode {
-            role: FeatureTreeNodeRole::History,
-            children,
-        })) if children.is_empty() && children.active_child().is_none()
-    ));
-
-    let rejected = [
-        (
-            [Some(7), None, None, None],
-            Vec::new(),
-            0,
-            0,
-            0,
-            source_properties.clone(),
-        ),
-        (
-            object_indices,
-            vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
-            0,
-            0,
-            0,
-            source_properties.clone(),
-        ),
-        (
-            object_indices,
-            Vec::new(),
-            1,
-            0,
-            0,
-            source_properties.clone(),
-        ),
-        (
-            object_indices,
-            Vec::new(),
-            0,
-            1,
-            0,
-            source_properties.clone(),
-        ),
-        (
-            object_indices,
-            Vec::new(),
-            0,
-            0,
-            1,
-            source_properties.clone(),
-        ),
-    ];
-    for (object_indices, outputs, body_references, body_operands, strings, properties) in rejected {
-        assert!(non_modeling_history_definition(
-            ctx,
-            "EXTRACT_STRING",
-            &object_indices,
-            &outputs,
-            body_references,
-            body_operands,
-            strings,
-            &properties,
+            &extra_property,
         )
-        .unwrap().is_none());
-    }
-
-    let mut extra_property = source_properties.clone();
-    extra_property.insert("input_block.0".into(), "block".into());
-    assert!(non_modeling_history_definition(
-            ctx,
-        "EXTRACT_STRING",
-        &object_indices,
-        &[],
-        0,
-        0,
-        0,
-        &extra_property,
-    )
-    .unwrap().is_none());
+        .unwrap()
+        .is_none());
     });
 }
 

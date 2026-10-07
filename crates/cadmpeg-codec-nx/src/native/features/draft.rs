@@ -733,8 +733,7 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
                 crate::om::draft_references::draft_feature_payload_references(
                     ctx,
                     record.payload_view(),
-                )?
-            {
+                )? {
                 let index_extent = usize::from(lane.declared_count())
                     .checked_sub(1)
                     .ok_or_else(|| {

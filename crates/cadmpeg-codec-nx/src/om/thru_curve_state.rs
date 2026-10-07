@@ -25,7 +25,9 @@ impl<T> ThruCurveBranchItems<T> {
     }
 
     pub(super) fn from_wire(
-        ctx: &DecodeContext<'_>, members: Vec<T>, lane: &[u8],
+        ctx: &DecodeContext<'_>,
+        members: Vec<T>,
+        lane: &[u8],
     ) -> Result<Result<Self, &'static str>, CodecError> {
         Ok(Self::validate(members, lane, |lane| {
             ctx.admit_iter(lane, "NX thru-curve state lane validation")
@@ -33,7 +35,8 @@ impl<T> ThruCurveBranchItems<T> {
     }
 
     fn validate<'a, E, I: Iterator<Item = &'a u8>>(
-        members: Vec<T>, lane: &'a [u8],
+        members: Vec<T>,
+        lane: &'a [u8],
         admit: impl FnOnce(&'a [u8]) -> Result<I, E>,
     ) -> Result<Result<Self, &'static str>, E> {
         if members.len().checked_add(4) == Some(lane.len()) && admit(lane)?.all(|&byte| byte == 0) {
@@ -48,7 +51,9 @@ impl<T> ThruCurveBranchItems<T> {
                 values: [[*a, *b, *c, *d], [*e, *f, *g, *h]],
             }));
         }
-        Ok(Err("state_lane must be the member-count-sized zero lane or the four-member extended lane"))
+        Ok(Err(
+            "state_lane must be the member-count-sized zero lane or the four-member extended lane",
+        ))
     }
 
     pub(crate) fn as_slice(&self) -> &[T] {
@@ -165,8 +170,10 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
         let error = crate::test_support::resource_refusal_at(
-            &[], ResourceDimension::WorkUnits, "NX thru-curve state lane validation",
-            |ctx| { ThruCurveBranchItems::from_wire(ctx, vec![1, 2], &[0; 6]) },
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX thru-curve state lane validation",
+            |ctx| ThruCurveBranchItems::from_wire(ctx, vec![1, 2], &[0; 6]),
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX thru-curve state lane validation"));

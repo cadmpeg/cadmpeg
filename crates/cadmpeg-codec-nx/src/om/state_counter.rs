@@ -130,37 +130,35 @@ impl StateCounterMap {
         let mut run_start = 0;
         let mut run_end = 0;
         let mut run_len = 0;
-        if let Some(range_end) = bytes
-            .len()
-            .checked_sub(2) {
+        if let Some(range_end) = bytes.len().checked_sub(2) {
             for at in ctx.admit_iter(&(0..range_end), "scan NX operation-state counter map")? {
-            if bytes.get(at) != Some(&0x05) || !matches!(bytes.get(at + 1), Some(0x01 | 0x02)) {
-                continue;
+                if bytes.get(at) != Some(&0x05) || !matches!(bytes.get(at + 1), Some(0x01 | 0x02)) {
+                    continue;
+                }
+                let Some(row) = StateCounter::read(bytes, at, base_offset) else {
+                    continue;
+                };
+                let Some(row_end) = at.checked_add(row.byte_len()) else {
+                    return Ok(None);
+                };
+                if at == run_end {
+                    run_end = row_end;
+                    run_len += 1;
+                } else {
+                    run_start = at;
+                    run_end = row_end;
+                    run_len = 1;
+                }
+                if run_len >= 2
+                    && bytes
+                        .len()
+                        .checked_sub(run_end)
+                        .is_some_and(|tail| tail <= MAX_COUNTER_TAIL_BYTES)
+                    && best.is_none_or(|(_, _, current_len)| run_len > current_len)
+                {
+                    best = Some((run_start, run_end, run_len));
+                }
             }
-            let Some(row) = StateCounter::read(bytes, at, base_offset) else {
-                continue;
-            };
-            let Some(row_end) = at.checked_add(row.byte_len()) else {
-                return Ok(None);
-            };
-            if at == run_end {
-                run_end = row_end;
-                run_len += 1;
-            } else {
-                run_start = at;
-                run_end = row_end;
-                run_len = 1;
-            }
-            if run_len >= 2
-                && bytes
-                    .len()
-                    .checked_sub(run_end)
-                    .is_some_and(|tail| tail <= MAX_COUNTER_TAIL_BYTES)
-                && best.is_none_or(|(_, _, current_len)| run_len > current_len)
-            {
-                best = Some((run_start, run_end, run_len));
-            }
-        }
         }
         let Some((start, end, row_count)) = best else {
             return Ok(None);

@@ -298,7 +298,10 @@ impl SectionLayout {
             section.cached_operation_labels.len(),
             "NX cached operation labels",
         )?;
-        for label in ctx.admit_iter(section.cached_operation_labels.as_ref(), "NX cached operation label traversal")? {
+        for label in ctx.admit_iter(
+            section.cached_operation_labels.as_ref(),
+            "NX cached operation label traversal",
+        )? {
             operation_labels.push(CachedOperationLabel::new(ctx, label)?);
         }
         Ok(Some(Self {
@@ -323,7 +326,10 @@ impl SectionLayout {
             self.operation_labels.len(),
             "NX materialized operation labels",
         )?;
-        for label in ctx.admit_iter(&self.operation_labels, "NX materialized operation label traversal")? {
+        for label in ctx.admit_iter(
+            &self.operation_labels,
+            "NX materialized operation label traversal",
+        )? {
             cached_operation_labels.push(label.materialize());
         }
         Ok(Section {

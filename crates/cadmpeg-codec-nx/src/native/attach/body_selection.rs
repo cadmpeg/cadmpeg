@@ -183,11 +183,13 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
         && (offset_store.is_none()
             || ctx.any_by(
                 &offset_blocks,
-                |block| Ok(!ctx.equal(
-                    &offset_store_identity(block),
-                    &offset_store,
-                    "NX body selection offset store identity",
-                )?),
+                |block| {
+                    Ok(!ctx.equal(
+                        &offset_store_identity(block),
+                        &offset_store,
+                        "NX body selection offset store identity",
+                    )?)
+                },
                 "NX body selection offset store consistency",
             )?)
     {
@@ -196,7 +198,10 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
     if !offset_blocks.is_empty() {
         let mut bodies = Vec::new();
         let mut identity_keys = Vec::new();
-        for block in ctx.admit_iter(&offset_blocks, "NX body selection offset blocks")?.copied() {
+        for block in ctx
+            .admit_iter(&offset_blocks, "NX body selection offset blocks")?
+            .copied()
+        {
             ctx.charge_collection_items(2, "NX feature body offset selection")?;
             reservation.with_storage(|| {
                 ctx.reserve_capacity(&mut bodies, 1, "NX feature body offset selection")
@@ -204,8 +209,12 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
             reservation.with_storage(|| {
                 ctx.reserve_capacity(&mut identity_keys, 1, "NX feature body offset identities")
             })?;
-            bodies.push(reservation.with_storage(|| ctx.copy_retained_text(block, "NX feature body offset selection"))?);
-            identity_keys.push(FeatureBodyIdentity::OffsetStore(reservation.with_storage(|| ctx.copy_retained_text(block, "NX feature body offset identities"))?));
+            bodies.push(reservation.with_storage(|| {
+                ctx.copy_retained_text(block, "NX feature body offset selection")
+            })?);
+            identity_keys.push(FeatureBodyIdentity::OffsetStore(reservation.with_storage(
+                || ctx.copy_retained_text(block, "NX feature body offset identities"),
+            )?));
         }
         return Ok(FeatureBodySelection::Local {
             bodies,
@@ -240,7 +249,10 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
     }
     if all_resolved {
         let mut identity_keys = Vec::new();
-        for root in ctx.admit_iter(&roots, "NX body selection local roots")?.copied() {
+        for root in ctx
+            .admit_iter(&roots, "NX body selection local roots")?
+            .copied()
+        {
             ctx.reserve_scoped_vec(
                 &mut reservation,
                 &mut identity_keys,
@@ -258,7 +270,10 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
     }
     let mut bodies = Vec::new();
     let mut identity_keys = Vec::new();
-    for root in ctx.admit_iter(&roots, "NX body selection local roots")?.copied() {
+    for root in ctx
+        .admit_iter(&roots, "NX body selection local roots")?
+        .copied()
+    {
         ctx.charge_collection_items(2, "NX feature body local selection")?;
         reservation.with_storage(|| {
             ctx.reserve_capacity(&mut bodies, 1, "NX feature body local selection")
@@ -338,7 +353,10 @@ pub(super) fn feature_body_set_selection(
         .into_selection(ctx);
     }
     let mut bodies = Vec::new();
-    for root in ctx.admit_iter(&roots, "NX body selection local roots")?.copied() {
+    for root in ctx
+        .admit_iter(&roots, "NX body selection local roots")?
+        .copied()
+    {
         ctx.reserve_scoped_vec(
             &mut reservation,
             &mut bodies,
@@ -388,11 +406,21 @@ pub(super) fn atomic_disjoint_body_selections(
                 None => true,
                 Some((left, right)) => match (left, right) {
                     (FeatureBodyIdentity::Segment(_), FeatureBodyIdentity::Segment(_)) => true,
-                    (FeatureBodyIdentity::OffsetStore(left), FeatureBodyIdentity::OffsetStore(right)) => ctx.equal(&offset_store_identity(left), &offset_store_identity(right), "NX atomic disjoint body selections equality")?,
+                    (
+                        FeatureBodyIdentity::OffsetStore(left),
+                        FeatureBodyIdentity::OffsetStore(right),
+                    ) => ctx.equal(
+                        &offset_store_identity(left),
+                        &offset_store_identity(right),
+                        "NX atomic disjoint body selections equality",
+                    )?,
                     _ => false,
                 },
             };
-            same_namespace && !ctx.admit_iter(left, "NX body selection disjointness")?.any(|key| right.contains(key))
+            same_namespace
+                && !ctx
+                    .admit_iter(left, "NX body selection disjointness")?
+                    .any(|key| right.contains(key))
         }
         _ => false,
     };

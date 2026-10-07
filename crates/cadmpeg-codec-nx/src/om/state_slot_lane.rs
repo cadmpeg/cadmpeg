@@ -103,15 +103,17 @@ impl StateSlotLane<u64> {
     }
 
     fn extent<'a, E, I: Iterator<Item = &'a Option<StateIndexToken>>>(
-        offset: u64, slots: &'a [Option<StateIndexToken>],
+        offset: u64,
+        slots: &'a [Option<StateIndexToken>],
         admit: impl FnOnce(&'a [Option<StateIndexToken>]) -> Result<I, E>,
     ) -> Result<Result<u64, &'static str>, E> {
-        let end = admit(slots)?.try_fold(offset, |end, slot| {
-            end.checked_add(u64::from(slot.map_or(1, StateIndexToken::byte_len)))
-        }).and_then(|end| end.checked_add(5));
+        let end = admit(slots)?
+            .try_fold(offset, |end, slot| {
+                end.checked_add(u64::from(slot.map_or(1, StateIndexToken::byte_len)))
+            })
+            .and_then(|end| end.checked_add(5));
         Ok(end.ok_or("source_offset: slot-lane extent overflows"))
     }
-
 }
 
 #[cfg(test)]
@@ -157,5 +159,4 @@ mod tests {
             },
         );
     }
-
 }

@@ -26,19 +26,27 @@ impl<T, O> CountedLane<T, O> {
     pub(crate) fn declared_count(&self) -> u8 {
         self.members.declared_count()
     }
-    fn byte_len(&self) -> u16 { self.byte_len }
+    fn byte_len(&self) -> u16 {
+        self.byte_len
+    }
 
     fn extent<'a, E, I: Iterator<Item = &'a CompactIndexTarget<T>>>(
         anchor: &CompactIndexTarget<T>,
         members: &'a [CompactIndexTarget<T>],
         admit: impl FnOnce(&'a [CompactIndexTarget<T>]) -> Result<I, E>,
-    ) -> Result<Option<u16>, E> where T: 'a {
-        let Some(start) = COUNTED_PREFIX.checked_add(u16::from(anchor.atom.byte_len())) else { return Ok(None); };
-        Ok(admit(members)?.try_fold(start, |length, index| {
-            length.checked_add(u16::from(index.atom.byte_len()))
-        }).and_then(|length| length.checked_add(COUNTED_TERMINATOR_LEN)))
+    ) -> Result<Option<u16>, E>
+    where
+        T: 'a,
+    {
+        let Some(start) = COUNTED_PREFIX.checked_add(u16::from(anchor.atom.byte_len())) else {
+            return Ok(None);
+        };
+        Ok(admit(members)?
+            .try_fold(start, |length, index| {
+                length.checked_add(u16::from(index.atom.byte_len()))
+            })
+            .and_then(|length| length.checked_add(COUNTED_TERMINATOR_LEN)))
     }
-
 }
 
 impl<T, O: Copy + Add<Output = O> + From<u16>> CountedLane<T, O> {
@@ -75,15 +83,28 @@ impl<T> CountedLane<T, usize> {
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         let byte_len = Self::extent(&anchor, members.as_slice(), |members| {
             ctx.admit_iter(members, "NX counted lane token widths")
-        })?.ok_or_else(|| ctx.refuse_codec_limit("NX counted lane extent", u64::MAX, u64::MAX))?;
-        if offset.checked_add(usize::from(byte_len)).is_none() { return Ok(None); }
-        Ok(Some(Self { offset, anchor, members, byte_len }))
+        })?
+        .ok_or_else(|| ctx.refuse_codec_limit("NX counted lane extent", u64::MAX, u64::MAX))?;
+        if offset.checked_add(usize::from(byte_len)).is_none() {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            offset,
+            anchor,
+            members,
+            byte_len,
+        }))
     }
 
     pub(crate) fn into_absolute(self, base: u64) -> Option<CountedLane<T, u64>> {
         let offset = base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset))?;
         offset.checked_add(u64::from(self.byte_len()))?;
-        Some(CountedLane { offset, anchor: self.anchor, members: self.members, byte_len: self.byte_len })
+        Some(CountedLane {
+            offset,
+            anchor: self.anchor,
+            members: self.members,
+            byte_len: self.byte_len,
+        })
     }
 }
 
@@ -219,22 +240,27 @@ impl<O> AbrLane<(), O> {
 }
 
 impl<T> CountedLane<T, u64> {
-            pub(crate) fn new(
-                anchor: CompactIndexTarget<T>,
-                members: CountedIndexMembers<CompactIndexTarget<T>>,
-                offset: u64,
-            ) -> Option<Self> {
-                let byte_len = match Self::extent(&anchor, members.as_slice(), |members| {
-                    Ok::<_, std::convert::Infallible>(members.iter())
-                }) {
-                    Ok(byte_len) => byte_len?,
-                    Err(error) => match error {},
-                };
-                let lane = Self { offset, anchor, members, byte_len };
-                offset.checked_add(u64::from(lane.byte_len()))?;
-                Some(lane)
-            }
-        }
+    pub(crate) fn new(
+        anchor: CompactIndexTarget<T>,
+        members: CountedIndexMembers<CompactIndexTarget<T>>,
+        offset: u64,
+    ) -> Option<Self> {
+        let byte_len = match Self::extent(&anchor, members.as_slice(), |members| {
+            Ok::<_, std::convert::Infallible>(members.iter())
+        }) {
+            Ok(byte_len) => byte_len?,
+            Err(error) => match error {},
+        };
+        let lane = Self {
+            offset,
+            anchor,
+            members,
+            byte_len,
+        };
+        offset.checked_add(u64::from(lane.byte_len()))?;
+        Some(lane)
+    }
+}
 
 macro_rules! checked_origins {
     ($offset:ty) => {

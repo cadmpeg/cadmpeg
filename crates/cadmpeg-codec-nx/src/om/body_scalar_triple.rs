@@ -61,7 +61,8 @@ pub(crate) fn operation_body_scalar_triples(
         "scan NX body scalar triples",
     )?;
     let mut triples = Vec::new();
-    for (ordinal, reference) in super::operation_body_reference_candidates(ctx, record)?.enumerate() {
+    for (ordinal, reference) in super::operation_body_reference_candidates(ctx, record)?.enumerate()
+    {
         let parsed = (|| {
             let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();

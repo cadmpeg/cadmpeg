@@ -231,12 +231,20 @@ fn offset_store_identity_comparison_refusal_propagates() {
         let native = "nx:om-object-indices#94,95".to_string();
         let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             feature_body_selection_with_offset_blocks(
-                ctx, &[94, 95], &roots, &blocks, &bodies, native.clone(),
-            )?.into_selection(ctx)
+                ctx,
+                &[94, 95],
+                &roots,
+                &blocks,
+                &bodies,
+                native.clone(),
+            )?
+            .into_selection(ctx)
         };
         let error = crate::test_support::resource_refusal_at(
-            &[], ResourceDimension::WorkUnits,
-            "NX body selection offset store identity", decode,
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX body selection offset store identity",
+            decode,
         );
         // The comparison operand counts one Option tag and one store-identity byte.
         assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -246,12 +254,19 @@ fn offset_store_identity_comparison_refusal_propagates() {
         crate::test_support::with_decode_context(|ctx| {
             let selection = decode(ctx).unwrap();
             if second_store == "3" {
-                assert_eq!(selection, BodySelection::local(
-                    vec![
-                        "nx:om-data-blocks-3:block#94".to_string(),
-                        "nx:om-data-blocks-3:block#95".to_string(),
-                    ], native.clone(), ctx,
-                ).unwrap().unwrap());
+                assert_eq!(
+                    selection,
+                    BodySelection::local(
+                        vec![
+                            "nx:om-data-blocks-3:block#94".to_string(),
+                            "nx:om-data-blocks-3:block#95".to_string(),
+                        ],
+                        native.clone(),
+                        ctx,
+                    )
+                    .unwrap()
+                    .unwrap()
+                );
             } else {
                 assert_eq!(selection, BodySelection::Native(native.clone()));
             }

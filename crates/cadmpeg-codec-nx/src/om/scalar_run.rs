@@ -52,22 +52,41 @@ impl<F: ScalarFrame, O> FramedScalarRun<F, O> {
             Ok(end) => end?,
             Err(error) => match error {},
         };
-        Ok(Self { form, offset, values, end })
+        Ok(Self {
+            form,
+            offset,
+            values,
+            end,
+        })
     }
 
     pub(crate) fn from_wire(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        form: F, offset: u64, values: NonEmpty<(F::Atom, O)>,
+        form: F,
+        offset: u64,
+        values: NonEmpty<(F::Atom, O)>,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
         Ok(Self::validate(form, offset, &values, |values| {
             ctx.admit_iter(values, "NX scalar run token widths")
-        })?.map(|end| Self { form, offset, values, end }))
+        })?
+        .map(|end| Self {
+            form,
+            offset,
+            values,
+            end,
+        }))
     }
 
     fn validate<'a, E, I: Iterator<Item = &'a (F::Atom, O)>>(
-        form: F, offset: u64, values: &'a NonEmpty<(F::Atom, O)>,
+        form: F,
+        offset: u64,
+        values: &'a NonEmpty<(F::Atom, O)>,
         mut admit: impl FnMut(&'a [(F::Atom, O)]) -> Result<I, E>,
-    ) -> Result<Result<u64, &'static str>, E> where F::Atom: 'a, O: 'a {
+    ) -> Result<Result<u64, &'static str>, E>
+    where
+        F::Atom: 'a,
+        O: 'a,
+    {
         let Some(start) = offset.checked_add(form.prefix_len()) else {
             return Ok(Err("value_payload_offsets overflow the discriminator"));
         };
@@ -131,13 +150,16 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
         let error = crate::test_support::resource_refusal_at(
-            &[], ResourceDimension::WorkUnits, "NX scalar run token widths",
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX scalar run token widths",
             |ctx| {
                 let atom = crate::om::fixed::Q155Atom {
                     marker: crate::om::fixed::Q155Marker::M30,
                     scalar: crate::om::fixed::Q155::from_raw([0; 7]).unwrap(),
                 };
-                let values = crate::om::nonempty::NonEmpty::from_admitted_vec(vec![(atom, ())]).unwrap();
+                let values =
+                    crate::om::nonempty::NonEmpty::from_admitted_vec(vec![(atom, ())]).unwrap();
                 super::FramedScalarRun::from_wire(ctx, crate::om::fixed::Q155LaneFrame, 0, values)
             },
         );

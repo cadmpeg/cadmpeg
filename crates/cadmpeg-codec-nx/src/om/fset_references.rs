@@ -26,21 +26,48 @@ impl<B> FsetReferences<B> {
             Ok(valid) => valid?,
             Err(error) => match error {},
         }
-        Ok(Self { offset, selector, first, second })
+        Ok(Self {
+            offset,
+            selector,
+            first,
+            second,
+        })
     }
 
-    fn from_wire(ctx: &DecodeContext<'_>, offset: u64, selector: String, first: [(u16, B); 2], second: [(u16, B); 3]) -> Result<Result<Self, &'static str>, CodecError> {
+    fn from_wire(
+        ctx: &DecodeContext<'_>,
+        offset: u64,
+        selector: String,
+        first: [(u16, B); 2],
+        second: [(u16, B); 3],
+    ) -> Result<Result<Self, &'static str>, CodecError> {
         Ok(Self::validate(offset, &selector, |selector| {
             ctx.admit_iter(selector, "NX FSET selector syntax")
-        })?.map(|()| Self { offset, selector, first, second }))
+        })?
+        .map(|()| Self {
+            offset,
+            selector,
+            first,
+            second,
+        }))
     }
 
-    fn validate<'a, E, I: Iterator<Item = char>>(offset: u64, selector: &'a str, admit: impl FnOnce(&'a str) -> Result<I, E>) -> Result<Result<(), &'static str>, E> {
-        if !(1..=247).contains(&selector.len()) || !admit(selector)?.all(|ch| ch.is_ascii_graphic() && ch != '>') {
-            return Ok(Err("selector: requires 1 through 247 graphic ASCII bytes excluding >"));
+    fn validate<'a, E, I: Iterator<Item = char>>(
+        offset: u64,
+        selector: &'a str,
+        admit: impl FnOnce(&'a str) -> Result<I, E>,
+    ) -> Result<Result<(), &'static str>, E> {
+        if !(1..=247).contains(&selector.len())
+            || !admit(selector)?.all(|ch| ch.is_ascii_graphic() && ch != '>')
+        {
+            return Ok(Err(
+                "selector: requires 1 through 247 graphic ASCII bytes excluding >",
+            ));
         }
-        Ok(offset.checked_add(cadmpeg_core::decode::u64_from_index(selector.len()) + 22)
-            .map(|_| ()).ok_or("source_offset: FSET frame overflows"))
+        Ok(offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(selector.len()) + 22)
+            .map(|_| ())
+            .ok_or("source_offset: FSET frame overflows"))
     }
     pub(crate) fn offset(&self) -> u64 {
         self.offset
@@ -109,21 +136,31 @@ impl FsetReferences<()> {
             let Some(raw) = bytes.get(body_start + 1..selector_end) else {
                 return Ok(None);
             };
-            let Ok(selector) =
-                ctx.validate_utf8(raw, "NX FSET selector UTF-8 validation")?
-            else {
+            let Ok(selector) = ctx.validate_utf8(raw, "NX FSET selector UTF-8 validation")? else {
                 return Ok(None);
             };
             let mut at = selector_end;
-            let Some(first_head) = read_word(&mut at) else { return Ok(None); };
-            let Some(first_tail) = read_word(&mut at) else { return Ok(None); };
+            let Some(first_head) = read_word(&mut at) else {
+                return Ok(None);
+            };
+            let Some(first_tail) = read_word(&mut at) else {
+                return Ok(None);
+            };
             let first = [first_head, first_tail];
             at += 1;
-            let Some(second_head) = read_word(&mut at) else { return Ok(None); };
-            let Some(second_middle) = read_word(&mut at) else { return Ok(None); };
-            let Some(second_tail) = read_word(&mut at) else { return Ok(None); };
+            let Some(second_head) = read_word(&mut at) else {
+                return Ok(None);
+            };
+            let Some(second_middle) = read_word(&mut at) else {
+                return Ok(None);
+            };
+            let Some(second_tail) = read_word(&mut at) else {
+                return Ok(None);
+            };
             let second = [second_head, second_middle, second_tail];
-            let Some(end) = at.checked_add(3) else { return Ok(None); };
+            let Some(end) = at.checked_add(3) else {
+                return Ok(None);
+            };
             if bytes.get(at..end) != Some(&[0, 3, 0]) {
                 return Ok(None);
             }
@@ -133,14 +170,17 @@ impl FsetReferences<()> {
                 ctx.format_retained(format_args!("{selector}"), "NX FSET selector")?,
                 first,
                 second,
-            )?.ok())
+            )?
+            .ok())
         };
         let Some(last) = bytes.len().checked_sub(1) else {
             return Ok(None);
         };
         let mut candidate = None;
         for start in ctx.admit_iter(&(0..last), "NX FSET reference candidate search")? {
-            let Some(next) = decode(start)? else { continue; };
+            let Some(next) = decode(start)? else {
+                continue;
+            };
             if candidate.is_some() {
                 return Ok(None);
             }
@@ -172,7 +212,10 @@ impl FsetReferences<()> {
                 (second_tail, target(second_tail)?),
             ],
         };
-        if offset.checked_add(cadmpeg_core::decode::u64_from_index(mapped.selector.len()) + 22).is_none() {
+        if offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(mapped.selector.len()) + 22)
+            .is_none()
+        {
             return Ok(None);
         }
         Ok(Some(mapped))
@@ -196,7 +239,9 @@ mod tests {
         let payload = graph_payload();
         let record = OperationPayload::new(&payload, 100, "FSET").expect("test FSET payload");
         crate::test_support::with_decode_context(|ctx| {
-            FsetReferences::read(ctx, record).unwrap().expect("complete FSET graph")
+            FsetReferences::read(ctx, record)
+                .unwrap()
+                .expect("complete FSET graph")
         })
     }
 

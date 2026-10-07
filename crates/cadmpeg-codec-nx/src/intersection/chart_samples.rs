@@ -114,9 +114,16 @@ impl ChartSamples {
         points.extend(self.samples.iter().map(|sample| sample.0.get()));
         Ok(points)
     }
-    pub(crate) fn iter_points<'samples>(&'samples self, ctx: &DecodeContext<'_>) -> Result<impl DoubleEndedIterator<Item = Point3> + 'samples, CodecError> {
-        Ok(ctx.admit_iter(self.samples.initial(), "NX chart point traversal")?
-            .chain(ctx.admit_iter(std::slice::from_ref(self.samples.last()), "NX chart point traversal")?)
+    pub(crate) fn iter_points<'samples>(
+        &'samples self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<impl DoubleEndedIterator<Item = Point3> + 'samples, CodecError> {
+        Ok(ctx
+            .admit_iter(self.samples.initial(), "NX chart point traversal")?
+            .chain(ctx.admit_iter(
+                std::slice::from_ref(self.samples.last()),
+                "NX chart point traversal",
+            )?)
             .map(|sample| sample.0.get()))
     }
     pub(crate) fn len(&self) -> usize {
@@ -158,10 +165,23 @@ impl ChartSamples {
         }
         let mut replacement =
             ctx.collection_vec(self.samples.len(), "NX chart parameter replacement")?;
-        for (old, new) in ctx.admit_iter(self.samples.initial(), "replace NX chart source pairs")?
-            .chain(ctx.admit_iter(std::slice::from_ref(self.samples.last()), "replace NX chart source pairs")?)
-            .zip(ctx.admit_iter(other.samples.initial(), "replace NX chart replacement pairs")?
-                .chain(ctx.admit_iter(std::slice::from_ref(other.samples.last()), "replace NX chart replacement pairs")?)) {
+        for (old, new) in ctx
+            .admit_iter(self.samples.initial(), "replace NX chart source pairs")?
+            .chain(ctx.admit_iter(
+                std::slice::from_ref(self.samples.last()),
+                "replace NX chart source pairs",
+            )?)
+            .zip(
+                ctx.admit_iter(
+                    other.samples.initial(),
+                    "replace NX chart replacement pairs",
+                )?
+                .chain(ctx.admit_iter(
+                    std::slice::from_ref(other.samples.last()),
+                    "replace NX chart replacement pairs",
+                )?),
+            )
+        {
             replacement.push((old.0, new.1));
         }
         let Some(samples) = crate::om::nonempty::NonEmpty::from_admitted_vec(replacement) else {
@@ -264,7 +284,9 @@ impl SourceChartData {
             return Ok(Err("points: admitted storage is too small or not empty"));
         }
         for point in admit(points)? {
-            let Some(point) = FinitePoint3::new(*point) else { return Ok(Err("points: coordinates must be finite")); };
+            let Some(point) = FinitePoint3::new(*point) else {
+                return Ok(Err("points: coordinates must be finite"));
+            };
             checked.push(point);
         }
         Ok(Ok(Self {
@@ -273,7 +295,12 @@ impl SourceChartData {
         }))
     }
 
-    fn ext11_with_storage<'values, E, P: Iterator<Item = &'values Point3>, V: Iterator<Item = &'values f64>>(
+    fn ext11_with_storage<
+        'values,
+        E,
+        P: Iterator<Item = &'values Point3>,
+        V: Iterator<Item = &'values f64>,
+    >(
         points: &'values [Point3],
         parameters: &'values [f64],
         support_uv: super::SupportUv,
@@ -299,17 +326,27 @@ impl SourceChartData {
             return Ok(Err("points: admitted storage is too small or not empty"));
         }
         for (point, parameter) in admit_points(points)?.zip(admit_parameters(parameters)?) {
-            let Some(point) = FinitePoint3::new(*point) else { return Ok(Err("points: coordinates must be finite")); };
-            let Some(parameter) = FiniteReal::new(*parameter) else { return Ok(Err("native_parameters: finite strictly increasing values required")); };
+            let Some(point) = FinitePoint3::new(*point) else {
+                return Ok(Err("points: coordinates must be finite"));
+            };
+            let Some(parameter) = FiniteReal::new(*parameter) else {
+                return Ok(Err(
+                    "native_parameters: finite strictly increasing values required",
+                ));
+            };
             if samples
                 .last()
                 .is_some_and(|previous| parameter <= previous.1)
             {
-                return Ok(Err("native_parameters: finite strictly increasing values required"));
+                return Ok(Err(
+                    "native_parameters: finite strictly increasing values required",
+                ));
             }
             samples.push((point, parameter));
         }
-        let Some(samples) = crate::om::nonempty::NonEmpty::from_admitted_vec(samples) else { return Ok(Err("points: at least one point required")); };
+        let Some(samples) = crate::om::nonempty::NonEmpty::from_admitted_vec(samples) else {
+            return Ok(Err("points: at least one point required"));
+        };
         Ok(Ok(Self {
             count,
             encoding: SourceEncoding::Ext11 {
@@ -324,7 +361,10 @@ impl SourceChartData {
         points: Vec<Point3>,
     ) -> Result<Option<Self>, CodecError> {
         let (checked, reservation) = ctx.temporary_vec(points.len(), "NX finite chart points")?;
-        let data = Self::xyz3_with_storage(&points, checked, |points| ctx.admit_iter(points, "admit NX xyz3 chart"))?.ok();
+        let data = Self::xyz3_with_storage(&points, checked, |points| {
+            ctx.admit_iter(points, "admit NX xyz3 chart")
+        })?
+        .ok();
         if data.is_some() {
             reservation.commit()?;
         }
@@ -337,7 +377,9 @@ impl SourceChartData {
             storage.try_reserve_exact(points.len()).map(|()| storage)
         }
         .map_err(|_| "points: storage allocation failed")?;
-        match Self::xyz3_with_storage(&points, checked, |points| Ok::<_, Infallible>(points.iter())) {
+        match Self::xyz3_with_storage(&points, checked, |points| {
+            Ok::<_, Infallible>(points.iter())
+        }) {
             Ok(value) => value,
             Err(never) => match never {},
         }
@@ -365,7 +407,15 @@ impl SourceChartData {
             None => (None, None),
         };
         let (samples, reservation) = ctx.temporary_vec(points.len(), "NX chart sample pairs")?;
-        let data = Self::ext11_with_storage(&points, &parameters, [first, second], samples, |points| ctx.admit_iter(points, "admit NX ext11 chart"), |parameters| ctx.admit_iter(parameters, "admit NX ext11 chart"))?.ok();
+        let data = Self::ext11_with_storage(
+            &points,
+            &parameters,
+            [first, second],
+            samples,
+            |points| ctx.admit_iter(points, "admit NX ext11 chart"),
+            |parameters| ctx.admit_iter(parameters, "admit NX ext11 chart"),
+        )?
+        .ok();
         if data.is_some() {
             reservation.commit()?;
             for lane_reservation in [first_reservation, second_reservation]
@@ -395,7 +445,14 @@ impl SourceChartData {
             storage.try_reserve_exact(points.len()).map(|()| storage)
         }
         .map_err(|_| "points: storage allocation failed")?;
-        match Self::ext11_with_storage(&points, &parameters, [first?, second?], samples, |points| Ok::<_, Infallible>(points.iter()), |parameters| Ok::<_, Infallible>(parameters.iter())) {
+        match Self::ext11_with_storage(
+            &points,
+            &parameters,
+            [first?, second?],
+            samples,
+            |points| Ok::<_, Infallible>(points.iter()),
+            |parameters| Ok::<_, Infallible>(parameters.iter()),
+        ) {
             Ok(value) => value,
             Err(never) => match never {},
         }
@@ -512,11 +569,19 @@ impl SourceChartData {
                 if samples.len() < 2 {
                     return Ok(None);
                 }
-                if !ctx.admit_iter(samples.initial(), "admit NX chart carrier")?
-                    .chain(ctx.admit_iter(std::slice::from_ref(samples.last()), "admit NX chart carrier")?)
+                if !ctx
+                    .admit_iter(samples.initial(), "admit NX chart carrier")?
+                    .chain(ctx.admit_iter(
+                        std::slice::from_ref(samples.last()),
+                        "admit NX chart carrier",
+                    )?)
                     .enumerate()
                     .skip(1)
-                    .any(|(index, sample)| samples.get(index - 1).is_some_and(|previous| previous.0 != sample.0))
+                    .any(|(index, sample)| {
+                        samples
+                            .get(index - 1)
+                            .is_some_and(|previous| previous.0 != sample.0)
+                    })
                 {
                     return Ok(None);
                 }
@@ -888,8 +953,15 @@ mod physical_lane_tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
         let error = crate::test_support::resource_refusal_at(
-            &[], ResourceDimension::WorkUnits, "admit NX xyz3 chart",
-            |ctx| { super::SourceChartData::xyz3_charged(ctx, vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)]) },
+            &[],
+            ResourceDimension::WorkUnits,
+            "admit NX xyz3 chart",
+            |ctx| {
+                super::SourceChartData::xyz3_charged(
+                    ctx,
+                    vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)],
+                )
+            },
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "admit NX xyz3 chart"));
@@ -900,11 +972,19 @@ mod physical_lane_tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
         let error = crate::test_support::resource_refusal_at(
-            &[], ResourceDimension::WorkUnits, "admit NX ext11 chart",
-            |ctx| { super::SourceChartData::ext11_charged(ctx, vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)], vec![0.0], [None, None]) },
+            &[],
+            ResourceDimension::WorkUnits,
+            "admit NX ext11 chart",
+            |ctx| {
+                super::SourceChartData::ext11_charged(
+                    ctx,
+                    vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)],
+                    vec![0.0],
+                    [None, None],
+                )
+            },
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "admit NX ext11 chart"));
     }
-
 }

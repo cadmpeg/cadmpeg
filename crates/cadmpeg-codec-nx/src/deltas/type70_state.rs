@@ -22,8 +22,19 @@ pub(crate) struct Type70State {
     trailing_reference: NonNullXmt,
 }
 impl DecodeCost for Type70State {
-    fn decode_cost(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<u64, cadmpeg_core::CodecError> {
-        (u32::from(self.xmt), self.node_id, &self.references, self.count, u32::from(self.trailing_reference)).decode_cost(ctx, operation)
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            u32::from(self.xmt),
+            self.node_id,
+            &self.references,
+            self.count,
+            u32::from(self.trailing_reference),
+        )
+            .decode_cost(ctx, operation)
     }
 }
 impl Type70State {
