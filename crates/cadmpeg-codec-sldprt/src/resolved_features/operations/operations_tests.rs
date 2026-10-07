@@ -90,33 +90,31 @@ fn split_line_enrichment_refuses_collection_limit() {
 }
 
 #[test]
-fn split_line_enrichment_refuses_retained_limit() {
+fn split_line_enrichment_refuses_scoped_storage_limit() {
     use cadmpeg_core::decode::ResourceDimension;
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain SLDPRT split-line observation ID",
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "collect SLDPRT split-line objects",
         |cap| {
             Err::<(), cadmpeg_core::CodecError>(split_line_limit_error(|policy| {
-                policy.limits.max_retained_bytes = cap;
+                policy.limits.max_materialized_bytes = cap;
             }))
         },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "retain SLDPRT split-line observation ID")
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "collect SLDPRT split-line objects")
     );
 }
 
 #[test]
 fn split_line_enrichment_refuses_work_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let error = split_line_limit_error(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "scan SLDPRT split-line objects")
-    );
+    let error = crate::test_support::work_refusal_at("scan SLDPRT split-line objects", |ctx| {
+        let (mut histories, lanes) = split_line_limit_input();
+        enrich_history_split_lines(ctx, &mut histories, &lanes)
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 #[test]
@@ -156,7 +154,7 @@ fn feature_operation_binding_refuses_history_index_collection_limit() {
     assert!(matches!(error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "index SLDPRT extrusion history"));
+                && limit.operation == "index SLDPRT operation history"));
 }
 
 #[test]

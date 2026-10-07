@@ -18,9 +18,9 @@ use std::collections::{BTreeMap, HashMap};
 use super::copy_projected_feature_text;
 use crate::history::classify::extrude_feature_op;
 use crate::history::literals::{
-    parse_angle_rad, parse_boolean_op, parse_bounded_angle_rad, parse_dimension_display_length,
-    parse_point3_mm, parse_positive_dimension_length_mm, parse_positive_length_mm, parse_vector3,
-    strip_diameter_modifier, valid_direction,
+    admit_literal, parse_angle_rad, parse_boolean_op, parse_bounded_angle_rad,
+    parse_dimension_display_length, parse_point3_mm, parse_positive_dimension_length_mm,
+    parse_positive_length_mm, parse_vector3, strip_diameter_modifier, valid_direction,
 };
 
 pub(super) fn project_extrude(
@@ -660,8 +660,9 @@ pub(super) fn hole_sketch_construction(
         );
     for expression in expressions {
         let expression = expression?;
+        admit_literal(ctx, expression, "parse SLDPRT hole sketch dimension")?;
         let dimension = if strip_diameter_modifier(expression).is_some() {
-            parse_dimension_display_length(ctx, expression)?
+            parse_dimension_display_length(expression)
                 .and_then(|value| PositiveLength::try_from(value).ok())
                 .map(ParsedDimension::Diameter)
         } else if let Some(value) = parse_bounded_angle_rad(expression) {

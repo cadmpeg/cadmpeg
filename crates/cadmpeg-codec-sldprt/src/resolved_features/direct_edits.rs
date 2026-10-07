@@ -2,6 +2,7 @@
 
 use super::axes::{compact_line_reference_directions, declared_line_reference_directions};
 use super::scalars::feature_object_name;
+use super::{classes_within, sorted_classes};
 use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
 use cadmpeg_core::decode::View;
@@ -50,8 +51,10 @@ pub(super) fn move_body_translation_record(
     let Some(scan_end) = end.checked_sub(TRAILER_OFFSET + 20) else {
         return Ok(None);
     };
-    for selection_offset in data_class_offset..scan_end {
-        ctx.charge_work(400, OPERATION)?;
+    // Each position reads a bounded record; the walk charges every position it
+    // visits and stops at a second record.
+    let mut offsets = data_class_offset..scan_end;
+    while let Some(selection_offset) = ctx.next_charged(&mut offsets, OPERATION)? {
         let Some(count) = View::u32_le_at(payload, selection_offset)
             .and_then(|value| usize::try_from(value).ok())
         else {
@@ -125,8 +128,7 @@ pub(super) fn move_body_translation_record(
             continue;
         };
         let local_body_ids = super::selections::read_compact_body_ids(ctx, ids, OPERATION)?;
-        ctx.charge_work(u64_from_index(local_body_ids.len()), OPERATION)?;
-        if local_body_ids.contains(&0) {
+        if ctx.contains(&local_body_ids, &0, OPERATION)? {
             continue;
         }
         if candidate.is_some() {
@@ -175,18 +177,40 @@ pub(crate) fn enrich_history_move_face_translations(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "SLDPRT move-face workspace")?;
     let mut candidates = BTreeMap::<(usize, usize), Vec<Option<FeatureDirection3>>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT direct-edit lanes")? {
+        let direction_specs = sorted_classes(
+            ctx,
+            &mut storage,
+            lane,
+            "moDirectionSpec_c",
+            "index SLDPRT move-face direction classes",
+        )?;
+        let line_refs = sorted_classes(
+            ctx,
+            &mut storage,
+            lane,
+            "moLineRef_w",
+            "index SLDPRT move-face line references",
+        )?;
         let mut starts = Vec::new();
         for (history_index, history) in ctx
             .admit_iter(&*histories, "scan SLDPRT direct-edit histories")?
             .enumerate()
         {
-            for (feature_index, feature) in history.features.iter().enumerate() {
-                ctx.charge_work(1, "scan SLDPRT move-face feature starts")?;
+            for (feature_index, feature) in ctx
+                .admit_iter(&history.features, "scan SLDPRT move-face feature starts")?
+                .enumerate()
+            {
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_vec(&mut starts, 1, "collect SLDPRT move-face feature starts")?;
-                    starts.push((name.offset, history_index, feature_index));
+                    storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut starts,
+                            (name.offset, history_index, feature_index),
+                            "collect SLDPRT move-face feature starts",
+                        )
+                    })?;
                 }
             }
         }
@@ -202,8 +226,16 @@ pub(crate) fn enrich_history_move_face_translations(
         {
             let feature = &histories[history_index].features[feature_index];
             if classify(feature) != Some(FeatureClass::MoveFace)
-                || feature.properties.contains_key("Mode")
-                || feature.properties.contains_key("Direction")
+                || ctx.contains_key_btree_map(
+                    &feature.properties,
+                    "Mode",
+                    "find SLDPRT move-face properties",
+                )?
+                || ctx.contains_key_btree_map(
+                    &feature.properties,
+                    "Direction",
+                    "find SLDPRT move-face properties",
+                )?
             {
                 continue;
             }
@@ -229,19 +261,21 @@ pub(crate) fn enrich_history_move_face_translations(
                 )?;
                 continue;
             }
-            let direction_specs = ctx
-                .admit_iter(&lane.classes, "scan SLDPRT move-face direction classes")?
-                .filter(|class| {
-                    class.name == "moDirectionSpec_c"
-                        && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
-                })
-                .count();
-            let mut line_refs = lane.classes.iter().filter(|class| {
-                class.name == "moLineRef_w"
-                    && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
-            });
-            let line_ref = line_refs.next();
-            if direction_specs != 1 || line_ref.is_none() || line_refs.next().is_some() {
+            let specs_within = classes_within(
+                ctx,
+                &direction_specs,
+                u64_from_index(start),
+                u64_from_index(end),
+                "find SLDPRT move-face direction classes",
+            )?;
+            let line_refs_within = classes_within(
+                ctx,
+                &line_refs,
+                u64_from_index(start),
+                u64_from_index(end),
+                "find SLDPRT move-face line references",
+            )?;
+            let ([_], [line_ref]) = (specs_within, line_refs_within) else {
                 push_move_face_candidate(
                     ctx,
                     &mut candidates,
@@ -249,17 +283,12 @@ pub(crate) fn enrich_history_move_face_translations(
                     None,
                 )?;
                 continue;
-            }
-            let Some(line_ref) = line_ref else {
-                continue;
             };
             let mut direction_storage =
                 ctx.reserve_scoped(0, "hold SLDPRT move-face directions")?;
             let mut directions = direction_storage.with_storage(|| {
                 declared_line_reference_directions(ctx, &lane.native_payload, line_ref.offset, end)
             })?;
-            let mut excluded_storage =
-                ctx.reserve_scoped(0, "hold SLDPRT move-face excluded handles")?;
             let excluded_handles = match usize::try_from(line_ref.offset) {
                 Ok(offset) => {
                     let handle = |relative| {
@@ -271,14 +300,9 @@ pub(crate) fn enrich_history_move_face_translations(
                             )
                         })
                     };
-                    excluded_storage.with_storage(|| {
-                        ctx.collect_vec(
-                            [handle(136)?, handle(144)?],
-                            "collect SLDPRT move-face excluded handles",
-                        )
-                    })?
+                    Some([handle(136)?, handle(144)?])
                 }
-                Err(_) => Vec::new(),
+                Err(_) => None,
             };
             let mut compact_storage =
                 ctx.reserve_scoped(0, "hold SLDPRT compact move-face directions")?;
@@ -288,7 +312,9 @@ pub(crate) fn enrich_history_move_face_translations(
                     &lane.native_payload,
                     start,
                     end,
-                    &excluded_handles,
+                    excluded_handles
+                        .as_ref()
+                        .map_or(&[][..], |handles| &handles[..]),
                 )
             })?;
             direction_storage.with_storage(|| {
@@ -305,9 +331,18 @@ pub(crate) fn enrich_history_move_face_translations(
                 .copied()
                 .map(FeatureDirection3::from_unit_without_small_components)
             {
-                if !unique.contains(&direction) {
-                    ctx.reserve_vec(&mut unique, 1, "collect SLDPRT unique move-face directions")?;
-                    unique.push(direction);
+                if !ctx.any_by(
+                    &unique,
+                    |candidate| Ok(*candidate == direction),
+                    "find SLDPRT unique move-face directions",
+                )? {
+                    direction_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut unique,
+                            direction,
+                            "collect SLDPRT unique move-face directions",
+                        )
+                    })?;
                 }
             }
             push_move_face_candidate(
@@ -327,18 +362,22 @@ pub(crate) fn enrich_history_move_face_translations(
         let Some((&Some(first), rest)) = candidates.split_first() else {
             continue;
         };
-        if rest.iter().any(|candidate| {
-            candidate.is_none_or(|candidate| {
-                let candidate = candidate.get();
-                let first = first.get();
-                (candidate.x - first.x).abs()
-                    > EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12
-                    || (candidate.y - first.y).abs()
+        if ctx.any_by(
+            rest,
+            |candidate| {
+                Ok(candidate.is_none_or(|candidate| {
+                    let candidate = candidate.get();
+                    let first = first.get();
+                    (candidate.x - first.x).abs()
                         > EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12
-                    || (candidate.z - first.z).abs()
-                        > EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12
-            })
-        }) {
+                        || (candidate.y - first.y).abs()
+                            > EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12
+                        || (candidate.z - first.z).abs()
+                            > EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12
+                }))
+            },
+            "check SLDPRT move-face candidate agreement",
+        )? {
             continue;
         }
         let feature = &mut histories[history_index].features[feature_index];
@@ -368,18 +407,33 @@ pub(crate) fn enrich_history_move_body_translations(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "SLDPRT move-body workspace")?;
     let mut candidates = BTreeMap::<(usize, usize), Vec<Option<FiniteVector3>>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT direct-edit lanes")? {
+        let data_classes = sorted_classes(
+            ctx,
+            &mut storage,
+            lane,
+            "moMoveCopyBodyData_c",
+            "index SLDPRT move-body data classes",
+        )?;
         let mut starts = Vec::new();
         for (history_index, history) in ctx
             .admit_iter(&*histories, "scan SLDPRT direct-edit histories")?
             .enumerate()
         {
-            for (feature_index, feature) in history.features.iter().enumerate() {
-                ctx.charge_work(1, "scan SLDPRT move-body feature starts")?;
+            for (feature_index, feature) in ctx
+                .admit_iter(&history.features, "scan SLDPRT move-body feature starts")?
+                .enumerate()
+            {
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_vec(&mut starts, 1, "collect SLDPRT move-body feature starts")?;
-                    starts.push((name.offset, history_index, feature_index));
+                    storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut starts,
+                            (name.offset, history_index, feature_index),
+                            "collect SLDPRT move-body feature starts",
+                        )
+                    })?;
                 }
             }
         }
@@ -395,7 +449,11 @@ pub(crate) fn enrich_history_move_body_translations(
         {
             let feature = &histories[history_index].features[feature_index];
             if classify(feature) != Some(FeatureClass::MoveBody)
-                || feature.properties.contains_key("Translation")
+                || ctx.contains_key_btree_map(
+                    &feature.properties,
+                    "Translation",
+                    "find SLDPRT move-body properties",
+                )?
             {
                 continue;
             }
@@ -412,12 +470,14 @@ pub(crate) fn enrich_history_move_body_translations(
             let Some(start) = usize::try_from(start).ok().filter(|start| *start < end) else {
                 continue;
             };
-            let mut data_classes = lane.classes.iter().filter(|class| {
-                class.name == "moMoveCopyBodyData_c"
-                    && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
-            });
-            let candidate = match (data_classes.next(), data_classes.next()) {
-                (Some(class), None) => move_body_translation_record(
+            let candidate = match classes_within(
+                ctx,
+                &data_classes,
+                u64_from_index(start),
+                u64_from_index(end),
+                "find SLDPRT move-body data classes",
+            )? {
+                [class] => move_body_translation_record(
                     ctx,
                     &lane.native_payload,
                     start,
@@ -443,7 +503,11 @@ pub(crate) fn enrich_history_move_body_translations(
         let Some((&Some(first), rest)) = candidates.split_first() else {
             continue;
         };
-        if rest.iter().any(|candidate| *candidate != Some(first)) {
+        if ctx.any_by(
+            rest,
+            |candidate| Ok(*candidate != Some(first)),
+            "check SLDPRT move-body candidate agreement",
+        )? {
             continue;
         }
         let first = first.get();
@@ -747,7 +811,7 @@ mod tests {
         crate::resolved_features::parameters::enrich_history_parameters(
             &ctx,
             &mut histories,
-            [&lane],
+            std::slice::from_ref(&lane),
             true,
         )
         .expect("move-face parameter enrichment succeeds");
@@ -864,11 +928,11 @@ mod tests {
         );
     }
     #[test]
-    fn move_face_excluded_handle_storage_propagates_refusal() {
+    fn move_face_class_index_storage_propagates_refusal() {
         let lane = line_reference_lane(&[Vector3::new(0.0, -1.0, 0.0)], 1);
         cadmpeg_test_support::refusal::resource_limit_at(
             cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-            "collect SLDPRT move-face excluded handles",
+            "index SLDPRT move-face line references",
             |cap| {
                 let arena = cadmpeg_core::decode::DecodeArena::new();
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();

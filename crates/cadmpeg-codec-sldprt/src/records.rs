@@ -896,6 +896,33 @@ pub(crate) struct FeatureInputGeneratedSurfaceIdentity {
     pub(crate) components: Vec<FeatureInputComponentPathEntry>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputGeneratedSurfaceIdentity {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.id.as_str(),
+                    self.parent.as_str(),
+                    self.ordinal,
+                    self.offset,
+                ),
+                (
+                    self.type_prefix,
+                    self.feature_source_id,
+                    self.local_identity,
+                    &self.components,
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// One typed node in a persistent feature-input component path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputComponentPathEntry {
@@ -980,6 +1007,61 @@ pub(crate) struct FeatureInputRelationInstance {
     pub(crate) scalars: relation_scalars::RelationScalars,
     /// Operand cells shared by the participating scalar records.
     pub(crate) operands: Vec<FeatureInputOperand>,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputRelationBinding {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.id.as_str(),
+                    self.parent.as_str(),
+                    self.ordinal,
+                    self.offset,
+                ),
+                (
+                    self.class_ref.as_str(),
+                    self.family,
+                    self.scalar_ref.as_str(),
+                    self.feature_ref.as_deref(),
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputRelationInstance {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.id.as_str(),
+                    self.parent.as_str(),
+                    self.ordinal,
+                    self.offset,
+                ),
+                (
+                    self.family,
+                    self.class_ref.as_str(),
+                    self.feature_ref.as_str(),
+                ),
+                &self.scalars,
+                self.operands.as_slice(),
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 /// Partial wire record; membership is admitted before it becomes a relation.
@@ -1342,6 +1424,26 @@ pub(crate) struct FeatureInputOperand {
         deserialize_with = "deserialize_entity_ref"
     )]
     pub(crate) entity_ref: Option<String>,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputOperand {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                self.offset,
+                self.reference_ref.as_str(),
+                self.kind,
+                self.entity_index,
+                self.entity_ref.as_deref(),
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 /// Native feature-input entity-reference cell family.

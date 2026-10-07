@@ -321,7 +321,7 @@ fn native_load_materialized_limit_refuses_before_expected_lane_clone() {
 }
 
 #[test]
-fn native_store_materialized_limit_refuses_before_feature_validation_clone() {
+fn native_store_materialized_limit_refuses_before_namespace_write() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let decoded = SldprtCodec
@@ -341,7 +341,7 @@ fn native_store_materialized_limit_refuses_before_feature_validation_clone() {
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == "validate SLDPRT store features"
+                && limit.operation == "index SLDPRT stored features"
     ));
     assert!(namespace.arenas().is_empty());
 
@@ -722,7 +722,7 @@ fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
 }
 
 #[test]
-fn native_scalar_operand_validation_limit_refuses_before_resolution() {
+fn native_store_groups_operand_candidates_before_resolution() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let decoded = SldprtCodec
@@ -732,39 +732,36 @@ fn native_scalar_operand_validation_limit_refuses_before_resolution() {
         )
         .unwrap();
     let native = sldprt_native(decoded.ir());
-    let lane = native
-        .feature_input_lanes
-        .iter()
-        .find(|lane| {
-            lane.scalars
+    assert!(native.feature_input_lanes.iter().any(|lane| {
+        !lane.sketch_entities.is_empty()
+            && lane
+                .scalars
                 .iter()
                 .any(|scalar| !scalar.operands.is_empty())
-        })
-        .unwrap();
-    let scalar = lane
-        .scalars
-        .iter()
-        .find(|scalar| !scalar.operands.is_empty())
-        .unwrap();
+    }));
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::resolved_scalar_operand_markers(&limited, lane, scalar).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "group SLDPRT stored sketch entities",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut namespace = cadmpeg_ir::NativeNamespace::default();
+            native
+                .store(&limited, &mut namespace)
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    );
     assert!(matches!(
-        cadmpeg_core::CodecError::from(error),
+        error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect SLDPRT scalar operand markers"
+            if limit.operation == "group SLDPRT stored sketch entities"
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(
-        super::resolved_scalar_operand_markers(&service, lane, scalar)
-            .unwrap()
-            .len(),
-        scalar.operands.len()
-    );
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&service, &mut namespace).unwrap();
 }
 
 #[test]
@@ -1814,7 +1811,7 @@ fn expected_lane_reservations_cover_borrowed_results() {
 }
 
 #[test]
-fn native_relation_membership_refuses_work_before_quadratic_validation() {
+fn native_relation_membership_admits_each_identity_once() {
     let refs: Vec<_> = (0..128)
         .map(|index| format!("scalar-{index:032}"))
         .collect();
@@ -1828,21 +1825,33 @@ fn native_relation_membership_refuses_work_before_quadratic_validation() {
             &[relation],
         )
         .unwrap();
+    // Membership is admitted through one index pass, so its work grows with
+    // the identities rather than with their pairs.
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 200_000;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::native::SldprtNative::load_charged(&ctx, &namespace).unwrap_err();
-    let error = cadmpeg_core::CodecError::from(error);
-    assert!(
-        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "admit SLDPRT relation scalar membership"),
-        "{error:?}"
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "admit SLDPRT relation scalar membership",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            crate::native::SldprtNative::load_charged(&ctx, &namespace)
+                .map_err(cadmpeg_core::CodecError::from)
+        },
     );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("{error:?}");
+    };
+    // Pairwise comparison of these identities alone would charge their count
+    // times their total length, well past this bound.
+    let identity_bytes = refs.iter().map(String::len).sum::<usize>();
+    let pairwise = u64::try_from(refs.len() * identity_bytes).unwrap();
+    assert!(limit.used + limit.additional < pairwise / 2, "{limit:?}");
 }
 
 #[test]
-fn inline_relation_membership_refuses_work_before_quadratic_validation() {
+fn inline_relation_membership_admits_each_identity_once() {
     let refs: Vec<_> = (0..128)
         .map(|index| format!("scalar-{index:032}"))
         .collect();
@@ -1857,15 +1866,27 @@ fn inline_relation_membership_refuses_work_before_quadratic_validation() {
             &[lane],
         )
         .unwrap();
+    // Membership is admitted through one index pass, so its work grows with
+    // the identities rather than with their pairs.
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 200_000;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::native::SldprtNative::load_charged(&ctx, &namespace).unwrap_err();
-    let error = cadmpeg_core::CodecError::from(error);
-    assert!(
-        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "admit SLDPRT relation scalar membership"),
-        "{error:?}"
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "admit SLDPRT relation scalar membership",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            crate::native::SldprtNative::load_charged(&ctx, &namespace)
+                .map_err(cadmpeg_core::CodecError::from)
+        },
     );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("{error:?}");
+    };
+    // Pairwise comparison of these identities alone would charge their count
+    // times their total length, well past this bound.
+    let identity_bytes = refs.iter().map(String::len).sum::<usize>();
+    let pairwise = u64::try_from(refs.len() * identity_bytes).unwrap();
+    assert!(limit.used + limit.additional < pairwise / 2, "{limit:?}");
 }

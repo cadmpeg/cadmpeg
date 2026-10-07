@@ -5,11 +5,12 @@ use super::legacy_feature_input_section;
 
 #[test]
 fn legacy_feature_input_section_is_an_exact_numeric_config_stream() {
-    assert!(legacy_feature_input_section("Contents/Config-0"));
-    assert!(legacy_feature_input_section("Contents\\Config-37"));
-    assert!(!legacy_feature_input_section("Contents/Config-0-Partition"));
-    assert!(!legacy_feature_input_section("Contents/Config-name"));
-    assert!(!legacy_feature_input_section("Other/Config-0"));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(legacy_feature_input_section(&ctx, "Contents/Config-0").unwrap());
+    assert!(legacy_feature_input_section(&ctx, "Contents\\Config-37").unwrap());
+    assert!(!legacy_feature_input_section(&ctx, "Contents/Config-0-Partition").unwrap());
+    assert!(!legacy_feature_input_section(&ctx, "Contents/Config-name").unwrap());
+    assert!(!legacy_feature_input_section(&ctx, "Other/Config-0").unwrap());
 }
 
 #[test]
@@ -37,6 +38,10 @@ fn legacy_sketch_object_stream_requires_a_sketch_and_entity_declaration() {
 fn feature_input_parent_identity_propagates_format_work_refusal() {
     let stream = crate::container::CompoundStream {
         path: cadmpeg_ir::StreamName::try_from("Contents/ResolvedFeatures".to_owned()).unwrap(),
+        name_words: crate::container::NameWords {
+            resolved_features: true,
+            ..crate::container::NameWords::default()
+        },
         directory_id: 12,
         start_sector: 0,
         payload: Vec::new(),

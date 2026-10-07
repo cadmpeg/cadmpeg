@@ -64,10 +64,7 @@ fn scan_transformed_reference_plane(
     let payload = section.payload();
     for offset in ctx
         .admit_iter(payload, "scan SLDPRT metadata token markers")?
-        .windows(
-            std::num::NonZeroUsize::new(TOKEN.len())
-                .ok_or_else(|| CodecError::malformed("zero metadata token width"))?,
-        )
+        .windows(const { crate::nonzero(TOKEN.len()) })
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {
@@ -123,10 +120,7 @@ fn scan_length_user_units(
     let payload = section.payload();
     for offset in ctx
         .admit_iter(payload, "scan SLDPRT metadata token markers")?
-        .windows(
-            std::num::NonZeroUsize::new(TOKEN.len())
-                .ok_or_else(|| CodecError::malformed("zero metadata token width"))?,
-        )
+        .windows(const { crate::nonzero(TOKEN.len()) })
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {
@@ -153,10 +147,7 @@ fn scan_length_user_units(
         }
         let units = ctx
             .admit_iter(bytes, "validate SLDPRT linear unit name")?
-            .chunks(
-                std::num::NonZeroUsize::new(2)
-                    .ok_or_else(|| CodecError::malformed("zero UTF-16 unit width"))?,
-            )
+            .chunks(const { crate::nonzero(2) })
             .filter_map(|unit| View::u16_le_at(unit, 0));
         if char::decode_utf16(units)
             .map(|unit| unit.unwrap_or(char::REPLACEMENT_CHARACTER))
@@ -205,16 +196,27 @@ fn scan_units_xml(
             return Ok(());
         }
     };
+    const OPERATION: &str = "read SLDPRT document unit XML";
     let document = admitted_document.document();
-    for node in document.descendants().filter(roxmltree::Node::is_element) {
+    let mut nodes = document.descendants();
+    while let Some(node) = ctx.next_charged(&mut nodes, OPERATION)? {
+        if !node.is_element() {
+            continue;
+        }
         let value = if node.tag_name().name() == "SW_UnitsLinear" {
             node.text()
-        } else if node.attribute("Name") == Some("SW_UnitsLinear") {
-            node.attribute("Value").or_else(|| node.text())
+        } else if ctx.xml_attribute(node, "Name", OPERATION)? == Some("SW_UnitsLinear") {
+            match ctx.xml_attribute(node, "Value", OPERATION)? {
+                Some(value) => Some(value),
+                None => node.text(),
+            }
         } else {
-            node.attribute("SW_UnitsLinear")
+            ctx.xml_attribute(node, "SW_UnitsLinear", OPERATION)?
         };
-        let Some(code) = value.and_then(|value| value.trim().parse::<i64>().ok()) else {
+        let Some(value) = value else {
+            continue;
+        };
+        let Ok(code) = ctx.parse_text::<i64>(ctx.trim_text(value, OPERATION)?, OPERATION)? else {
             continue;
         };
         ctx.reserve_vec(out, 1, "collect SLDPRT document attributes")?;
@@ -307,10 +309,7 @@ fn scan_part(
     let payload = section.payload();
     for offset in ctx
         .admit_iter(payload, "scan SLDPRT metadata token markers")?
-        .windows(
-            std::num::NonZeroUsize::new(TOKEN.len())
-                .ok_or_else(|| CodecError::malformed("zero metadata token width"))?,
-        )
+        .windows(const { crate::nonzero(TOKEN.len()) })
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {
@@ -348,10 +347,7 @@ fn scan_configuration_manager(
     let payload = section.payload();
     for offset in ctx
         .admit_iter(payload, "scan SLDPRT metadata token markers")?
-        .windows(
-            std::num::NonZeroUsize::new(TOKEN.len())
-                .ok_or_else(|| CodecError::malformed("zero metadata token width"))?,
-        )
+        .windows(const { crate::nonzero(TOKEN.len()) })
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {

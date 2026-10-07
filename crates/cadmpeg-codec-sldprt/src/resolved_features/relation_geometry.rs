@@ -11,12 +11,12 @@ use super::operands::{
     coordinate_line_endpoints_with_linked_point, linked_coordinate_line_endpoints,
 };
 use super::relation_loci::{
-    line_line_angle, line_line_distance, marker_point_locus,
-    marker_transform_candidates_by_feature, point_line_distance_value, profile_axis_for_relation,
-    profile_loci_by_marker, profile_locus_point_charged, relation_constraint_is_inactive,
-    relation_operand_marker, same_dimension_angle, same_dimension_length,
-    typed_relation_definition, typed_relation_definition_with_profile_axis,
-    unoriented_line_line_angle,
+    entity_locus_point, find_profile_entity, line_line_angle, line_line_distance,
+    marker_point_locus, marker_transform_candidates_by_feature, marker_transform_candidates_in,
+    point_line_distance_value, profile_axis_for_relation, profile_loci_in,
+    relation_constraint_is_inactive_in, relation_definition, relation_operand_marker_in,
+    same_dimension_angle, same_dimension_length, unoriented_line_line_angle, ProfileEntities,
+    RelationIndex,
 };
 use super::relation_records::{
     circle_dimension_handle_driver, relation_uses_dynamic_operands, relation_uses_solver_points,
@@ -27,7 +27,7 @@ use super::transforms::{
 };
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
-    marker_relation_is_inactive, typed_marker_relation_definition_in_sketch,
+    marker_relation_definition, marker_relation_is_inactive_in, RelationMarkers,
 };
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
@@ -1453,15 +1453,6 @@ fn indexed_geometry_ref_matches(
     Ok(ctx.parse_text::<usize>(suffix, "parse SLDPRT indexed geometry reference")? == Ok(index))
 }
 
-pub(super) fn relation_operand_geometry_ref_matches(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    relation: &FeatureInputRelationInstance,
-    operand_index: usize,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    indexed_geometry_ref_matches(ctx, value, &relation.id, ":operand:", operand_index)
-}
-
 pub(super) fn solver_line_geometry_ref_matches(
     ctx: &DecodeContext<'_>,
     value: &str,
@@ -1542,13 +1533,11 @@ pub(crate) fn project_relation_solved_line_geometry(
     }
     let transforms =
         marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)?;
-    let mut markers_by_id = HashMap::new();
-    for lane in ctx.admit_iter(lanes, "scan SLDPRT solved-line marker lanes")? {
-        for marker in ctx.admit_iter(&lane.sketch_entities, "index SLDPRT solved-line markers")? {
-            let operation = "index SLDPRT solved-line markers";
-            ctx.insert_hash_map(&mut markers_by_id, marker.id(), marker, operation)?;
-        }
-    }
+    let (markers, _markers_storage) = ctx
+        .with_scoped_storage("index SLDPRT solved-line markers", || {
+            RelationMarkers::new(ctx, lanes)
+        })?;
+    let markers_by_id = markers.by_id();
 
     for lane in ctx.admit_iter(lanes, "scan SLDPRT solved-line lanes")? {
         let mut marker_roster = Vec::new();
@@ -1719,7 +1708,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                 cadmpeg_core::CodecError,
             > {
                 let marker_id =
-                    relation_operand_marker(ctx, relation, operand_index, sketch, &markers_by_id)?;
+                    relation_operand_marker_in(ctx, relation, operand_index, sketch, &markers)?;
                 let marker = if let Some(marker_id) = marker_id {
                     let mut selected = None;
                     for candidate in ctx.admit_iter(
@@ -1782,7 +1771,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                     Some(marker) => Some(marker),
                     None => {
                         let marker_id =
-                            relation_operand_marker(ctx, relation, 0, sketch, &markers_by_id)?;
+                            relation_operand_marker_in(ctx, relation, 0, sketch, &markers)?;
                         if let Some(marker_id) = marker_id {
                             let mut selected = None;
                             for marker in ctx.admit_iter(
@@ -2582,8 +2571,20 @@ pub(crate) fn project_relation_solved_point_geometry(
         };
         ctx.insert_hash_map(&mut sketches_by_feature, native_ref, sketch, operation)?;
     }
-    let transforms =
-        marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)?;
+    let (markers, _markers_storage) = ctx
+        .with_scoped_storage("index SLDPRT solved-point markers", || {
+            RelationMarkers::new(ctx, lanes)
+        })?;
+    let markers_by_id = markers.by_id();
+    // The loci join the entities present before this projection appends points.
+    let ((transforms, loci_by_marker), _loci_storage) =
+        ctx.with_scoped_storage("build SLDPRT solved-point marker loci", || {
+            let profile = ProfileEntities::new(ctx, entities)?;
+            let transforms =
+                marker_transform_candidates_in(ctx, features, sketches, &profile, lanes)?;
+            let loci = profile_loci_in(ctx, features, &profile, &markers, lanes, &transforms)?;
+            Ok::<_, cadmpeg_core::CodecError>((transforms, loci))
+        })?;
     let ownership_scope = ctx
         .with_scoped_storage("SLDPRT solved-point relation parameter ownership", || {
             owned_relation_parameters(ctx, features, parameters, lanes)
@@ -2594,14 +2595,6 @@ pub(crate) fn project_relation_solved_point_geometry(
         ctx.charge_work(1, operation)?;
         ctx.insert_hash_map(&mut parameters_by_id, &parameter.id, parameter, operation)?;
     }
-    let mut markers_by_id = HashMap::new();
-    for lane in ctx.admit_iter(lanes, "scan SLDPRT solved-point marker lanes")? {
-        for marker in ctx.admit_iter(&lane.sketch_entities, "index SLDPRT solved-point markers")? {
-            let operation = "index SLDPRT solved-point markers";
-            ctx.insert_hash_map(&mut markers_by_id, marker.id(), marker, operation)?;
-        }
-    }
-    let loci_by_marker = profile_loci_by_marker(ctx, features, sketches, entities, lanes)?;
 
     for lane in ctx.admit_iter(lanes, "scan SLDPRT solved-point lanes")? {
         let lane_key = ctx
@@ -2797,9 +2790,7 @@ pub(crate) fn project_relation_solved_point_geometry(
             }
             let resolve = |index: usize| -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
                 match relation.operands[index].entity_ref.as_deref() {
-                    Some(marker) => {
-                        marker_point_locus(ctx, marker, &markers_by_id, &loci_by_marker)
-                    }
+                    Some(marker) => marker_point_locus(ctx, marker, markers_by_id, &loci_by_marker),
                     None => Ok(None),
                 }
             };
@@ -2815,7 +2806,7 @@ pub(crate) fn project_relation_solved_point_geometry(
             };
             let Some(missing_marker) = ctx
                 .get_hash_map(
-                    &markers_by_id,
+                    markers_by_id,
                     missing_marker_id,
                     "resolve SLDPRT missing dimension point marker",
                 )?
@@ -2831,9 +2822,13 @@ pub(crate) fn project_relation_solved_point_geometry(
             {
                 continue;
             }
-            let Some(known_point) =
-                profile_locus_point_charged(ctx, &known, entities, "resolve SLDPRT profile locus")?
-            else {
+            let Some(known_point) = find_profile_entity(
+                ctx,
+                entities,
+                super::transforms::locus_entity(&known),
+                "resolve SLDPRT profile locus",
+            )?
+            .and_then(|entity| entity_locus_point(entity, &known)) else {
                 continue;
             };
             let mut selected_point = None;
@@ -4135,19 +4130,27 @@ pub(crate) fn project_relation_bindings(
         };
         ctx.insert_hash_map(&mut sketches_by_feature, native_ref, sketch, operation)?;
     }
-    let transforms =
-        marker_transform_candidates_by_feature(ctx, features, sketches, sketch_entities, lanes)?;
-    let loci_by_marker = profile_loci_by_marker(ctx, features, sketches, sketch_entities, lanes)?;
-    let mut markers_by_id = HashMap::new();
-    for lane in ctx.admit_iter(lanes, "scan SLDPRT planar relation marker lanes")? {
-        for marker in ctx.admit_iter(
-            &lane.sketch_entities,
-            "index SLDPRT planar relation markers",
-        )? {
-            let operation = "index SLDPRT planar relation markers";
-            ctx.insert_hash_map(&mut markers_by_id, marker.id(), marker, operation)?;
-        }
-    }
+    let (profile, _profile_storage) = ctx
+        .with_scoped_storage("index SLDPRT planar relation entities", || {
+            ProfileEntities::new(ctx, sketch_entities)
+        })?;
+    let (markers, _markers_storage) = ctx
+        .with_scoped_storage("index SLDPRT planar relation markers", || {
+            RelationMarkers::new(ctx, lanes)
+        })?;
+    let markers_by_id = markers.by_id();
+    let ((transforms, loci_by_marker), _loci_storage) =
+        ctx.with_scoped_storage("build SLDPRT planar relation marker loci", || {
+            let transforms =
+                marker_transform_candidates_in(ctx, features, sketches, &profile, lanes)?;
+            let loci = profile_loci_in(ctx, features, &profile, &markers, lanes, &transforms)?;
+            Ok::<_, cadmpeg_core::CodecError>((transforms, loci))
+        })?;
+    let index = RelationIndex {
+        entities: &profile,
+        markers: &markers,
+        loci_by_marker: &loci_by_marker,
+    };
     let relation_parameters_scope = ctx
         .with_scoped_storage("SLDPRT planar relation parameter ownership", || {
             owned_relation_parameters(ctx, features, parameters, lanes)
@@ -4244,7 +4247,7 @@ pub(crate) fn project_relation_bindings(
                 for entity in marker_entities(
                     ctx,
                     marker,
-                    &markers_by_id,
+                    markers_by_id,
                     &loci_by_marker,
                     MarkerEntityFilter::All,
                 )? {
@@ -4268,40 +4271,28 @@ pub(crate) fn project_relation_bindings(
                         .map(Vec::as_slice),
                     )?
                     .map(|profile_axis| {
-                        typed_relation_definition_with_profile_axis(
+                        relation_definition(
                             ctx,
                             relation,
                             parameter,
-                            crate::resolved_features::relation_loci::SketchRelationEntities {
-                                sketch,
-                                sketch_entities,
-                            },
-                            &markers_by_id,
-                            &loci_by_marker,
+                            sketch,
+                            index,
                             Some(profile_axis),
                         )
                     })
                     .transpose()?
                     .flatten()
                 }
-                _ => typed_relation_definition(
-                    ctx,
-                    relation,
-                    parameter,
-                    sketch,
-                    sketch_entities,
-                    &markers_by_id,
-                    &loci_by_marker,
-                )?,
+                _ => relation_definition(ctx, relation, parameter, sketch, index, None)?,
             };
             let typed_definition = match typed_definition {
                 Some(definition)
                     if reference_parameter
-                        && relation_constraint_is_inactive(
+                        && relation_constraint_is_inactive_in(
                             ctx,
                             parameter,
                             &definition,
-                            sketch_entities,
+                            &profile,
                         )? =>
                 {
                     None
@@ -4346,9 +4337,8 @@ pub(crate) fn project_relation_bindings(
                     operands,
                 }
             };
-            let active =
-                relation_constraint_is_inactive(ctx, parameter, &definition, sketch_entities)?
-                    .then_some(false);
+            let active = relation_constraint_is_inactive_in(ctx, parameter, &definition, &profile)?
+                .then_some(false);
             let has_display_scalar =
                 relation_display_scalar_for_parameter(ctx, relation, lane)?.is_some();
             let Ok(definition) =
@@ -4447,18 +4437,10 @@ pub(crate) fn project_relation_bindings(
             else {
                 continue;
             };
-            let Some(definition) = typed_marker_relation_definition_in_sketch(
-                ctx,
-                marker,
-                sketch,
-                sketch_entities,
-                &markers_by_id,
-                &loci_by_marker,
-            )?
-            else {
+            let Some(definition) = marker_relation_definition(ctx, marker, sketch, index)? else {
                 continue;
             };
-            let active = marker_relation_is_inactive(ctx, marker, &definition, sketch_entities)?
+            let active = marker_relation_is_inactive_in(ctx, marker, &definition, &profile)?
                 .then_some(false);
             let Ok(definition) =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
