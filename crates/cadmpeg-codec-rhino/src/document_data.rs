@@ -506,6 +506,7 @@ fn render_userdata(
     let mut items = Vec::new();
     let mut unknown_chunks = Vec::new();
     while offset < record.body().end {
+        ctx.charge_work(1, "Rhino render userdata framing walk")?;
         let chunk = chunk_at(data, offset, record.body().end, archive, false)?;
         match chunk.typecode {
             CLASS_USERDATA => {
@@ -581,6 +582,7 @@ fn retained_sha256(
     bytes: &[u8],
     operation: &'static str,
 ) -> Result<String, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), operation)?;
     let digest = cadmpeg_ir::hash::sha256(bytes);
     ctx.format_retained(
         format_args!("{}", cadmpeg_ir::hash::LowerHex(&digest)),
@@ -598,6 +600,8 @@ pub(crate) fn install(
     ir: &mut CadIr,
 ) -> Result<NativeInstall, CodecError> {
     let properties = &scan.metadata.properties;
+    let ((revisions, notes, applications, document_settings, previews, mut setting_records),
+        mut native_storage) = ctx.with_scoped_storage("Rhino document native workspace", || {
     let mut revisions = ctx.collection_vec(
         usize::from(properties.revision_history.is_some()),
         "Rhino document revisions",
@@ -707,6 +711,9 @@ pub(crate) fn install(
             parse_error: None,
         });
     }
+        Ok::<_, CodecError>((revisions, notes, applications, document_settings, previews, setting_records))
+    })?;
+    let settings = &scan.metadata.settings;
     let binding = UnitBinding::from_units(settings.units.as_ref());
     let mut annotations = Vec::new();
     let mut grids = Vec::new();
@@ -724,12 +731,12 @@ pub(crate) fn install(
                 ANNOTATION_SETTINGS | GRID_DEFAULTS | RENDER_SETTINGS
             ) && binding.neutral_scale().is_none()
             {
-                let message = ctx.format_retained(format_args!(
+                let message = native_storage.with_storage(|| ctx.format_retained(format_args!(
                     "setting record {:#010x} at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
                     record.typecode,
                     record.range.start,
                     binding.label()
-                ), "Rhino unit-binding setting message")?;
+                ), "Rhino unit-binding setting message"))?;
                 ctx.reserve_vec(&mut losses, 1, "Rhino document setting losses")?;
                 losses
                     .push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(
@@ -740,6 +747,7 @@ pub(crate) fn install(
                     table_typecode: table.typecode,
                     record: record.clone(),
                 });
+                native_storage.with_storage(|| {
                 ctx.reserve_vec(&mut setting_records, 1, "Rhino retained setting records")?;
                 setting_records.push(SettingRecord {
                     id: retained_numbered_id(
@@ -758,16 +766,18 @@ pub(crate) fn install(
                     )?,
                     parse_error: Some(message),
                 });
+                Ok::<_, CodecError>(())
+                })?;
                 continue;
             }
             let result = if record.typecode == ANNOTATION_SETTINGS {
                 let Some(scale) = binding.neutral_scale() else {
                     continue;
                 };
-                match annotation_settings(ctx, scan.data, record.body(), record.range.start, scale)
+                match native_storage.with_storage(|| annotation_settings(ctx, scan.data, record.body(), record.range.start, scale))
                 {
                     Ok(value) => {
-                        ctx.reserve_vec(&mut annotations, 1, "Rhino annotation settings")?;
+                        ctx.reserve_scoped_vec(&mut native_storage, &mut annotations, 1, "Rhino annotation settings")?;
                         annotations.push(value);
                         Ok(())
                     }
@@ -777,9 +787,9 @@ pub(crate) fn install(
                 let Some(scale) = binding.neutral_scale() else {
                     continue;
                 };
-                match grid_defaults(ctx, scan.data, record.body(), record.range.start, scale) {
+                match native_storage.with_storage(|| grid_defaults(ctx, scan.data, record.body(), record.range.start, scale)) {
                     Ok(value) => {
-                        ctx.reserve_vec(&mut grids, 1, "Rhino grid defaults")?;
+                        ctx.reserve_scoped_vec(&mut native_storage, &mut grids, 1, "Rhino grid defaults")?;
                         grids.push(value);
                         Ok(())
                     }
@@ -789,16 +799,16 @@ pub(crate) fn install(
                 let Some(scale) = binding.neutral_scale() else {
                     continue;
                 };
-                match render_settings(
+                match native_storage.with_storage(|| render_settings(
                     ctx,
                     scan.data,
                     record.body(),
                     record.range.start,
                     scan.archive,
                     scale,
-                ) {
+                )) {
                     Ok(value) => {
-                        ctx.reserve_vec(&mut renders, 1, "Rhino render settings")?;
+                        ctx.reserve_scoped_vec(&mut native_storage, &mut renders, 1, "Rhino render settings")?;
                         renders.push(value);
                         render_settings_seen = true;
                         Ok(())
@@ -807,7 +817,7 @@ pub(crate) fn install(
                 }
             } else if record.typecode == RENDER_USERDATA {
                 if render_settings_seen {
-                    match render_userdata(ctx, scan.data, record, scan.archive) {
+                    match ctx.with_scoped_storage("Rhino render userdata workspace", || render_userdata(ctx, scan.data, record, scan.archive)) {
                         Ok(_) => {
                             ctx.reserve_vec(
                                 &mut opaque_records,
@@ -845,6 +855,7 @@ pub(crate) fn install(
                     table_typecode: table.typecode,
                     record: record.clone(),
                 });
+                native_storage.with_storage(|| {
                 ctx.reserve_vec(&mut setting_records, 1, "Rhino retained setting records")?;
                 setting_records.push(SettingRecord {
                     id: retained_numbered_id(
@@ -865,6 +876,8 @@ pub(crate) fn install(
                         ctx.format_retained(format_args!("{error}"), "Rhino setting parse error")?,
                     ),
                 });
+                Ok::<_, CodecError>(())
+                })?;
             }
         }
     }

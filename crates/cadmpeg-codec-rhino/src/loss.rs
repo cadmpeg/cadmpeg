@@ -98,9 +98,7 @@ impl Diagnostics {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         other: &mut Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.reserve_vec(&mut self.0, other.0.len(), "Rhino diagnostic copies")?;
-        self.0.append(&mut other.0);
-        Ok(())
+        ctx.append_vec(&mut self.0, &mut other.0, "Rhino diagnostic copies")
     }
 
     /// Adds a source label while admitting each destination diagnostic and message.
@@ -110,7 +108,7 @@ impl Diagnostics {
         other: Self,
         prefix: std::fmt::Arguments<'_>,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        for diagnostic in other {
+        for diagnostic in ctx.admit_iter(other.0, "Rhino prefixed diagnostic traversal")? {
             self.push_coded_admitted(
                 ctx,
                 diagnostic.code,

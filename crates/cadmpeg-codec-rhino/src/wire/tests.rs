@@ -133,3 +133,16 @@ fn loss_message_retained_bytes_are_charged_once() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.used == 7 && limit.additional == 1)
     );
 }
+
+
+#[test]
+fn canonical_json_preserves_ordinary_raw_value_named_keys() {
+    let value = serde_json::json!({
+        "$serde_json::private::RawValue": "not-json",
+        "nested": {"$serde_json::private::RawValue": "[0]"},
+    });
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let text = super::admitted_canonical_json(&ctx, &value, "canonical raw-named key")
+        .expect("the keys are ordinary object keys");
+    assert_eq!(text, r#"{"$serde_json::private::RawValue":"not-json","nested":{"$serde_json::private::RawValue":"[0]"}}"#);
+}

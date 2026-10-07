@@ -125,15 +125,21 @@ macro_rules! retained_metadata_test {
         #[test]
         fn $name() {
             let scan = $fixture();
-            let limit = crate::test_support::retained_limit_at($operation, 0, |cap| {
-                let cadmpeg_core::CodecError::ResourceLimit(refusal) =
-                    metadata_refusal(&scan, 100, cap)
-                else {
-                    panic!("metadata resource refusal");
-                };
-                refusal
-            });
-            assert_metadata_refusal(&metadata_refusal(&scan, 100, limit), $operation);
+            let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                $operation,
+                |cap| {
+                    let arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                    policy.limits.max_collection_items = 100;
+                    policy.limits.max_materialized_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                        scan.data, &arena, &policy,
+                    )?;
+                    install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+                },
+            );
+            assert_metadata_refusal(&refusal, $operation);
         }
     };
 }
@@ -1029,4 +1035,23 @@ fn render_userdata_unknown_chunks_refuse_collection_limit() {
         crate::chunks::FramingError::Resource(refusal)
             if refusal.operation == "Rhino render userdata unknown chunks"
     ));
+}
+
+
+#[test]
+fn document_digest_refuses_before_hashing_source_bytes() {
+    let bytes = [0x5a; 4096];
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits, "document digest", |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &bytes, &arena, &policy,
+            )?;
+            super::retained_sha256(&ctx, &bytes, "document digest")
+        },
+    );
+    assert!(matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.used == 0 && limit.additional == 4096));
 }
