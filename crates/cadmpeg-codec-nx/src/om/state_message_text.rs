@@ -14,7 +14,7 @@ pub(crate) struct StateMessageText<S>(PrintableString<S>, u8);
 impl<S: crate::immutable_text::ImmutableText> StateMessageText<S> {
     pub(super) fn new(text: S) -> Result<Self, &'static str> {
         let text =
-            PrintableString::new(text).map_err(|_| "text: must be nonempty printable ASCII")?;
+            PrintableString::from_text(text).map_err(|_| "text: must be nonempty printable ASCII")?;
         Self::from_printable(text)
     }
 

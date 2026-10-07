@@ -4417,7 +4417,7 @@ pub(crate) fn uuid_string_values<'a>(
         let Ok(text) = ctx.validate_utf8(raw, "NX UUID text UTF-8 validation")? else {
             continue;
         };
-        let Ok(value) = crate::canonical_uuid::CanonicalUuid::from_wire(ctx, text)? else {
+        let Ok(value) = crate::canonical_uuid::CanonicalUuid::new(text) else {
             continue;
         };
         if bytes.get(end) != Some(&0) {
