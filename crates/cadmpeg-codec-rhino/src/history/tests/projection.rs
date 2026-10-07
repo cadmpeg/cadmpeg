@@ -17,7 +17,7 @@ fn history_value_joins_preserve_the_scalar_and_fixed_lane_spelling() {
 #[test]
 fn history_empty_string_joins_admit_each_source_step() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let value = Value::Strings(vec![String::new(), String::new()]);
+    for value in [Value::Strings(vec![String::new()]), Value::Strings(vec![String::new(), String::new()])] {
     cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino history value text", |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -27,6 +27,7 @@ fn history_empty_string_joins_admit_each_source_step() {
         if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(limit)); }
         result
     });
+}
 }
 
 #[test]

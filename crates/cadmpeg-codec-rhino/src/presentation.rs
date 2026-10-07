@@ -5583,7 +5583,7 @@ pub(crate) fn install(
             }
         }
     }
-    let (group_index_counts, _group_index_workspace) = crate::settings::index_occurrences(
+    let (group_index_counts, group_index_workspace) = crate::settings::index_occurrences(
         ctx,
         &groups,
         |group| group.archive_index,
@@ -5807,6 +5807,8 @@ pub(crate) fn install(
             )?;
         }
     }
+    drop(group_index_counts);
+    drop(group_index_workspace);
     let disambiguated_group_count = disambiguate_group_ids(ctx, &mut groups)?;
     if disambiguated_group_count != 0 {
         push_presentation_loss(ctx, &mut losses, RhinoLossCode::DuplicateRecordResolved, format_args!(
@@ -5814,24 +5816,11 @@ pub(crate) fn install(
         ))?;
     }
     for group in ctx.admit_iter(&mut groups[..], "Rhino group link traversal")? {
-        let index_count = ctx
-            .binary_search_by(
-                &group_index_counts,
-                |(index, _)| Ok(index.cmp(&group.archive_index)),
-                "Rhino group index count lookup",
-            )?
-            .ok()
-            .and_then(|position| group_index_counts.get(position).map(|(_, count)| *count));
-        group.links = if index_count == Some(1) {
-            ctx.remove_hash_map(
-                &mut group_members,
-                &group.archive_index,
-                "Rhino group member removal",
-            )?
-            .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
+        group.links = ctx.remove_hash_map(
+            &mut group_members,
+            &group.archive_index,
+            "Rhino group member removal",
+        )?.unwrap_or_default();
         ctx.stable_sort_by(
             &mut group.links,
             |value| value,
