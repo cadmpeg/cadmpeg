@@ -252,17 +252,12 @@ fn insert_appearance(
         format_args!("catia:appearance:rgba#{}", LowerHex(&rgba)),
         "catia_appearance_id",
     )?;
-    let id = match cadmpeg_ir::ids::Identity::admit_text(id, |work| {
-        ctx.charge_work(work, "catia_appearance_asset_identity")
-    })? {
-        Ok(identity) => AppearanceId::from(identity),
-        Err(value) => {
-            return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
-                format_args!("identity is invalid: {value:?}"),
-                "catia_appearance_asset_identity_error",
-            )?));
-        }
-    };
+    let id = AppearanceId::from(crate::resource::admit_identity(
+        ctx,
+        id,
+        "catia_appearance_asset_identity",
+        "catia_appearance_asset_identity_error",
+    )?);
     if !ir
         .model
         .appearances
@@ -307,17 +302,12 @@ fn insert_binding(
         format_args!("catia:appearance:binding#{index}:{key}"),
         "catia_appearance_binding_id",
     )?;
-    let id = match cadmpeg_ir::ids::Identity::admit_text(id, |work| {
-        ctx.charge_work(work, "catia_appearance_binding_identity")
-    })? {
-        Ok(identity) => AppearanceBindingId::from(identity),
-        Err(value) => {
-            return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
-                format_args!("identity is invalid: {value:?}"),
-                "catia_appearance_binding_identity_error",
-            )?));
-        }
-    };
+    let id = AppearanceBindingId::from(crate::resource::admit_identity(
+        ctx,
+        id,
+        "catia_appearance_binding_identity",
+        "catia_appearance_binding_identity_error",
+    )?);
     insert_binding_record(ctx, ir, appearance, target, id)
 }
 
@@ -342,17 +332,12 @@ fn insert_source_binding(
         ),
         "catia_appearance_source_binding_id",
     )?;
-    let id = match cadmpeg_ir::ids::Identity::admit_text(id, |work| {
-        ctx.charge_work(work, "catia_appearance_source_binding_identity")
-    })? {
-        Ok(identity) => AppearanceBindingId::from(identity),
-        Err(value) => {
-            return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
-                format_args!("identity is invalid: {value:?}"),
-                "catia_appearance_source_binding_identity_error",
-            )?));
-        }
-    };
+    let id = AppearanceBindingId::from(crate::resource::admit_identity(
+        ctx,
+        id,
+        "catia_appearance_source_binding_identity",
+        "catia_appearance_source_binding_identity_error",
+    )?);
     insert_binding_record(
         ctx,
         ir,
