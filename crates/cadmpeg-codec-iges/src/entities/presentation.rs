@@ -252,30 +252,12 @@ fn text_font_definition(
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
-    parameters: &[ParameterRecord],
+    (entries, records): (&BTreeMap<u32, &DirectoryEntry>, &BTreeMap<u32, &ParameterRecord>),
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
     sequences: &super::geometry::SourceSequences,
 ) -> Result<ProjectionOutcome, CodecError> {
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges presentation parameter index",
-        )?;
-    }
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges presentation directory index",
-        )?;
-    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut defined = BTreeMap::new();
@@ -287,7 +269,7 @@ pub(super) fn project(
         if let Some(font) = records
             .get(&entry.sequence)
             .copied()
-            .and_then(|record| text_font_definition(entry, record, &entries, global.global_table()))
+            .and_then(|record| text_font_definition(entry, record, entries, global.global_table()))
         {
             ctx.insert_btree_map(
                 &mut text_fonts,
@@ -335,7 +317,7 @@ pub(super) fn project(
         let parameter_end = record.parameter_end();
         let font = record.integer_or(3, 1);
         let font_valid = font.is_some_and(|font| {
-            general_note_font_valid_for_global_table(font, &entries, global.global_table())
+            general_note_font_valid_for_global_table(font, entries, global.global_table())
         });
         let directory_valid = text_template_directory_valid(entry, global.global_table());
         let fields_valid = parameter_end <= 11

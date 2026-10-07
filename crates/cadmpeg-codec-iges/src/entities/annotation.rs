@@ -1048,28 +1048,10 @@ fn sectioned_area_valid(
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
-    parameters: &[ParameterRecord],
+    (entries, records): (&BTreeMap<u32, &DirectoryEntry>, &BTreeMap<u32, &ParameterRecord>),
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges annotation parameter index",
-        )?;
-    }
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges annotation directory index",
-        )?;
-    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -1082,8 +1064,8 @@ pub(super) fn project(
             .map(|record| -> Result<bool, CodecError> {
                 let resolved_transform = match resolve_transform(
                     entry.transform,
-                    &entries,
-                    &records,
+                    entries,
+                    records,
                     global.length_factor_mm(),
                     global.real_precision(),
                     &mut BTreeSet::new(),
@@ -1109,22 +1091,22 @@ pub(super) fn project(
                             | AnnotationKind::RadiusDimension => dimension_valid(
                                 entry,
                                 record,
-                                &entries,
-                                &records,
+                                entries,
+                                records,
                                 global.global_table(),
                             ),
                             AnnotationKind::FlagNote | AnnotationKind::GeneralLabel => {
                                 flag_or_label_valid(
                                     entry,
                                     record,
-                                    &entries,
-                                    &records,
+                                    entries,
+                                    records,
                                     global.global_table(),
                                 )
                             }
                             AnnotationKind::GeneralNote => general_note_valid_for_global_table(
                                 record,
-                                &entries,
+                                entries,
                                 global.global_table(),
                                 entry.form,
                             ),
@@ -1136,8 +1118,8 @@ pub(super) fn project(
                             }
                             AnnotationKind::GeneralSymbol => general_symbol_valid(
                                 record,
-                                &entries,
-                                &records,
+                                entries,
+                                records,
                                 entry.form,
                                 global.global_table(),
                             ),
@@ -1146,7 +1128,7 @@ pub(super) fn project(
                                     sectioned_area_valid(
                                         ir,
                                         record,
-                                        &entries,
+                                        entries,
                                         entry.form,
                                         SectionedAreaContext {
                                             global_table: global.global_table(),
