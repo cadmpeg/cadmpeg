@@ -138,7 +138,7 @@ impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
                 )
             })?;
             let mut ordered = storage.with_storage(|| {
-                ctx.collect_vec(ctx.admit_iter(&lane.sketch_entities, OPERATION)?, OPERATION)
+                ctx.collect_vec(&lane.sketch_entities, OPERATION)
             })?;
             for marker in ctx.admit_iter(&ordered, OPERATION)? {
                 storage.with_storage(|| {
@@ -275,10 +275,7 @@ impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
         let mut storage = ctx.reserve_scoped(0, DIMENSIONED_CARRIER_OPERATION)?;
         let ordered = storage.with_storage(|| {
             ctx.collect_vec(
-                ctx.admit_iter(
-                    &self.lanes[lane].sketch_entities,
-                    DIMENSIONED_CARRIER_OPERATION,
-                )?,
+                &self.lanes[lane].sketch_entities,
                 DIMENSIONED_CARRIER_OPERATION,
             )
         })?;
@@ -1833,22 +1830,16 @@ fn terminal_repeated_radial_circle_pairs<'a>(
     let Some(terminal) = roster.last().copied() else {
         return Ok(None);
     };
-    let mut pairs = ctx.collect_vec(
-        ctx.admit_iter(roster, MARKER_CIRCLE_OPERATION)?
-            .zip(ctx.admit_iter(&roster[1..], MARKER_CIRCLE_OPERATION)?)
-            .filter_map(|(center, radial)| {
-                let center_index = center.object_index()?;
-                let radial_index = radial.object_index()?;
-                if center_index != radial_index.checked_add(1)? {
-                    return None;
-                }
-                let [cu, cv] = center.coordinates_m?.get();
-                let [ru, rv] = radial.coordinates_m?.get();
-                same_dimension_length((ru - cu).hypot(rv - cv), radius)
-                    .then_some((*center, *radial))
-            }),
-        MARKER_CIRCLE_OPERATION,
-    )?;
+    let mut pairs = Vec::new();
+    for pair in ctx.admit_iter(roster, MARKER_CIRCLE_OPERATION)?.windows(std::num::NonZeroUsize::new(2).expect("two-point window")) {
+        let [center, radial] = pair else { unreachable!("two-point window"); };
+        let Some((center_index, radial_index)) = center.object_index().zip(radial.object_index()) else { continue; };
+        if Some(center_index) != radial_index.checked_add(1) { continue; }
+        let Some(([cu, cv], [ru, rv])) = center.coordinates_m.map(|point| point.get()).zip(radial.coordinates_m.map(|point| point.get())) else { continue; };
+        if same_dimension_length((ru - cu).hypot(rv - cv), radius) {
+            ctx.push_vec(&mut pairs, (*center, *radial), MARKER_CIRCLE_OPERATION)?;
+        }
+    }
     if pairs.len() < 2
         || !ctx.equal(
             &(pairs.last().map(|(_, radial)| radial.id())),
@@ -2391,19 +2382,12 @@ pub(crate) fn project_marker_dimensioned_circles(
         if let Some((carrier_id, carrier_ref, radial_index, carrier_construction)) =
             circle_only_carrier
         {
-            let mut roster = temporary_storage.with_storage(|| {
-                ctx.collect_vec(
-                    ctx.admit_iter(&markers, MARKER_CIRCLE_OPERATION)?
-                        .copied()
-                        .filter(|(marker, _)| {
-                            matches!(
-                                marker.kind(),
-                                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                            )
-                        }),
-                    MARKER_CIRCLE_OPERATION,
-                )
-            })?;
+            let mut roster = Vec::new();
+            for &(marker, point) in ctx.admit_iter(&markers, MARKER_CIRCLE_OPERATION)? {
+                if matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint) {
+                    temporary_storage.with_storage(|| ctx.push_vec(&mut roster, (marker, point), MARKER_CIRCLE_OPERATION))?;
+                }
+            }
             ctx.sort_unstable_by_key(
                 &mut roster,
                 |value| {
@@ -2485,7 +2469,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                                 .native_ref
                                 .as_deref()
                                 .map(|reference| {
-                                    ctx.copy_retained_text(&reference, MARKER_CIRCLE_OPERATION)
+                                    ctx.copy_retained_text(reference, MARKER_CIRCLE_OPERATION)
                                 })
                                 .transpose()?;
                             let entity = SketchEntity::new(
@@ -2693,7 +2677,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 sketch
                     .profiles
                     .retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
-                for (index, geometry) in transformed.into_iter().enumerate() {
+                for (index, geometry) in ctx.admit_iter(transformed, MARKER_CIRCLE_OPERATION)?.enumerate() {
                     let Some(entity_id) = mint_formatted::<SketchEntityId>(ctx, format_args!("sldprt:model:sketch-entity#repeated-radial-circle:{lane_key}:{offset}:{index}"), OPERATION)? else {
                         continue;
                     };
@@ -2706,7 +2690,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                         .native_ref
                         .as_deref()
                         .map(|reference| {
-                            ctx.copy_retained_text(&reference, MARKER_CIRCLE_OPERATION)
+                            ctx.copy_retained_text(reference, MARKER_CIRCLE_OPERATION)
                         })
                         .transpose()?;
                     let entity = SketchEntity::new(
@@ -2898,7 +2882,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     sketch
                         .profiles
                         .retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
-                    for (record, geometry) in transformed {
+                    for (record, geometry) in ctx.admit_iter(transformed, MARKER_CIRCLE_OPERATION)? {
                         let lane_key = ctx
                             .rsplit_once(&record.0.id, "#", "resolve SLDPRT dimensions keys")?
                             .map_or(record.0.id.as_str(), |(_, key)| key);
@@ -2920,7 +2904,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                             .native_ref
                             .as_deref()
                             .map(|reference| {
-                                ctx.copy_retained_text(&reference, MARKER_CIRCLE_OPERATION)
+                                ctx.copy_retained_text(reference, MARKER_CIRCLE_OPERATION)
                             })
                             .transpose()?;
                         let entity = SketchEntity::new(
@@ -2937,27 +2921,16 @@ pub(crate) fn project_marker_dimensioned_circles(
                 }
             }
         }
-        let centers = temporary_storage.with_storage(|| {
-            ctx.collect_vec(
-                ctx.admit_iter(&markers, MARKER_CIRCLE_OPERATION)?
-                    .copied()
-                    .filter(|(marker, _)| marker.kind() == SketchInputKind::LineOrCircle),
-                MARKER_CIRCLE_OPERATION,
-            )
-        })?;
-        let radial = temporary_storage.with_storage(|| {
-            ctx.collect_vec(
-                ctx.admit_iter(&markers, MARKER_CIRCLE_OPERATION)?
-                    .copied()
-                    .filter(|(marker, _)| {
-                        matches!(
-                            marker.kind(),
-                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                        )
-                    }),
-                MARKER_CIRCLE_OPERATION,
-            )
-        })?;
+        let mut centers = Vec::new();
+        let mut radial = Vec::new();
+        for &(marker, point) in ctx.admit_iter(&markers, MARKER_CIRCLE_OPERATION)? {
+            if marker.kind() == SketchInputKind::LineOrCircle {
+                temporary_storage.with_storage(|| ctx.push_vec(&mut centers, (marker, point), MARKER_CIRCLE_OPERATION))?;
+            }
+            if matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint) {
+                temporary_storage.with_storage(|| ctx.push_vec(&mut radial, (marker, point), MARKER_CIRCLE_OPERATION))?;
+            }
+        }
         let [(center_marker, coordinates)] = centers.as_slice() else {
             continue;
         };
@@ -3036,7 +3009,7 @@ pub(crate) fn project_marker_dimensioned_circles(
             let geometry_reference = parameter
                 .native_ref
                 .as_deref()
-                .map(|reference| ctx.copy_retained_text(&reference, MARKER_CIRCLE_OPERATION))
+                .map(|reference| ctx.copy_retained_text(reference, MARKER_CIRCLE_OPERATION))
                 .transpose()?;
             let entity = SketchEntity::new(
                 entity_id,

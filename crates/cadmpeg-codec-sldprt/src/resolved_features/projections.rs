@@ -44,7 +44,6 @@ use cadmpeg_ir::{
     scalar::{Angle, Length, PositiveLength},
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::fmt::Write;
 
 const EPS_PROJECTIONS_UNIQUE_CYLINDRICAL_FACE_E9: f64 = 1.0e-9;
 const EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E8: f64 = 1.0e-8;
@@ -1119,8 +1118,7 @@ pub(crate) fn project_compact_body_selections(
                 };
                 if matches!(bodies, cadmpeg_ir::features::BodySelection::Unresolved) {
                     let ids = ctx.try_collect_vec(
-                        ctx.admit_iter(&selection.local_body_ids, OPERATION)?
-                            .map(|id| ctx.format_retained(format_args!("{id}"), OPERATION)),
+                        selection.local_body_ids.iter().map(|id| ctx.format_retained(format_args!("{id}"), OPERATION)),
                         OPERATION,
                     )?;
                     let Ok(selection) = cadmpeg_ir::features::BodySelection::local(
@@ -1305,7 +1303,7 @@ pub(crate) fn project_compact_edge_selections(
                                     .map(|group| std::mem::replace(&mut group.edges, EdgeSelection::Unresolved)),
                             _ => None,
                         };
-                        for RadiusSelectionGroup(radius, selections) in radius_groups {
+                        for RadiusSelectionGroup(radius, selections) in ctx.admit_iter(radius_groups, GROUP_OPERATION)? {
                             let edges = if unresolved_edges {
                                 projected_edges(&selections)?
                             } else {
@@ -1315,7 +1313,7 @@ pub(crate) fn project_compact_edge_selections(
                                     )
                                 })?
                             };
-                            replacement_groups.push(FilletGroup { edges, radius, tangency_weight });
+                            ctx.push_vec(&mut replacement_groups, FilletGroup { edges, radius, tangency_weight }, GROUP_OPERATION)?;
                         }
                         *definition = FeatureDefinition::Operation(FeatureOperation::Fillet {
                             groups: replacement_groups
@@ -1327,12 +1325,12 @@ pub(crate) fn project_compact_edge_selections(
             }
             match &mut *definition {
                 FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => {
-                    for group in groups.iter_mut().filter(|group| matches!(group.edges, EdgeSelection::Unresolved)) {
+                    for group in ctx.admit_iter(&mut groups[..], "project SLDPRT compact edge groups")?.filter(|group| matches!(group.edges, EdgeSelection::Unresolved)) {
                         group.edges = projected_edges(edge_selections)?;
                     }
                 }
                 FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) => {
-                    for group in groups.iter_mut() {
+                    for group in ctx.admit_iter(&mut groups[..], "project SLDPRT compact edge groups")? {
                         group.edges = projected_edges(edge_selections)?;
                     }
                 }
@@ -1924,8 +1922,7 @@ pub(crate) fn project_compact_surface_selections(
                         let native = compact_surface_selection_set_value(ctx, feature_selections)?;
                         let mut faces = Vec::new();
                         let mut complete = true;
-                        for selection in feature_selections {
-                            ctx.charge_work(1, OPERATION)?;
+                        for selection in ctx.admit_iter(feature_selections, OPERATION)? {
                             let generated = match selection.terminal_feature_ref.as_deref() {
  Some(producer) => producer_id(producer)?,
  None => None,
@@ -1942,8 +1939,6 @@ pub(crate) fn project_compact_surface_selections(
                                     complete = false;
                                     continue;
                                 };
-                                ctx.charge_work(u64::try_from(faces.len())
-                                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
                                 if !ctx.contains(&faces, &face, OPERATION)? {
                                     ctx.reserve_vec(&mut faces, 1, OPERATION)?;
                                     faces.push(face);
@@ -1979,34 +1974,13 @@ pub(crate) fn project_compact_surface_selections(
  None => None,
  };
                         if let Some(producer) = target_producer {
-                            let mut local_id_bytes = 0usize;
-                            let mut local_id_count = 0usize;
-                            for component in &target.components {
-                                ctx.charge_work(1, OPERATION)?;
-                                let Some(id) = component.local_id else {
-                                    continue;
-                                };
-                                let digits = if id == 0 { 1 } else {
-                                    usize::try_from(id.ilog10()).ok()
-                                        .and_then(|log| log.checked_add(1))
-                                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?
-                                };
-                                local_id_bytes = local_id_bytes
-                                    .checked_add(usize::from(local_id_count != 0))
-                                    .and_then(|sum| sum.checked_add(digits))
-                                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                                local_id_count = local_id_count.checked_add(1)
-                                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                            }
                             let mut local_id = String::new();
-                            ctx.try_reserve_retained_text(&mut local_id, local_id_bytes, OPERATION)?;
-                            for id in target.components.iter().filter_map(|component| component.local_id) {
+                            for component in ctx.admit_iter(&target.components, OPERATION)? {
+                                let Some(id) = component.local_id else { continue; };
                                 if !local_id.is_empty() {
                                     ctx.push_retained_char(&mut local_id, ',', "format SLDPRT surface cut body separator")?;
                                 }
-                                write!(local_id, "{id}").map_err(|_| {
-                                    cadmpeg_core::CodecError::malformed("cannot format SLDPRT surface cut body id")
-                                })?;
+                                ctx.append_formatted_retained(&mut local_id, format_args!("{id}"), OPERATION)?;
                             }
                             let producer_id = producer.try_clone_for_decode(ctx, OPERATION)?;
                             let Ok(body) =
@@ -2085,7 +2059,7 @@ pub(crate) fn project_compact_surface_selections(
                                     });
                                 let face = match generated {
                                     Some((producer, local_id)) => {
-                                        if producer != feature_id
+                                        if !ctx.equal(producer, feature_id, OPERATION)?
  && !ctx.contains(dependencies.as_slice(), producer, OPERATION)?
                                         {
                                             dependencies.insert(ctx, producer.try_clone_for_decode(ctx, OPERATION)?, OPERATION)?;
@@ -2137,8 +2111,6 @@ pub(crate) fn project_compact_surface_selections(
                     {
                         const OPERATION: &str = "project SLDPRT datum plane dependencies";
                         for selection in feature_selections {
-                            ctx.charge_work(u64::try_from(selection.producer_feature_refs.len())
-                                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
                             add_producer_dependencies(ctx, &feature_ids_by_native, &selection.producer_feature_refs, feature_id, dependencies, OPERATION)?;
                         }
                         break 'feature_edit;
@@ -2727,8 +2699,7 @@ fn format_surface_path_set<'a>(
         let components = path_at(index);
         let key = storage.with_storage(|| {
             ctx.collect_vec(
-                ctx.admit_iter(components, operation)?
-                    .map(|component| component.local_id),
+                components.iter().map(|component| component.local_id),
                 operation,
             )
         })?;
@@ -3171,7 +3142,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         break;
                     };
                     match generated {
-                        Some(previous) if previous != candidate => {
+                        Some(previous) if !ctx.equal(&previous, &candidate, GENERATED_OPERATION)? => {
                             complete = false;
                             break;
                         }
