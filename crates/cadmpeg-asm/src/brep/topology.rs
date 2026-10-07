@@ -465,7 +465,7 @@ pub(super) fn walk_reachable_topology(
                                                     token_table,
                                                 )
                                                 .map(|result| result.and_then(|(mut curve, native_chart)| {
-                                                    if (*selector < 0) ^ record_reversed(intcurve) {
+                                                    if (*selector < 0) ^ record_reversed(ctx, intcurve)? {
                                                         curve.reverse_parameterization(ctx)?;
                                                     }
                                                     Ok((curve, native_chart))
@@ -584,7 +584,7 @@ pub(super) fn walk_reachable_topology(
                                                 // as the negation of its cache; the
                                                 // edge's stored range is on the
                                                 // reversed parameterization.
-                                                if record_reversed(crec) {
+                                                if record_reversed(ctx, crec)? {
                                                     curve.reverse_parameterization(ctx)?;
                                                 }
                                                 scratch.with_storage(|| ctx.insert_hash_map(curve_geo, cv, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)), "ASM topology curve_geo"))?;
@@ -601,12 +601,12 @@ pub(super) fn walk_reachable_topology(
                                                     &crec.tokens,
                                                     token_table,
                                                 ).transpose()?.and_then(|definition| definition.into_definition().ok())
-                                                .and_then(|mut definition| {
-                                                    if record_reversed(crec) {
-                                                        reverse_procedural_curve_definition(&mut definition).ok()?;
+                                                .map(|mut definition| -> Result<_, cadmpeg_core::CodecError> {
+                                                    if record_reversed(ctx, crec)? && reverse_procedural_curve_definition(&mut definition).is_err() {
+                                                        return Ok(None);
                                                     }
-                                                    Some(definition)
-                                                })
+                                                    Ok(Some(definition))
+                                                }).transpose()?.flatten()
                                             {
                                                 scratch.with_storage(|| ctx.insert_hash_map(curve_geo, cv, CurveGeometry::Procedural {
                                                     construction: brep_id!(
@@ -919,7 +919,7 @@ fn keep_wire_edge(
         {
             let parsed_domain = nurbs::proc_curve::nurbs_curve_parameter_domain(&decoded.curve);
             let mut curve = decoded.curve;
-            if record_reversed(curve_record) {
+            if record_reversed(ctx, curve_record)? {
                 curve.reverse_parameterization(ctx)?;
             }
             scratch.with_storage(|| ctx.insert_hash_map(
@@ -948,12 +948,12 @@ fn keep_wire_edge(
             )
             .transpose()?
             .and_then(|definition| definition.into_definition().ok())
-            .and_then(|mut definition| {
-                if record_reversed(curve_record) {
-                    reverse_procedural_curve_definition(&mut definition).ok()?;
+            .map(|mut definition| -> Result<_, cadmpeg_core::CodecError> {
+                if record_reversed(ctx, curve_record)? && reverse_procedural_curve_definition(&mut definition).is_err() {
+                    return Ok(None);
                 }
-                Some(definition)
-            })
+                Ok(Some(definition))
+            }).transpose()?.flatten()
         {
             scratch.with_storage(|| ctx.insert_hash_map(
                 curve_geo,

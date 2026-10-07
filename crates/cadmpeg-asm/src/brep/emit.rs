@@ -5506,10 +5506,11 @@ pub(super) fn emit_faces(
             // self-consistent.
             let native_sense = sense_at(r, 8);
             let mut sense = native_sense;
-            let carrier_flipped = by_index
-                .get(&surface)
-                .is_some_and(|surf| surf.head() == "spline" && record_reversed(surf))
-                ^ inward_normal_surfaces.contains(&surface);
+            let carrier_reversed = match by_index.get(&surface) {
+                Some(surf) if surf.head() == "spline" => record_reversed(ctx, surf)?,
+                _ => false,
+            };
+            let carrier_flipped = carrier_reversed ^ inward_normal_surfaces.contains(&surface);
             if carrier_flipped {
                 sense = match sense {
                     Sense::Forward => Sense::Reversed,

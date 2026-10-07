@@ -24,14 +24,14 @@ use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use std::collections::{HashMap, HashSet};
 
 use super::AsmBrep;
-const EPS_GEOMETRY_PCURVE_RANGES_ON_DOMAIN_E9: f64 = 1.0e-9;
-const EPS_GEOMETRY_ANALYTIC_PROCEDURAL_SURFACE_E10: f64 = 1.0e-10;
-const EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10: f64 = 1.0e-10;
-const EPS_GEOMETRY_LINEAR_NURBS_SPINE_E10: f64 = 1.0e-10;
-const EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E12: f64 = 1.0e-12;
-const EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10: f64 = 1.0e-10;
-const EPS_GEOMETRY_REDUCE_HOMOGENEOUS_BEZIER_TO_QUADRATIC_E10: f64 = 1.0e-10;
-const EPS_GEOMETRY_CLAMP_EDGE_RANGES_TO_CARRIER_DOMAINS_E9: f64 = 1.0e-9;
+const EPS_PCURVE_DOMAIN: f64 = 1.0e-9;
+const EPS_EXTRUSION_AXIS_ALIGNMENT: f64 = 1.0e-10;
+const EPS_ROLLING_BALL_MATCH: f64 = 1.0e-10;
+const EPS_SPINE_COLLINEARITY: f64 = 1.0e-10;
+const EPS_RATIONAL_KNOT_MATCH: f64 = 1.0e-12;
+const EPS_RATIONAL_CIRCLE_MATCH: f64 = 1.0e-10;
+const EPS_DEGREE_REDUCTION: f64 = 1.0e-10;
+const EPS_EDGE_DOMAIN_SNAP: f64 = 1.0e-9;
 
 macro_rules! propagate_resource {
     ($result:expr) => {
@@ -398,7 +398,7 @@ pub(super) fn pcurve_ranges_on_domain(
                     cadmpeg_ir::math::parameter_in_domain(
                         *value,
                         [first, last],
-                        EPS_GEOMETRY_PCURVE_RANGES_ON_DOMAIN_E9,
+                        EPS_PCURVE_DOMAIN,
                     )
                 })
                 .then_some(())?;
@@ -478,29 +478,31 @@ pub(super) fn sense_at(rec: &Record, i: usize) -> Sense {
 /// marks geometry as the reverse of its cached definition. A reversed intcurve
 /// negates the cache parameterization (`C(t) = cache(-t)`), and a reversed
 /// spline surface flips the cache normal.
-pub(super) fn record_reversed(rec: &Record) -> bool {
-    // Adjacency in chunk space: a freestanding payload identifier (e.g. the
-    // embedded curve's type name) can sit between value tokens without
-    // separating the sense bit from the scope it precedes.
+pub(super) fn record_reversed(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    rec: &Record,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    // Payload identifiers do not separate the sense bit from its scope.
     let mut previous: Option<&Token> = None;
-    rec.chunks()
-        .find_map(|token| {
-            let result = matches!(token, Token::SubtypeOpen)
-                .then(|| match previous {
-                    Some(Token::True) => Some(true),
-                    Some(Token::False) => Some(false),
-                    _ => None,
-                })
-                .flatten();
-            previous = Some(token);
-            result
-        })
-        .or_else(|| {
-            // A plain `intcurve` companion has no subtype scope after its
-            // base header; its sense remains the fourth payload value.
-            (rec.head() == "intcurve").then(|| matches!(rec.chunk(3), Some(Token::True)))
-        })
-        .unwrap_or(false)
+    let mut header_fields = 0;
+    let mut header_reversed = false;
+    let scoped = ctx.find_map(rec.tokens.as_ref(), |token| {
+        if token.is_payload_ident() { return Ok(None); }
+        if header_fields < 4 {
+            if header_fields == 3 { header_reversed = matches!(token, Token::True); }
+            header_fields += 1;
+        }
+        let reversed = if matches!(token, Token::SubtypeOpen) {
+            match previous {
+                Some(Token::True) => Some(true),
+                Some(Token::False) => Some(false),
+                _ => None,
+            }
+        } else { None };
+        previous = Some(token);
+        Ok(reversed)
+    }, "ASM record sense tokens")?;
+    Ok(scoped.unwrap_or_else(|| rec.head() == "intcurve" && header_reversed))
 }
 
 /// Reverse a curve carrier to its opposite orientation, `C'(t) = C(-t)`.
@@ -651,7 +653,7 @@ pub(super) fn analytic_procedural_surface(
             let (center, normal, ref_direction, radius) =
                 propagate_resource!(rational_four_arc_circle(ctx, directrix)?);
             let axis = UnitVector3::normalized(*direction)?;
-            if 1.0 - axis.as_raw().dot(normal).abs() > EPS_GEOMETRY_ANALYTIC_PROCEDURAL_SURFACE_E10
+            if 1.0 - axis.as_raw().dot(normal).abs() > EPS_EXTRUSION_AXIS_ALIGNMENT
             {
                 return None;
             }
@@ -710,16 +712,16 @@ fn analytic_rolling_ball_surface(
         let second_origin = plane_surface_2.origin();
         let second_normal = *plane_surface_2.frame().axis().as_raw();
         let (origin, axis) = propagate_resource!(linear_nurbs_spine(ctx, spine)?);
-        let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10 * radius;
+        let tolerance = EPS_ROLLING_BALL_MATCH * radius;
         let support_intersection = first_normal.cross(second_normal);
         let support_intersection_norm = support_intersection.norm();
-        if support_intersection_norm <= EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
+        if support_intersection_norm <= EPS_ROLLING_BALL_MATCH
             || 1.0
                 - axis
                     .as_raw()
                     .dot(support_intersection.scale(1.0 / support_intersection_norm))
                     .abs()
-                > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
+                > EPS_ROLLING_BALL_MATCH
         {
             return None;
         }
@@ -728,7 +730,7 @@ fn analytic_rolling_ball_surface(
             (*second_origin, second_normal),
         ] {
             if axis.as_raw().dot(plane_normal).abs()
-                > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
+                > EPS_ROLLING_BALL_MATCH
                 || (point_vector(plane_origin, origin).dot(plane_normal).abs() - radius).abs()
                     > tolerance
             {
@@ -792,12 +794,12 @@ fn analytic_rolling_ball_surface(
     let (center, axis, ref_direction, major_radius) =
         propagate_resource!(rational_four_arc_circle(ctx, spine)?);
     let scale = major_radius.max(radius).max(cylinder_radius);
-    let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10 * scale;
+    let tolerance = EPS_ROLLING_BALL_MATCH * scale;
     let center_offset = point_vector(cylinder_origin, center);
     let axial_offset = center_offset.dot(cylinder_axis);
     let radial_offset = center_offset - cylinder_axis.scale(axial_offset);
-    if 1.0 - axis.dot(plane_normal).abs() > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
-        || 1.0 - axis.dot(cylinder_axis).abs() > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
+    if 1.0 - axis.dot(plane_normal).abs() > EPS_ROLLING_BALL_MATCH
+        || 1.0 - axis.dot(cylinder_axis).abs() > EPS_ROLLING_BALL_MATCH
         || (point_vector(plane_origin, center).dot(plane_normal).abs() - radius).abs() > tolerance
         || radial_offset.norm() > tolerance
         || ((major_radius - cylinder_radius).abs() - radius).abs() > tolerance
@@ -853,7 +855,7 @@ fn linear_spine_points<T>(
     if propagate_resource!(ctx.any_by(points, |pole| {
         let relative = point_vector(origin.get(), point(pole).get());
         let relative = Vector3::new(relative.x / extent, relative.y / extent, relative.z / extent);
-        Ok(axis.as_raw().cross(relative).norm() > EPS_GEOMETRY_LINEAR_NURBS_SPINE_E10)
+        Ok(axis.as_raw().cross(relative).norm() > EPS_SPINE_COLLINEARITY)
     }, "ASM spine collinearity")) {
         return None;
     }
@@ -871,7 +873,7 @@ pub(super) fn rational_four_arc_circle(
     if degree < 2 || curve.periodic() || points.len() != 4 * degree + 1 {
         return None;
     }
-    let knot_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E12
+    let knot_tolerance = EPS_RATIONAL_KNOT_MATCH
         * (curve.knots()[curve.knots().len() - 1] * 0.5 - curve.knots()[0] * 0.5).abs()
         * 2.0;
     let spans = [
@@ -931,7 +933,7 @@ pub(super) fn rational_four_arc_circle(
     ];
     let base_weight = quadratics[0][0][3];
     let weight_scale = base_weight.abs();
-    let weight_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10 * weight_scale;
+    let weight_tolerance = EPS_RATIONAL_CIRCLE_MATCH * weight_scale;
     if !base_weight.is_finite()
         || base_weight == 0.0
         || quadratics.iter().any(|span| {
@@ -958,7 +960,7 @@ pub(super) fn rational_four_arc_circle(
         .flat_map(|span| span.windows(2))
         .map(|pair| point_distance(pair[0], pair[1]))
         .fold(0.0_f64, f64::max);
-    let tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10 * scale;
+    let tolerance = EPS_RATIONAL_CIRCLE_MATCH * scale;
     if point_distance(quadratic_points[0][0], quadratic_points[3][2]) > tolerance
         || quadratic_points
             .windows(2)
@@ -990,13 +992,13 @@ pub(super) fn rational_four_arc_circle(
         let radial_unit = FiniteVector3::new(radial)?.unit_nonzero()?;
         let next_unit = FiniteVector3::new(next)?.unit_nonzero()?;
         if (radial.norm() - radius).abs() > tolerance
-            || radial_unit.dot(next_unit).abs() > EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10
+            || radial_unit.dot(next_unit).abs() > EPS_RATIONAL_CIRCLE_MATCH
         {
             return None;
         }
         let span_normal = FiniteVector3::new(radial_unit.cross(next_unit))?.unit_nonzero()?;
         if normal.is_some_and(|normal: Vector3| {
-            normal.dot(span_normal) < 1.0 - EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10
+            normal.dot(span_normal) < 1.0 - EPS_RATIONAL_CIRCLE_MATCH
         }) {
             return None;
         }
@@ -1041,7 +1043,7 @@ fn reduce_homogeneous_bezier_to_quadratic(
             for coordinate in 0..4 {
                 let scale = ctx.fold(&control, 0.0_f64, |scale, point| Ok(scale.max(point[coordinate].abs())), "ASM rational reduction scale")?;
                 if (reduced[degree - 1][coordinate] - control[degree][coordinate]).abs()
-                    > EPS_GEOMETRY_REDUCE_HOMOGENEOUS_BEZIER_TO_QUADRATIC_E10 * scale {
+                    > EPS_DEGREE_REDUCTION * scale {
                     return Ok(None);
                 }
             }
@@ -1095,7 +1097,7 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
             continue;
         };
         let tolerance = (last * 0.5 - first * 0.5).abs()
-            * (2.0 * EPS_GEOMETRY_CLAMP_EDGE_RANGES_TO_CARRIER_DOMAINS_E9);
+            * (2.0 * EPS_EDGE_DOMAIN_SNAP);
         if start < *first && *first - start <= tolerance {
             start = *first;
         }
@@ -1327,7 +1329,7 @@ mod sense_tests {
                 offset: 0,
                 len: 0,
             };
-            assert_eq!(record_reversed(&record), expected);
+            assert_eq!(record_reversed(&cadmpeg_test_support::service_decode_context(), &record).unwrap(), expected);
         }
     }
 }
