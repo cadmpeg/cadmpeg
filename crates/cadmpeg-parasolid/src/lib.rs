@@ -47,29 +47,33 @@ pub fn find_schema_token<'a>(
     ctx: &DecodeContext<'_>,
     prologue: &'a [u8],
 ) -> Result<Option<SchemaToken<'a>>, CodecError> {
-    let mut from = 0;
-    while let Some(offset) = next_schema_marker(ctx, prologue, from)? {
-        let body = &prologue[offset + SCHEMA_MARKER.len()..];
-        let body_len = ctx
-            .position_by(
-                body,
-                |byte| Ok(!is_token_byte(*byte)),
-                "Parasolid schema token extent",
-            )?
-            .unwrap_or(body.len());
-        // The extent search proved every byte a token byte, so the token is
-        // complete exactly when it has a byte after the marker.
-        if body_len > 0 {
-            let end = offset + SCHEMA_MARKER.len() + body_len;
-            if let Ok(value) =
-                ctx.validate_utf8(&prologue[offset..end], "Parasolid schema token UTF-8")?
-            {
-                return Ok(Some(SchemaToken { value, offset }));
+    ctx.find_map(
+        prologue.windows(SCHEMA_MARKER.len()).enumerate(),
+        |(offset, window)| {
+            if window != SCHEMA_MARKER {
+                return Ok(None);
             }
-        }
-        from = offset + 1;
-    }
-    Ok(None)
+            let body = &prologue[offset + SCHEMA_MARKER.len()..];
+            let body_len = ctx
+                .position_by(
+                    body,
+                    |byte| Ok(!is_token_byte(*byte)),
+                    "Parasolid schema token extent",
+                )?
+                .unwrap_or(body.len());
+            // The extent search proved every byte a token byte, so the token
+            // is complete exactly when it has a byte after the marker.
+            if body_len == 0 {
+                return Ok(None);
+            }
+            let end = offset + SCHEMA_MARKER.len() + body_len;
+            Ok(ctx
+                .validate_utf8(&prologue[offset..end], "Parasolid schema token UTF-8")?
+                .ok()
+                .map(|value| SchemaToken { value, offset }))
+        },
+        "Parasolid schema marker search",
+    )
 }
 
 /// Find a complete schema token whose byte length immediately precedes it.
@@ -78,41 +82,23 @@ pub fn find_u8_length_prefixed_schema_token<'a>(
     ctx: &DecodeContext<'_>,
     prologue: &'a [u8],
 ) -> Result<Option<SchemaToken<'a>>, CodecError> {
-    let mut from = 0;
-    while let Some(offset) = next_schema_marker(ctx, prologue, from)? {
-        from = offset + 1;
-        let Some(prefix) = offset.checked_sub(1).and_then(|index| prologue.get(index)) else {
-            continue;
-        };
-        let end = offset + usize::from(*prefix);
-        if let Some(token) = schema_token(ctx, prologue, offset, end)? {
-            return Ok(Some(token));
-        }
-    }
-    Ok(None)
+    ctx.find_map(
+        prologue.windows(SCHEMA_MARKER.len()).enumerate(),
+        |(offset, window)| {
+            if window != SCHEMA_MARKER {
+                return Ok(None);
+            }
+            let Some(prefix) = offset.checked_sub(1).and_then(|index| prologue.get(index)) else {
+                return Ok(None);
+            };
+            schema_token(ctx, prologue, offset, offset + usize::from(*prefix))
+        },
+        "Parasolid prefixed schema marker search",
+    )
 }
 
 /// The fixed four-byte marker that opens every schema token.
 const SCHEMA_MARKER: &[u8; 4] = b"SCH_";
-
-/// Offset of the first schema marker at or after `from`. Each window the
-/// search visits is charged as it is visited.
-fn next_schema_marker(
-    ctx: &DecodeContext<'_>,
-    prologue: &[u8],
-    from: usize,
-) -> Result<Option<usize>, CodecError> {
-    let Some(rest) = prologue.get(from..) else {
-        return Ok(None);
-    };
-    Ok(ctx
-        .position_by(
-            rest.windows(SCHEMA_MARKER.len()),
-            |window| Ok(window == SCHEMA_MARKER),
-            "Parasolid schema marker search",
-        )?
-        .map(|found| from + found))
-}
 
 const fn is_token_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
@@ -420,19 +406,15 @@ pub fn unverified_message(
         return Ok(None);
     }
 
-    let schema = ctx
-        .get_btree_map(
-            matched.declared(),
-            DECLARED_SCHEMA,
-            "Parasolid schema declaration lookup",
-        )?
+    // A Parasolid match declares exactly the schema and carrier keys
+    // `classify_layer` inserts, so each lookup compares fixed keys.
+    let schema = matched
+        .declared()
+        .get(DECLARED_SCHEMA)
         .map_or("<unrecorded>", String::as_str);
-    let carrier = ctx
-        .get_btree_map(
-            matched.declared(),
-            DECLARED_CARRIER,
-            "Parasolid carrier declaration lookup",
-        )?
+    let carrier = matched
+        .declared()
+        .get(DECLARED_CARRIER)
         .map_or("<unrecorded>", String::as_str);
     if matched.dialect() == &PARASOLID_UNKNOWN {
         return Ok(Some(ctx.format_retained(
