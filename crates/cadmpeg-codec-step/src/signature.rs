@@ -21,7 +21,7 @@ pub(crate) fn decode_payload(
             at += 1;
             continue;
         }
-        if let Some(end) = crate::lex::print_control_end(input, at) {
+        if let Some(end) = crate::lex::print_control_end(ctx, input, at)? {
             if end <= payload.end {
                 at = end;
                 continue;
