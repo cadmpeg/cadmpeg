@@ -74,6 +74,7 @@
 //! assert_eq!(Angle::from_assigned_real(value).get(), -2.5);
 //! ```
 
+use cadmpeg_core::decode::cost::DecodeCost;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -184,11 +185,6 @@ impl From<UnitBinary32> for f32 {
 #[serde(try_from = "i64", into = "i64")]
 pub struct PositiveI64(i64);
 
-decode_cost_record!(
-    [] PositiveI64;
-    Self(field_0) => [field_0: i64]
-);
-
 impl PositiveI64 {
     /// Admit a positive signed 64-bit integer.
     pub const fn new(value: i64) -> Option<Self> {
@@ -226,7 +222,6 @@ macro_rules! checked_scalar {
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
         pub struct $name(f64);
-        decode_cost_record!([] $name; Self(field_0) => [field_0: f64]);
         rewrite_scalar!($name);
 
         impl $name {
@@ -264,49 +259,77 @@ macro_rules! checked_scalar {
     };
 }
 
+macro_rules! scalar_decode_cost {
+    ($($scalar:ty),+ $(,)?) => {
+        $(
+            impl DecodeCost for $scalar {
+                const FIXED_BYTES: Option<u64> = <f64 as DecodeCost>::FIXED_BYTES;
+
+                fn decode_cost(
+                    &self,
+                    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                    operation: &'static str,
+                ) -> Result<u64, cadmpeg_core::CodecError> {
+                    self.get().decode_cost(ctx, operation)
+                }
+            }
+        )+
+    };
+}
+
 checked_scalar!(
     /// A finite length in canonical millimeters.
     Length, value, true, "Length must be finite"
 );
+scalar_decode_cost!(Length);
 checked_scalar!(
     /// A finite signed angle in canonical radians.
     #[derive(Default)]
     Angle, value, true, "Angle must be finite"
 );
+scalar_decode_cost!(Angle);
 checked_scalar!(
     /// A positive finite length in canonical millimeters.
     PositiveLength, value, value > 0.0, "PositiveLength must be positive and finite"
 );
+scalar_decode_cost!(PositiveLength);
 checked_scalar!(
     /// A finite nonzero signed length in canonical millimeters.
     NonZeroLength, value, value != 0.0, "NonZeroLength must be finite and nonzero"
 );
+scalar_decode_cost!(NonZeroLength);
 checked_scalar!(
     /// A nonnegative finite length in canonical millimeters.
     NonNegativeLength, value, value >= 0.0, "NonNegativeLength must be nonnegative and finite"
 );
+scalar_decode_cost!(NonNegativeLength);
 checked_scalar!(
     /// A finite angle strictly between negative and positive half-pi radians.
     SlopeAngle, value, value.abs() < std::f64::consts::FRAC_PI_2,
     "SlopeAngle must be finite and strictly between -pi/2 and pi/2"
 );
+scalar_decode_cost!(SlopeAngle);
 checked_scalar!(
     /// A finite angle strictly between zero and pi radians.
     InteriorAngle, value, value > 0.0 && value < std::f64::consts::PI,
     "InteriorAngle must be finite and strictly between zero and pi"
 );
+scalar_decode_cost!(InteriorAngle);
 checked_scalar!(
     /// A positive finite angle in canonical radians.
     PositiveAngle, value, value > 0.0, "PositiveAngle must be positive and finite"
 );
+scalar_decode_cost!(PositiveAngle);
 checked_scalar!(
     /// A finite nonzero signed angle in canonical radians.
     NonZeroAngle, value, value != 0.0, "NonZeroAngle must be finite and nonzero"
 );
+scalar_decode_cost!(NonZeroAngle);
 checked_scalar!(
     /// A finite dimensionless scalar.
     FiniteReal, value, true, "FiniteReal must be finite"
 );
+scalar_decode_cost!(FiniteReal);
 
 impl FiniteReal {
     /// Negative one in a finite scalar lane.
@@ -316,19 +339,23 @@ checked_scalar!(
     /// A positive finite dimensionless scalar.
     PositiveReal, value, value > 0.0, "PositiveReal must be positive and finite"
 );
+scalar_decode_cost!(PositiveReal);
 checked_scalar!(
     /// A nonnegative finite dimensionless scalar.
     NonNegativeReal, value, value >= 0.0, "NonNegativeReal must be nonnegative and finite"
 );
+scalar_decode_cost!(NonNegativeReal);
 
 checked_scalar!(
     /// A finite nonzero signed dimensionless scalar.
     NonZeroReal, value, value != 0.0, "NonZeroReal must be finite and nonzero"
 );
+scalar_decode_cost!(NonZeroReal);
 checked_scalar!(
     /// A finite fraction in the closed interval from zero to one.
     Fraction, value, value >= 0.0 && value <= 1.0, "Fraction must be between zero and one"
 );
+scalar_decode_cost!(Fraction);
 checked_scalar!(
     /// A finite dimensionless scale of at least one. The product of a nonzero
     /// value and this scale has a magnitude not below the value's, so it is

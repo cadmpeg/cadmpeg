@@ -36,7 +36,7 @@ pub(crate) fn classify(
     if let Some(header) = acis_header::parse(ctx, prefix)? {
         return Ok(Some(StreamKind::AcisBinary(header)));
     }
-    if looks_like_text_stream(prefix) {
+    if looks_like_text_stream(ctx, prefix)? {
         return Ok(Some(StreamKind::Text));
     }
     Ok(None)
@@ -44,35 +44,45 @@ pub(crate) fn classify(
 
 /// Whether the prefix opens like a text stream: a first line of four ASCII
 /// integer fields (the four header words) followed by a counted-string line.
-fn looks_like_text_stream(prefix: &[u8]) -> bool {
+fn looks_like_text_stream(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<bool, CodecError> {
     if !sat::has_text_magic(prefix) {
-        return false;
+        return Ok(false);
     }
-    let Some(line_end) = prefix.iter().position(|byte| *byte == b'\n') else {
-        return false;
+    let Some(line_end) = ctx.admit_iter(prefix, "SAT text header line")?
+        .position(|byte| *byte == b'\n') else {
+        return Ok(false);
     };
     let mut fields = prefix[..line_end]
         .split(|byte| matches!(byte, b' ' | b'\t' | b'\r'))
         .filter(|field| !field.is_empty());
     for _ in 0..4 {
         let Some(field) = fields.next() else {
-            return false;
+            return Ok(false);
         };
-        if !std::str::from_utf8(field).is_ok_and(|field| field.parse::<i64>().is_ok()) {
-            return false;
+        let Ok(field) = ctx.validate_utf8(field, "SAT header field UTF-8")? else {
+            return Ok(false);
+        };
+        if ctx.parse_text::<i64>(field, "SAT header integer")?.is_err() {
+            return Ok(false);
         }
     }
-    fields.next().is_none() && prefix.get(line_end + 1).is_some_and(u8::is_ascii_digit)
+    Ok(fields.next().is_none() && prefix.get(line_end + 1).is_some_and(u8::is_ascii_digit))
 }
 
-pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
-    if asm_header::has_asm_magic(prefix) || acis_header::has_acis_magic(prefix) {
+pub(crate) fn confidence(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<Confidence, CodecError> {
+    Ok(if asm_header::has_asm_magic(prefix) || acis_header::has_acis_magic(prefix) {
         Confidence::High
-    } else if looks_like_text_stream(prefix) {
+    } else if looks_like_text_stream(ctx, prefix)? {
         Confidence::Medium
     } else {
         Confidence::No
-    }
+    })
 }
 
 pub(crate) fn header_attributes(
@@ -133,11 +143,12 @@ pub(crate) fn inspect(
             let stream = crate::dialect::record_stream_start(bytes, Family::Asm, header);
             header_attributes(ctx, &header.metadata, Family::Asm, &mut attributes)?;
             if header.metadata.has_history_partition() {
-                notes.push(
+                ctx.push_vec(
+                    &mut notes,
                     "the stream declares a construction-history partition; decode reads \
-                         the solved partition"
-                        .to_string(),
-                );
+                         the solved partition".to_string(),
+                    "collect SAT inspect notes",
+                )?;
             }
             let evidence = StreamEvidence::Binary {
                 family: Family::Asm,
@@ -155,11 +166,12 @@ pub(crate) fn inspect(
             };
             header_attributes(ctx, &header.metadata, Family::Acis, &mut attributes)?;
             if header.metadata.has_history_partition() {
-                notes.push(
+                ctx.push_vec(
+                    &mut notes,
                     "the stream declares a construction-history partition; decode reads \
-                         the solved partition"
-                        .into(),
-                );
+                         the solved partition".to_string(),
+                    "collect SAT inspect notes",
+                )?;
             }
             crate::dialect::layers(ctx, &evidence)?
         }
@@ -169,7 +181,7 @@ pub(crate) fn inspect(
             let parsed = match sat::parse(ctx, bytes) {
                 Ok(stream) => Ok((stream.header.as_kernel_header(ctx)?, stream)),
                 Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
-                    return Err(error.into());
+                    return Err(CodecError::ResourceLimit(error));
                 }
                 Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
                     return Err(error.into_codec_error());
@@ -219,7 +231,10 @@ pub(crate) fn inspect(
                     })
                 }
                 Err(error) => {
-                    notes.push(format!("text stream does not parse: {error}"));
+                    let note = ctx.format_retained(
+                        format_args!("text stream does not parse: {error}"), "SAT inspect parse note",
+                    )?;
+                    ctx.push_vec(&mut notes, note, "collect SAT inspect notes")?;
                     None
                 }
             };
@@ -237,7 +252,7 @@ pub(crate) fn inspect(
                 cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
                     CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
                 }
-                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
+                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
             })?,
         cadmpeg_ir::ContainerKind::Stream,
         vec![ContainerEntry {

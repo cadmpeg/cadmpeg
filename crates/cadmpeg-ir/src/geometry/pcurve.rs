@@ -12,6 +12,7 @@ use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use crate::topology::ParameterInterval;
 use crate::transform::Transform2;
 use crate::units::{FinitePoint2, FiniteVector, NonzeroPoint2};
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
@@ -40,11 +41,6 @@ pub struct WeightedPole2<P = Point2> {
     pub weight: NonZeroReal,
 }
 
-decode_cost_record!(
-    [P: cadmpeg_core::decode::cost::DecodeCost] WeightedPole2<P>;
-    Self { point, weight } => [point:  P, weight:  NonZeroReal]
-);
-
 /// The poles of a parameter-space NURBS curve.
 // A source states raw positions; a `PcurveNurbs` holds the admitted poles,
 // whose positions are `FinitePoint2` values.
@@ -64,12 +60,6 @@ pub enum PcurveNurbsPoles<P = Point2> {
         points: Vec<WeightedPole2<P>>,
     },
 }
-
-decode_cost_enum!(
-    [P: cadmpeg_core::decode::cost::DecodeCost] PcurveNurbsPoles<P>;
-    Self::Polynomial { points } => [points],
-    Self::Rational { points } => [points],
-);
 
 impl PcurveNurbsPoles {
     /// Edit every pole position, keeping the prior positions on a refusal.
@@ -306,11 +296,6 @@ pub struct LinePcurve {
     direction: NonzeroPoint2,
 }
 
-decode_cost_record!(
-    [] LinePcurve;
-    Self { origin, direction } => [origin:  FinitePoint2, direction:  NonzeroPoint2]
-);
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -377,11 +362,6 @@ pub struct PolarHarmonicPcurve {
     axial_cos: FiniteReal,
     axial_sin: FiniteReal,
 }
-
-decode_cost_record!(
-    [] PolarHarmonicPcurve;
-    Self { radial_center, radial_cos, radial_sin, axial_origin, axial_cos, axial_sin } => [radial_center:  FinitePoint2, radial_cos:  FinitePoint2, radial_sin:  FinitePoint2, axial_origin:  FiniteReal, axial_cos:  FiniteReal, axial_sin:  FiniteReal]
-);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -498,11 +478,6 @@ pub struct SphericalGreatCirclePcurve {
     plane_slope: FiniteReal,
 }
 
-decode_cost_record!(
-    [] SphericalGreatCirclePcurve;
-    Self { azimuth_origin, azimuth_rate, plane_phase, plane_slope } => [azimuth_origin:  FiniteReal, azimuth_rate:  FiniteReal, plane_phase:  FiniteReal, plane_slope:  FiniteReal]
-);
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -608,11 +583,6 @@ pub struct CirclePcurve {
     y_axis: FinitePoint2,
     radius: PositiveReal,
 }
-
-decode_cost_record!(
-    [] CirclePcurve;
-    Self { center, x_axis, y_axis, radius } => [center:  FinitePoint2, x_axis:  FinitePoint2, y_axis:  FinitePoint2, radius:  PositiveReal]
-);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -727,11 +697,6 @@ pub struct EllipsePcurve {
     major_radius: PositiveReal,
     minor_radius: PositiveReal,
 }
-
-decode_cost_record!(
-    [] EllipsePcurve;
-    Self { center, x_axis, y_axis, major_radius, minor_radius } => [center:  FinitePoint2, x_axis:  FinitePoint2, y_axis:  FinitePoint2, major_radius:  PositiveReal, minor_radius:  PositiveReal]
-);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -879,11 +844,6 @@ pub struct HarmonicPcurve {
     sine: FinitePoint2,
 }
 
-decode_cost_record!(
-    [] HarmonicPcurve;
-    Self { center, cosine, sine } => [center:  FinitePoint2, cosine:  FinitePoint2, sine:  FinitePoint2]
-);
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -948,11 +908,6 @@ pub struct ParabolaPcurve {
     y_axis: FinitePoint2,
     focal_distance: PositiveReal,
 }
-
-decode_cost_record!(
-    [] ParabolaPcurve;
-    Self { vertex, x_axis, y_axis, focal_distance } => [vertex:  FinitePoint2, x_axis:  FinitePoint2, y_axis:  FinitePoint2, focal_distance:  PositiveReal]
-);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1065,11 +1020,6 @@ pub struct HyperbolaPcurve {
     major_radius: PositiveReal,
     minor_radius: PositiveReal,
 }
-
-decode_cost_record!(
-    [] HyperbolaPcurve;
-    Self { center, x_axis, y_axis, major_radius, minor_radius } => [center:  FinitePoint2, x_axis:  FinitePoint2, y_axis:  FinitePoint2, major_radius:  PositiveReal, minor_radius:  PositiveReal]
-);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1217,11 +1167,6 @@ pub struct HyperbolicPcurve {
     sine: FinitePoint2,
 }
 
-decode_cost_record!(
-    [] HyperbolicPcurve;
-    Self { center, cosine, sine } => [center:  FinitePoint2, cosine:  FinitePoint2, sine:  FinitePoint2]
-);
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1302,11 +1247,6 @@ pub struct TrimmedPcurve {
     #[serde(skip)]
     depth: usize,
 }
-
-decode_cost_record!(
-    [] TrimmedPcurve, depth cadmpeg_core::decode::DepthGuard<'_>;
-    Self { parameter_range, same_sense, basis, depth } => [parameter_range:  ParameterInterval, same_sense:  bool, basis:  Box<PcurveGeometry>, depth:  usize]
-);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1389,11 +1329,6 @@ pub struct OffsetPcurve {
     #[serde(skip)]
     depth: usize,
 }
-
-decode_cost_record!(
-    [] OffsetPcurve, depth cadmpeg_core::decode::DepthGuard<'_>;
-    Self { distance, basis, depth } => [distance:  FiniteReal, basis:  Box<PcurveGeometry>, depth:  usize]
-);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1491,24 +1426,6 @@ pub enum PcurveGeometry {
     Offset(OffsetPcurve),
 }
 
-decode_cost_enum!(
-    [] PcurveGeometry, depth cadmpeg_core::decode::DepthGuard<'_>;
-    Self::Line(field_0) => [field_0],
-    Self::PolarHarmonic(field_0) => [field_0],
-    Self::PolarNurbs { nurbs } => [nurbs],
-    Self::SphericalGreatCircle(field_0) => [field_0],
-    Self::Circle(field_0) => [field_0],
-    Self::Ellipse(field_0) => [field_0],
-    Self::Harmonic(field_0) => [field_0],
-    Self::Parabola(field_0) => [field_0],
-    Self::Hyperbola(field_0) => [field_0],
-    Self::Hyperbolic(field_0) => [field_0],
-    Self::Nurbs { nurbs } => [nurbs],
-    Self::Transformed(field_0) => [field_0],
-    Self::Trimmed(field_0) => [field_0],
-    Self::Offset(field_0) => [field_0],
-);
-
 /// One paired radial and axial pole of a polar parameter-space NURBS.
 // A source states raw values; a `PolarPcurveNurbs` holds the admitted row,
 // whose radial pole is a `FinitePoint2` and whose axial pole is a
@@ -1523,11 +1440,6 @@ pub struct PolarNurbsPole<P = Point2, S = f64> {
     pub axial: S,
 }
 
-decode_cost_record!(
-    [P: cadmpeg_core::decode::cost::DecodeCost, S: cadmpeg_core::decode::cost::DecodeCost] PolarNurbsPole<P, S>;
-    Self { radial, axial } => [radial:  P, axial:  S]
-);
-
 /// Checked polar parameter-space NURBS payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolarPcurveNurbs {
@@ -1536,11 +1448,6 @@ pub struct PolarPcurveNurbs {
     poles: PolarNurbsPoles<FinitePoint2, FiniteReal>,
     periodic: bool,
 }
-
-decode_cost_record!(
-    [] PolarPcurveNurbs;
-    Self { degree, knots, poles, periodic } => [degree:  u32, knots:  KnotVector, poles:  PolarNurbsPoles<FinitePoint2, FiniteReal>, periodic:  bool]
-);
 
 /// One rational polar pole: its radial and axial halves and its weight.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -1554,11 +1461,6 @@ pub struct WeightedPolarNurbsPole<P = Point2, S = f64> {
     /// Rational weight at this pole.
     pub weight: NonZeroReal,
 }
-
-decode_cost_record!(
-    [P: cadmpeg_core::decode::cost::DecodeCost, S: cadmpeg_core::decode::cost::DecodeCost] WeightedPolarNurbsPole<P, S>;
-    Self { radial, axial, weight } => [radial:  P, axial:  S, weight:  NonZeroReal]
-);
 
 /// The poles of a polar parameter-space NURBS curve.
 // A source states raw values; a `PolarPcurveNurbs` holds the admitted poles.
@@ -1578,12 +1480,6 @@ pub enum PolarNurbsPoles<P = Point2, S = f64> {
         poles: Vec<WeightedPolarNurbsPole<P, S>>,
     },
 }
-
-decode_cost_enum!(
-    [P: cadmpeg_core::decode::cost::DecodeCost, S: cadmpeg_core::decode::cost::DecodeCost] PolarNurbsPoles<P, S>;
-    Self::Polynomial { poles } => [poles],
-    Self::Rational { poles } => [poles],
-);
 
 impl PolarNurbsPoles<FinitePoint2, FiniteReal> {
     /// The poles with raw radial and axial values, for a reader that writes
@@ -1930,10 +1826,70 @@ pub struct PcurveNurbs {
     periodic: bool,
 }
 
-decode_cost_record!(
-    [] PcurveNurbs;
-    Self { degree, knots, poles, periodic } => [degree:  u32, knots:  KnotVector, poles:  PcurveNurbsPoles<FinitePoint2>, periodic:  bool]
-);
+fn pcurve_cost_sum(
+    ctx: &DecodeContext<'_>,
+    left: u64,
+    right: u64,
+    operation: &'static str,
+) -> Result<u64, CodecError> {
+    left.checked_add(right)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+}
+
+impl DecodeCost for WeightedPole2<FinitePoint2> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (self.point.get(), self.weight.get()).decode_cost(ctx, operation)
+    }
+}
+
+impl DecodeCost for PcurveNurbsPoles<FinitePoint2> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Polynomial { points } => {
+                let mut bytes = 1_u64;
+                for point in ctx.admit_iter(points, operation)? {
+                    bytes = pcurve_cost_sum(
+                        ctx,
+                        bytes,
+                        point.get().decode_cost(ctx, operation)?,
+                        operation,
+                    )?;
+                }
+                Ok(bytes)
+            }
+            Self::Rational { points } => {
+                let mut bytes = 1_u64;
+                for pole in ctx.admit_iter(points, operation)? {
+                    bytes =
+                        pcurve_cost_sum(ctx, bytes, pole.decode_cost(ctx, operation)?, operation)?;
+                }
+                Ok(bytes)
+            }
+        }
+    }
+}
+
+impl DecodeCost for PcurveNurbs {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (
+            self.degree,
+            (self.knots.as_slice(), (&self.poles, self.periodic)),
+        )
+            .decode_cost(ctx, operation)
+    }
+}
 
 impl PcurveNurbs {
     /// Copy the admitted knot and pole lanes through the decode budget.
@@ -2345,11 +2301,6 @@ pub struct PlacedPcurve {
     depth: usize,
 }
 
-decode_cost_record!(
-    [] PlacedPcurve, depth cadmpeg_core::decode::DepthGuard<'_>;
-    Self { basis, transform, depth } => [basis:  Box<PcurveGeometry>, transform:  Transform2, depth:  usize]
-);
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -2589,11 +2540,6 @@ pub struct Pcurve {
     pub metadata: PcurveMetadata,
 }
 
-decode_cost_record!(
-    [] Pcurve;
-    Self { id, geometry, metadata } => [id:  PcurveId, geometry:  PcurveGeometry, metadata:  PcurveMetadata]
-);
-
 impl Pcurve {
     /// Native wrapper reversal, when the source stores one.
     pub fn wrapper_reversed(&self) -> Option<bool> {
@@ -2633,12 +2579,6 @@ pub enum PcurveMetadata {
         form: PcurveGeneralForm,
     },
 }
-
-decode_cost_enum!(
-    [] PcurveMetadata;
-    Self::AsmInline { form } => [form],
-    Self::General { form } => [form],
-);
 
 impl Default for PcurveMetadata {
     fn default() -> Self {
@@ -2723,11 +2663,6 @@ pub struct PcurveInlineForm {
     parameter_range: FiniteVector<2>,
     fit_tolerance: FitTolerance,
 }
-
-decode_cost_record!(
-    [] PcurveInlineForm;
-    Self { wrapper_reversed, native_tail_flags, parameter_range, fit_tolerance } => [wrapper_reversed:  bool, native_tail_flags:  [bool; 4], parameter_range:  FiniteVector<2>, fit_tolerance:  FitTolerance]
-);
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -2828,11 +2763,6 @@ pub struct PcurveGeneralForm {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     fit_tolerance: Option<FitTolerance>,
 }
-
-decode_cost_record!(
-    [] PcurveGeneralForm;
-    Self { wrapper_reversed, parameter_range, fit_tolerance } => [wrapper_reversed:  Option<bool>, parameter_range:  Option<FiniteVector<2>>, fit_tolerance:  Option<FitTolerance>]
-);
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

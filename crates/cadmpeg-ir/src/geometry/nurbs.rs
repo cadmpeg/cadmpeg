@@ -38,11 +38,6 @@ fn copy_decode_grid<T: Copy>(
 #[serde(transparent)]
 pub struct KnotVector(Vec<f64>);
 
-decode_cost_record!(
-    [] KnotVector;
-    Self(field_0) => [field_0: Vec<f64>]
-);
-
 impl KnotVector {
     /// Admit finite non-decreasing knot values.
     ///
@@ -227,11 +222,6 @@ pub struct WeightedPole3<P = Point3> {
     pub weight: NonZeroReal,
 }
 
-decode_cost_record!(
-    [P: cadmpeg_core::decode::cost::DecodeCost] WeightedPole3<P>;
-    Self { point, weight } => [point:  P, weight:  NonZeroReal]
-);
-
 /// The poles of a NURBS curve, stating the curve's rational form.
 ///
 /// A rational pole carries its weight in its own row, so a weight list that
@@ -255,12 +245,6 @@ pub enum NurbsPoles3<P = Point3> {
         points: Vec<WeightedPole3<P>>,
     },
 }
-
-decode_cost_enum!(
-    [P: cadmpeg_core::decode::cost::DecodeCost] NurbsPoles3<P>;
-    Self::Polynomial { points } => [points],
-    Self::Rational { points } => [points],
-);
 
 /// A pole value a producer hands a NURBS store: a raw value, which the store
 /// admits in its own refusal order, or an admitted value, which it keeps.
@@ -659,12 +643,6 @@ pub enum NurbsPoleGrid<P = Point3> {
     },
 }
 
-decode_cost_enum!(
-    [P: cadmpeg_core::decode::cost::DecodeCost] NurbsPoleGrid<P>;
-    Self::Polynomial { rows } => [rows],
-    Self::Rational { rows } => [rows],
-);
-
 pub(crate) fn pair_curve_lanes<P, W, S: NurbsAdmission>(
     admission: &S,
     points: Vec<P>,
@@ -899,11 +877,6 @@ pub struct NurbsSurface {
     /// Whether the surface is periodic in v.
     v_periodic: bool,
 }
-
-decode_cost_record!(
-    [] NurbsSurface;
-    Self { u_degree, v_degree, u_knots, v_knots, poles, normal_reversed, u_periodic, v_periodic } => [u_degree:  u32, v_degree:  u32, u_knots:  KnotVector, v_knots:  KnotVector, poles:  NurbsPoleGrid<FinitePoint3>, normal_reversed:  bool, u_periodic:  bool, v_periodic:  bool]
-);
 
 /// Polynomial tensor-product B-spline surface with a rectangular control grid.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1777,11 +1750,6 @@ pub struct NurbsCurve {
     /// Whether the curve is periodic.
     periodic: bool,
 }
-
-decode_cost_record!(
-    [] NurbsCurve;
-    Self { degree, knots, poles, periodic } => [degree:  u32, knots:  KnotVector, poles:  NurbsPoles3<FinitePoint3>, periodic:  bool]
-);
 
 impl NurbsCurve {
     /// Copy the admitted lanes through the decode collection budget.

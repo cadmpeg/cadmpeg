@@ -72,11 +72,6 @@ pub struct PolygonalSurface {
     chordal_deflection: NonNegativeReal,
 }
 
-decode_cost_record!(
-    [] PolygonalSurface;
-    Self { vertices, triangles, chordal_deflection } => [vertices:  Vec<FinitePoint3>, triangles:  Vec<[u32; 3]>, chordal_deflection:  NonNegativeReal]
-);
-
 impl PolygonalSurface {
     /// Admitted polygon vertices in source order.
     pub fn vertices(&self) -> &[FinitePoint3] {
@@ -258,11 +253,6 @@ pub struct PolylineVertex<R = f64, P = Point3> {
     pub point: P,
 }
 
-decode_cost_record!(
-    [R: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] PolylineVertex<R, P>;
-    Self { parameter, point } => [parameter:  R, point:  P]
-);
-
 /// The samples of a polyline, with or without source parameters.
 ///
 /// A parameterized polyline carries one parameter per sample in the sample
@@ -285,12 +275,6 @@ pub enum PolylineSamples<R = f64, P = Point3> {
     },
 }
 
-decode_cost_enum!(
-    [R: cadmpeg_core::decode::cost::DecodeCost, P: cadmpeg_core::decode::cost::DecodeCost] PolylineSamples<R, P>;
-    Self::Unparameterized { points } => [points],
-    Self::Parameterized { vertices } => [vertices],
-);
-
 /// Source-native polyline with an explicit chordal error bound.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -300,11 +284,6 @@ pub struct PolylineCurve {
     samples: PolylineSamples<FiniteReal, FinitePoint3>,
     chordal_deflection: NonNegativeReal,
 }
-
-decode_cost_record!(
-    [] PolylineCurve;
-    Self { samples, chordal_deflection } => [samples:  PolylineSamples<FiniteReal, FinitePoint3>, chordal_deflection:  NonNegativeReal]
-);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
