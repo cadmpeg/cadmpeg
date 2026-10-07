@@ -278,34 +278,5 @@ pub(super) fn assert_repeated_triangle_work_refusal(operation: &'static str) {
         "each candidate omits a face that contains a matched edge interior"
     );
 
-    let mut cap = 0;
-    for _ in 0..8192 {
-        let (refusal, need) =
-            crate::test_support::with_work_limit(cap, |ctx| match repeated_triangle_fixture(ctx) {
-                Err(CodecError::ResourceLimit(refusal)) => {
-                    assert_eq!(
-                        refusal.dimension,
-                        cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    );
-                    assert_eq!(ctx.resource_refusal(), Some(refusal));
-                    let need = refusal
-                        .used
-                        .checked_add(refusal.additional)
-                        .expect("resource need fits");
-                    assert!(need > cap, "{operation}: {refusal:?}");
-                    (refusal, need)
-                }
-                Err(error) => panic!("unexpected refusal before {operation}: {error:?}"),
-                Ok(_) => panic!("repeated-domain input did not reach {operation}"),
-            });
-        if refusal.operation == operation {
-            assert_eq!(
-                refusal.dimension,
-                cadmpeg_core::decode::ResourceDimension::WorkUnits
-            );
-            return;
-        }
-        cap = need;
-    }
-    panic!("resource route exceeds the boundary count: {operation}");
+    super::residual_admission::walk_to_work_refusal(operation, repeated_triangle_fixture);
 }
