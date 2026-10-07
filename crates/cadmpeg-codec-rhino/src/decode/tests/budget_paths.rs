@@ -50,14 +50,14 @@ fn brep_c2_cache_lookup_preserves_work_refusal() {
 }
 
 #[test]
-fn brep_c2_cache_leaves_retention_for_output_poles() {
+fn brep_c2_cache_leaves_retention_for_output_knots() {
     let (data, raw) = source_shaped_plane_brep();
     let brep = with_expand_bytes(&data, |expand| {
         crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)
     }).expect("validate Brep");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "Rhino Brep pcurve poles", |cap| {
+        "Rhino Brep pcurve knots", |cap| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
@@ -94,4 +94,83 @@ fn indexed_instance_dispatch_visits_only_selected_source() {
         });
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "Rhino object dispatch" && limit.additional == 1));
+}
+
+#[test]
+fn instance_curve_cache_moves_without_retained_copy() {
+    let fixture_ctx = cadmpeg_test_support::service_decode_context();
+    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &fixture_ctx, 1, (0..1002_u32).map(f64::from).collect::<Vec<_>>(),
+        (0..1000_u32).map(|index| cadmpeg_ir::math::Point3::new(f64::from(index), 0.0, 0.0)).collect::<Vec<_>>(),
+        None, false,
+    ).expect("fixture budget").expect("valid curve");
+    let scan = scan_with_objects(&[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4096;
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+        .expect("empty root");
+    let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))
+        .expect("transaction");
+    let checkpoint = cadmpeg_ir::draft::ModelCheckpoint::capture(&transaction.session.document().model, &ctx)
+        .expect("checkpoint");
+    transaction.session.document_mut().expect("fixture document").model.curves.push(cadmpeg_ir::geometry::Curve {
+        id: "rhino:object:curve#cache".try_into().expect("identity"),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Procedural {
+            construction: "rhino:object:procedural-curve#cache".try_into().expect("identity"),
+            cache: Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(curve)),
+        },
+        source_object: None,
+    });
+    let mut scratch = ctx.reserve_scoped(0, "instance cache move fixture").expect("scratch");
+    let links = transaction.transform_new_entities(&checkpoint.0, cadmpeg_ir::transform::Transform::identity(), &mut scratch)
+        .expect("move the cache and transform it within the retained limit");
+    assert_eq!(links.len(), 1);
+    let geometry = &transaction.session.document().model.curves[0].geometry;
+    let cadmpeg_ir::geometry::CurveGeometry::Solved(cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(moved)) = geometry else {
+        panic!("instance carrier keeps the solved NURBS cache");
+    };
+    assert_eq!(moved.pole_count(), 1000);
+    let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } = moved.pole_rows() else {
+        panic!("fixture has polynomial poles");
+    };
+    assert_eq!(points.first().expect("first pole").get(), cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(points.last().expect("last pole").get(), cadmpeg_ir::math::Point3::new(999.0, 0.0, 0.0));
+}
+
+#[test]
+fn object_key_copy_refuses_scratch_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, [0; 16])]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino object key copy",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+            let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
+            transaction.checked_object_key(scan.objects[0].identity().expect("framed identity"), 0)
+                .map(|key| key.is_some())
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "Rhino object key copy"
+            && limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn duplicate_instance_member_stops_before_unused_unique_keys() {
+    let member = crate::wire::Uuid::nil();
+    let other = crate::wire::Uuid::from_canonical([1; 16]);
+    let last = crate::wire::Uuid::from_canonical([2; 16]);
+    let members = [member, member, other, last];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // The first key consumes one collection item; the duplicate consumes none.
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(!super::super::instance_members_are_unique(&ctx, &members)
+        .expect("unused suffix keys need no allocation"));
 }
