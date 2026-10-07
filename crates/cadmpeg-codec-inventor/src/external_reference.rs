@@ -24,13 +24,6 @@ pub(crate) enum UfrxState<'a> {
     },
 }
 
-impl<'a> UfrxState<'a> {
-    fn parsed(ctx: &DecodeContext<'_>, document: UfrxDocument<'a>) -> Result<Self, CodecError> {
-        ctx.charge_collection_items(1, "admit UFRxDoc parsed document")?;
-        Ok(Self::Parsed(Box::new(document)))
-    }
-}
-
 #[derive(Debug)]
 pub(crate) struct UfrxDocument<'a> {
     pub(crate) stream: CompoundStreamId,
@@ -129,7 +122,7 @@ pub(crate) fn parse<'a>(
     let source = snapshot.open(ctx, stream)?;
     Ok(
         match parse_stream(ctx, source, stream.id(), document_kind) {
-            Ok(document) => UfrxState::parsed(ctx, document)?,
+            Ok(document) => UfrxState::Parsed(Box::new(document)),
             Err(CodecError::NotImplemented(detail)) => {
                 let (schema, section_versions) = parse_schema_table(ctx, source)?;
                 UfrxState::Unsupported {
@@ -1063,31 +1056,23 @@ mod tests {
     }
 
     #[test]
-    fn parsed_document_box_refuses_collection_limit_before_allocation() {
+    fn parsed_document_box_uses_no_collection_slot() {
         let (bytes, _) = fixture(11);
         let arena = DecodeArena::new();
-        let (setup, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("fixture context");
-        let document = parse_stream(&setup, root, stream_id(), &DocumentKind::Assembly)
-            .expect("fixture document parses");
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (limited, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+        // The 23 section versions, one reference and one occurrence use 25
+        // slots. The fixed document box adds no collection slot.
+        policy.limits.max_collection_items = 25;
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("fixture context");
+        let document = parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly)
+            .expect("fixture document parses within its collection budget");
+        assert!(matches!(UfrxState::Parsed(Box::new(document)), UfrxState::Parsed(_)));
         assert!(matches!(
-            UfrxState::parsed(&limited, document),
+            ctx.charge_collection_items(1, "probe collection slots"),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit UFRxDoc parsed document"
-        ));
-        let document = parse_stream(&setup, root, stream_id(), &DocumentKind::Assembly)
-            .expect("fixture document parses again");
-        let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service context");
-        assert!(matches!(
-            UfrxState::parsed(&service, document).expect("document admitted"),
-            UfrxState::Parsed(_)
+                    && limit.used == 25 && limit.additional == 1
         ));
     }
 
