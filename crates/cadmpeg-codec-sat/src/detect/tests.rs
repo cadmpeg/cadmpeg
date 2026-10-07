@@ -75,6 +75,43 @@ fn detection_is_content_based() {
 }
 
 #[test]
+fn text_header_line_holds_exactly_four_integer_fields_then_a_digit() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    for (bytes, expected) in [
+        (&b"700 0 6 0\n3"[..], true),
+        (b"700 0 6 0\r\n3", true),
+        (b"700 0\t6 0  \n3", true),
+        (b"700 0 6\n3 4", false),
+        (b"700 0 6 0 1\n3", false),
+        (b"700 0 6 0", false),
+        (b"700 0 6 0 ", false),
+        (b"700 0 6 0\n", false),
+        (b"700 0 6 0\nx", false),
+        (b"700 0 x 0\n3", false),
+    ] {
+        assert_eq!(
+            super::looks_like_text_stream(&ctx, bytes).expect("service admission"),
+            expected,
+            "{}",
+            String::from_utf8_lossy(bytes)
+        );
+    }
+}
+
+#[test]
+fn text_header_detection_visits_only_the_first_line() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut bytes = b"700 0 6 0\n3".to_vec();
+    bytes.resize(1 << 20, b'7');
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+    assert!(super::looks_like_text_stream(&ctx, &bytes).expect("the first line fits the budget"));
+}
+
+#[test]
 fn inspect_reports_the_stream_kind_and_header_facts() {
     let summary = SatCodec
         .inspect(
