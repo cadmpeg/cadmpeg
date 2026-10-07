@@ -189,31 +189,35 @@ fn decode_instances_from(
 }
 
 fn validate_entry_name(ctx: &DecodeContext<'_>, name: &str) -> Result<(), CodecError> {
-    if name.is_empty()
-        || name.starts_with('/')
-        || ctx.contains_text(name, "\\", "check Inventor Protein entry name")?
-        || ctx.contains_text(name, "\0", "check Inventor Protein entry name")?
-        || {
-            let mut component = 0_u8;
-            let has_unsafe_component = ctx
-                .admit_iter(name.as_bytes(), "validate Inventor Protein path components")?
-                .any(|byte| {
-                    if *byte == b'/' {
+    // One pass rejects a backslash or NUL byte and any empty, `.` or `..`
+    // component: `component` is 1 or 2 after a leading `.` or `..`, 3 once
+    // the component holds anything else.
+    if name.is_empty() || name.starts_with('/') || {
+        let mut component = 0_u8;
+        let has_unsafe_byte = ctx.any_by(
+            name.as_bytes(),
+            |byte| {
+                Ok(match *byte {
+                    b'\\' | 0 => true,
+                    b'/' => {
                         let invalid = component != 3;
                         component = 0;
                         invalid
-                    } else {
+                    }
+                    byte => {
                         component = match component {
-                            0 if *byte == b'.' => 1,
-                            1 if *byte == b'.' => 2,
+                            0 if byte == b'.' => 1,
+                            1 if byte == b'.' => 2,
                             _ => 3,
                         };
                         false
                     }
-                });
-            has_unsafe_component || component != 3
-        }
-    {
+                })
+            },
+            "validate Inventor Protein entry name",
+        )?;
+        has_unsafe_byte || component != 3
+    } {
         ctx.charge_formatted_retained(
             format_args!("Inventor Protein package has unsafe entry name {name:?}"),
             "retain Inventor unsafe Protein entry diagnostic",
@@ -634,10 +638,10 @@ mod tests {
                 .map(|key_bytes| *key_bytes * archive_map_comparisons)
                 .sum::<usize>(),
         );
-        // Each of the three names is searched twice for a one-byte pattern,
-        // name bytes plus one each, and scanned once for path components.
+        // Each of the three names is scanned once, every byte plus the end
+        // probe.
         let archive_name_validation_work =
-            cadmpeg_core::decode::u64_from_index(3 * archive_name_bytes + 3 * 2);
+            cadmpeg_core::decode::u64_from_index(archive_name_bytes + 3);
         // Calibrate one complete schema load followed by both exact framing
         // and decode calls, using the same catalog as the production path.
         let schema_and_instance_decode_succeeds = |limit| {
