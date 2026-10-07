@@ -698,109 +698,43 @@ fn validate_sketches(
         "validate Inventor PmDc sketch entities",
     )? {
         let token = entity.identity.segment_token.as_str();
-        let (mut references, mut references_storage) =
-            ctx.temporary_vec(0, "collect Inventor PmDc sketch entity references")?;
-        references_storage.with_storage(|| {
-            ctx.push_vec(
-                &mut references,
-                entity.header.next.index(),
-                "collect Inventor PmDc sketch entity references",
-            )?;
-            ctx.push_vec(
-                &mut references,
-                entity.header.context.index(),
-                "collect Inventor PmDc sketch entity references",
-            )?;
-            ctx.push_vec(
-                &mut references,
-                entity.sketch.index(),
-                "collect Inventor PmDc sketch entity references",
-            )
-        })?;
-        let mut add_list = |list: &PmDcReferenceList| -> Result<(), CodecError> {
-            let list_references = list.references();
-            let admitted = ctx.admit_iter(
-                list_references,
-                "resolve Inventor PmDc sketch entity references",
-            )?;
-            for reference in admitted.map(|reference| reference.index()) {
-                references_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut references,
-                        reference,
-                        "collect Inventor PmDc sketch entity references",
-                    )
-                })?;
-            }
-            Ok(())
-        };
-        match &entity.kind {
-            PmDcSketchEntityKind::Point {
-                endpoint_of,
-                center_of,
-                tail,
-                ..
-            } => {
-                add_list(endpoint_of)?;
-                add_list(center_of)?;
-                if let PointTail::Present { associations, .. } = tail {
-                    add_list(associations)?;
-                }
-            }
-            PmDcSketchEntityKind::Line {
-                points, auxiliary, ..
-            } => {
-                add_list(points)?;
-                for list in ctx.admit_iter(
-                    auxiliary,
-                    "visit Inventor PmDc sketch entity auxiliary lists",
-                )? {
-                    add_list(list)?;
-                }
-            }
-            PmDcSketchEntityKind::Circle {
-                points,
-                auxiliary,
-                center,
-                ..
-            }
-            | PmDcSketchEntityKind::Ellipse {
-                points,
-                auxiliary,
-                center,
-                ..
-            } => {
-                add_list(points)?;
-                for list in ctx.admit_iter(
-                    auxiliary,
-                    "visit Inventor PmDc sketch entity auxiliary lists",
-                )? {
-                    add_list(list)?;
-                }
-                references_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut references,
-                        center.index(),
-                        "collect Inventor PmDc sketch entity references",
-                    )
-                })?;
-            }
-        }
         let header_matches = record_is_exact(
             token,
             entity.identity.record_ordinal,
             entity.identity.type_id.as_str(),
-        )? && references_resolve(
-            token,
-            &references[..3],
-            "resolve Inventor PmDc sketch entity header references",
-        )?;
-        let kind_matches = header_matches
-            && references_resolve(
-                token,
-                &references[3..],
+        )? && reference_resolves(token, entity.header.next.index())?
+            && reference_resolves(token, entity.header.context.index())?
+            && reference_resolves(token, entity.sketch.index())?;
+        let list_resolves = |list: &PmDcReferenceList| {
+            ctx.all_by(
+                list.references(),
+                |reference| reference_resolves(token, reference.index()),
                 "resolve Inventor PmDc sketch entity references",
-            )?;
+            )
+        };
+        let kind_matches = header_matches
+            && match &entity.kind {
+                PmDcSketchEntityKind::Point { endpoint_of, center_of, tail, .. } => {
+                    list_resolves(endpoint_of)? && list_resolves(center_of)?
+                        && match tail {
+                            PointTail::Absent => true,
+                            PointTail::Present { associations, .. } => list_resolves(associations)?,
+                        }
+                }
+                PmDcSketchEntityKind::Line { points, auxiliary, .. } => {
+                    list_resolves(points)? && ctx.all_by(
+                        auxiliary, list_resolves,
+                        "visit Inventor PmDc sketch entity auxiliary lists",
+                    )?
+                }
+                PmDcSketchEntityKind::Circle { points, auxiliary, center, .. }
+                | PmDcSketchEntityKind::Ellipse { points, auxiliary, center, .. } => {
+                    list_resolves(points)? && ctx.all_by(
+                        auxiliary, list_resolves,
+                        "visit Inventor PmDc sketch entity auxiliary lists",
+                    )? && reference_resolves(token, center.index())?
+                }
+            };
         if !header_matches || !kind_matches {
             push_finding(
                 ctx,
@@ -838,155 +772,55 @@ fn validate_sketches(
         "validate Inventor PmDc sketch constraints",
     )? {
         let header = &constraint.header;
-        let (mut references, mut references_storage) =
-            ctx.temporary_vec(0, "collect Inventor PmDc sketch-constraint references")?;
-        references_storage.with_storage(|| {
-            ctx.push_vec(
-                &mut references,
-                header.content.next.index(),
-                "collect Inventor PmDc sketch-constraint references",
-            )?;
-            ctx.push_vec(
-                &mut references,
-                header.content.context.index(),
-                "collect Inventor PmDc sketch-constraint references",
-            )?;
-            ctx.push_vec(
-                &mut references,
-                header.group.index(),
-                "collect Inventor PmDc sketch-constraint references",
-            )?;
-            ctx.push_vec(
-                &mut references,
-                header.parameter.index(),
-                "collect Inventor PmDc sketch-constraint references",
-            )
-        })?;
-        for (key, _) in ctx.admit_iter(
-            header.scalar_map.entries(),
-            "resolve Inventor PmDc scalar-map entries",
-        )? {
-            references_storage.with_storage(|| {
-                ctx.push_vec(
-                    &mut references,
-                    key.index(),
-                    "collect Inventor PmDc sketch-constraint references",
-                )
-            })?;
-        }
-        let reference_entries = ctx.admit_iter(
-            header.reference_map.entries(),
-            "resolve Inventor PmDc reference-map entries",
-        )?;
-        for (key, value) in reference_entries {
-            for reference in [key.index(), value.index()] {
-                references_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut references,
-                        reference,
-                        "collect Inventor PmDc sketch-constraint references",
-                    )
-                })?;
-            }
-        }
-        match &constraint.kind {
-            PmDcSketchConstraintKind::Coincident { first, second }
-            | PmDcSketchConstraintKind::Parallel { first, second, .. }
-            | PmDcSketchConstraintKind::Perpendicular { first, second, .. }
-            | PmDcSketchConstraintKind::Tangent { first, second, .. }
-            | PmDcSketchConstraintKind::EqualRadius { first, second } => {
-                let extra = [first.index(), second.index()];
-                let admitted =
-                    ctx.admit_iter(&extra, "resolve Inventor PmDc sketch-constraint references")?;
-                for &reference in admitted {
-                    references_storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut references,
-                            reference,
-                            "collect Inventor PmDc sketch-constraint references",
-                        )
-                    })?;
-                }
-            }
-            PmDcSketchConstraintKind::Horizontal { entity, .. }
-            | PmDcSketchConstraintKind::Vertical { entity, .. }
-            | PmDcSketchConstraintKind::Radius { entity, .. } => {
-                references_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut references,
-                        entity.index(),
-                        "collect Inventor PmDc sketch-constraint references",
-                    )
-                })?;
-            }
-            PmDcSketchConstraintKind::HorizontalDistance {
-                first,
-                second,
-                parameter,
-                ..
-            }
-            | PmDcSketchConstraintKind::VerticalDistance {
-                first,
-                second,
-                parameter,
-                ..
-            } => {
-                let extra = [first.index(), second.index(), parameter.index()];
-                let admitted =
-                    ctx.admit_iter(&extra, "resolve Inventor PmDc sketch-constraint references")?;
-                for &reference in admitted {
-                    references_storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut references,
-                            reference,
-                            "collect Inventor PmDc sketch-constraint references",
-                        )
-                    })?;
-                }
-            }
-            PmDcSketchConstraintKind::Diameter {
-                reference, entity, ..
-            } => {
-                let extra = [reference.index(), entity.index()];
-                let admitted =
-                    ctx.admit_iter(&extra, "resolve Inventor PmDc sketch-constraint references")?;
-                for &reference in admitted {
-                    references_storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut references,
-                            reference,
-                            "collect Inventor PmDc sketch-constraint references",
-                        )
-                    })?;
-                }
-            }
-            PmDcSketchConstraintKind::CircleCenter { entity, center } => {
-                let extra = [entity.index(), center.index()];
-                let admitted =
-                    ctx.admit_iter(&extra, "resolve Inventor PmDc sketch-constraint references")?;
-                for &reference in admitted {
-                    references_storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut references,
-                            reference,
-                            "collect Inventor PmDc sketch-constraint references",
-                        )
-                    })?;
-                }
-            }
-        }
         let token = constraint.identity.segment_token.as_str();
-        let record_matches = record_is_exact(
+        let references_match = record_is_exact(
             token,
             constraint.identity.record_ordinal,
             constraint.identity.type_id.as_str(),
-        )?;
-        let references_match = record_matches
-            && references_resolve(
-                token,
-                &references,
-                "resolve Inventor PmDc sketch-constraint references",
-            )?;
+        )? && reference_resolves(token, header.content.next.index())?
+            && reference_resolves(token, header.content.context.index())?
+            && reference_resolves(token, header.group.index())?
+            && reference_resolves(token, header.parameter.index())?
+            && ctx.all_by(
+                header.scalar_map.entries(),
+                |(key, _)| reference_resolves(token, key.index()),
+                "resolve Inventor PmDc scalar-map entries",
+            )?
+            && ctx.all_by(
+                header.reference_map.entries(),
+                |(key, value)| {
+                    Ok(reference_resolves(token, key.index())?
+                        && reference_resolves(token, value.index())?)
+                },
+                "resolve Inventor PmDc reference-map entries",
+            )?
+            && match &constraint.kind {
+                PmDcSketchConstraintKind::Coincident { first, second }
+                | PmDcSketchConstraintKind::Parallel { first, second, .. }
+                | PmDcSketchConstraintKind::Perpendicular { first, second, .. }
+                | PmDcSketchConstraintKind::Tangent { first, second, .. }
+                | PmDcSketchConstraintKind::EqualRadius { first, second } => {
+                    reference_resolves(token, first.index())?
+                        && reference_resolves(token, second.index())?
+                }
+                PmDcSketchConstraintKind::Horizontal { entity, .. }
+                | PmDcSketchConstraintKind::Vertical { entity, .. }
+                | PmDcSketchConstraintKind::Radius { entity, .. } => reference_resolves(token, entity.index())?,
+                PmDcSketchConstraintKind::HorizontalDistance { first, second, parameter, .. }
+                | PmDcSketchConstraintKind::VerticalDistance { first, second, parameter, .. } => {
+                    reference_resolves(token, first.index())?
+                        && reference_resolves(token, second.index())?
+                        && reference_resolves(token, parameter.index())?
+                }
+                PmDcSketchConstraintKind::Diameter { reference, entity, .. } => {
+                    reference_resolves(token, reference.index())?
+                        && reference_resolves(token, entity.index())?
+                }
+                PmDcSketchConstraintKind::CircleCenter { entity, center } => {
+                    reference_resolves(token, entity.index())?
+                        && reference_resolves(token, center.index())?
+                }
+            };
         if !references_match {
             push_finding(
                 ctx,
@@ -1342,104 +1176,7 @@ fn validate_features(
         &data.pm_dc_feature_properties,
         "validate Inventor PmDc feature properties",
     )? {
-        let (mut references, mut references_storage) =
-            ctx.temporary_vec(0, "collect Inventor PmDc feature-property references")?;
-        references_storage.with_storage(|| {
-            ctx.push_vec(
-                &mut references,
-                property.header.next.index(),
-                "collect Inventor PmDc feature-property references",
-            )?;
-            ctx.push_vec(
-                &mut references,
-                property.header.context.index(),
-                "collect Inventor PmDc feature-property references",
-            )
-        })?;
         let token = property.identity.segment_token.as_str();
-        match &property.kind {
-            PmDcFeaturePropertyKind::References { items, .. } => {
-                let item_references = items.references();
-                let admitted = ctx.admit_iter(
-                    item_references,
-                    "resolve Inventor PmDc feature-property references",
-                )?;
-                for reference in admitted.map(|reference| reference.index()) {
-                    references_storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut references,
-                            reference,
-                            "collect Inventor PmDc feature-property references",
-                        )
-                    })?;
-                }
-            }
-            PmDcFeaturePropertyKind::SurfaceBody { body } => {
-                references_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut references,
-                        body.index(),
-                        "collect Inventor PmDc feature-property references",
-                    )
-                })?;
-            }
-            PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } => {
-                references_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut references,
-                        entity_link.index(),
-                        "collect Inventor PmDc feature-property references",
-                    )
-                })?;
-            }
-            PmDcFeaturePropertyKind::Placement {
-                transform,
-                point,
-                value,
-            } => {
-                let extra = [transform.index(), point.index(), value.index()];
-                let admitted =
-                    ctx.admit_iter(&extra, "resolve Inventor PmDc placement references")?;
-                for &reference in admitted {
-                    references_storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut references,
-                            reference,
-                            "collect Inventor PmDc feature-property references",
-                        )
-                    })?;
-                }
-            }
-            PmDcFeaturePropertyKind::FilletEdgeSet {
-                edges,
-                radius,
-                selection,
-                continuity,
-            } => {
-                let extra = [
-                    edges.index(),
-                    radius.index(),
-                    selection.index(),
-                    continuity.index(),
-                ];
-                let admitted =
-                    ctx.admit_iter(&extra, "resolve Inventor PmDc fillet-edge references")?;
-                for &reference in admitted {
-                    references_storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut references,
-                            reference,
-                            "collect Inventor PmDc feature-property references",
-                        )
-                    })?;
-                }
-            }
-            PmDcFeaturePropertyKind::Enumeration { .. }
-            | PmDcFeaturePropertyKind::WideEnumeration { .. }
-            | PmDcFeaturePropertyKind::Boolean { .. }
-            | PmDcFeaturePropertyKind::RdxVariable { .. }
-            | PmDcFeaturePropertyKind::EdgeItem { .. } => {}
-        }
         let key = (token, property.identity.record_ordinal);
         let record_matches =
             match ctx.get_hash_map(&raw, &key, "find Inventor PmDc feature property")? {
@@ -1450,13 +1187,32 @@ fn validate_features(
                 )?,
                 None => false,
             };
-        if !record_matches
-            || !ctx.all_by(
-                &references,
-                |reference| resolves(token, *reference),
-                "resolve Inventor PmDc feature-property references",
-            )?
-        {
+        let references_match = record_matches
+            && resolves(token, property.header.next.index())?
+            && resolves(token, property.header.context.index())?
+            && match &property.kind {
+                PmDcFeaturePropertyKind::References { items, .. } => ctx.all_by(
+                    items.references(),
+                    |reference| resolves(token, reference.index()),
+                    "resolve Inventor PmDc feature-property references",
+                )?,
+                PmDcFeaturePropertyKind::SurfaceBody { body } => resolves(token, body.index())?,
+                PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } => resolves(token, entity_link.index())?,
+                PmDcFeaturePropertyKind::Placement { transform, point, value } => {
+                    resolves(token, transform.index())? && resolves(token, point.index())?
+                        && resolves(token, value.index())?
+                }
+                PmDcFeaturePropertyKind::FilletEdgeSet { edges, radius, selection, continuity } => {
+                    resolves(token, edges.index())? && resolves(token, radius.index())?
+                        && resolves(token, selection.index())? && resolves(token, continuity.index())?
+                }
+                PmDcFeaturePropertyKind::Enumeration { .. }
+                | PmDcFeaturePropertyKind::WideEnumeration { .. }
+                | PmDcFeaturePropertyKind::Boolean { .. }
+                | PmDcFeaturePropertyKind::RdxVariable { .. }
+                | PmDcFeaturePropertyKind::EdgeItem { .. } => true,
+            };
+        if !references_match {
             push_finding(
                 ctx,
                 findings,

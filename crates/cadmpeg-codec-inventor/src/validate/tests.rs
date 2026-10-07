@@ -258,3 +258,105 @@ fn expression_references_validate_without_collection_slots() {
         assert!(findings.is_empty());
     }
 }
+
+fn located_payload<T: serde::de::DeserializeOwned>(payload: serde_json::Value) -> super::Located<T> {
+    super::Located::new(
+        serde_json::from_value(payload).expect("payload"),
+        crate::record_identity::RecordTypeId::try_from(carrier_record().type_id.as_str().to_owned()).expect("type id"),
+        cadmpeg_ir::ids::IdentityKey::encode_segment("t"),
+        0,
+    )
+}
+
+fn content_header() -> serde_json::Value {
+    serde_json::json!({
+        "header_value": 0, "header_id": 0, "next": {"index": 1, "qualified": false},
+        "flags": 0, "context": {"index": 1, "qualified": false}, "source_index": 0
+    })
+}
+
+fn reference_list(index: u32) -> serde_json::Value {
+    serde_json::json!({
+        "marker": 8, "metadata": {"width": "u16", "values": [0, 0]},
+        "references": [{"index": index, "qualified": false}]
+    })
+}
+
+#[test]
+fn sketch_entity_references_validate_in_place_and_stop_at_failure() {
+    for index in [1, 2] {
+        let mut data = empty_native_data();
+        data.records.push(carrier_record());
+        data.pm_dc_sketch_entities.push(located_payload(serde_json::json!({
+            "save_version_major": 1, "header": content_header(), "entity_flags": 0,
+            "sketch": {"index": 1, "qualified": false},
+            "kind": {"form": "line", "points": reference_list(index),
+                "auxiliary": [reference_list(1)], "origin": [0.0, 0.0], "direction": [1.0, 0.0]}
+        })));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Raw-record index, entity uniqueness and native-entity identity: three
+        // slots. A failed reference adds one finding; no reference copies exist.
+        policy.limits.max_collection_items = 3 + u64::from(index == 2);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut findings = Vec::new();
+        validate_sketches(&ctx, &data, &cadmpeg_ir::CadIr::empty(), &mut findings).expect("entity validation");
+        assert_eq!(findings.len(), usize::from(index == 2));
+        if let Some(finding) = findings.first() {
+            assert_eq!(finding.message, "Inventor PmDc sketch-entity record or reference does not resolve");
+        }
+    }
+}
+
+#[test]
+fn sketch_constraint_reference_maps_validate_without_copies() {
+    for index in [1, 2] {
+        let mut data = empty_native_data();
+        data.records.push(carrier_record());
+        let reference = serde_json::json!({"index": 1, "qualified": false});
+        data.pm_dc_sketch_constraints.push(located_payload(serde_json::json!({
+            "save_version_major": 1,
+            "header": {"content": content_header(), "state": 0, "group": reference,
+                "parameter": reference,
+                "scalar_map": {"metadata": [0, 0], "entries": [[reference, 0.0]]},
+                "reference_map": {"metadata": [0, 0], "entries": [[reference, {"index": index, "qualified": false}]]}},
+            "kind": {"form": "coincident", "first": reference, "second": reference}
+        })));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Raw-record index, constraint uniqueness and native-constraint identity:
+        // three slots. A failed map value adds one finding slot.
+        policy.limits.max_collection_items = 3 + u64::from(index == 2);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut findings = Vec::new();
+        validate_sketches(&ctx, &data, &cadmpeg_ir::CadIr::empty(), &mut findings).expect("constraint validation");
+        assert_eq!(findings.len(), usize::from(index == 2));
+        if let Some(finding) = findings.first() {
+            assert_eq!(finding.message, "Inventor PmDc sketch-constraint record or reference does not resolve");
+        }
+    }
+}
+
+#[test]
+fn feature_property_references_validate_without_copies() {
+    for index in [1, 2] {
+        let mut data = empty_native_data();
+        data.records.push(carrier_record());
+        data.pm_dc_feature_properties.push(located_payload(serde_json::json!({
+            "save_version_major": 1, "header": content_header(),
+            "kind": {"form": "references", "family": "object_collection", "items": reference_list(index)}
+        })));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Raw-record index, property uniqueness and two property indexes: four
+        // slots. A failed list reference adds one finding slot.
+        policy.limits.max_collection_items = 4 + u64::from(index == 2);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut findings = Vec::new();
+        super::validate_features(&ctx, &cadmpeg_ir::CadIr::empty(), &data, &mut findings).expect("property validation");
+        assert_eq!(findings.len(), usize::from(index == 2));
+        if let Some(finding) = findings.first() {
+            assert_eq!(finding.message, "Inventor PmDc feature-property record or reference does not resolve");
+        }
+    }
+}
