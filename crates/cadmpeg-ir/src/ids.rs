@@ -547,7 +547,7 @@ impl IdentityKey {
     ) -> Result<Self, CodecError> {
         Ok(Self(match &self.0 {
             std::borrow::Cow::Borrowed(text) => {
-                ctx.charge_work(1, operation)?;
+                ctx.charge_work(0, operation)?;
                 std::borrow::Cow::Borrowed(*text)
             }
             std::borrow::Cow::Owned(text) => {

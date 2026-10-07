@@ -656,3 +656,42 @@ fn decode_identity_grammar_stops_at_the_first_invalid_scalar() {
     assert_eq!(super::Identity::new_for_decode(&ctx, value.clone(), "identity scan").unwrap(), super::Identity::new(value));
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn decode_owned_identity_constructors_refuse_grammar_visits() {
+    use super::{Identity, UnknownId, HistoricalFaceId};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for kind in 0..4 {
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "owned identity grammar", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let result = match kind {
+                0 => Identity::new_for_decode(&ctx, "a:b:c#é部".to_owned(), "owned identity grammar").map(|value| { value.unwrap(); }),
+                1 => IdentityComponent::try_new_for_decode(&ctx, "é部".to_owned(), "owned identity grammar").map(|value| { value.unwrap(); }),
+                2 => UnknownId::mint_for_decode(&ctx, "a:b:c#é部".to_owned(), "owned identity grammar").map(|value| { value.unwrap(); }),
+                _ => HistoricalFaceId::mint_for_decode(&ctx, "é部".to_owned(), "owned identity grammar").map(|value| { value.unwrap(); }),
+            };
+            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result else { panic!("grammar refusal"); };
+            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == *limit));
+            result
+        });
+    }
+}
+
+#[test]
+fn static_identity_key_copy_needs_no_work_or_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let key = crate::identity_key!("static");
+    assert_eq!(key.try_clone_for_decode(&ctx, "static key copy").unwrap(), key);
+    ctx.finish_session().unwrap();
+}

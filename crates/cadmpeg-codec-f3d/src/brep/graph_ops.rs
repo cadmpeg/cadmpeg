@@ -594,12 +594,7 @@ impl Brep {
                     "copy F3D BREP remapped ID",
                 )
             })?
-            .with_text_replacements(
-                replacements
-                    .0
-                    .iter()
-                    .map(|(source, target)| (source, target)),
-            )?;
+            .with_text_replacements(&replacements.0, |(source, target)| (source, target))?;
         let source = std::mem::take(self);
         let rewritten = source.rewrite_identities(ctx, &mut map);
         map.finish(ctx)?;
