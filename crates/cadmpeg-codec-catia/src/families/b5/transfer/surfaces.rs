@@ -194,7 +194,7 @@ pub(super) fn neutral_surface(
             bounds,
         } => match revolution_surface(
             ctx,
-            graph.profiles.get(&profile_curve),
+            ctx.get_btree_map(&graph.profiles, &profile_curve, "catia_b5_revolution_profile_lookup")?,
             (axis_origin, axis_direction),
             angular_scale,
             bounds,

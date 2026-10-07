@@ -29,9 +29,65 @@ fn container_for_extent<'a>(
     byte_len: u64,
 ) -> Option<&'a super::OuterContainerDeclaration> {
     crate::test_support::with_service_context(|ctx| {
-        outer_container_for_extent(ctx, outer, declarations, byte_offset, byte_len)
+        let index = super::outer_container_extent_index(ctx, outer, declarations)?;
+        outer_container_for_extent(ctx, &index, byte_offset, byte_len)
     })
     .expect("service budget")
+}
+
+#[test]
+fn outer_extent_index_preserves_overlap_and_single_extent_ownership() {
+    let declarations = ["first", "second", "second"].map(|name| super::OuterContainerDeclaration {
+        data_offset: 0,
+        ordinal: 0,
+        class_name: String::new(),
+        base_class: String::new(),
+        stream_name: name.to_owned(),
+    });
+    let outer = InnerDir {
+        inner: 10,
+        descriptors: vec![
+            Descriptor { name: "first".to_owned(), desc_offset: 0, extents: vec![
+                Extent { phys_off: 0, phys_len: 90, flags: 0 },
+                Extent { phys_off: 40, phys_len: 60, flags: 0 },
+                Extent { phys_off: 100, phys_len: 20, flags: 0 },
+            ] },
+            Descriptor { name: "second".to_owned(), desc_offset: 1, extents: vec![
+                Extent { phys_off: 80, phys_len: 50, flags: 0 },
+            ] },
+        ],
+    };
+    crate::test_support::with_retained_limit(0, |ctx| {
+        let index = super::outer_container_extent_index(ctx, &outer, &declarations)
+            .expect("interval index uses temporary storage");
+        for start in 0..160 {
+            for length in 0..32 {
+                let mut expected = declarations.iter().enumerate().filter_map(|(owner, declaration)| {
+                    outer.descriptors.iter().any(|descriptor| {
+                        descriptor.name == declaration.stream_name && descriptor.extents.iter().any(|extent| {
+                            let extent_start = 10 + u64::from(extent.phys_off);
+                            extent_start <= start && start + length <= extent_start + u64::from(extent.phys_len)
+                        })
+                    }).then_some(owner)
+                });
+                let expected = match (expected.next(), expected.next()) {
+                    (Some(owner), None) => Some(&declarations[owner]),
+                    _ => None,
+                };
+                let actual = outer_container_for_extent(ctx, &index, start, length)
+                    .expect("interval query");
+                assert_eq!(actual.map(std::ptr::from_ref), expected.map(std::ptr::from_ref),
+                    "range {start}+{length}");
+            }
+        }
+        assert!(outer_container_for_extent(ctx, &index, u64::MAX, 1).expect("overflow gate").is_none());
+    });
+    let refused = crate::test_support::with_work_refusal("catia_outer_container_extent_query", |ctx| {
+        let index = super::outer_container_extent_index(ctx, &outer, &declarations)?;
+        outer_container_for_extent(ctx, &index, 20, 1).map(|owner| owner.is_some())
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_outer_container_extent_query"));
 }
 
 fn summarize_service(scan: &ContainerScan<'_>) -> cadmpeg_ir::ContainerSummary {

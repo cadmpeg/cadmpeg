@@ -17,7 +17,7 @@ use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::ops::Range;
 
@@ -1528,50 +1528,92 @@ pub(crate) fn outer_container_declarations(
     parse_outer_container_declarations(ctx, &logical, &outer.descriptors)
 }
 
-/// Select the unique declared outer container whose physical extent contains
-/// the complete file range.
-pub(crate) fn outer_container_for_extent<'a>(
-    ctx: &DecodeContext<'_>,
+/// Physical extents in ascending start order, with a prefix maximum end.
+struct DeclaredExtent {
+    start: u64,
+    end: u64,
+    declaration: usize,
+    prefix_end: u64,
+}
+
+/// One borrowed declaration index with live temporary interval storage.
+pub(crate) struct OuterContainerIndex<'a, 'storage> {
+    declarations: &'a [OuterContainerDeclaration],
+    extents: Vec<DeclaredExtent>,
+    _storage: ScopedReservation<'storage>,
+}
+
+/// Index declaration names once, then key their physical extents by start.
+pub(crate) fn outer_container_extent_index<'a, 'storage>(
+    ctx: &'storage DecodeContext<'_>,
     outer: &InnerDir,
     declarations: &'a [OuterContainerDeclaration],
+) -> Result<OuterContainerIndex<'a, 'storage>, CodecError> {
+    const OPERATION: &str = "catia_outer_container_index";
+    let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
+    let ordered = scratch.with_storage(|| {
+        let mut by_name = HashMap::<&str, Vec<usize>>::new();
+        for (index, declaration) in ctx.admit_iter(declarations, OPERATION)?.enumerate() {
+            ctx.push_hash_group(&mut by_name, declaration.stream_name.as_str(), index,
+                OPERATION, OPERATION)?;
+        }
+        let mut ordered = BTreeSet::new();
+        for descriptor in ctx.admit_iter(&outer.descriptors, OPERATION)? {
+            let Some(owners) = ctx.get_hash_map(&by_name, descriptor.name.as_str(), OPERATION)? else {
+                continue;
+            };
+            for extent in ctx.admit_iter(&descriptor.extents, OPERATION)? {
+                let Some(start) = u64_from_index(outer.inner).checked_add(u64::from(extent.phys_off)) else {
+                    continue;
+                };
+                let Some(end) = start.checked_add(u64::from(extent.phys_len)) else {
+                    continue;
+                };
+                for &owner in ctx.admit_iter(owners, OPERATION)? {
+                    ctx.insert_btree_set(&mut ordered, (start, end, owner), OPERATION)?;
+                }
+            }
+        }
+        Ok::<_, CodecError>(ordered)
+    })?;
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut prefix_end = 0;
+    let extents = storage.with_storage(|| ctx.collect_vec(
+        ordered.into_iter().map(|(start, end, declaration)| {
+            prefix_end = prefix_end.max(end);
+            DeclaredExtent { start, end, declaration, prefix_end }
+        }), OPERATION))?;
+    Ok(OuterContainerIndex { declarations, extents, _storage: storage })
+}
+
+/// Select the unique declaration whose single physical extent contains the range.
+/// Prefix maxima stop the backward query once no earlier extent can contain it.
+pub(crate) fn outer_container_for_extent<'a>(
+    ctx: &DecodeContext<'_>,
+    index: &OuterContainerIndex<'a, '_>,
     byte_offset: u64,
     byte_len: u64,
 ) -> Result<Option<&'a OuterContainerDeclaration>, CodecError> {
+    const OPERATION: &str = "catia_outer_container_extent_query";
     let Some(byte_end) = byte_offset.checked_add(byte_len) else {
         return Ok(None);
     };
-    let physical_base = u64_from_index(outer.inner);
+    let position = ctx.partition_point(&index.extents,
+        |extent| Ok(extent.start <= byte_offset), OPERATION)?;
     let mut selected = None;
-    for declaration in ctx.admit_iter(declarations, "catia_outer_container_scan")? {
-        let contains = ctx.any_by(
-            &outer.descriptors,
-            |descriptor| {
-                Ok(descriptor.is_named(ctx, &declaration.stream_name)?
-                    && ctx.any_by(
-                        &descriptor.extents,
-                        |extent| {
-                            let extent_start =
-                                u64::from(extent.phys_off).checked_add(physical_base);
-                            Ok(extent_start.is_some_and(|extent_start| {
-                                extent_start <= byte_offset
-                                    && extent_start
-                                        .checked_add(u64::from(extent.phys_len))
-                                        .is_some_and(|extent_end| byte_end <= extent_end)
-                            }))
-                        },
-                        "catia_outer_container_extent_scan",
-                    )?)
-            },
-            "catia_outer_container_descriptor_scan",
-        )?;
-        if contains {
-            if selected.is_some() {
+    let mut candidates = index.extents[..position].iter().rev();
+    while let Some(extent) = ctx.next_charged(&mut candidates, OPERATION)? {
+        if extent.prefix_end < byte_end {
+            break;
+        }
+        if byte_end <= extent.end {
+            if selected.is_some_and(|owner| owner != extent.declaration) {
                 return Ok(None);
             }
-            selected = Some(declaration);
+            selected = Some(extent.declaration);
         }
     }
-    Ok(selected)
+    Ok(selected.map(|owner| &index.declarations[owner]))
 }
 
 fn parse_outer_container_declarations(

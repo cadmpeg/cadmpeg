@@ -69,3 +69,31 @@ fn b5_framed_record_budget_exhaustion_stops_before_the_next_record() {
     assert!(output);
     assert!(budget.exhausted());
 }
+
+#[test]
+fn b5_directrix_context_lookups_preserve_work_refusal() {
+    use std::collections::{BTreeMap, HashMap};
+    use super::super::{B5Record, parse_extrusion_directrix};
+    let mut source_payload = vec![0x81, 0x83, 0x81, 0x01];
+    for value in [-3.0f64, 4.0, 0.0] {
+        source_payload.extend_from_slice(&value.to_le_bytes());
+    }
+    source_payload.push(0x01);
+    let source = B5Record { offset: 0, family: 0xb5, class: 0x24,
+        object_id: 2, payload: &source_payload };
+    let records = HashMap::from([(2, &source)]);
+    let pcurves = BTreeMap::from([(3, super::object_stream_pcurve(7, vec![-3.0, 4.0], None))]);
+    let mut payload = vec![0x81, 0x82];
+    for value in [-3.0f64, 4.0] { payload.extend_from_slice(&value.to_le_bytes()); }
+    payload.push(0x05);
+    for value in [-1.5f64, 0.0, 0.0, 1.0, -5.0, 6.0] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    let record = B5Record { offset: 0, family: 0xb5, class: 0x14,
+        object_id: 4, payload: &payload };
+    for operation in ["catia_b5_directrix_record_lookup", "catia_b5_directrix_pcurve_lookup"] {
+        assert_source_work_refusal(operation,
+            |ctx| parse_extrusion_directrix(ctx, &record, &records, &pcurves),
+            Option::is_some);
+    }
+}

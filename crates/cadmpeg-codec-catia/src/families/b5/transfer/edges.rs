@@ -301,14 +301,13 @@ pub(super) fn b5_supports_agree(
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let mut supports = ctx.admit_iter(supports, "catia_b5_edge_support_agreement_scan")?;
-    let Some(first) = supports.next() else {
+    let Some((first, supports)) = supports.split_first() else {
         return Ok(false);
     };
     let Some(reference) = b5_support_endpoints(ctx, first, surfaces, pcurves)? else {
         return Ok(false);
     };
-    for support in supports {
+    ctx.all_by(supports, |support| {
         let Some(candidate) = b5_support_endpoints(ctx, support, surfaces, pcurves)? else {
             return Ok(false);
         };
@@ -320,8 +319,8 @@ pub(super) fn b5_supports_agree(
         {
             return Ok(false);
         }
-    }
-    Ok(true)
+        Ok(true)
+    }, "catia_b5_edge_support_agreement_scan")
 }
 
 pub(super) fn b5_support_endpoints(
