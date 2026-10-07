@@ -149,23 +149,178 @@ pub(super) fn geometry_equal(
             "compare sketch geometry text",
         ),
         (
-            SketchGeometryDefinition::Point { .. }
-            | SketchGeometryDefinition::Line { .. }
-            | SketchGeometryDefinition::ReferenceLine { .. }
-            | SketchGeometryDefinition::Circle { .. }
-            | SketchGeometryDefinition::Arc { .. }
-            | SketchGeometryDefinition::Ellipse { .. }
-            | SketchGeometryDefinition::Hyperbola { .. }
-            | SketchGeometryDefinition::Parabola { .. },
-            _,
-        ) => Ok(left == right),
+            SketchGeometryDefinition::Point {
+                position: left_position,
+            },
+            SketchGeometryDefinition::Point {
+                position: right_position,
+            },
+        ) => ctx.equal(
+            &left_position.get(),
+            &right_position.get(),
+            "compare sketch geometry analytic fields",
+        ),
         (
-            SketchGeometryDefinition::Nurbs { .. }
-            | SketchGeometryDefinition::Text { .. }
-            | SketchGeometryDefinition::ExternalReference { .. }
-            | SketchGeometryDefinition::Native { .. },
-            _,
-        ) => Ok(false),
+            SketchGeometryDefinition::Line {
+                start: left_start,
+                end: left_end,
+            },
+            SketchGeometryDefinition::Line {
+                start: right_start,
+                end: right_end,
+            },
+        ) => ctx.equal(
+            &(left_start.get(), left_end.get()),
+            &(right_start.get(), right_end.get()),
+            "compare sketch geometry analytic fields",
+        ),
+        (
+            SketchGeometryDefinition::ReferenceLine {
+                origin: left_origin,
+                direction: left_direction,
+            },
+            SketchGeometryDefinition::ReferenceLine {
+                origin: right_origin,
+                direction: right_direction,
+            },
+        ) => ctx.equal(
+            &(left_origin.get(), left_direction.get()),
+            &(right_origin.get(), right_direction.get()),
+            "compare sketch geometry analytic fields",
+        ),
+        (
+            SketchGeometryDefinition::Circle {
+                center: left_center,
+                radius: left_radius,
+            },
+            SketchGeometryDefinition::Circle {
+                center: right_center,
+                radius: right_radius,
+            },
+        ) => ctx.equal(
+            &(left_center.get(), left_radius.get()),
+            &(right_center.get(), right_radius.get()),
+            "compare sketch geometry analytic fields",
+        ),
+        (
+            SketchGeometryDefinition::Arc {
+                center: left_center,
+                radius: left_radius,
+                start_angle: left_start_angle,
+                end_angle: left_end_angle,
+            },
+            SketchGeometryDefinition::Arc {
+                center: right_center,
+                radius: right_radius,
+                start_angle: right_start_angle,
+                end_angle: right_end_angle,
+            },
+        ) => ctx.equal(
+            &(
+                left_center.get(),
+                left_radius.get(),
+                left_start_angle.get(),
+                left_end_angle.get(),
+            ),
+            &(
+                right_center.get(),
+                right_radius.get(),
+                right_start_angle.get(),
+                right_end_angle.get(),
+            ),
+            "compare sketch geometry analytic fields",
+        ),
+        (
+            SketchGeometryDefinition::Ellipse {
+                center: left_center,
+                major_angle: left_major_angle,
+                radii: left_radii,
+                bounds: left_bounds,
+            },
+            SketchGeometryDefinition::Ellipse {
+                center: right_center,
+                major_angle: right_major_angle,
+                radii: right_radii,
+                bounds: right_bounds,
+            },
+        ) => ctx.equal(
+            &(
+                left_center.get(),
+                left_major_angle.get(),
+                left_radii.major().get(),
+                left_radii.minor().get(),
+                (*left_bounds).map(|[start, end]| [start.get(), end.get()]),
+            ),
+            &(
+                right_center.get(),
+                right_major_angle.get(),
+                right_radii.major().get(),
+                right_radii.minor().get(),
+                (*right_bounds).map(|[start, end]| [start.get(), end.get()]),
+            ),
+            "compare sketch geometry analytic fields",
+        ),
+        (
+            SketchGeometryDefinition::Hyperbola {
+                center: left_center,
+                major_angle: left_major_angle,
+                major_radius: left_major_radius,
+                minor_radius: left_minor_radius,
+                bounds: left_bounds,
+            },
+            SketchGeometryDefinition::Hyperbola {
+                center: right_center,
+                major_angle: right_major_angle,
+                major_radius: right_major_radius,
+                minor_radius: right_minor_radius,
+                bounds: right_bounds,
+            },
+        ) => ctx.equal(
+            &(
+                left_center.get(),
+                left_major_angle.get(),
+                left_major_radius.get(),
+                left_minor_radius.get(),
+                (*left_bounds).map(|[start, end]| [start.get(), end.get()]),
+            ),
+            &(
+                right_center.get(),
+                right_major_angle.get(),
+                right_major_radius.get(),
+                right_minor_radius.get(),
+                (*right_bounds).map(|[start, end]| [start.get(), end.get()]),
+            ),
+            "compare sketch geometry analytic fields",
+        ),
+        (
+            SketchGeometryDefinition::Parabola {
+                vertex: left_vertex,
+                axis_angle: left_axis_angle,
+                focal_length: left_focal_length,
+                bounds: left_bounds,
+            },
+            SketchGeometryDefinition::Parabola {
+                vertex: right_vertex,
+                axis_angle: right_axis_angle,
+                focal_length: right_focal_length,
+                bounds: right_bounds,
+            },
+        ) => ctx.equal(
+            &(
+                left_vertex.get(),
+                left_axis_angle.get(),
+                left_focal_length.get(),
+                (*left_bounds).map(|[start, end]| [start.get(), end.get()]),
+            ),
+            &(
+                right_vertex.get(),
+                right_axis_angle.get(),
+                right_focal_length.get(),
+                (*right_bounds).map(|[start, end]| [start.get(), end.get()]),
+            ),
+            "compare sketch geometry analytic fields",
+        ),
+        _ => Ok(false),
     }
 }
 
@@ -174,7 +329,8 @@ mod tests {
     use super::geometry_equal;
     use crate::geometry::pcurve::PcurveNurbs;
     use crate::math::Point2;
-    use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
+    use crate::scalar::{Angle, Length};
+    use crate::sketches::{EllipseRadii, SketchGeometry, SketchGeometryDefinition};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -220,6 +376,270 @@ mod tests {
             vertical_alignment: None,
         })
         .unwrap()
+    }
+
+    fn analytic_geometry(definition: SketchGeometryDefinition) -> SketchGeometry {
+        SketchGeometry::try_from(definition).expect("valid analytic geometry fixture")
+    }
+
+    #[test]
+    fn analytic_points_and_lines_compare_each_field_exactly() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let point = |position| analytic_geometry(SketchGeometryDefinition::Point { position });
+        let origin = point(Point2::new(0.0, -0.0));
+        let signed_zero_origin = point(Point2::new(-0.0, 0.0));
+        let displaced_point = point(Point2::new(0.0, 1.0));
+        assert!(geometry_equal(&ctx, &origin, &signed_zero_origin).unwrap());
+        assert!(!geometry_equal(&ctx, &origin, &displaced_point).unwrap());
+
+        let line = |start, end| analytic_geometry(SketchGeometryDefinition::Line { start, end });
+        let start = Point2::new(-1.0, 0.0);
+        let end = Point2::new(2.0, 3.0);
+        let line_value = line(start, end);
+        let same_line = line(start, end);
+        assert!(geometry_equal(&ctx, &line_value, &same_line).unwrap());
+        assert!(!geometry_equal(&ctx, &line_value, &line(Point2::new(-2.0, 0.0), end),).unwrap());
+        assert!(!geometry_equal(&ctx, &line_value, &line(start, Point2::new(2.0, 4.0)),).unwrap());
+
+        let reference_line = |origin, direction| {
+            analytic_geometry(SketchGeometryDefinition::ReferenceLine { origin, direction })
+        };
+        let reference_value = reference_line(Point2::new(1.0, 2.0), Point2::new(1.0, 0.5));
+        let same_reference = reference_line(Point2::new(1.0, 2.0), Point2::new(1.0, 0.5));
+        assert!(geometry_equal(&ctx, &reference_value, &same_reference).unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &reference_value,
+            &reference_line(Point2::new(2.0, 2.0), Point2::new(1.0, 0.5)),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &reference_value,
+            &reference_line(Point2::new(1.0, 2.0), Point2::new(1.0, 0.75)),
+        )
+        .unwrap());
+
+        assert!(!geometry_equal(&ctx, &origin, &line_value).unwrap());
+        assert!(!geometry_equal(&ctx, &line_value, &reference_value).unwrap());
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn analytic_curves_compare_radii_angles_and_bounds_exactly() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let center = Point2::new(1.0, 2.0);
+
+        let circle = |center, radius| {
+            analytic_geometry(SketchGeometryDefinition::Circle {
+                center,
+                radius: Length::new(radius).unwrap(),
+            })
+        };
+        let circle_value = circle(center, 2.0);
+        assert!(geometry_equal(&ctx, &circle_value, &circle(center, 2.0)).unwrap());
+        assert!(
+            !geometry_equal(&ctx, &circle_value, &circle(Point2::new(2.0, 2.0), 2.0),).unwrap()
+        );
+        assert!(!geometry_equal(&ctx, &circle_value, &circle(center, 3.0)).unwrap());
+
+        let arc = |center, radius, start_angle, end_angle| {
+            analytic_geometry(SketchGeometryDefinition::Arc {
+                center,
+                radius: Length::new(radius).unwrap(),
+                start_angle: Angle::new(start_angle).unwrap(),
+                end_angle: Angle::new(end_angle).unwrap(),
+            })
+        };
+        let arc_value = arc(center, 2.0, 0.25, 1.5);
+        assert!(geometry_equal(&ctx, &arc_value, &arc(center, 2.0, 0.25, 1.5)).unwrap());
+        assert!(geometry_equal(
+            &ctx,
+            &arc(center, 2.0, 0.0, 1.5),
+            &arc(center, 2.0, -0.0, 1.5),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &arc_value,
+            &arc(Point2::new(2.0, 2.0), 2.0, 0.25, 1.5),
+        )
+        .unwrap());
+        assert!(!geometry_equal(&ctx, &arc_value, &arc(center, 3.0, 0.25, 1.5)).unwrap());
+        assert!(!geometry_equal(&ctx, &arc_value, &arc(center, 2.0, 0.5, 1.5)).unwrap());
+        assert!(!geometry_equal(&ctx, &arc_value, &arc(center, 2.0, 0.25, 1.75)).unwrap());
+
+        let ellipse = |center, major_angle, major_radius, minor_radius, bounds| {
+            analytic_geometry(SketchGeometryDefinition::Ellipse {
+                center,
+                major_angle: Angle::new(major_angle).unwrap(),
+                radii: EllipseRadii {
+                    major_radius: Length::new(major_radius).unwrap(),
+                    minor_radius: Length::new(minor_radius).unwrap(),
+                },
+                bounds,
+            })
+        };
+        let ellipse_bounds = Some([Angle::new(0.0).unwrap(), Angle::new(1.5).unwrap()]);
+        let ellipse_value = ellipse(center, 0.25, 4.0, 2.0, ellipse_bounds);
+        assert!(geometry_equal(
+            &ctx,
+            &ellipse_value,
+            &ellipse(center, 0.25, 4.0, 2.0, ellipse_bounds),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &ellipse_value,
+            &ellipse(Point2::new(2.0, 2.0), 0.25, 4.0, 2.0, ellipse_bounds),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &ellipse_value,
+            &ellipse(center, 0.5, 4.0, 2.0, ellipse_bounds),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &ellipse_value,
+            &ellipse(center, 0.25, 5.0, 2.0, ellipse_bounds),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &ellipse_value,
+            &ellipse(center, 0.25, 4.0, 1.5, ellipse_bounds),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &ellipse_value,
+            &ellipse(
+                center,
+                0.25,
+                4.0,
+                2.0,
+                Some([Angle::new(0.0).unwrap(), Angle::new(1.75).unwrap()]),
+            ),
+        )
+        .unwrap());
+        assert!(
+            !geometry_equal(&ctx, &ellipse_value, &ellipse(center, 0.25, 4.0, 2.0, None),).unwrap()
+        );
+
+        let hyperbola = |center, major_angle, major_radius, minor_radius, bounds| {
+            analytic_geometry(SketchGeometryDefinition::Hyperbola {
+                center,
+                major_angle: Angle::new(major_angle).unwrap(),
+                major_radius: Length::new(major_radius).unwrap(),
+                minor_radius: Length::new(minor_radius).unwrap(),
+                bounds,
+            })
+        };
+        let hyperbola_bounds = Some([-2.0, 2.0]);
+        let hyperbola_value = hyperbola(center, 0.25, 4.0, 2.0, hyperbola_bounds);
+        assert!(geometry_equal(
+            &ctx,
+            &hyperbola_value,
+            &hyperbola(center, 0.25, 4.0, 2.0, hyperbola_bounds),
+        )
+        .unwrap());
+        assert!(geometry_equal(
+            &ctx,
+            &hyperbola(center, 0.25, 4.0, 2.0, Some([-0.0, 2.0]),),
+            &hyperbola(center, 0.25, 4.0, 2.0, Some([0.0, 2.0]),),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &hyperbola_value,
+            &hyperbola(Point2::new(2.0, 2.0), 0.25, 4.0, 2.0, hyperbola_bounds),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &hyperbola_value,
+            &hyperbola(center, 0.5, 4.0, 2.0, hyperbola_bounds),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &hyperbola_value,
+            &hyperbola(center, 0.25, 5.0, 2.0, hyperbola_bounds),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &hyperbola_value,
+            &hyperbola(center, 0.25, 4.0, 1.5, hyperbola_bounds),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &hyperbola_value,
+            &hyperbola(center, 0.25, 4.0, 2.0, Some([-2.0, 1.5])),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &hyperbola_value,
+            &hyperbola(center, 0.25, 4.0, 2.0, None),
+        )
+        .unwrap());
+
+        let parabola = |vertex, axis_angle, focal_length, bounds| {
+            analytic_geometry(SketchGeometryDefinition::Parabola {
+                vertex,
+                axis_angle: Angle::new(axis_angle).unwrap(),
+                focal_length: Length::new(focal_length).unwrap(),
+                bounds,
+            })
+        };
+        let parabola_bounds = Some([-1.0, 1.0]);
+        let parabola_value = parabola(center, 0.25, 2.0, parabola_bounds);
+        assert!(geometry_equal(
+            &ctx,
+            &parabola_value,
+            &parabola(center, 0.25, 2.0, parabola_bounds),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &parabola_value,
+            &parabola(Point2::new(2.0, 2.0), 0.25, 2.0, parabola_bounds),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &parabola_value,
+            &parabola(center, 0.5, 2.0, parabola_bounds),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &parabola_value,
+            &parabola(center, 0.25, 3.0, parabola_bounds),
+        )
+        .unwrap());
+        assert!(!geometry_equal(
+            &ctx,
+            &parabola_value,
+            &parabola(center, 0.25, 2.0, Some([-1.0, 1.5])),
+        )
+        .unwrap());
+        assert!(
+            !geometry_equal(&ctx, &parabola_value, &parabola(center, 0.25, 2.0, None),).unwrap()
+        );
+
+        assert!(!geometry_equal(&ctx, &circle_value, &arc_value).unwrap());
+        assert!(!geometry_equal(&ctx, &ellipse_value, &hyperbola_value).unwrap());
+        assert!(!geometry_equal(&ctx, &hyperbola_value, &parabola_value).unwrap());
+        ctx.finish_session().unwrap();
     }
 
     #[test]

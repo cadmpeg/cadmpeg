@@ -46,7 +46,7 @@ fn decode_asm_binary(
                 header,
                 stream: None,
             },
-            "ASM binary header has no record stream",
+            format_args!("ASM binary header has no record stream"),
         ));
     };
     let payload = if ctx.container_only() {
@@ -122,7 +122,7 @@ fn decode_acis_binary(
                 header,
                 stream: None,
             },
-            "ACIS binary header has no record stream",
+            format_args!("ACIS binary header has no record stream"),
         ));
     };
     let payload = if ctx.container_only() {
@@ -192,7 +192,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
                 unsupported_unframed(
                     ctx,
                     &StreamEvidence::Text(None),
-                    format!("text container does not frame: {error}"),
+                    format_args!("text container does not frame: {error}"),
                 )
             })
         })?;
@@ -203,7 +203,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
                 unsupported_unframed(
                     ctx,
                     &StreamEvidence::Text(None),
-                    format!("text stream does not frame: {error}"),
+                    format_args!("text stream does not frame: {error}"),
                 )
             })
         })?;
@@ -254,7 +254,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
 fn unsupported_unframed(
     ctx: &DecodeContext<'_>,
     evidence: &StreamEvidence<'_>,
-    message: impl Into<String>,
+    message: std::fmt::Arguments<'_>,
 ) -> CodecError {
     let (matched, kernel) = match layers(ctx, evidence) {
         Ok(layers) => layers,
@@ -267,13 +267,18 @@ fn unsupported_unframed(
                 cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
                     CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
                 }
-                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
+                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => {
+                    CodecError::ResourceLimit(limit)
+                }
             };
         }
     };
     CodecError::UnsupportedDialect {
         dialects: Box::new(dialects),
-        message: message.into(),
+        message: match ctx.format_retained(message, "SAT unframed stream refusal") {
+            Ok(message) => message,
+            Err(error) => return error,
+        },
     }
 }
 
@@ -297,27 +302,34 @@ fn build_result(
                 cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
                     CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
                 }
-                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => limit.into(),
+                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => {
+                    CodecError::ResourceLimit(limit)
+                }
             })?,
         cadmpeg_core::text::named_entries_for_decode(ctx, "the acis header", attributes)?,
     ));
     let mut losses = Vec::new();
-    let mut unresolved_tolerance = |name: &str, value: f64| {
-        losses.push(SatLossCode::HeaderToleranceUnresolved.note(format!(
+    let mut unresolved_tolerance = |name: &str, value: f64| -> Result<(), CodecError> {
+        let message = ctx.format_retained(format_args!(
             "header {name} tolerance {value} does not yield a positive finite IR value; keeping the default"
-        )));
+        ), "SAT unresolved tolerance loss")?;
+        ctx.push_vec(
+            &mut losses,
+            SatLossCode::HeaderToleranceUnresolved.note(ctx, message)?,
+            "SAT loss notes",
+        )
     };
     if let Some(value) = header.linear {
         let linear_mm = value * 10.0;
         match cadmpeg_ir::scalar::PositiveLength::new(linear_mm) {
             Some(linear) => ir.tolerances.linear = linear,
-            None => unresolved_tolerance("linear", value),
+            None => unresolved_tolerance("linear", value)?,
         }
     }
     if let Some(value) = header.angular {
         match cadmpeg_ir::scalar::PositiveAngle::new(value) {
             Some(angular) => ir.tolerances.angular = angular,
-            None => unresolved_tolerance("angular", value),
+            None => unresolved_tolerance("angular", value)?,
         }
     }
 
@@ -343,21 +355,49 @@ fn build_result(
 
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
-    losses.extend(dialect_loss(ctx, kernel)?);
+    ctx.extend_vec(
+        &mut losses,
+        dialect_loss(ctx, kernel)?.into_iter().collect(),
+        "SAT dialect loss notes",
+    )?;
     if !geometry_transferred {
-        let branch = text_dialect.map_or(String::new(), |dialect| {
-            format!(" The stream ends with `{}`.", terminator_line(dialect))
-        });
-        losses.push(SatLossCode::GeometryFramedWithoutCarriers.note(format!(
-            "the stream framed but its records decoded no surfaces, points, or faces; its \
-             version or branch is outside the ASM decoders' coverage.{branch}"
-        )));
+        let branch = match text_dialect {
+            Some(dialect) => ctx.format_scoped(
+                format_args!(" The stream ends with `{}`.", terminator_line(dialect)),
+                "SAT terminal branch loss suffix",
+            )?,
+            None => (
+                String::new(),
+                ctx.reserve_scoped(0, "SAT terminal branch loss suffix")?,
+            ),
+        };
+        let message = ctx.format_retained(
+            format_args!(
+                "the stream framed but its records decoded no surfaces, points, or faces; its \
+             version or branch is outside the ASM decoders' coverage.{}",
+                branch.0
+            ),
+            "SAT untransferred geometry loss",
+        )?;
+        ctx.push_vec(
+            &mut losses,
+            SatLossCode::GeometryFramedWithoutCarriers.note(ctx, message)?,
+            "SAT loss notes",
+        )?;
     }
     if stats.unknown_surface_faces() > 0 {
-        losses.push(SatLossCode::GeometryProceduralSurfaceUntyped.note(format!(
-            "{} face(s) rest on procedural surface constructions without a decoded carrier",
-            stats.unknown_surface_faces()
-        )));
+        let message = ctx.format_retained(
+            format_args!(
+                "{} face(s) rest on procedural surface constructions without a decoded carrier",
+                stats.unknown_surface_faces()
+            ),
+            "SAT procedural surface loss",
+        )?;
+        ctx.push_vec(
+            &mut losses,
+            SatLossCode::GeometryProceduralSurfaceUntyped.note(ctx, message)?,
+            "SAT loss notes",
+        )?;
     }
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     coverage.record(ctx, crate::coverage::UNKNOWN_RECORDS, unknowns.len())?;
@@ -375,9 +415,7 @@ fn build_result(
     };
 
     let mut annotations = AnnotationBuilder::new();
-    let annotation_count = cadmpeg_core::decode::u64_from_index(annotation_records.len());
-    ctx.charge_work(annotation_count, "scan SAT annotation records")?;
-    for record in annotation_records {
+    for record in ctx.admit_iter(&annotation_records, "scan SAT annotation records")? {
         let stream = StreamHandle::new(
             ctx,
             cadmpeg_ir::stream_name!("sat:").with_suffix(
@@ -394,7 +432,7 @@ fn build_result(
             record.offset,
             Some(record.tag.as_str()),
         )?;
-        for field in record.derived_fields {
+        for field in ctx.admit_iter(&record.derived_fields, "scan SAT derived fields")? {
             annotations
                 .derived(ctx, &record.id, field)
                 .map_err(cadmpeg_core::CodecError::from)?;

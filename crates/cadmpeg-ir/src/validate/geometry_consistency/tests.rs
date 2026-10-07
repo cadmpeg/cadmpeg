@@ -850,7 +850,8 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         ranges.iter().any(|[start, end]| {
             (start - 0.75).abs() <= 1.0e-10 && (end - 0.25).abs() <= 1.0e-10
         }),
-        "{ranges:?}"
+        "{:?}",
+        &*ranges
     );
 }
 

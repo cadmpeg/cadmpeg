@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Located parser failures shared by the Inventor record families.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 
@@ -15,8 +17,7 @@ pub(crate) enum RecordIssueFamily {
     Feature { type_id: RecordTypeId },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "RecordIssueWire")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecordIssue {
     pub(crate) family: RecordIssueFamily,
     pub(crate) segment_token: cadmpeg_ir::ids::IdentityKey,
@@ -68,13 +69,16 @@ impl Serialize for RecordIssue {
 }
 
 impl RecordIssue {
-    pub(crate) fn id(&self) -> String {
-        RecordIssueId(self).to_string()
+    pub(crate) fn id(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        ctx.format_retained(
+            format_args!("{}", RecordIssueId(self)),
+            "retain Inventor record issue identity",
+        )
     }
 }
 
 #[derive(Serialize, Deserialize)]
-struct RecordIssueWire {
+pub(crate) struct RecordIssueWire {
     id: String,
     #[serde(
         default,
@@ -90,8 +94,11 @@ struct RecordIssueWire {
 #[cfg(test)]
 impl From<RecordIssue> for RecordIssueWire {
     fn from(value: RecordIssue) -> Self {
+        let ctx = cadmpeg_test_support::service_decode_context();
         Self {
-            id: value.id(),
+            id: value
+                .id(&ctx)
+                .expect("test service context retains record issue identity"),
             type_id: match value.family {
                 RecordIssueFamily::Assembly | RecordIssueFamily::Presentation => None,
                 RecordIssueFamily::Design { type_id }
@@ -105,38 +112,103 @@ impl From<RecordIssue> for RecordIssueWire {
     }
 }
 
-impl TryFrom<RecordIssueWire> for RecordIssue {
-    type Error = String;
-
-    fn try_from(wire: RecordIssueWire) -> Result<Self, Self::Error> {
-        let prefix = wire.id.split_once('#').map(|(prefix, _)| prefix);
-        let family = match (prefix, wire.type_id) {
-            (Some("inventor:assembly:record-issue"), None) => RecordIssueFamily::Assembly,
-            (Some("inventor:presentation:record-issue"), None) => RecordIssueFamily::Presentation,
-            (Some("inventor:pmdc:record-issue"), Some(type_id)) => RecordIssueFamily::Design {
-                type_id: type_id.try_into().map_err(str::to_owned)?,
-            },
-            (Some("inventor:pmdc:sketch-record-issue"), Some(type_id)) => {
+impl RecordIssueWire {
+    pub(crate) fn into_record(self, ctx: &DecodeContext<'_>) -> Result<RecordIssue, CodecError> {
+        let prefix = ctx
+            .split_once(&self.id, "#", "split Inventor record issue identity")?
+            .map(|(prefix, _)| prefix);
+        let family = match (prefix, self.type_id) {
+            (Some(prefix), None)
+                if ctx.equal(
+                    prefix,
+                    "inventor:assembly:record-issue",
+                    "compare Inventor record issue family",
+                )? =>
+            {
+                RecordIssueFamily::Assembly
+            }
+            (Some(prefix), None)
+                if ctx.equal(
+                    prefix,
+                    "inventor:presentation:record-issue",
+                    "compare Inventor record issue family",
+                )? =>
+            {
+                RecordIssueFamily::Presentation
+            }
+            (Some(prefix), Some(type_id))
+                if ctx.equal(
+                    prefix,
+                    "inventor:pmdc:record-issue",
+                    "compare Inventor record issue family",
+                )? =>
+            {
+                RecordIssueFamily::Design {
+                    type_id: type_id.try_into().map_err(|_| {
+                        CodecError::Malformed(
+                            "type_id must contain 32 lowercase hexadecimal digits".into(),
+                        )
+                    })?,
+                }
+            }
+            (Some(prefix), Some(type_id))
+                if ctx.equal(
+                    prefix,
+                    "inventor:pmdc:sketch-record-issue",
+                    "compare Inventor record issue family",
+                )? =>
+            {
                 RecordIssueFamily::Sketch {
-                    type_id: type_id.try_into().map_err(str::to_owned)?,
+                    type_id: type_id.try_into().map_err(|_| {
+                        CodecError::Malformed(
+                            "type_id must contain 32 lowercase hexadecimal digits".into(),
+                        )
+                    })?,
                 }
             }
-            (Some("inventor:pmdc:feature-record-issue"), Some(type_id)) => {
+            (Some(prefix), Some(type_id))
+                if ctx.equal(
+                    prefix,
+                    "inventor:pmdc:feature-record-issue",
+                    "compare Inventor record issue family",
+                )? =>
+            {
                 RecordIssueFamily::Feature {
-                    type_id: type_id.try_into().map_err(str::to_owned)?,
+                    type_id: type_id.try_into().map_err(|_| {
+                        CodecError::Malformed(
+                            "type_id must contain 32 lowercase hexadecimal digits".into(),
+                        )
+                    })?,
                 }
             }
-            _ => return Err("record issue id family and type_id do not agree".into()),
+            _ => {
+                return Err(CodecError::Malformed(
+                    "record issue id family and type_id do not agree".into(),
+                ));
+            }
         };
-        let issue = Self {
+        let segment_token = crate::record_identity::try_identity_key(
+            ctx,
+            self.segment_token,
+            "validate Inventor record issue segment token",
+            None,
+        )?;
+        let issue = RecordIssue {
             family,
-            segment_token: cadmpeg_ir::ids::IdentityKey::try_new(wire.segment_token)
-                .map_err(|error| error.to_string())?,
-            record_ordinal: wire.record_ordinal,
-            detail: wire.detail,
+            segment_token,
+            record_ordinal: self.record_ordinal,
+            detail: self.detail,
         };
-        if issue.id() != wire.id {
-            return Err("record issue id does not match its record location".into());
+        let (expected_id, _expected_id_storage) =
+            ctx.with_scoped_storage("validate Inventor record issue identity", || issue.id(ctx))?;
+        if !ctx.equal(
+            &expected_id,
+            &self.id,
+            "validate Inventor record issue identity",
+        )? {
+            return Err(CodecError::Malformed(
+                "record issue id does not match its record location".into(),
+            ));
         }
         Ok(issue)
     }
@@ -146,6 +218,13 @@ impl TryFrom<RecordIssueWire> for RecordIssue {
 mod tests {
     use super::{RecordIssue, RecordIssueFamily, RecordIssueWire};
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
+
+    fn from_value(value: serde_json::Value) -> Result<RecordIssue, String> {
+        let wire =
+            serde_json::from_value::<RecordIssueWire>(value).map_err(|error| error.to_string())?;
+        wire.into_record(&cadmpeg_test_support::service_decode_context())
+            .map_err(|error| error.to_string())
+    }
 
     #[test]
     fn record_issues_reject_invalid_type_guids() {
@@ -161,7 +240,7 @@ mod tests {
                 "ABCDEF0123456789abcdef0123456789ab",
             ] {
                 let wire = serde_json::json!({"id": format!("{prefix}#segment-0"), "type_id": type_id, "segment_token": "segment", "record_ordinal": 0, "detail": "invalid"});
-                assert!(serde_json::from_value::<RecordIssue>(wire).is_err());
+                assert!(from_value(wire).is_err());
             }
         }
     }
@@ -170,7 +249,7 @@ mod tests {
     fn record_issues_reject_invalid_segment_tokens() {
         for token in ["", "has space", "has#separator"] {
             let wire = serde_json::json!({"id": format!("inventor:assembly:record-issue#{token}-0"), "segment_token": token, "record_ordinal": 0, "detail": "invalid"});
-            assert!(serde_json::from_value::<RecordIssue>(wire).is_err());
+            assert!(from_value(wire).is_err());
         }
     }
 
@@ -235,13 +314,12 @@ mod tests {
                 expected
             );
             assert_eq!(
-                serde_json::from_value::<RecordIssue>(expected.clone())
-                    .expect("valid test fixture"),
+                from_value(expected.clone()).expect("valid test fixture"),
                 issue
             );
             let mut wrong_location = expected.clone();
             wrong_location["record_ordinal"] = serde_json::json!(8);
-            assert!(serde_json::from_value::<RecordIssue>(wrong_location).is_err());
+            assert!(from_value(wrong_location).is_err());
             if typed {
                 expected
                     .as_object_mut()
@@ -250,7 +328,7 @@ mod tests {
             } else {
                 expected["type_id"] = serde_json::json!("0123456789abcdef0123456789abcdef");
             }
-            assert!(serde_json::from_value::<RecordIssue>(expected).is_err());
+            assert!(from_value(expected).is_err());
         }
     }
 

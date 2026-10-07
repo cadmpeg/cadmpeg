@@ -1211,6 +1211,19 @@ impl From<IncreasingParameterInterval> for ParameterInterval {
 #[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
 pub struct IncreasingParameterInterval([f64; 2]);
 
+impl cadmpeg_core::decode::cost::DecodeCost for IncreasingParameterInterval {
+    const FIXED_BYTES: Option<u64> =
+        <[f64; 2] as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
+
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        self.0.decode_cost(ctx, operation)
+    }
+}
+
 impl IncreasingParameterInterval {
     /// Order finite endpoints without testing their already admitted finiteness.
     pub fn from_finite_endpoints(endpoints: crate::units::FiniteVector<2>) -> Option<Self> {
