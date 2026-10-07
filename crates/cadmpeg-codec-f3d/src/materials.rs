@@ -714,22 +714,27 @@ fn appearance_properties_equal(
     )? {
         return Ok(false);
     }
-    let left_entries = ctx.admit_iter(left, "compare F3D appearance properties")?;
-    let right_entries = ctx.admit_iter(right, "compare F3D appearance properties")?;
-    for ((left_name, left_value), (right_name, right_value)) in left_entries.zip(right_entries) {
-        if !ctx.equal(
-            left_name,
-            right_name,
-            "compare F3D appearance property names",
-        )? || !ctx.equal(
-            &left_value.get(),
-            &right_value.get(),
-            "compare F3D appearance property values",
-        )? {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    let mut right_entries = right.iter();
+    ctx.all_by(
+        left,
+        |(left_name, left_value)| {
+            let Some((right_name, right_value)) =
+                ctx.next_charged(&mut right_entries, "compare F3D appearance properties")?
+            else {
+                return Ok(false);
+            };
+            Ok(ctx.equal(
+                left_name,
+                right_name,
+                "compare F3D appearance property names",
+            )? && ctx.equal(
+                &left_value.get(),
+                &right_value.get(),
+                "compare F3D appearance property values",
+            )?)
+        },
+        "compare F3D appearance properties",
+    )
 }
 
 fn appearance_textures_equal(
@@ -744,14 +749,19 @@ fn appearance_textures_equal(
     )? {
         return Ok(false);
     }
-    let left_textures = ctx.admit_iter(left, "compare F3D appearance textures")?;
-    let right_textures = ctx.admit_iter(right, "compare F3D appearance textures")?;
-    for (left, right) in left_textures.zip(right_textures) {
-        if !appearance_texture_equal(ctx, left, right)? {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    let mut right_textures = right.iter();
+    ctx.all_by(
+        left,
+        |left| {
+            let Some(right) =
+                ctx.next_charged(&mut right_textures, "compare F3D appearance textures")?
+            else {
+                return Ok(false);
+            };
+            appearance_texture_equal(ctx, left, right)
+        },
+        "compare F3D appearance textures",
+    )
 }
 
 fn appearance_texture_equal(
@@ -1734,10 +1744,11 @@ fn legacy_face_appearance_assignments(
             else {
                 continue;
             };
-            if ctx
-                .admit_iter(display_name.as_str(), "validate F3D face display name")?
-                .any(char::is_control)
-            {
+            if ctx.any_by(
+                display_name.as_str().chars(),
+                |value| Ok(char::is_control(value)),
+                "validate F3D face display name",
+            )? {
                 continue;
             }
             cursor = display_name_end;
@@ -1803,15 +1814,19 @@ fn legacy_face_selector_is_valid(
     if suffix.is_empty() {
         return Ok(false);
     }
-    Ok(ctx
-        .admit_iter(suffix, "validate F3D legacy face preset")?
-        .all(|character| {
-            if digit_only {
-                character.is_ascii_digit()
-            } else {
-                character.is_ascii_alphanumeric()
-            }
-        }))
+    ctx.all_by(
+        suffix.chars(),
+        |character| {
+            Ok({
+                if digit_only {
+                    character.is_ascii_digit()
+                } else {
+                    character.is_ascii_alphanumeric()
+                }
+            })
+        },
+        "validate F3D legacy face preset",
+    )
 }
 
 /// Decode a face-scoped appearance assignment from the paired-library marker
@@ -1954,8 +1969,10 @@ fn is_lowercase_guid(ctx: &DecodeContext<'_>, value: &str) -> Result<bool, Codec
     if value.len() != GUID_LEN || !is_guid_prefix(value) {
         return Ok(false);
     }
-    Ok(ctx
-        .admit_iter(&value.as_bytes()[..GUID_LEN], "validate F3D lowercase GUID")?
+    ctx.charge_work(0, "validate F3D lowercase GUID")?;
+    Ok(value
+        .as_bytes()
+        .iter()
         .all(|byte| !byte.is_ascii_uppercase()))
 }
 
@@ -2060,53 +2077,46 @@ fn body_node_candidate(
     nodes: &std::collections::HashMap<String, u64>,
 ) -> Result<Option<u64>, CodecError> {
     const APPEARANCE_MARKER: &str = "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C";
-    let mut marker = None;
-    for (index, (_, value)) in ctx
-        .admit_iter(
-            &strings[..=visual_index],
-            "find F3D browser appearance boundary",
-        )?
-        .enumerate()
-        .rev()
-    {
-        if ctx.equal(
-            value.as_str(),
-            APPEARANCE_MARKER,
-            "compare F3D browser appearance marker",
-        )? {
-            marker = Some(index);
-            break;
-        }
-    }
+    let marker = ctx.rposition_by(
+        &strings[..=visual_index],
+        |(_, value)| {
+            ctx.equal(
+                value.as_str(),
+                APPEARANCE_MARKER,
+                "compare F3D browser appearance marker",
+            )
+        },
+        "find F3D browser appearance boundary",
+    )?;
     let Some(marker) = marker else {
         return Ok(None);
     };
     // Include the three strings before the marker and every string after it.
     let mut first = None;
-    for (ordinal, (_, candidate)) in ctx
-        .admit_iter(&strings[..visual_index], "scan F3D browser node candidates")?
-        .enumerate()
-    {
-        if ordinal < marker && ordinal.abs_diff(marker) > 3 {
-            continue;
-        }
-        let mut folded_storage = ctx.reserve_scoped(0, "fold F3D browser node candidate")?;
-        let entity = folded_storage.with_storage(|| {
-            let folded = ctx.to_ascii_lowercase(candidate, "fold F3D browser node candidate")?;
-            Ok::<Option<u64>, CodecError>(
-                ctx.get_hash_map(nodes, &folded, "find F3D browser node")?
-                    .copied(),
-            )
-        })?;
-        let Some(entity) = entity else {
-            continue;
-        };
-        if first.is_some_and(|previous| previous != entity) {
-            return Ok(None);
-        }
-        first = Some(entity);
-    }
-    Ok(first)
+    let conflict = ctx.any_by(
+        &strings[marker.saturating_sub(3)..visual_index],
+        |(_, candidate)| {
+            let mut folded_storage = ctx.reserve_scoped(0, "fold F3D browser node candidate")?;
+            let entity = folded_storage.with_storage(|| {
+                let folded =
+                    ctx.to_ascii_lowercase(candidate, "fold F3D browser node candidate")?;
+                Ok::<Option<u64>, CodecError>(
+                    ctx.get_hash_map(nodes, &folded, "find F3D browser node")?
+                        .copied(),
+                )
+            })?;
+            let Some(entity) = entity else {
+                return Ok(false);
+            };
+            if first.is_some_and(|previous| previous != entity) {
+                return Ok(true);
+            }
+            first = Some(entity);
+            Ok(false)
+        },
+        "scan F3D browser node candidates",
+    )?;
+    Ok(if conflict { None } else { first })
 }
 
 fn bind_bodies(
@@ -2652,10 +2662,8 @@ fn utf16_string_prefix_is_text(
     let Some(prefix_bytes) = bytes.get(payload_at..prefix_end) else {
         return Ok(false);
     };
-    let prefix = ctx
-        .admit_iter(prefix_bytes, "validate F3D UTF-16 string prefix")?
-        .enumerate()
-        .step_by(2);
+    ctx.charge_work(0, "validate F3D UTF-16 string prefix")?;
+    let prefix = prefix_bytes.iter().enumerate().step_by(2);
     let mut high_surrogate = false;
     for (offset, _) in prefix {
         let Some(unit) = View::u16_le_at(prefix_bytes, offset) else {
@@ -2690,10 +2698,11 @@ fn lp_utf16_string_at(
     else {
         return Ok(None);
     };
-    if ctx
-        .admit_iter(value.as_str(), "check F3D Protein string controls")?
-        .any(char::is_control)
-    {
+    if ctx.any_by(
+        value.as_str().chars(),
+        |value| Ok(char::is_control(value)),
+        "check F3D Protein string controls",
+    )? {
         return Ok(None);
     }
     Ok(Some((value, end - offset)))
@@ -2847,10 +2856,11 @@ fn decode_definition_catalog_record(
         .ok_or_else(|| malformed("description", position))?;
     consume_catalog_strings(ctx, record, &mut position)?;
     consume_catalog_strings(ctx, record, &mut position)?;
-    if ctx
-        .admit_iter(&record[position..], "check F3D definition trailing padding")?
-        .any(|byte| *byte != 0)
-    {
+    if ctx.any_by(
+        &record[position..],
+        |byte| Ok(*byte != 0),
+        "check F3D definition trailing padding",
+    )? {
         return Err(malformed("trailing padding", position));
     }
     Ok(DefinitionCatalog {
@@ -2894,12 +2904,13 @@ fn nested_entry<'a>(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
-    for entry in ctx.admit_iter(archive.entries(), "scan nested F3D Protein entries")? {
-        if ctx.ends_with(&entry.name, suffix, "match nested F3D Protein entry suffix")? {
-            return Ok(Some(archive.open(ctx, &entry.name)?));
-        }
-    }
-    Ok(None)
+    ctx.find_by(
+        archive.entries(),
+        |entry| ctx.ends_with(&entry.name, suffix, "match nested F3D Protein entry suffix"),
+        "scan nested F3D Protein entries",
+    )?
+    .map(|entry| archive.open(ctx, &entry.name))
+    .transpose()
 }
 
 /// Decode the fixed source-less layouts emitted by [`encode_protein`]. Native

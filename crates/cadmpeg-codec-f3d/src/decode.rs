@@ -560,9 +560,10 @@ fn datum_point_construction_is_resolved(
         DatumPointConstruction::TwoEdgeIntersection { edges } => {
             edges.iter().all(edge_selection_is_resolved)
         }
-        DatumPointConstruction::ThreePlaneIntersection { planes } => ctx
-            .admit_iter(planes.as_ref(), "scan F3D datum point construction planes")?
-            .all(datum_plane_reference_is_resolved),
+        DatumPointConstruction::ThreePlaneIntersection { planes } => {
+            ctx.charge_work(0, "scan F3D datum point construction planes")?;
+            planes.iter().all(datum_plane_reference_is_resolved)
+        }
         DatumPointConstruction::Vertex { vertex } => matches!(
             vertex,
             VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
@@ -749,7 +750,7 @@ fn feature_definition_is_incomplete(
         FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { frame, points }) => {
             !datum_plane_frame_is_resolved(*frame)
-                || !ctx.admit_iter(&**points, "scan F3D three-point plane construction")?.all(|point| {
+                || !points.iter().all(|point| {
                     matches!(
                         point,
                         cadmpeg_ir::features::VertexSelection::Generated { .. }
@@ -834,12 +835,12 @@ fn feature_definition_is_incomplete(
                 cadmpeg_ir::features::SweepShape::Unresolved { section, sections }
                 | cadmpeg_ir::features::SweepShape::Surface { section, sections } => !section.is_unresolved()
                     && section.referenced_profile().is_none_or(planar_profile_ref_is_resolved)
-                    && ctx.admit_iter(sections.as_slice(), "scan F3D Sweep completeness sections")?.all(|section| !section.is_unresolved()
-                        && section.referenced_profile().is_none_or(planar_profile_ref_is_resolved)),
+                    && ctx.all_by(sections.as_slice(), |section| Ok(!section.is_unresolved()
+                        && section.referenced_profile().is_none_or(planar_profile_ref_is_resolved)), "scan F3D Sweep completeness sections")?,
                 cadmpeg_ir::features::SweepShape::Solid { section, sections, .. } => !section.is_unresolved()
                     && section.referenced_profile().is_none_or(planar_profile_ref_is_resolved)
-                    && ctx.admit_iter(sections.as_slice(), "scan F3D Sweep completeness sections")?.all(|section| !section.is_unresolved()
-                        && section.referenced_profile().is_none_or(planar_profile_ref_is_resolved)),
+                    && ctx.all_by(sections.as_slice(), |section| Ok(!section.is_unresolved()
+                        && section.referenced_profile().is_none_or(planar_profile_ref_is_resolved)), "scan F3D Sweep completeness sections")?,
             };
             let mode_is_resolved = match mode {
                 SweepMode::Unresolved {} => false,
@@ -890,10 +891,10 @@ fn feature_definition_is_incomplete(
                 || face.as_ref().is_some_and(face_selection_is_resolved);
             let placements_are_resolved = placements.as_ref().map(|placements| Ok::<_, CodecError>(
                 !placements.is_empty()
-                    && ctx.admit_iter(placements.as_slice(), "scan F3D Hole completeness placements")?.all(|placement| match placement {
+                    && ctx.all_by(placements.as_slice(), |placement| Ok(match placement {
                         HolePlacement::Directed { direction, .. } => direction.unit().is_some(),
                         HolePlacement::Axis { axis, .. } => axis.unit().is_some(),
-                    })
+                    }), "scan F3D Hole completeness placements")?
             )).transpose()?.unwrap_or(false);
 
             !support_is_resolved
@@ -1049,14 +1050,13 @@ fn feature_definition_is_incomplete(
         }
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) => {
             groups.is_empty()
-                || ctx.admit_iter(groups.as_slice(), "scan F3D treatment completeness groups")?.any(|group| {
+                || ctx.any_by(groups.as_slice(), |group| Ok({
                     !edge_selection_is_resolved(&group.edges) || group.spec.is_unresolved()
-                })
+                }), "scan F3D treatment completeness groups")?
         }
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => {
             groups.is_empty()
-                || ctx.admit_iter(groups.as_slice(), "scan F3D Fillet completeness groups")?
-                    .any(|group| !edge_selection_is_resolved(&group.edges))
+                || ctx.any_by(groups.as_slice(), |group| Ok(!edge_selection_is_resolved(&group.edges)), "scan F3D Fillet completeness groups")?
         }
         FeatureDefinition::Operation(FeatureOperation::DeleteFace { faces, .. }) => {
             !face_selection_is_resolved(faces)
@@ -1122,14 +1122,14 @@ fn feature_definition_is_incomplete(
         }) => {
             let guidance_incomplete = match guidance {
                 cadmpeg_ir::features::LoftGuidance::Guides(paths) => {
-                    ctx.admit_iter(paths.as_slice(), "scan F3D Loft completeness guides")?.any(|path| !loft_path_is_resolved(path))
+                    ctx.any_by(paths.as_slice(), |path| Ok(!loft_path_is_resolved(path)), "scan F3D Loft completeness guides")?
                 }
                 cadmpeg_ir::features::LoftGuidance::Centerline(path) => {
                     !loft_path_is_resolved(path)
                 }
             };
             sections.len() < 2
-                || ctx.admit_iter(sections.as_slice(), "scan F3D Loft completeness sections")?.any(|section| match section {
+                || ctx.any_by(sections.as_slice(), |section| Ok(match section {
                     cadmpeg_ir::features::LoftSection::Profile(profile) => {
                         !profile_ref_is_resolved(profile)
                     }
@@ -1140,7 +1140,7 @@ fn feature_definition_is_incomplete(
                         cadmpeg_ir::features::LoftPointSection::Point(_)
                         | cadmpeg_ir::features::LoftPointSection::Vertex(_),
                     ) => false,
-                })
+                }), "scan F3D Loft completeness sections")?
                 || guidance_incomplete
         }
         FeatureDefinition::Operation(FeatureOperation::FilledSurface {
@@ -1165,7 +1165,7 @@ fn feature_definition_is_incomplete(
             };
             let support_is_required = continuity
                 .resolved()
-                .map(|continuity| Ok::<_, CodecError>(ctx.admit_iter(continuity.conditions.as_slice(), "scan F3D surface continuity conditions")?.copied().any(needs_support))).transpose()?.unwrap_or(false);
+                .map(|continuity| ctx.any_by(continuity.conditions.as_slice(), |value| Ok(needs_support(*value)), "scan F3D surface continuity conditions")).transpose()?.unwrap_or(false);
 
             !boundary_is_resolved
                 || !continuity_is_resolved
@@ -1174,7 +1174,7 @@ fn feature_definition_is_incomplete(
         }
         FeatureDefinition::Operation(FeatureOperation::FullRoundFillet { groups }) => {
             groups.is_empty()
-                || ctx.admit_iter(groups.as_slice(), "scan F3D treatment completeness groups")?.any(|group| {
+                || ctx.any_by(groups.as_slice(), |group| Ok({
                     !face_selection_is_resolved(group.center_faces())
                         || matches!(
                             group.side_one_faces(),
@@ -1194,7 +1194,7 @@ fn feature_definition_is_incomplete(
                             cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(ref selection)
                                 if !face_selection_is_resolved(selection)
                         )
-                })
+                }), "scan F3D treatment completeness groups")?
         }
         FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) => {
             let target = operands.target();
@@ -7261,8 +7261,8 @@ pub(crate) fn resolve_face_appearance_bindings(
             if !crate::bytes::is_guid_hyphenated(value) {
                 continue;
             }
-            if !ctx
-                .admit_iter(value.as_str(), "scan F3D face material GUID case")?
+            if !value
+                .chars()
                 .all(|character| !character.is_ascii_uppercase())
             {
                 continue;

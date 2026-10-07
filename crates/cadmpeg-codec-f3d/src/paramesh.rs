@@ -1414,6 +1414,7 @@ fn require_layout(
     stream: &MeshStream,
     layout: StreamLayout,
 ) -> Result<(), CodecError> {
+    const MISMATCH: &str = "paramesh stream descriptor does not match its implemented layout";
     let expected: &[(&str, StreamDescriptorValue)] = match layout {
         StreamLayout::Byte => &[("T", StreamDescriptorValue::Integer(0))],
         StreamLayout::Float2 => &[
@@ -1438,31 +1439,26 @@ fn require_layout(
             ("d", StreamDescriptorValue::Integer(1)),
         ],
     };
-    if stream.descriptor.len() != expected.len()
-        || !ctx.all_by(
-            expected,
-            |(expected_name, expected_value)| {
-                ctx.any_by(
-                    &stream.descriptor,
-                    |(name, value)| {
-                        if !ctx.equal(
-                            name.as_str(),
-                            *expected_name,
-                            "compare paramesh descriptor names",
-                        )? {
-                            return Ok(false);
-                        }
-                        ctx.equal(value, expected_value, "compare paramesh descriptor values")
-                    },
-                    "find paramesh descriptor member",
-                )
+    if stream.descriptor.len() != expected.len() {
+        return Err(CodecError::malformed(MISMATCH));
+    }
+    for (expected_name, expected_value) in expected {
+        if !ctx.any_by(
+            &stream.descriptor,
+            |(name, value)| {
+                if !ctx.equal(
+                    name.as_str(),
+                    *expected_name,
+                    "compare paramesh descriptor names",
+                )? {
+                    return Ok(false);
+                }
+                ctx.equal(value, expected_value, "compare paramesh descriptor values")
             },
-            "validate paramesh descriptor members",
-        )?
-    {
-        return Err(CodecError::malformed(
-            "paramesh stream descriptor does not match its implemented layout",
-        ));
+            "find paramesh descriptor member",
+        )? {
+            return Err(CodecError::malformed(MISMATCH));
+        }
     }
     Ok(())
 }
@@ -1472,18 +1468,15 @@ fn require_version_2_descriptor(
     ctx: &DecodeContext<'_>,
     stream: &MeshStream,
 ) -> Result<(), CodecError> {
-    for layout in ctx.admit_iter(
-        &[
-            StreamLayout::Byte,
-            StreamLayout::Float2,
-            StreamLayout::Float3,
-            StreamLayout::Float4,
-            StreamLayout::PackedDirection,
-            StreamLayout::TerminalDelta,
-        ],
-        "match paramesh version-2 descriptor",
-    )? {
-        match require_layout(ctx, stream, *layout) {
+    for layout in [
+        StreamLayout::Byte,
+        StreamLayout::Float2,
+        StreamLayout::Float3,
+        StreamLayout::Float4,
+        StreamLayout::PackedDirection,
+        StreamLayout::TerminalDelta,
+    ] {
+        match require_layout(ctx, stream, layout) {
             Ok(()) => return Ok(()),
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(_) => {}
@@ -1529,14 +1522,14 @@ fn attribute_names(
                 _ => CodecError::malformed("paramesh attribute-name stream is not XML"),
             })?;
     let document = admitted_document.document();
-    ctx.charge_work(1, "select paramesh XML root element")?;
-    let root = document.root_element();
+    let root = ctx.xml_root_element(document, "select paramesh XML root element")?;
     if root.tag_name().name() != "Root" || root.attributes().next().is_some() {
         return Err(CodecError::malformed(
             "paramesh attribute-name stream has an invalid fragment envelope",
         ));
     }
-    for node in root.children() {
+    let mut children = root.children();
+    while let Some(node) = ctx.next_charged(&mut children, "scan paramesh XML envelope nodes")? {
         if !node.is_element() {
             if !node.is_text() {
                 return Err(CodecError::malformed(
@@ -1558,7 +1551,10 @@ fn attribute_names(
     }
 
     let mut names = std::collections::BTreeMap::new();
-    for attribute in root.children() {
+    let mut attributes = root.children();
+    while let Some(attribute) =
+        ctx.next_charged(&mut attributes, "scan paramesh XML attribute records")?
+    {
         if !attribute.is_element() {
             continue;
         }
@@ -1567,7 +1563,8 @@ fn attribute_names(
                 "paramesh attribute-name stream has an undefined element",
             ));
         }
-        for node in attribute.children() {
+        let mut nodes = attribute.children();
+        while let Some(node) = ctx.next_charged(&mut nodes, "scan paramesh XML attribute nodes")? {
             if node.is_element() {
                 continue;
             }
@@ -1588,10 +1585,24 @@ fn attribute_names(
                 ));
             }
         }
-        let mut children = attribute.children().filter(roxmltree::Node::is_element);
-        let (Some(triangle_name), Some(authored_name), None) =
-            (children.next(), children.next(), children.next())
-        else {
+        let mut children = attribute.children();
+        let (Some(triangle_name), Some(authored_name), None) = (
+            ctx.find_by(
+                &mut children,
+                |node| Ok(node.is_element()),
+                "select paramesh XML member",
+            )?,
+            ctx.find_by(
+                &mut children,
+                |node| Ok(node.is_element()),
+                "select paramesh XML member",
+            )?,
+            ctx.find_by(
+                &mut children,
+                |node| Ok(node.is_element()),
+                "select paramesh XML member",
+            )?,
+        ) else {
             return Err(CodecError::malformed(
                 "paramesh attribute-name record does not have two members",
             ));
@@ -1605,9 +1616,15 @@ fn attribute_names(
                 "paramesh attribute-name record has an undefined member",
             ));
         }
-        if triangle_name.children().any(|node| !node.is_text())
-            || authored_name.children().any(|node| !node.is_text())
-        {
+        if ctx.any_by(
+            triangle_name.children(),
+            |node| Ok(!node.is_text()),
+            "check paramesh XML triangle-name text",
+        )? || ctx.any_by(
+            authored_name.children(),
+            |node| Ok(!node.is_text()),
+            "check paramesh XML authored-name text",
+        )? {
             return Err(CodecError::malformed(
                 "paramesh attribute-name record member is not text",
             ));
@@ -2126,10 +2143,7 @@ struct ParamMeshHeader {
 
 impl ParamMeshHeader {
     fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Self, CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(PROTOBUF_AT),
-            "validate paramesh header",
-        )?;
+        ctx.charge_work(0, "validate paramesh header")?;
         if bytes.get(..MAGIC.len()) != Some(&MAGIC[..]) {
             return Err(CodecError::malformed("paramesh container has no magic"));
         }
@@ -2141,10 +2155,7 @@ impl ParamMeshHeader {
         let reserved = bytes
             .get(MAGIC.len() + 4..PROTOBUF_COUNT_AT)
             .ok_or_else(|| CodecError::malformed("paramesh container is truncated"))?;
-        if ctx
-            .admit_iter(reserved, "validate paramesh reserved header bytes")?
-            .any(|byte| *byte != 0)
-        {
+        if reserved.iter().any(|byte| *byte != 0) {
             return Err(CodecError::malformed(
                 "paramesh reserved header bytes are not zero",
             ));
@@ -2388,17 +2399,25 @@ fn registry_attributes(
         if let Some(index_stream) = index_stream {
             require_layout(ctx, index_stream, StreamLayout::TerminalDelta)?;
         }
-        let mut registered_name = None;
-        if let Some(resource_guid) = registration.resource_guid.as_deref() {
-            for (guid, name) in
-                ctx.admit_iter(attribute_names, "find paramesh registered attribute name")?
-            {
-                if ctx.eq_ignore_ascii_case(guid, resource_guid, "match paramesh attribute GUID")? {
-                    registered_name = Some(name);
-                    break;
-                }
-            }
-        }
+        let registered_name = registration
+            .resource_guid
+            .as_deref()
+            .map(|resource_guid| {
+                ctx.find_by(
+                    attribute_names,
+                    |(guid, _)| {
+                        ctx.eq_ignore_ascii_case(
+                            guid,
+                            resource_guid,
+                            "match paramesh attribute GUID",
+                        )
+                    },
+                    "find paramesh registered attribute name",
+                )
+                .map(|entry| entry.map(|(_, name)| name))
+            })
+            .transpose()?
+            .flatten();
         if registered_name.is_some_and(|name| !match name.kind {
             AttributeNameKind::Color => {
                 registration.role == 4 && registration.streams.element_code == ELEMENT_QUAD
@@ -2616,13 +2635,19 @@ fn registry_texture_ids(
     ctx: &DecodeContext<'_>,
     attributes: &[MeshAttribute],
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    let mut named = attributes
-        .iter()
-        .filter(|attribute| attribute.authored_name.as_deref() == Some("tid"));
-    let Some(channel) = named.next() else {
+    let mut attributes = attributes.iter();
+    let named = |attribute: &&MeshAttribute| match attribute.authored_name.as_deref() {
+        Some(name) => ctx.equal(name, "tid", "match paramesh texture channel name"),
+        None => Ok(false),
+    };
+    let Some(channel) = ctx.find_by(&mut attributes, named, "select paramesh texture channel")?
+    else {
         return Ok(None);
     };
-    if named.next().is_some() {
+    if ctx
+        .find_by(&mut attributes, named, "select paramesh texture channel")?
+        .is_some()
+    {
         return Err(CodecError::malformed(
             "paramesh registry declares more than one tid channel",
         ));
@@ -3772,6 +3797,32 @@ mod tests {
             &[("r0", delta_descriptor(), terminal_delta_values(&[0, 2]))],
             2,
         )));
+    }
+
+    #[test]
+    fn paramesh_xml_node_walks_preserve_work_refusal() {
+        let stream = MeshStream {
+            descriptor: vec![("T".to_owned(), StreamDescriptorValue::Integer(0))],
+            bytes: b"<?xml version=\"1.0\"?>\n<Attrib>\n<TriName>grp_tt2060d08b-7434-4786-9506-b0ee951bb9dc</TriName>\n<AmtName>tid</AmtName>\n</Attrib>\n".to_vec(),
+        };
+        for operation in [
+            "select paramesh XML root element",
+            "scan paramesh XML envelope nodes",
+            "scan paramesh XML attribute records",
+            "scan paramesh XML attribute nodes",
+            "select paramesh XML member",
+            "check paramesh XML triangle-name text",
+            "check paramesh XML authored-name text",
+        ] {
+            let error = crate::test_support::resource_refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                operation,
+                0,
+                |ctx| super::attribute_names(ctx, Some(&stream)),
+            );
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.operation == operation));
+        }
     }
 
     #[test]

@@ -75,14 +75,22 @@ fn entity_id<'a>(
     let Value::Map(fields) = value else {
         return Ok(None);
     };
-    for (key, value) in ctx.admit_iter(fields, operation)? {
-        if let Value::String(key) = key {
-            if equal(ctx, key, "id", operation)? {
-                return text_value(ctx, value, operation);
+    let value = ctx.find_map(
+        fields,
+        |(key, value)| {
+            if let Value::String(key) = key {
+                if equal(ctx, key, "id", operation)? {
+                    return Ok(Some(value));
+                }
             }
-        }
-    }
-    Ok(None)
+            Ok(None)
+        },
+        operation,
+    )?;
+    value
+        .map(|value| text_value(ctx, value, operation))
+        .transpose()
+        .map(Option::flatten)
 }
 
 fn text_value<'a>(
@@ -334,17 +342,22 @@ fn arena<'a>(
     let Value::Map(fields) = value else {
         return Err(CodecError::malformed("BREP projection must be an object"));
     };
-    for (key, value) in ctx.admit_iter(fields, "find F3D retained arena")? {
-        if let Value::String(key) = key {
-            if equal(ctx, key, name, "find F3D retained arena")? {
-                return match value {
-                    Value::Seq(items) => Ok(items),
-                    _ => Err(CodecError::malformed("BREP projection has no typed arena")),
-                };
+    let value = ctx.find_map(
+        fields,
+        |(key, value)| {
+            if let Value::String(key) = key {
+                if equal(ctx, key, name, "find F3D retained arena")? {
+                    return Ok(Some(value));
+                }
             }
-        }
+            Ok(None)
+        },
+        "find F3D retained arena",
+    )?;
+    match value {
+        Some(Value::Seq(items)) => Ok(items),
+        _ => Err(CodecError::malformed("BREP projection has no typed arena")),
     }
-    Err(CodecError::malformed("BREP projection has no typed arena"))
 }
 
 fn select_rows<T>(

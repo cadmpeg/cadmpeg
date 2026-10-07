@@ -149,20 +149,17 @@ impl MergeSession<'_, '_> {
                 .map_or(reference.relative_path.as_str(), |design| {
                     design.display_name.as_str()
                 });
-            let mut cycle = false;
-            for path in self
-                .ctx
-                .admit_iter(&self.stack, "match F3Z reference cycle")?
-            {
-                if self.ctx.equal(
-                    path.as_str(),
-                    reference.relative_path.as_str(),
-                    "match F3D reference cycle",
-                )? {
-                    cycle = true;
-                    break;
-                }
-            }
+            let cycle = self.ctx.any_by(
+                &self.stack,
+                |path| {
+                    self.ctx.equal(
+                        path.as_str(),
+                        reference.relative_path.as_str(),
+                        "match F3D reference cycle",
+                    )
+                },
+                "match F3Z reference cycle",
+            )?;
             if cycle {
                 super::push_loss(
                     self.ctx,

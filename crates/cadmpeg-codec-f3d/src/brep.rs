@@ -543,21 +543,16 @@ fn attribute_family(
     attribute: &SourceAttribute,
     family: &str,
 ) -> Result<Option<usize>, CodecError> {
-    for (index, value) in attribute.values.iter().enumerate() {
-        ctx.charge_work(1, "scan Fusion attribute family")?;
-        if let AttributeValue::String(name) = value {
-            let work = cadmpeg_core::decode::u64_from_index(name.len())
-                .checked_add(cadmpeg_core::decode::u64_from_index(family.len()))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("compare Fusion attribute family", 0, u64::MAX)
-                })?;
-            ctx.charge_work(work, "compare Fusion attribute family")?;
-            if name == family {
-                return Ok(Some(index));
+    ctx.position_by(
+        &attribute.values,
+        |value| match value {
+            AttributeValue::String(name) => {
+                ctx.equal(name.as_str(), family, "compare Fusion attribute family")
             }
-        }
-    }
-    Ok(None)
+            _ => Ok(false),
+        },
+        "scan Fusion attribute family",
+    )
 }
 
 fn sketch_curve_link(

@@ -1697,18 +1697,22 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let edge_knot_mirror = !edge_knot_records.is_empty()
         && end_conditions == Some("SUBD_CREASES")
         && edge_knot_records.len() == edge_roots.len()
-        && ctx
-            .admit_iter(&edge_knot_records, "match T-spline mirrored edge knots")?
-            .zip(ctx.admit_iter(&edge_knot_intervals, "match T-spline edge knot intervals")?)
-            .all(|(record, interval)| match interval {
-                Some(interval) => {
-                    record.get() > 0.0
-                        && (record.get() - interval.get()).abs()
-                            <= EDGE_KNOT_MIRROR_RELATIVE_EPS
-                                * record.get().abs().max(interval.get().abs()).max(1.0)
-                }
-                None => record.get() == -1.0,
-            });
+        && ctx.all_by(
+            0..edge_knot_records.len().min(edge_knot_intervals.len()),
+            |index| {
+                let record = edge_knot_records[index];
+                Ok(match edge_knot_intervals[index] {
+                    Some(interval) => {
+                        record.get() > 0.0
+                            && (record.get() - interval.get()).abs()
+                                <= EDGE_KNOT_MIRROR_RELATIVE_EPS
+                                    * record.get().abs().max(interval.get().abs()).max(1.0)
+                    }
+                    None => record.get() == -1.0,
+                })
+            },
+            "match T-spline mirrored edge knots",
+        )?;
     if !edge_knot_records.is_empty() && !edge_knot_mirror {
         if let Some(count) = ctx.get_mut_btree_map(
             &mut unknown_record_kinds,
@@ -1739,16 +1743,22 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .filter(|live| **live)
         .count();
     if declarations.len() != 6
-        || !ctx
-            .admit_iter(&face_roots, "check T-spline face roots")?
-            .any(Option::is_some)
-        || !ctx
-            .admit_iter(&edge_roots, "check T-spline edge roots")?
-            .any(Option::is_some)
+        || !ctx.any_by(
+            &face_roots,
+            |value| Ok(Option::is_some(value)),
+            "check T-spline face roots",
+        )?
+        || !ctx.any_by(
+            &edge_roots,
+            |value| Ok(Option::is_some(value)),
+            "check T-spline edge roots",
+        )?
         || live_vertices == 0
-        || !ctx
-            .admit_iter(&half_edges, "check T-spline half-edges")?
-            .any(Option::is_some)
+        || !ctx.any_by(
+            &half_edges,
+            |value| Ok(Option::is_some(value)),
+            "check T-spline half-edges",
+        )?
         || (!grip_vertices.is_empty() && grip_vertices.len() != grip_points.len())
     {
         return Err(malformed(ctx, name, "control cage is incomplete"));
@@ -2130,10 +2140,11 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             "project T-spline edge vertices",
         )?;
     }
-    if ctx
-        .admit_iter(&edge_by_half, "validate T-spline half-edge ownership")?
-        .any(Option::is_none)
-    {
+    if ctx.any_by(
+        &edge_by_half,
+        |value| Ok(Option::is_none(value)),
+        "validate T-spline half-edge ownership",
+    )? {
         return Err(malformed(
             ctx,
             name,
