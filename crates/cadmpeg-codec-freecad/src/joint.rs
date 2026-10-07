@@ -17,30 +17,17 @@ pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<JointRecord>, CodecError> {
-    let mut owner_storage = ctx.reserve_scoped(0, "FreeCAD joint owner storage")?;
-    let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
-    for property in properties {
-        if !by_owner.contains_key(property.owner.as_str()) {
-            owner_storage
-                .with_storage(|| ctx.reserve_map(&mut by_owner, 1, "fcstd joint owner index"))?;
-            by_owner.insert(&property.owner, Vec::new());
-        }
-        if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
-            owner_storage
-                .with_storage(|| ctx.reserve_vec(owned, 1, "fcstd joint owner properties"))?;
-            owned.push(property);
-        }
-    }
+    let (by_owner, _owner_storage) = ctx.collect_scoped_btree_groups(
+        properties.iter().map(|property| (property.owner.as_str(), property)),
+        "fcstd joint owner index",
+    )?;
     let mut output = Vec::new();
-    for object in objects {
-        let source = by_owner
-            .get(object.id().as_str())
+    for object in ctx.admit_iter(objects, "fcstd joint objects")? {
+        let owned = ctx
+            .get_btree_map(&by_owner, object.id().as_str(), "fcstd joint owner lookup")?
             .map_or(&[][..], Vec::as_slice);
-        let mut owned = owner_storage
-            .with_storage(|| ctx.collection_vec(source.len(), "fcstd joint selected properties"))?;
-        owned.extend_from_slice(source);
-        let grounded_property = sole_named_property(ctx, "joint", &owned, "ObjectToGround")?;
-        let joint_type_property = sole_named_property(ctx, "joint", &owned, "JointType")?;
+        let grounded_property = sole_named_property(ctx, "joint", owned, "ObjectToGround")?;
+        let joint_type_property = sole_named_property(ctx, "joint", owned, "JointType")?;
         if grounded_property.is_some() && joint_type_property.is_some() {
             return Err(crate::resource::malformed_charged(
                 ctx,
@@ -88,7 +75,7 @@ pub(crate) fn transfer(
             .map(|property| enumeration_value(ctx, property))
             .transpose()?;
         let body = if grounded_property.is_some() {
-            let placement = placement(ctx, &owned, "Placement")?.unwrap_or_default();
+            let placement = placement(ctx, owned, "Placement")?.unwrap_or_default();
             let reference = grounded_property
                 .into_iter()
                 .flat_map(PropertyRecord::links)
@@ -115,8 +102,8 @@ pub(crate) fn transfer(
             JointBody::Pair {
                 kind: PairedJointFamily::new(joint_type).map_err(CodecError::Malformed)?,
                 connectors: Box::new([
-                    connector_record(&owned, "Reference1", "Placement1", "Offset1")?,
-                    connector_record(&owned, "Reference2", "Placement2", "Offset2")?,
+                    connector_record(owned, "Reference1", "Placement1", "Offset1")?,
+                    connector_record(owned, "Reference2", "Placement2", "Offset2")?,
                 ]),
             }
         } else {
