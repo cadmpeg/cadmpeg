@@ -558,14 +558,18 @@ mod tests {
             len: 0,
         };
         let expected = "f3d:brep:mystery#1";
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            7 + cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-        let error = super::unknown_record_id(&ctx, &record, crate::asm_format!("f3d"))
-            .expect_err("dynamic identity exceeds retained limit");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes, "ASM unknown record identity", |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                super::unknown_record_id(&ctx, &record, crate::asm_format!("f3d"))
+            },
+        );
+        assert_eq!(super::unknown_record_id(
+            &cadmpeg_test_support::service_decode_context(), &record, crate::asm_format!("f3d"),
+        ).unwrap().as_str(), expected);
         let CodecError::ResourceLimit(refusal) = error else {
             panic!("expected resource refusal, got {error:?}");
         };
