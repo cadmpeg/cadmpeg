@@ -24,85 +24,86 @@ pub(super) fn attach_parasolid_topology_string_attributes(
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (strings_by_id, _strings_by_id_reservation) = ctx.collect_scoped_btree_map(
-        sources
-            .strings
-            .iter()
-            .map(|record| (record.id.as_str(), record)),
-        "NX Parasolid string record index",
-    )?;
-    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
-        sources
-            .string_uses
-            .iter()
-            .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
-        "NX Parasolid string use groups",
-    )?;
-    for (_, uses) in ctx.admit_iter(
-        &mut uses_by_entity,
-        "NX Parasolid string use group traversal",
-    )? {
-        ctx.stable_sort_by(
-            uses,
-            |value| &value.position,
-            Ord::cmp,
-            "NX Parasolid string attribute ordering",
+    if !attribute_index.contexts.is_empty() {
+        let (strings_by_id, _strings_by_id_reservation) = ctx.collect_scoped_btree_map(
+            sources
+                .strings
+                .iter()
+                .map(|record| (record.id.as_str(), record)),
+            "NX Parasolid string record index",
         )?;
-    }
-    for context in ctx.admit_iter(&attribute_index.contexts, "NX string attribute contexts")? {
-        let reference = context.reference;
-        let entity = context.entity;
-        if let Some(feature_property_records) = ctx.get_btree_map(
-            &uses_by_entity,
-            entity,
-            "NX attach parasolid topology string attributes uses by entity lookup",
+        let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
+            sources
+                .string_uses
+                .iter()
+                .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
+            "NX Parasolid string use groups",
+        )?;
+        for (_, uses) in ctx.admit_iter(
+            &mut uses_by_entity,
+            "NX Parasolid string use group traversal",
         )? {
-            for string_use in
-                ctx.admit_iter(feature_property_records, "NX string attribute uses")?
-            {
-                let Some(string) = ctx.get_btree_map(
-                    &strings_by_id,
-                    string_use.string_record.as_str(),
-                    "NX attach parasolid topology string attributes strings by id lookup",
-                )?
-                else {
-                    continue;
-                };
-                let id = topology_attribute_id(
-                    ctx,
-                    reference,
-                    &cadmpeg_ir::identity_component!("topology-string-attribute"),
-                    string_use.position.reference_ordinal(),
-                    context.id_suffix.as_ref(),
-                )?;
-                let source_stream = StreamHandle::new(
-                    ctx,
-                    cadmpeg_ir::stream_name!("nx:s").with_suffix(
+            ctx.stable_sort_by(
+                uses,
+                |value| &value.position,
+                Ord::cmp,
+                "NX Parasolid string attribute ordering",
+            )?;
+        }
+        for context in ctx.admit_iter(&attribute_index.contexts, "NX string attribute contexts")? {
+            let reference = context.reference;
+            let entity = context.entity;
+            if let Some(feature_property_records) = ctx.get_btree_map(
+                &uses_by_entity,
+                entity,
+                "NX attach parasolid topology string attributes uses by entity lookup",
+            )? {
+                for string_use in
+                    ctx.admit_iter(feature_property_records, "NX string attribute uses")?
+                {
+                    let Some(string) = ctx.get_btree_map(
+                        &strings_by_id,
+                        string_use.string_record.as_str(),
+                        "NX attach parasolid topology string attributes strings by id lookup",
+                    )?
+                    else {
+                        continue;
+                    };
+                    let id = topology_attribute_id(
                         ctx,
-                        reference.stream_ordinal,
-                        "compose annotation stream name",
-                    )?,
-                    "allocate annotation stream handle",
-                )?;
-                annotations.note(
-                    ctx,
-                    id.as_str(),
-                    &source_stream,
-                    string.inflated_offset,
-                    Some("ENTITY_54_STRING_ATTRIBUTE"),
-                )?;
-                annotations
-                    .derived(ctx, id.as_str(), "target")
-                    .map_err(cadmpeg_core::CodecError::from)?;
-                annotations
-                    .derived(ctx, id.as_str(), "name")
-                    .map_err(cadmpeg_core::CodecError::from)?;
-                let field_name = attribute_index.attribute_names.field_name(
-                    ctx,
-                    reference,
-                    string_use.id.as_str(),
-                )?;
-                let name = topology_attribute_name(
+                        reference,
+                        &cadmpeg_ir::identity_component!("topology-string-attribute"),
+                        string_use.position.reference_ordinal(),
+                        context.id_suffix.as_ref(),
+                    )?;
+                    let source_stream = StreamHandle::new(
+                        ctx,
+                        cadmpeg_ir::stream_name!("nx:s").with_suffix(
+                            ctx,
+                            reference.stream_ordinal,
+                            "compose annotation stream name",
+                        )?,
+                        "allocate annotation stream handle",
+                    )?;
+                    annotations.note(
+                        ctx,
+                        id.as_str(),
+                        &source_stream,
+                        string.inflated_offset,
+                        Some("ENTITY_54_STRING_ATTRIBUTE"),
+                    )?;
+                    annotations
+                        .derived(ctx, id.as_str(), "target")
+                        .map_err(cadmpeg_core::CodecError::from)?;
+                    annotations
+                        .derived(ctx, id.as_str(), "name")
+                        .map_err(cadmpeg_core::CodecError::from)?;
+                    let field_name = attribute_index.attribute_names.field_name(
+                        ctx,
+                        reference,
+                        string_use.id.as_str(),
+                    )?;
+                    let name = topology_attribute_name(
                     ctx,
                     field_name,
                     ctx.get_btree_map(
@@ -114,8 +115,9 @@ pub(super) fn attach_parasolid_topology_string_attributes(
                     "84",
                     string_use.position.reference_ordinal(),
                 )?;
-                let values = single_string_attribute_values(ctx, string.value.as_str())?;
-                push_topology_attribute(ctx, ir, context, id, name, values)?;
+                    let values = single_string_attribute_values(ctx, string.value.as_str())?;
+                    push_topology_attribute(ctx, ir, context, id, name, values)?;
+                }
             }
         }
     }
@@ -134,6 +136,7 @@ pub(super) struct ParasolidNumericAttributeSources<'a> {
     pub(super) doubles: &'a [crate::native::parasolid::ParasolidEntity53DoubleRecord],
 }
 
+#[derive(Default)]
 struct ParasolidAttributeNameIndex<'a> {
     classes_by_entity: BTreeMap<
         (&'a str, &'a str),
@@ -549,30 +552,41 @@ impl<'a, 'ctx> ParasolidTopologyAttributeIndex<'a, 'ctx> {
         field_names: &'a [crate::native::parasolid::ParasolidAttributeFieldNames],
     ) -> Result<Self, CodecError> {
         let mut reservation = ctx.reserve_scoped(0, "NX Parasolid attribute indexes")?;
-        let attribute_names = ParasolidAttributeNameIndex::new(
-            ctx,
-            &mut reservation,
-            class_uses,
-            definitions,
-            field_uses,
-            field_names,
-        )?;
-        let class_names = parasolid_topology_attribute_class_names(
-            ctx,
-            &mut reservation,
-            class_uses,
-            definitions,
-        )?;
-        Ok(Self {
-            class_names,
-            attribute_names,
-            contexts: parasolid_topology_attribute_contexts(
+        let contexts = if topology_references.is_empty() {
+            Vec::new()
+        } else {
+            parasolid_topology_attribute_contexts(
                 ctx,
                 &mut reservation,
                 ir,
                 topology_references,
                 class_uses,
-            )?,
+            )?
+        };
+        let (attribute_names, class_names) = if contexts.is_empty() {
+            (ParasolidAttributeNameIndex::default(), BTreeMap::new())
+        } else {
+            (
+                ParasolidAttributeNameIndex::new(
+                    ctx,
+                    &mut reservation,
+                    class_uses,
+                    definitions,
+                    field_uses,
+                    field_names,
+                )?,
+                parasolid_topology_attribute_class_names(
+                    ctx,
+                    &mut reservation,
+                    class_uses,
+                    definitions,
+                )?,
+            )
+        };
+        Ok(Self {
+            class_names,
+            attribute_names,
+            contexts,
             _reservation: reservation,
         })
     }
@@ -853,50 +867,51 @@ pub(super) fn attach_parasolid_topology_numeric_attributes(
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (integers_by_id, _integers_by_id_reservation) = ctx.collect_scoped_btree_map(
-        sources
-            .integers
-            .iter()
-            .map(|record| (record.id.as_str(), record)),
-        "NX Parasolid integer record index",
-    )?;
-    let (doubles_by_id, _doubles_by_id_reservation) = ctx.collect_scoped_btree_map(
-        sources
-            .doubles
-            .iter()
-            .map(|record| (record.id.as_str(), record)),
-        "NX Parasolid double record index",
-    )?;
-    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
-        sources
-            .numeric_uses
-            .iter()
-            .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
-        "NX Parasolid numeric use groups",
-    )?;
-    for (_, uses) in ctx.admit_iter(
-        &mut uses_by_entity,
-        "NX Parasolid numeric use group traversal",
-    )? {
-        ctx.stable_sort_by(
-            uses,
-            |value| &value.position,
-            Ord::cmp,
-            "NX Parasolid numeric attribute ordering",
+    if !attribute_index.contexts.is_empty() {
+        let (integers_by_id, _integers_by_id_reservation) = ctx.collect_scoped_btree_map(
+            sources
+                .integers
+                .iter()
+                .map(|record| (record.id.as_str(), record)),
+            "NX Parasolid integer record index",
         )?;
-    }
-    for context in ctx.admit_iter(&attribute_index.contexts, "NX numeric attribute contexts")? {
-        let reference = context.reference;
-        let entity = context.entity;
-        if let Some(feature_property_records) = ctx.get_btree_map(
-            &uses_by_entity,
-            entity,
-            "NX attach parasolid topology numeric attributes uses by entity lookup",
+        let (doubles_by_id, _doubles_by_id_reservation) = ctx.collect_scoped_btree_map(
+            sources
+                .doubles
+                .iter()
+                .map(|record| (record.id.as_str(), record)),
+            "NX Parasolid double record index",
+        )?;
+        let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
+            sources
+                .numeric_uses
+                .iter()
+                .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
+            "NX Parasolid numeric use groups",
+        )?;
+        for (_, uses) in ctx.admit_iter(
+            &mut uses_by_entity,
+            "NX Parasolid numeric use group traversal",
         )? {
-            for numeric_use in
-                ctx.admit_iter(feature_property_records, "NX numeric attribute uses")?
-            {
-                let (values, source_offset, tag, lane) = match numeric_use.kind {
+            ctx.stable_sort_by(
+                uses,
+                |value| &value.position,
+                Ord::cmp,
+                "NX Parasolid numeric attribute ordering",
+            )?;
+        }
+        for context in ctx.admit_iter(&attribute_index.contexts, "NX numeric attribute contexts")? {
+            let reference = context.reference;
+            let entity = context.entity;
+            if let Some(feature_property_records) = ctx.get_btree_map(
+                &uses_by_entity,
+                entity,
+                "NX attach parasolid topology numeric attributes uses by entity lookup",
+            )? {
+                for numeric_use in
+                    ctx.admit_iter(feature_property_records, "NX numeric attribute uses")?
+                {
+                    let (values, source_offset, tag, lane) = match numeric_use.kind {
                     crate::native::parasolid::ParasolidEntity51NumericKind::UnsignedIntegers => {
                         let Some(record) = ctx.get_btree_map(
                             &integers_by_id,
@@ -934,35 +949,35 @@ pub(super) fn attach_parasolid_topology_numeric_attributes(
                         )
                     }
                 };
-                let id = topology_attribute_id(
-                    ctx,
-                    reference,
-                    &cadmpeg_ir::identity_component!("topology-numeric-attribute"),
-                    numeric_use.position.reference_ordinal(),
-                    context.id_suffix.as_ref(),
-                )?;
-                let source_stream = StreamHandle::new(
-                    ctx,
-                    cadmpeg_ir::stream_name!("nx:s").with_suffix(
+                    let id = topology_attribute_id(
                         ctx,
-                        reference.stream_ordinal,
-                        "compose annotation stream name",
-                    )?,
-                    "allocate annotation stream handle",
-                )?;
-                annotations.note(ctx, id.as_str(), &source_stream, source_offset, Some(tag))?;
-                annotations
-                    .derived(ctx, id.as_str(), "target")
-                    .map_err(cadmpeg_core::CodecError::from)?;
-                annotations
-                    .derived(ctx, id.as_str(), "name")
-                    .map_err(cadmpeg_core::CodecError::from)?;
-                let field_name = attribute_index.attribute_names.field_name(
-                    ctx,
-                    reference,
-                    numeric_use.id.as_str(),
-                )?;
-                let name = topology_attribute_name(
+                        reference,
+                        &cadmpeg_ir::identity_component!("topology-numeric-attribute"),
+                        numeric_use.position.reference_ordinal(),
+                        context.id_suffix.as_ref(),
+                    )?;
+                    let source_stream = StreamHandle::new(
+                        ctx,
+                        cadmpeg_ir::stream_name!("nx:s").with_suffix(
+                            ctx,
+                            reference.stream_ordinal,
+                            "compose annotation stream name",
+                        )?,
+                        "allocate annotation stream handle",
+                    )?;
+                    annotations.note(ctx, id.as_str(), &source_stream, source_offset, Some(tag))?;
+                    annotations
+                        .derived(ctx, id.as_str(), "target")
+                        .map_err(cadmpeg_core::CodecError::from)?;
+                    annotations
+                        .derived(ctx, id.as_str(), "name")
+                        .map_err(cadmpeg_core::CodecError::from)?;
+                    let field_name = attribute_index.attribute_names.field_name(
+                        ctx,
+                        reference,
+                        numeric_use.id.as_str(),
+                    )?;
+                    let name = topology_attribute_name(
                     ctx,
                     field_name,
                     ctx.get_btree_map(
@@ -974,7 +989,8 @@ pub(super) fn attach_parasolid_topology_numeric_attributes(
                     lane,
                     numeric_use.position.reference_ordinal(),
                 )?;
-                push_topology_attribute(ctx, ir, context, id, name, values)?;
+                    push_topology_attribute(ctx, ir, context, id, name, values)?;
+                }
             }
         }
     }
@@ -1002,98 +1018,99 @@ pub(super) fn attach_parasolid_topology_structured_attributes(
     attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (vectors_by_id, _vectors_by_id_reservation) = ctx.collect_scoped_btree_map(
-        sources
-            .vectors
-            .iter()
-            .map(|record| (record.id.as_str(), record)),
-        "NX Parasolid vector record index",
-    )?;
-    let (axes_by_id, _axes_by_id_reservation) = ctx.collect_scoped_btree_map(
-        sources
-            .axes
-            .iter()
-            .map(|record| (record.id.as_str(), record)),
-        "NX Parasolid axis record index",
-    )?;
-    let (tags_by_id, _tags_by_id_reservation) = ctx.collect_scoped_btree_map(
-        sources
-            .tags
-            .iter()
-            .map(|record| (record.id.as_str(), record)),
-        "NX Parasolid tag record index",
-    )?;
-    let (unicode_by_id, _unicode_by_id_reservation) = ctx.collect_scoped_btree_map(
-        sources
-            .unicode
-            .iter()
-            .map(|record| (record.id.as_str(), record)),
-        "NX Parasolid Unicode record index",
-    )?;
-    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
-        sources
-            .structured_uses
-            .iter()
-            .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
-        "NX Parasolid structured use groups",
-    )?;
-    for (_, uses) in ctx.admit_iter(
-        &mut uses_by_entity,
-        "NX Parasolid structured use group traversal",
-    )? {
-        ctx.stable_sort_by(
-            uses,
-            |value| &value.position,
-            Ord::cmp,
-            "NX Parasolid structured attribute ordering",
+    if !attribute_index.contexts.is_empty() {
+        let (vectors_by_id, _vectors_by_id_reservation) = ctx.collect_scoped_btree_map(
+            sources
+                .vectors
+                .iter()
+                .map(|record| (record.id.as_str(), record)),
+            "NX Parasolid vector record index",
         )?;
-    }
-    for context in ctx.admit_iter(
-        &attribute_index.contexts,
-        "NX structured attribute contexts",
-    )? {
-        let reference = context.reference;
-        let entity = context.entity;
-        if let Some(feature_property_records) = ctx.get_btree_map(
-            &uses_by_entity,
-            entity,
-            "NX attach parasolid topology structured attributes uses by entity lookup",
+        let (axes_by_id, _axes_by_id_reservation) = ctx.collect_scoped_btree_map(
+            sources
+                .axes
+                .iter()
+                .map(|record| (record.id.as_str(), record)),
+            "NX Parasolid axis record index",
+        )?;
+        let (tags_by_id, _tags_by_id_reservation) = ctx.collect_scoped_btree_map(
+            sources
+                .tags
+                .iter()
+                .map(|record| (record.id.as_str(), record)),
+            "NX Parasolid tag record index",
+        )?;
+        let (unicode_by_id, _unicode_by_id_reservation) = ctx.collect_scoped_btree_map(
+            sources
+                .unicode
+                .iter()
+                .map(|record| (record.id.as_str(), record)),
+            "NX Parasolid Unicode record index",
+        )?;
+        let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
+            sources
+                .structured_uses
+                .iter()
+                .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
+            "NX Parasolid structured use groups",
+        )?;
+        for (_, uses) in ctx.admit_iter(
+            &mut uses_by_entity,
+            "NX Parasolid structured use group traversal",
         )? {
-            for structured_use in
-                ctx.admit_iter(feature_property_records, "NX structured attribute uses")?
-            {
-                use crate::native::parasolid::structured_value_kind::StructuredValueKind as Kind;
-                use crate::native::parasolid::ParasolidVectorValueKind;
-                let (values, source_offset, tag, family) = match structured_use.kind {
-                    Kind::Points | Kind::Vectors | Kind::Directions => {
-                        let Some(record) = ctx.get_btree_map(
+            ctx.stable_sort_by(
+                uses,
+                |value| &value.position,
+                Ord::cmp,
+                "NX Parasolid structured attribute ordering",
+            )?;
+        }
+        for context in ctx.admit_iter(
+            &attribute_index.contexts,
+            "NX structured attribute contexts",
+        )? {
+            let reference = context.reference;
+            let entity = context.entity;
+            if let Some(feature_property_records) = ctx.get_btree_map(
+                &uses_by_entity,
+                entity,
+                "NX attach parasolid topology structured attributes uses by entity lookup",
+            )? {
+                for structured_use in
+                    ctx.admit_iter(feature_property_records, "NX structured attribute uses")?
+                {
+                    use crate::native::parasolid::structured_value_kind::StructuredValueKind as Kind;
+                    use crate::native::parasolid::ParasolidVectorValueKind;
+                    let (values, source_offset, tag, family) = match structured_use.kind {
+                        Kind::Points | Kind::Vectors | Kind::Directions => {
+                            let Some(record) = ctx.get_btree_map(
                             &vectors_by_id,
                             structured_use.value_record.as_str(),"NX attach parasolid topology structured attributes vectors by id lookup",
                         )?
                         else {
                             continue;
                         };
-                        let family = match (structured_use.kind, record.kind) {
-                            (Kind::Points, ParasolidVectorValueKind::Points) => "85_point",
-                            (Kind::Vectors, ParasolidVectorValueKind::Vectors) => "86_vector",
-                            (Kind::Directions, ParasolidVectorValueKind::Directions) => {
-                                "89_direction"
-                            }
-                            _ => continue,
-                        };
-                        (
-                            mapped_vector_attribute_values(
-                                ctx,
-                                record.values.as_slice(),
-                                |value| value.finite_components(),
-                            )?,
-                            record.inflated_offset,
-                            "PARASOLID_VECTOR_ATTRIBUTE",
-                            family,
-                        )
-                    }
-                    Kind::Axes => {
-                        let Some(record) = ctx.get_btree_map(
+                            let family = match (structured_use.kind, record.kind) {
+                                (Kind::Points, ParasolidVectorValueKind::Points) => "85_point",
+                                (Kind::Vectors, ParasolidVectorValueKind::Vectors) => "86_vector",
+                                (Kind::Directions, ParasolidVectorValueKind::Directions) => {
+                                    "89_direction"
+                                }
+                                _ => continue,
+                            };
+                            (
+                                mapped_vector_attribute_values(
+                                    ctx,
+                                    record.values.as_slice(),
+                                    |value| value.finite_components(),
+                                )?,
+                                record.inflated_offset,
+                                "PARASOLID_VECTOR_ATTRIBUTE",
+                                family,
+                            )
+                        }
+                        Kind::Axes => {
+                            let Some(record) = ctx.get_btree_map(
                             &axes_by_id,
                             structured_use.value_record.as_str(),
                             "NX attach parasolid topology structured attributes axes by id lookup",
@@ -1101,26 +1118,26 @@ pub(super) fn attach_parasolid_topology_structured_attributes(
                         else {
                             continue;
                         };
-                        (
-                            mapped_vector_attribute_values(
-                                ctx,
-                                record.values.as_slice(),
-                                |axis| {
-                                    let first = axis[0].finite_components();
-                                    let second = axis[1].finite_components();
-                                    [
-                                        first[0], first[1], first[2], second[0], second[1],
-                                        second[2],
-                                    ]
-                                },
-                            )?,
-                            record.inflated_offset,
-                            "ENTITY_57_AXIS_ATTRIBUTE",
-                            "87_axis",
-                        )
-                    }
-                    Kind::Tags => {
-                        let Some(record) = ctx.get_btree_map(
+                            (
+                                mapped_vector_attribute_values(
+                                    ctx,
+                                    record.values.as_slice(),
+                                    |axis| {
+                                        let first = axis[0].finite_components();
+                                        let second = axis[1].finite_components();
+                                        [
+                                            first[0], first[1], first[2], second[0], second[1],
+                                            second[2],
+                                        ]
+                                    },
+                                )?,
+                                record.inflated_offset,
+                                "ENTITY_57_AXIS_ATTRIBUTE",
+                                "87_axis",
+                            )
+                        }
+                        Kind::Tags => {
+                            let Some(record) = ctx.get_btree_map(
                             &tags_by_id,
                             structured_use.value_record.as_str(),
                             "NX attach parasolid topology structured attributes tags by id lookup",
@@ -1128,60 +1145,60 @@ pub(super) fn attach_parasolid_topology_structured_attributes(
                         else {
                             continue;
                         };
-                        (
-                            mapped_attribute_values(ctx, record.values.as_slice(), |value| {
-                                AttributeValue::Integer(i64::from(*value))
-                            })?,
-                            record.inflated_offset,
-                            "ENTITY_58_TAG_ATTRIBUTE",
-                            "88_tag",
-                        )
-                    }
-                    Kind::Unicode => {
-                        let Some(record) = ctx.get_btree_map(
+                            (
+                                mapped_attribute_values(ctx, record.values.as_slice(), |value| {
+                                    AttributeValue::Integer(i64::from(*value))
+                                })?,
+                                record.inflated_offset,
+                                "ENTITY_58_TAG_ATTRIBUTE",
+                                "88_tag",
+                            )
+                        }
+                        Kind::Unicode => {
+                            let Some(record) = ctx.get_btree_map(
                             &unicode_by_id,
                             structured_use.value_record.as_str(),"NX attach parasolid topology structured attributes unicode by id lookup",
                         )?
                         else {
                             continue;
                         };
-                        (
-                            single_string_attribute_values(ctx, record.value.as_str())?,
-                            record.inflated_offset,
-                            "ENTITY_62_UNICODE_ATTRIBUTE",
-                            "98_unicode",
-                        )
-                    }
-                };
-                let id = topology_attribute_id(
-                    ctx,
-                    reference,
-                    &cadmpeg_ir::identity_component!("topology-structured-attribute"),
-                    structured_use.position.reference_ordinal(),
-                    context.id_suffix.as_ref(),
-                )?;
-                let source_stream = StreamHandle::new(
-                    ctx,
-                    cadmpeg_ir::stream_name!("nx:s").with_suffix(
+                            (
+                                single_string_attribute_values(ctx, record.value.as_str())?,
+                                record.inflated_offset,
+                                "ENTITY_62_UNICODE_ATTRIBUTE",
+                                "98_unicode",
+                            )
+                        }
+                    };
+                    let id = topology_attribute_id(
                         ctx,
-                        reference.stream_ordinal,
-                        "compose annotation stream name",
-                    )?,
-                    "allocate annotation stream handle",
-                )?;
-                annotations.note(ctx, id.as_str(), &source_stream, source_offset, Some(tag))?;
-                annotations
-                    .derived(ctx, id.as_str(), "target")
-                    .map_err(cadmpeg_core::CodecError::from)?;
-                annotations
-                    .derived(ctx, id.as_str(), "name")
-                    .map_err(cadmpeg_core::CodecError::from)?;
-                let field_name = attribute_index.attribute_names.field_name(
-                    ctx,
-                    reference,
-                    structured_use.id.as_str(),
-                )?;
-                let name = topology_attribute_name(
+                        reference,
+                        &cadmpeg_ir::identity_component!("topology-structured-attribute"),
+                        structured_use.position.reference_ordinal(),
+                        context.id_suffix.as_ref(),
+                    )?;
+                    let source_stream = StreamHandle::new(
+                        ctx,
+                        cadmpeg_ir::stream_name!("nx:s").with_suffix(
+                            ctx,
+                            reference.stream_ordinal,
+                            "compose annotation stream name",
+                        )?,
+                        "allocate annotation stream handle",
+                    )?;
+                    annotations.note(ctx, id.as_str(), &source_stream, source_offset, Some(tag))?;
+                    annotations
+                        .derived(ctx, id.as_str(), "target")
+                        .map_err(cadmpeg_core::CodecError::from)?;
+                    annotations
+                        .derived(ctx, id.as_str(), "name")
+                        .map_err(cadmpeg_core::CodecError::from)?;
+                    let field_name = attribute_index.attribute_names.field_name(
+                        ctx,
+                        reference,
+                        structured_use.id.as_str(),
+                    )?;
+                    let name = topology_attribute_name(
                     ctx,
                     field_name,
                     ctx.get_btree_map(
@@ -1193,7 +1210,8 @@ pub(super) fn attach_parasolid_topology_structured_attributes(
                     family,
                     structured_use.position.reference_ordinal(),
                 )?;
-                push_topology_attribute(ctx, ir, context, id, name, values)?;
+                    push_topology_attribute(ctx, ir, context, id, name, values)?;
+                }
             }
         }
     }
