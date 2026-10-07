@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Charged borrowed text queries and ASCII case conversion.
+use super::text::QuerySource;
 use super::{u64_from_index, DecodeContext, ScopedReservation};
 
 /// One live admission for a standard Unicode case conversion of these bytes.
@@ -101,32 +102,38 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
-    /// Finds a UTF-8 substring after admitting every candidate comparison.
+    /// Finds a UTF-8 substring after admitting the linear two-way search over
+    /// the text and the pattern.
     pub fn find_text(
         &self,
         text: &str,
         pattern: &str,
         operation: &'static str,
     ) -> Result<Option<usize>, CodecError> {
-        let positions = self.cost_sum(u64_from_index(text.len()), 1, operation)?;
-        let comparisons = self.cost_sum(u64_from_index(pattern.len()), 1, operation)?;
         self.charge_work(
-            self.cost_product(positions, comparisons, operation)?,
+            self.cost_sum(
+                u64_from_index(text.len()),
+                u64_from_index(pattern.len()),
+                operation,
+            )?,
             operation,
         )?;
         Ok(text.find(pattern))
     }
-    /// Finds the last UTF-8 substring after admitting every candidate comparison.
+    /// Finds the last UTF-8 substring after admitting the linear two-way search
+    /// over the text and the pattern.
     pub fn rfind_text(
         &self,
         text: &str,
         pattern: &str,
         operation: &'static str,
     ) -> Result<Option<usize>, CodecError> {
-        let positions = self.cost_sum(u64_from_index(text.len()), 1, operation)?;
-        let comparisons = self.cost_sum(u64_from_index(pattern.len()), 1, operation)?;
         self.charge_work(
-            self.cost_product(positions, comparisons, operation)?,
+            self.cost_sum(
+                u64_from_index(text.len()),
+                u64_from_index(pattern.len()),
+                operation,
+            )?,
             operation,
         )?;
         Ok(text.rfind(pattern))
@@ -163,53 +170,69 @@ impl DecodeContext<'_> {
             .map(|index| (&text[..index], &text[index + pattern.len()..])))
     }
     /// Compares a prefix through the one byte-slice equality operation.
-    pub fn starts_with(
+    pub fn starts_with<T, P>(
         &self,
-        text: &str,
-        prefix: &str,
+        text: &T,
+        prefix: &P,
         operation: &'static str,
-    ) -> Result<bool, CodecError> {
-        match text.as_bytes().get(..prefix.len()) {
-            Some(bytes) => self.equal_bytes(bytes, prefix.as_bytes(), operation),
+    ) -> Result<bool, CodecError>
+    where
+        T: QuerySource + ?Sized,
+        P: QuerySource<View = T::View> + ?Sized,
+    {
+        match text.query_bytes().get(..prefix.query_bytes().len()) {
+            Some(bytes) => self.equal_bytes(bytes, prefix.query_bytes(), operation),
             None => Ok(false),
         }
     }
     /// Compares a suffix through the one byte-slice equality operation.
-    pub fn ends_with(
+    pub fn ends_with<T, P>(
         &self,
-        text: &str,
-        suffix: &str,
+        text: &T,
+        suffix: &P,
         operation: &'static str,
-    ) -> Result<bool, CodecError> {
-        match text.len().checked_sub(suffix.len()) {
-            Some(index) => {
-                self.equal_bytes(&text.as_bytes()[index..], suffix.as_bytes(), operation)
-            }
+    ) -> Result<bool, CodecError>
+    where
+        T: QuerySource + ?Sized,
+        P: QuerySource<View = T::View> + ?Sized,
+    {
+        let bytes = text.query_bytes();
+        let suffix = suffix.query_bytes();
+        match bytes.len().checked_sub(suffix.len()) {
+            Some(index) => self.equal_bytes(&bytes[index..], suffix, operation),
             None => Ok(false),
         }
     }
-    /// Removes a matched prefix without allocating the remaining text.
-    pub fn strip_prefix<'text>(
+    /// Removes a matched prefix without allocating the remaining view.
+    pub fn strip_prefix<'text, T, P>(
         &self,
-        text: &'text str,
-        prefix: &str,
+        text: &'text T,
+        prefix: &P,
         operation: &'static str,
-    ) -> Result<Option<&'text str>, CodecError> {
+    ) -> Result<Option<&'text T::View>, CodecError>
+    where
+        T: QuerySource + ?Sized,
+        P: QuerySource<View = T::View> + ?Sized,
+    {
         Ok(if self.starts_with(text, prefix, operation)? {
-            Some(&text[prefix.len()..])
+            text.query_range(prefix.query_bytes().len()..text.query_bytes().len())
         } else {
             None
         })
     }
-    /// Removes a matched suffix without allocating the remaining text.
-    pub fn strip_suffix<'text>(
+    /// Removes a matched suffix without allocating the remaining view.
+    pub fn strip_suffix<'text, T, P>(
         &self,
-        text: &'text str,
-        suffix: &str,
+        text: &'text T,
+        suffix: &P,
         operation: &'static str,
-    ) -> Result<Option<&'text str>, CodecError> {
+    ) -> Result<Option<&'text T::View>, CodecError>
+    where
+        T: QuerySource + ?Sized,
+        P: QuerySource<View = T::View> + ?Sized,
+    {
         Ok(if self.ends_with(text, suffix, operation)? {
-            Some(&text[..text.len() - suffix.len()])
+            text.query_range(0..text.query_bytes().len() - suffix.query_bytes().len())
         } else {
             None
         })
@@ -350,6 +373,78 @@ impl DecodeContext<'_> {
 mod tests {
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::CodecError;
+    #[test]
+    fn byte_queries_preserve_views_empty_patterns_and_length_mismatch() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let bytes: &[u8] = &[0, 255, 0];
+        for pattern in [&[][..], &[0][..], &[255][..], &[0, 255, 0, 0][..]] {
+            assert_eq!(
+                ctx.strip_prefix(bytes, pattern, "prefix").expect("query"),
+                bytes.strip_prefix(pattern)
+            );
+            assert_eq!(
+                ctx.strip_suffix(bytes, pattern, "suffix").expect("query"),
+                bytes.strip_suffix(pattern)
+            );
+            assert_eq!(
+                ctx.starts_with(bytes, pattern, "prefix").expect("query"),
+                bytes.starts_with(pattern)
+            );
+            assert_eq!(
+                ctx.ends_with(bytes, pattern, "suffix").expect("query"),
+                bytes.ends_with(pattern)
+            );
+        }
+        assert_eq!(
+            ctx.strip_suffix(bytes, &[0], "suffix")
+                .expect("query")
+                .expect("match")
+                .as_ptr(),
+            bytes.as_ptr()
+        );
+        assert_eq!(
+            ctx.strip_prefix(&String::from("éλ"), "é", "owned")
+                .expect("query"),
+            Some("λ")
+        );
+        assert_eq!(
+            ctx.strip_suffix(&vec![1_u8, 0], &[0], "owned bytes")
+                .expect("query"),
+            Some(&[1][..])
+        );
+    }
+
+    #[test]
+    fn byte_queries_charge_pattern_once_and_preserve_original_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert_eq!(
+            ctx.strip_suffix(&[1_u8, 2, 3], &[2, 3], "suffix")
+                .expect("exact scan"),
+            Some(&[1][..])
+        );
+        let CodecError::ResourceLimit(first) = ctx
+            .strip_prefix(&[1_u8, 2, 3], &[1], "prefix")
+            .expect_err("refusal")
+        else {
+            panic!("resource refusal")
+        };
+        assert_eq!(first.used, 2);
+        assert_eq!(first.additional, 1);
+        assert_eq!(first.operation, "prefix");
+        let CodecError::ResourceLimit(repeated) = ctx
+            .strip_suffix(&[1_u8], &[1], "later")
+            .expect_err("sticky refusal")
+        else {
+            panic!("resource refusal")
+        };
+        assert_eq!(first, repeated);
+    }
+
     #[test]
     fn unicode_case_preserves_context_and_multiscalar_expansions() {
         let arena = DecodeArena::new();
@@ -506,14 +601,14 @@ mod tests {
         );
     }
     #[test]
-    fn text_search_admits_candidate_and_pattern_work_before_search() {
+    fn text_search_admits_text_and_pattern_work_before_search() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Four candidate positions times three pattern steps.
-        policy.limits.max_work_units = 12;
+        // The two-way search reads the three text bytes and two pattern bytes.
+        policy.limits.max_work_units = 5;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         assert_eq!(ctx.find_text("abc", "bc", "find").expect("search"), Some(1));
-        policy.limits.max_work_units = 11;
+        policy.limits.max_work_units = 4;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let CodecError::ResourceLimit(first) =
             ctx.rfind_text("abc", "bc", "rfind").expect_err("refusal")

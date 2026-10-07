@@ -27,6 +27,16 @@ impl Hash for Colliding {
 
 #[test]
 fn membership_hash_callbacks_admit_once_and_release_the_index() {
+    // Reserving three members bounds the index at six slots, which is eight buckets with
+    // their control bytes, alignment and trailing controls. That bound is charged as work,
+    // and held twice in scoped bytes while the new table is filled: once as the table's
+    // growth, once as the transient allocation.
+    let table =
+        8 * std::mem::size_of::<super::MemberKey<'_, &Colliding, DecodeAdmission<'_, '_>>>()
+            + 15
+            + 8
+            + 16;
+    let scoped_peak = 2 * table;
     for allowance in 0..=12 {
         let hashes = Rc::new(Cell::new(0));
         let comparisons = Rc::new(Cell::new(0));
@@ -38,8 +48,8 @@ fn membership_hash_callbacks_admit_once_and_release_the_index() {
             })
             .collect();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = allowance;
-        policy.limits.max_materialized_bytes = 200;
+        policy.limits.max_work_units = u64::try_from(table).expect("table fits u64") + allowance;
+        policy.limits.max_materialized_bytes = u64::try_from(scoped_peak).expect("peak fits u64");
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 3;
         policy.limits.max_recursion_depth = 0;
@@ -69,13 +79,19 @@ fn membership_hash_callbacks_admit_once_and_release_the_index() {
             assert_eq!(hashes.get(), 3);
             assert_eq!(comparisons.get(), 3);
             let storage = ctx
-                .reserve_scoped_limit(200, "membership index released")
+                .reserve_scoped_limit(
+                    u64::try_from(scoped_peak).expect("peak fits u64"),
+                    "membership index released",
+                )
                 .unwrap();
             drop(storage);
             let limit = ctx
                 .charge_work_limit(1, "exact membership work")
                 .unwrap_err();
-            assert_eq!(limit.used, 12);
+            assert_eq!(
+                limit.used,
+                u64::try_from(table).expect("table fits u64") + 12
+            );
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
             );

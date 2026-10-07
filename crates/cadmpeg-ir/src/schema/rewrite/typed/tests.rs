@@ -18,19 +18,20 @@ fn identity_cache_node_work() -> u64 {
         (std::mem::size_of::<String>() + std::mem::size_of::<crate::ids::Identity>()) * 11
             + 16 * std::mem::size_of::<usize>()
             + 2 * map_alignment;
-    // First-node mutation work is four passes over each B-tree node byte bound.
-    cadmpeg_core::decode::u64_from_index(4 * (set_node_bytes + map_node_bytes))
+    // A first insertion shifts its node once and pays two passes for the node
+    // it adds to the tree's node bound: three passes over each node byte bound.
+    cadmpeg_core::decode::u64_from_index(3 * (set_node_bytes + map_node_bytes))
 }
 
 #[test]
 fn typed_identity_cache_admits_copies_once_and_repeated_comparisons() {
     use cadmpeg_core::decode::u64_from_index;
     let source = "test:model:point#one";
-    // First admits four text copies, grammar visits, three visits/slots and both B-tree node mutations; repeat admits one visit, eleven comparisons and one copy.
+    // First admits four text copies, grammar visits, three visits/slots and both B-tree node mutations; repeat admits one visit, one comparison with the single stored key and one copy.
     let source_bytes = u64_from_index(source.len());
     let first_work =
         4 * source_bytes + u64_from_index(source.chars().count()) + 3 + identity_cache_node_work();
-    let repeat_work = 12 * source_bytes + 1;
+    let repeat_work = 2 * source_bytes + 1;
     for allowance in 0..=first_work + repeat_work {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = allowance;
@@ -96,7 +97,8 @@ fn typed_identity_cache_comparison_refusal_cannot_return_a_cached_target() {
         panic!("comparison must refuse");
     };
     assert_eq!(original.operation, "refused identity comparison");
-    assert_eq!(original.additional, 11 * source_bytes);
+    // The cache holds one key, so the lookup compares against it once.
+    assert_eq!(original.additional, source_bytes);
     assert!(
         matches!(map.identity(&ctx, "another identity"), Err(CodecError::ResourceLimit(limit)) if limit == original)
     );
@@ -307,10 +309,30 @@ fn typed_identity_rewrite_retains_its_grammar_proof_through_the_cache() {
     use cadmpeg_core::decode::u64_from_index;
     for source in ["a:b:c#one", "a:b:c#é:部"] {
         let bytes = u64_from_index(source.len());
-        // First admits four text copies, grammar visits, three visits/slots and both B-tree node mutations; repeat admits one visit, eleven comparisons and one copy.
+        // First admits four text copies, grammar visits, three visits/slots and both B-tree node mutations; repeat admits one visit, one comparison with the single stored key and one copy.
         let first_work =
             4 * bytes + u64_from_index(source.chars().count()) + 3 + identity_cache_node_work();
-        let repeat_work = 12 * bytes + 1;
+        let repeat_work = 2 * bytes + 1;
+        // One unit below the exact need refuses the repeated rewrite.
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = first_work + repeat_work - 1;
+        policy.limits.max_materialized_bytes = 4096;
+        policy.limits.max_retained_bytes = 2 * bytes;
+        policy.limits.max_collection_items = 2;
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut map = IdentityMap::new(&ctx, "single grammar cache", |source: &str| {
+            ctx.copy_retained_text(source, "typed callback copy")
+        })
+        .unwrap();
+        let identity = || crate::ids::Identity::new(source).unwrap();
+        identity().rewrite_identities(&ctx, &mut map).unwrap();
+        let refused = identity().rewrite_identities(&ctx, &mut map).unwrap_err();
+        assert!(
+            matches!(refused, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
+        );
+        drop(map);
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = first_work + repeat_work;
         policy.limits.max_materialized_bytes = 4096;

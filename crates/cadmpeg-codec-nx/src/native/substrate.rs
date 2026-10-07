@@ -572,8 +572,12 @@ mod tests {
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype,
                 schema: Some(
-                    cadmpeg_parasolid::OwnedSchemaToken::parse(&cadmpeg_test_support::service_decode_context(), "SCH_PAIR".into()).expect("service token admission")
-                        .expect("the fixture text is a schema token"),
+                    cadmpeg_parasolid::OwnedSchemaToken::parse(
+                        &cadmpeg_test_support::service_decode_context(),
+                        "SCH_PAIR".into(),
+                    )
+                    .expect("service token admission")
+                    .expect("the fixture text is a schema token"),
                 ),
             },
         };
@@ -1002,8 +1006,12 @@ mod tests {
                 body: crate::parasolid::StreamBody::Parasolid {
                     subtype: crate::parasolid::ParasolidSubtype::Partition,
                     schema: Some(
-                        cadmpeg_parasolid::OwnedSchemaToken::parse(&cadmpeg_test_support::service_decode_context(), "SCH_TEST_1_9999".into()).expect("service token admission")
-                            .expect("the fixture text is a schema token"),
+                        cadmpeg_parasolid::OwnedSchemaToken::parse(
+                            &cadmpeg_test_support::service_decode_context(),
+                            "SCH_TEST_1_9999".into(),
+                        )
+                        .expect("service token admission")
+                        .expect("the fixture text is a schema token"),
                     ),
                 },
             }],
@@ -1039,8 +1047,12 @@ mod tests {
                 body: crate::parasolid::StreamBody::Parasolid {
                     subtype: crate::parasolid::ParasolidSubtype::Partition,
                     schema: Some(
-                        cadmpeg_parasolid::OwnedSchemaToken::parse(&cadmpeg_test_support::service_decode_context(), "SCH_TEST_1_9999".into()).expect("service token admission")
-                            .expect("the fixture text is a schema token"),
+                        cadmpeg_parasolid::OwnedSchemaToken::parse(
+                            &cadmpeg_test_support::service_decode_context(),
+                            "SCH_TEST_1_9999".into(),
+                        )
+                        .expect("service token admission")
+                        .expect("the fixture text is a schema token"),
                     ),
                 },
             }
@@ -1127,8 +1139,12 @@ mod tests {
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype,
                 schema: schema.map(|schema| {
-                    cadmpeg_parasolid::OwnedSchemaToken::parse(&cadmpeg_test_support::service_decode_context(), schema.into()).expect("service token admission")
-                        .expect("the fixture text is a schema token")
+                    cadmpeg_parasolid::OwnedSchemaToken::parse(
+                        &cadmpeg_test_support::service_decode_context(),
+                        schema.into(),
+                    )
+                    .expect("service token admission")
+                    .expect("the fixture text is a schema token")
                 }),
             },
         };
