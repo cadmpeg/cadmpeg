@@ -85,15 +85,12 @@ fn pmi_id(
         format_args!("catia:model:pmi#entity-record-{source_offset:010}"),
         "catia_pmi_dimension_id",
     )?;
-    match cadmpeg_ir::ids::Identity::admit_text(value, |work| {
-        ctx.charge_work(work, "catia_pmi_identity_grammar")
-    })? {
-        Ok(identity) => Ok(PmiId::from(identity)),
-        Err(value) => Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
-            format_args!("identity is invalid: {value:?}"),
-            "catia_pmi_identity_error",
-        )?)),
-    }
+    Ok(PmiId::from(crate::resource::admit_identity(
+        ctx,
+        value,
+        "catia_pmi_identity_grammar",
+        "catia_pmi_identity_error",
+    )?))
 }
 
 fn dimension_definition(entity: &CatiaEntityRecord) -> Option<PmiDefinition> {

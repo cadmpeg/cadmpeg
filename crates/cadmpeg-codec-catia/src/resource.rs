@@ -120,6 +120,22 @@ mod collection_tests {
     }
 }
 
+/// Admit identity grammar and retain the invalid-text diagnostic on failure.
+pub(crate) fn admit_identity(
+    ctx: &DecodeContext<'_>,
+    value: String,
+    operation: &'static str,
+    error_operation: &'static str,
+) -> Result<cadmpeg_ir::ids::Identity, CodecError> {
+    match cadmpeg_ir::ids::Identity::admit_text(value, |work| ctx.charge_work(work, operation))? {
+        Ok(identity) => Ok(identity),
+        Err(value) => Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("identity is invalid: {value:?}"),
+            error_operation,
+        )?)),
+    }
+}
+
 pub(crate) fn source_attribute(
     ctx: &DecodeContext<'_>,
     attributes: &mut BTreeMap<NonBlankString, String>,
