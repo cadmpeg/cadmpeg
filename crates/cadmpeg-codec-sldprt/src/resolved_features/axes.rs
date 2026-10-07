@@ -1605,7 +1605,7 @@ fn profile_roster_construction_axis_in(
     let Some((origin, normal, u_axis)) = sketch.resolved_placement() else {
         return Ok(None);
     };
-    let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, markers)?;
+    let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(ctx, &lane.native_payload)?)?;
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let owned = owned_profile_markers(ctx, &mut storage, markers, profile_native)?;
     let construction_axis = |marker: &&SketchInputEntity| {
@@ -1762,7 +1762,7 @@ fn profile_generated_surface_axis(
         };
         axis.origin = projected_origin;
     }
-    let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, markers)?;
+    let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(ctx, &lane.native_payload)?)?;
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut endpoint_ids = HashSet::new();
     let v_axis = normal.cross(u_axis.get());
@@ -1917,7 +1917,7 @@ fn profile_curve_endpoint_ids<'a>(
     indexed_only: bool,
 ) -> Result<HashSet<&'a str>, CodecError> {
     const OPERATION: &str = "scan SLDPRT profile curve endpoints";
-    let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, markers)?;
+    let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(ctx, &lane.native_payload)?)?;
     let mut ids = HashSet::new();
     for curve in ctx.admit_iter(owned, OPERATION)? {
         for endpoint in ctx.admit_iter(
@@ -2129,7 +2129,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
     const OPERATION: &str = "find SLDPRT implicit profile axis";
-    let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, markers)?;
+    let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(ctx, &lane.native_payload)?)?;
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let owned = owned_profile_markers(ctx, &mut storage, markers, profile_native)?;
     let is_curve = |marker: &&&SketchInputEntity| {

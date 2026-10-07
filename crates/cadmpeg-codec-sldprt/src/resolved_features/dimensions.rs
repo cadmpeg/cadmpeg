@@ -92,7 +92,7 @@ const DIMENSIONED_CARRIER_OPERATION: &str = "resolve SLDPRT dimensioned carrier"
 /// One lane's markers in lane order, with the by-identity map curve endpoint resolution reads.
 struct LaneMarkers<'a, 'ctx> {
     ordered: Vec<&'a SketchInputEntity>,
-    geometry: super::endpoints::geometry_index::MarkerGeometryIndex<'a, 'ctx>,
+    geometry: super::endpoints::geometry_index::MarkerGeometryIndex<'a, 'a, 'ctx>,
     by_id: HashMap<&'a str, &'a SketchInputEntity>,
     _storage: ScopedReservation<'ctx>,
 }
@@ -290,7 +290,7 @@ impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
                 )
             })?;
         }
-        let geometry = super::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &ordered)?;
+        let geometry = super::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &ordered, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(ctx, &self.lanes[lane].native_payload)?)?;
         Ok(cell.get_or_init(|| LaneMarkers {
             geometry,
             ordered,
@@ -2657,10 +2657,8 @@ pub(crate) fn project_marker_dimensioned_circles(
                             None => false,
                         }
                     {
-                        let id = entity
-                            .id()
-                            .try_clone_for_decode(ctx, MARKER_CIRCLE_OPERATION)?;
                         temporary_storage.with_storage(|| {
+                            let id = entity.id().try_clone_for_decode(ctx, MARKER_CIRCLE_OPERATION)?;
                             ctx.insert_hash_set(&mut removed, id, MARKER_CIRCLE_OPERATION)
                         })?;
                     }
@@ -2861,10 +2859,8 @@ pub(crate) fn project_marker_dimensioned_circles(
                                 None => false,
                             }
                         {
-                            let id = entity
-                                .id()
-                                .try_clone_for_decode(ctx, MARKER_CIRCLE_OPERATION)?;
                             temporary_storage.with_storage(|| {
+                                let id = entity.id().try_clone_for_decode(ctx, MARKER_CIRCLE_OPERATION)?;
                                 ctx.insert_hash_set(&mut removed, id, MARKER_CIRCLE_OPERATION)
                             })?;
                         }

@@ -103,7 +103,7 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
         &zero_object,
     ];
     let endpoint_ids = |payload: &[u8]| {
-        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, payload).unwrap()).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -122,7 +122,7 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
     assert!({ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &direct,
 &curve,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &direct).unwrap()).unwrap(),
 ); result }
     .unwrap()
     .is_empty());
@@ -132,7 +132,7 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
     assert!({ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &terminal,
 &curve,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &terminal).unwrap()).unwrap(),
 ); result }
     .unwrap()
     .is_empty());
@@ -142,7 +142,7 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
     assert!({ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &zero_direct,
 &curve,
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &zero_direct).unwrap()).unwrap(),
 ); result }
     .unwrap()
     .is_empty());

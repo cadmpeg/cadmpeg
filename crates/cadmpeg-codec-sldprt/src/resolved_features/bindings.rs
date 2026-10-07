@@ -2355,10 +2355,11 @@ fn bind_resolved_curve_vertices(
 ) -> Result<(), cadmpeg_core::CodecError> {
     const SELECTED: &str = "scan SLDPRT selected curve endpoints";
     const RESOLVE: &str = "resolve SLDPRT curve endpoints";
+    let prefixes = crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(ctx, &lane.native_payload)?;
     let mut storage = ctx.reserve_scoped(0, SCALAR_BINDING_INDEX)?;
     let selected_axis_endpoints = {
         let (markers_by_id, markers) = lane_marker_index(ctx, &mut storage, &lane.sketch_entities)?;
-        let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &markers)?;
+        let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &markers, std::rc::Rc::clone(&prefixes))?;
         let mut selected = HashSet::new();
         for curve in ctx.admit_iter(&markers, SELECTED)? {
             if !index_from_u64(curve.offset()).is_some_and(|offset| {
@@ -2389,7 +2390,7 @@ fn bind_resolved_curve_vertices(
         let (resolved_curves, resolved_endpoints) = {
             let (markers_by_id, markers) =
                 lane_marker_index(ctx, &mut round, &lane.sketch_entities)?;
-            let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &markers)?;
+            let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &markers, std::rc::Rc::clone(&prefixes))?;
             let mut resolved_curves = HashSet::new();
             let mut resolved_endpoints = HashSet::new();
             for curve in ctx.admit_iter(&markers, RESOLVE)? {

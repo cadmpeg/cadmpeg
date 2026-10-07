@@ -1852,7 +1852,7 @@ pub(crate) fn project_marker_backed_sketches(
                     })?;
                 }
             }
-            let geometry_index = MarkerGeometryIndex::new(ctx, &object_markers)?;
+            let geometry_index = MarkerGeometryIndex::new(ctx, &object_markers, std::rc::Rc::clone(&prefixes))?;
             let context_start = object_index
                 .checked_sub(1)
                 .and_then(|index| objects.get(index))
@@ -2174,7 +2174,7 @@ marker,
 )?;
                             }
                             if circle_geometry.is_none() {
-                                circle_geometry = compact_legacy_terminal_diameter_circle(ctx,
+                                circle_geometry = compact_legacy_terminal_diameter_circle(
 &lane.native_payload,
 marker,
 &geometry_index,

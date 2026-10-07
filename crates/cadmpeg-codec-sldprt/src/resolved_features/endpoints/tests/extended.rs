@@ -116,7 +116,7 @@ fn extended_linked_line_uses_inline_self_endpoint() {
     };
 
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_linked_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_linked_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.0, 0.0075], [0.007, 0.0075]])
     );
@@ -126,13 +126,13 @@ fn extended_linked_line_uses_inline_self_endpoint() {
     external = external.with_test_identity(Some(1), external.local_id());
     curve = curve.with_test_identity(Some(4), curve.local_id());
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_linked_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_linked_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.0, 0.0075], [0.007, 0.0075]])
     );
     payload[140] = 1;
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_linked_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_linked_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         None
     );
@@ -187,7 +187,7 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
     };
 
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&point, &curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&point, &curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.007, 0.0075], [0.01, 0.012]])
     );
@@ -198,13 +198,13 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
         constructed_marker
     };
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&chained_curve, &curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&chained_curve, &curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.007, 0.0075], [0.01, 0.012]])
     );
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&point, &curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&point, &curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.007, 0.0075], [0.01, 0.012]])
     );
@@ -220,7 +220,7 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
         constructed_marker
     };
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &direct_curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&chained_curve, &direct_curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &direct_curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&chained_curve, &direct_curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
         .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.007, 0.0075], [0.01, 0.012]])
     );
@@ -230,7 +230,7 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
     );
     payload[126..130].fill(0);
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &direct_curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&chained_curve, &direct_curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &direct_curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&chained_curve, &direct_curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
         .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         None
     );
@@ -241,13 +241,13 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
         constructed_marker
     };
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&point, &duplicate, &curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&point, &duplicate, &curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         None
     );
     payload[130..134].fill(0);
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&point, &curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&point, &curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         None
     );
@@ -307,32 +307,32 @@ fn extended_declared_line_uses_its_typed_point_selector() {
     };
 
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.014, 0.016], [0.0165, 0.029]])
     );
     payload[96..98].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.014, 0.016], [0.0165, 0.029]])
     );
     payload[96..98].fill(0);
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         None
     );
     payload[96..98].fill(0xff);
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         None
     );
     payload[96..98].copy_from_slice(&8u16.to_le_bytes());
     payload[110] = 0;
     assert_eq!(
-        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve], crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         None
     );
@@ -541,7 +541,7 @@ fn extended_direct_object_line_uses_exact_point_identities() {
         .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        { let ctx = cadmpeg_test_support::service_decode_context(); let result = marker_curve_endpoint_markers(&ctx, &payload, &linked_curve, &markers_by_id, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = marker_curve_endpoint_markers(&ctx, &payload, &linked_curve, &markers_by_id, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()); result }
         .unwrap()
         .iter()
         .map(|endpoint| endpoint.id())
@@ -712,7 +712,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_compact_endpoint_markers(&roster_ctx,
 &payload,
 &entities[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -727,7 +727,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_compact_endpoint_markers(&roster_ctx,
 &payload,
 &entities[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -748,7 +748,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     assert!({ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_compact_endpoint_markers(&roster_ctx,
 &payload,
 &entities[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &ambiguous).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &ambiguous, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
     .unwrap()
     .is_empty());
@@ -765,7 +765,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_compact_endpoint_markers(&roster_ctx,
 &payload,
 &entities[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -777,7 +777,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     assert!({ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_compact_endpoint_markers(&roster_ctx,
 &payload,
 &entities[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
     .unwrap()
     .is_empty());
@@ -792,7 +792,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_compact_endpoint_markers(&roster_ctx,
 &payload,
 &entities[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -805,7 +805,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_compact_endpoint_markers(&roster_ctx,
 &payload,
 &entities[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -825,7 +825,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_compact_endpoint_markers(&roster_ctx,
 &payload,
 &roster_indexed[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -844,7 +844,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_compact_endpoint_markers(&roster_ctx,
 &payload,
 &roster_indexed[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -905,7 +905,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_compact_endpoint_markers(&roster_ctx,
 &payload,
 &entities[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -918,7 +918,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_compact_endpoint_markers(&roster_ctx,
 &payload,
 &entities[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -930,7 +930,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
     assert!({ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_compact_endpoint_markers(&roster_ctx,
 &payload,
 &entities[0],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
     .unwrap()
     .is_empty());
@@ -980,7 +980,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -998,7 +998,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -1021,7 +1021,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -1051,7 +1051,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     centered_entities[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]);
     let centered_markers = centered_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        { let ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_arc_center(&ctx, &payload, &centered_entities[3], &centered_markers, [&centered_entities[1], &centered_entities[2]], &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &centered_markers).unwrap()); result }
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_arc_center(&ctx, &payload, &centered_entities[3], &centered_markers, [&centered_entities[1], &centered_entities[2]], &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &centered_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()); result }
         .unwrap(),
         Some([0.0, 0.0])
     );
@@ -1068,7 +1068,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     payload[curve_offset + 66..curve_offset + 68].copy_from_slice(&1u16.to_le_bytes());
     let hybrid_markers = hybrid_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        { let ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_arc_center(&ctx, &payload, &hybrid_entities[4], &hybrid_markers, [&hybrid_entities[3], &hybrid_entities[2]], &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &hybrid_markers).unwrap()); result }
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_arc_center(&ctx, &payload, &hybrid_entities[4], &hybrid_markers, [&hybrid_entities[3], &hybrid_entities[2]], &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &hybrid_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()); result }
         .unwrap(),
         None
     );
@@ -1078,7 +1078,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         hybrid_entities[1].with_test_identity(Some(0), hybrid_entities[1].local_id());
     let hybrid_markers = hybrid_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        { let ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_arc_center(&ctx, &payload, &hybrid_entities[4], &hybrid_markers, [&hybrid_entities[3], &hybrid_entities[2]], &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &hybrid_markers).unwrap()); result }
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_arc_center(&ctx, &payload, &hybrid_entities[4], &hybrid_markers, [&hybrid_entities[3], &hybrid_entities[2]], &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &hybrid_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()); result }
         .unwrap(),
         Some([0.0, 0.0])
     );
@@ -1095,7 +1095,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -1116,7 +1116,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -1140,7 +1140,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[3],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -1167,7 +1167,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         .reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     let complete_roster_markers = complete_roster_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &complete_roster_entities[3], &complete_roster_markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &complete_roster_markers).unwrap()); result }
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &complete_roster_entities[3], &complete_roster_markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &complete_roster_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker
@@ -1177,7 +1177,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         vec![Some([3.0, 4.0]), Some([5.0, 6.0])]
     );
     payload[curve_offset + 56..curve_offset + 58].fill(0);
-    assert!({ let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &complete_roster_entities[3], &complete_roster_markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &complete_roster_markers).unwrap()); result }
+    assert!({ let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &complete_roster_entities[3], &complete_roster_markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &complete_roster_markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()); result }
     .unwrap()
     .is_empty());
 }
@@ -1265,7 +1265,7 @@ fn extended_terminal_wide_profile_curve_uses_coordinate_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[4],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -1274,7 +1274,7 @@ fn extended_terminal_wide_profile_curve_uses_coordinate_roster() {
         ["fourth", "second"]
     );
     assert_eq!(
-        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &entities[4], &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &entities[4], &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -1366,7 +1366,7 @@ fn extended_wide_104_profile_curve_uses_coordinate_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[4],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
@@ -1466,7 +1466,7 @@ fn extended_terminal_164_wide_profile_curve_uses_coordinate_roster() {
         { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
 &payload,
 &entities[8],
-&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&roster_ctx, &payload).unwrap()).unwrap(),
 ); result }
         .unwrap()
         .iter()
