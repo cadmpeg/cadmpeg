@@ -35,7 +35,6 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 mod digest_partition;
 
 use crate::container::configuration_index;
-use crate::container::contains_ascii_case_insensitive;
 
 use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::graph::{decode_bodies, Brep};
@@ -2662,14 +2661,11 @@ fn active_body_streams<'a>(
 ) -> Result<Vec<ActiveParasolidSite<'a>>, CodecError> {
     let mut streams = Vec::new();
     for section in scan.sections(ctx)? {
-        let name = section.name().unwrap_or("");
-        if contains_ascii_case_insensitive(name, "ghost")
-            || contains_ascii_case_insensitive(name, "resolvedfeatures")
-        {
+        if section.name_words().ghost || section.name_words().resolved_features {
             continue;
         }
         for stream in ctx.admit_iter(section.ps_streams(), "scan SLDPRT topology members")? {
-            if !crate::parasolid::is_body_stream(ctx, &stream.header)? {
+            if !stream.header.is_body_stream() {
                 continue;
             }
             ctx.reserve_vec(&mut streams, 1, "collect SLDPRT body streams")?;
@@ -2680,22 +2676,16 @@ fn active_body_streams<'a>(
             });
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut streams,
-        |value| value.header.description.as_str(),
-        |left: &str, right: &str| {
-            (!contains_ascii_case_insensitive(left, "partition"))
-                .cmp(&(!contains_ascii_case_insensitive(right, "partition")))
-        },
+        |value| value.header.words.partition,
+        |left, right| right.cmp(left),
         "sort SLDPRT active body streams",
     )?;
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut streams,
-        |value| value.source_stream().as_str(),
-        |left: &str, right: &str| {
-            (!contains_ascii_case_insensitive(left, "partition"))
-                .cmp(&(!contains_ascii_case_insensitive(right, "partition")))
-        },
+        |value| value.section.name_words().partition,
+        |left, right| right.cmp(left),
         "sort SLDPRT active body streams",
     )?;
     Ok(streams)
@@ -2763,17 +2753,13 @@ fn try_decode_brep(
                 &sites[&decoded_sites[selected_site].0],
                 "scan SLDPRT selected site body streams",
             )?
-            .any(|index| {
-                contains_ascii_case_insensitive(&streams[*index].header.description, "partition")
-            })
+            .any(|index| streams[*index].header.words.partition)
         && ctx
             .admit_iter(
                 &sites[&decoded_sites[selected_site].0],
                 "scan SLDPRT selected site body streams",
             )?
-            .any(|index| {
-                contains_ascii_case_insensitive(&streams[*index].header.description, "deltas")
-            });
+            .any(|index| streams[*index].header.words.deltas);
     let selected_has_geometry = !decoded_sites[selected_site].2.faces.is_empty()
         || !decoded_sites[selected_site].2.surfaces.is_empty()
         || !decoded_sites[selected_site].2.points.is_empty();
@@ -2801,23 +2787,13 @@ fn try_decode_brep(
                                         &sites[site][..],
                                         "scan SLDPRT try_decode_brep values",
                                     )?
-                                    .any(|index| {
-                                        contains_ascii_case_insensitive(
-                                            &streams[*index].header.description,
-                                            "partition",
-                                        )
-                                    })
+                                    .any(|index| streams[*index].header.words.partition)
                                 && ctx
                                     .admit_iter(
                                         &sites[site][..],
                                         "scan SLDPRT try_decode_brep values",
                                     )?
-                                    .any(|index| {
-                                        contains_ascii_case_insensitive(
-                                            &streams[*index].header.description,
-                                            "deltas",
-                                        )
-                                    })
+                                    .any(|index| streams[*index].header.words.deltas)
                         }),
                 )
             })?;
@@ -2855,6 +2831,7 @@ fn try_decode_brep(
                 .map_err(|_| CodecError::Malformed("invalid admitted Parasolid schema".into()))?;
             Ok::<_, CodecError>(StreamHeader {
                 description,
+                words: header.words,
                 schema,
                 body_offset: header.body_offset,
             })

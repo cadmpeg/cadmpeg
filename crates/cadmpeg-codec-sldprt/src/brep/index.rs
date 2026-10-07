@@ -48,21 +48,20 @@ impl CarrierIndex {
     ) -> Result<(), cadmpeg_core::CodecError> {
         match carrier {
             Carrier::Curve(carrier) => {
-                ctx.admit_btree_entry(
+                ctx.insert_btree_map(
                     &mut self.curves,
-                    &carrier.attr,
+                    carrier.attr,
+                    IndexedCurve::Exact(carrier),
                     "index SLDPRT curve carriers",
                 )?;
-                self.curves
-                    .insert(carrier.attr, IndexedCurve::Exact(carrier));
             }
             Carrier::Surface(carrier) => {
-                ctx.admit_btree_entry(
+                ctx.insert_btree_map(
                     &mut self.surfaces,
-                    &carrier.attr,
+                    carrier.attr,
+                    carrier,
                     "index SLDPRT surface carriers",
                 )?;
-                self.surfaces.insert(carrier.attr, carrier);
             }
         }
         Ok(())
@@ -112,14 +111,12 @@ impl CarrierIndex {
         ctx: &DecodeContext<'_>,
         intersection: intersection::IntersectionCarrier,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.admit_btree_entry(
+        ctx.entry_btree_map(
             &mut self.curves,
-            &intersection.carrier.attr,
+            intersection.carrier.attr,
             "index SLDPRT intersection carriers",
-        )?;
-        self.curves
-            .entry(intersection.carrier.attr)
-            .or_insert(IndexedCurve::Derived(intersection));
+        )?
+        .or_insert(IndexedCurve::Derived(intersection));
         Ok(())
     }
 
@@ -169,12 +166,12 @@ impl CarrierIndex {
             other.blend_support_pairs,
             "merge SLDPRT blend support pairs",
         )?;
-        ctx.reserve_capacity(
+        let mut lane_refusals = other.lane_refusals;
+        ctx.append_vec(
             &mut self.lane_refusals,
-            other.lane_refusals.len(),
+            &mut lane_refusals,
             "merge SLDPRT lane refusals",
         )?;
-        self.lane_refusals.extend(other.lane_refusals);
         Ok(())
     }
 }
@@ -204,40 +201,32 @@ pub(super) fn scan_carriers(
     ctx: &DecodeContext<'_>,
     body: &[u8],
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(body.len()),
-        "scan SLDPRT analytic carriers",
-    )?;
     let mut out = CarrierIndex::default();
-    let mut i = 0usize;
-    while i + 2 <= body.len() {
-        if body[i] == 0x00 {
-            if let Some(count) = body
-                .get(i + 1)
-                .copied()
-                .and_then(super::analytic_value_count)
-            {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(
-                        (count * 8 + super::DELTAS_MARKER_OFFSET + 3) * 3,
-                    ),
-                    "probe SLDPRT analytic carrier",
-                )?;
-            }
-            if let Some(c) = parse_carrier(ctx, body, i)? {
-                out.insert(ctx, c)?;
-            }
+    // Each start parses at most two fixed-width framings, so one unit per
+    // start pays for it.
+    let starts = 0..body.len().checked_sub(1).map_or(0, |end| end);
+    for i in ctx.admit_iter(starts, "scan SLDPRT analytic carriers")? {
+        if let Some(carrier) = parse_carrier(body, i) {
+            out.insert(ctx, carrier)?;
         }
-        i += 1;
     }
     let mut lane_refusals = Vec::new();
-    for carrier in spline::scan_curve_carriers(ctx, body, &mut lane_refusals)?.into_values() {
+    for (_, carrier) in ctx.admit_iter(
+        spline::scan_curve_carriers(ctx, body, &mut lane_refusals)?,
+        "index SLDPRT spline curve carriers",
+    )? {
         out.insert(ctx, Carrier::Curve(carrier))?;
     }
-    for carrier in spline::scan_surface_carriers(ctx, body, &mut lane_refusals)?.into_values() {
+    for (_, carrier) in ctx.admit_iter(
+        spline::scan_surface_carriers(ctx, body, &mut lane_refusals)?,
+        "index SLDPRT spline surface carriers",
+    )? {
         out.insert(ctx, Carrier::Surface(carrier))?;
     }
-    for carrier in subset::scan(ctx, body, &out)? {
+    for carrier in ctx.admit_iter(
+        subset::scan(ctx, body, &out)?,
+        "index SLDPRT subset carriers",
+    )? {
         out.insert(ctx, Carrier::Curve(carrier))?;
     }
     out.sweeps = sweep::scan_sweep_carriers(ctx, body)?;
@@ -245,9 +234,10 @@ pub(super) fn scan_carriers(
     out.blends = blends;
     out.blend_support_pairs = pairs;
     out.offsets = offset::scan(ctx, body)?;
-    for intersection in
-        intersection::scan_intersection_carriers(ctx, body, &mut lane_refusals)?.into_values()
-    {
+    for (_, intersection) in ctx.admit_iter(
+        intersection::scan_intersection_carriers(ctx, body, &mut lane_refusals)?,
+        "index SLDPRT intersection carriers",
+    )? {
         out.insert_intersection(ctx, intersection)?;
     }
     out.lane_refusals = lane_refusals;

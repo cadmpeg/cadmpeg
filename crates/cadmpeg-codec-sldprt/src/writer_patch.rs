@@ -65,7 +65,7 @@ pub(crate) fn patch_partition(
         .filter(|candidate| site_key(candidate) == site)
     {
         for stream in ctx.admit_iter(&candidate.ps_streams, "scan SLDPRT patch body streams")? {
-            if crate::parasolid::is_body_stream(&ctx, &stream.header)? {
+            if stream.header.is_body_stream() {
                 ctx.reserve_vec(&mut streams, 1, "index SLDPRT patch streams")?;
                 streams.push((candidate, &stream.payload, &stream.header));
             }
@@ -473,7 +473,6 @@ fn patch_surfaces(
         let reference = super::writer::surface_reference(solved);
         let (_, values) = super::writer::surface_values(&surface.geometry, reference, scale)?;
         if patch_compact(
-            ctx,
             payload,
             raw_annotation_offset(annotations, &surface.id)?,
             &values,
@@ -534,7 +533,6 @@ fn patch_curves(
         }
         let (_, values) = super::writer::curve_values(&curve.geometry, scale)?;
         if patch_compact(
-            ctx,
             payload,
             raw_annotation_offset(annotations, &curve.id)?,
             &values,
@@ -548,12 +546,11 @@ fn patch_curves(
 }
 
 fn patch_compact(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &mut [u8],
     offset: usize,
     values: &[f64],
 ) -> Result<Option<()>, cadmpeg_core::CodecError> {
-    let Some(carrier) = crate::brep::parse_carrier(ctx, payload, offset)? else {
+    let Some(carrier) = crate::brep::parse_carrier(payload, offset) else {
         return Ok(None);
     };
     let end = match carrier {

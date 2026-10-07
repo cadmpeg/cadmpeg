@@ -339,12 +339,13 @@ fn metadata_history_xml_refuses_scoped_limit() {
     let mut admitted_entities = 0;
     let error =
         super::super::build_metadata_ir(&ctx, &scan, &classification, None, &mut admitted_entities)
-            .expect_err("history XML text exceeds the scoped materialization limit");
+            .expect_err("the history XML tree exceeds the scoped materialization limit");
     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
         panic!("expected a resource refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(limit.operation, "materialize SLDPRT history XML");
+    // UTF-8 history text is borrowed; its parsed tree is the scoped storage.
+    assert_eq!(limit.operation, "decode XML tree");
 }
 
 #[test]
@@ -542,12 +543,13 @@ fn geometry_history_xml_refuses_scoped_limit() {
         None,
         &mut admitted_entities,
     )
-    .expect_err("history XML text exceeds the scoped materialization limit");
+    .expect_err("the history XML tree exceeds the scoped materialization limit");
     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
         panic!("expected a resource refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(limit.operation, "materialize SLDPRT history XML");
+    // UTF-8 history text is borrowed; its parsed tree is the scoped storage.
+    assert_eq!(limit.operation, "decode XML tree");
 }
 
 #[test]
