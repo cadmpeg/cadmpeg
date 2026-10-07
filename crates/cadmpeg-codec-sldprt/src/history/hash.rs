@@ -34,7 +34,8 @@ pub(crate) fn feature_hash(
     const OPERATION: &str = "match SLDPRT feature hash parents";
     let views = ctx.with_scoped_storage("SLDPRT canonical hash views", || {
         let mut parent_storage = ctx.reserve_scoped(0, OPERATION)?;
-        let tree_parents = crate::history::bind::tree_parents(ctx, &mut parent_storage, &model.features)?;
+        let tree_parents =
+            crate::history::bind::tree_parents(ctx, &mut parent_storage, &model.features)?;
         let mut features = Vec::new();
         for feature in ctx.admit_iter(&model.features, "scan SLDPRT canonical hash views")? {
             // The structural owner, or the regeneration predecessor when no
@@ -107,7 +108,8 @@ pub(crate) fn configuration_hash(
     configurations: &[DesignConfiguration],
 ) -> Result<String, CodecError> {
     let views = ctx.with_scoped_storage("SLDPRT canonical hash views", || {
-        let mut configurations = ctx.collect_vec(configurations, "retain SLDPRT canonical hash views")?;
+        let mut configurations =
+            ctx.collect_vec(configurations, "retain SLDPRT canonical hash views")?;
         ctx.stable_sort_by(
             &mut configurations,
             |value| &value.id,

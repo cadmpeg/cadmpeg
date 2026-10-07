@@ -135,47 +135,91 @@ fn run_sketch(policy: &DecodePolicy) -> Result<(), CodecError> {
 
 #[test]
 fn configuration_feature_copy_design_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, "retain SLDPRT configuration features", run_design);
+    assert_projection_refusal(
+        ResourceDimension::CollectionItems,
+        "retain SLDPRT configuration features",
+        run_design,
+    );
 }
 #[test]
 fn configuration_feature_copy_design_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, "retain SLDPRT configuration features", run_design);
+    assert_projection_refusal(
+        ResourceDimension::WorkUnits,
+        "retain SLDPRT configuration features",
+        run_design,
+    );
 }
 #[test]
 fn configuration_feature_copy_supplemental_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, "retain SLDPRT configuration features", run_supplemental);
+    assert_projection_refusal(
+        ResourceDimension::CollectionItems,
+        "retain SLDPRT configuration features",
+        run_supplemental,
+    );
 }
 #[test]
 fn configuration_feature_copy_supplemental_refuses_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, "retain SLDPRT configuration features", run_supplemental);
+    assert_projection_refusal(
+        ResourceDimension::RetainedBytes,
+        "retain SLDPRT configuration features",
+        run_supplemental,
+    );
 }
 #[test]
 fn configuration_feature_copy_supplemental_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, "retain SLDPRT configuration features", run_supplemental);
+    assert_projection_refusal(
+        ResourceDimension::WorkUnits,
+        "retain SLDPRT configuration features",
+        run_supplemental,
+    );
 }
 #[test]
 fn configuration_feature_copy_topology_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, "retain SLDPRT evaluated configuration features", run_topology);
+    assert_projection_refusal(
+        ResourceDimension::CollectionItems,
+        "retain SLDPRT evaluated configuration features",
+        run_topology,
+    );
 }
 #[test]
 fn configuration_feature_copy_topology_refuses_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, "retain SLDPRT evaluated configuration features", run_topology);
+    assert_projection_refusal(
+        ResourceDimension::RetainedBytes,
+        "retain SLDPRT evaluated configuration features",
+        run_topology,
+    );
 }
 #[test]
 fn configuration_feature_copy_topology_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, "retain SLDPRT evaluated configuration features", run_topology);
+    assert_projection_refusal(
+        ResourceDimension::WorkUnits,
+        "retain SLDPRT evaluated configuration features",
+        run_topology,
+    );
 }
 #[test]
 fn configuration_feature_copy_sketch_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, "retain SLDPRT evaluated configuration features", run_sketch);
+    assert_projection_refusal(
+        ResourceDimension::CollectionItems,
+        "retain SLDPRT evaluated configuration features",
+        run_sketch,
+    );
 }
 #[test]
 fn configuration_feature_copy_sketch_refuses_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, "retain SLDPRT evaluated configuration features", run_sketch);
+    assert_projection_refusal(
+        ResourceDimension::RetainedBytes,
+        "retain SLDPRT evaluated configuration features",
+        run_sketch,
+    );
 }
 #[test]
 fn configuration_feature_copy_sketch_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, "retain SLDPRT evaluated configuration features", run_sketch);
+    assert_projection_refusal(
+        ResourceDimension::WorkUnits,
+        "retain SLDPRT evaluated configuration features",
+        run_sketch,
+    );
 }
 
 #[test]

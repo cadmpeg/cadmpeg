@@ -133,18 +133,29 @@ fn assert_projection_refusal(
 
 #[test]
 fn configuration_sketch_projection_refuses_carrier_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, "copy SLDPRT configuration surface carriers", run);
+    assert_projection_refusal(
+        ResourceDimension::CollectionItems,
+        "copy SLDPRT configuration surface carriers",
+        run,
+    );
 }
-
 
 #[test]
 fn configuration_sketch_projection_refuses_carrier_nesting_limit() {
-    assert_projection_refusal(ResourceDimension::RecursionDepth, "copy SLDPRT configuration surface carriers", run);
+    assert_projection_refusal(
+        ResourceDimension::RecursionDepth,
+        "copy SLDPRT configuration surface carriers",
+        run,
+    );
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_carrier_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, "copy SLDPRT configuration surface carriers", run);
+    assert_projection_refusal(
+        ResourceDimension::WorkUnits,
+        "copy SLDPRT configuration surface carriers",
+        run,
+    );
 }
 
 fn datum_model() -> cadmpeg_ir::CadIr {
@@ -263,22 +274,38 @@ fn run_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
 
 #[test]
 fn configuration_datum_state_projection_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, "retain SLDPRT configuration datum dependency", run_datum);
+    assert_projection_refusal(
+        ResourceDimension::CollectionItems,
+        "retain SLDPRT configuration datum dependency",
+        run_datum,
+    );
 }
 
 #[test]
 fn configuration_datum_state_projection_refuses_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, "copy SLDPRT configuration datum reference", run_datum);
+    assert_projection_refusal(
+        ResourceDimension::RetainedBytes,
+        "copy SLDPRT configuration datum reference",
+        run_datum,
+    );
 }
 
 #[test]
 fn configuration_datum_state_projection_refuses_nesting_limit() {
-    assert_projection_refusal(ResourceDimension::RecursionDepth, "resolve SLDPRT configuration datum frame", run_datum);
+    assert_projection_refusal(
+        ResourceDimension::RecursionDepth,
+        "resolve SLDPRT configuration datum frame",
+        run_datum,
+    );
 }
 
 #[test]
 fn configuration_datum_state_projection_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, "index SLDPRT configuration base definitions", run_datum);
+    assert_projection_refusal(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT configuration base definitions",
+        run_datum,
+    );
 }
 
 fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -349,12 +376,20 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
 
 #[test]
 fn configuration_design_projection_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, "collect SLDPRT configuration values", run_design);
+    assert_projection_refusal(
+        ResourceDimension::CollectionItems,
+        "collect SLDPRT configuration values",
+        run_design,
+    );
 }
 
 #[test]
 fn configuration_design_projection_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, "collect SLDPRT configuration values", run_design);
+    assert_projection_refusal(
+        ResourceDimension::WorkUnits,
+        "collect SLDPRT configuration values",
+        run_design,
+    );
 }
 
 fn assert_configuration_values_refusal(dimension: ResourceDimension) {
@@ -427,17 +462,29 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
 
 #[test]
 fn configuration_sketch_projection_refuses_unscoped_datum_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, "retain SLDPRT configuration datum dependency", run_unscoped_datum);
+    assert_projection_refusal(
+        ResourceDimension::CollectionItems,
+        "retain SLDPRT configuration datum dependency",
+        run_unscoped_datum,
+    );
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_unscoped_datum_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, "copy SLDPRT configuration datum reference", run_unscoped_datum);
+    assert_projection_refusal(
+        ResourceDimension::RetainedBytes,
+        "copy SLDPRT configuration datum reference",
+        run_unscoped_datum,
+    );
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_unscoped_datum_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, "index SLDPRT configuration base definitions", run_unscoped_datum);
+    assert_projection_refusal(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT configuration base definitions",
+        run_unscoped_datum,
+    );
 }
 
 fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -523,17 +570,29 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
 
 #[test]
 fn configuration_sketch_projection_refuses_ownership_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, "retain SLDPRT evaluated configuration features", run_spatial_ownership);
+    assert_projection_refusal(
+        ResourceDimension::CollectionItems,
+        "retain SLDPRT evaluated configuration features",
+        run_spatial_ownership,
+    );
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_ownership_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, "retain SLDPRT evaluated configuration features", run_spatial_ownership);
+    assert_projection_refusal(
+        ResourceDimension::RetainedBytes,
+        "retain SLDPRT evaluated configuration features",
+        run_spatial_ownership,
+    );
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_ownership_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, "retain SLDPRT evaluated configuration features", run_spatial_ownership);
+    assert_projection_refusal(
+        ResourceDimension::WorkUnits,
+        "retain SLDPRT evaluated configuration features",
+        run_spatial_ownership,
+    );
 }
 
 fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -646,17 +705,29 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
 
 #[test]
 fn configuration_sketch_projection_refuses_hole_construction_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, "index SLDPRT configuration base definitions", run_hole_construction);
+    assert_projection_refusal(
+        ResourceDimension::CollectionItems,
+        "index SLDPRT configuration base definitions",
+        run_hole_construction,
+    );
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_hole_construction_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, "copy SLDPRT configuration hole construction", run_hole_construction);
+    assert_projection_refusal(
+        ResourceDimension::RetainedBytes,
+        "copy SLDPRT configuration hole construction",
+        run_hole_construction,
+    );
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_hole_construction_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, "index SLDPRT configuration base definitions", run_hole_construction);
+    assert_projection_refusal(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT configuration base definitions",
+        run_hole_construction,
+    );
 }
 
 fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -750,17 +821,29 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
 
 #[test]
 fn configuration_sketch_projection_refuses_hole_operand_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, "copy SLDPRT configuration hole placements", run_hole_operands);
+    assert_projection_refusal(
+        ResourceDimension::CollectionItems,
+        "copy SLDPRT configuration hole placements",
+        run_hole_operands,
+    );
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_hole_operand_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, "copy SLDPRT configuration hole placements", run_hole_operands);
+    assert_projection_refusal(
+        ResourceDimension::RetainedBytes,
+        "copy SLDPRT configuration hole placements",
+        run_hole_operands,
+    );
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_hole_operand_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, "index SLDPRT configuration base definitions", run_hole_operands);
+    assert_projection_refusal(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT configuration base definitions",
+        run_hole_operands,
+    );
 }
 
 fn profile_termination_operands() -> (
@@ -984,17 +1067,29 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
 
 #[test]
 fn configuration_sketch_projection_refuses_hole_profile_termination_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, "copy SLDPRT configuration hole profile", run_hole_profile_termination);
+    assert_projection_refusal(
+        ResourceDimension::CollectionItems,
+        "copy SLDPRT configuration hole profile",
+        run_hole_profile_termination,
+    );
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_hole_profile_termination_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, "copy SLDPRT configuration hole profile", run_hole_profile_termination);
+    assert_projection_refusal(
+        ResourceDimension::RetainedBytes,
+        "copy SLDPRT configuration hole profile",
+        run_hole_profile_termination,
+    );
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_hole_profile_termination_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, "index SLDPRT configuration base definitions", run_hole_profile_termination);
+    assert_projection_refusal(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT configuration base definitions",
+        run_hole_profile_termination,
+    );
 }
 
 fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -1091,13 +1186,20 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
 
 #[test]
 fn configuration_sketch_projection_refuses_parameter_overlay_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, "overlay SLDPRT configuration parameter values", run_parameter_overlay);
+    assert_projection_refusal(
+        ResourceDimension::CollectionItems,
+        "overlay SLDPRT configuration parameter values",
+        run_parameter_overlay,
+    );
 }
-
 
 #[test]
 fn configuration_sketch_projection_refuses_parameter_overlay_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, "overlay SLDPRT configuration parameter values", run_parameter_overlay);
+    assert_projection_refusal(
+        ResourceDimension::WorkUnits,
+        "overlay SLDPRT configuration parameter values",
+        run_parameter_overlay,
+    );
 }
 
 mod feature_copies;
@@ -1127,7 +1229,6 @@ fn configuration_parameter_overlays_use_scoped_storage() {
         run_parameter_overlay(&policy).unwrap();
     }
 }
-
 
 #[test]
 fn configuration_spatial_identity_lookup_keeps_candidate_text_scoped() {

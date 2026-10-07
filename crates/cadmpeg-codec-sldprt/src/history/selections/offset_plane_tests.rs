@@ -1122,7 +1122,8 @@ fn ambiguous_planar_faces_leave_identity_copies_and_suffix_unpaid() {
                 Point3::new(0.0, 0.0, 12.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
-            ).unwrap(),
+            )
+            .unwrap(),
         )),
         source_object: None,
     };
@@ -1148,9 +1149,14 @@ fn ambiguous_planar_faces_leave_identity_copies_and_suffix_unpaid() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut selection = FaceSelection::Unresolved;
     resolve_planar_face_selection(
-        &ctx, &mut selection, Point3::new(0.0, 0.0, 12.0),
-        Vector3::new(0.0, 0.0, 1.0), &faces, &surfaces,
-    ).unwrap();
+        &ctx,
+        &mut selection,
+        Point3::new(0.0, 0.0, 12.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        &faces,
+        &surfaces,
+    )
+    .unwrap();
     assert_eq!(selection, FaceSelection::Unresolved);
     assert!(ctx.resource_refusal().is_none());
 }

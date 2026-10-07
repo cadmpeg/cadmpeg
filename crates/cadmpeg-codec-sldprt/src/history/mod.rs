@@ -235,16 +235,20 @@ fn history(
         if !is_feature_node(&node) {
             continue;
         }
-        let id = feature_id_storage.with_storage(|| ctx.format_retained(
-            format_args!("sldprt:history:feature#{source}:{ordinal}"),
-            "retain SLDPRT feature identity",
-        ))?;
-        feature_id_storage.with_storage(|| ctx.insert_hash_map(
-            &mut feature_ids,
-            node.range().start,
-            id,
-            "index SLDPRT history feature IDs",
-        ))?;
+        let id = feature_id_storage.with_storage(|| {
+            ctx.format_retained(
+                format_args!("sldprt:history:feature#{source}:{ordinal}"),
+                "retain SLDPRT feature identity",
+            )
+        })?;
+        feature_id_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut feature_ids,
+                node.range().start,
+                id,
+                "index SLDPRT history feature IDs",
+            )
+        })?;
         ordinal += 1;
     }
     let mut features = Vec::new();
@@ -426,9 +430,17 @@ fn feature(
             let source_id = ctx
                 .xml_attribute(ancestor, "id", HISTORY_OPERATION)?
                 .map(|value| {
-                    if value == "-1" { return Ok(Some(FeatureSource::Reserved)); }
-                    Ok::<_, CodecError>(ctx.parse_text::<u32>(value, HISTORY_OPERATION)?.ok().and_then(FeatureSource::from_value))
-                }).transpose()?.flatten();
+                    if value == "-1" {
+                        return Ok(Some(FeatureSource::Reserved));
+                    }
+                    Ok::<_, CodecError>(
+                        ctx.parse_text::<u32>(value, HISTORY_OPERATION)?
+                            .ok()
+                            .and_then(FeatureSource::from_value),
+                    )
+                })
+                .transpose()?
+                .flatten();
             Ok(Some(crate::records::TreeParent::Record {
                 record_id,
                 source_id,
@@ -448,9 +460,17 @@ fn feature(
         source_id: ctx
             .xml_attribute(node, "id", HISTORY_OPERATION)?
             .map(|value| {
-                    if value == "-1" { return Ok(Some(FeatureSource::Reserved)); }
-                    Ok::<_, CodecError>(ctx.parse_text::<u32>(value, HISTORY_OPERATION)?.ok().and_then(FeatureSource::from_value))
-                }).transpose()?.flatten(),
+                if value == "-1" {
+                    return Ok(Some(FeatureSource::Reserved));
+                }
+                Ok::<_, CodecError>(
+                    ctx.parse_text::<u32>(value, HISTORY_OPERATION)?
+                        .ok()
+                        .and_then(FeatureSource::from_value),
+                )
+            })
+            .transpose()?
+            .flatten(),
         ordinal: u32::try_from(ordinal).map_err(|_| {
             ctx.refuse_codec_limit(
                 "index SLDPRT history feature ordinals",
@@ -547,7 +567,8 @@ pub(crate) fn enrich_scene_classes(
                 continue;
             };
             if feature.input_class.is_none() && classless_builtin_node(feature) {
-                feature.input_class = ctx.get_hash_map(scene_classes, &source, OPERATION)?
+                feature.input_class = ctx
+                    .get_hash_map(scene_classes, &source, OPERATION)?
                     .map(|name| ctx.copy_retained_text(name, OPERATION))
                     .transpose()?;
             }
