@@ -106,7 +106,9 @@ fn decode_mesh_proxy(
     decode_mesh_proxy_with_ctx(&ctx, data, extra, archive, scale, id, fingerprint)
 }
 
-fn decode_with_collection_limit(limit: u64) -> Result<Option<DecodedSubd>, cadmpeg_core::CodecError> {
+fn decode_with_collection_limit(
+    limit: u64,
+) -> Result<Option<DecodedSubd>, cadmpeg_core::CodecError> {
     let fixture = Fixture::default();
     let data = payload(fixture);
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -136,7 +138,8 @@ macro_rules! subd_collection_limit_test {
             // Probe the operation after earlier charges instead of counting those charges.
             match cadmpeg_test_support::refusal::resource_limit_at(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                $operation, decode_with_collection_limit,
+                $operation,
+                decode_with_collection_limit,
             ) {
                 cadmpeg_core::CodecError::ResourceLimit(refusal) => {
                     assert_eq!(refusal.operation, $operation);
@@ -190,10 +193,7 @@ subd_collection_limit_test!(
 subd_collection_limit_test!(vertices_refuse_collection_limit, "Rhino SubD vertices");
 subd_collection_limit_test!(edges_refuse_collection_limit, "Rhino SubD edges");
 subd_collection_limit_test!(faces_refuse_collection_limit, "Rhino SubD faces");
-subd_collection_limit_test!(
-    face_edges_refuse_collection_limit,
-    "Rhino SubD face edges"
-);
+subd_collection_limit_test!(face_edges_refuse_collection_limit, "Rhino SubD face edges");
 
 fn anonymous(body: &[u8]) -> Vec<u8> {
     let mut bytes = ANONYMOUS.to_le_bytes().to_vec();
@@ -1256,18 +1256,34 @@ fn a_non_reciprocal_incidence_refusal_names_no_byte() {
 
 #[test]
 fn rejected_mesh_proxy_does_not_retain_the_candidate_cage() {
-    let fingerprint = MeshProxyFingerprint { face_count: 4, vertex_count: 4, face_sha1: [0x11; 20], vertex_sha1: [0x22; 20] };
+    let fingerprint = MeshProxyFingerprint {
+        face_count: 4,
+        vertex_count: 4,
+        face_sha1: [0x11; 20],
+        vertex_sha1: [0x22; 20],
+    };
     let (bytes, descriptor) = proxy_userdata(&payload(Fixture::default()), fingerprint, true);
     let mut wrong_hash = fingerprint;
     wrong_hash.face_sha1[0] ^= 1;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes, "Rhino SubD vertices", None,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "Rhino SubD vertices",
+        None,
     );
-    let result = decode_mesh_proxy_with_ctx(&ctx, &bytes, &descriptor, ArchiveVersion::V5,
-        MillimeterScale::IDENTITY, "rhino:test:proxy-subd#0".try_into().unwrap(), wrong_hash).unwrap();
+    let result = decode_mesh_proxy_with_ctx(
+        &ctx,
+        &bytes,
+        &descriptor,
+        ArchiveVersion::V5,
+        MillimeterScale::IDENTITY,
+        "rhino:test:proxy-subd#0".try_into().unwrap(),
+        wrong_hash,
+    )
+    .unwrap();
     assert!(result.is_none());
     assert!(ctx.finish_session().is_ok());
 }
@@ -1275,11 +1291,22 @@ fn rejected_mesh_proxy_does_not_retain_the_candidate_cage() {
 #[test]
 fn mesh_proxy_candidate_refuses_speculative_and_retained_boundaries() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let fingerprint = MeshProxyFingerprint { face_count: 4, vertex_count: 4, face_sha1: [0x11; 20], vertex_sha1: [0x22; 20] };
+    let fingerprint = MeshProxyFingerprint {
+        face_count: 4,
+        vertex_count: 4,
+        face_sha1: [0x11; 20],
+        vertex_sha1: [0x22; 20],
+    };
     let (bytes, descriptor) = proxy_userdata(&payload(Fixture::default()), fingerprint, true);
     for (dimension, operation) in [
-        (ResourceDimension::MaterializedBytes, "Rhino SubD level vertices"),
-        (ResourceDimension::RetainedBytes, "Rhino SubD mesh proxy candidate"),
+        (
+            ResourceDimension::MaterializedBytes,
+            "Rhino SubD level vertices",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "Rhino SubD mesh proxy candidate",
+        ),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let arena = DecodeArena::new();
@@ -1290,12 +1317,22 @@ fn mesh_proxy_candidate_refuses_speculative_and_retained_boundaries() {
                 _ => panic!("storage dimension"),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-            let result = decode_mesh_proxy_with_ctx(&ctx, &bytes, &descriptor, ArchiveVersion::V5,
-                MillimeterScale::IDENTITY, "rhino:test:proxy-subd#0".try_into().unwrap(), fingerprint);
+            let result = decode_mesh_proxy_with_ctx(
+                &ctx,
+                &bytes,
+                &descriptor,
+                ArchiveVersion::V5,
+                MillimeterScale::IDENTITY,
+                "rhino:test:proxy-subd#0".try_into().unwrap(),
+                fingerprint,
+            );
             if let Err(SubdError::Resource(limit)) = &result {
                 assert_eq!(ctx.resource_refusal(), Some(*limit));
             }
-            result.map_err(|error| match error { SubdError::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(limit), error => panic!("unexpected proxy error: {error:?}") })
+            result.map_err(|error| match error {
+                SubdError::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(limit),
+                error => panic!("unexpected proxy error: {error:?}"),
+            })
         });
     }
 }

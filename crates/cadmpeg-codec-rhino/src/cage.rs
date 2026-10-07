@@ -180,7 +180,9 @@ pub(crate) fn decode_at(
             .ok_or_else(|| {
                 GeometryError::malformed(body.position(), "NURBS cage knot vector truncated")
             })?;
-        let mut reserved = expand.ctx().collection_vec(knot_count, "Rhino cage knot values")?;
+        let mut reserved = expand
+            .ctx()
+            .collection_vec(knot_count, "Rhino cage knot values")?;
         let mut previous: Option<FiniteReal> = None;
         for _ in 0..knot_count {
             expand.ctx().charge_work(1, "Rhino cage knot values")?;
@@ -219,7 +221,9 @@ pub(crate) fn decode_at(
         .ok_or_else(|| {
             GeometryError::malformed(body.position(), "NURBS cage control net truncated")
         })?;
-    let mut control_points = expand.ctx().collection_vec(control_count, "Rhino cage control points")?;
+    let mut control_points = expand
+        .ctx()
+        .collection_vec(control_count, "Rhino cage control points")?;
     let mut weights = if rational {
         Some(
             expand
@@ -231,13 +235,15 @@ pub(crate) fn decode_at(
         None
     };
     for _ in 0..control_count {
-            expand.ctx().charge_work(1, "Rhino cage control points")?;
+        expand.ctx().charge_work(1, "Rhino cage control points")?;
         let _tuple_bound = body
             .counted(cadmpeg_core::decode::u64_from_index(dimension), 8)
             .ok_or_else(|| {
                 GeometryError::malformed(body.position(), "NURBS cage coordinate tuple truncated")
             })?;
-        let mut stored = expand.ctx().collection_vec(dimension, "Rhino cage coordinate tuple")?;
+        let mut stored = expand
+            .ctx()
+            .collection_vec(dimension, "Rhino cage coordinate tuple")?;
         for _ in 0..dimension {
             expand.ctx().charge_work(1, "Rhino cage coordinate tuple")?;
             let value = req_f64(&mut body)?;
@@ -265,9 +271,18 @@ pub(crate) fn decode_at(
         } else {
             FiniteReal::ONE
         };
-        for coordinate in expand.ctx().admit_iter(&mut stored[..], "Rhino cage scaled coordinates").map_err(cadmpeg_core::CodecError::from)? {
+        for coordinate in expand
+            .ctx()
+            .admit_iter(&mut stored[..], "Rhino cage scaled coordinates")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             *coordinate = cadmpeg_ir::math::multiply_divide(*coordinate, scale.real(), weight)
-                .ok_or_else(|| GeometryError::malformed(body.position(), "scaled NURBS cage coordinate is invalid"))?;
+                .ok_or_else(|| {
+                    GeometryError::malformed(
+                        body.position(),
+                        "scaled NURBS cage coordinate is invalid",
+                    )
+                })?;
         }
         control_points.push(stored);
     }
@@ -383,17 +398,24 @@ mod tests {
                 let arena = cadmpeg_core::decode::DecodeArena::new();
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
-                let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                    .expect("root bytes admitted");
-                decode(crate::mesh::MeshExpand::new(&ctx, root), 0..bytes.len(),
-                    crate::test_support::millimeter_scale(10.0), ArchiveVersion::V8)
-                    .map_err(|error| match error {
-                        GeometryError::Codec(error) => error,
-                        other => cadmpeg_core::CodecError::malformed(other),
-                    })
+                let (ctx, root) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                        .expect("root bytes admitted");
+                decode(
+                    crate::mesh::MeshExpand::new(&ctx, root),
+                    0..bytes.len(),
+                    crate::test_support::millimeter_scale(10.0),
+                    ArchiveVersion::V8,
+                )
+                .map_err(|error| match error {
+                    GeometryError::Codec(error) => error,
+                    other => cadmpeg_core::CodecError::malformed(other),
+                })
             },
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal) if refusal.operation == operation));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal) if refusal.operation == operation)
+        );
     }
 
     #[test]
@@ -406,13 +428,19 @@ mod tests {
                 let arena = cadmpeg_core::decode::DecodeArena::new();
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 policy.limits.max_work_units = cap;
-                let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-                let result = decode(crate::mesh::MeshExpand::new(&ctx, root), 0..bytes.len(),
-                    crate::test_support::millimeter_scale(10.0), ArchiveVersion::V8)
-                    .map_err(|error| match error {
-                        GeometryError::Codec(error) => error,
-                        other => cadmpeg_core::CodecError::malformed(other),
-                    });
+                let (ctx, root) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                        .expect("root");
+                let result = decode(
+                    crate::mesh::MeshExpand::new(&ctx, root),
+                    0..bytes.len(),
+                    crate::test_support::millimeter_scale(10.0),
+                    ArchiveVersion::V8,
+                )
+                .map_err(|error| match error {
+                    GeometryError::Codec(error) => error,
+                    other => cadmpeg_core::CodecError::malformed(other),
+                });
                 if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
                     assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
                 }
@@ -420,8 +448,10 @@ mod tests {
             },
         );
         // The three stored coordinates are visited once for in-place scaling.
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "Rhino cage scaled coordinates" && limit.additional == 3));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino cage scaled coordinates" && limit.additional == 3)
+        );
     }
 
     #[test]
@@ -443,7 +473,6 @@ mod tests {
     fn cage_coordinate_tuple_refuses_collection_limit() {
         cage_collection_refusal("Rhino cage coordinate tuple");
     }
-
 
     #[test]
     fn nonfinite_cage_knot_is_refused_at_source() {

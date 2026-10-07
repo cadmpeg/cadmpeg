@@ -296,14 +296,18 @@ pub(crate) fn decode(
         active_miter(miter_present[1], miter_normals[1]),
     ];
 
-    let mut boundary_storage = expand.ctx().reserve_scoped(0, "Rhino extrusion source boundaries")?;
-    let source_boundaries = boundary_storage.with_storage(|| split_profiles(
-        expand.ctx(),
-        profile,
-        usize::try_from(profile_count)
-            .map_err(|_| GeometryError::unpositioned("geometry count exceeds address space"))?,
-        version_offset,
-    ))?;
+    let mut boundary_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino extrusion source boundaries")?;
+    let source_boundaries = boundary_storage.with_storage(|| {
+        split_profiles(
+            expand.ctx(),
+            profile,
+            usize::try_from(profile_count)
+                .map_err(|_| GeometryError::unpositioned("geometry count exceeds address space"))?,
+            version_offset,
+        )
+    })?;
     let xaxis = normalize(
         expand.ctx(),
         up.cross(tangent),
@@ -319,12 +323,29 @@ pub(crate) fn decode(
         .ctx()
         .collection_vec(source_boundaries.len(), "Rhino extrusion boundaries")
         .map_err(crate::curves::GeometryError::from)?;
-    let mut orientation_storage = expand.ctx().reserve_scoped(0, "Rhino extrusion orientations")?;
-    let mut orientations = orientation_storage.with_storage(|| expand.ctx().collection_vec(source_boundaries.len(), "Rhino extrusion orientations"))?;
-    for source in expand.ctx().admit_iter(source_boundaries, "Rhino extrusion profile traversal").map_err(cadmpeg_core::CodecError::from)? {
-        let mut source_storage = expand.ctx().reserve_scoped(0, "Rhino extrusion source NURBS")?;
-        let source_nurbs = source_storage.with_storage(|| exact_nurbs(expand.ctx(), &source, version_offset))?;
-        orientations.push(nurbs_orientation(expand.ctx(), &source_nurbs, version_offset)?);
+    let mut orientation_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino extrusion orientations")?;
+    let mut orientations = orientation_storage.with_storage(|| {
+        expand
+            .ctx()
+            .collection_vec(source_boundaries.len(), "Rhino extrusion orientations")
+    })?;
+    for source in expand
+        .ctx()
+        .admit_iter(source_boundaries, "Rhino extrusion profile traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
+        let mut source_storage = expand
+            .ctx()
+            .reserve_scoped(0, "Rhino extrusion source NURBS")?;
+        let source_nurbs =
+            source_storage.with_storage(|| exact_nurbs(expand.ctx(), &source, version_offset))?;
+        orientations.push(nurbs_orientation(
+            expand.ctx(),
+            &source_nurbs,
+            version_offset,
+        )?);
         let start_nurbs = transform_nurbs(
             expand.ctx(),
             &source_nurbs,
@@ -489,7 +510,11 @@ fn split_profiles(
     let mut profiles = ctx
         .collection_vec(children.len(), "Rhino extrusion profile split")
         .map_err(crate::curves::GeometryError::from)?;
-    profiles.extend(ctx.admit_iter(children, "Rhino extrusion profile split traversal").map_err(CodecError::from)?.map(|(_, child)| child));
+    profiles.extend(
+        ctx.admit_iter(children, "Rhino extrusion profile split traversal")
+            .map_err(CodecError::from)?
+            .map(|(_, child)| child),
+    );
     Ok(profiles)
 }
 
@@ -501,10 +526,10 @@ fn nurbs_orientation(
     if curve.pole_count() < 2 || curve.degree() == 0 {
         return Err(error(offset, "extrusion profile closure is degenerate"));
     }
-    if profile_off_plane(ctx, &curve)? {
+    if profile_off_plane(ctx, curve)? {
         return Err(error(offset, "extrusion profile is not in the XY plane"));
     }
-    let domain = nurbs_curve_parameter_domain(&curve)
+    let domain = nurbs_curve_parameter_domain(curve)
         .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
         .ok_or_else(|| error(offset, "extrusion profile parameter domain is invalid"))?;
     let degree = usize::try_from(curve.degree())
@@ -513,9 +538,10 @@ fn nurbs_orientation(
         .checked_add(1)
         .ok_or_else(|| error(offset, "extrusion profile degree is too large"))?;
     let mut basis_storage = ctx.reserve_scoped(0, "Rhino extrusion profile basis")?;
-    let mut basis = basis_storage.with_storage(|| ctx.alloc_filled(basis_count, 0.0, "Rhino extrusion profile basis"))?;
-    let start = evaluate_profile_point(ctx, &curve, domain[0], offset, &mut basis)?;
-    let end = evaluate_profile_point(ctx, &curve, domain[1], offset, &mut basis)?;
+    let mut basis = basis_storage
+        .with_storage(|| ctx.alloc_filled(basis_count, 0.0, "Rhino extrusion profile basis"))?;
+    let start = evaluate_profile_point(ctx, curve, domain[0], offset, &mut basis)?;
+    let end = evaluate_profile_point(ctx, curve, domain[1], offset, &mut basis)?;
     let sample_parameter = |start: f64, end: f64, fraction: f64, ordinary: f64| {
         if ordinary.is_finite() {
             Ok(ordinary)
@@ -532,14 +558,14 @@ fn nurbs_orientation(
         let span = domain[1] - domain[0];
         let one_third = evaluate_profile_point(
             ctx,
-            &curve,
+            curve,
             sample_parameter(domain[0], domain[1], 1.0 / 3.0, domain[0] + span / 3.0)?,
             offset,
             &mut basis,
         )?;
         let two_thirds = evaluate_profile_point(
             ctx,
-            &curve,
+            curve,
             sample_parameter(
                 domain[0],
                 domain[1],
@@ -558,8 +584,16 @@ fn nurbs_orientation(
         }
     }
 
-    let span_count = ctx.admit_iter(curve.knots().as_slice(), "Rhino extrusion orientation span count").map_err(CodecError::from)?
-        .windows(std::num::NonZeroUsize::new(2).ok_or_else(|| CodecError::malformed("invalid window size"))?)
+    let span_count = ctx
+        .admit_iter(
+            curve.knots().as_slice(),
+            "Rhino extrusion orientation span count",
+        )
+        .map_err(CodecError::from)?
+        .windows(
+            std::num::NonZeroUsize::new(2)
+                .ok_or_else(|| CodecError::malformed("invalid window size"))?,
+        )
         .filter(|pair| pair[0] < pair[1] && pair[1] > domain[0] && pair[0] < domain[1])
         .count();
     if span_count == 0 {
@@ -616,12 +650,12 @@ fn nurbs_orientation(
                 fraction,
                 span_start + fraction * (span_end - span_start),
             )?;
-            let current = evaluate_profile_point(ctx, &curve, parameter, offset, &mut basis)?;
+            let current = evaluate_profile_point(ctx, curve, parameter, offset, &mut basis)?;
             twice_area += (previous.x - current.x) * (previous.y + current.y);
             previous = current;
         }
     }
-    let final_point = evaluate_profile_point(ctx, &curve, domain[1], offset, &mut basis)?;
+    let final_point = evaluate_profile_point(ctx, curve, domain[1], offset, &mut basis)?;
     twice_area += (previous.x - final_point.x) * (previous.y + final_point.y);
     if !twice_area.is_finite() {
         return Err(error(offset, "extrusion profile orientation is invalid"));
@@ -636,15 +670,28 @@ fn nurbs_orientation(
 }
 
 fn source_periodic(ctx: &DecodeContext<'_>, curve: &NurbsCurve) -> Result<bool, CodecError> {
-    if !curve.periodic() || curve.degree() <= 1 { return Ok(false); }
-    let Ok(degree) = usize::try_from(curve.degree()) else { return Ok(false); };
+    if !curve.periodic() || curve.degree() <= 1 {
+        return Ok(false);
+    }
+    let Ok(degree) = usize::try_from(curve.degree()) else {
+        return Ok(false);
+    };
     let count = curve.pole_count();
-    if count < degree { return Ok(false); }
-    ctx.all_by(0..degree, |index| {
-        let first = curve.pole_rows().point_at(degree - 1 - index);
-        let last = curve.pole_rows().point_at(count - 1 - index);
-        Ok(match (first, last) { (Some(first), Some(last)) => points_coincident(first.get(), last.get()), _ => false })
-    }, "Rhino extrusion periodic closure search")
+    if count < degree {
+        return Ok(false);
+    }
+    ctx.all_by(
+        0..degree,
+        |index| {
+            let first = curve.pole_rows().point_at(degree - 1 - index);
+            let last = curve.pole_rows().point_at(count - 1 - index);
+            Ok(match (first, last) {
+                (Some(first), Some(last)) => points_coincident(first.get(), last.get()),
+                _ => false,
+            })
+        },
+        "Rhino extrusion periodic closure search",
+    )
 }
 
 fn evaluate_profile_point(
@@ -705,16 +752,7 @@ fn transform_nurbs(
     let mut curve = curve.try_clone_for_decode(ctx, "Rhino extrusion transformed NURBS")?;
     curve.try_map_control_points(
         |_, point| {
-            let transformed = transform_local(
-                ctx,
-                point.get(),
-                frame.origin,
-                frame.xaxis,
-                frame.yaxis,
-                frame.zaxis,
-                frame.miter,
-                offset,
-            )?;
+            let transformed = transform_local(ctx, point.get(), frame, offset)?;
             FinitePoint3::new(transformed).ok_or_else(|| {
                 GeometryError::malformed(offset, "control_points contains a non-finite point")
             })
@@ -727,11 +765,7 @@ fn transform_nurbs(
 fn transform_local(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     point: Point3,
-    origin: Point3,
-    xaxis: Vector3,
-    yaxis: Vector3,
-    zaxis: Vector3,
-    miter: Option<UnitVector3>,
+    frame: &ProfileFrame,
     offset: usize,
 ) -> Result<Point3, GeometryError> {
     if point.z != 0.0 {
@@ -740,9 +774,14 @@ fn transform_local(
             "extrusion profile pole is outside the XY plane",
         ));
     }
-    let local = mitered_local(ctx, Vector3::new(point.x, point.y, 0.0), miter, offset)?;
-    Ok(origin.translated(
-        xaxis.scale(local.x) + yaxis.scale(local.y) + zaxis.scale(local.z),
+    let local = mitered_local(
+        ctx,
+        Vector3::new(point.x, point.y, 0.0),
+        frame.miter,
+        offset,
+    )?;
+    Ok(frame.origin.translated(
+        frame.xaxis.scale(local.x) + frame.yaxis.scale(local.y) + frame.zaxis.scale(local.z),
         1.0,
     ))
 }
@@ -785,7 +824,10 @@ fn cap_pcurve(
     let mut points = ctx
         .collection_vec(curve.pole_count(), "Rhino extrusion cap points")
         .map_err(crate::curves::GeometryError::from)?;
-    for index in ctx.admit_iter(0..curve.pole_count(), "Rhino extrusion cap pole traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for index in ctx
+        .admit_iter(0..curve.pole_count(), "Rhino extrusion cap pole traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let point = curve
             .pole_rows()
             .point_at(index)
@@ -805,7 +847,11 @@ fn cap_pcurve(
             let mut weights = ctx
                 .collection_vec(points.len(), "Rhino extrusion cap weights")
                 .map_err(crate::curves::GeometryError::from)?;
-            weights.extend(ctx.admit_iter(&points[..], "Rhino extrusion cap weight traversal").map_err(CodecError::from)?.map(|pole| pole.weight.get()));
+            weights.extend(
+                ctx.admit_iter(&points[..], "Rhino extrusion cap weight traversal")
+                    .map_err(CodecError::from)?
+                    .map(|pole| pole.weight.get()),
+            );
             Some(weights)
         }
     };
@@ -875,10 +921,14 @@ fn read_mesh_cache(
     )?;
     let mut meshes = Vec::new();
     let mut cache_children = Vec::new();
-    let mut cache_storage = expand.ctx().reserve_scoped(0, "Rhino extrusion cache child ranges")?;
+    let mut cache_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino extrusion cache child ranges")?;
     let mut index = 0_usize;
     loop {
-        expand.ctx().charge_work(1, "Rhino extrusion mesh-cache scan")?;
+        expand
+            .ctx()
+            .charge_work(1, "Rhino extrusion mesh-cache scan")?;
         match cache_reader.u8()? {
             0 => break,
             1 => {}
@@ -896,9 +946,13 @@ fn read_mesh_cache(
             archive,
             "mesh-cache item",
         )?;
-        cache_storage.with_storage(|| expand.ctx().reserve_vec(
-            &mut cache_children, 1, "Rhino extrusion mesh-cache children",
-        ))?;
+        cache_storage.with_storage(|| {
+            expand.ctx().reserve_vec(
+                &mut cache_children,
+                1,
+                "Rhino extrusion mesh-cache children",
+            )
+        })?;
         cache_children.push(item.range());
         let mut item_reader = BoundedReader::new(data, item.body().start, item.body().end)?;
         require_anonymous_version(expand.ctx(), &mut item_reader, 1, 0, "mesh-cache item")?;
@@ -1078,7 +1132,9 @@ fn finish_anonymous(
 ) -> Result<(), GeometryError> {
     child.skip_remaining()?;
     let mut ranges = ctx.reserve_scoped(0, "Rhino extrusion checksum ranges")?;
-    let direct = ranges.with_storage(|| crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), checksum.children))?;
+    let direct = ranges.with_storage(|| {
+        crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), checksum.children)
+    })?;
     if matches!(
         crate::chunks::verify_checksum_ranges(ctx, data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
@@ -1106,7 +1162,8 @@ fn finish_payload(
 ) -> Result<(), GeometryError> {
     reader.skip_remaining()?;
     let mut ranges = ctx.reserve_scoped(0, "Rhino extrusion checksum ranges")?;
-    let direct = ranges.with_storage(|| crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children))?;
+    let direct = ranges
+        .with_storage(|| crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children))?;
     if matches!(
         crate::chunks::verify_checksum_ranges(ctx, data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
@@ -1230,7 +1287,11 @@ fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    fn exact_orientation(ctx: &cadmpeg_core::decode::DecodeContext<'_>, curve: &crate::curves::DecodedCurve, offset: usize) -> Result<i8, crate::curves::GeometryError> {
+    fn exact_orientation(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        curve: &crate::curves::DecodedCurve,
+        offset: usize,
+    ) -> Result<i8, crate::curves::GeometryError> {
         let mut storage = ctx.reserve_scoped(0, "Rhino extrusion source NURBS")?;
         let curve = storage.with_storage(|| super::exact_nurbs(ctx, curve, offset))?;
         super::nurbs_orientation(ctx, &curve, offset)
@@ -1239,9 +1300,9 @@ pub(crate) mod tests {
     const EPS_MITER_DIRECTION: f64 = 1.0e-12;
 
     use super::{
-        active_miter, cap_frame, cap_pcurve, mitered_local, read_mesh_cache,
-        read_v5_mesh_cache, split_profiles, transform_nurbs, ExtrusionFormat, ANONYMOUS,
-        CLOSURE_ABSOLUTE_TOLERANCE, ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
+        active_miter, cap_frame, cap_pcurve, mitered_local, read_mesh_cache, read_v5_mesh_cache,
+        split_profiles, transform_nurbs, ExtrusionFormat, ANONYMOUS, CLOSURE_ABSOLUTE_TOLERANCE,
+        ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
     };
     use crate::chunks::ArchiveVersion;
     use crate::curves::DecodedCurve;

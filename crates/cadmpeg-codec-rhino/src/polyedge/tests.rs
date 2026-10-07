@@ -53,19 +53,32 @@ fn semantic_json_preserves_bytes_and_refuses_retained_limit() {
 #[test]
 fn semantic_json_array_and_utf8_admission_preserves_work_refusals() {
     let payload = polyedge_payload();
-    for operation in ["Rhino polyedge semantic parameters", "Rhino polyedge semantic segments", "Rhino polyedge semantic UTF-8"] {
+    for operation in [
+        "Rhino polyedge semantic parameters",
+        "Rhino polyedge semantic segments",
+        "Rhino polyedge semantic UTF-8",
+    ] {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits, operation,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
             |cap| {
                 let arena = cadmpeg_core::decode::DecodeArena::new();
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 policy.limits.max_work_units = cap;
-                let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
-                let decoded = decode(crate::mesh::MeshExpand::new(&ctx, root), 0..payload.len(), ArchiveVersion::V8)
-                    .map_err(|error| match error {
-                        crate::chunks::FramingError::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(limit),
-                        other => cadmpeg_core::CodecError::malformed(other),
-                    })?;
+                let (ctx, root) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+                        .expect("root");
+                let decoded = decode(
+                    crate::mesh::MeshExpand::new(&ctx, root),
+                    0..payload.len(),
+                    ArchiveVersion::V8,
+                )
+                .map_err(|error| match error {
+                    crate::chunks::FramingError::Resource(limit) => {
+                        cadmpeg_core::CodecError::ResourceLimit(limit)
+                    }
+                    other => cadmpeg_core::CodecError::malformed(other),
+                })?;
                 let result = super::semantic_json(&ctx, &decoded);
                 if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
                     assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
@@ -73,7 +86,9 @@ fn semantic_json_array_and_utf8_admission_preserves_work_refusals() {
                 result
             },
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
+        );
     }
 }
 
@@ -160,16 +175,25 @@ fn polyedge_collection_refusal(operation: &str) {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_collection_items = cap;
-            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
-                .expect("root bytes admitted");
-            decode(crate::mesh::MeshExpand::new(&ctx, root), 0..payload.len(), ArchiveVersion::V8)
-                .map_err(|error| match error {
-                    crate::chunks::FramingError::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(limit),
-                    other => cadmpeg_core::CodecError::malformed(other),
-                })
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+                    .expect("root bytes admitted");
+            decode(
+                crate::mesh::MeshExpand::new(&ctx, root),
+                0..payload.len(),
+                ArchiveVersion::V8,
+            )
+            .map_err(|error| match error {
+                crate::chunks::FramingError::Resource(limit) => {
+                    cadmpeg_core::CodecError::ResourceLimit(limit)
+                }
+                other => cadmpeg_core::CodecError::malformed(other),
+            })
         },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal) if refusal.operation == operation));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal) if refusal.operation == operation)
+    );
 }
 
 #[test]

@@ -205,17 +205,23 @@ fn nurbs_curve_knot_bytes_refuse_materialized_limit_before_reserve() {
     // Seven stored FiniteReal knots occupy 56 scratch bytes before reconstruction.
     cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "Rhino NURBS knots", |cap| {
+        "Rhino NURBS knots",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds");
             let result = super::read_nurbs_curve(&ctx, &mut reader, MillimeterScale::IDENTITY);
-            if let Err(GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) = &result {
+            if let Err(GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) =
+                &result
+            {
                 assert_eq!(limit.additional, 56);
             }
-            result.map_err(|error| match error { GeometryError::Codec(error) => error, error => panic!("unexpected curve refusal: {error:?}") })
+            result.map_err(|error| match error {
+                GeometryError::Codec(error) => error,
+                error => panic!("unexpected curve refusal: {error:?}"),
+            })
         },
     );
     assert!(read_nurbs_curve(
@@ -307,11 +313,14 @@ fn sum_surface_temporary_lanes_refuse_materialized_limit_before_reserve() {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test input fits service profile");
-            super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0).map_err(|error| match error {
-                GeometryError::Codec(error) => error,
-                error => panic!("valid fixture returned {error:?}"),
-            })
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("test input fits service profile");
+            super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0).map_err(
+                |error| match error {
+                    GeometryError::Codec(error) => error,
+                    error => panic!("valid fixture returned {error:?}"),
+                },
+            )
         },
     );
     assert!(sum_nurbs(&first, &second, Vector3::new(0.0, 0.0, 0.0), 0).is_ok());
@@ -337,11 +346,14 @@ fn sum_surface_grid_refuses_materialized_limit_before_copy() {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test input fits service profile");
-            super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0).map_err(|error| match error {
-                GeometryError::Codec(error) => error,
-                error => panic!("valid fixture returned {error:?}"),
-            })
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("test input fits service profile");
+            super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0).map_err(
+                |error| match error {
+                    GeometryError::Codec(error) => error,
+                    error => panic!("valid fixture returned {error:?}"),
+                },
+            )
         },
     );
     assert!(sum_nurbs(&first, &second, Vector3::new(0.0, 0.0, 0.0), 0).is_ok());
@@ -362,19 +374,21 @@ fn revolution_temporary_lanes_refuse_materialized_limit_before_reserve() {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test input fits service profile");
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("test input fits service profile");
             super::revolution_nurbs(
-        &ctx,
-        &profile,
-        Point3::new(0.0, 0.0, 0.0),
-        Vector3::new(0.0, 0.0, 1.0),
-        super::RevolutionIntervals {
-            angle: [0.0, std::f64::consts::FRAC_PI_2],
-            parameter: [0.0, 1.0],
-        },
-        false,
-        0,
-    ).map_err(|error| match error {
+                &ctx,
+                &profile,
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                super::RevolutionIntervals {
+                    angle: [0.0, std::f64::consts::FRAC_PI_2],
+                    parameter: [0.0, 1.0],
+                },
+                false,
+                0,
+            )
+            .map_err(|error| match error {
                 GeometryError::Codec(error) => error,
                 error => panic!("valid fixture returned {error:?}"),
             })
