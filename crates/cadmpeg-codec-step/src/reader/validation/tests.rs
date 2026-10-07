@@ -217,14 +217,23 @@ fn validation_mesh_triangles_refuse_work_limit() {
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("mesh validation source decodes");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits work policy");
+    // The mesh scan and body matching charge work before the first triangle,
+    // so the boundary is found by probing the triangle charge itself.
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "step_validation_mesh_triangles",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits work policy");
+            super::mesh_properties(result.ir(), &ctx)
+        },
+    );
     assert!(matches!(
-        super::mesh_properties(result.ir(), &ctx),
-        Err(CodecError::ResourceLimit(refusal))
+        refusal,
+        CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::WorkUnits
                 && refusal.operation == "step_validation_mesh_triangles"
     ));
