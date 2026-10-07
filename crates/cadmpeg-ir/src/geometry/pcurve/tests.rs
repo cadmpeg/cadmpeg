@@ -931,3 +931,5 @@ fn a_conic_pcurve_reversed_about_zero_negates_only_its_second_axis() {
 mod line_parameters;
 
 mod budget;
+
+mod decode_cost;

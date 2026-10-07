@@ -8668,3 +8668,5 @@ cadmpeg_core::named_optional_field!(deserialize_record_bounds, RecordBounds, "re
 mod identity_rewrite;
 
 mod serialization;
+
+mod decode_cost;

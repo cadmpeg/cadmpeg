@@ -1234,3 +1234,5 @@ mod nesting_bound;
 mod support_mapping;
 
 pub(super) mod budget;
+
+mod decode_cost;
