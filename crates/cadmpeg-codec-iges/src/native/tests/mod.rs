@@ -284,7 +284,7 @@ fn native_required_back_pointer_member_refuses_node_limit() {
 }
 
 #[test]
-fn native_input_card_and_lookup_indexes_refuse_collection_limits() {
+fn native_input_cards_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -312,41 +312,25 @@ fn native_input_card_and_lookup_indexes_refuse_collection_limits() {
         directory: &quarantined_directory,
         parameters: &assembly.quarantined,
     };
-    for (cap, operation) in [
-        (0, "iges native card slots"),
-        (
-            cadmpeg_core::decode::u64_from_index(scan.cards().len() + scan.trailing().len()),
-            "iges native parameter index",
-        ),
-        (
-            cadmpeg_core::decode::u64_from_index(
-                (scan.cards().len() + scan.trailing().len()) + assembly.records.len(),
-            ),
-            "iges native directory index",
-        ),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            super::index_native_inputs(&scan, &directory, &assembly.records, quarantine(), &ctx),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == operation
-        ));
-    }
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems, "iges native card slots", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::collect_native_inputs(&scan, quarantine(), &ctx)
+        });
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges native card slots"));
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let indexes =
-        super::index_native_inputs(&scan, &directory, &assembly.records, quarantine(), &ctx)
+        super::collect_native_inputs(&scan, quarantine(), &ctx)
             .unwrap();
     assert_eq!(
         indexes.cards.len(),
         (scan.cards().len() + scan.trailing().len())
     );
-    assert_eq!(indexes.by_directory.len(), 1);
-    assert_eq!(indexes.entries.len(), 1);
 }
 
 #[test]
@@ -388,25 +372,21 @@ fn native_quarantine_indexes_refuse_each_collection_limit() {
         directory: &quarantined_directory,
         parameters: &assembly.quarantined,
     };
-    for (cap, operation) in [
-        (0, "iges native quarantined directory slots"),
-        (1, "iges native quarantined parameter slots"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            super::index_native_inputs(&scan, &directory, &assembly.records, quarantine(), &ctx),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == operation
-        ));
+    for operation in ["iges native quarantined directory slots", "iges native quarantined parameter slots"] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::collect_native_inputs(&scan, quarantine(), &ctx)
+        });
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let indexes =
-        super::index_native_inputs(&scan, &directory, &assembly.records, quarantine(), &ctx)
+        super::collect_native_inputs(&scan, quarantine(), &ctx)
             .unwrap();
     assert_eq!(indexes.quarantined_directory_records.len(), 1);
     assert_eq!(indexes.quarantined_parameter_records.len(), 1);
@@ -414,6 +394,7 @@ fn native_quarantine_indexes_refuse_each_collection_limit() {
 
 mod allocation_limits;
 mod annotations;
+mod budget;
 mod counted_lists;
 mod fem;
 mod macros;
