@@ -130,12 +130,13 @@ impl PmDcReference {
                 qualifiers.len()
             )));
         }
+        // The lengths are equal, so the admitted index traversal bounds the
+        // qualifier side of the zip.
         let indices = ctx.admit_iter(indices, "visit Inventor PmDc reference indices")?;
-        let qualifiers = ctx.admit_iter(qualifiers, "visit Inventor PmDc reference qualifiers")?;
         ctx.try_collect_vec(
             indices
                 .copied()
-                .zip(qualifiers.copied())
+                .zip(qualifiers.iter().copied())
                 .map(|(index, qualified)| {
                     Self::new(index, qualified)
                         .ok_or_else(|| CodecError::malformed("reference index exceeds 31 bits"))

@@ -45,7 +45,7 @@ fn unit_base_borrowed_wire_preserves_symbol_bytes() {
     let one = FiniteReal::new(1.0).expect("finite scalar");
     let unit = PmDcUnitKind::Base {
         dimension: PmDcUnitDimension::Length,
-        symbol: "mm".to_owned(),
+        symbol: "mm".into(),
         scale_to_internal: one,
         magnitude: one,
         factor: one,
