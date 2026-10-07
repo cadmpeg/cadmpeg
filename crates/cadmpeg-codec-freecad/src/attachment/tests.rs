@@ -413,7 +413,10 @@ fn map_mode_writes_the_same_text_through_a_writer() {
 
 #[test]
 fn attachment_property_visits_propagate_work_refusal() {
-    let property = diagnostic_property("App::PropertyEnumeration", vec![enum_value("Integer", Some("5"))]);
+    let property = diagnostic_property(
+        "App::PropertyEnumeration",
+        vec![enum_value("Integer", Some("5"))],
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_work_units = 0;
@@ -426,12 +429,15 @@ fn attachment_property_visits_propagate_work_refusal() {
 
 #[test]
 fn attachment_support_values_propagate_work_refusal() {
-    let property = diagnostic_property("App::PropertyLinkSubList", vec![
-        enum_value("LinkSubList", None),
-        enum_value("Link", None),
-    ]);
-    assert!(super::support_links(&cadmpeg_test_support::service_decode_context(), &property)
-        .expect("valid support values").is_empty());
+    let property = diagnostic_property(
+        "App::PropertyLinkSubList",
+        vec![enum_value("LinkSubList", None), enum_value("Link", None)],
+    );
+    assert!(
+        super::support_links(&cadmpeg_test_support::service_decode_context(), &property)
+            .expect("valid support values")
+            .is_empty()
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_work_units = 0;
@@ -444,9 +450,16 @@ fn attachment_support_values_propagate_work_refusal() {
 
 #[test]
 fn attachment_map_mode_parse_propagates_work_refusal() {
-    let property = diagnostic_property("App::PropertyEnumeration", vec![enum_value("Integer", Some("5"))]);
-    assert_eq!(super::map_mode_value(&cadmpeg_test_support::service_decode_context(), &property)
-        .expect("valid mode").to_string(), "5");
+    let property = diagnostic_property(
+        "App::PropertyEnumeration",
+        vec![enum_value("Integer", Some("5"))],
+    );
+    assert_eq!(
+        super::map_mode_value(&cadmpeg_test_support::service_decode_context(), &property)
+            .expect("valid mode")
+            .to_string(),
+        "5"
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_work_units = 0;
