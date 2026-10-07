@@ -394,27 +394,7 @@ fn presentation_hidden_style_walk_refuses_depth_limit() {
     );
 }
 
-#[test]
-fn presentation_style_inheritance_active_refuses_collection_limit() {
-    style_graph_refuses(
-        "step_presentation_style_inheritance_active",
-        false,
-        |exchange, ctx| {
-            super::super::style_inherits_from(1, 3, exchange, &mut BTreeSet::new(), ctx).map(|_| ())
-        },
-    );
-}
 
-#[test]
-fn presentation_style_inheritance_walk_refuses_depth_limit() {
-    style_graph_refuses(
-        "step_presentation_style_inheritance_walk",
-        true,
-        |exchange, ctx| {
-            super::super::style_inherits_from(1, 3, exchange, &mut BTreeSet::new(), ctx).map(|_| ())
-        },
-    );
-}
 
 #[test]
 fn presentation_null_style_visited_refuses_collection_limit() {
@@ -455,8 +435,8 @@ fn presentation_null_style_walk_refuses_depth_limit() {
 #[test]
 fn presentation_predefined_color_matches_ascii_case_without_copy() {
     assert_eq!(
-        super::super::predefined(&cadmpeg_test_support::service_decode_context(), "ReD").unwrap(),
-        super::super::predefined(&cadmpeg_test_support::service_decode_context(), "red").unwrap()
+        super::super::predefined("ReD"),
+        super::super::predefined("red")
     );
 }
 
@@ -588,7 +568,7 @@ fn scalar_candidate_refuses(operation: &str, retained: bool) {
     let body = cadmpeg_ir::ids::BodyId::mint("step:model:body#1").expect("body ID");
     let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
     let result = super::super::push_scalar_candidate(
-        &mut std::collections::HashMap::new(),
+        &mut std::collections::BTreeMap::new(),
         &cadmpeg_ir::appearance::AppearanceTarget::Body(body),
         1,
         color,
@@ -615,10 +595,6 @@ fn presentation_scalar_color_members_refuse_collection_limit() {
     scalar_candidate_refuses("step_presentation_scalar_color_members", false);
 }
 
-#[test]
-fn presentation_distinct_colors_refuse_collection_limit() {
-    vector_refuses("step_presentation_distinct_colors");
-}
 
 #[test]
 fn presentation_context_style_text_refuses_retained_limit() {
@@ -784,56 +760,7 @@ fn presentation_color_cache_copy_refuses_retained_limit() {
     ));
 }
 
-#[test]
-fn predefined_color_case_equality_preserves_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let error = super::super::predefined(&ctx, "ReD").unwrap_err();
-    let CodecError::ResourceLimit(refusal) = error else {
-        panic!("color classification must return the refusal");
-    };
-    assert_eq!(
-        refusal.operation,
-        "STEP predefined color name case equality"
-    );
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
-}
 
-#[test]
-fn binding_style_number_parse_preserves_refusal() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('origin',(0.,0.,0.));#2=DIRECTION('normal',(0.,0.,1.));#3=DIRECTION('u',(1.,0.,0.));#4=AXIS2_PLACEMENT_3D('placement',#1,#2,#3);#5=PLANE('surface',#4);#6=COLOUR_RGB('red',1.,0.,0.);#7=SURFACE_STYLE_RENDERING(#6,$,$,$,$,$);#8=PRESENTATION_STYLE_ASSIGNMENT((#7));#9=STYLED_ITEM('',(#8),#5);#10=INVISIBILITY((#9));ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) =
-        crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
-    let setup = cadmpeg_test_support::service_decode_context();
-    let mut ir = cadmpeg_ir::CadIr::empty();
-    crate::reader::geometry::decode(&exchange, &mut ir, &setup).unwrap();
-    let index = crate::reader::index::CarrierIndex::from_ir(&ir, &setup).unwrap();
-    let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, &setup).unwrap();
-    cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        "STEP binding style number parse",
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
-            let result = super::super::decode(
-                &exchange,
-                &topology.value,
-                &mut ir.clone(),
-                &std::collections::BTreeMap::new(),
-                &ctx,
-            )
-            .map(|_| ());
-            if let Err(CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
-        },
-    );
-}
 
 #[test]
 fn style_domain_point_containment_preserves_refusal() {

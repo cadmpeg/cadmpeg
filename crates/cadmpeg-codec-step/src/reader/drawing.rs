@@ -94,9 +94,8 @@ fn ensure_drawing_relationship_group(
     role: NonBlankString,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if !relationships.contains_key(&role) {
-        ctx.insert_btree_map(
-            relationships,
+    if !ctx.contains_key_btree_map(&relationships, &role, "STEP drawing relationships contains_key")? {
+        ctx.insert_btree_map(relationships,
             role,
             Vec::new(),
             "step_drawing_relationship_groups",
@@ -160,6 +159,7 @@ pub(super) fn decode(
     product_definition_ids_by_shape: &BTreeMap<u64, ProductDefinitionId>,
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
+    let mut scratch_storage = ctx.reserve_scoped(0, "STEP decode scratch")?;
     let mut losses = Vec::new();
     let mut candidates = Vec::new();
     for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal")? {
@@ -206,7 +206,7 @@ pub(super) fn decode(
 
     let mut drawing_ids = BTreeSet::new();
     for candidate in ctx.admit_iter(&candidates[..], "STEP decode traversal")? {
-        ctx.insert_btree_set(&mut drawing_ids, candidate.id, "step_drawing_ids")?;
+        scratch_storage.with_storage(|| ctx.insert_btree_set(&mut drawing_ids, candidate.id, "step_drawing_ids"))?;
     }
     let mut hidden_drawing_ids = BTreeSet::new();
     for record in ctx
@@ -220,24 +220,19 @@ pub(super) fn decode(
             continue;
         };
         visit_drawing_references(items, ctx, &mut |id| {
-            if drawing_ids.contains(&id) {
-                ctx.insert_btree_set(&mut hidden_drawing_ids, id, "step_hidden_drawing_ids")?;
+            if ctx.contains_btree_set(&drawing_ids, &id, "STEP drawing drawing_ids contains")? {
+                scratch_storage.with_storage(|| ctx.insert_btree_set(&mut hidden_drawing_ids, id, "step_hidden_drawing_ids"))?;
             }
             Ok(())
         })?;
     }
 
     let mut target_identities =
-        record_targets(ir, |record_id| known_typed.contains(&record_id), ctx)?;
+        record_targets(ir, |record_id| ctx.contains_hash_set(&known_typed, &record_id, "STEP drawing known_typed contains"), ctx)?;
     for candidate in ctx.admit_iter(&candidates[..], "STEP decode traversal")? {
-        ctx.admit_btree_entry(
-            &target_identities,
-            &candidate.id,
-            "step_drawing_target_groups",
-        )?;
-        let targets = target_identities.entry(candidate.id).or_default();
-        ctx.insert_btree_set(
-            targets,
+
+        let targets = ctx.entry_btree_map(&mut target_identities, candidate.id, "step_drawing_target_groups")?.or_default();
+        ctx.insert_btree_set(targets,
             ctx.copy_retained_text(
                 candidate.identity.as_str(),
                 "step_drawing_target_member_text",
@@ -251,10 +246,9 @@ pub(super) fn decode(
     for (&shape_id, product_definition_id) in
         ctx.admit_iter(product_definition_ids_by_shape, "STEP decode traversal")?
     {
-        ctx.admit_btree_entry(&target_identities, &shape_id, "step_drawing_target_groups")?;
-        let targets = target_identities.entry(shape_id).or_default();
-        ctx.insert_btree_set(
-            targets,
+
+        let targets = ctx.entry_btree_map(&mut target_identities, shape_id, "step_drawing_target_groups")?.or_default();
+        ctx.insert_btree_set(targets,
             ctx.copy_retained_text(
                 product_definition_id.as_str(),
                 "step_drawing_target_member_text",
@@ -274,8 +268,8 @@ pub(super) fn decode(
     let mut external_documents = BTreeMap::new();
     for entry in ctx.admit_iter(exchange.references(), "STEP decode borrowed traversal")? {
         if let ReferenceName::Entity(id) = entry.name {
-            ctx.admit_btree_entry(&external_documents, &id, "step_drawing_external_documents")?;
-            external_documents.insert(id, entry.uri.as_str());
+
+            scratch_storage.with_storage(|| ctx.insert_btree_map(&mut external_documents, id, entry.uri.as_str(), "step_drawing_external_documents"))?;
         }
     }
     let target_context = TargetContext {
@@ -296,14 +290,12 @@ pub(super) fn decode(
             ..
         } = candidate;
         let mut stored_parameters = BTreeMap::new();
-        ctx.insert_btree_map(
-            &mut stored_parameters,
+        ctx.insert_btree_map(&mut stored_parameters,
             cadmpeg_core::nonblank_literal!("source_id"),
             format!("#{id}"),
             "step_drawing_stored_parameters",
         )?;
-        ctx.insert_btree_map(
-            &mut stored_parameters,
+        ctx.insert_btree_map(&mut stored_parameters,
             cadmpeg_core::nonblank_literal!("source_type"),
             ctx.copy_retained_text(name, "STEP drawing source type")?,
             "step_drawing_stored_parameters",
@@ -318,8 +310,8 @@ pub(super) fn decode(
                 ctx,
             )? {
                 let key = parameter_key(ctx, name, index)?;
-                ctx.admit_btree_entry(&stored_parameters, &key, "step_drawing_stored_parameters")?;
-                stored_parameters.insert(key, value);
+
+                ctx.insert_btree_map(&mut stored_parameters, key, value, "step_drawing_stored_parameters")?;
             }
         }
 
@@ -340,8 +332,8 @@ pub(super) fn decode(
             &target_context,
             &mut losses,
         )?;
-        ctx.admit_btree_entry(&drawings, &id, "step_drawing_entries")?;
-        drawings.insert(
+
+        ctx.insert_btree_map(&mut drawings,
             id,
             Drawing {
                 id: DrawingId::from(
@@ -351,7 +343,7 @@ pub(super) fn decode(
                 kind: drawing_kind(name),
                 runtime_type: ctx.copy_retained_text(name, "STEP drawing runtime type")?,
                 order,
-                visible: hidden_drawing_ids.contains(&id).then_some(false),
+                visible: ctx.contains_btree_set(&hidden_drawing_ids, &id, "STEP drawing hidden_drawing_ids contains")?.then_some(false),
                 relationships,
                 template: None,
                 position: None,
@@ -361,8 +353,7 @@ pub(super) fn decode(
                 parameters: stored_parameters,
                 assets: Vec::new(),
                 native_ref: identity.into_string(),
-            },
-        );
+            }, "step_drawing_entries")?;
     }
 
     add_sheet_revision_usages(exchange, &mut drawings, &target_context, &mut losses, ctx)?;
@@ -390,7 +381,7 @@ pub(super) fn decode(
         drawings.len(),
         "step_drawing_ir_items",
     )?;
-    ir.model.drawings.extend(drawings.into_values());
+    ir.model.drawings.extend(ctx.admit_iter(drawings, "STEP drawing arena transfer")?.map(|(_, drawing)| drawing));
     Ok(StageOutcome {
         value: (),
         claims: typed_records,
@@ -427,7 +418,7 @@ fn referenced_target_ids(
     }
     for (_, record) in exchange.entities(ctx, "DRAWING_SHEET_REVISION_USAGE")? {
         let parameters = source_parameters(ctx, record, "DRAWING_SHEET_REVISION_USAGE")?;
-        for value in parameters.iter(ctx)?.take(2) {
+        for value in [parameters.get(0), parameters.get(1)].into_iter().flatten() {
             collect_reference_ids(value, &mut ids, ctx)?;
         }
     }
@@ -435,7 +426,7 @@ fn referenced_target_ids(
         exchange.matching_entity_ids(ctx, |name| DRAWING_ASSOCIATION_TYPES.contains(&name))?
     {
         let association_id = entity?;
-        let Some(record) = exchange.records().get(&association_id) else {
+        let Some(record) = ctx.get_btree_map(exchange.records(), &association_id, "STEP drawing record get")? else {
             continue;
         };
         let Some(parameters) = association_parameters(ctx, record)? else {
@@ -481,10 +472,10 @@ fn add_source_typed_targets(
 ) -> Result<(), CodecError> {
     let mut native_targets = Vec::new();
     for &id in ctx.admit_iter(referenced_ids, "STEP add source typed targets traversal")? {
-        if !known_typed.contains(&id) || target_identities.contains_key(&id) {
+        if !ctx.contains_hash_set(&known_typed, &id, "STEP drawing known_typed contains")? || ctx.contains_key_btree_map(&target_identities, &id, "STEP drawing target_identities contains_key")? {
             continue;
         }
-        let Some(record) = exchange.records().get(&id) else {
+        let Some(record) = ctx.get_btree_map(exchange.records(), &id, "STEP drawing record get")? else {
             continue;
         };
         if wrapper_target_resolution(id, target_identities, exchange, ctx)?.is_some() {
@@ -508,9 +499,9 @@ fn add_source_typed_targets(
                 ("source_type".to_owned(), NativeField::Text(source_type)),
             ],
         ));
-        ctx.admit_btree_entry(target_identities, &id, "step_drawing_native_target_groups")?;
+
         ctx.charge_collection_items(1, "step_drawing_native_target_members")?;
-        target_identities.insert(id, BTreeSet::from([copied_identity]));
+        ctx.insert_btree_map(target_identities, id, BTreeSet::from([copied_identity]), "step_drawing_native_target_groups")?;
     }
     if native_targets.is_empty() {
         return Ok(());
@@ -518,14 +509,14 @@ fn add_source_typed_targets(
     let namespace = ir.native.namespace_mut("step");
     let arenas = namespace.arenas_mut();
     let arena_key = String::from("drawing_targets");
-    ctx.admit_btree_entry(arenas, &arena_key, "step_drawing_native_arena")?;
-    let target_arena = arenas.entry(arena_key).or_default();
+
+    let target_arena = ctx.entry_btree_map(arenas, arena_key, "step_drawing_native_arena")?.or_default();
     ctx.reserve_vec(
         target_arena,
         native_targets.len(),
         "step_drawing_native_arena_items",
     )?;
-    target_arena.extend(native_targets);
+    target_arena.extend(ctx.admit_iter(native_targets, "STEP drawing native arena transfer")?);
     Ok(())
 }
 
@@ -583,22 +574,9 @@ fn required_parameter_count(name: &str) -> Option<usize> {
 fn source_parameters<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a RawRecord,
-    name: &str,
+    name: &'static str,
 ) -> Result<DrawingParameters<'a>, CodecError> {
-    let direct = ctx
-        .find_map(
-            &record.partials[..],
-            |partial| -> Result<Option<_>, CodecError> {
-                Ok((ctx.equal(
-                    partial.name.as_str(),
-                    name,
-                    "STEP source parameters equality",
-                )?)
-                .then_some(partial))
-            },
-            "STEP drawing source parameter traversal",
-        )?
-        .map(|partial| partial.parameters.as_slice());
+    let direct = record.partial(ctx, name)?.map(|partial| partial.parameters.as_slice());
     if name == "DRAUGHTING_CALLOUT" {
         if let Some(parameters) = direct.filter(|parameters| parameters.len() >= 2) {
             return Ok(DrawingParameters::from_slice(parameters));
@@ -753,7 +731,7 @@ fn add_sheet_revision_usages(
         };
         let sheet_target = target_context.resolve(revision_id)?;
         let revision_target = target_context.resolve(sheet_id)?;
-        if let Some(sheet) = drawings.get_mut(&sheet_id) {
+        if let Some(sheet) = ctx.get_mut_btree_map(drawings, &sheet_id, "STEP drawing drawings get_mut")? {
             match sheet_target {
                 TargetResolution::Resolved(target) => (target_context.ctx).push_btree_group(
                     &mut sheet.relationships,
@@ -795,15 +773,11 @@ fn add_sheet_revision_usages(
                 .flatten()
             {
                 let key = cadmpeg_core::nonblank_literal!(ctx, "usage_{usage_id}_sequence")?;
-                target_context.ctx.admit_btree_entry(
-                    &sheet.parameters,
-                    &key,
-                    "step_drawing_usage_sequences",
-                )?;
-                sheet.parameters.insert(key, sequence);
+                target_context.
+                ctx.insert_btree_map(&mut sheet.parameters, key, sequence, "step_drawing_usage_sequences")?;
             }
         }
-        if let Some(revision) = drawings.get_mut(&revision_id) {
+        if let Some(revision) = ctx.get_mut_btree_map(drawings, &revision_id, "STEP drawing drawings get_mut")? {
             match revision_target {
                 TargetResolution::Resolved(target) => (target_context.ctx).push_btree_group(
                     &mut revision.relationships,
@@ -846,7 +820,7 @@ fn add_draughting_model_associations(
         exchange.matching_entity_ids(ctx, |name| DRAWING_ASSOCIATION_TYPES.contains(&name))?
     {
         let association_id = entity?;
-        let Some(record) = exchange.records().get(&association_id) else {
+        let Some(record) = ctx.get_btree_map(exchange.records(), &association_id, "STEP drawing record get")? else {
             continue;
         };
         let Some(parameters) = association_parameters(ctx, record)? else {
@@ -855,7 +829,7 @@ fn add_draughting_model_associations(
         let Some(model_id) = parameters.get(3).and_then(ValueExt::reference) else {
             continue;
         };
-        let Some(model) = drawings.get_mut(&model_id) else {
+        let Some(model) = ctx.get_mut_btree_map(drawings, &model_id, "STEP drawing drawings get_mut")? else {
             continue;
         };
 
@@ -1001,8 +975,7 @@ fn add_draughting_model_associations(
             )?;
         }
         if complete {
-            target_context.ctx.insert_btree_set(
-                typed,
+            target_context.ctx.insert_btree_set(typed,
                 association_id,
                 "step_drawing_typed_claims",
             )?;
@@ -1055,8 +1028,7 @@ fn target_resolution(
     external_documents: &BTreeMap<u64, &str>,
     ctx: &DecodeContext<'_>,
 ) -> Result<TargetResolution, CodecError> {
-    if let Some(identity) = target_identities
-        .get(&id)
+    if let Some(identity) = ctx.get_btree_map(&target_identities, &id, "STEP drawing target_identities get")?
         .filter(|identities| identities.len() == 1)
         .and_then(|identities| identities.first())
     {
@@ -1067,7 +1039,7 @@ fn target_resolution(
             Vec::new(),
         )));
     }
-    if let Some(uri) = external_documents.get(&id) {
+    if let Some(uri) = ctx.get_btree_map(&external_documents, &id, "STEP drawing external_documents get")? {
         return Ok(TargetResolution::Resolved(ReferenceSelection::new(
             ReferenceTarget::External {
                 document: ctx.copy_retained_text(uri, "step_drawing_external_target_text")?,
@@ -1086,16 +1058,15 @@ fn target_resolution(
         Some(WrapperTargetResolution::Ambiguous(identities)) => Some(identities),
         None => None,
     };
-    if !known_typed.contains(&id) {
-        if let Some(record) = exchange.records().get(&id) {
+    if !ctx.contains_hash_set(&known_typed, &id, "STEP drawing known_typed contains")? {
+        if let Some(record) = ctx.get_btree_map(exchange.records(), &id, "STEP drawing record get")? {
             return Ok(TargetResolution::Resolved(ReferenceSelection::new(
                 ReferenceTarget::Local(opaque_record_id(id, record, ctx)?.into_string()),
                 Vec::new(),
             )));
         }
     }
-    let ambiguity = target_identities
-        .get(&id)
+    let ambiguity = ctx.get_btree_map(&target_identities, &id, "STEP drawing target_identities get")?
         .filter(|identities| identities.len() > 1)
         .map(|identities| clone_drawing_identities(identities, ctx))
         .transpose()?
@@ -1114,7 +1085,7 @@ fn wrapper_target_resolution(
     exchange: &Exchange,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<WrapperTargetResolution>, CodecError> {
-    if target_identities.contains_key(&id) {
+    if ctx.contains_key_btree_map(&target_identities, &id, "STEP drawing target_identities contains_key")? {
         return Ok(None);
     }
     let mut identities = BTreeSet::new();
@@ -1122,22 +1093,23 @@ fn wrapper_target_resolution(
     let mut complete = BTreeSet::new();
     let mut pending = ctx.alloc_filled(1, (id, false), "step_drawing_wrapper_pending")?;
     while let Some((id, leaving)) = pending.pop() {
+        ctx.charge_work(1, "STEP drawing worklist step")?;
         if leaving {
-            active.remove(&id);
+            ctx.remove_btree_set(&mut active, &id, "STEP drawing active remove")?;
             ctx.insert_btree_set(&mut complete, id, "step_drawing_wrapper_complete")?;
             continue;
         }
-        if complete.contains(&id) {
+        if ctx.contains_btree_set(&complete, &id, "STEP drawing complete contains")? {
             continue;
         }
-        if active.contains(&id) {
+        if ctx.contains_btree_set(&active, &id, "STEP drawing active contains")? {
             return Ok(None);
         }
         ctx.insert_btree_set(&mut active, id, "step_drawing_wrapper_active")?;
         ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending")?;
         pending.push((id, true));
-        if let Some(targets) = target_identities.get(&id) {
-            for target in targets {
+        if let Some(targets) = ctx.get_btree_map(&target_identities, &id, "STEP drawing target_identities get")? {
+            for target in ctx.admit_iter(targets, "STEP drawing targets traversal")? {
                 if !ctx.contains_btree_set(&identities, target, "STEP identities membership")? {
                     let copy =
                         ctx.copy_retained_text(target, "step_drawing_wrapper_identity_text")?;
@@ -1146,7 +1118,7 @@ fn wrapper_target_resolution(
             }
             continue;
         }
-        let Some(record) = exchange.records().get(&id) else {
+        let Some(record) = ctx.get_btree_map(exchange.records(), &id, "STEP drawing record get")? else {
             continue;
         };
         if let Some(plane) = record
@@ -1157,7 +1129,9 @@ fn wrapper_target_resolution(
             ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending")?;
             pending.push((plane, false));
         } else if let Some(representation) = mapped_representation(ctx, record, exchange)?
-            .and_then(|representation| exchange.records().get(&representation))
+            .map(|representation| ctx.get_btree_map(exchange.records(), &representation, "STEP drawing record get"))
+        .transpose()?
+        .flatten()
         {
             if let Some(items) = representation::items(ctx, representation)? {
                 for item in items.rev() {
@@ -1168,7 +1142,7 @@ fn wrapper_target_resolution(
         }
     }
     if identities.len() == 1 {
-        let Some(identity) = identities.pop_first() else {
+        let Some(identity) = ctx.admit_iter(identities, "STEP drawing singleton target traversal")?.next() else {
             return Ok(None);
         };
         return Ok(Some(WrapperTargetResolution::Singleton(identity)));
@@ -1192,7 +1166,7 @@ fn mapped_representation(
     else {
         return Ok(None);
     };
-    let Some(map) = exchange.records().get(&map_id) else {
+    let Some(map) = ctx.get_btree_map(exchange.records(), &map_id, "STEP drawing record get")? else {
         return Ok(None);
     };
     Ok(map

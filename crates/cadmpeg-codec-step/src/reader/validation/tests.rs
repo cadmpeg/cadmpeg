@@ -514,15 +514,25 @@ mod equality;
 
 #[test]
 fn validation_point_number_parse_preserves_refusal() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let error = super::step_id(&ctx, "step:data:point#7").unwrap_err();
+    // Identity splitting reads the source text before the numeric parse.
+    // The ladder admits that split and refuses the parse one unit below its need.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "STEP validation point number parse",
+        |limit| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let result = super::step_id(&ctx, "step:data:point#7");
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal)) = result {
+                assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+            }
+            result
+        },
+    );
     let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
         panic!("numeric parse must preserve the refusal");
     };
     assert_eq!(refusal.operation, "STEP validation point number parse");
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
 }

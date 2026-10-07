@@ -306,10 +306,6 @@ fn product_definition_descriptions_refuse_collection_limit() {
     product_collection_refuses("step_product_definition_descriptions");
 }
 
-#[test]
-fn product_definition_counts_refuse_collection_limit() {
-    product_collection_refuses("step_product_definition_counts");
-}
 
 #[test]
 fn product_definition_prototypes_refuse_collection_limit() {

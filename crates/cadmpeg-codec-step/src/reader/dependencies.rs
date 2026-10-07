@@ -18,6 +18,7 @@ pub(super) fn decode(
     exchange: &Exchange,
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
+    let mut scratch_storage = ctx.reserve_scoped(0, "STEP decode scratch")?;
     let mut losses = Vec::new();
     let mut documents = BTreeMap::new();
     let mut sources = BTreeMap::new();
@@ -55,8 +56,7 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
-            ctx.insert_btree_map(
-                &mut documents,
+            scratch_storage.with_storage(|| ctx.insert_btree_map(&mut documents,
                 id,
                 (
                     identifier,
@@ -64,7 +64,7 @@ pub(super) fn decode(
                     parameters.get(3).and_then(ValueExt::reference),
                 ),
                 "step_dependency_documents",
-            )?;
+            ))?;
         }
         if let Some(partial) = record.partial(ctx, "EXTERNAL_SOURCE")? {
             let parameters = partial.parameters.as_slice();
@@ -74,7 +74,7 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten()
             {
-                ctx.insert_btree_map(&mut sources, id, source, "step_dependency_sources")?;
+                scratch_storage.with_storage(|| ctx.insert_btree_map(&mut sources, id, source, "step_dependency_sources"))?;
             }
         }
     }
@@ -86,7 +86,7 @@ pub(super) fn decode(
             let Some(document_id) = parameters.first().and_then(ValueExt::reference) else {
                 continue;
             };
-            let Some((identifier, name, kind)) = documents.get(&document_id) else {
+            let Some((identifier, name, kind)) = ctx.get_btree_map(&documents, &document_id, "STEP dependencies documents get")? else {
                 continue;
             };
             let source = parameters
@@ -105,8 +105,7 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
-            ctx.insert_btree_set(
-                &mut notes,
+            ctx.insert_btree_set(&mut notes,
                 document_note(identifier, name, &source, ctx)?,
                 "step_dependency_note_set",
             )?;
@@ -120,7 +119,7 @@ pub(super) fn decode(
             let Some(source_id) = partial.parameters.get(1).and_then(ValueExt::reference) else {
                 continue;
             };
-            let Some(source) = sources.get(&source_id) else {
+            let Some(source) = ctx.get_btree_map(&sources, &source_id, "STEP dependencies sources get")? else {
                 continue;
             };
             let item = partial
@@ -130,8 +129,7 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
-            ctx.insert_btree_set(
-                &mut notes,
+            ctx.insert_btree_set(&mut notes,
                 ctx.join_retained(
                     &["external source ", source, " item ", &item],
                     "",
@@ -145,7 +143,7 @@ pub(super) fn decode(
     }
 
     let mut ordered_notes = ctx.collection_vec(notes.len(), "step_dependency_note_vector")?;
-    ordered_notes.extend(notes);
+    ordered_notes.extend(ctx.admit_iter(notes, "STEP dependency note transfer")?);
     Ok(StageOutcome {
         value: (),
         claims: typed,

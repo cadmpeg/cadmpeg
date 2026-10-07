@@ -324,12 +324,13 @@ fn datum_reference_refuses(records: &str, operation: &str) {
     let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("valid datum exchange");
-    let mut annotations = super::super::Annotations::default();
+    let setup_ctx = cadmpeg_test_support::service_decode_context();
+    let mut annotations = super::super::Annotations::new(&setup_ctx).expect("annotation index setup");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    crate::test_support::with_service_context(source.as_bytes(), |_, ctx| {
+    crate::test_support::with_service_context(source.as_bytes(), |_, _ctx| {
         annotations
             .push(
-                ctx,
+                &setup_ctx,
                 &mut ir,
                 2,
                 super::super::annotations::AnnotationDraft {
@@ -478,7 +479,10 @@ fn target_slot_refusal(operation: &'static str) -> CodecError {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits collection policy");
+    let mut scratch = ctx.reserve_scoped(0, "STEP target index setup").unwrap();
     super::super::push_target(
+        &mut std::collections::BTreeSet::new(),
+        &mut scratch,
         &mut Vec::new(),
         cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
             source_id: crate::reader::step_source_id(

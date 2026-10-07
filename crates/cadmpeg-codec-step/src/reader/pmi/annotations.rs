@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::pmi::{PmiAnnotation, PmiDefinition, PmiTarget};
@@ -44,12 +44,16 @@ impl AnnotationIndex {
 }
 
 /// STEP records mapped to inserted PMI annotations.
-#[derive(Default)]
-pub(super) struct Annotations {
+pub(super) struct Annotations<'ctx> {
     indices: BTreeMap<u64, AnnotationIndex>,
+    storage: ScopedReservation<'ctx>,
 }
 
-impl Annotations {
+impl<'ctx> Annotations<'ctx> {
+    pub(super) fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self { indices: BTreeMap::new(), storage: ctx.reserve_scoped(0, "STEP annotation index scratch")? })
+    }
+
     /// Insert an annotation and return its arena index.
     pub(super) fn push(
         &mut self,
@@ -67,13 +71,13 @@ impl Annotations {
             visible: draft.visible,
             definition: draft.definition,
         });
-        ctx.insert_btree_map(&mut self.indices, id, index, "step_pmi_annotation_index")?;
+        self.storage.with_storage(|| ctx.insert_btree_map(&mut self.indices, id, index, "step_pmi_annotation_index"))?;
         Ok(index)
     }
 
     /// The inserted annotation index for a STEP record.
-    pub(super) fn get(&self, id: u64) -> Option<AnnotationIndex> {
-        self.indices.get(&id).copied()
+    pub(super) fn get(&self, ctx: &DecodeContext<'_>, id: u64) -> Result<Option<AnnotationIndex>, CodecError> {
+        Ok(ctx.get_btree_map(&self.indices, &id, "STEP annotation index lookup")?.copied())
     }
 }
 
@@ -93,8 +97,8 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
         let mut ir = CadIr::empty();
-        Annotations::default()
-            .push(
+        let mut annotations = Annotations::new(&ctx).expect("annotation index setup");
+        annotations.push(
                 &ctx,
                 &mut ir,
                 1,
