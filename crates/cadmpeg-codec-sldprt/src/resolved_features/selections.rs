@@ -12,7 +12,7 @@ use super::markers::{
     linked_profile_point, marker_coordinates, marker_is_geometry_locus, marker_native_code,
 };
 use super::operations::repeated_class_token;
-use super::scalars::{feature_object_name, operand_kind};
+use super::scalars::{operand_kind, ObjectNames};
 use super::terminations::{
     compact_extrusion_offset_from_face_at, compact_extrusion_to_face_at,
     compact_extrusion_to_vertex_at, compact_single_face_reference_record_at,
@@ -60,13 +60,14 @@ fn selection_objects<'history, 'lane>(
     )>,
     CodecError,
 > {
+    let names = ObjectNames::new(ctx, lane)?;
     let mut objects = Vec::new();
     let mut input_index = 0_usize;
     for history in ctx.admit_iter(histories, operation)? {
         for feature in ctx.admit_iter(&history.features, operation)? {
             let index = input_index;
             input_index += 1;
-            let Some(name) = feature_object_name(feature, lane) else {
+            let Some(name) = names.of(ctx, feature)? else {
                 continue;
             };
             ctx.push_vec(&mut objects, (name, feature, index), operation)?;
@@ -1433,14 +1434,26 @@ pub(crate) fn enrich_feature_object_sources(
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "resolve SLDPRT selection feature object sources";
+    if !ctx.any_by(
+        &*features,
+        |feature| Ok(feature.source_id.is_none()),
+        OPERATION,
+    )? {
+        return Ok(());
+    }
+    let mut lane_names = Vec::new();
+    for lane in ctx.admit_iter(lanes, OPERATION)? {
+        ctx.push_vec(&mut lane_names, ObjectNames::new(ctx, lane)?, OPERATION)?;
+    }
     for feature in ctx.admit_iter(features, OPERATION)? {
         if feature.source_id.is_some() {
             continue;
         }
         let mut source = None;
         let mut ambiguous = false;
-        for lane in ctx.admit_iter(lanes, OPERATION)? {
-            let Some(candidate) = feature_object_name(feature, lane)
+        for names in ctx.admit_iter(&lane_names, OPERATION)? {
+            let Some(candidate) = names
+                .of(ctx, feature)?
                 .and_then(|name| name.object_id)
                 .and_then(ObjectId::value)
             else {
@@ -3333,19 +3346,13 @@ pub(super) fn variable_fillet_control_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
+    object_start: usize,
     object_end: usize,
 ) -> Result<Option<Vec<VariableFilletControl>>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "collect SLDPRT variable fillet controls";
     if !feature.kind.eq_ignore_ascii_case("VarFillet") {
         return Ok(None);
     }
-    ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
-    ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
-    let Some(object_start) =
-        feature_object_name(feature, lane).and_then(|name| usize::try_from(name.offset).ok())
-    else {
-        return Ok(None);
-    };
     let classes = fillet_dimension_classes(ctx, lane)?;
     let Some(control_start) =
         fillet_edge_roster_end(ctx, lane, &classes, object_start, object_end)?

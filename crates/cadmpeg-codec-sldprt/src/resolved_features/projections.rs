@@ -16,7 +16,7 @@ use super::relation_geometry::{
     RELATION_PARAMETER_ROLE_PROPERTY, RELATION_PARAMETER_ROLE_REFERENCE,
 };
 use super::relation_loci::same_dimension_length;
-use super::scalars::feature_object_name;
+use super::scalars::ObjectNames;
 use super::selections::{
     cosmetic_thread_cylinder_marker_reference, variable_fillet_control_references,
     variable_fillet_dimension_index_for_feature,
@@ -393,6 +393,7 @@ pub(crate) fn bind_parameter_scalars<'a>(
     }
     let mut lanes = lanes.into_iter();
     while let Some(lane) = ctx.next_charged(&mut lanes, OPERATION)? {
+        let names = ObjectNames::new(ctx, lane)?;
         let mut lane_storage = ctx.reserve_scoped(0, OPERATION)?;
         let (scalar_positions, _scalar_positions_storage) =
             first_positions(ctx, &lane.scalars, |scalar| scalar.id.as_str(), OPERATION)?;
@@ -442,7 +443,7 @@ pub(crate) fn bind_parameter_scalars<'a>(
             .admit_iter(&native_features, OPERATION)?
             .map(|(_, feature)| *feature)
         {
-            let start = feature_object_name(feature, lane).map(|name| name.offset);
+            let start = names.of(ctx, feature)?.map(|name| name.offset);
             lane_storage.with_storage(|| ctx.push_vec(&mut starts, (start, feature), OPERATION))?;
         }
         ctx.stable_sort_by_key(
@@ -1559,9 +1560,10 @@ fn variable_fillet_radius_groups<'a>(
     let mut non_vertex_control_names = HashSet::<String>::new();
     let mut non_vertex_control_references = Vec::new();
     for lane in ctx.admit_iter(lanes, OPERATION)? {
+        let names = ObjectNames::new(ctx, lane)?;
         let mut objects = Vec::new();
         for candidate in ctx.admit_iter(&history.features, OPERATION)? {
-            if let Some(name) = feature_object_name(candidate, lane) {
+            if let Some(name) = names.of(ctx, candidate)? {
                 controls_storage.with_storage(|| {
                     ctx.push_vec(&mut objects, (name.offset, candidate), OPERATION)
                 })?;
@@ -1576,11 +1578,15 @@ fn variable_fillet_radius_groups<'a>(
         else {
             continue;
         };
+        let Ok(object_start) = usize::try_from(objects[index].0) else {
+            continue;
+        };
         let object_end = objects
             .get(index + 1)
             .and_then(|(offset, _)| usize::try_from(*offset).ok())
             .unwrap_or(lane.native_payload.len());
-        let Some(controls) = variable_fillet_control_references(ctx, feature, lane, object_end)?
+        let Some(controls) =
+            variable_fillet_control_references(ctx, feature, lane, object_start, object_end)?
         else {
             continue;
         };

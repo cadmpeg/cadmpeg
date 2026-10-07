@@ -12,7 +12,7 @@ use super::markers::{
 };
 use super::reference_geometry::reference_plane_frame_key;
 use super::relation_loci::same_dimension_length;
-use super::scalars::feature_object_name;
+use super::scalars::ObjectNames;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
@@ -1893,14 +1893,15 @@ impl<'h> LaneFrameIndex<'h> {
         &self,
         ctx: &DecodeContext<'_>,
         histories: &[crate::records::FeatureHistory],
-        lane: &FeatureInputLane,
+        names: &ObjectNames<'_, '_>,
     ) -> Result<HashMap<u32, SketchPlaneFrame>, CodecError> {
         const OPERATION: &str = "index SLDPRT lane sketch plane candidates";
         let mut frames = frames_from_entries(ctx, &self.entries)?;
         let mut lane_candidates = BTreeMap::<u32, Vec<SketchPlaneFrame>>::new();
         for history in ctx.admit_iter(histories, OPERATION)? {
             for native in ctx.admit_iter(&history.features, OPERATION)? {
-                let Some(source) = feature_object_name(native, lane)
+                let Some(source) = names
+                    .of(ctx, native)?
                     .and_then(|name| name.object_id.and_then(ObjectId::value))
                 else {
                     continue;
@@ -1953,7 +1954,11 @@ pub(super) fn lane_sketch_plane_frames(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Result<HashMap<u32, SketchPlaneFrame>, CodecError> {
-    LaneFrameIndex::new(ctx, features, histories)?.lane_frames(ctx, histories, lane)
+    LaneFrameIndex::new(ctx, features, histories)?.lane_frames(
+        ctx,
+        histories,
+        &ObjectNames::new(ctx, lane)?,
+    )
 }
 
 pub(super) fn ordered_rectangle_corners(
