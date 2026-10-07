@@ -947,11 +947,8 @@ fn closed_cycle_marker_arc_geometry(
             let mut connecting_lines: [Option<&SketchEntity>; 2] = [None; 2];
             let mut connecting_count = 0;
             for endpoint in target_endpoints {
-                for &line in ctx.admit_iter(
-                    ctx.get_hash_map(lines_by_endpoint, endpoint, OPERATION)?
-                        .map_or(&[][..], Vec::as_slice),
-                    OPERATION,
-                )? {
+                let mut visited = ctx.get_hash_map(lines_by_endpoint, endpoint, OPERATION)?.map_or(&[][..], Vec::as_slice).iter();
+                while let Some(&line) = ctx.next_charged(&mut visited, OPERATION)? {
                     let ([first_ref, second_ref], SketchGeometryDefinition::Line { start, end }) =
                         (line.endpoint_refs.as_slice(), line.geometry.definition())
                     else { continue; };
@@ -1285,7 +1282,8 @@ pub(super) fn resolve_connected_marker_arcs(
                 continue;
             };
             let mut component_replacements = Vec::new();
-            for &index in ctx.admit_iter(&component, OPERATION)? {
+            let mut visited = component.iter();
+            while let Some(&index) = ctx.next_charged(&mut visited, OPERATION)? {
                 let [start_ref, end_ref] = entities[index].endpoint_refs.as_slice() else {
                     continue;
                 };
@@ -2730,11 +2728,13 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
     };
     // A rectangle is found once, from its lower-left and upper-right corner cells.
     let mut selected = None;
-    for &(u0, v0) in ctx.admit_iter(&points, OPERATION)? {
+    let mut visited = points.iter();
+    while let Some(&(u0, v0)) = ctx.next_charged(&mut visited, OPERATION)? {
         let Some(lower) = unique((u0, v0))? else {
             continue;
         };
-        for &(u1, v1) in ctx.admit_iter(&points, OPERATION)? {
+        let mut visited = points.iter();
+        while let Some(&(u1, v1)) = ctx.next_charged(&mut visited, OPERATION)? {
             if u1 <= u0 || v1 <= v0 {
                 continue;
             }
@@ -2777,6 +2777,7 @@ fn ordered_compact_line_profile(
         Point2,
     )],
 ) -> Result<Option<Vec<SketchEntityUse>>, CodecError> {
+    let (result, profile_storage) = ctx.with_scoped_storage("SLDPRT compact line profile", || -> Result<_, CodecError> {
     const OPERATION: &str = "scan SLDPRT compact line profile adjacency";
     if lines.len() < 3 {
         return Ok(None);
@@ -2873,6 +2874,9 @@ fn ordered_compact_line_profile(
         current = candidate.2;
     }
     Ok((current == origin).then_some(profile))
+    })?;
+    if result.is_some() { profile_storage.commit()?; }
+    Ok(result)
 }
 
 pub(super) fn complete_ordered_compact_line_profile(

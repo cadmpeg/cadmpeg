@@ -700,7 +700,8 @@ pub(super) fn nested_profile_contains_declared_circular_carriers<'a>(
             ctx.push_hash_group(&mut circles, cells, radius.get(), OPERATION, OPERATION)
         })?;
     }
-    for CircleCarrier([u, v], radius) in ctx.admit_iter(declared, OPERATION)? {
+    let mut visited = declared.iter();
+    while let Some(CircleCarrier([u, v], radius)) = ctx.next_charged(&mut visited, OPERATION)? {
         let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
         let Some(center) = transform.apply(native) else {
             continue;
@@ -1249,7 +1250,8 @@ pub(crate) fn project_compact_sketch_profiles(
                     let mut points_storage = ctx.reserve_scoped(0, OPERATION)?;
                     let mut points = Vec::new();
                     let mut complete = true;
-                    for marker in ctx.admit_iter(&markers, OPERATION)? {
+                    let mut visited = markers.iter();
+                    while let Some(marker) = ctx.next_charged(&mut visited, OPERATION)? {
                         let Some(point) = project(marker) else {
                             complete = false;
                             break;
