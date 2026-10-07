@@ -1426,11 +1426,9 @@ fn parse_view(
             kind: child_kind(child.typecode),
             source_offset: cadmpeg_core::decode::u64_from_index(offset),
             byte_len: cadmpeg_core::decode::u64_from_index(child.next_offset() - offset),
-            sha256: crate::instances::hex(
-                ctx,
-                &cadmpeg_ir::hash::sha256(&data[offset..child.next_offset()]),
-                "Rhino view child SHA-256",
-            )?,
+            sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                ctx, &data[offset..child.next_offset()], "Rhino view child SHA-256",
+            )?),
         });
         if terminated {
             break;
@@ -3778,4 +3776,6 @@ mod tests {
                     == Some("VIEW/VIEWPORT_USERDATA")
         }));
     }
+    mod digests;
+
 }

@@ -1272,20 +1272,26 @@ fn user_string_records(
     Ok(records)
 }
 
+enum UserStringSource { Object, Attributes }
+
 fn read_user_string_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     archive: ArchiveVersion,
     payload_range: Option<Range<usize>>,
     source_offset: usize,
-    label: &str,
+    source: UserStringSource,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<UserStringRecord>, CodecError> {
+    let (label, selection) = match source {
+        UserStringSource::Object => ("object user-string userdata", crate::objects::UserStringSelection::All),
+        UserStringSource::Attributes => ("object-attributes user-string userdata", crate::objects::UserStringSelection::ExcludeFirstTempObject),
+    };
     let Some(payload_range) = payload_range else {
         return Ok(Vec::new());
     };
-    match parse_user_string_list(ctx, data, payload_range, archive) {
-        Ok(entries) => user_string_records(ctx, entries),
+    match parse_user_string_list(ctx, data, payload_range, archive, selection) {
+        Ok(parsed) => user_string_records(ctx, parsed.entries),
         Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
         Err(error) => {
             push_presentation_loss(
@@ -1329,7 +1335,7 @@ fn first_user_string_records(
         archive,
         geometry_range,
         source_offset,
-        "object user-string userdata",
+        UserStringSource::Object,
         losses,
     )?;
     let attributes_range = ctx
@@ -1347,36 +1353,15 @@ fn first_user_string_records(
             "Rhino first user string records traversal",
         )?
         .map(|value| value.payload_range.clone());
-    let mut attributes = read_user_string_records(
+    let attributes = read_user_string_records(
         ctx,
         data,
         archive,
         attributes_range,
         source_offset,
-        "object-attributes user-string userdata",
+        UserStringSource::Attributes,
         losses,
     )?;
-    if let Some(index) = ctx.find_map(
-        (attributes)[..].iter().enumerate(),
-        |(index, value)| -> Result<_, CodecError> {
-            Ok(value
-                .key
-                .eq_ignore_ascii_case("$temp_object$")
-                .then_some(index))
-        },
-        "Rhino first user string records traversal",
-    )? {
-        let mut position = 0;
-        ctx.retain_vec(
-            &mut attributes,
-            |_| {
-                let keep = position != index;
-                position += 1;
-                Ok(keep)
-            },
-            "Rhino temporary user string removal",
-        )?;
-    }
     Ok((geometry, attributes))
 }
 
@@ -2119,7 +2104,7 @@ fn parse_light_record_attributes(
         let is_user_string =
             descriptor.class_uuid == USER_STRING_LIST && descriptor.item_uuid == USER_STRING_LIST;
         if is_user_string {
-            match parse_user_string_list(ctx, data, descriptor.payload_range.clone(), archive) {
+            match parse_user_string_list(ctx, data, descriptor.payload_range.clone(), archive, crate::objects::UserStringSelection::ValidateOnly) {
                 Ok(_) => {}
                 Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
                 Err(_) => {
@@ -4334,11 +4319,9 @@ fn parse_embedded_image(
         uncompressed_byte_len,
         buffer_offset: cadmpeg_core::decode::u64_from_index(buffer_offset),
         buffer_byte_len: cadmpeg_core::decode::u64_from_index(buffer_end - buffer_offset),
-        buffer_sha256: hex(
-            ctx,
-            &cadmpeg_ir::hash::sha256(&data[buffer_offset..buffer_end]),
-            "Rhino image SHA-256",
-        )?,
+        buffer_sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+            ctx, &data[buffer_offset..buffer_end], "Rhino image SHA-256",
+        )?),
     })
 }
 
@@ -4492,11 +4475,9 @@ fn parse_windows_bitmap(
         important_colors,
         pixel_buffer_offset: cadmpeg_core::decode::u64_from_index(pixel_buffer_offset),
         pixel_buffer_byte_len: cadmpeg_core::decode::u64_from_index(buffer.len()),
-        pixel_buffer_sha256: hex(
-            ctx,
-            &cadmpeg_ir::hash::sha256(buffer),
-            "Rhino Windows bitmap SHA-256",
-        )?,
+        pixel_buffer_sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+            ctx, buffer, "Rhino Windows bitmap SHA-256",
+        )?),
     })
 }
 

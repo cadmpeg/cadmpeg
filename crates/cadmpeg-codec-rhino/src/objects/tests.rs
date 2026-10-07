@@ -1266,15 +1266,17 @@ fn user_string_list_reads_ordered_entries_and_bounded_suffixes() {
     let mut payload = anonymous_chunk(archive, 3, &list_body);
     payload.extend([0xde, 0xad]);
 
+    let ctx = cadmpeg_test_support::service_decode_context();
     let values = crate::objects::parse_user_string_list(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &payload,
         0..payload.len(),
         archive,
+        crate::objects::UserStringSelection::All,
     )
     .expect("user-string list");
     assert_eq!(
-        values,
+        values.entries,
         [
             ("CaseKey".to_string(), "first".to_string()),
             ("casekey".to_string(), "second".to_string())
@@ -1291,6 +1293,7 @@ fn user_string_list_rejects_a_negative_count() {
         &payload,
         0..payload.len(),
         archive,
+        crate::objects::UserStringSelection::All,
     )
     .is_err());
 }
@@ -1311,7 +1314,8 @@ fn user_string_list_refusal(
     policy.limits.max_retained_bytes = retained_limit;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("root bytes admitted");
-    crate::objects::parse_user_string_list(&ctx, &bytes, 0..bytes.len(), archive)
+    crate::objects::parse_user_string_list(&ctx, &bytes, 0..bytes.len(), archive, crate::objects::UserStringSelection::All)
+        .map(|parsed| parsed.entries)
         .expect_err("user strings exceed configured limit")
 }
 
@@ -1821,3 +1825,5 @@ fn attribute_userdata_checksum_refusal_propagates_without_diagnostic() {
 }
 
 mod allocation;
+
+mod user_strings;
