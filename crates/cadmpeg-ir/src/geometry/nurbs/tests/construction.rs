@@ -33,11 +33,32 @@ fn finite_points() -> Vec<FinitePoint3> {
 
 #[test]
 fn final_nurbs_construction_admits_raw_conversion_and_all_knot_visits() {
-    for operation in ["IR NURBS admitted poles", "IR NURBS knot finiteness", "IR NURBS knot order"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-                NurbsCurve::new(ctx, 1, knots(), NurbsPoles3::Polynomial { points: raw_points() }, false)
-            }));
+    for operation in [
+        "IR NURBS admitted poles",
+        "IR NURBS knot finiteness",
+        "IR NURBS knot order",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        NurbsCurve::new(
+                            ctx,
+                            1,
+                            knots(),
+                            NurbsPoles3::Polynomial {
+                                points: raw_points(),
+                            },
+                            false,
+                        )
+                    },
+                )
+            },
+        );
     }
     for dimension in [
         ResourceDimension::RetainedBytes,
@@ -68,14 +89,34 @@ fn final_nurbs_construction_admits_raw_conversion_and_all_knot_visits() {
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );
     }
-    for operation in ["IR NURBS grid row shape", "IR NURBS admitted grid rows", "IR NURBS admitted poles",
-        "IR NURBS knot finiteness", "IR NURBS knot order"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-                NurbsSurface::new(ctx, NurbsSurfaceAxis::new(1, knots(), false),
-                    NurbsSurfaceAxis::new(1, knots(), false),
-                    NurbsPoleGrid::Polynomial { rows: vec![raw_points(), raw_points()] }, false)
-            }));
+    for operation in [
+        "IR NURBS grid row shape",
+        "IR NURBS admitted grid rows",
+        "IR NURBS admitted poles",
+        "IR NURBS knot finiteness",
+        "IR NURBS knot order",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        NurbsSurface::new(
+                            ctx,
+                            NurbsSurfaceAxis::new(1, knots(), false),
+                            NurbsSurfaceAxis::new(1, knots(), false),
+                            NurbsPoleGrid::Polynomial {
+                                rows: vec![raw_points(), raw_points()],
+                            },
+                            false,
+                        )
+                    },
+                )
+            },
+        );
     }
 }
 
@@ -151,19 +192,51 @@ fn final_nurbs_construction_moves_admitted_storage_without_copy_or_scalar_readmi
 #[test]
 fn finite_geometry_construction_admits_final_knot_conversion_in_the_caller() {
     for operation in ["IR finite knot values", "IR NURBS knot order"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-                NurbsCurve::from_finite_lanes(ctx, 1, finite_knots(), finite_points(), None, false)
-            }));
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        NurbsCurve::from_finite_lanes(
+                            ctx,
+                            1,
+                            finite_knots(),
+                            finite_points(),
+                            None,
+                            false,
+                        )
+                    },
+                )
+            },
+        );
     }
-    for operation in ["IR NURBS grid row shape", "IR finite knot values", "IR NURBS knot order"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-                NurbsSurface::from_finite_lanes(ctx,
-                    NurbsSurfaceAxis::new(1, finite_knots(), false),
-                    NurbsSurfaceAxis::new(1, finite_knots(), false),
-                    NurbsSurfaceLanes::new(vec![finite_points(), finite_points()], None), false)
-            }));
+    for operation in [
+        "IR NURBS grid row shape",
+        "IR finite knot values",
+        "IR NURBS knot order",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        NurbsSurface::from_finite_lanes(
+                            ctx,
+                            NurbsSurfaceAxis::new(1, finite_knots(), false),
+                            NurbsSurfaceAxis::new(1, finite_knots(), false),
+                            NurbsSurfaceLanes::new(vec![finite_points(), finite_points()], None),
+                            false,
+                        )
+                    },
+                )
+            },
+        );
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -206,11 +279,29 @@ fn checked_geometry_construction_releases_raw_pairing_and_keeps_only_final_stora
         if surface {
             let mut refusal_policy = policy.clone();
             refusal_policy.limits.max_work_units = u64::MAX;
-            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "IR NURBS knot order",
-                |cap| crate::geometry::tests::budget::with_policy(ResourceDimension::WorkUnits, cap,
-                    refusal_policy.clone(), |ctx| NurbsSurface::from_checked_lanes(ctx,
-                        NurbsSurfaceAxis::new(1, knots(), false), NurbsSurfaceAxis::new(1, knots(), false),
-                        NurbsSurfaceLanes::new(vec![raw_points(), raw_points()], Some(vec![vec![NonZeroReal::ONE; 2]; 2])), false)));
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                "IR NURBS knot order",
+                |cap| {
+                    crate::geometry::tests::budget::with_policy(
+                        ResourceDimension::WorkUnits,
+                        cap,
+                        refusal_policy.clone(),
+                        |ctx| {
+                            NurbsSurface::from_checked_lanes(
+                                ctx,
+                                NurbsSurfaceAxis::new(1, knots(), false),
+                                NurbsSurfaceAxis::new(1, knots(), false),
+                                NurbsSurfaceLanes::new(
+                                    vec![raw_points(), raw_points()],
+                                    Some(vec![vec![NonZeroReal::ONE; 2]; 2]),
+                                ),
+                                false,
+                            )
+                        },
+                    )
+                },
+            );
             let built = NurbsSurface::from_checked_lanes(
                 &ctx,
                 NurbsSurfaceAxis::new(1, knots(), false),

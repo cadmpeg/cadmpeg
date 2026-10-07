@@ -31,66 +31,98 @@ fn polar_poles() -> Vec<PolarNurbsPole> {
 #[test]
 fn pcurve_construction_preserves_original_refusals_for_pairing_conversion_and_knots() {
     for polar in [false, true] {
-        for operation in [if polar { "IR polar admitted poles" } else { "IR pcurve admitted poles" },
-            "IR NURBS knot finiteness", "IR NURBS knot order"] {
-            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-                |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-if polar {
-                PolarPcurveNurbs::new(
-                    ctx,
-                    1,
-                    knots(),
-                    PolarNurbsPoles::Polynomial {
-                        poles: polar_poles(),
-                    },
-                    false,
-                )
-                .map(|result| result.map(|_| ()))
+        for operation in [
+            if polar {
+                "IR polar admitted poles"
             } else {
-                PcurveNurbs::new(
-                    ctx,
-                    1,
-                    knots(),
-                    PcurveNurbsPoles::Polynomial { points: points() },
-                    false,
-                )
-                .map(|result| result.map(|_| ()))
-            }
-                }));
+                "IR pcurve admitted poles"
+            },
+            "IR NURBS knot finiteness",
+            "IR NURBS knot order",
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    crate::geometry::tests::budget::with_limit(
+                        ResourceDimension::WorkUnits,
+                        cap,
+                        |ctx| {
+                            if polar {
+                                PolarPcurveNurbs::new(
+                                    ctx,
+                                    1,
+                                    knots(),
+                                    PolarNurbsPoles::Polynomial {
+                                        poles: polar_poles(),
+                                    },
+                                    false,
+                                )
+                                .map(|result| result.map(|_| ()))
+                            } else {
+                                PcurveNurbs::new(
+                                    ctx,
+                                    1,
+                                    knots(),
+                                    PcurveNurbsPoles::Polynomial { points: points() },
+                                    false,
+                                )
+                                .map(|result| result.map(|_| ()))
+                            }
+                        },
+                    )
+                },
+            );
         }
         for checked in [false, true] {
-            let operation = if polar { "IR polar paired poles" } else { "IR pcurve paired poles" };
-            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-                |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-match (polar, checked) {
-                    (false, false) => {
-                        PcurveNurbsPoles::from_lanes(ctx, points(), Some(vec![1.0; 2]))
-                            .map(|result| result.map(|_| ()))
-                    }
-                    (false, true) => PcurveNurbsPoles::from_checked_lanes(
-                        ctx,
-                        points(),
-                        Some(vec![NonZeroReal::ONE; 2]),
+            let operation = if polar {
+                "IR polar paired poles"
+            } else {
+                "IR pcurve paired poles"
+            };
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    crate::geometry::tests::budget::with_limit(
+                        ResourceDimension::WorkUnits,
+                        cap,
+                        |ctx| match (polar, checked) {
+                            (false, false) => {
+                                PcurveNurbsPoles::from_lanes(ctx, points(), Some(vec![1.0; 2]))
+                                    .map(|result| result.map(|_| ()))
+                            }
+                            (false, true) => PcurveNurbsPoles::from_checked_lanes(
+                                ctx,
+                                points(),
+                                Some(vec![NonZeroReal::ONE; 2]),
+                            )
+                            .map(|result| result.map(|_| ())),
+                            (true, false) => {
+                                PolarNurbsPoles::from_lanes(ctx, polar_poles(), Some(vec![1.0; 2]))
+                                    .map(|result| result.map(|_| ()))
+                            }
+                            (true, true) => PolarNurbsPoles::from_checked_lanes(
+                                ctx,
+                                polar_poles(),
+                                Some(vec![NonZeroReal::ONE; 2]),
+                            )
+                            .map(|result| result.map(|_| ())),
+                        },
                     )
-                    .map(|result| result.map(|_| ())),
-                    (true, false) => {
-                        PolarNurbsPoles::from_lanes(ctx, polar_poles(), Some(vec![1.0; 2]))
-                            .map(|result| result.map(|_| ()))
-                    }
-                    (true, true) => PolarNurbsPoles::from_checked_lanes(
-                        ctx,
-                        polar_poles(),
-                        Some(vec![NonZeroReal::ONE; 2]),
-                    )
-                    .map(|result| result.map(|_| ())),
-                }
-                }));
+                },
+            );
         }
     }
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "IR pcurve paired poles",
-        |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-            PcurveNurbsPoles::from_finite_lanes(ctx, points(), Some(vec![FiniteReal::ONE; 2]))
-        }));
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "IR pcurve paired poles",
+        |cap| {
+            crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
+                PcurveNurbsPoles::from_finite_lanes(ctx, points(), Some(vec![FiniteReal::ONE; 2]))
+            })
+        },
+    );
 }
 
 #[test]
@@ -230,22 +262,31 @@ fn pcurve_construction_moves_admitted_lanes_and_admits_finite_knot_conversion() 
     assert_eq!(built.knots().as_ptr(), knot_address);
     ctx.finish_session().expect("no duplicate admission");
     for operation in ["IR finite knot values", "IR NURBS knot order"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-PcurveNurbs::from_finite_lanes(
-            ctx,
-            1,
-            vec![
-                FiniteReal::ZERO,
-                FiniteReal::ZERO,
-                FiniteReal::ONE,
-                FiniteReal::ONE,
-            ],
-            vec![FinitePoint2::ZERO; 2],
-            None,
-            false,
-        )
-            }));
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        PcurveNurbs::from_finite_lanes(
+                            ctx,
+                            1,
+                            vec![
+                                FiniteReal::ZERO,
+                                FiniteReal::ZERO,
+                                FiniteReal::ONE,
+                                FiniteReal::ONE,
+                            ],
+                            vec![FinitePoint2::ZERO; 2],
+                            None,
+                            false,
+                        )
+                    },
+                )
+            },
+        );
     }
 }
 

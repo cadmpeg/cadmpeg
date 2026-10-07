@@ -568,7 +568,7 @@ impl PlacedCurve {
         let _depth = ctx.enter_nested(operation)?;
         charge_decode_copy::<SolvedCurveGeometry>(1, ctx, operation)?;
         let basis = if let SolvedCurveGeometry::Transformed(placed) = self.basis.as_ref() {
-                SolvedCurveGeometry::Transformed(placed.try_clone_for_decode(ctx, operation)?)
+            SolvedCurveGeometry::Transformed(placed.try_clone_for_decode(ctx, operation)?)
         } else {
             self.basis.try_clone_for_decode(ctx, operation)?
         };
@@ -3436,9 +3436,11 @@ impl RollingBallJetStations {
         )? {
             return Ok(Err(error));
         }
-        if let Some(error) = ctx.find_map(&stations,
+        if let Some(error) = ctx.find_map(
+            &stations,
             |station| Ok(admit_rolling_ball_radii(&station.site).err()),
-            "rolling-ball jet station controls")? {
+            "rolling-ball jet station controls",
+        )? {
             return Ok(Err(error));
         }
         Ok(Ok(Self { degree, stations }))

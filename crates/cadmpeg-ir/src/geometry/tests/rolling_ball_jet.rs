@@ -266,21 +266,33 @@ fn rolling_ball_jet_decode_refuses_work_and_retained_rows() {
 fn rolling_ball_constructors_preserve_named_caller_work_refusals() {
     use cadmpeg_core::decode::ResourceDimension;
     for typed in [false, true] {
-        for operation in ["rolling-ball jet multiplicities", "rolling-ball jet knots", "rolling-ball jet station controls"] {
-            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-                |cap| super::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-                    let raw = vec![station(2.0, 6), station(8.0, 6)];
-                    if typed {
-                        let rows = raw.into_iter().map(|row| RollingBallJetStation {
-                            knot: crate::scalar::FiniteReal::new(row.knot).unwrap(),
-                            multiplicity: row.multiplicity,
-                            site: row.site.admit().unwrap(),
-                        }).collect();
-                        crate::geometry::RollingBallJetStations::from_parts(5, rows, ctx)
-                    } else {
-                        crate::geometry::RollingBallJetStations::try_new(5, raw, ctx)
-                    }
-                }));
+        for operation in [
+            "rolling-ball jet multiplicities",
+            "rolling-ball jet knots",
+            "rolling-ball jet station controls",
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    super::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
+                        let raw = vec![station(2.0, 6), station(8.0, 6)];
+                        if typed {
+                            let rows = raw
+                                .into_iter()
+                                .map(|row| RollingBallJetStation {
+                                    knot: crate::scalar::FiniteReal::new(row.knot).unwrap(),
+                                    multiplicity: row.multiplicity,
+                                    site: row.site.admit().unwrap(),
+                                })
+                                .collect();
+                            crate::geometry::RollingBallJetStations::from_parts(5, rows, ctx)
+                        } else {
+                            crate::geometry::RollingBallJetStations::try_new(5, raw, ctx)
+                        }
+                    })
+                },
+            );
         }
     }
 }

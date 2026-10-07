@@ -174,9 +174,13 @@ impl PolygonalSurface {
             return Err(admission.layout("polygonal surface must contain at least one triangle")?);
         }
         if !admission.all_by(triangles, "IR polygonal triangle index", |triangle| {
-            triangle.iter().all(|index| usize::try_from(*index).is_ok_and(|index| index < vertex_count))
+            triangle
+                .iter()
+                .all(|index| usize::try_from(*index).is_ok_and(|index| index < vertex_count))
         })? {
-            return Err(admission.layout("polygonal surface contains an out-of-range triangle index")?);
+            return Err(
+                admission.layout("polygonal surface contains an out-of-range triangle index")?
+            );
         }
         Ok(())
     }
@@ -390,19 +394,31 @@ impl PolylineSamples<FiniteReal, FinitePoint3> {
         let Self::Parameterized { vertices } = self else {
             return Ok(true);
         };
-        let Some(first) = vertices.first() else { return Ok(true); };
+        let Some(first) = vertices.first() else {
+            return Ok(true);
+        };
         let mut previous = first.parameter;
-        if admission.all_by(&vertices[1..], "IR polyline increasing parameter comparison", |vertex| {
-            let increasing = previous < vertex.parameter;
-            previous = vertex.parameter;
-            increasing
-        })? { return Ok(true); }
+        if admission.all_by(
+            &vertices[1..],
+            "IR polyline increasing parameter comparison",
+            |vertex| {
+                let increasing = previous < vertex.parameter;
+                previous = vertex.parameter;
+                increasing
+            },
+        )? {
+            return Ok(true);
+        }
         previous = first.parameter;
-        admission.all_by(&vertices[1..], "IR polyline decreasing parameter comparison", |vertex| {
-            let decreasing = previous > vertex.parameter;
-            previous = vertex.parameter;
-            decreasing
-        })
+        admission.all_by(
+            &vertices[1..],
+            "IR polyline decreasing parameter comparison",
+            |vertex| {
+                let decreasing = previous > vertex.parameter;
+                previous = vertex.parameter;
+                decreasing
+            },
+        )
     }
 
     /// Edit admitted points transactionally. The edit supplies an admitted
@@ -448,8 +464,13 @@ fn edit_sample_rows<T: Copy, E>(
 ) -> Result<Result<(), E>, CodecError> {
     let (copy, _storage) = ctx.copy_temporary_slice(rows, "IR sampled edit candidate")?;
     let mut candidate = copy;
-    if let Some(error) = ctx.find_map(candidate.iter_mut(), |row| Ok(edit(row).err()),
-        "IR sampled edit callback")? { return Ok(Err(error)); }
+    if let Some(error) = ctx.find_map(
+        candidate.iter_mut(),
+        |row| Ok(edit(row).err()),
+        "IR sampled edit callback",
+    )? {
+        return Ok(Err(error));
+    }
     ctx.copy_into(rows, &candidate, "IR sampled edit copy back")?;
     Ok(Ok(()))
 }
@@ -574,10 +595,18 @@ impl PolylineCurve {
     ) -> Result<(), A::Error> {
         Self::require_sample_count(admission, samples.count())?;
         let finite = match samples {
-            PolylineSamples::Unparameterized { points } => admission.all_by(points, "IR polyline point finiteness", Point3::is_finite)?,
-            PolylineSamples::Parameterized { vertices } => admission.all_by(vertices, "IR polyline point finiteness", |vertex| vertex.point.is_finite())?,
+            PolylineSamples::Unparameterized { points } => {
+                admission.all_by(points, "IR polyline point finiteness", Point3::is_finite)?
+            }
+            PolylineSamples::Parameterized { vertices } => {
+                admission.all_by(vertices, "IR polyline point finiteness", |vertex| {
+                    vertex.point.is_finite()
+                })?
+            }
         };
-        if !finite { return Err(admission.layout("points must be finite")?); }
+        if !finite {
+            return Err(admission.layout("points must be finite")?);
+        }
         Ok(())
     }
 
@@ -697,18 +726,26 @@ impl PolylineCurve {
 }
 
 fn scale_admitted_points<T>(
-    ctx: &DecodeContext<'_>, points: &mut [T],
+    ctx: &DecodeContext<'_>,
+    points: &mut [T],
     point: impl Fn(&mut T) -> &mut FinitePoint3,
-    scale: PositiveReal, message: &'static str,
+    scale: PositiveReal,
+    message: &'static str,
 ) -> Result<Result<(), GeometryLayoutError>, CodecError> {
-    let error = ctx.find_map(points.iter_mut(), |value| {
-        let point = point(value);
-        let Some(scaled) = point.scaled(scale) else {
-            return Ok(Some(GeometryLayoutError::Layout(ctx.copy_retained_text(message, "IR sampled refusal text")?)));
-        };
-        *point = scaled;
-        Ok(None)
-    }, "IR sampled unit scaling work")?;
+    let error = ctx.find_map(
+        points.iter_mut(),
+        |value| {
+            let point = point(value);
+            let Some(scaled) = point.scaled(scale) else {
+                return Ok(Some(GeometryLayoutError::Layout(
+                    ctx.copy_retained_text(message, "IR sampled refusal text")?,
+                )));
+            };
+            *point = scaled;
+            Ok(None)
+        },
+        "IR sampled unit scaling work",
+    )?;
     Ok(error.map_or(Ok(()), Err))
 }
 

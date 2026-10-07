@@ -7,19 +7,39 @@ use cadmpeg_core::CodecError;
 fn knot_edit_preserves_original_curve_storage_on_caller_refusal() {
     let original = super::curve();
     let count = original.knots().len();
-    for operation in ["IR NURBS edited knots", "IR NURBS knot edit", "IR NURBS knot finiteness", "IR NURBS knot order", "IR NURBS knot edit copy back"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-                let mut curve = original.clone();
-                let called = std::cell::Cell::new(false);
-                let result = curve.edit_knots(ctx, |knots| {
-                    called.set(true);
-                    for value in knots { *value += 2.; }
-                });
-                assert_eq!(curve, original);
-                assert_eq!(called.get(), !matches!(operation, "IR NURBS edited knots" | "IR NURBS knot edit"));
-                result
-            }));
+    for operation in [
+        "IR NURBS edited knots",
+        "IR NURBS knot edit",
+        "IR NURBS knot finiteness",
+        "IR NURBS knot order",
+        "IR NURBS knot edit copy back",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        let mut curve = original.clone();
+                        let called = std::cell::Cell::new(false);
+                        let result = curve.edit_knots(ctx, |knots| {
+                            called.set(true);
+                            for value in knots {
+                                *value += 2.;
+                            }
+                        });
+                        assert_eq!(curve, original);
+                        assert_eq!(
+                            called.get(),
+                            !matches!(operation, "IR NURBS edited knots" | "IR NURBS knot edit")
+                        );
+                        result
+                    },
+                )
+            },
+        );
     }
     for dimension in [
         ResourceDimension::MaterializedBytes,
@@ -127,9 +147,16 @@ fn knot_replacement_moves_admitted_output_without_copying_poles() {
     assert_eq!(curve.pole_rows(), original.pole_rows());
     ctx.finish_session().expect("moved storage");
     for operation in ["IR NURBS knot finiteness", "IR NURBS knot order"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-                original.clone().with_knots(ctx, original.knots().to_vec())
-            }));
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| original.clone().with_knots(ctx, original.knots().to_vec()),
+                )
+            },
+        );
     }
 }

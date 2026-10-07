@@ -42,10 +42,7 @@ impl PcurveGeometry {
     }
 }
 
-fn scale_pole(
-    point: &mut FinitePoint2,
-    [u_scale, v_scale]: [f64; 2],
-) -> Result<(), &'static str> {
+fn scale_pole(point: &mut FinitePoint2, [u_scale, v_scale]: [f64; 2]) -> Result<(), &'static str> {
     let raw = point.get();
     *point = FinitePoint2::new(Point2::new(raw.u * u_scale, raw.v * v_scale))
         .ok_or("control_points contains a non-finite point")?;
@@ -130,12 +127,20 @@ fn scale_in_place(
         }
         PcurveGeometry::Nurbs { nurbs } => {
             let refusal = match &mut nurbs.poles {
-                PcurveNurbsPoles::Polynomial { points } => ctx.find_map(points.iter_mut(),
-                    |point| Ok(scale_pole(point, scales).err()), "IR pcurve pole coordinate scaling work")?,
-                PcurveNurbsPoles::Rational { points } => ctx.find_map(points.iter_mut(),
-                    |pole| Ok(scale_pole(&mut pole.point, scales).err()), "IR pcurve pole coordinate scaling work")?,
+                PcurveNurbsPoles::Polynomial { points } => ctx.find_map(
+                    points.iter_mut(),
+                    |point| Ok(scale_pole(point, scales).err()),
+                    "IR pcurve pole coordinate scaling work",
+                )?,
+                PcurveNurbsPoles::Rational { points } => ctx.find_map(
+                    points.iter_mut(),
+                    |pole| Ok(scale_pole(&mut pole.point, scales).err()),
+                    "IR pcurve pole coordinate scaling work",
+                )?,
             };
-            if let Some(error) = refusal { return Err(error.into()); }
+            if let Some(error) = refusal {
+                return Err(error.into());
+            }
             return Ok(());
         }
         PcurveGeometry::Trimmed(trimmed) => {

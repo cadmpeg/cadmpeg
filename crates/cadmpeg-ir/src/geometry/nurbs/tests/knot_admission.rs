@@ -31,13 +31,31 @@ fn shared_knot_checks_preserve_prefix_order_and_original_refusal() {
             assert!(ctx.finish_session().is_ok());
         }
         for operation in ["IR NURBS knot finiteness", "IR NURBS knot order"] {
-            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-                |cap| crate::geometry::tests::budget::with_policy(ResourceDimension::WorkUnits, cap,
-                    { let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                      policy.limits.max_retained_bytes = 0; policy.limits.max_collection_items = 0; policy }, |ctx| {
-                    crate::geometry::nurbs::admitted::finish(crate::geometry::nurbs::require_nondecreasing_knots(
-                        ctx, &[0.0, 0.0, 1.0, 1.0], prefix))
-                }));
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    crate::geometry::tests::budget::with_policy(
+                        ResourceDimension::WorkUnits,
+                        cap,
+                        {
+                            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                            policy.limits.max_retained_bytes = 0;
+                            policy.limits.max_collection_items = 0;
+                            policy
+                        },
+                        |ctx| {
+                            crate::geometry::nurbs::admitted::finish(
+                                crate::geometry::nurbs::require_nondecreasing_knots(
+                                    ctx,
+                                    &[0.0, 0.0, 1.0, 1.0],
+                                    prefix,
+                                ),
+                            )
+                        },
+                    )
+                },
+            );
         }
     }
 }
@@ -75,13 +93,17 @@ fn knot_constructors_share_work_keep_storage_and_preserve_refusal() {
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
 
-    for (dimension, operation) in [(ResourceDimension::RetainedBytes, "IR finite knot values"),
+    for (dimension, operation) in [
+        (ResourceDimension::RetainedBytes, "IR finite knot values"),
         (ResourceDimension::CollectionItems, "IR finite knot values"),
-        (ResourceDimension::WorkUnits, "IR finite knot values"), (ResourceDimension::WorkUnits, "IR NURBS knot order")] {
-        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation,
-            |cap| crate::geometry::tests::budget::with_limit(dimension, cap, |ctx| {
+        (ResourceDimension::WorkUnits, "IR finite knot values"),
+        (ResourceDimension::WorkUnits, "IR NURBS knot order"),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            crate::geometry::tests::budget::with_limit(dimension, cap, |ctx| {
                 KnotVector::from_finite_lanes(ctx, vec![FiniteReal::ZERO; 4])
-            }));
+            })
+        });
     }
 
     let ctx = cadmpeg_test_support::service_decode_context();

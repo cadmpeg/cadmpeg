@@ -1137,25 +1137,43 @@ fn a_bspline_surface_holds_its_admitted_knots_and_poles() {
 fn weighted_pole_pairing_admits_each_slot_and_visit_before_weight() {
     use cadmpeg_core::decode::ResourceDimension;
     use std::cell::Cell;
-    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::CollectionItems,
-        ResourceDimension::MaterializedBytes, ResourceDimension::WorkUnits] {
-        cadmpeg_test_support::refusal::resource_limit_at(dimension, "test weighted pairing",
-            |cap| crate::geometry::tests::budget::with_limit(dimension, cap, |ctx| {
-                let mut storage = ctx.reserve_scoped(0, "test pairing scope")?;
-                let visits = Cell::new(0);
-                let run = || super::admitted::finish(super::weighted_poles(
-                    ctx, vec![3_u32, 7], vec![1.0, 2.0], &mut None, "test weighted pairing",
-                    |_, value| {
-                        visits.set(visits.get() + 1);
-                        Ok(crate::scalar::NonZeroReal::new(value).expect("weight"))
-                    },
-                )).map(|_| ());
-                let result = if dimension == ResourceDimension::MaterializedBytes {
-                    storage.with_storage(run)
-                } else { run() };
-                assert_eq!(visits.get(), 0);
-                result
-            }));
+    for dimension in [
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::WorkUnits,
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            dimension,
+            "test weighted pairing",
+            |cap| {
+                crate::geometry::tests::budget::with_limit(dimension, cap, |ctx| {
+                    let mut storage = ctx.reserve_scoped(0, "test pairing scope")?;
+                    let visits = Cell::new(0);
+                    let run = || {
+                        super::admitted::finish(super::weighted_poles(
+                            ctx,
+                            vec![3_u32, 7],
+                            vec![1.0, 2.0],
+                            &mut None,
+                            "test weighted pairing",
+                            |_, value| {
+                                visits.set(visits.get() + 1);
+                                Ok(crate::scalar::NonZeroReal::new(value).expect("weight"))
+                            },
+                        ))
+                        .map(|_| ())
+                    };
+                    let result = if dimension == ResourceDimension::MaterializedBytes {
+                        storage.with_storage(run)
+                    } else {
+                        run()
+                    };
+                    assert_eq!(visits.get(), 0);
+                    result
+                })
+            },
+        );
     }
 }
 
@@ -1466,11 +1484,26 @@ fn surface_shape_visits_refuse_before_each_row_and_keep_semantic_order() {
     let point = FinitePoint3::new(Point3::new(2.0, 3.0, 5.0)).expect("point");
     for ragged in [false, true] {
         let rows = vec![vec![point; 2], vec![point; if ragged { 1 } else { 2 }]];
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "IR NURBS grid row shape",
-            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-                super::admitted::finish(super::require_surface_shape(ctx, 1, 4, 1, 4,
-                    &NurbsPoleGrid::Polynomial { rows: rows.clone() }))
-            }));
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "IR NURBS grid row shape",
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        super::admitted::finish(super::require_surface_shape(
+                            ctx,
+                            1,
+                            4,
+                            1,
+                            4,
+                            &NurbsPoleGrid::Polynomial { rows: rows.clone() },
+                        ))
+                    },
+                )
+            },
+        );
         let standard = super::require_surface_shape(
             &super::StandardNurbsAdmission,
             1,
@@ -1525,14 +1558,33 @@ fn surface_pairing_rows_preserve_named_caller_refusals() {
     use crate::features::FinitePoint3;
     use cadmpeg_core::decode::ResourceDimension;
     let point = FinitePoint3::new(Point3::new(2.0, 3.0, 5.0)).expect("point");
-    for operation in ["IR NURBS paired grid rows", "IR NURBS paired poles", "IR NURBS grid row shape"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-                NurbsSurface::from_lanes(ctx,
-                    NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
-                    NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
-                    NurbsSurfaceLanes::new(vec![vec![point; 2]; 2], Some(vec![vec![3.; 2]; 2])), false)
-            }));
+    for operation in [
+        "IR NURBS paired grid rows",
+        "IR NURBS paired poles",
+        "IR NURBS grid row shape",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        NurbsSurface::from_lanes(
+                            ctx,
+                            NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
+                            NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
+                            NurbsSurfaceLanes::new(
+                                vec![vec![point; 2]; 2],
+                                Some(vec![vec![3.; 2]; 2]),
+                            ),
+                            false,
+                        )
+                    },
+                )
+            },
+        );
     }
 }
 

@@ -10,14 +10,27 @@ fn reflected_reversal_preserves_the_carrier_on_every_work_refusal() {
     let total = knot_count * 2 + 1 + u64::try_from(original.pole_count()).expect("poles");
     let start = FiniteReal::new(2.).expect("finite fixture domain start");
     let end = FiniteReal::new(5.).expect("finite fixture domain end");
-    for operation in ["IR NURBS reflected knot validation", "IR NURBS reflected knot reversal", "IR NURBS reflected pole reversal"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
-                let mut reversed = original.clone();
-                let result = reversed.reverse_parameterization_in_range(ctx, start, end);
-                assert_eq!(reversed, original);
-                result
-            }));
+    for operation in [
+        "IR NURBS reflected knot validation",
+        "IR NURBS reflected knot reversal",
+        "IR NURBS reflected pole reversal",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        let mut reversed = original.clone();
+                        let result = reversed.reverse_parameterization_in_range(ctx, start, end);
+                        assert_eq!(reversed, original);
+                        result
+                    },
+                )
+            },
+        );
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

@@ -16,10 +16,21 @@ fn vertices() -> Vec<Point3> {
 
 #[test]
 fn polygonal_construction_preserves_named_caller_refusals() {
-    for operation in ["IR polygonal triangle index", "IR polygonal admitted vertices"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
-            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap,
-                |ctx| PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0., ctx)));
+    for operation in [
+        "IR polygonal triangle index",
+        "IR polygonal admitted vertices",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0., ctx),
+                )
+            },
+        );
     }
     for dimension in [
         ResourceDimension::RetainedBytes,
@@ -56,10 +67,18 @@ fn polygonal_construction_moves_typed_storage_and_admits_raw_conversion_once() {
         u64::try_from(3 * std::mem::size_of::<FinitePoint3>()).expect("bytes");
     policy.limits.max_collection_items = 3;
     // One triangle visit and three vertex yields plus collector exhaustion.
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits,
-        "IR polygonal admitted vertices", |cap| crate::geometry::tests::budget::with_policy(
-            ResourceDimension::WorkUnits, cap, policy.clone(),
-            |ctx| PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0.5, ctx)));
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "IR polygonal admitted vertices",
+        |cap| {
+            crate::geometry::tests::budget::with_policy(
+                ResourceDimension::WorkUnits,
+                cap,
+                policy.clone(),
+                |ctx| PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0.5, ctx),
+            )
+        },
+    );
     policy.limits.max_work_units = 5;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let raw = PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0.5, &ctx)
@@ -138,18 +157,40 @@ fn polygonal_construction_admits_diagnostics_and_keeps_geometric_failure_order()
 
 #[test]
 fn polygonal_validation_charges_only_visited_triangles() {
-    let admitted = || vertices().into_iter().map(|point| FinitePoint3::new(point).expect("point")).collect();
-    let construct = |ctx: &DecodeContext<'_>| PolygonalSurface::from_admitted_scaled_deflection(admitted(),
-            vec![[0, 1, 3], [0, 1, 2]], NonNegativeReal::new(0.).expect("deflection"),
-            PositiveReal::new(1.).expect("scale"), ctx);
+    let admitted = || {
+        vertices()
+            .into_iter()
+            .map(|point| FinitePoint3::new(point).expect("point"))
+            .collect()
+    };
+    let construct = |ctx: &DecodeContext<'_>| {
+        PolygonalSurface::from_admitted_scaled_deflection(
+            admitted(),
+            vec![[0, 1, 3], [0, 1, 2]],
+            NonNegativeReal::new(0.).expect("deflection"),
+            PositiveReal::new(1.).expect("scale"),
+            ctx,
+        )
+    };
     let refusal = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "IR sampled construction refusal", |cap|
-            crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, &construct));
+        ResourceDimension::WorkUnits,
+        "IR sampled construction refusal",
+        |cap| {
+            crate::geometry::tests::budget::with_limit(
+                ResourceDimension::WorkUnits,
+                cap,
+                &construct,
+            )
+        },
+    );
     assert!(matches!(refusal, CodecError::ResourceLimit(limit) if limit.used == 1));
     let message = "polygonal surface contains an out-of-range triangle index";
     // One visited triangle followed by the diagnostic's byte copy.
-    let actual = crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits,
-        1 + cadmpeg_core::decode::u64_from_index(message.len()), construct).expect("one triangle and diagnostic");
-    assert_eq!(actual, Err(GeometryLayoutError::Layout(
-        message.into())));
+    let actual = crate::geometry::tests::budget::with_limit(
+        ResourceDimension::WorkUnits,
+        1 + cadmpeg_core::decode::u64_from_index(message.len()),
+        construct,
+    )
+    .expect("one triangle and diagnostic");
+    assert_eq!(actual, Err(GeometryLayoutError::Layout(message.into())));
 }
