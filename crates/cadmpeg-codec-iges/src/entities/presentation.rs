@@ -256,7 +256,7 @@ pub(super) fn project(
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &super::geometry::SourceSequences,
+    sequences: &super::geometry::SourceSequences<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
@@ -646,7 +646,7 @@ pub(super) fn project(
     for curve in &mut ir.model.curves {
         if let Some(source) = &mut curve.source_object {
             source.color = sequences
-                .curve(&curve.id)
+                .curve(&curve.id, ctx)?
                 .and_then(|sequence| entries.get(&sequence))
                 .and_then(|entry| resolve_color(entry.color));
         }
@@ -654,16 +654,18 @@ pub(super) fn project(
     for surface in &mut ir.model.surfaces {
         if let Some(source) = &mut surface.source_object {
             source.color = sequences
-                .surface(&surface.id)
+                .surface(&surface.id, ctx)?
                 .and_then(|sequence| entries.get(&sequence))
                 .and_then(|entry| resolve_color(entry.color));
         }
     }
 
     for index in 0..ir.model.bodies.len() {
+        let body = &ir.model.bodies[index];
+        let Some(sequence) = sequences.body(&body.id, ctx)? else {
+            continue;
+        };
         let Some((sequence, color_number, visible)) = (|| {
-            let body = &ir.model.bodies[index];
-            let sequence = sequences.body(&body.id)?;
             let entry = entries.get(&sequence)?;
             Some((sequence, entry.color, entry.status.is_visible()))
         })() else {
@@ -709,11 +711,11 @@ pub(super) fn project(
     for body in &mut ir.model.bodies {
         if body.visible.is_none() {
             body.visible = sequences
-                .body(&body.id)
+                .body(&body.id, ctx)?
                 .and_then(|sequence| entries.get(&sequence))
                 .map(|entry| entry.status.is_visible());
         }
-        let Some(sequence) = sequences.body(&body.id) else {
+        let Some(sequence) = sequences.body(&body.id, ctx)? else {
             continue;
         };
         let Some(TrailingPointerAnalysis::Unambiguous(groups)) =
@@ -773,9 +775,11 @@ pub(super) fn project(
     }
 
     for index in 0..ir.model.faces.len() {
+        let face = &ir.model.faces[index];
+        let Some(sequence) = sequences.face(&face.id, ctx)? else {
+            continue;
+        };
         let Some((sequence, color_number)) = (|| {
-            let face = &ir.model.faces[index];
-            let sequence = sequences.face(&face.id)?;
             let entry = entries.get(&sequence)?;
             Some((sequence, entry.color))
         })() else {

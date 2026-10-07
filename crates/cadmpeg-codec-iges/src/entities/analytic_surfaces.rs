@@ -271,7 +271,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {

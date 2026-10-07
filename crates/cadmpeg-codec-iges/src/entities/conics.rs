@@ -56,7 +56,7 @@ fn add_bounded_curve(
     entry: &DirectoryEntry,
     geometry: CurveGeometry,
     span: BoundedSpan,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<EdgeId, cadmpeg_core::CodecError> {
     let BoundedSpan {
@@ -132,20 +132,25 @@ fn endpoint_agrees_with_coefficient_carrier(
     distance == 0.0 || distance < resolution
 }
 
-pub(super) fn project(
+pub(super) fn project<'ctx>(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
-    source: (&BTreeMap<u32, &DirectoryEntry>, &BTreeMap<u32, &ParameterRecord>),
+    source: (
+        &BTreeMap<u32, &DirectoryEntry>,
+        &BTreeMap<u32, &ParameterRecord>,
+    ),
     global: &ProjectedGlobal,
-    ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
-) -> Result<WireProjectionOutcome, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+    sequences: &mut super::geometry::SourceSequences<'_>,
+) -> Result<super::geometry::ScopedWireProjection<'ctx>, CodecError> {
     let (entries, records) = source;
+    let mut decoded_storage = ctx.reserve_scoped(0, "iges curve family membership storage")?;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
 
-    for entry in ctx.admit_iter(directory, "iges conic directory traversal")?
+    for entry in ctx
+        .admit_iter(directory, "iges conic directory traversal")?
         .filter(|entry| entry.entity_type == 104 && (0..=3).contains(&entry.form))
     {
         let factor = global.length_factor_mm();
@@ -198,8 +203,8 @@ pub(super) fn project(
         }
         let transform = match resolve_transform(
             entry.transform,
-            &entries,
-            &records,
+            entries,
+            records,
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
@@ -696,14 +701,19 @@ pub(super) fn project(
         };
         ctx.reserve_vec(&mut wire_edges, 1, "iges conic wire edges")?;
         wire_edges.push(edge);
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges conic decoded sequences")?;
+        decoded_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut decoded, entry.sequence, "iges conic decoded sequences")
+        })?;
     }
 
-    Ok(WireProjectionOutcome {
-        decoded,
-        losses,
-        wire_edges,
-    })
+    Ok((
+        WireProjectionOutcome {
+            decoded,
+            losses,
+            wire_edges,
+        },
+        decoded_storage,
+    ))
 }
 
 #[cfg(test)]

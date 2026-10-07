@@ -355,12 +355,12 @@ fn interval_certified_linear_bezier(
             coordinate_uncertainties[coordinate].push(uncertainty);
         }
     }
-    Ok(coordinate_values
-        .into_iter()
-        .zip(coordinate_uncertainties)
-        .all(|(values, uncertainties)| {
-            super::geometry::declared_affine_progression(&values, &uncertainties)
-        }))
+    for (values, uncertainties) in coordinate_values.into_iter().zip(coordinate_uncertainties) {
+        if !super::geometry::declared_affine_progression(&values, &uncertainties, ctx)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn equal_arc_length_parameterization(
@@ -427,7 +427,7 @@ fn bounded_evaluable_curve<'a>(
     index: &CompositeIndex,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(&'a CurveGeometry, [f64; 2])>, CodecError> {
-    let Some(curve) = index.curve_by_id(ir, curve_id) else {
+    let Some(curve) = index.curve_by_id(ir, curve_id, ctx)? else {
         return Ok(None);
     };
     let geometry = &curve.geometry;
@@ -1389,7 +1389,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {

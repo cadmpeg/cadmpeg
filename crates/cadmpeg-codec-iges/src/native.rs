@@ -2400,8 +2400,8 @@ pub(crate) struct NativeStoreInputs<'a, 'b> {
     pub(crate) parameters: &'a [ParameterRecord],
     pub(crate) trailing_pointer_analysis: &'a BTreeMap<u32, TrailingPointerAnalysis>,
     pub(crate) quarantine: QuarantinedRecords<'a>,
-    pub(crate) structure_admitted: Option<&'a crate::entities::geometry::Projection>,
-    pub(crate) sequences: &'a crate::entities::geometry::SourceSequences,
+    pub(crate) structure_admitted: Option<&'a crate::entities::geometry::Projection<'a>>,
+    pub(crate) sequences: &'a crate::entities::geometry::SourceSequences<'a>,
     pub(crate) boundary_vertex_derivations: &'a [BoundaryVertexDerivation],
 }
 
@@ -6785,7 +6785,9 @@ pub(crate) fn store(
             .source_object
             .as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
-            .and_then(|_| sequences.curve(&curve.id))
+            .map(|_| sequences.curve(&curve.id, ctx))
+            .transpose()?
+            .flatten()
         {
             push_occurrence_neutral_link(
                 ctx,
@@ -6800,7 +6802,9 @@ pub(crate) fn store(
             .source_object
             .as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
-            .and_then(|_| sequences.surface(&surface.id))
+            .map(|_| sequences.surface(&surface.id, ctx))
+            .transpose()?
+            .flatten()
         {
             push_occurrence_neutral_link(
                 ctx,
@@ -6811,7 +6815,7 @@ pub(crate) fn store(
         }
     }
     for body in &ir.model.bodies {
-        if let Some(sequence) = sequences.body_neutral_form(&body.id) {
+        if let Some(sequence) = sequences.body_neutral_form(&body.id, ctx)? {
             push_occurrence_neutral_link(
                 ctx,
                 &mut occurrence_neutral_links,
@@ -6821,7 +6825,7 @@ pub(crate) fn store(
         }
     }
     for point in &ir.model.points {
-        if let Some(sequence) = sequences.point(&point.id) {
+        if let Some(sequence) = sequences.point(&point.id, ctx)? {
             push_occurrence_neutral_link(
                 ctx,
                 &mut occurrence_neutral_links,

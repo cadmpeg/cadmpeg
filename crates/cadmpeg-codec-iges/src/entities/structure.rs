@@ -1434,19 +1434,18 @@ fn linear_nurbs_boundary_points(
     }) {
         return Ok(None);
     }
-    let Some(parameters) = linear_nurbs_parameters(
+    let Some((parameters, _parameter_storage)) = linear_nurbs_parameters(
         nurbs.degree(),
         nurbs.knots(),
         nurbs.pole_count(),
         nurbs.periodic(),
         parameter_range,
-    ) else {
+        ctx,
+    )?
+    else {
         return Ok(None);
     };
-    let mut points = ctx.collection_vec(
-        parameters.clone().count(),
-        "iges plane NURBS boundary points",
-    )?;
+    let mut points = ctx.collection_vec(parameters.len(), "iges plane NURBS boundary points")?;
     for parameter in parameters {
         let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
             cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, nurbs, parameter),
@@ -1491,7 +1490,7 @@ fn linear_nurbs_is_simple_closed(
     {
         return Ok(false);
     }
-    let Some(projected) = plane_coordinates(&points, plane, ctx)? else {
+    let Some((projected, _coordinate_storage)) = plane_coordinates(&points, plane, ctx)? else {
         return Ok(false);
     };
     Ok(!planar_polyline_has_self_intersection(&projected, ctx)?)
@@ -1641,7 +1640,9 @@ fn bounded_plane_curve_is_simple(
             {
                 return Ok(false);
             }
-            let Some(projected) = plane_coordinates(&points, context.plane, context.ctx)? else {
+            let Some((projected, _coordinate_storage)) =
+                plane_coordinates(&points, context.plane, context.ctx)?
+            else {
                 return Ok(false);
             };
             Ok(!planar_polyline_has_self_intersection(
@@ -1782,7 +1783,7 @@ fn plane_face_draft(
     stem: &crate::ids::Stem,
     boundary_edges: Vec<Edge>,
     resolution: f64,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<ModelDraft, LegacyPlaneError> {
     let tolerance = if resolution > 0.0 {
@@ -1963,7 +1964,7 @@ fn legacy_single_parent_face(
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<Option<(ModelDraft, Vec<u32>)>, LegacyPlaneError> {
     let LegacyPlaneSource { entry, record } = source;
     let Some(parent_sequence) = existing_pointer(record, 3, entries) else {
@@ -2425,7 +2426,7 @@ pub(super) fn project(
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<(ProjectionOutcome, BTreeMap<u32, PlacementRejection>), CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {

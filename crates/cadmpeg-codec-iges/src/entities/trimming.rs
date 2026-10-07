@@ -264,7 +264,7 @@ fn create_boundary_vertices(
     source: (&str, usize),
     source_endpoints: &[BoundaryVertexSourceEndpoint],
     tolerance: cadmpeg_ir::scalar::PositiveReal,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<VertexId>, Vec<BoundaryVertexDerivation>), BoundaryVertexCreationError> {
     let (source_entity, boundary) = source;
@@ -688,8 +688,12 @@ fn source_curve_control_intervals(
     precision: RealPrecision,
     factor: f64,
     active: &mut BTreeSet<CurveId>,
-    ctx: &DecodeContext<'_>,
+    decode: (
+        &DecodeContext<'_>,
+        &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ),
 ) -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
+    let (ctx, control_storage) = decode;
     let (entries, records) = tables;
     let _nested = ctx.enter_nested("iges source curve intervals")?;
     if active.contains(curve_id) {
@@ -732,7 +736,13 @@ fn source_curve_control_intervals(
                 let mut controls = Vec::new();
                 for child_id in child_ids {
                     let Some(child) = source_curve_control_intervals(
-                        ir, &child_id, tables, precision, factor, active, ctx,
+                        ir,
+                        &child_id,
+                        tables,
+                        precision,
+                        factor,
+                        active,
+                        (ctx, control_storage),
                     )?
                     else {
                         return Ok(None);
@@ -754,7 +764,7 @@ fn source_curve_control_intervals(
                         precision,
                         factor,
                         active,
-                        ctx,
+                        (ctx, control_storage),
                     )?
                     else {
                         return Ok(None);
@@ -810,8 +820,12 @@ fn source_curve_control_intervals(
                 let Some(record) = records.get(&sequence).copied() else {
                     return Ok(None);
                 };
-                let Some(mut raw_controls) =
-                    super::geometry::type126_declared_control_points(record, precision, ctx)?
+                let Some(mut raw_controls) = super::geometry::type126_declared_control_points(
+                    record,
+                    precision,
+                    ctx,
+                    control_storage,
+                )?
                 else {
                     return Ok(None);
                 };
@@ -876,6 +890,7 @@ fn source_curve_control_polygon_within_bounds(
     let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(ir, support) else {
         return Ok(false);
     };
+    let mut control_storage = ctx.reserve_scoped(0, "iges declared source control storage")?;
     let Some(controls) = source_curve_control_intervals(
         ir,
         curve_id,
@@ -883,7 +898,7 @@ fn source_curve_control_polygon_within_bounds(
         precision,
         support.factor,
         &mut BTreeSet::new(),
-        ctx,
+        (ctx, &mut control_storage),
     )?
     else {
         return Ok(false);
@@ -914,19 +929,18 @@ fn linear_model_nurbs_points(
     }) {
         return Ok(None);
     }
-    let Some(parameters) = linear_nurbs_parameters(
+    let Some((parameters, _parameter_storage)) = linear_nurbs_parameters(
         nurbs.degree(),
         nurbs.knots(),
         nurbs.pole_count(),
         nurbs.periodic(),
         range,
-    ) else {
+        ctx,
+    )?
+    else {
         return Ok(None);
     };
-    let mut points = ctx.collection_vec(
-        parameters.clone().count(),
-        "iges linear model boundary points",
-    )?;
+    let mut points = ctx.collection_vec(parameters.len(), "iges linear model boundary points")?;
     for parameter in parameters {
         let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
             cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, nurbs, parameter),
@@ -955,19 +969,19 @@ fn linear_pcurve_points(
     }) {
         return Ok(None);
     }
-    let Some(parameters) = linear_nurbs_parameters(
+    let Some((parameters, _parameter_storage)) = linear_nurbs_parameters(
         nurbs.degree(),
         nurbs.knots(),
         nurbs.pole_rows().count(),
         nurbs.periodic(),
         range,
-    ) else {
+        ctx,
+    )?
+    else {
         return Ok(None);
     };
-    let mut points = ctx.collection_vec(
-        parameters.clone().count(),
-        "iges linear parameter boundary points",
-    )?;
+    let mut points =
+        ctx.collection_vec(parameters.len(), "iges linear parameter boundary points")?;
     for parameter in parameters {
         let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
             cadmpeg_ir::eval::decode::pcurve_uv(ctx, geometry, parameter),
@@ -1123,7 +1137,9 @@ fn linear_boundary_geometry(
             return Ok(None);
         }
     }
-    let Some(model_coordinates) = plane_coordinates(&model_points, model_plane, ctx)? else {
+    let Some((model_coordinates, _coordinate_storage)) =
+        plane_coordinates(&model_points, model_plane, ctx)?
+    else {
         return Ok(None);
     };
     if surface_kind == BoundarySurfaceKind::Trimmed
@@ -2048,7 +2064,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<(ProjectionOutcome, Vec<BoundaryVertexDerivation>), CodecError> {
     let mut lookup_storage = ctx.reserve_scoped(0, "IGES projection source lookup")?;
     let mut records = BTreeMap::new();

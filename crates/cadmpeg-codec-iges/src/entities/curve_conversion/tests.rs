@@ -12,41 +12,70 @@ use cadmpeg_ir::scalar::PositiveLength;
 
 #[test]
 fn analytic_arc_conversion_refuses_each_decode_lane() {
-    for (operation, cap, parabola) in [
-        ("iges analytic arc knots", 0, false),
-        ("iges analytic arc weighted poles", 6, false),
-        ("iges parabolic arc knots", 0, true),
-        ("iges parabolic arc poles", 6, true),
+    for (dimension, operation, parabola) in [
+        (
+            ResourceDimension::CollectionItems,
+            "iges analytic arc knots",
+            false,
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "iges analytic arc weighted poles",
+            false,
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "iges parabolic arc knots",
+            true,
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "iges parabolic arc poles",
+            true,
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            "iges analytic arc span traversal",
+            false,
+        ),
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
-        let result = if parabola {
-            parabolic_arc_nurbs(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                PositiveLength::new(1.0).expect("test setup"),
-                [0.0, 1.0],
-                &ctx,
-            )
-        } else {
-            elliptical_arc_nurbs(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                PositiveLength::new(2.0).expect("test setup"),
-                PositiveLength::new(1.0).expect("test setup"),
-                [0.0, std::f64::consts::FRAC_PI_2],
-                &ctx,
-            )
-        };
-        assert!(
-            matches!(result, Err(CurveConversionError::Resource(CodecError::ResourceLimit(limit)))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == operation)
-        );
+        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                _ => panic!("unsupported arc refusal dimension"),
+            }
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
+            let result = if parabola {
+                parabolic_arc_nurbs(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    PositiveLength::new(1.0).expect("test setup"),
+                    [0.0, 1.0],
+                    &ctx,
+                )
+            } else {
+                elliptical_arc_nurbs(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    PositiveLength::new(2.0).expect("test setup"),
+                    PositiveLength::new(1.0).expect("test setup"),
+                    [0.0, std::f64::consts::FRAC_PI_2],
+                    &ctx,
+                )
+            };
+            result.map_err(|error| match error {
+                CurveConversionError::Resource(error) => error,
+                other => panic!("unexpected arc conversion failure: {other}"),
+            })
+        });
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == operation));
     }
 }
 

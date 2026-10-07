@@ -780,7 +780,7 @@ fn boundary_vertex_creation_retains_every_source_endpoint() {
         ("iges:entity:directory#9", 0),
         &source_endpoints,
         cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
-        &mut crate::entities::geometry::SourceSequences::default(),
+        &mut crate::entities::geometry::SourceSequences::new(&ctx).unwrap(),
         &ctx,
     )
     .unwrap();
@@ -841,7 +841,7 @@ fn boundary_vertex_creation_refuses_each_collection_before_growth() {
                 ("iges:entity:directory#9", 0),
                 &source_endpoints,
                 cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
-                &mut crate::entities::geometry::SourceSequences::default(),
+                &mut crate::entities::geometry::SourceSequences::new(&ctx).unwrap(),
                 &ctx,
             );
             match result {

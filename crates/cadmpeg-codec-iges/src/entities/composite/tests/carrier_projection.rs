@@ -5,11 +5,8 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::DecodePolicy;
 use cadmpeg_core::decode::ResourceDimension;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Codec;
-use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::CompositeCurveSegment;
@@ -365,7 +362,14 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
         assert_eq!(concatenated.nurbs.degree(), 3);
         assert_eq!(
             std::iter::once(0.0)
-                .chain(concatenated.segments.into_iter().map(|segment| segment.end))
+                .chain(
+                    concatenated
+                        .segments
+                        .preceding
+                        .into_iter()
+                        .chain(std::iter::once(concatenated.segments.last))
+                        .map(|segment| segment.end),
+                )
                 .collect::<Vec<_>>(),
             vec![0.0, 1.0, 3.0, 4.0, 5.0, 7.0, 8.0]
         );
@@ -400,6 +404,10 @@ fn concatenated_range_is_exactly_the_canonical_knot_domain() {
         assert_eq!(
             Some(&concatenated.segments.end()),
             concatenated.nurbs.knots().last()
+        );
+        assert_eq!(
+            concatenated.endpoints.map(|point| point.get()),
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]
         );
     });
 }
@@ -720,28 +728,11 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
 #[test]
 fn composite_analytic_child_refuses_arc_lane_before_projection() {
     let bytes = mixed_analytic_composite_curve_file();
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        match IgesCodec.decode(
-            &mut Cursor::new(&bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == "iges analytic arc weighted poles" {
-                    return;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            other => panic!("expected analytic child collection refusal: {other:?}"),
-        }
-    }
-    panic!("analytic child weighted-pole refusal was not reached");
+    super::assert_decode_refusal(
+        &bytes,
+        ResourceDimension::CollectionItems,
+        "iges analytic arc weighted poles",
+    );
 }
 
 #[test]

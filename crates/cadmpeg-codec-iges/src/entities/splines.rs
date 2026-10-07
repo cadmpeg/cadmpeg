@@ -161,7 +161,7 @@ fn add_edge(
     entry: &DirectoryEntry,
     nurbs: NurbsCurve,
     parameter_range: [FiniteReal; 2],
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<EdgeId>, CodecError> {
     let Some(parameter_range) =
@@ -255,7 +255,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<WireProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {

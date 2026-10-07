@@ -133,7 +133,7 @@ fn topology_vertex(
     vertex_lists: &BTreeMap<u32, Vec<Point3>>,
     stem: &crate::ids::Stem,
     vertex_key: (u32, usize),
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<VertexId>, CodecError> {
     let (list, index) = vertex_key;
@@ -400,7 +400,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
