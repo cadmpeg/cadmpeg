@@ -268,6 +268,46 @@ impl<'a> ArchiveSnapshot<'a> {
         Ok(false)
     }
 
+    /// Tests readable, unencrypted entry names and skips unreadable entries.
+    /// An invalid ZIP returns false; resource refusals propagate unchanged.
+    /// The predicate admits its own name scans. Payloads are not decompressed.
+    pub fn probe_readable_names(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        mut matches: impl FnMut(&str) -> Result<bool, CodecError>,
+    ) -> Result<bool, CodecError> {
+        let mut index = match ZipIndex::new(ctx, bytes) {
+            Ok(index) => index,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => return Ok(false),
+        };
+        // The probe stops at the first match, so each visited entry is charged
+        // when it is reached.
+        let mut ordinals = 0..index.archive.len();
+        while let Some(ordinal) = ctx.next_charged(&mut ordinals, "ZIP readable name probe")? {
+            // zip 8.6 reads the 30-byte local header and seeks past variable fields.
+            ctx.charge_work(30, "ZIP readable name probe")?;
+            let Ok(entry) = index.archive.by_index_raw(ordinal) else {
+                continue;
+            };
+            if entry.encrypted()
+                || entry.get_metadata().aes_mode.is_some()
+                || !matches!(
+                    entry.compression(),
+                    CompressionMethod::Stored
+                        | CompressionMethod::Deflated
+                        | CompressionMethod::Zstd
+                )
+            {
+                continue;
+            }
+            if matches(entry.name())? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// Returns central-directory records in archive order.
     pub fn entries(&self) -> &[EntryRecord] {
         &self.entries
@@ -585,12 +625,11 @@ fn central_directory_inventory(
             .filter(|&start| bytes.get(start..start + 4) == Some(b"PK\x06\x07".as_slice()))
         {
             let record_start = ctx
-                .admit_iter(&bytes[..locator_start], "ZIP64 end record search")?
-                .windows(
-                    std::num::NonZeroUsize::new(4)
-                        .ok_or_else(|| CodecError::Malformed("zero ZIP signature width".into()))?,
-                )
-                .rposition(|signature| signature == b"PK\x06\x06")
+                .rfind_bytes(
+                    &bytes[..locator_start],
+                    b"PK\x06\x06",
+                    "ZIP64 end record search",
+                )?
                 .ok_or_else(|| CodecError::Malformed("ZIP64 end record is absent".into()))?;
             let record_size = View::u64_le_at(bytes, record_start + 4)
                 .ok_or_else(|| CodecError::Malformed("ZIP64 end record is truncated".into()))?;
@@ -640,12 +679,7 @@ fn central_directory_inventory(
             .get(search_start..search_end)
             .ok_or_else(|| CodecError::Malformed("ZIP directory search range is invalid".into()))?;
         let relative = ctx
-            .admit_iter(search, "ZIP central header search")?
-            .windows(
-                std::num::NonZeroUsize::new(4)
-                    .ok_or_else(|| CodecError::Malformed("zero ZIP signature width".into()))?,
-            )
-            .position(|window| window == b"PK\x01\x02")
+            .find_bytes(search, b"PK\x01\x02", "ZIP central header search")?
             .ok_or_else(|| CodecError::Malformed("ZIP central header is absent".into()))?;
         let start = search_start
             .checked_add(relative)
@@ -1308,6 +1342,8 @@ mod tests {
     use zip::CompressionMethod;
 
     use super::{ArchiveSnapshot, EntryRecord, PhysicalSpan, ZipCompression, ZipSpanRole};
+
+    mod probe;
 
     fn summary_refuses(dimension: ResourceDimension, limit: u64, operation: &str) {
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));

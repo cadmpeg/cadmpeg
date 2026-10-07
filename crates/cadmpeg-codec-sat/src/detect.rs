@@ -44,15 +44,14 @@ pub(crate) fn classify(
 
 /// Whether the prefix opens like a text stream: a first line of four ASCII
 /// integer fields (the four header words) followed by a counted-string line.
-fn looks_like_text_stream(
-    ctx: &DecodeContext<'_>,
-    prefix: &[u8],
-) -> Result<bool, CodecError> {
+fn looks_like_text_stream(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<bool, CodecError> {
     if !sat::has_text_magic(prefix) {
         return Ok(false);
     }
-    let Some(line_end) = ctx.admit_iter(prefix, "SAT text header line")?
-        .position(|byte| *byte == b'\n') else {
+    let Some(line_end) = ctx
+        .admit_iter(prefix, "SAT text header line")?
+        .position(|byte| *byte == b'\n')
+    else {
         return Ok(false);
     };
     let mut fields = prefix[..line_end]
@@ -72,17 +71,16 @@ fn looks_like_text_stream(
     Ok(fields.next().is_none() && prefix.get(line_end + 1).is_some_and(u8::is_ascii_digit))
 }
 
-pub(crate) fn confidence(
-    ctx: &DecodeContext<'_>,
-    prefix: &[u8],
-) -> Result<Confidence, CodecError> {
-    Ok(if asm_header::has_asm_magic(prefix) || acis_header::has_acis_magic(prefix) {
-        Confidence::High
-    } else if looks_like_text_stream(ctx, prefix)? {
-        Confidence::Medium
-    } else {
-        Confidence::No
-    })
+pub(crate) fn confidence(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<Confidence, CodecError> {
+    Ok(
+        if asm_header::has_asm_magic(prefix) || acis_header::has_acis_magic(prefix) {
+            Confidence::High
+        } else if looks_like_text_stream(ctx, prefix)? {
+            Confidence::Medium
+        } else {
+            Confidence::No
+        },
+    )
 }
 
 pub(crate) fn header_attributes(
@@ -146,7 +144,8 @@ pub(crate) fn inspect(
                 ctx.push_vec(
                     &mut notes,
                     "the stream declares a construction-history partition; decode reads \
-                         the solved partition".to_string(),
+                         the solved partition"
+                        .to_string(),
                     "collect SAT inspect notes",
                 )?;
             }
@@ -169,7 +168,8 @@ pub(crate) fn inspect(
                 ctx.push_vec(
                     &mut notes,
                     "the stream declares a construction-history partition; decode reads \
-                         the solved partition".to_string(),
+                         the solved partition"
+                        .to_string(),
                     "collect SAT inspect notes",
                 )?;
             }
@@ -232,7 +232,8 @@ pub(crate) fn inspect(
                 }
                 Err(error) => {
                     let note = ctx.format_retained(
-                        format_args!("text stream does not parse: {error}"), "SAT inspect parse note",
+                        format_args!("text stream does not parse: {error}"),
+                        "SAT inspect parse note",
                     )?;
                     ctx.push_vec(&mut notes, note, "collect SAT inspect notes")?;
                     None
@@ -252,7 +253,9 @@ pub(crate) fn inspect(
                 cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
                     CodecError::malformed(format_args!("SAT repeated dialect layer key: {layer:?}"))
                 }
-                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
+                cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => {
+                    CodecError::ResourceLimit(limit)
+                }
             })?,
         cadmpeg_ir::ContainerKind::Stream,
         vec![ContainerEntry {
