@@ -2,8 +2,8 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    append_link_to_record, append_record_links, brep_free_vertex_indices,
-    coedge_sense, commit_curve_tree, edge_param_range, edge_vertices, face_components, face_sense,
+    append_link_to_record, append_record_links, brep_free_vertex_indices, coedge_sense,
+    commit_curve_tree, edge_param_range, edge_vertices, face_components, face_sense,
     hatch_loop_ids, hatch_plane_transform, hatch_source_links, region_shell_groups,
     region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
     snapshot_instance_links, snapshot_instance_statuses, stage_brep, stage_curve_tree,
@@ -33,8 +33,8 @@ use cadmpeg_ir::topology::{Body, BodyKind, Point, Sense};
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
-mod candidate_annotations;
 mod c2;
+mod candidate_annotations;
 mod local_limits;
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
@@ -189,14 +189,17 @@ fn point_cloud_vertices_refuse_collection_limit() {
             warnings: Diagnostics::new(),
         })
     };
-    let run = |cap| with_transaction_limits(&scan, cap, None, None, |expand| {
-        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
-        let committed = context.commit_geometry(0, cloud())?;
-        Ok((committed, context.session.document().model.vertices.len()))
-    });
+    let run = |cap| {
+        with_transaction_limits(&scan, cap, None, None, |expand| {
+            let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+            let committed = context.commit_geometry(0, cloud())?;
+            Ok((committed, context.session.document().model.vertices.len()))
+        })
+    };
     let refusal = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "Rhino point-cloud vertices", run,
+        "Rhino point-cloud vertices",
+        run,
     );
     assert!(matches!(
         refusal,
@@ -206,7 +209,8 @@ fn point_cloud_vertices_refuse_collection_limit() {
     // Four setup items, one cloud vertex, five arena entries, and two child slots precede the link.
     let refusal = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "Rhino unknown record links", run,
+        "Rhino unknown record links",
+        run,
     );
     assert!(matches!(
         refusal,
@@ -216,11 +220,13 @@ fn point_cloud_vertices_refuse_collection_limit() {
     let cadmpeg_core::CodecError::ResourceLimit(limit) = refusal else {
         panic!("named resource refusal");
     };
-    let cap = limit.used.checked_add(limit.additional).expect("bounded fixture requirement");
+    let cap = limit
+        .used
+        .checked_add(limit.additional)
+        .expect("bounded fixture requirement");
     let (committed, vertices) = run(cap).expect("vertex and link admitted");
     assert!(committed);
     assert_eq!(vertices, 1);
-
 }
 
 #[test]
@@ -1152,7 +1158,9 @@ fn candidate_rejections_distinguish_admission_from_validation() {
     with_expand(&scan, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
         let admission =
-            context.validate_candidate_fallible::<(), String>(|_, _, _arena_storage| Err("admission".into()));
+            context.validate_candidate_fallible::<(), String>(|_, _, _arena_storage| {
+                Err("admission".into())
+            });
         assert!(
             matches!(admission, Err(CandidateError::Admission(message)) if message == "admission")
         );
@@ -1185,53 +1193,54 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
             let before_ir = context.session.document().clone();
             let before_annotations = context.annotations.clone();
             let before_budget = context.expansion_budget.entities;
-            let result = context.validate_candidate_fallible(|candidate, annotations, _arena_storage| {
-                candidate.model.assets.push(Asset {
-                    id: "rhino:test:asset#rejected".try_into().unwrap(),
-                    name: None,
-                    media_type: None,
-                    content: AssetContent::Embedded {
-                        data: AssetData::new(vec![1]).unwrap(),
-                    },
-                    native_ref: None,
+            let result =
+                context.validate_candidate_fallible(|candidate, annotations, _arena_storage| {
+                    candidate.model.assets.push(Asset {
+                        id: "rhino:test:asset#rejected".try_into().unwrap(),
+                        name: None,
+                        media_type: None,
+                        content: AssetContent::Embedded {
+                            data: AssetData::new(vec![1]).unwrap(),
+                        },
+                        native_ref: None,
+                    });
+                    candidate.native.namespace_mut("rhino").arenas_mut().insert(
+                        "history_records".into(),
+                        vec![NativeRecord::new(
+                            cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
+                                .expect("valid identity"),
+                            serde_json::Map::new(),
+                        )
+                        .unwrap()],
+                    );
+                    {
+                        let arena = cadmpeg_core::decode::DecodeArena::new();
+                        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                            &[],
+                            &arena,
+                            &cadmpeg_core::decode::DecodePolicy::service(),
+                        )
+                        .unwrap();
+                        set_exactness(
+                            &ctx,
+                            annotations,
+                            "rhino:test:asset#rejected",
+                            Exactness::Derived,
+                        )
+                        .unwrap();
+                    }
+                    if admission_failure {
+                        return Err::<(), String>("source admission refusal".into());
+                    }
+                    let point = Point::new(
+                        "rhino:test:point#duplicate".try_into().unwrap(),
+                        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                            .expect("a finite position is a point"),
+                        None,
+                    );
+                    candidate.model.points.extend([point.clone(), point]);
+                    Ok(())
                 });
-                candidate.native.namespace_mut("rhino").arenas_mut().insert(
-                    "history_records".into(),
-                    vec![NativeRecord::new(
-                        cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
-                            .expect("valid identity"),
-                        serde_json::Map::new(),
-                    )
-                    .unwrap()],
-                );
-                {
-                    let arena = cadmpeg_core::decode::DecodeArena::new();
-                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                        &[],
-                        &arena,
-                        &cadmpeg_core::decode::DecodePolicy::service(),
-                    )
-                    .unwrap();
-                    set_exactness(
-                        &ctx,
-                        annotations,
-                        "rhino:test:asset#rejected",
-                        Exactness::Derived,
-                    )
-                    .unwrap();
-                }
-                if admission_failure {
-                    return Err::<(), String>("source admission refusal".into());
-                }
-                let point = Point::new(
-                    "rhino:test:point#duplicate".try_into().unwrap(),
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .expect("a finite position is a point"),
-                    None,
-                );
-                candidate.model.points.extend([point.clone(), point]);
-                Ok(())
-            });
             assert!(result.is_err());
             assert_eq!(context.session.document(), &before_ir);
             assert_eq!(context.annotations, before_annotations);
@@ -1338,7 +1347,13 @@ fn extrusion_cap_staging_preserves_pcurve_rejection_details() {
             directrix: "rhino:test:curve#cap".try_into().expect("curve identity"),
         }];
         let error = with_collection_limit(u64::MAX, |ctx| {
-            stage_extrusion_caps((ctx, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch")),
+            stage_extrusion_caps(
+                (
+                    ctx,
+                    &mut ctx
+                        .reserve_scoped(0, "Rhino fixture arena scratch")
+                        .expect("fixture scratch"),
+                ),
                 &mut CadIr::empty(),
                 &mut cadmpeg_ir::Annotations::default(),
                 "caps",
@@ -1364,20 +1379,33 @@ fn extrusion_cap_loop_ids_refuse_collection_limit() {
         directrix: "rhino:test:curve#cap".try_into().expect("curve identity"),
     }];
     // One staged surface arena entry precedes the loop-ID collection.
-let error = cadmpeg_test_support::refusal::resource_limit_at(
-cadmpeg_core::decode::ResourceDimension::CollectionItems,
-"Rhino extrusion cap loop IDs", |cap| {
-with_collection_limit(cap, |ctx| {
-stage_extrusion_caps((ctx, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch")),
-&mut CadIr::empty(), &mut cadmpeg_ir::Annotations::default(), "caps",
-&test_association(), &extrusion, &boundaries)
-.map_err(|error| match error {
-CandidateError::Codec(error) => error,
-error => panic!("unexpected cap staging error: {error}"),
-})
-})
-});
-assert!(matches!(
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino extrusion cap loop IDs",
+        |cap| {
+            with_collection_limit(cap, |ctx| {
+                stage_extrusion_caps(
+                    (
+                        ctx,
+                        &mut ctx
+                            .reserve_scoped(0, "Rhino fixture arena scratch")
+                            .expect("fixture scratch"),
+                    ),
+                    &mut CadIr::empty(),
+                    &mut cadmpeg_ir::Annotations::default(),
+                    "caps",
+                    &test_association(),
+                    &extrusion,
+                    &boundaries,
+                )
+                .map_err(|error| match error {
+                    CandidateError::Codec(error) => error,
+                    error => panic!("unexpected cap staging error: {error}"),
+                })
+            })
+        },
+    );
+    assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.operation == "Rhino extrusion cap loop IDs"
@@ -1412,7 +1440,13 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             })
             .collect::<Vec<_>>();
         with_collection_limit(u64::MAX, |ctx| {
-            assert!(stage_extrusion_caps((ctx, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch")),
+            assert!(stage_extrusion_caps(
+                (
+                    ctx,
+                    &mut ctx
+                        .reserve_scoped(0, "Rhino fixture arena scratch")
+                        .expect("fixture scratch")
+                ),
                 &mut ir,
                 &mut cadmpeg_ir::Annotations::default(),
                 "caps",

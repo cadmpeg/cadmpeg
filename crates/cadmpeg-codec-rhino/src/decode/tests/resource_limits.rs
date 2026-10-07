@@ -44,7 +44,16 @@ fn class_loss_tag_refuses_retained_limit() {
 fn staged_curve_tree_refusal(limit: u64, operation: &str) {
     let refusal = with_collection_limit(limit, |ctx| {
         let mut staged = BrepDraft::default();
-        stage_curve_tree((ctx, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"), &mut ctx.reserve_scoped(0, "Rhino fixture link scratch").expect("fixture scratch")),
+        stage_curve_tree(
+            (
+                ctx,
+                &mut ctx
+                    .reserve_scoped(0, "Rhino fixture arena scratch")
+                    .expect("fixture scratch"),
+                &mut ctx
+                    .reserve_scoped(0, "Rhino fixture link scratch")
+                    .expect("fixture scratch"),
+            ),
             &mut staged,
             one_child_compound(),
             "compound",
@@ -73,7 +82,11 @@ fn committed_curve_tree_refusal(limit: u64, operation: &str) {
                 association: &test_association(),
                 record: None,
                 path: "root",
-            }, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"),)
+            },
+            &mut ctx
+                .reserve_scoped(0, "Rhino fixture arena scratch")
+                .expect("fixture scratch"),
+        )
         .expect_err("curve tree exceeds collection limit")
     });
     assert!(matches!(
@@ -109,7 +122,11 @@ fn hatch_loop_ids_refuse_collection_limit() {
         hatch_loop_ids(
             ctx,
             "fixture",
-            std::iter::once(crate::hatch::LoopKind::Outer), &mut ctx.reserve_scoped(0, "Rhino fixture link scratch").expect("fixture scratch"),)
+            std::iter::once(crate::hatch::LoopKind::Outer),
+            &mut ctx
+                .reserve_scoped(0, "Rhino fixture link scratch")
+                .expect("fixture scratch"),
+        )
         .expect_err("one loop exceeds zero collection items")
     });
     assert!(matches!(
@@ -124,16 +141,26 @@ fn hatch_loop_id_text_refuses_scratch_limit() {
     // The scoped row buffer precedes its scoped identity text.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "Rhino hatch loop ID text", |cap| {
+        "Rhino hatch loop ID text",
+        |cap| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_materialized_bytes = cap;
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             let mut storage = ctx.reserve_scoped(0, "Rhino fixture link scratch")?;
-            hatch_loop_ids(&ctx, "fixture", std::iter::once(crate::hatch::LoopKind::Outer), &mut storage)
-        });
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-        if refusal.operation == "Rhino hatch loop ID text"));
+            hatch_loop_ids(
+                &ctx,
+                "fixture",
+                std::iter::once(crate::hatch::LoopKind::Outer),
+                &mut storage,
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino hatch loop ID text")
+    );
 }
 
 #[test]
@@ -146,7 +173,11 @@ fn hatch_source_links_refuse_collection_limit() {
         hatch_source_links(
             ctx,
             vec![(crate::hatch::LoopKind::Outer, "loop".to_string())],
-            &feature_id, &mut ctx.reserve_scoped(0, "Rhino fixture link scratch").expect("fixture scratch"),)
+            &feature_id,
+            &mut ctx
+                .reserve_scoped(0, "Rhino fixture link scratch")
+                .expect("fixture scratch"),
+        )
         .expect_err("two links exceed one collection item")
     });
     assert!(matches!(
@@ -165,16 +196,21 @@ fn hatch_feature_link_text_refuses_scratch_limit() {
     // The scoped link buffer precedes its scoped feature identity text.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "Rhino hatch feature link text", |cap| {
+        "Rhino hatch feature link text",
+        |cap| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_materialized_bytes = cap;
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             let mut storage = ctx.reserve_scoped(0, "Rhino fixture link scratch")?;
             hatch_source_links(&ctx, Vec::new(), &feature_id, &mut storage)
-        });
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-        if refusal.operation == "Rhino hatch feature link text"));
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino hatch feature link text")
+    );
 }
 
 #[test]
@@ -226,9 +262,8 @@ fn class_outcome_label_refuses_materialized_limit() {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_materialized_bytes = cap;
-            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                scan.data, &arena, &policy,
-            )?;
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
             let expand = crate::mesh::MeshExpand::new(&ctx, root);
             let context = DecodeContext::new(&scan, expand)?;
             context.class_outcomes(&ctx).map(|rows| rows.len())

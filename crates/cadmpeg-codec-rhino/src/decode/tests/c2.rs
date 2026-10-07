@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::c2_curve_to_nurbs_join;
-use super::{decoded_nurbs, finite_parameter, line_nurbs, with_collection_limit, with_expand_bytes, Diagnostics, NurbsCurve, Point3};
+use super::{
+    decoded_nurbs, finite_parameter, line_nurbs, with_collection_limit, with_expand_bytes,
+    Diagnostics, NurbsCurve, Point3,
+};
 
 #[test]
 fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
@@ -119,4 +122,3 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0]
     );
 }
-
