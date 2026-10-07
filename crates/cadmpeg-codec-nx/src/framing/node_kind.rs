@@ -74,6 +74,39 @@ impl cadmpeg_core::decode::cost::DecodeCost for NodeKind {
 }
 
 impl NodeKind {
+    /// Number of supported fixed-record kinds.
+    pub(crate) const COUNT: usize = 24;
+
+    /// Dense index of this kind in `0..Self::COUNT`.
+    pub(crate) const fn ordinal(self) -> usize {
+        match self {
+            NodeKind::Body => 0,
+            NodeKind::Shell => 1,
+            NodeKind::Face => 2,
+            NodeKind::Loop => 3,
+            NodeKind::Edge => 4,
+            NodeKind::Fin => 5,
+            NodeKind::Vertex => 6,
+            NodeKind::Region => 7,
+            NodeKind::Point => 8,
+            NodeKind::Line => 9,
+            NodeKind::Circle => 10,
+            NodeKind::Ellipse => 11,
+            NodeKind::Intersection => 12,
+            NodeKind::Plane => 13,
+            NodeKind::Cylinder => 14,
+            NodeKind::Cone => 15,
+            NodeKind::Sphere => 16,
+            NodeKind::Torus => 17,
+            NodeKind::BlendSurface => 18,
+            NodeKind::OffsetSurface => 19,
+            NodeKind::BSurface => 20,
+            NodeKind::TrimmedCurve => 21,
+            NodeKind::BCurve => 22,
+            NodeKind::SpCurve => 23,
+        }
+    }
+
     /// Parasolid record tag byte.
     pub(crate) const fn code(self) -> u8 {
         match self {

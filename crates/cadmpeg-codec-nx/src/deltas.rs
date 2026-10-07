@@ -2186,10 +2186,7 @@ fn merge_records(
         .admit_iter(&tombstones, "NX deltas tombstone key traversal")?
         .map(|(key, tombstone)| (*key, *tombstone))
     {
-        if NodeKind::try_from(key.0)
-            .ok()
-            .and_then(|kind| graph.get(kind, key.1))
-            .is_some()
+        if graph.get_by_tag(ctx, key.0, key.1)?.is_some()
             && !topology_carriers.contains(&key.1)
             && replacements
                 .get(&key)
@@ -2229,10 +2226,7 @@ fn merge_records(
             )
         {
             if included(kind) {
-                if let Some(node) = NodeKind::try_from(kind)
-                    .ok()
-                    .and_then(|kind| graph.get(kind, xmt))
-                {
+                if let Some(node) = graph.get_by_tag(ctx, kind, xmt)? {
                     merged[node.pos()..node.end()].fill(0xff);
                 }
             }
@@ -2246,7 +2240,7 @@ fn merge_records(
         }
         Ok((merged, reservation))
     };
-    if graph.body_shape_shells(ctx)?.next().is_some() {
+    if !graph.body_shape_shells(ctx)?.is_empty() {
         let (merged, reservation) = build(false)?;
         reservation.commit()?;
         return Ok(merged);
@@ -2385,7 +2379,7 @@ fn count_unmatched_events(
         else {
             continue;
         };
-        if NodeKind::try_from(kind).ok().and_then(|kind| graph.get(kind, xmt)).is_none()
+        if graph.get_by_tag(ctx, kind, xmt)?.is_none()
             && !ctx.admit_iter(&events, "NX preceding full event traversal")?.any(|event| {
                 matches!(event, MergeEvent::Full { offset: full_offset } if *full_offset < offset)
             })
@@ -2407,7 +2401,7 @@ fn mergeable_record(
         return Ok(false);
     };
     Ok(crate::topology::Graph::parse(ctx, &record.canonical_bytes)?
-        .get(kind, record.xmt)
+        .get(ctx, kind, record.xmt)?
         .is_some())
 }
 

@@ -73,7 +73,7 @@ pub(super) fn saved_offset_carriers(
     let mut face_surfaces = BTreeSet::new();
     for (_, node) in ctx
         .admit_iter(
-            &(0..graph.kind_count(NodeKind::Face)),
+            &(0..graph.of_kind(NodeKind::Face).len()),
             "nx offset face surface traversal",
         )?
         .zip(graph.of_kind(NodeKind::Face))

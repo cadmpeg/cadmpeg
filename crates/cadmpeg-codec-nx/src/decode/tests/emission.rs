@@ -408,7 +408,7 @@ fn decode_retains_topology_owned_point_at_origin() {
             .unwrap();
     assert_eq!(
         graph
-            .get(NodeKind::Point, 11)
+            .node(NodeKind::Point, 11)
             .and_then(crate::topology::Node::point_position)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
@@ -601,7 +601,7 @@ fn decode_rejects_scanner_geometry_with_an_ambiguous_record_identity() {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
             .unwrap();
-    assert!(graph.get(NodeKind::Plane, 77).is_none());
+    assert!(graph.node(NodeKind::Plane, 77).is_none());
     assert!(crate::test_support::with_decode_context(|ctx| {
         ordered_surface_candidates(ctx, &graph).unwrap().is_empty()
     }));

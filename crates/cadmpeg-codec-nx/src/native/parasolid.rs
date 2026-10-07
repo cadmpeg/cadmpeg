@@ -620,7 +620,7 @@ pub(super) fn resolve_parasolid_group_member_targets(
             continue;
         };
         let graph = parsed.stream(partition).view_for_geometry().graph.as_ref();
-        member.target = member.target.resolve(graph, member.member_xmt);
+        member.target = member.target.resolve(ctx, graph, member.member_xmt)?;
     }
     Ok(())
 }

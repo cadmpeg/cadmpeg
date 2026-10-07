@@ -1328,7 +1328,7 @@ fn topology_retains_entity_attribute_list_references() {
             .unwrap();
     assert_eq!(
         graph
-            .get(crate::framing::node_kind::NodeKind::Face, 4)
+            .node(crate::framing::node_kind::NodeKind::Face, 4)
             .expect("required invariant")
             .face_fields()
             .expect("required invariant")
@@ -1339,7 +1339,7 @@ fn topology_retains_entity_attribute_list_references() {
     );
     assert_eq!(
         graph
-            .get(crate::framing::node_kind::NodeKind::Loop, 5)
+            .node(crate::framing::node_kind::NodeKind::Loop, 5)
             .expect("required invariant")
             .loop_fields()
             .expect("required invariant")
@@ -1350,7 +1350,7 @@ fn topology_retains_entity_attribute_list_references() {
     );
     assert_eq!(
         graph
-            .get(crate::framing::node_kind::NodeKind::Fin, 7)
+            .node(crate::framing::node_kind::NodeKind::Fin, 7)
             .expect("required invariant")
             .fin_fields()
             .expect("required invariant")
@@ -1361,7 +1361,7 @@ fn topology_retains_entity_attribute_list_references() {
     );
     assert_eq!(
         graph
-            .get(crate::framing::node_kind::NodeKind::Edge, 8)
+            .node(crate::framing::node_kind::NodeKind::Edge, 8)
             .expect("required invariant")
             .edge_fields()
             .expect("required invariant")
@@ -1372,7 +1372,7 @@ fn topology_retains_entity_attribute_list_references() {
     );
     assert_eq!(
         graph
-            .get(crate::framing::node_kind::NodeKind::Vertex, 10)
+            .node(crate::framing::node_kind::NodeKind::Vertex, 10)
             .expect("required invariant")
             .vertex_fields()
             .expect("required invariant")

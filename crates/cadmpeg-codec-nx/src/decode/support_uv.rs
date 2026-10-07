@@ -3289,7 +3289,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         let source = &sources[source_index];
         let source_offset = source
             .graph
-            .get(NodeKind::Fin, fin_xmt)
+            .get(ctx, NodeKind::Fin, fin_xmt)?
             .map_or(0, |node| cadmpeg_core::decode::u64_from_index(node.pos()));
         annotations.note(
             ctx,

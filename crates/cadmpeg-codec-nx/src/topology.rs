@@ -10,17 +10,18 @@
 
 use crate::framing::node_kind::NodeKind;
 use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Sense;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::OnceLock;
 
 use crate::framing::{
     fixed_record_boundary, fixed_record_candidates as framed_record_candidates, read_and_advance,
-    read_sequence_at, read_xmt, skip_sequence_at,
+    read_sequence_at, read_xmt, skip_sequence_at, FixedRecordFrame,
 };
 use crate::vec3_at::vec3_be_at;
 pub(crate) mod trimmed_curve_state;
@@ -478,92 +479,102 @@ impl Node {
         crate::geometry::decode_curve_record(&self.bytes, self.kind, payload_shift)
     }
 
-    fn reference_targets(&self) -> Vec<(ReferenceRole, u32)> {
-        let references = match self.kind {
-            NodeKind::Shell => self.shell_fields().map_or_else(Vec::new, |fields| {
-                vec![
-                    (ReferenceRole::Body, fields.body),
-                    (ReferenceRole::Region, fields.region),
+    /// Spine curve reference of a rolling-ball BLEND_SURFACE.
+    fn blend_spine(&self) -> Option<u32> {
+        let (_, mut at) = self.common_header()?;
+        (self.bytes.get(at) == Some(&b'R')).then_some(())?;
+        at += 1;
+        Some(read_sequence_at::<3>(&self.bytes, &mut at)?[2])
+    }
+
+    /// The typed non-null references this record makes to other records.
+    fn reference_targets(&self) -> [Option<(ReferenceRole, u32)>; 3] {
+        let target = |role, reference: Option<XmtTarget>| {
+            reference
+                .map(u32::from)
+                .filter(|xmt| *xmt > 1)
+                .map(|xmt| (role, xmt))
+        };
+        let wire = |role, reference: u32| target(role, XmtTarget::from_wire(reference));
+        match self.kind {
+            NodeKind::Shell => self.shell_fields().map_or([None; 3], |fields| {
+                [
+                    target(ReferenceRole::Body, fields.body),
+                    target(ReferenceRole::Region, fields.region),
+                    None,
                 ]
             }),
-            NodeKind::Face => self.face_fields().map_or_else(Vec::new, |fields| {
-                vec![(ReferenceRole::Surface, fields.surface)]
+            NodeKind::Face => self.face_fields().map_or([None; 3], |fields| {
+                [target(ReferenceRole::Surface, fields.surface), None, None]
             }),
-            NodeKind::Edge => self.edge_fields().map_or_else(Vec::new, |fields| {
-                vec![(ReferenceRole::Curve, fields.curve)]
+            NodeKind::Edge => self.edge_fields().map_or([None; 3], |fields| {
+                [target(ReferenceRole::Curve, fields.curve), None, None]
             }),
-            NodeKind::Fin => self.fin_fields().map_or_else(Vec::new, |fields| {
-                vec![(ReferenceRole::Curve, fields.curve_xmt)]
+            NodeKind::Fin => self.fin_fields().map_or([None; 3], |fields| {
+                [target(ReferenceRole::Curve, fields.curve_xmt), None, None]
             }),
-            NodeKind::Vertex => self.vertex_fields().map_or_else(Vec::new, |fields| {
-                vec![(ReferenceRole::Point, fields.point)]
+            NodeKind::Vertex => self.vertex_fields().map_or([None; 3], |fields| {
+                [target(ReferenceRole::Point, fields.point), None, None]
             }),
-            NodeKind::BlendSurface => {
-                let Some((_, mut at)) = self.common_header() else {
-                    return Vec::new();
-                };
-                if self.bytes.get(at) != Some(&b'R') {
-                    return Vec::new();
-                }
+            NodeKind::BlendSurface => (|| {
+                let (_, mut at) = self.common_header()?;
+                (self.bytes.get(at) == Some(&b'R')).then_some(())?;
                 at += 1;
-                read_sequence_at::<3>(&self.bytes, &mut at).map_or_else(Vec::new, |references| {
-                    vec![
-                        (ReferenceRole::Surface, XmtTarget::from_wire(references[0])),
-                        (ReferenceRole::Surface, XmtTarget::from_wire(references[1])),
-                        (ReferenceRole::Curve, XmtTarget::from_wire(references[2])),
-                    ]
-                })
-            }
-            NodeKind::OffsetSurface => {
-                let Some((_, mut at)) = self.common_header() else {
-                    return Vec::new();
-                };
-                if !matches!(self.bytes.get(at), Some(b'V' | b'I' | b'U'))
-                    || !matches!(self.bytes.get(at + 1), Some(0 | 1))
-                {
-                    return Vec::new();
-                }
+                let references = read_sequence_at::<3>(&self.bytes, &mut at)?;
+                Some([
+                    wire(ReferenceRole::Surface, references[0]),
+                    wire(ReferenceRole::Surface, references[1]),
+                    wire(ReferenceRole::Curve, references[2]),
+                ])
+            })()
+            .unwrap_or([None; 3]),
+            NodeKind::OffsetSurface => (|| {
+                let (_, mut at) = self.common_header()?;
+                (matches!(self.bytes.get(at), Some(b'V' | b'I' | b'U'))
+                    && matches!(self.bytes.get(at + 1), Some(0 | 1)))
+                .then_some(())?;
                 at += 2;
-                read_and_advance(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
-                    vec![(ReferenceRole::Surface, XmtTarget::from_wire(reference))]
-                })
-            }
-            NodeKind::TrimmedCurve => {
-                let Some((_, mut at)) = self.common_header() else {
-                    return Vec::new();
-                };
-                read_and_advance(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
-                    vec![(ReferenceRole::Curve, XmtTarget::from_wire(reference))]
-                })
-            }
-            NodeKind::SpCurve => {
-                let Some((_, mut at)) = self.common_header() else {
-                    return Vec::new();
-                };
-                read_sequence_at::<3>(&self.bytes, &mut at).map_or_else(Vec::new, |references| {
-                    vec![
-                        (ReferenceRole::Surface, XmtTarget::from_wire(references[0])),
-                        (ReferenceRole::Curve, XmtTarget::from_wire(references[1])),
-                        (ReferenceRole::Curve, XmtTarget::from_wire(references[2])),
-                    ]
-                })
-            }
-            _ => Vec::new(),
-        };
-        references
-            .into_iter()
-            .filter_map(|(role, reference)| Some((role, u32::from(reference?))))
-            .collect()
+                let reference = read_and_advance(&self.bytes, &mut at)?;
+                Some([wire(ReferenceRole::Surface, reference), None, None])
+            })()
+            .unwrap_or([None; 3]),
+            NodeKind::TrimmedCurve => (|| {
+                let (_, mut at) = self.common_header()?;
+                let reference = read_and_advance(&self.bytes, &mut at)?;
+                Some([wire(ReferenceRole::Curve, reference), None, None])
+            })()
+            .unwrap_or([None; 3]),
+            NodeKind::SpCurve => (|| {
+                let (_, mut at) = self.common_header()?;
+                let references = read_sequence_at::<3>(&self.bytes, &mut at)?;
+                Some([
+                    wire(ReferenceRole::Surface, references[0]),
+                    wire(ReferenceRole::Curve, references[1]),
+                    wire(ReferenceRole::Curve, references[2]),
+                ])
+            })()
+            .unwrap_or([None; 3]),
+            _ => [None; 3],
+        }
     }
 }
 
-/// An index of supported records keyed by `(node type, XMT identifier)`.
+/// Supported records grouped by type, each group in physical stream order,
+/// with identity and offset indexes into the groups.
 #[derive(Debug, Default)]
 pub(crate) struct Graph {
-    nodes: BTreeMap<(NodeKind, u32), Node>,
-    by_pos: BTreeMap<usize, (NodeKind, u32)>,
-    /// Record keys grouped by kind in their physical stream order.
-    by_kind: BTreeMap<NodeKind, Vec<(NodeKind, u32)>>,
+    /// Nodes of each kind in physical stream order, indexed by `NodeKind::ordinal`.
+    kinds: [Vec<Node>; NodeKind::COUNT],
+    /// Group position of each `(kind, XMT identifier)` node.
+    keys: BTreeMap<(NodeKind, u32), usize>,
+    /// Kind and group position of the node whose type tag starts at each offset.
+    by_pos: BTreeMap<usize, (NodeKind, usize)>,
+    /// XMT identifier of each kernel node identity within its kind, `None` when
+    /// the identity repeats. Built on first use.
+    node_ids: OnceLock<BTreeMap<(NodeKind, u32), Option<u32>>>,
+    /// Group position of the unique EDGE carrying each curve, `None` when
+    /// several edges carry it. Built on first use.
+    curve_edges: OnceLock<BTreeMap<u32, Option<usize>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -699,7 +710,11 @@ impl Graph {
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<CompositeCurve>, CodecError> {
         ctx.collect_retained_vec(
-            self.of_kind(NodeKind::Intersection).filter_map(|node| {
+            ctx.admit_iter(
+                self.of_kind(NodeKind::Intersection),
+                "NX topology carrier records",
+            )?
+            .filter_map(|node| {
                 let mut at = 8 + node.shift;
                 let header = read_sequence_at::<5>(&node.bytes, &mut at)?;
                 let sense = match node.bytes.get(at) {
@@ -829,7 +844,11 @@ impl Graph {
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<BlendSurface>, CodecError> {
         ctx.collect_retained_vec(
-            self.of_kind(NodeKind::BlendSurface).filter_map(|node| {
+            ctx.admit_iter(
+                self.of_kind(NodeKind::BlendSurface),
+                "NX topology carrier records",
+            )?
+            .filter_map(|node| {
                 let mut at = node.common_header()?.1;
                 (*node.bytes.get(at)? == b'R').then_some(())?;
                 at += 1;
@@ -872,7 +891,11 @@ impl Graph {
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<OffsetSurface>, CodecError> {
         ctx.collect_retained_vec(
-            self.of_kind(NodeKind::OffsetSurface).filter_map(|node| {
+            ctx.admit_iter(
+                self.of_kind(NodeKind::OffsetSurface),
+                "NX topology carrier records",
+            )?
+            .filter_map(|node| {
                 let mut at = node.common_header()?.1;
                 let discriminator =
                     OffsetSurfaceDiscriminator::try_from(char::from(*node.bytes.get(at)?)).ok()?;
@@ -913,7 +936,11 @@ impl Graph {
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<SurfaceCurve>, CodecError> {
         ctx.collect_retained_vec(
-            self.of_kind(NodeKind::SpCurve).filter_map(|node| {
+            ctx.admit_iter(
+                self.of_kind(NodeKind::SpCurve),
+                "NX topology carrier records",
+            )?
+            .filter_map(|node| {
                 let mut at = node.common_header()?.1;
                 let refs = read_sequence_at::<3>(&node.bytes, &mut at)?;
                 let tolerance = View::f64_be_at(&node.bytes, at)?;
@@ -945,7 +972,11 @@ impl Graph {
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<TrimmedCurve>, CodecError> {
         ctx.collect_retained_vec(
-            self.of_kind(NodeKind::TrimmedCurve).filter_map(|node| {
+            ctx.admit_iter(
+                self.of_kind(NodeKind::TrimmedCurve),
+                "NX topology carrier records",
+            )?
+            .filter_map(|node| {
                 let mut at = node.common_header()?.1;
                 let basis = read_and_advance(&node.bytes, &mut at)?;
                 let point_0 = vec3_be_at(&node.bytes, at)?;
@@ -964,247 +995,352 @@ impl Graph {
     }
 }
 
+/// Temporary storage held by one parsed graph until the caller keeps it.
+struct GraphStorage<'ctx> {
+    /// Copied node record bytes.
+    nodes: ScopedReservation<'ctx>,
+    /// Kind groups and the identity and position indexes.
+    index: ScopedReservation<'ctx>,
+}
+
+impl GraphStorage<'_> {
+    fn commit(self) -> Result<(), CodecError> {
+        self.nodes.commit()?;
+        self.index.commit()
+    }
+}
+
+/// Fixed-record candidates of one identity domain, in stream order.
+#[derive(Default)]
+struct DomainCandidates {
+    /// Typed topology and carrier candidates.
+    typed: Vec<NodeCandidate>,
+    /// BODY and REGION candidates, which carry ownership identity only.
+    ownership: Vec<NodeCandidate>,
+}
+
+/// Validated faces of each body-shape shell.
+pub(crate) struct BodyShell<'graph> {
+    /// The SHELL record.
+    pub(crate) node: &'graph Node,
+    /// Face identities owned by the shell: physical order for a shell anchored
+    /// by its last face, ascending identity order for a FACE chain.
+    pub(crate) faces: Vec<u32>,
+}
+
+const INDEX_OPERATION: &str = "NX topology node index";
+
 impl Graph {
     /// Parse supported fixed-record nodes from a neutral-binary stream.
+    ///
+    /// One scan frames every candidate under both identity domains. The
+    /// baseline domain excludes high node identities; the full domain is kept
+    /// only when it preserves every baseline node and completes a body
+    /// topology that the baseline does not.
     pub(crate) fn parse(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Self, CodecError> {
-        let (mut baseline, mut baseline_bytes) = Self::parse_fixed_records(ctx, stream, false)?;
-        let (full_domain, full_domain_bytes) = Self::parse_fixed_records(ctx, stream, true)?;
-        let preserves_baseline = baseline.nodes.iter().all(|(key, node)| {
-            full_domain.nodes.get(key).is_some_and(|candidate| {
-                candidate.pos() == node.pos() && candidate.bytes == node.bytes
-            })
-        });
-        if !preserves_baseline {
-            baseline_bytes.commit()?;
+        let ([baseline_candidates, full_candidates], candidate_storage) =
+            Self::scan_candidates(ctx, stream)?;
+        let (mut baseline, mut baseline_storage) =
+            Self::select_graph(ctx, stream, &baseline_candidates)?;
+        let (full_domain, full_domain_storage) = Self::select_graph(ctx, stream, &full_candidates)?;
+        drop((baseline_candidates, full_candidates, candidate_storage));
+        if !baseline.is_preserved_by(ctx, &full_domain)? {
+            baseline_storage.commit()?;
             return Ok(baseline);
         }
-        if !baseline.has_complete_body_topology(ctx)?
-            && full_domain.has_complete_body_topology(ctx)?
-            && full_domain.body_shape_face_count(ctx)? != 0
-        {
-            full_domain_bytes.commit()?;
-            Ok(full_domain)
-        } else {
-            baseline.admit_referenced_full_domain_nodes(ctx, &mut baseline_bytes, &full_domain)?;
-            baseline_bytes.commit()?;
-            Ok(baseline)
+        if !baseline.has_complete_body_topology(ctx)? {
+            let (complete, faces) = full_domain.body_topology_census(ctx)?;
+            if complete && faces != 0 {
+                full_domain_storage.commit()?;
+                return Ok(full_domain);
+            }
         }
+        baseline.admit_referenced_full_domain_nodes(ctx, &mut baseline_storage, &full_domain)?;
+        baseline_storage.commit()?;
+        Ok(baseline)
+    }
+
+    /// Return whether `other` holds every node of this graph at the same span.
+    ///
+    /// Both graphs frame the same stream, so equal spans hold equal bytes.
+    fn is_preserved_by(&self, ctx: &DecodeContext<'_>, other: &Self) -> Result<bool, CodecError> {
+        for group in &self.kinds {
+            for node in ctx.admit_iter(group, "NX baseline topology preservation")? {
+                let Some(candidate) = other.get(ctx, node.kind, node.xmt())? else {
+                    return Ok(false);
+                };
+                if (candidate.pos, candidate.end) != (node.pos, node.end) {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
     }
 
     /// Admit full-domain nodes through unique typed XMT references.
-    fn admit_referenced_full_domain_nodes(
+    fn admit_referenced_full_domain_nodes<'ctx>(
         &mut self,
-        ctx: &DecodeContext<'_>,
-        reservation: &mut ScopedReservation<'_>,
+        ctx: &'ctx DecodeContext<'_>,
+        storage: &mut GraphStorage<'ctx>,
         full_domain: &Self,
     ) -> Result<(), CodecError> {
+        const OPERATION: &str = "NX topology full-domain references";
+        let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
         let mut candidates = BTreeMap::<(ReferenceRole, u32), Option<&Node>>::new();
-        for node in full_domain.nodes.values() {
-            let Some(role) = ReferenceRole::for_kind(node.kind) else {
-                continue;
-            };
-            ctx.admit_btree_entry(
-                &candidates,
-                &(role, node.xmt()),
-                "NX topology candidate identities",
-            )?;
-            candidates
-                .entry((role, node.xmt()))
-                .and_modify(|candidate| *candidate = None)
-                .or_insert(Some(node));
+        for group in &full_domain.kinds {
+            for node in ctx.admit_iter(group, "NX full-domain topology nodes")? {
+                let Some(role) = ReferenceRole::for_kind(node.kind) else {
+                    continue;
+                };
+                let key = (role, node.xmt());
+                match ctx.get_mut_btree_map(&mut candidates, &key, OPERATION)? {
+                    Some(candidate) => *candidate = None,
+                    None => {
+                        // discarded-value: the key was absent before the admitted insertion.
+                        let _ = scratch.with_storage(|| {
+                            ctx.insert_btree_map(&mut candidates, key, Some(node), OPERATION)
+                        })?;
+                    }
+                }
+            }
         }
-        let mut required = BTreeSet::new();
-        for target in self
-            .nodes
-            .values()
-            .flat_map(Node::reference_targets)
-            .filter(|(_, xmt)| *xmt > 1)
-        {
-            ctx.insert_btree_set(&mut required, target, "NX topology required targets")?;
+        let mut pending = Vec::new();
+        for group in &self.kinds {
+            for node in ctx.admit_iter(group, "NX topology required source nodes")? {
+                for target in node.reference_targets().into_iter().flatten() {
+                    scratch.with_storage(|| ctx.push_vec(&mut pending, target, OPERATION))?;
+                }
+            }
         }
-        let mut changed = false;
-        while let Some(target) = required.pop_first() {
-            let Some(Some(candidate)) = candidates.get(&target) else {
-                continue;
-            };
-            let key = (candidate.kind, candidate.xmt());
-            if self.nodes.contains_key(&key) {
+        let mut visited = BTreeSet::new();
+        let mut added: [Vec<Node>; NodeKind::COUNT] = Default::default();
+        let mut any_added = false;
+        while let Some(target) = pending.pop() {
+            if !scratch.with_storage(|| ctx.insert_btree_set(&mut visited, target, OPERATION))? {
                 continue;
             }
-            for target in candidate
-                .reference_targets()
-                .into_iter()
-                .filter(|(_, xmt)| *xmt > 1)
-            {
-                ctx.insert_btree_set(&mut required, target, "NX topology required targets")?;
+            let Some(Some(candidate)) = ctx.get_btree_map(&candidates, &target, OPERATION)? else {
+                continue;
+            };
+            if ctx.contains_key_btree_map(
+                &self.keys,
+                &(candidate.kind, candidate.xmt()),
+                OPERATION,
+            )? {
+                continue;
             }
-            ctx.charge_collection_items(2, "NX topology admitted node indices")?;
-            let bytes = reservation.with_storage(|| {
+            for target in candidate.reference_targets().into_iter().flatten() {
+                scratch.with_storage(|| ctx.push_vec(&mut pending, target, OPERATION))?;
+            }
+            let bytes = storage.nodes.with_storage(|| {
                 ctx.copy_slice(&candidate.bytes, "NX topology admitted node bytes")
             })?;
-            self.by_pos.insert(candidate.pos(), key);
-            self.nodes.insert(
-                key,
-                Node {
-                    kind: candidate.kind,
-                    xmt: candidate.xmt,
-                    pos: candidate.pos(),
-                    end: candidate.end(),
-                    shift: candidate.shift,
-                    bytes,
-                },
-            );
-            changed = true;
+            let node = Node {
+                kind: candidate.kind,
+                xmt: candidate.xmt,
+                pos: candidate.pos,
+                end: candidate.end,
+                shift: candidate.shift,
+                bytes,
+            };
+            let group = &mut added[candidate.kind.ordinal()];
+            scratch.with_storage(|| ctx.push_vec(group, node, OPERATION))?;
+            any_added = true;
         }
-        if changed {
-            self.by_kind.clear();
-            for &key in self.by_pos.values() {
-                ctx.admit_btree_entry(&self.by_kind, &key.0, "NX topology kind indices")?;
-                let keys = self.by_kind.entry(key.0).or_default();
-                ctx.reserve_vec(keys, 1, "NX topology kind entries")?;
-                keys.push(key);
+        if !any_added {
+            return Ok(());
+        }
+        // Rebuild every kind group in physical order with fresh indexes.
+        let mut index = ctx.reserve_scoped(0, INDEX_OPERATION)?;
+        let mut graph = Self::default();
+        for (existing, mut admitted) in std::mem::take(&mut self.kinds).into_iter().zip(added) {
+            ctx.stable_sort_by_key(
+                &mut admitted,
+                |node| node.pos,
+                Ord::cmp,
+                "sort NX admitted topology nodes",
+            )?;
+            let mut existing = existing.into_iter().peekable();
+            let mut admitted = admitted.into_iter().peekable();
+            loop {
+                ctx.charge_work(1, "merge NX admitted topology nodes")?;
+                let take_admitted = match (existing.peek(), admitted.peek()) {
+                    (Some(existing), Some(admitted)) => admitted.pos < existing.pos,
+                    (None, _) => true,
+                    (Some(_), None) => false,
+                };
+                let next = if take_admitted {
+                    admitted.next()
+                } else {
+                    existing.next()
+                };
+                let Some(node) = next else {
+                    break;
+                };
+                graph.push_node(ctx, &mut index, node)?;
             }
         }
+        *self = graph;
+        storage.index = index;
         Ok(())
     }
 
-    fn parse_fixed_records<'ctx>(
+    /// Append a node to its kind group and index it. Nodes of one kind arrive
+    /// in physical order.
+    fn push_node(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        index: &mut ScopedReservation<'_>,
+        node: Node,
+    ) -> Result<(), CodecError> {
+        let kind = node.kind;
+        let key = (kind, node.xmt());
+        let pos = node.pos;
+        let group = &mut self.kinds[kind.ordinal()];
+        let position = group.len();
+        let keys = &mut self.keys;
+        let by_pos = &mut self.by_pos;
+        index.with_storage(|| {
+            // discarded-value: candidate selection leaves one node per identity and offset.
+            let _ = ctx.insert_btree_map(keys, key, position, INDEX_OPERATION)?;
+            // discarded-value: candidate selection leaves one node per identity and offset.
+            let _ = ctx.insert_btree_map(by_pos, pos, (kind, position), INDEX_OPERATION)?;
+            ctx.push_vec(group, node, INDEX_OPERATION)
+        })
+    }
+
+    /// Frame every fixed-record candidate once and keep the candidates valid
+    /// under the baseline and the full identity domain.
+    ///
+    /// At most one candidate per offset survives framing, so each list is in
+    /// strictly increasing offset order.
+    fn scan_candidates<'ctx>(
         ctx: &'ctx DecodeContext<'_>,
         stream: &[u8],
-        full_node_id_domain: bool,
-    ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
-        let mut candidates = Vec::new();
-        let mut ownership_candidates = Vec::new();
-        let mut candidate_reservation = ctx.reserve_scoped(0, "NX topology candidates")?;
-        let mut ownership_reservation =
-            ctx.reserve_scoped(0, "NX topology ownership candidates")?;
-        for pos in stream
-            .len()
-            .checked_sub(3)
-            .into_iter()
-            .flat_map(|last| 0..last)
-        {
-            ctx.charge_work(1, "scan NX topology candidates")?;
+    ) -> Result<([DomainCandidates; 2], ScopedReservation<'ctx>), CodecError> {
+        const OPERATION: &str = "NX topology candidates";
+        let mut domains: [DomainCandidates; 2] = Default::default();
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let last = stream.len().saturating_sub(3);
+        for pos in ctx.admit_iter(0..last, "scan NX topology candidates")? {
             if stream[pos] != 0 {
                 continue;
             }
             let Ok(kind) = NodeKind::try_from(stream[pos + 1]) else {
                 continue;
             };
-            for candidate in Self::fixed_record_candidates(stream, pos, kind, full_node_id_domain)
-                .into_iter()
-                .flatten()
-            {
-                if matches!(kind, NodeKind::Body | NodeKind::Region) {
-                    ctx.reserve_scoped_vec(
-                        &mut ownership_reservation,
-                        &mut ownership_candidates,
-                        1,
-                        "NX topology ownership candidates",
-                    )?;
-                    ownership_candidates.push(candidate);
+            let frames = framed_record_candidates(stream, pos, kind);
+            for (domain, full_node_id_domain) in domains.iter_mut().zip([false, true]) {
+                let Some(candidate) =
+                    Self::fixed_record_candidate(stream, pos, kind, &frames, full_node_id_domain)
+                else {
+                    continue;
+                };
+                let list = if matches!(kind, NodeKind::Body | NodeKind::Region) {
+                    &mut domain.ownership
                 } else {
-                    ctx.reserve_scoped_vec(
-                        &mut candidate_reservation,
-                        &mut candidates,
-                        1,
-                        "NX topology candidates",
-                    )?;
-                    candidates.push(candidate);
-                }
+                    &mut domain.typed
+                };
+                storage.with_storage(|| ctx.push_vec(list, candidate, OPERATION))?;
             }
         }
+        Ok((domains, storage))
+    }
 
+    /// Select one domain's records and materialize them as a graph.
+    fn select_graph<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        stream: &[u8],
+        candidates: &DomainCandidates,
+    ) -> Result<(Self, GraphStorage<'ctx>), CodecError> {
         // Resolve physical overlap before identity uniqueness. A candidate
         // that is wholly contained in a selected record is payload data, not
         // a second serialized node. Counting it first can invalidate the real
         // node and make otherwise stable identities depend on unrelated bytes.
-        let (non_overlapping, _non_overlapping_reservation) =
-            Self::select_non_overlapping_candidates(ctx, stream, candidates)?;
-        let (selected, _selected_reservation) =
-            Self::select_unique_candidates(ctx, non_overlapping)?;
+        let (non_overlapping, _non_overlapping_storage) =
+            Self::select_non_overlapping_candidates(ctx, stream, &candidates.typed)?;
+        let (selected, _selected_storage) = Self::select_unique_candidates(ctx, &non_overlapping)?;
         // BODY and REGION carry ownership identity only. Their opaque fixed
         // payloads can contain complete-looking typed tags, so they are
         // admitted after typed topology/carrier selection and never veto a
         // typed candidate. An ownership node that shares bytes with a typed
         // node is ambiguous and is omitted; shells retain the identity even
         // when the optional BODY or REGION record is absent.
-        let (non_overlapping_ownership, _ownership_nonoverlap_reservation) =
-            Self::select_non_overlapping_candidates(ctx, stream, ownership_candidates)?;
-        let (ownership, _ownership_unique_reservation) =
-            Self::select_unique_candidates(ctx, non_overlapping_ownership)?;
-        let (admitted_ownership, _admitted_reservation) =
-            Self::admit_disjoint_ownership(ctx, ownership, &selected)?;
+        let (non_overlapping_ownership, _ownership_nonoverlap_storage) =
+            Self::select_non_overlapping_candidates(ctx, stream, &candidates.ownership)?;
+        let (ownership, _ownership_unique_storage) =
+            Self::select_unique_candidates(ctx, &non_overlapping_ownership)?;
+        let mut storage = GraphStorage {
+            nodes: ctx.reserve_scoped(0, "NX topology node bytes")?,
+            index: ctx.reserve_scoped(0, INDEX_OPERATION)?,
+        };
         let mut graph = Self::default();
-        let mut node_reservation = ctx.reserve_scoped(0, "NX topology node bytes")?;
-        for candidate in selected.into_iter().chain(admitted_ownership) {
-            let Some(node) = candidate.materialize(ctx, &mut node_reservation, stream)? else {
-                continue;
-            };
-            let key = (node.kind, node.xmt());
-            ctx.charge_collection_items(2, "NX topology node indices")?;
-            graph.by_pos.insert(node.pos(), key);
-            graph.nodes.insert(key, node);
-        }
-        for &key in graph.by_pos.values() {
-            ctx.admit_btree_entry(&graph.by_kind, &key.0, "NX topology kind indices")?;
-            let keys = graph.by_kind.entry(key.0).or_default();
-            ctx.reserve_vec(keys, 1, "NX topology kind entries")?;
-            keys.push(key);
-        }
-        Ok((graph, node_reservation))
-    }
-
-    fn admit_disjoint_ownership<'ctx>(
-        ctx: &'ctx DecodeContext<'_>,
-        ownership: Vec<NodeCandidate>,
-        selected: &[NodeCandidate],
-    ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
-        let work = ownership.len().checked_mul(selected.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit("compare NX ownership overlaps", u64::MAX - 1, u64::MAX)
-        })?;
-        ctx.charge_work(u64_from_index(work), "compare NX ownership overlaps")?;
-        let mut admitted_ownership = Vec::new();
-        let mut admitted_reservation = ctx.reserve_scoped(0, "NX admitted ownership candidates")?;
-        for candidate in ownership {
-            if selected
-                .iter()
-                .all(|selected| !selected.overlaps(candidate))
-            {
-                ctx.reserve_scoped_vec(
-                    &mut admitted_reservation,
-                    &mut admitted_ownership,
-                    1,
-                    "NX admitted ownership candidates",
-                )?;
-                admitted_ownership.push(candidate);
+        for candidate in ctx.admit_iter(&selected, "NX selected topology records")? {
+            if let Some(node) = candidate.materialize(ctx, &mut storage.nodes, stream)? {
+                graph.push_node(ctx, &mut storage.index, node)?;
             }
         }
-        Ok((admitted_ownership, admitted_reservation))
+        let (ownership, _ownership_storage) =
+            Self::admit_disjoint_ownership(ctx, &ownership, &selected)?;
+        for candidate in ctx.admit_iter(&ownership, "NX admitted ownership records")? {
+            if let Some(node) = candidate.materialize(ctx, &mut storage.nodes, stream)? {
+                graph.push_node(ctx, &mut storage.index, node)?;
+            }
+        }
+        Ok((graph, storage))
     }
 
-    fn fixed_record_candidates(
+    /// Keep the ownership candidates that share no bytes with a selected
+    /// typed record. `selected` holds disjoint spans in offset order, so the
+    /// only span that can overlap a candidate is the first one ending after
+    /// its start.
+    fn admit_disjoint_ownership<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        ownership: &[NodeCandidate],
+        selected: &[NodeCandidate],
+    ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
+        const OPERATION: &str = "compare NX ownership overlaps";
+        let mut admitted = Vec::new();
+        let mut storage = ctx.reserve_scoped(0, "NX admitted ownership candidates")?;
+        for candidate in ctx.admit_iter(ownership, OPERATION)? {
+            let first_after = ctx.partition_point(
+                selected,
+                |selected| Ok(selected.end <= candidate.pos),
+                OPERATION,
+            )?;
+            if !selected
+                .get(first_after)
+                .is_some_and(|selected| selected.overlaps(*candidate))
+            {
+                storage.with_storage(|| ctx.push_vec(&mut admitted, *candidate, OPERATION))?;
+            }
+        }
+        Ok((admitted, storage))
+    }
+
+    /// The candidate one domain admits at a fixed-record tag.
+    fn fixed_record_candidate(
         stream: &[u8],
         pos: usize,
         kind: NodeKind,
+        frames: &[Option<FixedRecordFrame>; 2],
         full_node_id_domain: bool,
-    ) -> [Option<NodeCandidate>; 2] {
+    ) -> Option<NodeCandidate> {
         let mut candidates = [None; 2];
         let mut count = 0;
-        for frame in framed_record_candidates(stream, pos, kind)
-            .into_iter()
-            .flatten()
-        {
-            let Some(()) = candidate_has_valid_family_framing(
+        for frame in frames.iter().flatten() {
+            if candidate_has_valid_family_framing(
                 stream,
                 pos,
                 kind,
                 frame.shift(),
                 frame.end(),
                 full_node_id_domain,
-            ) else {
+            )
+            .is_none()
+            {
                 continue;
-            };
+            }
             candidates[count] = Some(NodeCandidate {
                 kind,
                 xmt: frame.xmt(),
@@ -1215,22 +1351,15 @@ impl Graph {
             count += 1;
         }
         if count < 2 {
-            return candidates;
+            return candidates[0];
         }
-
         let mut boundary_candidates = candidates
             .iter()
             .flatten()
             .copied()
             .filter(|candidate| fixed_record_boundary(stream, candidate.end()));
-        let Some(candidate) = boundary_candidates.next() else {
-            return [None; 2];
-        };
-        if boundary_candidates.next().is_none() {
-            [Some(candidate), None]
-        } else {
-            [None; 2]
-        }
+        let candidate = boundary_candidates.next()?;
+        boundary_candidates.next().is_none().then_some(candidate)
     }
 
     /// Keep one complete physical record for each serialized identity.
@@ -1238,176 +1367,203 @@ impl Graph {
     /// A second record with the same `(kind, xmt)` is not a recoverable choice:
     /// the fixed-record grammar provides no discriminator that can make one
     /// authoritative. Invalidate the identity instead of ranking candidates
-    /// by topology shape, reference counts, or scan position.
+    /// by topology shape, reference counts, or scan position. The result keeps
+    /// the input order.
     fn select_unique_candidates<'ctx>(
         ctx: &'ctx DecodeContext<'_>,
-        candidates: Vec<NodeCandidate>,
+        candidates: &[NodeCandidate],
     ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
-        let mut by_key = BTreeMap::<(NodeKind, u32), Option<NodeCandidate>>::new();
-        for node in candidates {
-            ctx.admit_btree_entry(
-                &by_key,
-                &(node.kind, node.xmt()),
-                "NX topology unique candidate keys",
-            )?;
-            match by_key.entry((node.kind, node.xmt())) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(Some(node));
-                }
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    // A duplicate identity is invalid. Retain only the fact
-                    // that it is ambiguous; do not retain every overlapping
-                    // physical interpretation of the same identity.
-                    entry.insert(None);
+        const OPERATION: &str = "NX topology unique candidates";
+        let mut repeated_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut repeated = BTreeMap::<(NodeKind, u32), bool>::new();
+        for candidate in ctx.admit_iter(candidates, OPERATION)? {
+            let key = (candidate.kind, candidate.xmt());
+            match ctx.get_mut_btree_map(&mut repeated, &key, OPERATION)? {
+                Some(flag) => *flag = true,
+                None => {
+                    // discarded-value: the key was absent before the admitted insertion.
+                    let _ = repeated_storage.with_storage(|| {
+                        ctx.insert_btree_map(&mut repeated, key, false, OPERATION)
+                    })?;
                 }
             }
         }
         let mut selected = Vec::new();
-        let mut reservation = ctx.reserve_scoped(0, "NX topology unique candidates")?;
-        for candidate in by_key.into_values().flatten() {
-            ctx.reserve_scoped_vec(
-                &mut reservation,
-                &mut selected,
-                1,
-                "NX topology unique candidates",
-            )?;
-            selected.push(candidate);
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        for candidate in ctx.admit_iter(candidates, OPERATION)? {
+            let key = (candidate.kind, candidate.xmt());
+            if ctx.get_btree_map(&repeated, &key, OPERATION)? == Some(&false) {
+                storage.with_storage(|| ctx.push_vec(&mut selected, *candidate, OPERATION))?;
+            }
         }
-        Ok((selected, reservation))
+        Ok((selected, storage))
     }
 
     /// Discard overlapping candidates when no serialized ownership boundary
-    /// identifies which record owns the bytes.
+    /// identifies which record owns the bytes. `nodes` is in increasing
+    /// offset order; the result keeps that order and holds disjoint spans.
     fn select_non_overlapping_candidates<'ctx>(
         ctx: &'ctx DecodeContext<'_>,
         stream: &[u8],
-        mut nodes: Vec<NodeCandidate>,
+        nodes: &[NodeCandidate],
     ) -> Result<(Vec<NodeCandidate>, ScopedReservation<'ctx>), CodecError> {
-        ctx.stable_sort_by_key(
-            &mut nodes,
-            |value| (value.pos(), value.end()),
-            |left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)),
-            "sort NX topology candidates",
-        )?;
+        const OPERATION: &str = "select NX topology candidates";
         let mut selected = Vec::new();
-        let mut reservation = ctx.reserve_scoped(0, "NX topology nonoverlapping candidates")?;
+        let mut storage = ctx.reserve_scoped(0, "NX topology nonoverlapping candidates")?;
         let mut start = 0;
         while let Some(first) = nodes.get(start).copied() {
-            ctx.charge_work(1, "select NX topology candidates")?;
-            if fixed_record_boundary(stream, first.end()) {
-                let end = first.end();
-                ctx.reserve_scoped_vec(
-                    &mut reservation,
-                    &mut selected,
-                    1,
-                    "NX topology nonoverlapping candidates",
-                )?;
-                selected.push(first);
-                start += 1;
-                while nodes
-                    .get(start)
-                    .is_some_and(|candidate| candidate.pos() < end)
-                {
-                    start += 1;
+            ctx.charge_work(1, OPERATION)?;
+            let end = if fixed_record_boundary(stream, first.end()) {
+                storage.with_storage(|| ctx.push_vec(&mut selected, first, OPERATION))?;
+                // Candidates starting inside the selected record are its payload.
+                let mut end = start + 1;
+                while let Some(candidate) = nodes.get(end) {
+                    ctx.charge_work(1, OPERATION)?;
+                    if candidate.pos() >= first.end() {
+                        break;
+                    }
+                    end += 1;
                 }
-                continue;
-            }
-            let mut end = start + 1;
-            let mut cluster_end = first.end();
-            while nodes
-                .get(end)
-                .is_some_and(|candidate| candidate.pos() < cluster_end)
-            {
-                cluster_end = cluster_end.max(nodes[end].end());
-                end += 1;
-            }
-            let cluster = &nodes[start..end];
-            if let [node] = cluster {
-                ctx.reserve_scoped_vec(
-                    &mut reservation,
-                    &mut selected,
-                    1,
-                    "NX topology nonoverlapping candidates",
-                )?;
-                selected.push(*node);
+                end
             } else {
-                let mut boundary_candidates = cluster
-                    .iter()
-                    .copied()
-                    .filter(|candidate| fixed_record_boundary(stream, candidate.end()));
-                let Some(node) = boundary_candidates.next() else {
-                    start = end;
-                    continue;
-                };
-                if boundary_candidates.next().is_none() {
-                    ctx.reserve_scoped_vec(
-                        &mut reservation,
-                        &mut selected,
-                        1,
-                        "NX topology nonoverlapping candidates",
-                    )?;
-                    selected.push(node);
+                let mut end = start + 1;
+                let mut cluster_end = first.end();
+                while let Some(candidate) = nodes.get(end) {
+                    ctx.charge_work(1, OPERATION)?;
+                    if candidate.pos() >= cluster_end {
+                        break;
+                    }
+                    cluster_end = cluster_end.max(candidate.end());
+                    end += 1;
                 }
-            }
+                let cluster = &nodes[start..end];
+                let unique_boundary = if let [node] = cluster {
+                    Some(*node)
+                } else {
+                    let mut bounded = None;
+                    let mut ambiguous = false;
+                    for candidate in ctx.admit_iter(cluster, OPERATION)? {
+                        if fixed_record_boundary(stream, candidate.end()) {
+                            ambiguous = bounded.is_some();
+                            if ambiguous {
+                                break;
+                            }
+                            bounded = Some(*candidate);
+                        }
+                    }
+                    bounded.filter(|_| !ambiguous)
+                };
+                if let Some(node) = unique_boundary {
+                    storage.with_storage(|| ctx.push_vec(&mut selected, node, OPERATION))?;
+                }
+                end
+            };
             start = end;
         }
-        Ok((selected, reservation))
+        Ok((selected, storage))
     }
 
     /// Look up a node by record type and XMT identifier.
-    pub(crate) fn get(&self, kind: NodeKind, xmt: u32) -> Option<&Node> {
-        self.nodes.get(&(kind, xmt))
+    pub(crate) fn get(
+        &self,
+        ctx: &DecodeContext<'_>,
+        kind: NodeKind,
+        xmt: u32,
+    ) -> Result<Option<&Node>, CodecError> {
+        let Some(&position) =
+            ctx.get_btree_map(&self.keys, &(kind, xmt), "NX topology node lookup")?
+        else {
+            return Ok(None);
+        };
+        Ok(self.of_kind(kind).get(position))
     }
 
-    pub(crate) fn get_target(&self, kind: NodeKind, target: Option<XmtTarget>) -> Option<&Node> {
-        self.get(kind, u32::from(target?))
+    /// Look up a node by record type tag and XMT identifier; an unsupported
+    /// tag has no node.
+    pub(crate) fn get_by_tag(
+        &self,
+        ctx: &DecodeContext<'_>,
+        tag: u8,
+        xmt: u32,
+    ) -> Result<Option<&Node>, CodecError> {
+        match NodeKind::try_from(tag) {
+            Ok(kind) => self.get(ctx, kind, xmt),
+            Err(()) => Ok(None),
+        }
+    }
+
+    /// Look up the node a typed reference targets; the null reference has none.
+    pub(crate) fn get_target(
+        &self,
+        ctx: &DecodeContext<'_>,
+        kind: NodeKind,
+        target: Option<XmtTarget>,
+    ) -> Result<Option<&Node>, CodecError> {
+        match target {
+            Some(target) => self.get(ctx, kind, u32::from(target)),
+            None => Ok(None),
+        }
     }
 
     /// Look up the node whose type tag starts at `pos`.
-    pub(crate) fn at_pos(&self, pos: usize) -> Option<&Node> {
-        let &(kind, xmt) = self.by_pos.get(&pos)?;
-        self.get(kind, xmt)
+    pub(crate) fn at_pos(
+        &self,
+        ctx: &DecodeContext<'_>,
+        pos: usize,
+    ) -> Result<Option<&Node>, CodecError> {
+        let Some(&(kind, position)) =
+            ctx.get_btree_map(&self.by_pos, &pos, "NX topology offset lookup")?
+        else {
+            return Ok(None);
+        };
+        Ok(self.of_kind(kind).get(position))
     }
 
-    /// Iterate nodes of one record type in physical record order.
-    pub(crate) fn of_kind(&self, kind: NodeKind) -> impl Iterator<Item = &Node> {
-        self.by_kind
-            .get(&kind)
-            .into_iter()
-            .flat_map(|keys| keys.iter())
-            .filter_map(|key| self.nodes.get(key))
+    /// Nodes of one record type in physical record order.
+    pub(crate) fn of_kind(&self, kind: NodeKind) -> &[Node] {
+        &self.kinds[kind.ordinal()]
     }
 
-    /// Cardinality retained by the kind index, without walking node identities.
-    pub(crate) fn kind_count(&self, kind: NodeKind) -> usize {
-        self.by_kind.get(&kind).map_or(0, Vec::len)
-    }
-
-    /// Admit indexed node traversal before yielding records of one kind.
-    pub(crate) fn of_kind_charged<'graph>(
-        &'graph self,
+    /// Resolve one current XMT identity from a kernel node identity that occurs
+    /// once among the nodes of its kind.
+    pub(crate) fn unique_xmt_by_node_id(
+        &self,
         ctx: &DecodeContext<'_>,
         kind: NodeKind,
-    ) -> Result<impl Iterator<Item = &'graph Node>, CodecError> {
-        let count = self.by_kind.get(&kind).map_or(0, Vec::len);
-        let work = count.checked_mul(self.nodes.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit("iterate NX topology records", u64::MAX, u64::MAX)
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "iterate NX topology records",
-        )?;
-        Ok(self.of_kind(kind))
-    }
-
-    /// Resolve one current XMT identity from a unique kernel node identity.
-    pub(crate) fn unique_xmt_by_node_id(&self, kind: NodeKind, node_id: u32) -> Option<u32> {
-        let mut matches = self
-            .of_kind(kind)
-            .filter(|node| node.node_id() == Some(node_id))
-            .map(Node::xmt);
-        let xmt = matches.next()?;
-        matches.next().is_none().then_some(xmt)
+        node_id: u32,
+    ) -> Result<Option<u32>, CodecError> {
+        const OPERATION: &str = "NX topology node identity index";
+        let index = match self.node_ids.get() {
+            Some(index) => index,
+            None => {
+                let mut index = BTreeMap::new();
+                for group in &self.kinds {
+                    for node in ctx.admit_iter(group, OPERATION)? {
+                        let Some(id) = node.node_id() else {
+                            continue;
+                        };
+                        let key = (node.kind, id);
+                        match ctx.get_mut_btree_map(&mut index, &key, OPERATION)? {
+                            Some(xmt) => *xmt = None,
+                            None => {
+                                // discarded-value: the key was absent before the admitted insertion.
+                                let _ = ctx.insert_btree_map(
+                                    &mut index,
+                                    key,
+                                    Some(node.xmt()),
+                                    OPERATION,
+                                )?;
+                            }
+                        }
+                    }
+                }
+                self.node_ids.get_or_init(|| index)
+            }
+        };
+        Ok(ctx
+            .get_btree_map(index, &(kind, node_id), OPERATION)?
+            .copied()
+            .flatten())
     }
 
     /// Curve identities occupying typed curve-reference slots in the fixed
@@ -1416,87 +1572,111 @@ impl Graph {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<BTreeSet<u32>, CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(self.nodes.len()),
-            "scan NX topology curve references",
-        )?;
+        const OPERATION: &str = "NX topology carrier references";
         let mut references = BTreeSet::new();
-        for reference in self
-            .of_kind(NodeKind::Edge)
-            .filter_map(Node::edge_fields)
-            .filter_map(|fields| fields.curve.map(u32::from))
-            .filter(|reference| *reference > 1)
-        {
-            ctx.insert_btree_set(&mut references, reference, "NX topology carrier references")?;
-        }
-        for reference in self
-            .of_kind(NodeKind::Fin)
-            .filter_map(Node::fin_fields)
-            .filter_map(|fields| fields.curve_xmt.map(u32::from))
-            .filter(|reference| *reference > 1)
-        {
-            ctx.insert_btree_set(&mut references, reference, "NX topology carrier references")?;
-        }
-        for node in self.of_kind(NodeKind::BlendSurface) {
-            let Some((_, mut at)) = node.common_header() else {
-                continue;
-            };
-            if node.bytes.get(at) != Some(&b'R') {
-                continue;
+        let mut insert = |reference: Option<u32>| -> Result<(), CodecError> {
+            if let Some(reference) = reference.filter(|reference| *reference > 1) {
+                ctx.insert_btree_set(&mut references, reference, OPERATION)?;
             }
-            at += 1;
-            if let Some(spine) = read_sequence_at::<3>(&node.bytes, &mut at)
-                .and_then(|items| items.get(2).copied())
-                .filter(|reference| *reference > 1)
-            {
-                ctx.insert_btree_set(&mut references, spine, "NX topology carrier references")?;
-            }
+            Ok(())
+        };
+        for node in ctx.admit_iter(self.of_kind(NodeKind::Edge), OPERATION)? {
+            insert(
+                node.edge_fields()
+                    .and_then(|fields| fields.curve.map(u32::from)),
+            )?;
         }
-        for node in self.of_kind(NodeKind::TrimmedCurve) {
-            if let Some(reference) = node
-                .compact_tail_references::<1>()
-                .and_then(|items| items.first().copied())
-                .filter(|reference| *reference > 1)
-            {
-                ctx.insert_btree_set(&mut references, reference, "NX topology carrier references")?;
-            }
+        for node in ctx.admit_iter(self.of_kind(NodeKind::Fin), OPERATION)? {
+            insert(
+                node.fin_fields()
+                    .and_then(|fields| fields.curve_xmt.map(u32::from)),
+            )?;
         }
-        for node in self.of_kind(NodeKind::SpCurve) {
-            if let Some(reference) = node
-                .compact_tail_references::<3>()
-                .and_then(|items| items.get(2).copied())
-                .filter(|reference| *reference > 1)
-            {
-                ctx.insert_btree_set(&mut references, reference, "NX topology carrier references")?;
-            }
+        for node in ctx.admit_iter(self.of_kind(NodeKind::BlendSurface), OPERATION)? {
+            insert(node.blend_spine())?;
+        }
+        for node in ctx.admit_iter(self.of_kind(NodeKind::TrimmedCurve), OPERATION)? {
+            insert(node.compact_tail_references::<1>().map(|items| items[0]))?;
+        }
+        for node in ctx.admit_iter(self.of_kind(NodeKind::SpCurve), OPERATION)? {
+            insert(node.compact_tail_references::<3>().map(|items| items[2]))?;
         }
         Ok(references)
     }
 
     /// Resolve the exact witnesses of the unique edge carrying a curve.
-    pub(crate) fn unique_curve_edge_witness(&self, curve_xmt: u32) -> Option<CurveEdgeWitness> {
-        let mut edges = self
-            .of_kind(NodeKind::Edge)
-            .filter_map(Node::edge_fields)
-            .filter(|edge| edge.curve.map(u32::from) == Some(curve_xmt));
-        let edge = edges.next()?;
-        edges.next().is_none().then_some(())?;
-        let first_fin = self.get_target(NodeKind::Fin, edge.fin)?.fin_fields()?;
-        let second_fin = self
-            .get_target(NodeKind::Fin, first_fin.forward)?
-            .fin_fields()?;
-        let position = |vertex_xmt| {
-            let point_xmt = self
-                .get_target(NodeKind::Vertex, vertex_xmt)?
-                .vertex_fields()?
-                .point;
-            self.get_target(NodeKind::Point, point_xmt)?
-                .point_position()
+    pub(crate) fn unique_curve_edge_witness(
+        &self,
+        ctx: &DecodeContext<'_>,
+        curve_xmt: u32,
+    ) -> Result<Option<CurveEdgeWitness>, CodecError> {
+        const OPERATION: &str = "NX topology curve edge index";
+        let index = match self.curve_edges.get() {
+            Some(index) => index,
+            None => {
+                let mut index = BTreeMap::new();
+                for (position, node) in ctx
+                    .admit_iter(self.of_kind(NodeKind::Edge), OPERATION)?
+                    .enumerate()
+                {
+                    let Some(curve) = node.edge_fields().and_then(|fields| fields.curve) else {
+                        continue;
+                    };
+                    let curve = u32::from(curve);
+                    match ctx.get_mut_btree_map(&mut index, &curve, OPERATION)? {
+                        Some(edge) => *edge = None,
+                        None => {
+                            // discarded-value: the key was absent before the admitted insertion.
+                            let _ =
+                                ctx.insert_btree_map(&mut index, curve, Some(position), OPERATION)?;
+                        }
+                    }
+                }
+                self.curve_edges.get_or_init(|| index)
+            }
         };
-        Some(CurveEdgeWitness {
-            endpoints: [position(first_fin.vertex)?, position(second_fin.vertex)?],
+        let Some(Some(position)) = ctx.get_btree_map(index, &curve_xmt, OPERATION)?.copied() else {
+            return Ok(None);
+        };
+        let Some(edge) = self
+            .of_kind(NodeKind::Edge)
+            .get(position)
+            .and_then(Node::edge_fields)
+        else {
+            return Ok(None);
+        };
+        let Some(first_fin) = self
+            .get_target(ctx, NodeKind::Fin, edge.fin)?
+            .and_then(Node::fin_fields)
+        else {
+            return Ok(None);
+        };
+        let Some(second_fin) = self
+            .get_target(ctx, NodeKind::Fin, first_fin.forward)?
+            .and_then(Node::fin_fields)
+        else {
+            return Ok(None);
+        };
+        let position = |vertex_xmt| -> Result<Option<FinitePoint3>, CodecError> {
+            let Some(point_xmt) = self
+                .get_target(ctx, NodeKind::Vertex, vertex_xmt)?
+                .and_then(Node::vertex_fields)
+                .map(|fields| fields.point)
+            else {
+                return Ok(None);
+            };
+            Ok(self
+                .get_target(ctx, NodeKind::Point, point_xmt)?
+                .and_then(Node::point_position))
+        };
+        let (Some(start), Some(end)) = (position(first_fin.vertex)?, position(second_fin.vertex)?)
+        else {
+            return Ok(None);
+        };
+        Ok(Some(CurveEdgeWitness {
+            endpoints: [start, end],
             tolerance: edge.tolerance,
-        })
+        }))
     }
 
     /// Carrier identities required by the surviving fixed topology image.
@@ -1504,46 +1684,128 @@ impl Graph {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<BTreeSet<u32>, CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(self.nodes.len()),
-            "scan NX topology carrier references",
-        )?;
+        const OPERATION: &str = "NX topology carrier references";
         let mut references = self.referenced_curve_xmts(ctx)?;
-        for reference in self
-            .of_kind(NodeKind::Face)
-            .filter_map(Node::face_fields)
-            .filter_map(|fields| fields.surface.map(u32::from))
-            .filter(|reference| *reference > 1)
-        {
-            ctx.insert_btree_set(&mut references, reference, "NX topology carrier references")?;
+        for node in ctx.admit_iter(self.of_kind(NodeKind::Face), OPERATION)? {
+            if let Some(reference) = node
+                .face_fields()
+                .and_then(|fields| fields.surface.map(u32::from))
+                .filter(|reference| *reference > 1)
+            {
+                ctx.insert_btree_set(&mut references, reference, OPERATION)?;
+            }
         }
-        for reference in self
-            .of_kind(NodeKind::Vertex)
-            .filter_map(Node::vertex_fields)
-            .filter_map(|fields| fields.point.map(u32::from))
-            .filter(|reference| *reference > 1)
-        {
-            ctx.insert_btree_set(&mut references, reference, "NX topology carrier references")?;
+        for node in ctx.admit_iter(self.of_kind(NodeKind::Vertex), OPERATION)? {
+            if let Some(reference) = node
+                .vertex_fields()
+                .and_then(|fields| fields.point.map(u32::from))
+                .filter(|reference| *reference > 1)
+            {
+                ctx.insert_btree_set(&mut references, reference, OPERATION)?;
+            }
         }
         Ok(references)
     }
 
-    /// Return SHELL nodes whose ownership fields define a body shape.
+    /// Return the SHELL nodes whose ownership fields define a body shape, each
+    /// with its validated faces.
+    ///
+    /// One pass indexes faces by their owning shell, so classifying every shell
+    /// visits each face a bounded number of times.
     pub(crate) fn body_shape_shells(
         &self,
         ctx: &DecodeContext<'_>,
-    ) -> Result<impl Iterator<Item = &Node> + '_, CodecError> {
-        let shells = self.by_kind.get(&NodeKind::Shell).map_or(0, Vec::len);
-        let per_shell = self.shell_census_work_bound().ok_or_else(|| {
-            ctx.refuse_codec_limit("classify NX body shells", u64::MAX - 1, u64::MAX)
-        })?;
-        let work = shells.checked_mul(per_shell).ok_or_else(|| {
-            ctx.refuse_codec_limit("classify NX body shells", u64::MAX - 1, u64::MAX)
-        })?;
-        ctx.charge_work(u64_from_index(work), "classify NX body shells")?;
-        Ok(self
-            .of_kind(NodeKind::Shell)
-            .filter(|shell| self.is_body_shape_shell(shell)))
+    ) -> Result<Vec<BodyShell<'_>>, CodecError> {
+        const OPERATION: &str = "classify NX body shells";
+        let mut index_storage = ctx.reserve_scoped(0, "NX shell face index")?;
+        let mut faces_by_shell = BTreeMap::<u32, Vec<u32>>::new();
+        for face in ctx.admit_iter(self.of_kind(NodeKind::Face), "NX shell face index")? {
+            let Some(shell) = face.face_fields().and_then(|fields| fields.shell) else {
+                continue;
+            };
+            index_storage.with_storage(|| {
+                ctx.push_btree_group(
+                    &mut faces_by_shell,
+                    u32::from(shell),
+                    face.xmt(),
+                    "NX shell face index",
+                    "NX shell face index",
+                )
+            })?;
+        }
+        let mut shells = Vec::new();
+        for shell in ctx.admit_iter(self.of_kind(NodeKind::Shell), OPERATION)? {
+            if let Some(faces) = self.body_shell_faces(ctx, shell, &faces_by_shell)? {
+                ctx.push_vec(&mut shells, BodyShell { node: shell, faces }, OPERATION)?;
+            }
+        }
+        Ok(shells)
+    }
+
+    /// Validate one shell as a body shape and return its faces.
+    fn body_shell_faces(
+        &self,
+        ctx: &DecodeContext<'_>,
+        shell: &Node,
+        faces_by_shell: &BTreeMap<u32, Vec<u32>>,
+    ) -> Result<Option<Vec<u32>>, CodecError> {
+        const OPERATION: &str = "validate NX shell faces";
+        let Some(fields) = shell.shell_fields() else {
+            return Ok(None);
+        };
+        if fields.attributes.is_some()
+            || fields.next_shell.is_some()
+            || fields.sentinel_0.is_some()
+            || fields.sentinel_1.is_some()
+            || fields.body.is_none_or(|target| u32::from(target) == 0)
+            || fields.region.is_none_or(|target| u32::from(target) == 0)
+        {
+            return Ok(None);
+        }
+        let owned = ctx
+            .get_btree_map(faces_by_shell, &shell.xmt(), OPERATION)?
+            .map_or(&[][..], Vec::as_slice);
+        if fields.last_face.is_some() {
+            // The last-face anchor names the first face; ownership comes from
+            // each face's shell reference.
+            if fields.last_face != fields.first_face || owned.is_empty() {
+                return Ok(None);
+            }
+            let anchored = self
+                .get_target(ctx, NodeKind::Face, fields.first_face)?
+                .and_then(Node::face_fields)
+                .is_some_and(|face| face.shell.map(u32::from) == Some(shell.xmt()));
+            if !anchored {
+                return Ok(None);
+            }
+            return Ok(Some(ctx.copy_slice(owned, "NX shell face identities")?));
+        }
+        // A FACE chain visits only faces owned by this shell, each once, so a
+        // chain longer than the owned faces repeats one.
+        let mut faces = Vec::new();
+        let mut face_xmt = fields.first_face;
+        while let Some(target) = face_xmt {
+            if faces.len() == owned.len() {
+                return Ok(None);
+            }
+            let current = u32::from(target);
+            let Some(face) = self
+                .get(ctx, NodeKind::Face, current)?
+                .and_then(Node::face_fields)
+            else {
+                return Ok(None);
+            };
+            if face.shell.map(u32::from) != Some(shell.xmt()) {
+                return Ok(None);
+            }
+            ctx.push_vec(&mut faces, current, "NX shell face identities")?;
+            face_xmt = face.next_face;
+        }
+        if faces.is_empty() {
+            return Ok(None);
+        }
+        ctx.sort_unstable_by(&mut faces, |value| value, Ord::cmp, "sort NX shell faces")?;
+        Ok(Some(faces))
     }
 
     /// Return whether every body-shape face has a non-empty valid loop chain
@@ -1553,44 +1815,7 @@ impl Graph {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<bool, CodecError> {
-        let mut shells = self.body_shape_shells(ctx)?.peekable();
-        if shells.peek().is_none() {
-            return Ok(false);
-        }
-        let mut reachable_fins = BTreeSet::new();
-        for shell in shells {
-            let Some(face_xmts) = self.shell_face_xmts(ctx, shell)? else {
-                return Ok(false);
-            };
-            for face_xmt in face_xmts {
-                let rings = match self.face_loop_rings(ctx, face_xmt) {
-                    Ok(rings) => rings,
-                    Err(FaceLoopError::Invalid(_)) => return Ok(false),
-                    Err(FaceLoopError::Codec(error)) => return Err(error),
-                };
-                if rings.is_empty() {
-                    return Ok(false);
-                }
-                for (_, ring) in rings {
-                    for xmt in ring {
-                        ctx.insert_btree_set(
-                            &mut reachable_fins,
-                            xmt,
-                            "NX reachable FIN identities",
-                        )?;
-                    }
-                }
-            }
-        }
-        Ok(reachable_fins.iter().all(|xmt| {
-            self.get(NodeKind::Fin, *xmt)
-                .and_then(Node::fin_fields)
-                .is_some_and(|fields| {
-                    fields
-                        .other
-                        .is_none_or(|other| reachable_fins.contains(&u32::from(other)))
-                })
-        }))
+        Ok(self.body_topology_census(ctx)?.0)
     }
 
     /// Count faces owned by validated body-shape shells.
@@ -1598,21 +1823,68 @@ impl Graph {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<usize, CodecError> {
-        let shells = self.body_shape_shells(ctx)?;
-        // The second census uses the same traversal bound as classification.
-        let count = self.by_kind.get(&NodeKind::Shell).map_or(0, Vec::len);
-        let work = self
-            .shell_census_work_bound()
-            .and_then(|n| n.checked_mul(count))
-            .ok_or_else(|| ctx.refuse_codec_limit("count NX body faces", u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(u64_from_index(work), "count NX body faces")?;
-        shells
-            .filter_map(|shell| self.shell_face_count(shell))
-            .try_fold(0usize, |count, next| {
-                count.checked_add(next).ok_or_else(|| {
-                    ctx.refuse_codec_limit("count NX body faces", u64::MAX - 1, u64::MAX)
-                })
-            })
+        let mut storage = ctx.reserve_scoped(0, "NX body shells")?;
+        let shells = storage.with_storage(|| self.body_shape_shells(ctx))?;
+        Self::face_count(ctx, &shells)
+    }
+
+    /// Total faces of the body shells. Each face belongs to one shell, so the
+    /// sum cannot exceed the graph's face count.
+    fn face_count(ctx: &DecodeContext<'_>, shells: &[BodyShell<'_>]) -> Result<usize, CodecError> {
+        Ok(ctx
+            .admit_iter(shells, "count NX body faces")?
+            .map(|shell| shell.faces.len())
+            .sum())
+    }
+
+    /// Whether the body topology is complete, and how many body-shape faces
+    /// it has, from one classification of the shells.
+    fn body_topology_census(&self, ctx: &DecodeContext<'_>) -> Result<(bool, usize), CodecError> {
+        const OPERATION: &str = "NX reachable FIN identities";
+        let mut storage = ctx.reserve_scoped(0, "NX body shells")?;
+        let shells = storage.with_storage(|| self.body_shape_shells(ctx))?;
+        let faces = Self::face_count(ctx, &shells)?;
+        if shells.is_empty() {
+            return Ok((false, faces));
+        }
+        let mut reachable_fins = BTreeSet::new();
+        for shell in ctx.admit_iter(&shells, "NX body shell faces")? {
+            for &face_xmt in ctx.admit_iter(&shell.faces, "NX body shell faces")? {
+                let rings =
+                    match storage.with_storage(|| match self.face_loop_rings(ctx, face_xmt) {
+                        Ok(rings) => Ok(Ok(rings)),
+                        Err(FaceLoopError::Invalid(failure)) => Ok(Err(failure)),
+                        Err(FaceLoopError::Codec(error)) => Err(error),
+                    })? {
+                        Ok(rings) => rings,
+                        Err(_) => return Ok((false, faces)),
+                    };
+                if rings.is_empty() {
+                    return Ok((false, faces));
+                }
+                for (_, ring) in ctx.admit_iter(rings, OPERATION)? {
+                    for xmt in ctx.admit_iter(ring, OPERATION)? {
+                        storage.with_storage(|| {
+                            ctx.insert_btree_set(&mut reachable_fins, xmt, OPERATION)
+                        })?;
+                    }
+                }
+            }
+        }
+        for &xmt in ctx.admit_iter(&reachable_fins, OPERATION)? {
+            let Some(fields) = self
+                .get(ctx, NodeKind::Fin, xmt)?
+                .and_then(Node::fin_fields)
+            else {
+                return Ok((false, faces));
+            };
+            if let Some(other) = fields.other {
+                if !ctx.contains_btree_set(&reachable_fins, &u32::from(other), OPERATION)? {
+                    return Ok((false, faces));
+                }
+            }
+        }
+        Ok((true, faces))
     }
 
     /// Return the validated loop-to-FIN rings owned by a face.
@@ -1626,26 +1898,24 @@ impl Graph {
         ctx: &DecodeContext<'_>,
         face_xmt: u32,
     ) -> Result<Vec<(u32, Vec<u32>)>, FaceLoopError> {
+        const OPERATION: &str = "walk NX face loops";
         let face = self
-            .get(NodeKind::Face, face_xmt)
+            .get(ctx, NodeKind::Face, face_xmt)?
             .and_then(Node::face_fields)
             .ok_or(FaceLoopFailure::InvalidFace { face_xmt })?;
         let mut loop_xmt = face.loop_xmt;
         let mut seen_loops = BTreeSet::new();
-        let mut seen_reservation = ctx.reserve_scoped(0, "NX face loop identities")?;
+        let mut seen_storage = ctx.reserve_scoped(0, "NX face loop identities")?;
         let mut rings = Vec::new();
         while let Some(target) = loop_xmt {
             let current = u32::from(target);
-            if seen_loops.contains(&current) {
+            if !seen_storage.with_storage(|| {
+                ctx.insert_btree_set(&mut seen_loops, current, "NX face loop identities")
+            })? {
                 return Err(FaceLoopFailure::InvalidLoopChain { loop_xmt: current }.into());
             }
-            ctx.charge_work(1, "walk NX face loops")?;
-            seen_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<u32>(),
-            ))?;
-            ctx.insert_btree_set(&mut seen_loops, current, "NX face loop identities")?;
             let fields = self
-                .get(NodeKind::Loop, current)
+                .get(ctx, NodeKind::Loop, current)?
                 .and_then(Node::loop_fields)
                 .ok_or(FaceLoopFailure::InvalidLoopChain { loop_xmt: current })?;
             if fields.face.map(u32::from) != Some(face_xmt) {
@@ -1655,8 +1925,7 @@ impl Graph {
                 .fin
                 .ok_or(FaceLoopFailure::InvalidLoopChain { loop_xmt: current })?;
             let ring = self.fin_ring(ctx, current, first_fin)?;
-            ctx.reserve_vec(&mut rings, 1, "NX face loop rings")?;
-            rings.push((current, ring));
+            ctx.push_vec(&mut rings, (current, ring), OPERATION)?;
             loop_xmt = fields.next_loop;
         }
         Ok(rings)
@@ -1668,14 +1937,17 @@ impl Graph {
         loop_xmt: u32,
         first: XmtTarget,
     ) -> Result<Vec<u32>, FaceLoopError> {
+        const OPERATION: &str = "walk NX FIN ring";
         let first = u32::from(first);
         let mut current = first;
         let mut previous = None;
         let mut seen = BTreeSet::new();
-        let mut seen_reservation = ctx.reserve_scoped(0, "NX FIN ring identities")?;
+        let mut seen_storage = ctx.reserve_scoped(0, "NX FIN ring identities")?;
         let mut ring = Vec::new();
         loop {
-            if seen.contains(&current) {
+            if !seen_storage.with_storage(|| {
+                ctx.insert_btree_set(&mut seen, current, "NX FIN ring identities")
+            })? {
                 return if current == first {
                     Ok(ring)
                 } else {
@@ -1686,26 +1958,22 @@ impl Graph {
                     .into())
                 };
             }
-            ctx.charge_work(1, "walk NX FIN ring")?;
-            seen_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<u32>(),
-            ))?;
-            ctx.insert_btree_set(&mut seen, current, "NX FIN ring identities")?;
-            ctx.reserve_vec(&mut ring, 1, "NX FIN ring entries")?;
-            ring.push(current);
+            ctx.push_vec(&mut ring, current, "NX FIN ring entries")?;
             let invalid_fin = FaceLoopFailure::InvalidFinRing {
                 loop_xmt,
                 fin_xmt: current,
             };
             let fields = self
-                .get(NodeKind::Fin, current)
+                .get(ctx, NodeKind::Fin, current)?
                 .and_then(Node::fin_fields)
                 .ok_or(invalid_fin)?;
-            let vertex_resolves = self.get_target(NodeKind::Vertex, fields.vertex).is_some()
+            let vertex_resolves = self
+                .get_target(ctx, NodeKind::Vertex, fields.vertex)?
+                .is_some()
                 || (fields.vertex.is_none()
                     && fields.forward.map(u32::from) == Some(current)
                     && fields.backward.map(u32::from) == Some(current));
-            if self.get_target(NodeKind::Edge, fields.edge).is_none() {
+            if self.get_target(ctx, NodeKind::Edge, fields.edge)?.is_none() {
                 return Err(FaceLoopFailure::UnresolvedFinEdge {
                     loop_xmt,
                     fin_xmt: current,
@@ -1718,7 +1986,7 @@ impl Graph {
             }
             if let Some(other_xmt) = fields.other {
                 let other = self
-                    .get(NodeKind::Fin, u32::from(other_xmt))
+                    .get(ctx, NodeKind::Fin, u32::from(other_xmt))?
                     .and_then(Node::fin_fields)
                     .ok_or(invalid_fin)?;
                 if other.other.map(u32::from) != Some(current) || other.edge != fields.edge {
@@ -1731,119 +1999,36 @@ impl Graph {
                 }
             }
             let next = self
-                .get_target(NodeKind::Fin, fields.forward)
+                .get_target(ctx, NodeKind::Fin, fields.forward)?
                 .and_then(Node::fin_fields)
                 .ok_or(invalid_fin)?;
             if next.backward.map(u32::from) != Some(current) {
                 return Err(invalid_fin.into());
             }
+            ctx.charge_work(1, OPERATION)?;
             previous = Some(current);
             current = u32::from(fields.forward.ok_or(invalid_fin)?);
         }
     }
+}
 
-    /// Two complete node traversals and one lookup per node bound a census.
-    /// Each lookup compares at most the full node population.
-    fn shell_census_work_bound(&self) -> Option<usize> {
-        self.nodes
-            .len()
-            .checked_mul(2)?
-            .checked_add(1)?
-            .checked_mul(self.nodes.len())
+#[cfg(test)]
+impl Graph {
+    /// Every node, kind by kind, for test assertions.
+    pub(crate) fn test_nodes(&self) -> impl Iterator<Item = &Node> {
+        self.kinds.iter().flatten()
     }
 
-    fn is_body_shape_shell(&self, shell: &Node) -> bool {
-        let Some(fields) = shell.shell_fields() else {
-            return false;
-        };
-        if fields.attributes.is_some()
-            || fields.next_shell.is_some()
-            || fields.sentinel_0.is_some()
-            || fields.sentinel_1.is_some()
-            || fields.body.is_none_or(|target| u32::from(target) == 0)
-            || fields.region.is_none_or(|target| u32::from(target) == 0)
-        {
-            return false;
-        }
-
-        self.shell_face_count(shell).is_some()
+    /// Look a node up for a test assertion, outside any decode budget.
+    pub(crate) fn node(&self, kind: NodeKind, xmt: u32) -> Option<&Node> {
+        let &position = self.keys.get(&(kind, xmt))?;
+        self.of_kind(kind).get(position)
     }
 
-    fn shell_face_count(&self, shell: &Node) -> Option<usize> {
-        let fields = shell.shell_fields()?;
-        if fields.last_face.is_some() {
-            (fields.last_face == fields.first_face).then_some(())?;
-            self.get_target(NodeKind::Face, fields.first_face)
-                .and_then(Node::face_fields)
-                .filter(|face| face.shell.map(u32::from) == Some(shell.xmt()))?;
-            let count = self
-                .of_kind(NodeKind::Face)
-                .filter(|face| {
-                    face.face_fields()
-                        .is_some_and(|fields| fields.shell.map(u32::from) == Some(shell.xmt()))
-                })
-                .count();
-            return (count != 0).then_some(count);
-        }
-
-        let mut face_xmt = fields.first_face;
-        let face_limit = self.of_kind(NodeKind::Face).count();
-        let mut count = 0usize;
-        while let Some(target) = face_xmt {
-            let current = u32::from(target);
-            count = count.checked_add(1)?;
-            (count <= face_limit).then_some(())?;
-            let face = self
-                .get(NodeKind::Face, current)
-                .and_then(Node::face_fields)?;
-            if face.shell.map(u32::from) != Some(shell.xmt()) {
-                return None;
-            }
-            face_xmt = face.next_face;
-        }
-        (count != 0).then_some(count)
-    }
-
-    pub(crate) fn shell_face_xmts(
-        &self,
-        ctx: &DecodeContext<'_>,
-        shell: &Node,
-    ) -> Result<Option<Vec<u32>>, CodecError> {
-        ctx.charge_work(
-            u64_from_index(self.shell_census_work_bound().ok_or_else(|| {
-                ctx.refuse_codec_limit("validate NX shell faces", u64::MAX - 1, u64::MAX)
-            })?),
-            "validate NX shell faces",
-        )?;
-        let Some(count) = self.shell_face_count(shell) else {
-            return Ok(None);
-        };
-        let mut faces = ctx.collection_vec(count, "NX shell face identities")?;
-        let Some(fields) = shell.shell_fields() else {
-            return Ok(None);
-        };
-        if fields.last_face.is_some() {
-            faces.extend(
-                self.of_kind(NodeKind::Face)
-                    .filter(|face| {
-                        face.face_fields()
-                            .is_some_and(|fields| fields.shell.map(u32::from) == Some(shell.xmt()))
-                    })
-                    .map(Node::xmt),
-            );
-        } else {
-            let mut face_xmt = fields.first_face;
-            while let Some(target) = face_xmt {
-                let current = u32::from(target);
-                faces.push(current);
-                face_xmt = self
-                    .get(NodeKind::Face, current)
-                    .and_then(Node::face_fields)
-                    .and_then(|face| face.next_face);
-            }
-            ctx.sort_unstable_by(&mut faces, |value| value, Ord::cmp, "sort NX shell faces")?;
-        }
-        Ok(Some(faces))
+    /// Look the node at a type-tag offset up for a test assertion.
+    pub(crate) fn node_at(&self, pos: usize) -> Option<&Node> {
+        let &(kind, position) = self.by_pos.get(&pos)?;
+        self.of_kind(kind).get(position)
     }
 }
 

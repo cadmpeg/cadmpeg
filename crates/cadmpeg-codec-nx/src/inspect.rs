@@ -124,7 +124,7 @@ pub(super) fn summarize(
                     name,
                     false,
                     SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                        graph.kind_count(kind),
+                        graph.of_kind(kind).len(),
                     )),
                 )?;
             }
@@ -152,7 +152,7 @@ pub(super) fn summarize(
                         name,
                         false,
                         SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            graph.kind_count(kind),
+                            graph.of_kind(kind).len(),
                         )),
                     )?;
                 }

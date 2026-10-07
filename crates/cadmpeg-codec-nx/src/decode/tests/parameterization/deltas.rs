@@ -194,7 +194,7 @@ fn decode_preserves_partition_loop_topology_over_deltas_history() {
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap()
-            .get(NodeKind::Loop, 5)
+            .node(NodeKind::Loop, 5)
             .and_then(|node| node.u32_at(4)),
         Some(0)
     );
@@ -220,7 +220,7 @@ fn decode_preserves_partition_shell_topology_over_deltas_history() {
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap()
-            .get(NodeKind::Shell, 3)
+            .node(NodeKind::Shell, 3)
             .and_then(|node| node.u32_at(4)),
         Some(0)
     );

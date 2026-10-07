@@ -1291,7 +1291,7 @@ fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
                 &record.canonical_bytes
             ))
             .unwrap()
-            .get(
+            .node(
                 NodeKind::try_from(u8::try_from(kind).expect("fixture value fits u8")).unwrap(),
                 12
             )
@@ -1413,7 +1413,7 @@ fn merged_deltas_full_record_replaces_partition_node() {
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap()
-            .get(NodeKind::Point, 11)
+            .node(NodeKind::Point, 11)
             .is_some()
     );
 }
@@ -1439,7 +1439,7 @@ fn merged_tombstone_preserves_a_topology_referenced_carrier() {
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap()
-            .get(NodeKind::Point, 11)
+            .node(NodeKind::Point, 11)
             .is_some()
     );
     assert_eq!(analytic_points(&merged)[0].x, 10.0);
@@ -1518,7 +1518,7 @@ fn merged_exact_key_tombstone_removes_unreferenced_partition_node() {
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap()
-            .get(NodeKind::Point, 11)
+            .node(NodeKind::Point, 11)
             .is_none()
     );
 }
@@ -1564,7 +1564,7 @@ fn final_body_revision_scopes_deltas_overlay_events() {
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap()
-            .get(NodeKind::Point, 11)
+            .node(NodeKind::Point, 11)
             .is_some()
     );
 
@@ -1577,7 +1577,7 @@ fn final_body_revision_scopes_deltas_overlay_events() {
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap()
-            .get(NodeKind::Point, 11)
+            .node(NodeKind::Point, 11)
             .is_none()
     );
 }
@@ -1600,8 +1600,8 @@ fn body_revision_scopes_keep_each_monotonic_sequence_current() {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap();
-    assert!(graph.get(NodeKind::Point, 50).is_some());
-    assert!(graph.get(NodeKind::Point, 51).is_some());
+    assert!(graph.node(NodeKind::Point, 50).is_some());
+    assert!(graph.node(NodeKind::Point, 51).is_some());
     let points = analytic_points(&merged);
     assert!(points
         .iter()
@@ -1635,8 +1635,8 @@ fn body_revision_scopes_accept_reverse_serialized_counter_direction() {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap();
-    assert!(graph.get(NodeKind::Point, 50).is_some());
-    assert!(graph.get(NodeKind::Point, 51).is_some());
+    assert!(graph.node(NodeKind::Point, 50).is_some());
+    assert!(graph.node(NodeKind::Point, 51).is_some());
     let points = analytic_points(&merged);
     assert!(points
         .iter()
