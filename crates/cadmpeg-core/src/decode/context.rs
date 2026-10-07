@@ -511,40 +511,44 @@ impl<'a> DecodeContext<'a> {
         mut compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        // Small runs use adjacent swaps, so their stable order needs no scratch.
+        // Small runs insert by adjacent swaps, so their stable order needs no
+        // scratch. Every insertion compares each earlier neighbour, without
+        // stopping where the value comes to rest, so the steps depend only on
+        // the length: the compared prefix is already sorted and swaps nothing.
         if values.len() <= 20 {
             self.admit_sort(values, projection, operation)?;
             for end in 1..values.len() {
                 self.charge_work(1, operation)?;
-                let mut position = end;
-                while position > 0 {
+                for position in (1..=end).rev() {
                     self.charge_work(1, operation)?;
-                    if !compare(&values[position], &values[position - 1]).is_lt() {
-                        break;
+                    if compare(&values[position], &values[position - 1]).is_lt() {
+                        values.swap(position, position - 1);
                     }
-                    values.swap(position, position - 1);
-                    position -= 1;
                 }
             }
             return Ok(());
         }
         // Larger runs sort an index array by the values' keys, so the sort
-        // admits its comparisons and index moves once; the values themselves
-        // move only along the permutation's cycles, each swap moving two.
+        // admits its comparisons and index moves once. Each destination then
+        // takes its value with one swap, tracking where every original value
+        // sits and which original value every position holds, so the moves
+        // depend only on the length.
         let count = super::u64_from_index(values.len());
         self.charge_collection_items(
             count
-                .checked_mul(2)
+                .checked_mul(3)
                 .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
             operation,
         )?;
         let (mut order, _order_storage) = self.scoped_vector_storage(values.len(), operation)?;
-        let (mut destinations, _destination_storage) =
+        let (mut position_of, _position_storage) =
             self.scoped_vector_storage(values.len(), operation)?;
+        let (mut held_at, _held_storage) = self.scoped_vector_storage(values.len(), operation)?;
         for index in 0..values.len() {
-            self.charge_work(2, operation)?;
+            self.charge_work(3, operation)?;
             order.push(index);
-            destinations.push(0usize);
+            position_of.push(index);
+            held_at.push(index);
         }
         let ordering = super::sort::CopiedKey {
             key: |&index: &usize| (projection.project(&values[index]), index),
@@ -554,24 +558,23 @@ impl<'a> DecodeContext<'a> {
         order.sort_unstable_by(|left, right| {
             compare(&values[*left], &values[*right]).then_with(|| left.cmp(right))
         });
-        for (destination, source) in order.into_iter().enumerate() {
-            self.charge_work(1, operation)?;
-            destinations[source] = destination;
-        }
-        // The cycles take at most one swap per value, each moving two values.
+        // One swap per destination, each moving two values.
         let moved = super::u64_from_index(std::mem::size_of::<T>())
             .checked_mul(2)
             .and_then(|bytes| bytes.checked_mul(count))
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         self.charge_work(moved, operation)?;
-        for index in 0..values.len() {
+        for (destination, source) in order.into_iter().enumerate() {
             self.charge_work(1, operation)?;
-            while destinations[index] != index {
-                self.charge_work(1, operation)?;
-                let destination = destinations[index];
-                values.swap(index, destination);
-                destinations.swap(index, destination);
-            }
+            // Destinations before this one already hold their values, so the
+            // source value sits at this destination or after it.
+            let current = position_of[source];
+            let displaced = held_at[destination];
+            values.swap(destination, current);
+            position_of[displaced] = current;
+            held_at[current] = displaced;
+            position_of[source] = destination;
+            held_at[destination] = source;
         }
         Ok(())
     }
