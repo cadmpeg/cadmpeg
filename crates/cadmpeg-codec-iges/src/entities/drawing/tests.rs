@@ -4,7 +4,6 @@
 
 use crate::directory::{DirectoryEntry, SourceStatus};
 use cadmpeg_core::decode::{DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
@@ -62,28 +61,27 @@ fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
 #[test]
 fn drawing_entity_loss_refuses_unadmitted_slot_and_message() {
     let entry = directory_entry(404, 0);
+    for (dimension, operation) in [
+        (ResourceDimension::CollectionItems, "iges drawing loss slots"),
+        (ResourceDimension::RetainedBytes, "iges drawing loss message"),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            if dimension == ResourceDimension::RetainedBytes {
+                policy.limits.max_retained_bytes = cap;
+            } else {
+                policy.limits.max_collection_items = cap;
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut losses = Vec::new();
+            let result = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing");
+            assert!(losses.is_empty());
+            result
+        });
+    }
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut losses = Vec::new();
-    let error = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges drawing loss slots")
-    );
-    assert!(losses.is_empty());
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
-    );
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges drawing loss message")
-    );
-    assert!(losses.is_empty());
-
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap();
     assert_eq!(losses.len(), 1);
@@ -1021,4 +1019,22 @@ fn decode_types_v4_view_list_with_required_back_pointers() {
         "iges:entity:directory#5"
     );
     assert!(result.report().losses.is_empty(), "{:#?}", result.report());
+}
+
+#[test]
+fn drawing_traversal_refusals_reach_decode() {
+    for (bytes, operation) in [
+        (drawing_with_properties_file(), "iges drawing directory traversal"),
+        (drawing_with_properties_file(), "iges drawing reference traversal"),
+        (drawing_with_properties_file(), "iges drawing property traversal"),
+        (segmented_view_visibility_file(), "iges segmented view traversal"),
+        (view_visibility_forms_file(), "iges view association search"),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
+                .map_err(|failure| match failure { cadmpeg_ir::codec::DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
+        });
+    }
 }
