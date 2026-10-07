@@ -761,3 +761,34 @@ fn model_pcurve_parameter_range_refuses_collection_limit() {
     });
     assert_collection_refusal(&error, "ASM topology pcurve_parameter_ranges");
 }
+
+#[test]
+fn history_construction_kind_does_not_consume_retained_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let records = [
+        ref_record(0, "face", &[-1, -1, -1, -1, -1, -1, -1, 1]),
+        Record {
+            index: 1, name: "spline".into(), offset: 0, len: 0,
+            tokens: vec![Token::SubtypeOpen, Token::Ident("mystery".into()), Token::SubtypeClose].into(),
+        },
+    ];
+    let by_index = indexed_records(&records);
+    let token_table = nurbs::toks::SubtypeTable::from_records(
+        &cadmpeg_test_support::service_decode_context(), &records,
+    ).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut scratch = ctx.reserve_scoped(0, "ASM test decode scratch").unwrap();
+    let mut carriers = Carriers::default();
+    let mut reach = Reachable::default();
+    keep_faces_and_carriers(TopologyContext {
+        ctx: &ctx, by_index: &by_index, token_table: &token_table,
+        purpose: DecodePurpose::History, format: crate::asm_format!("f3d"),
+    }, &mut AsmBrep::default(), &records, &mut carriers, &mut reach, &mut scratch).unwrap();
+    assert!(reach.faces.contains(&0));
+    assert!(reach.surfaces.contains(&1));
+    assert!(carriers.procedural_surface_defs.is_empty());
+    assert!(matches!(carriers.surface_geo.get(&1), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }))));
+}
