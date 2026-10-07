@@ -206,7 +206,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         id: "payload-string#3-0".to_string(),
         operation_record: record.id.clone(),
         ordinal: 0,
-        value: crate::payload_text::PayloadText::from_text(
+        value: crate::payload_text::PayloadText::new(
             "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer".to_string(),
         )
         .unwrap(),
@@ -289,7 +289,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         id: "payload-string#4-0".to_string(),
         operation_record: counterbored_record.id.clone(),
         ordinal: 0,
-        value: crate::payload_text::PayloadText::from_text(
+        value: crate::payload_text::PayloadText::new(
             "Hole_GeneralHole_Counterbored_Through".to_string(),
         )
         .unwrap(),
@@ -316,7 +316,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         id: "payload-string#5-0".to_string(),
         operation_record: countersunk_record.id.clone(),
         ordinal: 0,
-        value: crate::payload_text::PayloadText::from_text(
+        value: crate::payload_text::PayloadText::new(
             "Hole_GeneralHole_Countersunk_Blind".to_string(),
         )
         .unwrap(),
@@ -348,7 +348,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         id: "payload-string#3-1".to_string(),
         operation_record: record.id.clone(),
         ordinal: 1,
-        value: crate::payload_text::PayloadText::from_text("Hole_Unknown".to_string()).unwrap(),
+        value: crate::payload_text::PayloadText::new("Hole_Unknown".to_string()).unwrap(),
         source_offset: 194,
     };
     assert!(simple_hole_templates(
@@ -359,7 +359,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     .is_empty());
 
     let mut malformed = string;
-    malformed.value = crate::payload_text::PayloadText::from_text(
+    malformed.value = crate::payload_text::PayloadText::new(
         "Hole_GeneralHole_Simple_Through_EndChamfer_StartChamfer".to_string(),
     )
     .unwrap();
@@ -396,7 +396,7 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
         id: "payload-string#threaded-0".to_string(),
         operation_record: record.id.clone(),
         ordinal: 0,
-        value: crate::payload_text::PayloadText::from_text(
+        value: crate::payload_text::PayloadText::new(
             "Hole_ThreadedHole_M Profile_Blind".to_string(),
         )
         .unwrap(),
@@ -450,7 +450,7 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
     .is_empty());
 
     let mut unknown = string;
-    unknown.value = crate::payload_text::PayloadText::from_text(
+    unknown.value = crate::payload_text::PayloadText::new(
         "Hole_ThreadedHole_M Profile_Blind_Extra".to_string(),
     )
     .unwrap();
@@ -487,7 +487,7 @@ fn template_inputs(
         id: "payload-string#template-0".to_string(),
         operation_record: record.id.clone(),
         ordinal: 0,
-        value: crate::payload_text::PayloadText::from_text(value.to_string()).unwrap(),
+        value: crate::payload_text::PayloadText::new(value.to_string()).unwrap(),
         source_offset: 130,
     };
     (label, record, string)

@@ -2747,7 +2747,7 @@ impl TryFrom<ParasolidAttributeDefinitionWire> for ParasolidAttributeDefinition 
             identifier_xmt: NonNullXmt::try_from(wire.identifier_xmt)
                 .map_err(|_| "identifier_xmt must exceed one")?,
             identifier_inflated_offset: wire.identifier_inflated_offset,
-            name: PrintableString::from_text(wire.name)
+            name: PrintableString::new(wire.name)
                 .map_err(|_| "name must be nonempty printable ASCII")?,
             type_id: NonZeroU32::new(wire.type_id).ok_or("type_id must be nonzero")?,
             action_codes: wire.action_codes,
@@ -3436,10 +3436,13 @@ pub(super) fn parasolid_attribute_definitions(
         payloads.commit()?;
         for definition in ctx.admit_iter(scanned, "NX attribute definitions")? {
             ctx.reserve_vec(&mut records, 1, "NX attribute definitions")?;
-            let name = crate::printable_string::PrintableString::from_wire(ctx, ctx.copy_retained_text(
-                definition.name.as_str(),
-                "retain NX attribute definition name",
-            )?)?
+            let name = crate::printable_string::PrintableString::from_wire(
+                ctx,
+                ctx.copy_retained_text(
+                    definition.name.as_str(),
+                    "retain NX attribute definition name",
+                )?,
+            )?
             .map_err(|message| retained_malformed(ctx, message))?;
             let id = parasolid_record_id(
                 ctx,
@@ -3949,7 +3952,8 @@ pub(super) fn parasolid_entity_value_records(
                 u32::from(record.xmt),
                 record.offset,
             )?;
-            let value = crate::printable_string::PrintableString::from_wire(ctx,
+            let value = crate::printable_string::PrintableString::from_wire(
+                ctx,
                 ctx.copy_retained_text(record.value.as_str(), "retain NX Parasolid string value")?,
             )?
             .map_err(|message| retained_malformed(ctx, message))?;

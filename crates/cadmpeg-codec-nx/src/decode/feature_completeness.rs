@@ -17,7 +17,6 @@ use cadmpeg_ir::{
     scalar::Length,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use std::convert::Infallible;
 
 pub(crate) mod operands;
 use operands::{
@@ -38,9 +37,8 @@ const PROPERTIES: &str = "nx feature completeness source properties";
 
 /// Admission for the input-sized work of the completeness predicates.
 ///
-/// Decode reports pass their [`DecodeContext`], which charges every visit,
-/// comparison and lookup. The context-free saved-body census passes
-/// [`StandardCompleteness`], which never refuses.
+/// Decode reports and the saved-body census pass their [`DecodeContext`],
+/// which charges every visit, comparison and lookup.
 pub(crate) trait CompletenessAdmission {
     type Error;
 
@@ -177,79 +175,6 @@ impl CompletenessAdmission for DecodeContext<'_> {
     }
 }
 
-/// The admission for context-free callers. It charges nothing and never
-/// refuses; read its results with [`standard`].
-pub(crate) struct StandardCompleteness;
-
-impl CompletenessAdmission for StandardCompleteness {
-    type Error = Infallible;
-
-    fn any_by<T>(
-        &self,
-        values: &[T],
-        mut predicate: impl FnMut(&T) -> Result<bool, Infallible>,
-        _operation: &'static str,
-    ) -> Result<bool, Infallible> {
-        for value in values {
-            if predicate(value)? {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
-    fn contains<T: DecodeCost + PartialEq>(
-        &self,
-        values: &[T],
-        value: &T,
-        _operation: &'static str,
-    ) -> Result<bool, Infallible> {
-        Ok(values.contains(value))
-    }
-
-    fn has_duplicate<T: DecodeCost + Ord>(
-        &self,
-        values: &[T],
-        _operation: &'static str,
-    ) -> Result<bool, Infallible> {
-        let mut seen = BTreeSet::new();
-        Ok(!values.iter().all(|value| seen.insert(value)))
-    }
-
-    fn has_equal_pair<T: DecodeCost + PartialEq>(
-        &self,
-        values: &[T],
-        _operation: &'static str,
-    ) -> Result<bool, Infallible> {
-        Ok(values
-            .iter()
-            .enumerate()
-            .any(|(index, value)| values[..index].contains(value)))
-    }
-
-    fn is_blank(&self, text: &str, _operation: &'static str) -> Result<bool, Infallible> {
-        Ok(text.trim().is_empty())
-    }
-
-    fn property<'p>(
-        &self,
-        properties: &'p BTreeMap<NonBlankString, String>,
-        key: &str,
-        _operation: &'static str,
-    ) -> Result<Option<&'p String>, Infallible> {
-        Ok(properties.get(key))
-    }
-
-    fn any_property_key(
-        &self,
-        properties: &BTreeMap<NonBlankString, String>,
-        mut predicate: impl FnMut(&str) -> bool,
-        _operation: &'static str,
-    ) -> Result<bool, Infallible> {
-        Ok(properties.keys().any(|key| predicate(key.as_str())))
-    }
-}
-
 /// Run a completeness predicate under a service decode budget.
 #[cfg(test)]
 pub(crate) fn decode_check<T>(
@@ -257,14 +182,6 @@ pub(crate) fn decode_check<T>(
 ) -> T {
     crate::test_support::with_decode_context(predicate)
         .expect("the completeness check stays within the service budget")
-}
-
-/// Unwrap a predicate result produced under [`StandardCompleteness`].
-pub(crate) fn standard<T>(result: Result<T, Infallible>) -> T {
-    match result {
-        Ok(value) => value,
-        Err(never) => match never {},
-    }
 }
 
 fn has_property<A: CompletenessAdmission>(

@@ -90,7 +90,11 @@ fn intersection_chart_route_refuses_scoped_limit() {
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "NX chart sample pairs",
         |ctx| {
-            crate::intersection::curves(ctx, &stream, crate::intersection::ChartPointLayout::Ext11)
+            crate::intersection::chart_source_records(
+                ctx,
+                &stream,
+                crate::intersection::ChartPointLayout::Ext11,
+            )
         },
     );
     assert!(

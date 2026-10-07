@@ -5,7 +5,7 @@
 pub(crate) struct PrintableString<S>(S);
 
 impl<S: crate::immutable_text::ImmutableText> PrintableString<S> {
-    pub(crate) fn from_text(value: S) -> Result<Self, &'static str> {
+    pub(crate) fn new(value: S) -> Result<Self, &'static str> {
         match Self::validate(value.as_ref(), |chars| {
             Ok::<_, std::convert::Infallible>(chars.next())
         }) {
@@ -67,7 +67,7 @@ impl<S: crate::immutable_text::ImmutableText> serde::Serialize for PrintableStri
 impl<'de> serde::Deserialize<'de> for PrintableString<String> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = <String as serde::Deserialize>::deserialize(deserializer)?;
-        Self::from_text(value).map_err(serde::de::Error::custom)
+        Self::new(value).map_err(serde::de::Error::custom)
     }
 }
 
@@ -78,7 +78,7 @@ mod tests {
     #[test]
     fn printable_value_preserves_wire_and_owned_transfer() {
         let text = " ~Name42";
-        let value = PrintableString::from_text(text).unwrap().into_owned();
+        let value = PrintableString::new(text).unwrap().into_owned();
         let json = serde_json::to_string(&value).unwrap();
         assert_eq!(json, serde_json::to_string(text).unwrap());
         assert_eq!(
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn printable_value_rejects_empty_control_and_non_ascii() {
         for text in ["", "\0", "\n", "\t", "\u{7f}", "μ"] {
-            assert!(PrintableString::from_text(text).is_err());
+            assert!(PrintableString::new(text).is_err());
             let json = serde_json::to_string(text).unwrap();
             let error = serde_json::from_str::<PrintableString<String>>(&json).unwrap_err();
             assert!(error.to_string().contains("value"));
@@ -99,8 +99,8 @@ mod tests {
     #[test]
     fn printablestring_serializes_the_checked_borrowed_and_owned_text() {
         let text = "Name";
-        let borrowed = super::PrintableString::from_text(text).unwrap();
-        let owned = super::PrintableString::from_text(text.to_owned()).unwrap();
+        let borrowed = super::PrintableString::new(text).unwrap();
+        let owned = super::PrintableString::new(text.to_owned()).unwrap();
         for _ in 0..3 {
             assert_eq!(borrowed.as_str(), text);
             assert_eq!(owned.as_str(), text);
@@ -141,7 +141,7 @@ mod tests {
                 assert!(PrintableString::from_wire(ctx, text.as_str())
                     .unwrap()
                     .is_err());
-                assert!(PrintableString::from_text(text.as_str()).is_err());
+                assert!(PrintableString::new(text.as_str()).is_err());
             },
         );
     }

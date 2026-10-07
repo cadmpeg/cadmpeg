@@ -1106,7 +1106,8 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
             let graph_payload = ctx.copy_retained_text(&payload.id, "NX draft string graph")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX draft string ordinal", 0, 1))?;
-            let value = PrintableString::from_wire(ctx,
+            let value = PrintableString::from_wire(
+                ctx,
                 ctx.copy_retained_text(value.value.as_str(), "NX draft construction string")?,
             )?
             .map_err(cadmpeg_core::CodecError::malformed)?;

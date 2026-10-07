@@ -865,8 +865,8 @@ pub(in crate::native) fn feature_surface_construction_strings(
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
             let text =
                 ctx.copy_retained_text(value.value.as_str(), "NX surface payload string text")?;
-            let value =
-                crate::payload_text::PayloadText::from_wire(ctx, text)?.map_err(CodecError::malformed)?;
+            let value = crate::payload_text::PayloadText::from_wire(ctx, text)?
+                .map_err(CodecError::malformed)?;
             ctx.reserve_vec(&mut strings, 1, "NX surface payload strings")?;
             strings.push(FeatureSurfaceConstructionString {
                 id,
