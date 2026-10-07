@@ -2631,8 +2631,10 @@ fn read_regions(
     reader.skip(chunk.next_offset() - reader.position())?;
     match parsed {
         Ok((sides, regions, nested, inline_region_loaded)) => {
-            let direct =
-                crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), nested.as_slice())?;
+            let mut ranges = ctx.reserve_scoped(0, "Rhino region checksum ranges")?;
+            let direct = ranges.with_storage(||
+                crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), nested.as_slice())
+            )?;
             if matches!(
                 verify_checksum_ranges(ctx, bytes, &chunk, &direct)?,
                 ChecksumStatus::Mismatch { .. }
@@ -2820,8 +2822,10 @@ fn region_element(
         ))
     } else {
         let chunk = crate::chunks::chunk_at(bytes, start, reader.end(), archive, false)?;
-        let class =
-            parse_class_wrapper(ctx, bytes, chunk.range(), archive, &mut Diagnostics::new())?;
+        let mut wrapper_storage = ctx.reserve_scoped(0, "Rhino region wrapper diagnostics")?;
+        let class = wrapper_storage.with_storage(||
+            parse_class_wrapper(ctx, bytes, chunk.range(), archive, &mut Diagnostics::new())
+        )?;
         if class.class_uuid != expected_class {
             return Err(error(start, "unexpected Brep region element class"));
         }
@@ -3186,6 +3190,18 @@ fn validate_edge_incidences(
     raw: &RawBrep,
     resolved: &ResolvedBrep,
 ) -> Result<(), GeometryError> {
+    let mut storage = ctx.reserve_scoped(0, "Rhino Brep endpoint incidence counts")?;
+    let mut counts = storage.with_storage(|| {
+        ctx.alloc_filled(resolved.edges.len(), [0_usize; 2], "Rhino Brep endpoint incidence counts")
+    })?;
+    for (vertex_index, vertex) in ctx.admit_iter(&resolved.vertices[..], "Rhino Brep incidence vertex traversal").map_err(CodecError::from)?.enumerate() {
+        for edge_index in ctx.admit_iter(&vertex.edges[..], "Rhino Brep vertex incidence traversal").map_err(CodecError::from)? {
+            let endpoints = resolved.edges[*edge_index].vertices;
+            for endpoint in 0..2 {
+                if endpoints[endpoint] == vertex_index { counts[*edge_index][endpoint] += 1; }
+            }
+        }
+    }
     for (edge_index, edge) in ctx
         .admit_iter(
             resolved.edges.as_slice(),
@@ -3219,14 +3235,7 @@ fn validate_edge_incidences(
             } else {
                 1
             };
-            let count = ctx
-                .admit_iter(
-                    resolved.vertices[*vertex].edges.as_slice(),
-                    "Rhino Brep vertex incidence traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
-                .filter(|value| **value == edge_index)
-                .count();
+            let count = counts[edge_index][endpoint];
             if count != expected {
                 return Err(GeometryError::malformed(
                     raw.edges[edge_index].source_range.start,
@@ -5479,5 +5488,69 @@ mod tests {
             .expect("optional regions degrade");
         assert!(validated.raw().regions.is_empty());
         assert_eq!(validated.warnings().len(), 1);
+    }
+
+    fn incidence_star(count: usize) -> (RawBrep, ResolvedBrep) {
+        let mut raw = one_face_raw();
+        raw.edges = (0..count).map(|_| raw.edges[0].clone()).collect();
+        let tolerance = crate::brep::BrepTolerance::Unset;
+        let mut vertices = vec![ResolvedVertex { edges: (0..count).collect(), tolerance }];
+        vertices.extend((0..count).map(|edge| ResolvedVertex { edges: vec![edge], tolerance }));
+        let edges = (0..count).map(|edge| crate::brep::ResolvedEdge {
+            curve: 0, vertices: [0, edge + 1], trims: Vec::new(), tolerance,
+        }).collect();
+        (raw, ResolvedBrep { vertices, edges, ..ResolvedBrep::default() })
+    }
+
+    #[test]
+    fn vertex_incidence_counts_visit_a_star_once() {
+        let (raw, resolved) = incidence_star(32);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        // 32 count initializations + 33 vertices + 64 references + 32 edges.
+        policy.limits.max_work_units = 32 + 33 + 64 + 32;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        crate::brep::validate_edge_incidences(&ctx, &raw, &resolved).expect("linear incidence budget");
+        ctx.finish_session().unwrap();
+        with_test_context(&[], |ctx| {
+            let mut missing = resolved.clone();
+            missing.vertices[0].edges.pop();
+            assert!(crate::brep::validate_edge_incidences(ctx, &raw, &missing).is_err());
+            let mut duplicated = resolved.clone();
+            duplicated.vertices[0].edges.push(0);
+            assert!(crate::brep::validate_edge_incidences(ctx, &raw, &duplicated).is_err());
+            let mut closed = resolved.clone();
+            closed.edges[0].vertices = [0, 0];
+            closed.vertices[0].edges.push(0);
+            crate::brep::validate_edge_incidences(ctx, &raw, &closed).expect("closed endpoint counted twice");
+        });
+    }
+
+    #[test]
+    fn endpoint_incidence_counts_refuse_before_building() {
+        use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let (raw, resolved) = incidence_star(32);
+        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems] {
+            cadmpeg_test_support::refusal::resource_limit_at(dimension, "Rhino Brep endpoint incidence counts", |limit| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = limit,
+                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+                    _ => unreachable!(),
+                }
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = crate::brep::validate_edge_incidences(&ctx, &raw, &resolved);
+                assert!(matches!(ctx.charge_work(0, "after incidence refusal"), Err(CodecError::ResourceLimit(_))));
+                result.map_err(|error| match error { GeometryError::Codec(error) => error, other => CodecError::malformed(other) })
+            });
+        }
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let _probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, "Rhino Brep endpoint incidence counts", None);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        crate::brep::validate_edge_incidences(&ctx, &raw, &resolved).expect("counts are scratch");
+        ctx.finish_session().unwrap();
     }
 }
