@@ -393,11 +393,11 @@ fn compact(ctx: &DecodeContext<'_>, live: &[bool]) -> Result<Vec<Option<u32>>, C
     Ok(compacted)
 }
 
-fn require_end<'a>(
+fn require_end(
     ctx: &DecodeContext<'_>,
     name: &str,
     fields: &mut std::iter::Copied<
-        cadmpeg_core::decode::scan::AdmittedIter<std::slice::Iter<'_, &'a str>>,
+        cadmpeg_core::decode::scan::AdmittedIter<std::slice::Iter<'_, &str>>,
     >,
     record: &str,
 ) -> Result<(), CodecError> {
@@ -494,16 +494,16 @@ enum SymmetryKind {
     },
 }
 
-fn parse_pairs<'a>(
+fn parse_pairs(
     ctx: &DecodeContext<'_>,
     name: &str,
     fields: &mut std::iter::Copied<
-        cadmpeg_core::decode::scan::AdmittedIter<std::slice::Iter<'_, &'a str>>,
+        cadmpeg_core::decode::scan::AdmittedIter<std::slice::Iter<'_, &str>>,
     >,
     record: &str,
 ) -> Result<BTreeMap<usize, usize>, CodecError> {
     let mut values = Vec::new();
-    while let Some(value) = fields.next() {
+    for value in fields.by_ref() {
         ctx.push_vec(
             &mut values,
             parse_int::<usize>(ctx, name, Some(value), record)?,
@@ -551,15 +551,15 @@ fn parse_pairs<'a>(
     Ok(pairs)
 }
 
-fn parse_radial_pairs<'a>(
+fn parse_radial_pairs(
     ctx: &DecodeContext<'_>,
     name: &str,
     fields: &mut std::iter::Copied<
-        cadmpeg_core::decode::scan::AdmittedIter<std::slice::Iter<'_, &'a str>>,
+        cadmpeg_core::decode::scan::AdmittedIter<std::slice::Iter<'_, &str>>,
     >,
 ) -> Result<Vec<[u64; 2]>, CodecError> {
     let mut values = Vec::new();
-    while let Some(value) = fields.next() {
+    for value in fields.by_ref() {
         let index = ctx
             .parse_text::<u64>(value, "parse T-spline radial map index")?
             .map_err(|_| malformed(ctx, name, "invalid radial symmetry map index"))?;

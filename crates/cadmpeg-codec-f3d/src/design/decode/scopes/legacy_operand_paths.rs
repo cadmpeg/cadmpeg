@@ -763,13 +763,16 @@ fn exact_legacy_class_388_envelope(
 
 /// The fixed fields of the class-451 locator frame at `locator_at`: its
 /// scope backlink offset and the wrapper it references.
+/// A legacy path locator: its reference offset and the located record.
+type LegacyPathLocator = (u64, (u32, u64));
+
 fn legacy_path_locator(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     locator_record_index: u32,
     locator_at: usize,
-) -> Result<Option<(u64, (u32, u64))>, CodecError> {
+) -> Result<Option<LegacyPathLocator>, CodecError> {
     if exact_indexed_header_at(bytes, locator_at, locator_record_index) != Some(b"451")
         || !zeros_at::<{ path_locator::NONZERO_RECORD_REFERENCE - path_locator::ZERO_RUN_10 }>(
             bytes,

@@ -410,7 +410,6 @@ fn mirror_plane_binding_propagates_work_refusals_for_stream_comparisons() {
                     &identities,
                     std::slice::from_ref(&history),
                 )
-                .map(|_| ())
             },
         );
         assert!(matches!(

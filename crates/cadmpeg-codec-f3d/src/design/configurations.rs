@@ -669,7 +669,7 @@ pub(crate) fn unresolved_configuration_rule_count(
     }
     let mut count = 0usize;
     for rule in ctx.admit_iter(native, "f3d unresolved configuration rules")? {
-        if !rule.rule().is_some_and(|payload| !payload.is_empty()) {
+        if rule.rule().is_none_or(serde_json::Map::is_empty) {
             continue;
         }
         if !ctx.contains_btree_set(

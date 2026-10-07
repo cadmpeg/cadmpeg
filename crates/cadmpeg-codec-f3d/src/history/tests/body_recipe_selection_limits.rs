@@ -615,7 +615,7 @@ fn body_recipe_face_carrier_refuses_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         operation,
         0,
-        |ctx| face_candidate_with_context(ctx),
+        face_candidate_with_context,
     );
     assert!(matches!(
         error,
@@ -640,7 +640,7 @@ fn body_recipe_face_scans_and_comparisons_refuse_work() {
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
             operation,
             0,
-            |ctx| face_candidate_with_context(ctx),
+            face_candidate_with_context,
         );
         assert!(matches!(
             error,

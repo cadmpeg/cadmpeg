@@ -70,9 +70,7 @@ fn resolution_error(
         super::super::validate_face_group_member_resolution(
             &ctx,
             &mut Vec::new(),
-            [("f3d:Design/BulkStream.dat", 100, 201)]
-                .into_iter()
-                .collect(),
+            &std::collections::BTreeSet::from([("f3d:Design/BulkStream.dat", 100, 201)]),
             &std::collections::HashSet::new(),
             &native.design_entity_selection_operands,
         )

@@ -363,18 +363,15 @@ pub(super) fn bind_face_selection(
                 "compare F3D face selection group identity",
             )
         };
-    let Some(group_index) = ctx.position_by(
-        groups,
-        |group| matches_group(group),
-        "find F3D face selection group",
-    )?
+    let Some(group_index) =
+        ctx.position_by(groups, &matches_group, "find F3D face selection group")?
     else {
         return Ok(());
     };
     if ctx
         .position_by(
             &groups[group_index + 1..],
-            |group| matches_group(group),
+            matches_group,
             "find F3D face selection group",
         )?
         .is_some()
@@ -435,7 +432,7 @@ pub(super) fn bind_face_selection(
         };
         let Some(operand_index) = ctx.position_by(
             operands,
-            |operand| operand_matches(operand),
+            &operand_matches,
             "find F3D face selection operand",
         )?
         else {
@@ -444,7 +441,7 @@ pub(super) fn bind_face_selection(
         if ctx
             .position_by(
                 &operands[operand_index + 1..],
-                |operand| operand_matches(operand),
+                operand_matches,
                 "find F3D face selection operand",
             )?
             .is_some()
@@ -529,7 +526,7 @@ pub(super) fn bind_body_recipe_face_selection(
         };
     let Some(group_index) = ctx.position_by(
         groups,
-        |group| group_matches(group),
+        &group_matches,
         "find F3D body recipe face selection group",
     )?
     else {
@@ -538,7 +535,7 @@ pub(super) fn bind_body_recipe_face_selection(
     if ctx
         .position_by(
             &groups[group_index + 1..],
-            |group| group_matches(group),
+            group_matches,
             "find F3D body recipe face selection group",
         )?
         .is_some()
@@ -581,7 +578,7 @@ pub(super) fn bind_body_recipe_face_selection(
             };
         let Some(operand_index) = ctx.position_by(
             operands,
-            |operand| operand_matches(operand),
+            &operand_matches,
             "find F3D body recipe face selection operand",
         )?
         else {
@@ -590,7 +587,7 @@ pub(super) fn bind_body_recipe_face_selection(
         if ctx
             .position_by(
                 &operands[operand_index + 1..],
-                |operand| operand_matches(operand),
+                operand_matches,
                 "find F3D body recipe face selection operand",
             )?
             .is_some()
@@ -624,9 +621,9 @@ pub(super) fn bind_body_recipe_face_selection(
     Ok(())
 }
 
-pub(super) fn faces_in_topology<'a>(
+pub(super) fn faces_in_topology(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
-    candidates: &'a [cadmpeg_ir::ids::FaceId],
+    candidates: &[cadmpeg_ir::ids::FaceId],
     topology: &AsmHistoricalTopology,
 ) -> Result<Vec<cadmpeg_ir::ids::FaceId>, cadmpeg_core::CodecError> {
     let mut faces = HashSet::new();
@@ -1316,18 +1313,15 @@ pub(crate) fn bind_entity_selection_history(
                 "compare F3D selection entity scope stream",
             )
         };
-        let Some(scope_index) = decode.position_by(
-            scopes,
-            |scope| matches_scope(scope),
-            "find F3D selection entity scope",
-        )?
+        let Some(scope_index) =
+            decode.position_by(scopes, &matches_scope, "find F3D selection entity scope")?
         else {
             continue;
         };
         if decode
             .position_by(
                 &scopes[scope_index + 1..],
-                |scope| matches_scope(scope),
+                matches_scope,
                 "find F3D selection entity scope",
             )?
             .is_some()
@@ -2053,18 +2047,15 @@ pub(crate) fn bind_mirror_selection_planes(
                         .map(|member| member.value)
                         .eq([selection_record_index]))
             };
-        let Some(group_index) = decode.position_by(
-            groups,
-            |group| matches_group(group),
-            "find F3D Mirror plane group",
-        )?
+        let Some(group_index) =
+            decode.position_by(groups, &matches_group, "find F3D Mirror plane group")?
         else {
             continue;
         };
         if decode
             .position_by(
                 &groups[group_index + 1..],
-                |group| matches_group(group),
+                matches_group,
                 "find F3D Mirror plane group",
             )?
             .is_some()
@@ -2086,15 +2077,13 @@ pub(crate) fn bind_mirror_selection_planes(
                     && operand.group_member_ordinal == 0
                     && operand.record_index() == selection_record_index)
             };
-        let matching_operand = if let Some(index) = decode.position_by(
-            operands,
-            |operand| matches_operand(operand),
-            "find F3D Mirror plane operand",
-        )? {
+        let matching_operand = if let Some(index) =
+            decode.position_by(operands, &matches_operand, "find F3D Mirror plane operand")?
+        {
             if decode
                 .position_by(
                     &operands[index + 1..],
-                    |operand| matches_operand(operand),
+                    matches_operand,
                     "find F3D Mirror plane operand",
                 )?
                 .is_some()
@@ -2120,13 +2109,13 @@ pub(crate) fn bind_mirror_selection_planes(
         };
         let matching_face_operand = if let Some(index) = decode.position_by(
             face_operands,
-            |operand| matches_face_operand(operand),
+            &matches_face_operand,
             "find F3D Mirror plane face operand",
         )? {
             if decode
                 .position_by(
                     &face_operands[index + 1..],
-                    |operand| matches_face_operand(operand),
+                    matches_face_operand,
                     "find F3D Mirror plane face operand",
                 )?
                 .is_some()
@@ -2153,13 +2142,13 @@ pub(crate) fn bind_mirror_selection_planes(
             };
             let identity = if let Some(index) = decode.position_by(
                 identities,
-                |identity| matches_identity(identity),
+                &matches_identity,
                 "find F3D Mirror plane identity",
             )? {
                 if decode
                     .position_by(
                         &identities[index + 1..],
-                        |identity| matches_identity(identity),
+                        matches_identity,
                         "find F3D Mirror plane identity",
                     )?
                     .is_some()
@@ -2792,10 +2781,9 @@ pub(super) fn historical_mirror_coedge_plane(
                     &coedge_ref,
                     "find F3D mirror loop member",
                 )?
+                && loop_relation.replace(relation).is_some()
             {
-                if loop_relation.replace(relation).is_some() {
-                    return Ok(None);
-                }
+                return Ok(None);
             }
         }
         let Some(loop_relation) = loop_relation else {
@@ -2817,10 +2805,9 @@ pub(super) fn historical_mirror_coedge_plane(
                 &relation.member_refs,
                 &coedge.owner_loop,
                 "find F3D mirror face loop member",
-            )? {
-                if face_relation.replace(relation).is_some() {
-                    return Ok(None);
-                }
+            )? && face_relation.replace(relation).is_some()
+            {
+                return Ok(None);
             }
         }
         let Some(face_relation) = face_relation else {

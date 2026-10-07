@@ -292,9 +292,8 @@ fn exact_assembly_operand_path_envelope(
     let Some(path_reference_offset) = wrapper_frame(
         ctx,
         bytes,
-        wrapper_at,
+        (wrapper_at, wrapper_end),
         *wrapper_class_tag,
-        wrapper_end,
         variable_reference,
         path_spans.len(),
         path_record_index,
@@ -386,9 +385,8 @@ fn exact_assembly_operand_path_envelope(
 fn wrapper_frame(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    wrapper_at: usize,
+    (wrapper_at, wrapper_end): (usize, usize),
     wrapper_class_tag: [u8; 3],
-    wrapper_end: usize,
     variable_reference: bool,
     span_count: usize,
     path_record_index: u32,

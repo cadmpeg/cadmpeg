@@ -324,7 +324,7 @@ fn entity_selection_previous_state_comparison_propagates_work_refusal() {
                 )
                 .unwrap(),
             ];
-            bind_entity_selection_history(decode, &mut operands, &scopes, &histories).map(|_| ())
+            bind_entity_selection_history(decode, &mut operands, &scopes, &histories)
         },
     );
     assert!(matches!(
@@ -633,7 +633,7 @@ fn released_projection_cache_scan_propagates_work_refusal() {
         0,
         |decode| {
             let mut histories = [history.clone()];
-            crate::history::discard_projection_caches(decode, &mut histories).map(|_| ())
+            crate::history::discard_projection_caches(decode, &mut histories)
         },
     );
     assert!(matches!(
@@ -672,7 +672,7 @@ fn historical_entity_version_retain_propagates_work_refusal() {
         0,
         |decode| {
             let mut histories = [history.clone()];
-            crate::history::discard_projection_caches(decode, &mut histories).map(|_| ())
+            crate::history::discard_projection_caches(decode, &mut histories)
         },
     );
     assert!(matches!(
@@ -702,7 +702,7 @@ fn historical_entity_version_membership_propagates_work_refusal() {
         0,
         |decode| {
             let mut histories = [history.clone()];
-            crate::history::discard_projection_caches(decode, &mut histories).map(|_| ())
+            crate::history::discard_projection_caches(decode, &mut histories)
         },
     );
     assert!(matches!(
@@ -1482,7 +1482,7 @@ fn entity_selection_scope_stream_comparison_propagates_work_refusal() {
                 )
                 .unwrap(),
             ];
-            bind_entity_selection_history(decode, &mut operands, &scopes, &[]).map(|_| ())
+            bind_entity_selection_history(decode, &mut operands, &scopes, &[])
         },
     );
     assert!(matches!(

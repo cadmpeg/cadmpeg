@@ -5043,16 +5043,26 @@ pub(crate) fn unique_history_state_pair<'a>(
     histories: &'a [AsmHistory],
     state_id: i64,
     previous_state_id: i64,
-) -> Result<Option<(&'a AsmHistory, &'a AsmDeltaState, &'a AsmDeltaState)>, cadmpeg_core::CodecError>
-{
-    if let Some(direct) =
-        unique_history_state_pair_for_link(decode, histories, state_id, previous_state_id, true)?
+) -> Result<Option<HistoryStatePair<'a>>, cadmpeg_core::CodecError> {
+    // A directly linked pair decides the answer, ambiguous or not; only an
+    // absent direct link falls back to reachability.
+    match unique_history_state_pair_for_link(decode, histories, state_id, previous_state_id, true)?
     {
-        return Ok(direct);
+        StatePairSearch::Unique(pair) => return Ok(Some(pair)),
+        StatePairSearch::Ambiguous => return Ok(None),
+        StatePairSearch::Absent => {}
     }
     Ok(
-        unique_history_state_pair_for_link(decode, histories, state_id, previous_state_id, false)?
-            .flatten(),
+        match unique_history_state_pair_for_link(
+            decode,
+            histories,
+            state_id,
+            previous_state_id,
+            false,
+        )? {
+            StatePairSearch::Unique(pair) => Some(pair),
+            StatePairSearch::Ambiguous | StatePairSearch::Absent => None,
+        },
     )
 }
 
@@ -5417,16 +5427,26 @@ fn history_state_pair(
     Ok(Some((state_index, previous_index)))
 }
 
+/// A unique state pair: its history, the state and the previous state.
+type HistoryStatePair<'a> = (&'a AsmHistory, &'a AsmDeltaState, &'a AsmDeltaState);
+
+/// The outcome of searching every history for one state pair.
+enum StatePairSearch<'a> {
+    /// No history holds the pair.
+    Absent,
+    /// More than one history holds it, or its states cannot be read back.
+    Ambiguous,
+    /// Exactly one history holds it.
+    Unique(HistoryStatePair<'a>),
+}
+
 fn unique_history_state_pair_for_link<'a>(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
     histories: &'a [AsmHistory],
     state_id: i64,
     previous_state_id: i64,
     require_direct: bool,
-) -> Result<
-    Option<Option<(&'a AsmHistory, &'a AsmDeltaState, &'a AsmDeltaState)>>,
-    cadmpeg_core::CodecError,
-> {
+) -> Result<StatePairSearch<'a>, cadmpeg_core::CodecError> {
     let operation = "find F3D history state pair";
     let mut pair_indices = None;
     let Some(index) = decode.position_by(
@@ -5439,7 +5459,7 @@ fn unique_history_state_pair_for_link<'a>(
         operation,
     )?
     else {
-        return Ok(None);
+        return Ok(StatePairSearch::Absent);
     };
     if decode
         .position_by(
@@ -5458,19 +5478,19 @@ fn unique_history_state_pair_for_link<'a>(
         )?
         .is_some()
     {
-        return Ok(Some(None));
+        return Ok(StatePairSearch::Ambiguous);
     }
     let (Some(history), Some((state_index, previous_index))) = (histories.get(index), pair_indices)
     else {
-        return Ok(Some(None));
+        return Ok(StatePairSearch::Ambiguous);
     };
     let (Some(state), Some(previous)) = (
         history.states.get(state_index),
         history.states.get(previous_index),
     ) else {
-        return Ok(Some(None));
+        return Ok(StatePairSearch::Ambiguous);
     };
-    Ok(Some(Some((history, state, previous))))
+    Ok(StatePairSearch::Unique((history, state, previous)))
 }
 
 /// Return the one ASM history bound to a Design scope.
@@ -5514,8 +5534,7 @@ fn bound_history_state_pair<'a>(
     previous_state_id: i64,
     scope_histories: &HashMap<String, String>,
     histories: &'a [AsmHistory],
-) -> Result<Option<(&'a AsmHistory, &'a AsmDeltaState, &'a AsmDeltaState)>, cadmpeg_core::CodecError>
-{
+) -> Result<Option<HistoryStatePair<'a>>, cadmpeg_core::CodecError> {
     let Some(history) = bound_scope_history(decode, scope_id, scope_histories, histories)? else {
         return Ok(None);
     };
@@ -6059,10 +6078,10 @@ fn linked_previous_state_id(
         .and_then(|transition| transition.previous_state_id);
     match (derived, linked) {
         (Some(derived), Some(linked)) => {
-            if derived != linked {
-                Ok(None)
-            } else {
+            if derived == linked {
                 Ok(Some(derived))
+            } else {
+                Ok(None)
             }
         }
         (Some(derived), _) => Ok(Some(derived)),
@@ -7672,8 +7691,7 @@ fn body_recipe_operand_history_pair<'a>(
     operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &'a [AsmHistory],
-) -> Result<Option<(&'a AsmHistory, &'a AsmDeltaState, &'a AsmDeltaState)>, cadmpeg_core::CodecError>
-{
+) -> Result<Option<HistoryStatePair<'a>>, cadmpeg_core::CodecError> {
     let operation = "find F3D body recipe history scope";
     let Some((stream, _)) = decode.rsplit_once(&operand.id, ":", operation)? else {
         return Ok(None);
@@ -9053,7 +9071,7 @@ fn side_one_recipe_edge(
     {
         decode.retain_vec(
             &mut candidates,
-            |candidate| decode.contains(*edges, candidate, "find F3D recipe side edge candidate"),
+            |candidate| decode.contains(edges, candidate, "find F3D recipe side edge candidate"),
             "retain F3D recipe side edge candidates",
         )?;
     }
@@ -10931,11 +10949,11 @@ fn historical_topology(
         coedge_topology: topology_some!(ctx.collect_fallible_options(
             brep.coedges.iter().map(
                 |coedge| -> Result<Option<AsmHistoricalCoedge>, cadmpeg_core::CodecError> {
-                    let (next, previous) =
-                        match cadmpeg_ir::topology::coedge_ring_neighbors(&brep.loops, coedge) {
-                            Some(neighbors) => neighbors,
-                            None => return Ok(None),
-                        };
+                    let Some((next, previous)) =
+                        cadmpeg_ir::topology::coedge_ring_neighbors(&brep.loops, coedge)
+                    else {
+                        return Ok(None);
+                    };
                     let Some(coedge_ref) = stable_ref(ctx, coedge.id.as_str())? else {
                         return Ok(None);
                     };

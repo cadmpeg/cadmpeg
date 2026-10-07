@@ -2303,13 +2303,16 @@ fn decode_design_object_types<'ctx, 'a>(
     Ok((storage, out))
 }
 
+/// ACT channel names and values keyed by entity suffix.
+type ActChannelIndex = std::collections::HashMap<u64, BTreeMap<String, String>>;
+
 fn decode_act_channels<'ctx, 'a>(
     ctx: &'ctx DecodeContext<'a>,
     scan: &ContainerScan<'a>,
 ) -> Result<
     (
         cadmpeg_core::decode::ScopedReservation<'ctx>,
-        std::collections::HashMap<u64, BTreeMap<String, String>>,
+        ActChannelIndex,
     ),
     CodecError,
 > {

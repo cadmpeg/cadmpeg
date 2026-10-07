@@ -5549,6 +5549,7 @@ fn decode_asm_history(
     crate::history::decode(ctx, bytes, &history_brep.name, width, &ctx.policy().limits)
 }
 
+#[derive(Clone, Copy)]
 enum RelatedRecordIndexSource<'a> {
     RelationAndParameterLinks(&'a F3dNative),
     ParameterOwnerLinks(&'a F3dNative),
@@ -7073,7 +7074,7 @@ pub(crate) fn resolve_face_appearance_bindings(
                 Entry::Occupied(mut entry) => {
                     let existing = entry.get_mut();
                     if !ctx.eq_ignore_ascii_case(
-                        &existing.visual_guid,
+                        existing.visual_guid,
                         &assignment.visual_guid,
                         "compare F3D face appearance assignment visual tokens",
                     )? {
