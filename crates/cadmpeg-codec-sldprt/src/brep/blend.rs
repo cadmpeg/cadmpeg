@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{u64_from_index, View};
+use cadmpeg_core::decode::View;
 
 use super::LEN_TO_MM;
 
@@ -115,8 +115,7 @@ fn parse_raw(bytes: &[u8], offset: usize) -> Option<RawCarrier> {
     })
 }
 
-fn parse_blend(bytes: &[u8], offset: usize) -> Option<BlendCarrier> {
-    let raw = parse_raw(bytes, offset)?;
+fn blend_from_raw(raw: &RawCarrier, offset: usize) -> Option<BlendCarrier> {
     let [first_radius, second_radius, first_side, second_side] = raw.values;
     if first_radius.abs() <= f64::EPSILON
         || (first_radius.abs() - second_radius.abs()).abs() > EPS_BLEND_PARSE_BLEND_E12
@@ -157,28 +156,26 @@ pub(super) fn scan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<BlendCarriers, cadmpeg_core::CodecError> {
-    ctx.charge_work(u64_from_index(bytes.len()), "scan SLDPRT blend carriers")?;
     let mut blends = BTreeMap::new();
     let mut pairs = BTreeMap::new();
-    let Some(last_offset) = bytes.len().checked_sub(57) else {
-        return Ok(BlendCarriers { blends, pairs });
-    };
-    for offset in 0..last_offset {
-        if let Some(carrier) = parse_blend(bytes, offset) {
-            ctx.admit_btree_entry(&mut blends, &carrier.attr, "index SLDPRT blend carriers")?;
-            blends.entry(carrier.attr).or_insert(carrier);
+    let starts = 0..bytes.len().checked_sub(57).map_or(0, |end| end);
+    for offset in ctx.admit_iter(starts, "scan SLDPRT blend carriers")? {
+        let Some(raw) = parse_raw(bytes, offset) else {
+            continue;
+        };
+        if let Some(carrier) = blend_from_raw(&raw, offset) {
+            ctx.entry_btree_map(&mut blends, carrier.attr, "index SLDPRT blend carriers")?
+                .or_insert(carrier);
         }
-        if let Some(raw) = parse_raw(bytes, offset) {
-            if raw.selector == SupportSelector::TwoSurfaces
-                && raw.values[0].abs() <= f64::EPSILON
-                && raw.values[1].abs() <= f64::EPSILON
-            {
-                ctx.admit_btree_entry(&mut pairs, &raw.attr, "index SLDPRT blend support pairs")?;
-                pairs.entry(raw.attr).or_insert(SupportPairCarrier {
+        if raw.selector == SupportSelector::TwoSurfaces
+            && raw.values[0].abs() <= f64::EPSILON
+            && raw.values[1].abs() <= f64::EPSILON
+        {
+            ctx.entry_btree_map(&mut pairs, raw.attr, "index SLDPRT blend support pairs")?
+                .or_insert(SupportPairCarrier {
                     supports: [raw.references[0], raw.references[1]],
                     intersection: raw.references[2],
                 });
-            }
         }
     }
     Ok(BlendCarriers { blends, pairs })

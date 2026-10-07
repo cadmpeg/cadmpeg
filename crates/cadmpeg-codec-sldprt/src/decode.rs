@@ -35,7 +35,6 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 mod digest_partition;
 
 use crate::container::configuration_index;
-use crate::container::contains_ascii_case_insensitive;
 
 use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::graph::{decode_bodies, Brep};
@@ -488,18 +487,6 @@ fn insert_charged_set<'a, T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost 
 ) -> Result<(), CodecError> {
     ctx.insert_hash_set(set, value, operation)?;
     Ok(())
-}
-
-fn charged_hash_map<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
-    ctx: &DecodeContext<'_>,
-    entries: impl IntoIterator<Item = (K, V)>,
-    operation: &'static str,
-) -> Result<HashMap<K, V>, CodecError> {
-    let mut map = HashMap::new();
-    for (key, value) in entries {
-        ctx.insert_hash_map(&mut map, key, value, operation)?;
-    }
-    Ok(map)
 }
 
 fn has_incoherent_refs<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
@@ -2373,15 +2360,8 @@ fn unprojected_sketch_relation_records(
         &native.feature_input_lanes,
         "scan SLDPRT unprojected_sketch_relation_records values",
     )? {
-        let markers_by_id = charged_hash_map(
-            ctx,
-            ctx.admit_iter(
-                &lane.sketch_entities,
-                "index SLDPRT sketch relation markers",
-            )?
-            .map(|marker| (marker.id(), marker)),
-            "index SLDPRT sketch relation markers",
-        )?;
+        let lane_markers =
+            crate::resolved_features::typed_relations::RelationMarkers::of_lane(ctx, lane)?;
         let instances = ctx
             .admit_iter(
                 &lane.relation_instances[..],
@@ -2464,10 +2444,10 @@ fn unprojected_sketch_relation_records(
                     "test SLDPRT hashed identity",
                 )?,
                 None => false,
-            } && crate::resolved_features::typed_relations::marker_owns_constraint(
+            } && crate::resolved_features::typed_relations::marker_owns_constraint_in(
                 ctx,
                 marker,
-                &markers_by_id,
+                &lane_markers,
             )? && !ctx.contains_hash_set(
                 &(projected),
                 marker.id(),
@@ -2491,15 +2471,8 @@ fn multiply_projected_sketch_relation_records(
         &native.feature_input_lanes,
         "scan SLDPRT multiply_projected_sketch_relation_records values",
     )? {
-        let markers_by_id = charged_hash_map(
-            ctx,
-            ctx.admit_iter(
-                &lane.sketch_entities,
-                "index SLDPRT sketch relation markers",
-            )?
-            .map(|marker| (marker.id(), marker)),
-            "index SLDPRT sketch relation markers",
-        )?;
+        let markers =
+            crate::resolved_features::typed_relations::RelationMarkers::of_lane(ctx, lane)?;
         for relation in ctx.admit_iter(
             &lane.relation_instances,
             "scan SLDPRT multiply_projected_sketch_relation_records values",
@@ -2515,10 +2488,8 @@ fn multiply_projected_sketch_relation_records(
             &lane.sketch_entities,
             "scan SLDPRT multiply_projected_sketch_relation_records values",
         )? {
-            if crate::resolved_features::typed_relations::marker_owns_constraint(
-                ctx,
-                marker,
-                &markers_by_id,
+            if crate::resolved_features::typed_relations::marker_owns_constraint_in(
+                ctx, marker, &markers,
             )? {
                 insert_charged_set(
                     ctx,
@@ -2738,14 +2709,11 @@ fn active_body_streams<'a>(
 ) -> Result<Vec<ActiveParasolidSite<'a>>, CodecError> {
     let mut streams = Vec::new();
     for section in scan.sections(ctx)? {
-        let name = section.name().unwrap_or("");
-        if contains_ascii_case_insensitive(name, "ghost")
-            || contains_ascii_case_insensitive(name, "resolvedfeatures")
-        {
+        if section.name_words().ghost() || section.name_words().resolved_features() {
             continue;
         }
         for stream in ctx.admit_iter(section.ps_streams(), "scan SLDPRT topology members")? {
-            if !crate::parasolid::is_body_stream(ctx, &stream.header)? {
+            if !stream.header.is_body_stream() {
                 continue;
             }
             ctx.reserve_vec(&mut streams, 1, "collect SLDPRT body streams")?;
@@ -2756,22 +2724,16 @@ fn active_body_streams<'a>(
             });
         }
     }
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut streams,
-        |value| value.header.description.as_str(),
-        |left: &str, right: &str| {
-            (!contains_ascii_case_insensitive(left, "partition"))
-                .cmp(&(!contains_ascii_case_insensitive(right, "partition")))
-        },
+        |value| value.header.words.partition(),
+        |left, right| right.cmp(left),
         "sort SLDPRT active body streams",
     )?;
-    ctx.stable_sort_by(
+    ctx.stable_sort_by_key(
         &mut streams,
-        |value| value.source_stream().as_str(),
-        |left: &str, right: &str| {
-            (!contains_ascii_case_insensitive(left, "partition"))
-                .cmp(&(!contains_ascii_case_insensitive(right, "partition")))
-        },
+        |value| value.section.name_words().partition(),
+        |left, right| right.cmp(left),
         "sort SLDPRT active body streams",
     )?;
     Ok(streams)
@@ -2844,17 +2806,13 @@ fn try_decode_brep(
                 &sites[decoded_sites[selected_site].0],
                 "scan SLDPRT selected site body streams",
             )?
-            .any(|index| {
-                contains_ascii_case_insensitive(&streams[*index].header.description, "partition")
-            })
+            .any(|index| streams[*index].header.words.partition())
         && ctx
             .admit_iter(
                 &sites[decoded_sites[selected_site].0],
                 "scan SLDPRT selected site body streams",
             )?
-            .any(|index| {
-                contains_ascii_case_insensitive(&streams[*index].header.description, "deltas")
-            });
+            .any(|index| streams[*index].header.words.deltas());
     let selected_has_geometry = !decoded_sites[selected_site].2.faces.is_empty()
         || !decoded_sites[selected_site].2.surfaces.is_empty()
         || !decoded_sites[selected_site].2.points.is_empty();
@@ -2882,23 +2840,13 @@ fn try_decode_brep(
                                         &sites[*site][..],
                                         "scan SLDPRT try_decode_brep values",
                                     )?
-                                    .any(|index| {
-                                        contains_ascii_case_insensitive(
-                                            &streams[*index].header.description,
-                                            "partition",
-                                        )
-                                    })
+                                    .any(|index| streams[*index].header.words.partition())
                                 && ctx
                                     .admit_iter(
                                         &sites[*site][..],
                                         "scan SLDPRT try_decode_brep values",
                                     )?
-                                    .any(|index| {
-                                        contains_ascii_case_insensitive(
-                                            &streams[*index].header.description,
-                                            "deltas",
-                                        )
-                                    })
+                                    .any(|index| streams[*index].header.words.deltas())
                         }),
                 )
             })?;
@@ -2948,6 +2896,7 @@ fn try_decode_brep(
                 .map_err(|_| CodecError::Malformed("invalid admitted Parasolid schema".into()))?;
             Ok::<_, CodecError>(StreamHeader {
                 description,
+                words: header.words,
                 schema,
                 body_offset: header.body_offset,
             })

@@ -59,29 +59,35 @@ fn display_reference_text_refuses_materialized_limit_before_allocation() {
                 && limit.operation == "decode display-list reference text"));
 }
 
-fn reference_collection_refusal(extra: u64, operation: &'static str) {
+fn reference_collection_refusal(operation: &'static str) {
     let payload = framed_surface_reference("moContent3IntSurfIdRep_c,300,4,-1,0,");
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = extra;
-    assert!(matches!(reference_limit_error(&payload, &policy),
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == operation));
-}
-
-#[test]
-fn display_reference_fields_refuse_collection_limit_before_scanning() {
-    reference_collection_refusal(0, "scan display-list reference fields");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)?;
+            persistent_surface_references(
+                &ctx,
+                &payload,
+                ByteRange::new(0, payload.len()).expect("ordered range"),
+            )
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 #[test]
 fn display_reference_numeric_fields_refuse_collection_limit_before_allocation() {
-    reference_collection_refusal(3, "decode display-list reference fields");
+    reference_collection_refusal("decode display-list reference fields");
 }
 
 #[test]
 fn display_references_refuse_collection_limit_before_insertion() {
-    reference_collection_refusal(5, "collect display-list references");
+    reference_collection_refusal("collect display-list references");
 }
 
 #[test]

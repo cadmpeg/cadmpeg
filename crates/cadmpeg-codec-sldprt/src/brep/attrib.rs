@@ -114,21 +114,35 @@ pub(super) struct Dictionary<'ctx> {
     _storage: ScopedReservation<'ctx>,
 }
 
+/// What the name records declare for one definition node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Declaration {
+    /// No name record declares the node.
+    Undeclared,
+    /// Name records of different families declare the node.
+    Conflicting,
+    /// Every name record that declares the node names this family.
+    Family(Family),
+}
+
 impl Dictionary<'_> {
-    /// The family declared for a definition node: `None` when no name record
-    /// declares the node, `Some(None)` when its declarations conflict.
+    /// The declaration of a definition node.
     pub(super) fn family(
         &self,
         ctx: &DecodeContext<'_>,
         node: u16,
-    ) -> Result<Option<Option<Family>>, cadmpeg_core::CodecError> {
-        Ok(ctx
-            .get_btree_map(
+    ) -> Result<Declaration, cadmpeg_core::CodecError> {
+        Ok(
+            match ctx.get_btree_map(
                 &self.families,
                 &node,
                 "look up Parasolid attribute definitions",
-            )?
-            .copied())
+            )? {
+                None => Declaration::Undeclared,
+                Some(None) => Declaration::Conflicting,
+                Some(Some(family)) => Declaration::Family(*family),
+            },
+        )
     }
 }
 
@@ -392,7 +406,7 @@ pub(super) fn bindings(
         let Some(definition) = View::u16_be_at(buf, p + attr_inst::DEFINITION_NODE_ID) else {
             continue;
         };
-        let Some(Some(family)) = dictionary.family(ctx, definition)? else {
+        let Declaration::Family(family) = dictionary.family(ctx, definition)? else {
             continue;
         };
         if !family.has_bindings() {
@@ -510,8 +524,8 @@ pub(super) fn bindings(
 #[cfg(test)]
 mod tests {
     use super::{
-        bindings, dictionary, integer_list, Bindings, Family, GraphicRun, ATOM_ID, FACE_COLOR,
-        LAST_BODY_MODIFIER,
+        bindings, dictionary, integer_list, Bindings, Declaration, Family, GraphicRun, ATOM_ID,
+        FACE_COLOR, LAST_BODY_MODIFIER,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -610,13 +624,12 @@ mod tests {
         scan(&ctx, bytes).expect("attribute scan")
     }
 
-    fn declared(bytes: &[u8], node: u16) -> Option<Option<Family>> {
+    fn declared(bytes: &[u8], node: u16) -> Declaration {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
         let dictionary = dictionary(&ctx, bytes).expect("definitions");
-        let family = dictionary.family(&ctx, node).expect("definition lookup");
-        family
+        dictionary.family(&ctx, node).expect("definition lookup")
     }
 
     fn refusal(dimension: ResourceDimension, operation: &'static str, bytes: &[u8]) {
@@ -719,13 +732,16 @@ mod tests {
         let dictionary = dictionary(&ctx, &bytes).expect("definitions without retained bytes");
         assert_eq!(
             dictionary.family(&ctx, 16).expect("lookup"),
-            Some(Some(Family::FaceAtom))
+            Declaration::Family(Family::FaceAtom)
         );
         assert_eq!(
             dictionary.family(&ctx, 18).expect("lookup"),
-            Some(Some(Family::FaceColor))
+            Declaration::Family(Family::FaceColor)
         );
-        assert_eq!(dictionary.family(&ctx, 19).expect("lookup"), None);
+        assert_eq!(
+            dictionary.family(&ctx, 19).expect("lookup"),
+            Declaration::Undeclared
+        );
     }
 
     #[test]
@@ -794,7 +810,7 @@ mod tests {
     fn a_name_must_be_printable_up_to_the_definition_record() {
         let mut body = Vec::new();
         append_definition(&mut body, b"ATOM_ID\x012001", 15, 16);
-        assert_eq!(declared(&body, 16), None);
+        assert_eq!(declared(&body, 16), Declaration::Undeclared);
     }
 
     #[test]
@@ -802,14 +818,14 @@ mod tests {
         let mut body = Vec::new();
         append_definition(&mut body, ATOM_ID, 15, 16);
         append_definition(&mut body, LAST_BODY_MODIFIER, 17, 16);
-        assert_eq!(declared(&body, 16), Some(None));
+        assert_eq!(declared(&body, 16), Declaration::Conflicting);
     }
 
     #[test]
     fn unsupported_families_are_declared_as_other() {
         let mut body = Vec::new();
         append_definition(&mut body, b"OTHER_FAMILY", 15, 16);
-        assert_eq!(declared(&body, 16), Some(Some(Family::Other)));
+        assert_eq!(declared(&body, 16), Declaration::Family(Family::Other));
     }
 
     #[test]

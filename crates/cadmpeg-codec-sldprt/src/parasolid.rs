@@ -8,10 +8,13 @@
 //! descriptions identify partition, deltas, and feature-profile payloads.
 
 use cadmpeg_container::compression::inflate_zlib_member;
-use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
+use cadmpeg_core::decode::{DecodeContext, ExpandSpec, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
 use flate2::{Decompress, FlushDecompress, Status};
+use std::collections::HashMap;
+
+use crate::container::NameWords;
 
 use crate::layout::{
     parasolid_chain_frame_header as chain_frame_hdr,
@@ -40,77 +43,44 @@ pub(crate) struct ExtractedStream {
 }
 
 /// Extract every stream with its direct or wrapper offset in the outer payload.
+///
+/// Streams come out in payload order: direct streams by their signature
+/// offset, wrapped streams by their wrapper offset, nested zlib streams by
+/// their member offset.
 pub(crate) fn extract_streams_with_offsets(
     payload: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<ExtractedStream>, CodecError> {
-    let scan_work = cadmpeg_core::decode::u64_from_index(payload.len())
-        .checked_mul(64)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("scan Parasolid stream candidates", u64::MAX - 1, u64::MAX)
-        })?;
-    ctx.charge_work(scan_work, "scan Parasolid stream candidates")?;
-    let mut out = Vec::new();
     let wrapped_prefix = has_wrapped_prefix(payload);
-    let starts = if wrapped_prefix {
-        Vec::new()
-    } else {
-        direct_stream_headers(payload, ctx)?
-    };
-    let mut starts = starts.into_iter().peekable();
-    while let Some((start, header)) = starts.next() {
-        let end = starts.peek().map_or(payload.len(), |(offset, _)| *offset);
-        ctx.reserve_vec(&mut out, 1, "collect direct Parasolid streams")?;
-        let payload = ctx.copy_retained(&payload[start..end], "retain direct Parasolid stream")?;
-        out.push(ExtractedStream {
-            offset: start,
-            payload,
-            header,
-        });
+    if !wrapped_prefix {
+        let direct = direct_streams(payload, ctx)?;
+        if !direct.is_empty() {
+            return Ok(direct);
+        }
     }
-    if !out.is_empty() {
-        return Ok(out);
-    }
-    if !ctx.contains_bytes(
+    let mut out = DistinctStreams::new(ctx)?;
+    let mut wrapped = false;
+    for magic_at in ctx.find_bytes_iter(
         payload,
         &WRAPPED_MAGIC_PREFIX,
         "find Parasolid wrapper prefix",
     )? {
-        return Ok(out);
-    }
-
-    let magic_starts = payload
-        .windows(WRAPPED_MAGIC_PREFIX.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == WRAPPED_MAGIC_PREFIX).then_some(offset));
-    for magic_at in magic_starts {
+        wrapped = true;
         let stream = if magic_at == 0 {
             single_wrapped_stream(payload, magic_at, ctx)?
         } else {
             chained_wrapped_stream(payload, magic_at, ctx)?
         };
         if let Some(stream) = stream {
-            if !stream_payload_present(ctx, &out, &stream.payload)? {
-                ctx.push_vec(&mut out, stream, "collect wrapped Parasolid streams")?;
-            }
+            out.push(ctx, stream, "collect wrapped Parasolid streams")?;
         }
     }
-    if !out.is_empty() {
-        ctx.stable_sort_by(
-            &mut out,
-            |value| &value.offset,
-            Ord::cmp,
-            "sort wrapped Parasolid streams",
-        )?;
-        return Ok(out);
-    }
-
     // A payload with the section prefix is a malformed chained wrapper, not a
     // reason to retain its first frame as a complete stream. This prevents a
     // bad continuation from silently recreating the historical one-megabyte
     // truncation.
-    if wrapped_prefix {
-        return Ok(out);
+    if !wrapped || !out.streams.is_empty() || wrapped_prefix {
+        return Ok(out.streams);
     }
 
     // Preserve older nested wrappers that do not carry the chained-section
@@ -127,32 +97,32 @@ pub(crate) fn extract_streams_with_offsets(
         })?;
     let work = ctx.work_budget(local_limit);
     let mut work_used = 0_u64;
-    let mut i = 0usize;
-    while i + 2 <= payload.len() {
-        if payload[i] == 0x78 && matches!(payload[i + 1], 0x01 | 0x9c | 0xda) {
+    for (i, pair) in ctx
+        .admit_iter(payload, "scan Parasolid zlib candidates")?
+        .windows(const { crate::nonzero(2) })
+        .enumerate()
+    {
+        if pair[0] != 0x78 || !matches!(pair[1], 0x01 | 0x9c | 0xda) {
+            continue;
+        }
+        let effort = u64::try_from(payload.len() - i)
+            .map_err(|_| CodecError::NotImplemented("Parasolid probe work exceeds u64".into()))?;
+        if !work.charge_by(payload.len() - i) {
+            ctx.charge_work(0, "probe Parasolid zlib candidates")?;
+            return Err(ctx.refuse_codec_limit(
+                "probe Parasolid zlib candidates",
+                local_limit,
+                work_used.checked_add(effort).ok_or_else(|| {
+                    CodecError::NotImplemented("Parasolid probe work exceeds u64".into())
+                })?,
+            ));
+        }
+        work_used = work_used
+            .checked_add(effort)
+            .ok_or_else(|| CodecError::NotImplemented("Parasolid probe work exceeds u64".into()))?;
+        let inner =
+            match inflate_zlib_member(ctx, View::over_retained(&payload[i..]), ExpandSpec::Unknown)
             {
-                let effort = u64::try_from(payload.len() - i).map_err(|_| {
-                    CodecError::NotImplemented("Parasolid probe work exceeds u64".into())
-                })?;
-                if !work.charge_by(payload.len() - i) {
-                    ctx.charge_work(0, "probe Parasolid zlib candidates")?;
-                    return Err(ctx.refuse_codec_limit(
-                        "probe Parasolid zlib candidates",
-                        local_limit,
-                        work_used.checked_add(effort).ok_or_else(|| {
-                            CodecError::NotImplemented("Parasolid probe work exceeds u64".into())
-                        })?,
-                    ));
-                }
-                work_used = work_used.checked_add(effort).ok_or_else(|| {
-                    CodecError::NotImplemented("Parasolid probe work exceeds u64".into())
-                })?;
-            }
-            let inner = match inflate_zlib_member(
-                ctx,
-                View::over_retained(&payload[i..]),
-                ExpandSpec::Unknown,
-            ) {
                 Ok((view, _)) if view.window().starts_with(b"PS\0\0") => {
                     if let Some(header) = stream_header(ctx, view.window())? {
                         Some(ExtractedStream {
@@ -169,38 +139,62 @@ pub(crate) fn extract_streams_with_offsets(
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(_) => None,
             };
-            if let Some(stream) = inner {
-                if !stream_payload_present(ctx, &out, &stream.payload)? {
-                    ctx.push_vec(&mut out, stream, "collect nested Parasolid streams")?;
-                }
-            }
+        if let Some(stream) = inner {
+            out.push(ctx, stream, "collect nested Parasolid streams")?;
         }
-        i += 1;
     }
-    Ok(out)
+    Ok(out.streams)
 }
 
-fn stream_payload_present(
-    ctx: &DecodeContext<'_>,
-    streams: &[ExtractedStream],
-    payload: &[u8],
-) -> Result<bool, CodecError> {
-    const OPERATION: &str = "compare Parasolid stream candidates";
-    let bytes = ctx
-        .admit_iter(&streams[..], "scan SLDPRT stream_payload_present values")?
-        .try_fold(
-            cadmpeg_core::decode::u64_from_index(streams.len()),
-            |bytes, known| {
-                bytes.checked_add(cadmpeg_core::decode::u64_from_index(
-                    known.payload.len().min(payload.len()),
-                ))
-            },
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(bytes, OPERATION)?;
-    Ok(ctx
-        .admit_iter(&streams[..], "scan SLDPRT stream_payload_present values")?
-        .any(|known| known.payload == payload))
+/// Streams already extracted from one payload, in extraction order, with an
+/// index by content hash. A repeated stream is found by comparing it with the
+/// streams that share its hash, not with every earlier stream.
+struct DistinctStreams<'ctx> {
+    streams: Vec<ExtractedStream>,
+    by_hash: HashMap<u64, Vec<usize>>,
+    index_storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx> DistinctStreams<'ctx> {
+    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            streams: Vec::new(),
+            by_hash: HashMap::new(),
+            index_storage: ctx.reserve_scoped(0, "index Parasolid stream candidates")?,
+        })
+    }
+
+    /// Keep `stream` unless an earlier stream has the same bytes.
+    fn push(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        stream: ExtractedStream,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        const OPERATION: &str = "compare Parasolid stream candidates";
+        let hash = ctx.hash_value(stream.payload.as_slice(), OPERATION)?;
+        if let Some(group) = ctx.get_hash_map(&self.by_hash, &hash, OPERATION)? {
+            if ctx.any_by(
+                group,
+                |known| ctx.equal_bytes(&self.streams[*known].payload, &stream.payload, OPERATION),
+                OPERATION,
+            )? {
+                return Ok(());
+            }
+        }
+        let index = self.streams.len();
+        ctx.push_vec(&mut self.streams, stream, operation)?;
+        let by_hash = &mut self.by_hash;
+        self.index_storage.with_storage(|| {
+            ctx.push_hash_group(
+                by_hash,
+                hash,
+                index,
+                "index Parasolid stream candidates",
+                "index Parasolid stream candidates",
+            )
+        })
+    }
 }
 
 fn has_wrapped_prefix(payload: &[u8]) -> bool {
@@ -262,16 +256,18 @@ fn chained_wrapped_stream(
     let Some(mut frame_at) = magic_at.checked_add(WRAPPED_MAGIC_PREFIX.len()) else {
         return Ok(None);
     };
-    let mut frames = 0usize;
     let mut frame_outputs = Vec::new();
     while frame_at < section_end {
         let Some(remaining) = payload.get(frame_at..section_end) else {
             return Ok(None);
         };
-        if ctx
-            .admit_iter(&remaining[..], "scan SLDPRT chained_wrapped_stream values")?
-            .all(|byte| *byte == 0)
-        {
+        // Zero padding closes the section; the test stops at the first
+        // nonzero byte, which is normally the next frame's first byte.
+        if ctx.all_by(
+            remaining,
+            |byte| Ok(*byte == 0),
+            "scan Parasolid chained section padding",
+        )? {
             break;
         }
         if remaining.len() < WRAPPED_FRAME_HEADER_LEN {
@@ -310,19 +306,15 @@ fn chained_wrapped_stream(
             return Ok(None);
         };
         ctx.push_vec(&mut frame_outputs, frame, "collect Parasolid frames")?;
-        let Some(next_frames) = frames.checked_add(1) else {
-            return Ok(None);
-        };
-        frames = next_frames;
         frame_at = member_end;
     }
-    if frames == 0 {
-        return Ok(None);
-    }
-    let stream = if frame_outputs.len() == 1 {
-        frame_outputs.remove(0)
-    } else {
-        ctx.concat_retained(&frame_outputs, "retain concatenated Parasolid stream")?
+    let stream = match frame_outputs.len() {
+        0 => return Ok(None),
+        1 => match frame_outputs.pop() {
+            Some(frame) => frame,
+            None => return Ok(None),
+        },
+        _ => ctx.concat_retained(&frame_outputs, "retain concatenated Parasolid stream")?,
     };
     extracted_stream(ctx, chain_len_at, stream)
 }
@@ -419,27 +411,44 @@ fn inflate_zlib_frame_budgeted(
     }
 }
 
-fn direct_stream_headers(
+/// Every directly framed stream, each running from its signature to the
+/// next stream's signature or the payload end.
+fn direct_streams(
     payload: &[u8],
     ctx: &DecodeContext<'_>,
-) -> Result<Vec<(usize, StreamHeader)>, CodecError> {
-    let mut headers = Vec::new();
-    for (start, bytes) in ctx
-        .admit_iter(payload, "scan Parasolid stream header windows")?
-        .windows(
-            std::num::NonZeroUsize::new(4)
-                .ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?,
-        )
-        .enumerate()
-    {
-        if bytes != b"PS\0\0" {
+) -> Result<Vec<ExtractedStream>, CodecError> {
+    let mut streams = Vec::new();
+    let mut pending: Option<(usize, StreamHeader)> = None;
+    for start in ctx.find_bytes_iter(payload, b"PS\0\0", "scan Parasolid stream header windows")? {
+        let Some(header) = stream_header(ctx, &payload[start..])? else {
             continue;
-        }
-        if let Some(header) = stream_header(ctx, &payload[start..])? {
-            ctx.push_vec(&mut headers, (start, header), "collect Parasolid headers")?;
+        };
+        if let Some((previous, previous_header)) = pending.replace((start, header)) {
+            push_direct_stream(ctx, &mut streams, payload, previous..start, previous_header)?;
         }
     }
-    Ok(headers)
+    if let Some((start, header)) = pending {
+        push_direct_stream(ctx, &mut streams, payload, start..payload.len(), header)?;
+    }
+    Ok(streams)
+}
+
+fn push_direct_stream(
+    ctx: &DecodeContext<'_>,
+    streams: &mut Vec<ExtractedStream>,
+    payload: &[u8],
+    range: std::ops::Range<usize>,
+    header: StreamHeader,
+) -> Result<(), CodecError> {
+    ctx.reserve_vec(streams, 1, "collect direct Parasolid streams")?;
+    let offset = range.start;
+    let payload = ctx.copy_retained(&payload[range], "retain direct Parasolid stream")?;
+    streams.push(ExtractedStream {
+        offset,
+        payload,
+        header,
+    });
+    Ok(())
 }
 
 /// Parsed framing fields for one Parasolid stream.
@@ -447,6 +456,8 @@ fn direct_stream_headers(
 pub(crate) struct StreamHeader {
     /// Human-readable stream description.
     pub(crate) description: String,
+    /// Classification words of [`Self::description`].
+    pub(crate) words: NameWords,
     /// `SCH_<modeller>_<schema>_<format>` schema token.
     pub(crate) schema: cadmpeg_parasolid::OwnedSchemaToken,
     /// Byte offset where the class-definition record body begins.
@@ -461,7 +472,6 @@ pub(crate) fn stream_header(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Option<StreamHeader>, CodecError> {
-    ctx.charge_work(256, "decode Parasolid stream header")?;
     let window = payload.len().min(64);
     let Some(sig) = ctx.find_bytes(
         &payload[..window],
@@ -513,6 +523,7 @@ pub(crate) fn stream_header(
         "retain Parasolid stream description",
     )?;
     append_lossy_utf8(ctx, &mut description, description_bytes)?;
+    let words = NameWords::of(ctx, &description, "classify Parasolid stream description")?;
 
     let schema_text = token.value();
     let owned_schema = ctx.copy_retained_text(schema_text, "retain Parasolid schema token")?;
@@ -521,6 +532,7 @@ pub(crate) fn stream_header(
 
     Ok(Some(StreamHeader {
         description,
+        words,
         schema,
         body_offset: schema_end,
     }))
@@ -576,26 +588,11 @@ fn append_lossy_utf8(
     Ok::<_, cadmpeg_core::CodecError>(())
 }
 
-/// Test whether the description identifies a partition or deltas body stream.
-pub(crate) fn is_body_stream(
-    ctx: &DecodeContext<'_>,
-    header: &StreamHeader,
-) -> Result<bool, CodecError> {
-    let bytes = header.description.as_bytes();
-    Ok(ctx
-        .admit_iter(bytes, "scan Parasolid partition description")?
-        .windows(
-            std::num::NonZeroUsize::new(9)
-                .ok_or_else(|| CodecError::malformed("zero partition description width"))?,
-        )
-        .any(|part| part.eq_ignore_ascii_case(b"partition"))
-        || ctx
-            .admit_iter(bytes, "scan Parasolid deltas description")?
-            .windows(
-                std::num::NonZeroUsize::new(6)
-                    .ok_or_else(|| CodecError::malformed("zero deltas description width"))?,
-            )
-            .any(|part| part.eq_ignore_ascii_case(b"deltas")))
+impl StreamHeader {
+    /// Whether the description identifies a partition or deltas body stream.
+    pub(crate) fn is_body_stream(&self) -> bool {
+        self.words.partition() || self.words.deltas()
+    }
 }
 
 /// Decode the unique counted XYZ polyline carried by a classified mesh stream.
@@ -608,20 +605,18 @@ pub(crate) fn mesh_polyline_from_header(
     payload: &[u8],
     header: &StreamHeader,
 ) -> Result<Option<Vec<Point3>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(payload.len()),
-        "scan Parasolid mesh coordinates",
-    )?;
-    let schema = header.schema.value();
-    if !schema.as_bytes().ends_with(b"_13006") {
+    const SCAN: &str = "scan Parasolid mesh coordinates";
+    if !header.schema.value().as_bytes().ends_with(b"_13006") {
         return Ok(None);
     }
     let Some(scan_end) = payload.len().checked_sub(2) else {
         return Ok(None);
     };
-    let mut candidates = Vec::new();
-    for tag_at in header.body_offset..scan_end {
-        if payload.get(tag_at..tag_at + 2) != Some(&[0x00, 0x22]) || tag_at < 4 {
+    // Every counted array that fits the payload, as (scalar count, tag offset).
+    let mut storage = ctx.reserve_scoped(0, SCAN)?;
+    let mut arrays = Vec::new();
+    for tag_at in ctx.admit_iter(header.body_offset..scan_end, SCAN)? {
+        if tag_at < 4 || payload.get(tag_at..tag_at + 2) != Some(&[0x00, 0x22]) {
             continue;
         }
         let Some(scalar_count) =
@@ -632,57 +627,75 @@ pub(crate) fn mesh_polyline_from_header(
         if scalar_count < 6 || scalar_count % 3 != 0 {
             continue;
         }
-        let Some(byte_count) = scalar_count.checked_mul(8) else {
+        if mesh_coordinates(payload, tag_at, scalar_count).is_none() {
             continue;
-        };
-        let Some(values) = payload.get(tag_at + 2..tag_at + 2 + byte_count) else {
-            continue;
-        };
-        let point_count = scalar_count / 3;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(values.len()),
-            "decode Parasolid mesh coordinates",
-        )?;
-        let mut points = ctx.vector_storage(point_count, "decode Parasolid mesh points")?;
-        for xyz in values.chunks_exact(24) {
-            let (Some(x), Some(y), Some(z)) = (
-                View::f64_be_at(xyz, 0),
-                View::f64_be_at(xyz, 8),
-                View::f64_be_at(xyz, 16),
-            ) else {
-                return Ok(None);
-            };
-            let point = Point3::new(x, y, z);
-            if !point.is_finite() {
-                points.clear();
-                break;
-            }
-            ctx.push_vec(&mut (points), point, "decode Parasolid mesh points")?;
         }
-        if points.len() >= 2 {
-            ctx.push_vec(
-                &mut candidates,
-                (scalar_count, points),
-                "collect Parasolid mesh candidates",
-            )?;
-        }
+        ctx.push_scoped_vec(&mut storage, &mut arrays, (scalar_count, tag_at), SCAN)?;
     }
-    ctx.stable_sort_by(
-        &mut candidates,
-        |value| &value.0,
+    ctx.stable_sort_by_key(
+        &mut arrays,
+        |(scalar_count, _)| *scalar_count,
         |left, right| right.cmp(left),
         "sort Parasolid mesh candidates",
     )?;
-    let Some((largest_count, _)) = candidates.first() else {
+    // The polyline is the largest array whose coordinates are all finite,
+    // when no other finite array has its size. Arrays are visited largest
+    // first, and only down to the selected size.
+    let mut selected: Option<(usize, usize)> = None;
+    let mut candidates = arrays.iter();
+    while let Some(&(scalar_count, tag_at)) =
+        ctx.next_charged(&mut candidates, "select Parasolid mesh candidate")?
+    {
+        if selected.is_some_and(|(selected_count, _)| scalar_count < selected_count) {
+            break;
+        }
+        let Some(values) = mesh_coordinates(payload, tag_at, scalar_count) else {
+            continue;
+        };
+        if !ctx.all_by(
+            values.chunks_exact(8),
+            |value| Ok(View::f64_be_at(value, 0).is_some_and(f64::is_finite)),
+            "decode Parasolid mesh coordinates",
+        )? {
+            continue;
+        }
+        if selected.is_some() {
+            return Ok(None);
+        }
+        selected = Some((scalar_count, tag_at));
+    }
+    let Some((scalar_count, tag_at)) = selected else {
         return Ok(None);
     };
-    if candidates
-        .get(1)
-        .is_some_and(|(count, _)| count == largest_count)
-    {
+    let Some(values) = mesh_coordinates(payload, tag_at, scalar_count) else {
         return Ok(None);
+    };
+    let mut points = ctx.vector_storage(scalar_count / 3, "decode Parasolid mesh points")?;
+    for xyz in ctx
+        .admit_iter(values, "decode Parasolid mesh points")?
+        .chunks(const { crate::nonzero(24) })
+    {
+        let (Some(x), Some(y), Some(z)) = (
+            View::f64_be_at(xyz, 0),
+            View::f64_be_at(xyz, 8),
+            View::f64_be_at(xyz, 16),
+        ) else {
+            return Ok(None);
+        };
+        ctx.push_vec(
+            &mut points,
+            Point3::new(x, y, z),
+            "decode Parasolid mesh points",
+        )?;
     }
-    Ok(candidates.into_iter().next().map(|(_, points)| points))
+    Ok(Some(points))
+}
+
+/// The big-endian f64 values a counted array tag at `tag_at` states, when
+/// they lie inside the payload.
+fn mesh_coordinates(payload: &[u8], tag_at: usize, scalar_count: usize) -> Option<&[u8]> {
+    let start = tag_at.checked_add(2)?;
+    payload.get(start..start.checked_add(scalar_count.checked_mul(8)?)?)
 }
 
 #[cfg(test)]

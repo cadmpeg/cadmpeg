@@ -27,6 +27,20 @@ impl CloneCharged for RelationScalars {
     }
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for RelationScalars {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.refs.as_slice(), self.parameter, self.display),
+            ctx,
+            operation,
+        )
+    }
+}
+
 impl RelationScalars {
     pub(crate) fn from_scalars<'a, S, F>(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -42,9 +56,25 @@ impl RelationScalars {
         let mut display = None;
         let mut duplicate_parameter = false;
         let mut duplicate_display = false;
+        let mut storage = ctx.reserve_scoped(0, "check SLDPRT relation scalar identity")?;
+        let mut members = std::collections::HashSet::new();
         for value in ctx.admit_iter(scalars, "select SLDPRT relation scalar roles")? {
             let scalar = scalar_ref(value);
-            admit_member(ctx, &refs, &scalar.id)?;
+            if ctx
+                .trim_text(&scalar.id, "check SLDPRT relation scalar identity")?
+                .is_empty()
+            {
+                return Err(cadmpeg_core::CodecError::malformed(BLANK_MEMBER));
+            }
+            if !storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut members,
+                    scalar.id.as_str(),
+                    "check SLDPRT relation scalar identity",
+                )
+            })? {
+                return Err(cadmpeg_core::CodecError::malformed(REPEATED_MEMBER));
+            }
             let index = refs.len();
             match scalar.role {
                 FeatureInputScalarRole::Driving => {
@@ -163,12 +193,15 @@ impl RelationScalars {
     }
 }
 
+const BLANK_MEMBER: &str = "scalar_refs identities must be nonblank";
+const REPEATED_MEMBER: &str = "scalar_refs identities must be distinct";
+
 fn check_member(refs: &[String], id: &str) -> Result<(), &'static str> {
     if id.trim().is_empty() {
-        return Err("scalar_refs identities must be nonblank");
+        return Err(BLANK_MEMBER);
     }
     if refs.iter().any(|member| member == id) {
-        return Err("scalar_refs identities must be distinct");
+        return Err(REPEATED_MEMBER);
     }
     Ok(())
 }
@@ -211,39 +244,62 @@ impl RelationScalarsWire {
         )
     }
 
+    /// Admit the membership in one pass: each identity is checked nonblank
+    /// and distinct through an index that also places the selected roles.
     pub(crate) fn admit(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<RelationScalars, cadmpeg_core::CodecError> {
         const OPERATION: &str = "admit SLDPRT relation scalar membership";
-        let count = cadmpeg_core::decode::u64_from_index(self.scalar_refs.len());
-        let total = ctx
-            .admit_iter(&self.scalar_refs, OPERATION)?
-            .try_fold(0u64, |sum, id| {
-                sum.checked_add(cadmpeg_core::decode::u64_from_index(id.len()))
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX, u64::MAX))?;
-        let work = (|| {
-            let mut work = count.checked_mul(total)?;
-            if count != 0 {
-                work =
-                    work.checked_add(count.checked_mul(count.checked_sub(1)?)?.checked_div(2)?)?;
-            }
-            for selected in [&self.parameter_scalar_ref, &self.display_scalar_ref]
-                .into_iter()
-                .flatten()
-            {
-                let length = cadmpeg_core::decode::u64_from_index(selected.len());
-                work = work
-                    .checked_add(total)?
-                    .checked_add(count.checked_mul(length.checked_add(1)?)?)?;
-            }
-            work.checked_add(1)
-        })()
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX, u64::MAX))?;
-        ctx.charge_work(work, OPERATION)?;
-        self.into_checked().map_err(|error| {
+        let refuse = |error: &str| {
             cadmpeg_core::CodecError::malformed(format_args!("relation instance: {error}"))
+        };
+        if self.scalar_refs.is_empty() {
+            return Err(refuse("scalar_refs must be nonempty"));
+        }
+        let (parameter, display) = {
+            let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+            let mut positions = std::collections::HashMap::new();
+            for (index, id) in ctx.admit_iter(&self.scalar_refs, OPERATION)?.enumerate() {
+                if ctx.trim_text(id, OPERATION)?.is_empty() {
+                    return Err(refuse(BLANK_MEMBER));
+                }
+                if storage
+                    .with_storage(|| {
+                        ctx.insert_hash_map(&mut positions, id.as_str(), index, OPERATION)
+                    })?
+                    .is_some()
+                {
+                    return Err(refuse(REPEATED_MEMBER));
+                }
+            }
+            let position = |id: &Option<String>, missing: &str| match id {
+                Some(id) => match ctx.get_hash_map(&positions, id.as_str(), OPERATION)? {
+                    Some(&index) => Ok(Some(index)),
+                    None => Err(refuse(missing)),
+                },
+                None => Ok(None),
+            };
+            (
+                position(
+                    &self.parameter_scalar_ref,
+                    "parameter_scalar_ref must be a member of scalar_refs",
+                )?,
+                position(
+                    &self.display_scalar_ref,
+                    "display_scalar_ref must be a member of scalar_refs",
+                )?,
+            )
+        };
+        if parameter.is_some() && parameter == display {
+            return Err(refuse(
+                "parameter_scalar_ref and display_scalar_ref must be distinct",
+            ));
+        }
+        Ok(RelationScalars {
+            refs: self.scalar_refs,
+            parameter,
+            display,
         })
     }
 }
