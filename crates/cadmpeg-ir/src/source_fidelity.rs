@@ -303,12 +303,12 @@ impl RetainedSourceRecord {
         ))
     }
 
-    fn from_unknown_image<'stream>(
-        stream: &'stream str,
+    fn from_unknown_image(
+        stream: &str,
         id: UnknownId,
         offset: u64,
         raw: crate::unknown::RawRetainedBytes,
-    ) -> Result<(UnknownId, u64, RetainedBytes), UnknownImageError<'stream>> {
+    ) -> Result<(UnknownId, u64, RetainedBytes), UnknownImageError<'_>> {
         let bytes = match raw {
             crate::unknown::RawRetainedBytes::Inline { data } => RetainedBytes::Inline { data },
             crate::unknown::RawRetainedBytes::Digest { byte_len, sha256 } => {
@@ -346,7 +346,7 @@ impl std::fmt::Display for UnknownImageError<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Digest { id } => write!(formatter, "retained record {id}: {}", crate::hash::digest::InvalidSha256Digest),
-            Self::Extent { id, stream, offset, byte_len } => write!(formatter, "retained record {id}: source record {}: offset {offset} + {byte_len} bytes exceeds u64", stream),
+            Self::Extent { id, stream, offset, byte_len } => write!(formatter, "retained record {id}: source record {stream}: offset {offset} + {byte_len} bytes exceeds u64"),
         }
     }
 }
