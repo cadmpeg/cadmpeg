@@ -307,7 +307,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                 }),
                 ..HoleProjection::default()
             },
-            BTreeMap::new(),
+            || Ok(BTreeMap::new()),
         )
         .unwrap();
         assert!(matches!(
@@ -748,7 +748,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
                 counterbore: projection.counterbores.get(&operation).copied(),
                 ..HoleProjection::default()
             },
-            BTreeMap::new(),
+            || Ok(BTreeMap::new()),
         )
         .unwrap();
         assert!(matches!(
@@ -810,7 +810,9 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 
     crate::test_support::with_decode_context(|ctx| {
         let project_offset = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-            offset_surface_feature_definition(ctx, ir, outputs).expect("offset resource admission")
+            offset_surface_feature_definition(ctx, ir, outputs)
+                .expect("offset resource admission")
+                .map(|(definition, witnesses)| (definition, witnesses.values))
         };
 
         let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -940,7 +942,9 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     crate::test_support::with_decode_context(|ctx| {
         let project_thicken = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-            thicken_feature_definition(ctx, ir, outputs).expect("thicken resource admission")
+            thicken_feature_definition(ctx, ir, outputs)
+                .expect("thicken resource admission")
+                .map(|(definition, witnesses)| (definition, witnesses.values))
         };
 
         let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -1060,7 +1064,9 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
 
     crate::test_support::with_decode_context(|ctx| {
         let project_thicken = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-            thicken_feature_definition(ctx, ir, outputs).expect("thicken resource admission")
+            thicken_feature_definition(ctx, ir, outputs)
+                .expect("thicken resource admission")
+                .map(|(definition, witnesses)| (definition, witnesses.values))
         };
 
         let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -1164,11 +1170,12 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
     crate::test_support::with_decode_context(|ctx| {
-        let project_blend = |ir: &cadmpeg_ir::document::CadIr,
-                             outputs: &[BodyId],
-                             family: NxBlendFamily| {
-            blend_feature_definition(ctx, ir, outputs, family).expect("blend resource admission")
-        };
+        let project_blend =
+            |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId], family: NxBlendFamily| {
+                blend_feature_definition(ctx, ir, outputs, family)
+                    .expect("blend resource admission")
+                    .map(|(definition, witnesses)| (definition, witnesses.values))
+            };
         let project_bipartition = |pairs: Vec<[SurfaceId; 2]>| {
             blend_support_bipartition(ctx, &pairs)
                 .expect("blend graph resource admission")

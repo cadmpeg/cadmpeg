@@ -679,3 +679,28 @@ fn repeated_body_identity_builds_output_lineage() {
     assert_eq!(results[0].bodies(), results[1].bodies());
     assert_ne!(results[0].native_ref, results[1].native_ref);
 }
+
+#[test]
+fn incomplete_body_image_outputs_copy_no_retained_identities() {
+    let first = native_body_write("first");
+    let second = native_body_write("second");
+    let body = BodyId::mint("test:model:entity#body").unwrap();
+    for candidates in [
+        BTreeMap::from([("first", body.clone())]),
+        BTreeMap::from([("first", body.clone()), ("second", body.clone())]),
+    ] {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_retained_bytes = 0,
+            |ctx| {
+                assert!(complete_operation_body_image_outputs(
+                    ctx,
+                    &[&first, &second],
+                    &candidates
+                )
+                .unwrap()
+                .is_empty());
+            },
+        );
+    }
+}
