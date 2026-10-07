@@ -108,6 +108,11 @@ pub(crate) struct Located<T, O = u64> {
 impl<T: cadmpeg_core::decode::cost::DecodeCost, O: cadmpeg_core::decode::cost::DecodeCost>
     cadmpeg_core::decode::cost::DecodeCost for Located<T, O>
 {
+    const FIXED_BYTES: Option<u64> = match (T::FIXED_BYTES, O::FIXED_BYTES) {
+        (Some(value), Some(offset)) => value.checked_add(offset),
+        _ => None,
+    };
+
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,

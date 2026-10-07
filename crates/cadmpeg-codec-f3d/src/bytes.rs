@@ -138,7 +138,7 @@ pub(crate) fn lp_ascii_filtered_view<'a>(
     let Some(raw) = bytes.get(start..end) else {
         return Ok(None);
     };
-    if !ctx.admit_iter(raw, "filter F3D ASCII bytes")?.all(allowed) {
+    if !ctx.all_by(raw, |byte| Ok(allowed(byte)), "filter F3D ASCII bytes")? {
         return Ok(None);
     }
     let Ok(value) = ctx.validate_utf8(raw, "decode F3D ASCII string")? else {
@@ -626,6 +626,22 @@ pub(crate) fn lp_utf16_bytes(value: &str) -> Result<Vec<u8>, CodecError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ascii_filter_stops_at_first_invalid_byte() {
+        let mut bytes = 128_u32.to_le_bytes().to_vec();
+        bytes.extend(std::iter::once(0).chain(std::iter::repeat_n(b'a', 127)));
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert_eq!(
+                super::lp_ascii_filtered_view(ctx, &bytes, 0, 128..=128, u8::is_ascii_graphic)
+                    .unwrap(),
+                None
+            );
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+    }
+
     #[test]
     fn fixed_real_lanes_need_no_decode_storage() {
         let values = [1.0_f64, -2.0, 3.0];

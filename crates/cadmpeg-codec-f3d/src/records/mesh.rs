@@ -1662,6 +1662,8 @@ pub(crate) struct DesignMeshRecordIdentity {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for DesignMeshRecordIdentity {
+    const FIXED_BYTES: Option<u64> = Some(3 + 4 + 8 + 8);
+
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,

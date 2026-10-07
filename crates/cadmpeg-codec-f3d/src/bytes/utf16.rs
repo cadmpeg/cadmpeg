@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validated UTF-16 text borrowed from a counted source field.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use std::fmt::Write;
 
@@ -17,15 +17,14 @@ impl<'a> Utf16View<'a> {
         if !raw.len().is_multiple_of(2) {
             return Ok(None);
         }
-        ctx.charge_work(u64_from_index(raw.len()), "validate F3D UTF-16 text")?;
         let mut view = View::over_retained(raw);
         let mut utf8_len = 0usize;
-        for character in char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
+        let mut characters = char::decode_utf16(std::iter::from_fn(|| view.u16_le()));
+        while let Some(character) = ctx.next_charged(&mut characters, "validate F3D UTF-16 text")? {
             let Ok(character) = character else {
                 return Ok(None);
             };
-            // Each code unit decodes to at most three UTF-8 bytes per two
-            // input bytes, so the sum cannot exceed `isize::MAX`.
+            // Measure UTF-8 storage without constructing decoded text.
             let Some(next) = utf8_len.checked_add(character.len_utf8()) else {
                 return Ok(None);
             };
@@ -57,8 +56,11 @@ impl<'a> Utf16View<'a> {
         if self.len() != text.len() {
             return Ok(false);
         }
-        ctx.charge_work(u64_from_index(text.len()), "compare F3D UTF-16 text")?;
-        Ok(self.chars().eq(text.chars()))
+        ctx.all_by(
+            self.chars().zip(text.chars()),
+            |(left, right)| Ok(left == right),
+            "compare F3D UTF-16 text",
+        )
     }
     /// Whether both texts are equal under ASCII case folding. Unequal lengths
     /// need no scan.
@@ -70,13 +72,11 @@ impl<'a> Utf16View<'a> {
         if self.len() != other.len() {
             return Ok(false);
         }
-        ctx.charge_work(u64_from_index(self.len()), "compare F3D UTF-16 text")?;
-        Ok(self
-            .chars()
-            .map(|character| character.to_ascii_lowercase())
-            .eq(other
-                .chars()
-                .map(|character| character.to_ascii_lowercase())))
+        ctx.all_by(
+            self.chars().zip(other.chars()),
+            |(left, right)| Ok(left.eq_ignore_ascii_case(&right)),
+            "compare F3D UTF-16 text",
+        )
     }
     /// Whether this is a 36- to 38-character GUID-like token. The check reads
     /// at most 38 characters.
@@ -155,14 +155,14 @@ mod tests {
 
     #[test]
     fn utf16_validation_refuses_before_scanning() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "validate F3D UTF-16 text",
+            0,
+            |ctx| Utf16View::new(ctx, &[b'A', 0]).map(|_| ()),
+        );
         assert!(
-            matches!(Utf16View::new(&ctx, &[b'A', 0]), Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "validate F3D UTF-16 text")
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "validate F3D UTF-16 text")
         );
     }
 
@@ -170,19 +170,33 @@ mod tests {
     fn utf16_comparisons_charge_only_equal_lengths() {
         let raw = units("Ab");
         let longer = units("aBc");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Exactly the two validations: 4 + 6 bytes.
-        policy.limits.max_work_units = 10;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-        let view = Utf16View::new(&ctx, &raw).unwrap().unwrap();
-        let longer = Utf16View::new(&ctx, &longer).unwrap().unwrap();
-        assert!(!view.eq_str(&ctx, "Abc").unwrap());
-        assert!(!view.eq_ignore_ascii_case(&ctx, longer).unwrap());
-        assert!(
-            matches!(view.eq_str(&ctx, "Ab"), Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "compare F3D UTF-16 text")
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "compare F3D UTF-16 text",
+            0,
+            |ctx| {
+                let view = Utf16View::new(ctx, &raw)?.unwrap();
+                let longer = Utf16View::new(ctx, &longer)?.unwrap();
+                assert!(!view.eq_str(ctx, "Abc").unwrap());
+                assert!(!view.eq_ignore_ascii_case(ctx, longer).unwrap());
+                view.eq_str(ctx, "Ab")
+            },
         );
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "compare F3D UTF-16 text")
+        );
+    }
+
+    #[test]
+    fn utf16_invalid_first_scalar_does_not_charge_tail() {
+        let mut raw = 0xdc00_u16.to_le_bytes().to_vec();
+        raw.extend(units(&"a".repeat(128)));
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert_eq!(Utf16View::new(ctx, &raw).unwrap(), None);
+            assert_eq!(ctx.resource_refusal(), None);
+        });
     }
 
     #[test]

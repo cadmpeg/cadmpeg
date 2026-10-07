@@ -199,12 +199,11 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
             .view
             .take(count)
             .ok_or_else(|| truncated(self.ctx, field))?;
-        if !self
-            .ctx
-            .admit_iter(raw, "validate F3D manifest ASCII")
-            .map_err(CodecError::from)?
-            .all(|byte| matches!(byte, 0x20..=0x7e))
-        {
+        if !self.ctx.all_by(
+            raw,
+            |byte| Ok(matches!(byte, 0x20..=0x7e)),
+            "validate F3D manifest ASCII",
+        )? {
             return Err(probe_malformed(
                 self.ctx,
                 field,
@@ -542,9 +541,11 @@ fn parse_asset_tail_at<'a, 'ctx>(
                     None => false,
                 };
                 let suffix_is_graphic = if prefix_matches {
-                    ctx.admit_iter(&urn_text.0[4..], "validate F3D manifest lineage URN")
-                        .map_err(CodecError::from)?
-                        .all(|character| character.is_ascii_graphic())
+                    ctx.all_by(
+                        urn_text.0[4..].chars(),
+                        |character| Ok(character.is_ascii_graphic()),
+                        "validate F3D manifest lineage URN",
+                    )?
                 } else {
                     false
                 };
@@ -858,16 +859,10 @@ fn parse_revision_ten_design_asset<'ctx>(
         )?;
         let locator = cursor.utf16_with_count(locator_units, &field.0)?;
         let locator_text = locator.to_scoped(cursor.ctx, "search F3D asset link locator")?;
-        let mut last = ['\0'; 4];
-        let contains_urn = cursor
-            .ctx
-            .admit_iter(locator_text.0.as_str(), "search F3D asset link locator")
-            .map_err(CodecError::from)?
-            .any(|character| {
-                last.rotate_left(1);
-                last[3] = character;
-                last == ['u', 'r', 'n', ':']
-            });
+        let contains_urn =
+            cursor
+                .ctx
+                .contains_text(&locator_text.0, "urn:", "search F3D asset link locator")?;
         if !contains_urn {
             return Err(probe_malformed(
                 cursor.ctx,
@@ -1085,10 +1080,13 @@ fn validate_asset_base_view<'ctx>(
     value: Utf16View<'_>,
 ) -> Result<(), ManifestFailure<'ctx>> {
     let text = value.to_scoped(ctx, "validate F3D asset-folder base")?;
-    let characters = ctx
-        .admit_iter(text.0.as_str(), "validate F3D asset-folder base")
-        .map_err(CodecError::from)?;
-    if !asset_base_is_valid(characters) {
+    let valid = !matches!(text.0.as_str(), "" | "." | "..")
+        && ctx.all_by(
+            text.0.chars(),
+            |character| Ok(!matches!(character, '/' | '\\' | '\0')),
+            "validate F3D asset-folder base",
+        )?;
+    if !valid {
         return Err(probe_malformed(
             ctx,
             "asset-folder base name",

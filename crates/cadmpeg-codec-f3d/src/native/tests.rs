@@ -103,17 +103,17 @@ fn native_owner_index_refuses_collection_limit() {
 }
 
 #[test]
-fn native_owner_index_refuses_retained_key_limit() {
+fn native_owner_index_refuses_scoped_table_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain F3D native owner id",
+    policy.limits.max_materialized_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "index F3D native owners",
         |cap| {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             super::owner_indices(&ctx, &["key"], |id| *id)
                 .map(|_| ())
@@ -128,7 +128,7 @@ fn native_owner_index_refuses_retained_key_limit() {
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "retain F3D native owner id"
+            if limit.operation == "index F3D native owners"
     ));
 }
 
@@ -143,7 +143,7 @@ fn native_owner_groups_refuse_outer_collection_limit() {
     let error = super::group_by_owner(
         &ctx,
         Vec::<(&str, &str)>::new(),
-        &std::collections::HashMap::new(),
+        &std::collections::HashMap::<String, usize>::new(),
         2,
         |record| record.0,
         |record| record.1,
@@ -192,7 +192,7 @@ fn native_missing_owner_text_refuses_retained_limit() {
     let error = super::group_by_owner(
         &ctx,
         vec![("child", "missing")],
-        &std::collections::HashMap::new(),
+        &std::collections::HashMap::<String, usize>::new(),
         0,
         |record| record.0,
         |record| record.1,
@@ -1709,6 +1709,7 @@ fn native_owner_lookup_preserves_work_refusal() {
                 |row| row.0,
                 |row| row.1,
             )
+            .map(|_| ())
             .map_err(cadmpeg_core::CodecError::from)
         },
     );
@@ -1727,6 +1728,7 @@ fn native_owner_scan_and_hash_preserve_work_refusal() {
             0,
             |decode| {
                 super::owner_indices(decode, &["owner"], |id| *id)
+                    .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from)
             },
         );

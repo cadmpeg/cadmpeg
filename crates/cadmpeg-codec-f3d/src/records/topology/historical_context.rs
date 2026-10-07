@@ -210,6 +210,8 @@ pub(crate) struct DesignHistoricalLoopCoedge {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalLoopCoedge {
+    const FIXED_BYTES: Option<u64> = Some(8 + 8);
+
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -230,6 +232,8 @@ pub(crate) struct DesignHistoricalLoopVertex {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalLoopVertex {
+    const FIXED_BYTES: Option<u64> = Some(8 + 8 + 8);
+
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -250,6 +254,8 @@ pub(crate) struct DesignHistoricalLoopPoint {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalLoopPoint {
+    const FIXED_BYTES: Option<u64> = Some(8 + 8 + 8 + 8);
+
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -270,6 +276,8 @@ pub(crate) struct DesignHistoricalLoopPosition {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalLoopPosition {
+    const FIXED_BYTES: Option<u64> = Some(8 + 8 + 8 + 8 + 24);
+
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -590,6 +598,8 @@ impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalEdgeContext {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalEdgeLoopContext {
+    const FIXED_BYTES: Option<u64> = Some(8 + 8 + 8 + 4 + 4 + 8 + 8);
+
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
