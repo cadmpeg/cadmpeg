@@ -19,7 +19,7 @@ use crate::solve::mesh_quotient::{SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS}
 use crate::solve::union_find::UnionFind;
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 /// Return the counted physical edge rows in their serialized table order.
@@ -2630,10 +2630,20 @@ fn standard_mesh_missing_edge_assignment_domains(
                         )
                         .is_none_or(|(actual, expected)| actual == expected);
                     let end_points = self.corner_points.get(&(self.face, value.cycle, end));
-                    let points_close = current_points
-                        .as_ref()
-                        .zip(end_points)
-                        .is_none_or(|(actual, expected)| !actual.is_disjoint(expected));
+                    let points_close = match current_points.as_ref().zip(end_points) {
+                        Some((actual, expected)) => self.ctx.any_by(
+                            expected,
+                            |point| {
+                                self.ctx.contains_hash_set(
+                                    actual,
+                                    point,
+                                    "catia_gap_corner_point_overlap",
+                                )
+                            },
+                            "catia_gap_corner_point_overlap",
+                        )?,
+                        None => true,
+                    };
                     if port_closes && points_close {
                         let next_port = self.gaps.get(gap + 1).and_then(|next| {
                             self.corner_ports
@@ -2645,8 +2655,12 @@ fn standard_mesh_missing_edge_assignment_domains(
                                 self.corner_points.get(&(self.face, next.cycle, next.start))
                             }) {
                             Some(Arc::new(
-                                self.ctx
-                                    .copy_retained_set(source, "catia_gap_next_corner_points")?,
+                                self.ctx.collect_hash_set(
+                                    self.ctx
+                                        .admit_iter(source, "catia_gap_next_corner_points")?
+                                        .copied(),
+                                    "catia_gap_next_corner_points",
+                                )?,
                             ))
                         } else {
                             None
@@ -2886,10 +2900,13 @@ fn standard_mesh_missing_edge_assignment_domains(
             .first()
             .and_then(|gap| corner_points.get(&(face, gap.cycle, gap.start)))
         {
-            Some(Arc::new(ctx.copy_retained_set(
-                source,
-                "catia_gap_initial_corner_points",
-            )?))
+            Some(Arc::new(
+                ctx.collect_hash_set(
+                    ctx.admit_iter(source, "catia_gap_initial_corner_points")?
+                        .copied(),
+                    "catia_gap_initial_corner_points",
+                )?,
+            ))
         } else {
             None
         };
@@ -3381,18 +3398,31 @@ fn standard_mesh_missing_edge_assignment_domains(
             }
         }
         if let Some(candidates) = edge_candidates {
-            let mut points = HashSet::new();
+            let mut points = BTreeSet::new();
             for &point in candidates[run.edge].iter().flatten() {
-                ctx.insert_hash_set(&mut points, point, "catia_mesh_corner_candidate_points")?;
+                ctx.insert_btree_set(&mut points, point, "catia_mesh_corner_candidate_points")?;
             }
             if !points.is_empty() {
                 for corner in [run.start, end] {
                     let key = (run.face, run.cycle, corner);
                     if let Some(stored) = corner_points.get_mut(&key) {
-                        stored.retain(|point| points.contains(point));
+                        ctx.retain_btree_set(
+                            stored,
+                            |point| {
+                                ctx.contains_btree_set(
+                                    &points,
+                                    point,
+                                    "catia_mesh_corner_point_filter",
+                                )
+                            },
+                            "catia_mesh_corner_point_filter",
+                        )?;
                     } else {
-                        let copied =
-                            ctx.copy_retained_set(&points, "catia_mesh_corner_point_copy")?;
+                        let copied = ctx.collect_btree_set(
+                            ctx.admit_iter(&points, "catia_mesh_corner_point_copy")?
+                                .copied(),
+                            "catia_mesh_corner_point_copy",
+                        )?;
                         ctx.insert_hash_map(
                             &mut corner_points,
                             key,
@@ -4223,7 +4253,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
 }
 
 type MeshCorner = (usize, usize, usize);
-type MeshCornerPoints = HashMap<MeshCorner, HashSet<usize>>;
+type MeshCornerPoints = HashMap<MeshCorner, BTreeSet<usize>>;
 
 struct MeshAssignmentCorners {
     assignments: Vec<Vec<Vec<MeshEdgePlacementCandidate>>>,
@@ -4281,10 +4311,10 @@ fn standard_mesh_assignment_corner_points(
             let Some(pair) = edge_points[run.edge] else {
                 continue;
             };
-            let mut candidates = HashSet::new();
+            let mut candidates = BTreeSet::new();
             for point in pair {
                 if let Err(error) =
-                    ctx.insert_hash_set(&mut candidates, point, "catia_corner_candidate_points")
+                    ctx.insert_btree_set(&mut candidates, point, "catia_corner_candidate_points")
                 {
                     return Some(Err(error));
                 }
@@ -4299,13 +4329,25 @@ fn standard_mesh_assignment_corner_points(
             ];
             for position in positions {
                 if let Some(stored) = corner_points.get_mut(&position) {
-                    stored.retain(|point| candidates.contains(point));
+                    if let Err(error) = ctx.retain_btree_set(
+                        stored,
+                        |point| {
+                            ctx.contains_btree_set(&candidates, point, "catia_corner_point_filter")
+                        },
+                        "catia_corner_point_filter",
+                    ) {
+                        return Some(Err(error));
+                    }
                     if stored.is_empty() {
                         return None;
                     }
                 } else {
-                    let copied = match ctx.copy_retained_set(&candidates, "catia_corner_point_copy")
-                    {
+                    let copied = match ctx
+                        .admit_iter(&candidates, "catia_corner_point_copy")
+                        .map_err(CodecError::from)
+                        .and_then(|points| {
+                            ctx.collect_btree_set(points.copied(), "catia_corner_point_copy")
+                        }) {
                         Ok(copied) => copied,
                         Err(error) => return Some(Err(error)),
                     };
@@ -4328,32 +4370,43 @@ fn standard_mesh_assignment_corner_points(
             }
         }
         loop {
-            let before = corner_points.values().map(HashSet::len).sum::<usize>();
-            for &(left, right, pair) in &run_constraints {
+            // Each round either removes a point or ends the loop, so rounds are
+            // bounded by the admitted points; every round admits its visits.
+            let mut changed = false;
+            let constraints =
+                match ctx.admit_iter(&run_constraints, "catia_corner_point_constraint_round") {
+                    Ok(constraints) => constraints,
+                    Err(error) => return Some(Err(error.into())),
+                };
+            for &(left, right, pair) in constraints {
                 let left_points = corner_points.get(&left)?;
                 let right_points = corner_points.get(&right)?;
                 let left_single = (left_points.len() == 1)
-                    .then(|| left_points.iter().copied().next())
+                    .then(|| left_points.first().copied())
                     .flatten();
                 let right_single = (right_points.len() == 1)
-                    .then(|| right_points.iter().copied().next())
+                    .then(|| right_points.first().copied())
                     .flatten();
-                if let Some(point) = left_single {
-                    corner_points
-                        .get_mut(&right)?
-                        .retain(|candidate| *candidate != point && pair.contains(candidate));
-                }
-                if let Some(point) = right_single {
-                    corner_points
-                        .get_mut(&left)?
-                        .retain(|candidate| *candidate != point && pair.contains(candidate));
+                for (single, target) in [(left_single, right), (right_single, left)] {
+                    let Some(point) = single else {
+                        continue;
+                    };
+                    let stored = corner_points.get_mut(&target)?;
+                    let before = stored.len();
+                    if let Err(error) = ctx.retain_btree_set(
+                        stored,
+                        |candidate| Ok(*candidate != point && pair.contains(candidate)),
+                        "catia_corner_point_narrowing",
+                    ) {
+                        return Some(Err(error));
+                    }
+                    changed |= stored.len() != before;
                 }
                 if corner_points.get(&left)?.is_empty() || corner_points.get(&right)?.is_empty() {
                     return None;
                 }
             }
-            let after = corner_points.values().map(HashSet::len).sum::<usize>();
-            if after == before {
+            if !changed {
                 break;
             }
         }

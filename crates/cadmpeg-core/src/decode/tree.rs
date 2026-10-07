@@ -184,6 +184,51 @@ fn enter_tree_depth<'ctx>(
 }
 
 impl DecodeContext<'_> {
+    /// Finds the document element with admission before each child visit.
+    pub fn xml_root_element<'node, 'input>(
+        &self,
+        document: &'node roxmltree::Document<'input>,
+        operation: &'static str,
+    ) -> Result<roxmltree::Node<'node, 'input>, CodecError> {
+        let mut children = document.root().children();
+        while let Some(node) = self.next_charged(&mut children, operation)? {
+            if node.is_element() {
+                return Ok(node);
+            }
+        }
+        Err(CodecError::malformed("XML document has no element"))
+    }
+
+    /// Compares the local tag name, independent of its namespace.
+    pub fn xml_has_tag_name(
+        &self,
+        node: roxmltree::Node<'_, '_>,
+        name: &str,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        if !node.is_element() {
+            self.charge_work(0, operation)?;
+            return Ok(false);
+        }
+        self.equal(node.tag_name().name(), name, operation)
+    }
+
+    /// Finds the first attribute with this local name, independent of namespace.
+    pub fn xml_attribute<'node>(
+        &self,
+        node: roxmltree::Node<'node, '_>,
+        name: &str,
+        operation: &'static str,
+    ) -> Result<Option<&'node str>, CodecError> {
+        let mut attributes = node.attributes();
+        while let Some(attribute) = self.next_charged(&mut attributes, operation)? {
+            if self.equal(attribute.name(), name, operation)? {
+                return Ok(Some(attribute.value()));
+            }
+        }
+        Ok(None)
+    }
+
     fn tree_malformed(&self, error: impl std::fmt::Display, operation: &'static str) -> CodecError {
         match self.format_retained(format_args!("{error}"), operation) {
             Ok(message) => CodecError::Malformed(message),
@@ -440,6 +485,7 @@ struct JsonBound {
     entries: u64,
     depth: u64,
     bytes: u64,
+    raw: bool,
 }
 
 struct JsonParserAdmission<'input, 'ctx> {
@@ -545,6 +591,7 @@ impl DecodeContext<'_> {
             entries,
             depth: maximum,
             bytes,
+            raw,
         })
     }
 
@@ -555,16 +602,7 @@ impl DecodeContext<'_> {
     ) -> Result<JsonParserAdmission<'input, '_>, CodecError> {
         let bound = self.json_bound(text, operation)?;
         self.charge_collection_items(bound.values, operation)?;
-        let work = u64_from_index(text.len())
-            .checked_mul(
-                bound
-                    .entries
-                    .checked_add(1)
-                    .ok_or_else(|| self.tree_overflow(operation))?,
-            )
-            .and_then(|n| n.checked_mul(bound.depth.checked_add(1)?))
-            .ok_or_else(|| self.tree_overflow(operation))?;
-        self.charge_work(work, operation)?;
+        self.charge_work(self.json_pass_work(text, &bound, operation)?, operation)?;
         let reservation = self.reserve_scoped(bound.bytes, operation)?;
         let depth = enter_tree_depth(self, bound.depth, operation)?;
         Ok(JsonParserAdmission {
@@ -610,16 +648,66 @@ impl DecodeContext<'_> {
             .ok_or_else(|| self.tree_overflow(operation))
     }
 
+    /// Work of one parse of the text. A pass scans the input once, copies
+    /// each string once, and compares each object key with at most one B-tree
+    /// search path of keys, so the input length times one plus the copy pass
+    /// plus the comparison bound covers it. A typed pass into a derived struct
+    /// matches each key against the struct's field names instead, which costs
+    /// at most the field count times the key length: a constant of the target
+    /// type that this bound does not scale by. A `raw_value` carrier can replay
+    /// its string once per nesting level and compare against every entry.
+    fn json_pass_work(
+        &self,
+        text: &str,
+        bound: &JsonBound,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let length = u64_from_index(text.len());
+        let factor = if bound.raw {
+            bound
+                .entries
+                .checked_add(1)
+                .and_then(|n| n.checked_mul(bound.depth.checked_add(1)?))
+        } else {
+            self.json_comparisons(bound, operation)?.checked_add(2)
+        };
+        factor
+            .and_then(|factor| length.checked_mul(factor))
+            .ok_or_else(|| self.tree_overflow(operation))
+    }
+
+    /// Comparisons on one object key's B-tree search path: no more than the
+    /// keys in the map, and no more than the per-level bound of a search.
+    fn json_comparisons(
+        &self,
+        bound: &JsonBound,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let entries = usize::try_from(bound.entries).map_err(|_| self.tree_overflow(operation))?;
+        Ok(Self::tree_comparisons(entries).min(bound.entries))
+    }
+
+    /// Work of converting the parsed tree: one step per value and the key
+    /// comparisons of the target's map insertions.
+    fn json_conversion_work(
+        &self,
+        text: &str,
+        bound: &JsonBound,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        u64_from_index(text.len())
+            .checked_mul(self.json_comparisons(bound, operation)?)
+            .and_then(|work| work.checked_add(bound.values))
+            .ok_or_else(|| self.tree_overflow(operation))
+    }
+
     fn json_validation_admission<'input, T>(
         &self,
         parsed: &ParsedJson<'input, '_>,
         operation: &'static str,
     ) -> Result<TypedJsonAdmission<'_, T, &'input str>, CodecError> {
         let retained = self.typed_json_storage::<T>(&parsed.bound, operation)?;
-        let work = u64_from_index(parsed.text.len())
-            .checked_mul(parsed.bound.values)
-            .and_then(|n| n.checked_mul(parsed.bound.depth.checked_add(1)?))
-            .ok_or_else(|| self.tree_overflow(operation))?;
+        let work = self.json_pass_work(parsed.text, &parsed.bound, operation)?;
         self.charge_work(work, operation)?;
         self.charge_collection_items(parsed.bound.values, operation)?;
         let reservation = self.reserve_scoped(retained, operation)?;
@@ -638,9 +726,10 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<TypedJsonAdmission<'ctx, T, serde_json::Value>, CodecError> {
         let retained = self.typed_json_storage::<T>(&parsed.bound, operation)?;
+        let work = self.json_conversion_work(parsed.text, &parsed.bound, operation)?;
         self.charge_retained(retained, operation)?;
         self.charge_collection_items(parsed.bound.values, operation)?;
-        self.charge_work(parsed.bound.values, operation)?;
+        self.charge_work(work, operation)?;
         let depth = enter_tree_depth(self, parsed.bound.depth, operation)?;
         Ok(TypedJsonAdmission {
             source: parsed.value,
@@ -665,11 +754,14 @@ impl DecodeContext<'_> {
     /// Parses types with derived Deserialize: structs, enums, vectors, maps,
     /// strings and scalars. Custom allocating deserializers are outside this
     /// bound. The retained typed result is admitted as twice the value-tree
-    /// storage plus `size_of::<T>()`; conversion charges one work unit per value.
+    /// storage plus `size_of::<T>()`; the typed parse charges one text pass and
+    /// the conversion one step per value plus key comparisons, each before its
+    /// deserializer runs.
     /// Source validation with the derived deserializer preserves duplicate-field
     /// errors that Value maps erase. Its temporary result has a separate scoped
-    /// admission of twice the tree bytes plus `size_of::<T>()`; scan and conversion
-    /// work are charged before validation. Typed trees use ordinary map members
+    /// admission of twice the tree bytes plus `size_of::<T>()`; validation and
+    /// conversion work are charged separately before their respective passes.
+    /// Typed trees use ordinary map members
     /// rather than Value's private raw-value carrier. The admission remains live.
     pub fn parse_json<T: serde::de::DeserializeOwned>(
         &self,
@@ -691,6 +783,8 @@ impl DecodeContext<'_> {
 
 #[cfg(test)]
 mod tests {
+    mod queries;
+    mod typed;
     use super::ATTRIBUTE_RECORD_BOUND;
     use crate::decode::{
         u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,

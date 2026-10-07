@@ -231,7 +231,12 @@ fn body_partition_join_refusal(
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
             schema: Some(
-                cadmpeg_parasolid::OwnedSchemaToken::parse(&cadmpeg_test_support::service_decode_context(), "SCH_TEST".into()).expect("service token admission").expect("schema token"),
+                cadmpeg_parasolid::OwnedSchemaToken::parse(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "SCH_TEST".into(),
+                )
+                .expect("service token admission")
+                .expect("schema token"),
             ),
         },
     };
@@ -1432,8 +1437,12 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
             schema: Some(
-                cadmpeg_parasolid::OwnedSchemaToken::parse(&cadmpeg_test_support::service_decode_context(), "SCH_TEST".into()).expect("service token admission")
-                    .expect("the fixture text is a schema token"),
+                cadmpeg_parasolid::OwnedSchemaToken::parse(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "SCH_TEST".into(),
+                )
+                .expect("service token admission")
+                .expect("the fixture text is a schema token"),
             ),
         },
     };

@@ -82,7 +82,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             return false;
         };
         field.name.as_str() == "source"
-            && types::admitted_iterator(self.tcx, self.expr_ty(base))
+            && types::admitted_iter(self.tcx, self.expr_ty(base))
             && self
                 .tcx
                 .crate_name(self.typeck.hir_owner.def_id.to_def_id().krate)
@@ -91,7 +91,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn checked_body(&self, definition: DefId) -> bool {
-        crate::production(self.tcx, definition)
+        !types::standard(self.tcx, definition)
+            && crate::production(self.tcx, definition)
             && match definition.as_local() {
                 Some(local) => self.tcx.hir_maybe_body_owned_by(local).is_some(),
                 None => self.tcx.is_mir_available(definition),
@@ -136,6 +137,24 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn checked_call(&self, expression: &'tcx Expr<'tcx>, definition: DefId) -> bool {
+        if self.call(expression).is_some_and(|(called, operands)| {
+            called == definition
+                && operands.first().is_some_and(|source| {
+                    self.resolved_instance(expression, definition)
+                        .is_some_and(|instance| {
+                            crate::conversion::copy_conversion_is_fixed(
+                                self.tcx,
+                                self.typing_env(),
+                                definition,
+                                instance,
+                                self.expr_ty(source),
+                                self.expr_ty(expression),
+                            )
+                        })
+                })
+        }) {
+            return true;
+        }
         if self.admitted_source_step(expression, definition)
             || self.closed_scalar_default(expression)
             || self.core_iterator_metadata(expression, definition)
@@ -158,7 +177,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some(trait_id) = self.tcx.trait_of_assoc(definition) else {
             return false;
         };
-        if types::cost_trait(self.tcx, trait_id) || types::text_source_trait(self.tcx, trait_id) {
+        if types::cost_trait(self.tcx, trait_id) || types::closed_source_trait(self.tcx, trait_id) {
             return self.implementation(expression, definition).is_none();
         }
         if !self.closed_local_trait(trait_id) {
@@ -232,10 +251,31 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn indirect(&mut self, expression: &'tcx Expr<'tcx>) {
+        if self.borrowed_identity_callback_call(expression) {
+            return;
+        }
         let ExprKind::Call(callee, _) = expression.kind else {
             return;
         };
-        if matches!(self.expr_ty(callee).kind(), ty::FnDef(_, _)) {
+        if let ty::FnDef(definition, _) = self.expr_ty(callee).kind() {
+            if self
+                .tcx
+                .trait_of_assoc(*definition)
+                .is_some_and(|trait_id| {
+                    [
+                        self.tcx.lang_items().fn_trait(),
+                        self.tcx.lang_items().fn_mut_trait(),
+                        self.tcx.lang_items().fn_once_trait(),
+                    ]
+                    .contains(&Some(trait_id))
+                })
+            {
+                self.report(
+                    expression.span,
+                    "unproven_decode_charge",
+                    "indirect call through a Fn trait method has no concrete checked callback proof; use a concrete context-taking callee or explicit admission inside the callback",
+                );
+            }
             return;
         }
         if self.provider_callback_parameter(self.expr_ty(callee)) {

@@ -1584,13 +1584,17 @@ fn compact_face_quotient_states_accumulate_across_calls() {
 #[test]
 fn compact_face_quotient_state_cap_is_exhausted() {
     const EDGE_COUNT: usize = 14;
+    const STATE_CAP: usize = 4_096;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // Global byte work admits all states; the local search budget and collection ceiling own this assertion.
+    // Global byte work admits all states; the local search budget and collection ceiling own this
+    // assertion. The retained-byte limit grows by 1000 bytes per root byte, so a root of one byte
+    // per state admits the retained hash tables of all states, which are charged at their growth bound.
     policy.limits.max_work_units = u64::MAX;
     policy.limits.max_collection_items = 100_000_000;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root fits the collection limit");
+    let root = vec![0; STATE_CAP];
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&root, &arena, &policy)
+        .expect("test root fits the collection limit");
     let choices = vec![Vec::new(); EDGE_COUNT];
     let quotient = MeshQuotient::new(
         (0..EDGE_COUNT * 2)

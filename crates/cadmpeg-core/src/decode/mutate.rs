@@ -3,8 +3,30 @@
 use super::cost::DecodeCost;
 use super::{u64_from_index, DecodeContext};
 use crate::CodecError;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl DecodeContext<'_> {
+    /// Inserts one value after admitting the suffix shift and slot growth.
+    /// An index past the end is malformed; an earlier refusal is returned first.
+    pub fn insert_vec<T>(
+        &self,
+        values: &mut Vec<T>,
+        index: usize,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_work(0, operation)?;
+        if index > values.len() {
+            return Err(CodecError::malformed(
+                "vector insertion index exceeds length",
+            ));
+        }
+        self.reserve_vec(values, 1, operation)?;
+        self.admit_moves(&values[index..], 1, operation)?;
+        values.insert(index, value);
+        Ok(())
+    }
+
     /// Converts vector storage to a boxed slice after admitting a possible shrink copy.
     /// The caller admits the vector's existing storage.
     pub fn into_boxed_slice<T>(
@@ -44,35 +66,6 @@ impl DecodeContext<'_> {
         self.charge_work(self.cost_sum(count, bytes, operation)?, operation)
     }
 
-    /// Retains hash entries after admitting the complete bucket scan.
-    /// The predicate admits child work. A predicate refusal keeps that entry
-    /// and all later entries; entries already removed stay removed.
-    pub fn retain_hash_map<K, V, S>(
-        &self,
-        values: &mut std::collections::HashMap<K, V, S>,
-        mut keep: impl FnMut(&K, &mut V) -> Result<bool, CodecError>,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.charge_work(u64_from_index(values.capacity()), operation)?;
-        let mut refusal = None;
-        values.retain(|key, value| {
-            if refusal.is_some() {
-                return true;
-            }
-            match keep(key, value) {
-                Ok(keep) => keep,
-                Err(error) => {
-                    refusal = Some(error);
-                    true
-                }
-            }
-        });
-        match refusal {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
-    }
-
     /// Copies equal-length slices after admitting all inline source bytes.
     pub fn copy_into<T: Copy>(
         &self,
@@ -102,7 +95,7 @@ impl DecodeContext<'_> {
 
     /// Replaces each value through a fallible factory that admits child construction.
     /// A refusal preserves later values; completed replacements remain installed.
-    pub fn fill_with<T: DecodeCost>(
+    pub fn fill_with<T>(
         &self,
         values: &mut [T],
         mut make: impl FnMut() -> Result<T, CodecError>,
@@ -111,7 +104,6 @@ impl DecodeContext<'_> {
         self.admit_moves(values, 1, operation)?;
         for value in values {
             self.charge_work(1, operation)?;
-            self.charge_key(value, 1, operation)?;
             *value = make()?;
         }
         Ok(())
@@ -158,7 +150,7 @@ impl DecodeContext<'_> {
 
     /// Resizes through a fallible factory; existing values move without cloning children.
     /// The factory admits child construction. A refusal can leave a shorter growth.
-    pub fn resize_with<T: DecodeCost>(
+    pub fn resize_with<T>(
         &self,
         values: &mut Vec<T>,
         length: usize,
@@ -178,7 +170,7 @@ impl DecodeContext<'_> {
     }
 
     /// Resizes Copy values through the one fallible growth implementation.
-    pub fn resize_vec<T: Copy + DecodeCost>(
+    pub fn resize_vec<T: Copy>(
         &self,
         values: &mut Vec<T>,
         length: usize,
@@ -319,23 +311,20 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
-    /// Drops a vector suffix after admitting its slots and complete child bytes.
-    pub fn truncate_vec<T: DecodeCost>(
+    /// Drops a vector suffix. Releasing values is paid by the charges that
+    /// admitted them, so truncation charges nothing.
+    pub fn truncate_vec<T>(
         &self,
         values: &mut Vec<T>,
         length: usize,
-        operation: &'static str,
+        _operation: &'static str,
     ) -> Result<(), CodecError> {
-        if let Some(removed) = values.get(length..) {
-            self.charge_work(u64_from_index(removed.len()), operation)?;
-            self.charge_key(removed, 1, operation)?;
-            values.truncate(length);
-        }
+        values.truncate(length);
         Ok(())
     }
 
     /// Drops all vector values through the admitted suffix removal.
-    pub fn clear_vec<T: DecodeCost>(
+    pub fn clear_vec<T>(
         &self,
         values: &mut Vec<T>,
         operation: &'static str,
@@ -345,7 +334,7 @@ impl DecodeContext<'_> {
 
     /// Keeps selected values in order. The predicate admits child work.
     /// On callback refusal, the vector keeps every value and may change their order.
-    pub fn retain_vec<T: DecodeCost>(
+    pub fn retain_vec<T>(
         &self,
         values: &mut Vec<T>,
         mut keep: impl FnMut(&T) -> Result<bool, CodecError>,
@@ -356,7 +345,7 @@ impl DecodeContext<'_> {
 
     /// Keeps selected values while allowing the predicate to edit each value.
     /// The predicate admits child work. A refusal keeps all values and completed edits.
-    pub fn retain_mut<T: DecodeCost>(
+    pub fn retain_mut<T>(
         &self,
         values: &mut Vec<T>,
         mut keep: impl FnMut(&mut T) -> Result<bool, CodecError>,
@@ -374,6 +363,76 @@ impl DecodeContext<'_> {
         self.truncate_vec(values, write, operation)
     }
 
+    /// Keeps selected B-tree map entries in key order. Every entry visit is
+    /// admitted first; each removal admits its rebalancing before the entry is
+    /// removed. The predicate admits child work. On refusal the remaining
+    /// entries are kept and the original refusal is returned.
+    pub fn retain_btree_map<K: Ord, V>(
+        &self,
+        values: &mut BTreeMap<K, V>,
+        mut keep: impl FnMut(&K, &mut V) -> Result<bool, CodecError>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_work(u64_from_index(values.len()), operation)?;
+        let len = values.len();
+        let mut refusal = None;
+        values.retain(|key, value| {
+            if refusal.is_some() {
+                return true;
+            }
+            match keep(key, value)
+                .and_then(|kept| self.admit_tree_removal::<K, V>(kept, len, operation))
+            {
+                Ok(kept) => kept,
+                Err(error) => {
+                    refusal = Some(error);
+                    true
+                }
+            }
+        });
+        refusal.map_or(Ok(()), Err)
+    }
+
+    /// Keeps selected B-tree set values in order, admitting visits and each
+    /// removal as `retain_btree_map` does.
+    pub fn retain_btree_set<T: Ord>(
+        &self,
+        values: &mut BTreeSet<T>,
+        mut keep: impl FnMut(&T) -> Result<bool, CodecError>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_work(u64_from_index(values.len()), operation)?;
+        let len = values.len();
+        let mut refusal = None;
+        values.retain(|value| {
+            if refusal.is_some() {
+                return true;
+            }
+            match keep(value)
+                .and_then(|kept| self.admit_tree_removal::<T, ()>(kept, len, operation))
+            {
+                Ok(kept) => kept,
+                Err(error) => {
+                    refusal = Some(error);
+                    true
+                }
+            }
+        });
+        refusal.map_or(Ok(()), Err)
+    }
+
+    fn admit_tree_removal<K, V>(
+        &self,
+        kept: bool,
+        len: usize,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        if !kept {
+            self.admit_tree_removal_work::<K, V>(len, operation)?;
+        }
+        Ok(kept)
+    }
+
     /// Removes adjacent equal values and keeps the first value in each run.
     pub fn dedup_vec<T: DecodeCost + PartialEq>(
         &self,
@@ -389,7 +448,7 @@ impl DecodeContext<'_> {
 
     /// Compacts adjacent matches. The predicate admits child work.
     /// On callback refusal, the vector keeps every value and may change their order.
-    pub fn dedup_by<T: DecodeCost>(
+    pub fn dedup_by<T>(
         &self,
         values: &mut Vec<T>,
         mut same: impl FnMut(&T, &T) -> Result<bool, CodecError>,
@@ -412,7 +471,7 @@ impl DecodeContext<'_> {
 
     /// Compacts adjacent projected keys through complete-key comparison.
     /// The extractor admits construction of each projected key.
-    pub fn dedup_by_key<T: DecodeCost, K: DecodeCost + PartialEq>(
+    pub fn dedup_by_key<T, K: DecodeCost + PartialEq>(
         &self,
         values: &mut Vec<T>,
         mut key: impl FnMut(&T) -> Result<K, CodecError>,
@@ -668,15 +727,15 @@ mod tests {
     }
 
     #[test]
-    fn hash_retention_refuses_before_predicate_and_propagates_child_refusal() {
+    fn btree_retention_refuses_before_predicate_and_propagates_child_refusal() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
+        policy.limits.max_work_units = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let mut values = std::collections::HashMap::from([(1_u8, 2_u8), (3, 4)]);
+        let mut values = std::collections::BTreeMap::from([(1_u8, 2_u8), (3, 4)]);
         let called = std::cell::Cell::new(false);
         let CodecError::ResourceLimit(first) = ctx
-            .retain_hash_map(
+            .retain_btree_map(
                 &mut values,
                 |_, _| {
                     called.set(true);
@@ -684,7 +743,7 @@ mod tests {
                 },
                 "retain",
             )
-            .expect_err("refusal")
+            .expect_err("two visits exceed one unit")
         else {
             panic!("refusal")
         };
@@ -699,7 +758,7 @@ mod tests {
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
         let mut calls = 0;
         let CodecError::ResourceLimit(child) = ctx
-            .retain_hash_map(
+            .retain_btree_map(
                 &mut values,
                 |_, _| {
                     calls += 1;
@@ -715,18 +774,17 @@ mod tests {
         assert_eq!(child.operation, "child");
         assert_eq!(
             values,
-            std::collections::HashMap::from([(1_u8, 2_u8), (3, 4)])
+            std::collections::BTreeMap::from([(1_u8, 2_u8), (3, 4)])
         );
     }
 
     #[test]
-    fn hash_retention_charges_capacity_and_preserves_selected_entries() {
+    fn btree_retention_charges_visits_and_each_removal() {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
-        let mut values = std::collections::HashMap::from([(1_u8, 2_u8), (3, 4)]);
-        let capacity = values.capacity();
-        ctx.retain_hash_map(
+        let mut values = std::collections::BTreeMap::from([(1_u8, 2_u8), (3, 4)]);
+        ctx.retain_btree_map(
             &mut values,
             |key, value| {
                 *value += 1;
@@ -735,14 +793,23 @@ mod tests {
             "retain",
         )
         .expect("admission");
-        assert_eq!(values, std::collections::HashMap::from([(3_u8, 5_u8)]));
+        assert_eq!(values, std::collections::BTreeMap::from([(3_u8, 5_u8)]));
+        let mut set = std::collections::BTreeSet::from([1_u8, 3]);
+        ctx.retain_btree_set(&mut set, |value| Ok(*value == 1), "retain set")
+            .expect("admission");
+        assert_eq!(set, std::collections::BTreeSet::from([1_u8]));
         let CodecError::ResourceLimit(limit) =
             ctx.charge_work(u64::MAX, "probe").expect_err("probe")
         else {
             panic!("refusal")
         };
-        // The scan admits the hash table's complete capacity, including empty buckets.
-        assert_eq!(limit.used, crate::decode::u64_from_index(capacity));
+        // Two visits per tree, and one removal per tree shifting its single leaf.
+        let node_bytes = |slot: usize| {
+            crate::decode::u64_from_index(
+                11 * slot + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<usize>(),
+            )
+        };
+        assert_eq!(limit.used, 2 + 2 + node_bytes(2) + node_bytes(1));
     }
 
     #[test]
@@ -938,5 +1005,90 @@ mod tests {
         assert_eq!(child.operation, "child");
         values.sort_unstable();
         assert_eq!(values, [1, 2, 3]);
+    }
+    #[test]
+    fn indexed_insertion_preserves_order_and_charges_suffix_before_mutation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 6;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut values = Vec::with_capacity(4);
+        values.extend([1_u8, 3, 4]);
+        // Shifting the two-byte suffix visits and moves two slots.
+        ctx.insert_vec(&mut values, 1, 2, "insert")
+            .expect("suffix moves");
+        assert_eq!(values, [1, 2, 3, 4]);
+        let CodecError::ResourceLimit(first) = ctx
+            .insert_vec(&mut values, 0, 0, "next insertion")
+            .expect_err("growth of the full vector exceeds the remaining work")
+        else {
+            panic!("resource refusal")
+        };
+        // Reallocating the full four-slot vector copies four slots first.
+        assert_eq!(first.used, 4);
+        assert_eq!(first.additional, 4);
+        assert_eq!(values, [1, 2, 3, 4]);
+        let CodecError::ResourceLimit(repeated) = ctx
+            .insert_vec(&mut values, 4, 5, "later")
+            .expect_err("sticky refusal")
+        else {
+            panic!("resource refusal")
+        };
+        assert_eq!(first, repeated);
+        let CodecError::ResourceLimit(invalid) = ctx
+            .insert_vec(&mut values, 5, 5, "invalid after refusal")
+            .expect_err("sticky refusal precedes invalid index")
+        else {
+            panic!("resource refusal")
+        };
+        assert_eq!(first, invalid);
+    }
+
+    #[test]
+    fn indexed_insertion_validates_index_and_admits_scoped_storage() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 8;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (mut values, mut storage) = ctx.temporary_vec::<u8>(0, "temporary").expect("empty");
+        assert!(matches!(
+            storage.with_storage(|| ctx.insert_vec(&mut values, 1, 1, "invalid")),
+            Err(CodecError::Malformed(_))
+        ));
+        assert!(values.is_empty());
+        storage
+            .with_storage(|| ctx.insert_vec(&mut values, 0, 1, "insert"))
+            .expect("scoped growth");
+        storage
+            .with_storage(|| ctx.insert_vec(&mut values, 1, 2, "end"))
+            .expect("end insertion");
+        assert_eq!(values, [1, 2]);
+        drop((values, storage));
+        ctx.reserve_scoped(8, "released vector").expect("released");
+    }
+
+    #[test]
+    fn indexed_insertion_refuses_growth_before_mutation() {
+        for scoped in [false, true] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            if scoped {
+                policy.limits.max_materialized_bytes = 0;
+            } else {
+                policy.limits.max_retained_bytes = 0;
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            let mut values = Vec::<u8>::new();
+            let mut storage = ctx.reserve_scoped(0, "scope").expect("scope");
+            let error = if scoped {
+                storage.with_storage(|| ctx.insert_vec(&mut values, 0, 1, "insert"))
+            } else {
+                ctx.insert_vec(&mut values, 0, 1, "insert")
+            };
+            assert!(matches!(error, Err(CodecError::ResourceLimit(_))));
+            assert!(values.is_empty());
+            assert_eq!(values.capacity(), 0);
+        }
     }
 }
