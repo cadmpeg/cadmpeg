@@ -16,8 +16,12 @@ use crate::nurbs::subtypes;
 use crate::nurbs::toks;
 use crate::nurbs::toks::Cur;
 use crate::sab::Token;
-use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis};
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::{
+    NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, WeightedPole3,
+};
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::NonZeroReal;
 
 use crate::nurbs::toks::take_knot_table as knots;
 
@@ -46,7 +50,9 @@ fn control_points(
         count,
         marker.rational(),
     ));
-    for _ in 0..count {
+    let mut visits = 0..count;
+    while propagate_resource!(ctx.next_charged(&mut visits, "ASM control points entries")).is_some()
+    {
         let mut comps = [0.0f64; 4];
         for comp in comps.iter_mut().take(marker.cp_dims()) {
             *comp = cur.take_f64()?;
@@ -134,8 +140,55 @@ pub(super) fn surface_block(
 
     // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
     // order where index `u * v_count + v` is pole `(u, v)`.
-    let poles = propagate_resource!(control_points(ctx, &mut cur, pole_count, marker)?);
-    let grid = propagate_resource!(poles.into_counted_transposed_grid(ctx, n_poles_u, n_poles_v)?);
+    let grid = if marker.rational() {
+        let mut rows = propagate_resource!(ctx.collect_indexed_vec(
+            n_poles_u,
+            "ASM NURBS grid rows",
+            |_| ctx.collection_vec(n_poles_v, "ASM NURBS grid row poles"),
+        ));
+        let mut columns = 0..n_poles_v;
+        while propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
+            .is_some()
+        {
+            for row in propagate_resource!(ctx
+                .admit_iter(&mut rows, "ASM surface control points")
+                .map_err(cadmpeg_core::CodecError::from))
+            {
+                let point = FinitePoint3::new(Point3::new(
+                    cur.take_f64()? * LEN_TO_MM,
+                    cur.take_f64()? * LEN_TO_MM,
+                    cur.take_f64()? * LEN_TO_MM,
+                ))?;
+                row.push(WeightedPole3 {
+                    point,
+                    weight: NonZeroReal::new(cur.take_f64()?)?,
+                });
+            }
+        }
+        NurbsPoleGrid::Rational { rows }
+    } else {
+        let mut rows = propagate_resource!(ctx.collect_indexed_vec(
+            n_poles_u,
+            "ASM NURBS grid rows",
+            |_| ctx.collection_vec(n_poles_v, "ASM NURBS grid row poles"),
+        ));
+        let mut columns = 0..n_poles_v;
+        while propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
+            .is_some()
+        {
+            for row in propagate_resource!(ctx
+                .admit_iter(&mut rows, "ASM surface control points")
+                .map_err(cadmpeg_core::CodecError::from))
+            {
+                row.push(FinitePoint3::new(Point3::new(
+                    cur.take_f64()? * LEN_TO_MM,
+                    cur.take_f64()? * LEN_TO_MM,
+                    cur.take_f64()? * LEN_TO_MM,
+                ))?);
+            }
+        }
+        NurbsPoleGrid::Polynomial { rows }
+    };
     let surface = propagate_resource!(NurbsSurface::new(
         ctx,
         NurbsSurfaceAxis::new(
@@ -185,7 +238,11 @@ pub(super) fn curve_block(
     }
     let (knot_vector, n_poles) =
         propagate_resource!(knots(ctx, &mut cur, usize::try_from(n_uniq).ok()?, degree)?);
-    let poles = propagate_resource!(control_points(ctx, &mut cur, n_poles, marker)?);
+    let (poles, _pole_storage) = propagate_resource!(ctx.with_scoped_storage(
+        "ASM raw curve poles",
+        || control_points(ctx, &mut cur, n_poles, marker).transpose()
+    ));
+    let poles = poles?;
 
     let curve = propagate_resource!(NurbsCurve::new(
         ctx,
@@ -207,19 +264,30 @@ pub(super) fn surface_cache(
     toks: &[Token],
 ) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
     let scope = propagate_resource!(toks::cache_scope(ctx, toks)?);
-    let positions = propagate_resource!(toks::owned_marker_positions(ctx, scope)?);
-    let compound = scope.iter().any(|token| {
+    let (positions, _marker_storage) = propagate_resource!(ctx
+        .with_scoped_storage("ASM cache marker positions", || {
+            toks::owned_marker_positions(ctx, scope).transpose()
+        }));
+    let positions = positions?;
+    let compound =
+        propagate_resource!(ctx.any_by(scope, |token| Ok(
         matches!(token, Token::Ident(name) | Token::SubIdent(name) if name == "comp_spl_sur")
-    });
-    if compound {
-        positions.into_iter().find_map(|pos| {
-            surface_block(ctx, scope, pos).map(|result| result.map(|(surface, _)| surface))
-        })
+    ), "ASM compound surface cache search"));
+    let decode = |pos| {
+        surface_block(ctx, scope, pos)
+            .transpose()
+            .map(|candidate| candidate.map(|(surface, _)| surface))
+    };
+    let found = if compound {
+        propagate_resource!(ctx.find_map(positions, decode, "ASM surface cache candidates"))
     } else {
-        positions.into_iter().rev().find_map(|pos| {
-            surface_block(ctx, scope, pos).map(|result| result.map(|(surface, _)| surface))
-        })
-    }
+        propagate_resource!(ctx.find_map(
+            positions.into_iter().rev(),
+            decode,
+            "ASM surface cache candidates"
+        ))
+    };
+    found.map(Ok)
 }
 
 /// Decode the surface cache a subtype scope itself owns: the first surface
@@ -229,11 +297,19 @@ pub(super) fn owned_surface_cache(
     scope: toks::SubtypeScope<'_>,
 ) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
     let tokens = scope.tokens();
-    propagate_resource!(scope.owned_marker_positions(ctx))
-        .into_iter()
-        .find_map(|pos| {
-            surface_block(ctx, tokens, pos).map(|result| result.map(|(surface, _)| surface))
-        })
+    let (positions, _marker_storage) = propagate_resource!(ctx
+        .with_scoped_storage("ASM cache marker positions", || scope
+            .owned_marker_positions(ctx)));
+    propagate_resource!(ctx.find_map(
+        positions,
+        |pos| {
+            surface_block(ctx, tokens, pos)
+                .transpose()
+                .map(|candidate| candidate.map(|(cache, _)| cache))
+        },
+        "ASM owned_surface_cache candidates"
+    ))
+    .map(Ok)
 }
 
 /// Decode the 3D curve cache of a procedural curve record from its payload
@@ -244,9 +320,21 @@ pub(super) fn curve_cache(
     toks: &[Token],
 ) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
     let scope = propagate_resource!(toks::cache_scope(ctx, toks)?);
-    propagate_resource!(toks::owned_marker_positions(ctx, scope)?)
-        .into_iter()
-        .find_map(|pos| curve_block(ctx, scope, pos).map(|result| result.map(|(curve, _)| curve)))
+    let (positions, _marker_storage) = propagate_resource!(ctx
+        .with_scoped_storage("ASM cache marker positions", || {
+            toks::owned_marker_positions(ctx, scope).transpose()
+        }));
+    let positions = positions?;
+    propagate_resource!(ctx.find_map(
+        positions,
+        |pos| {
+            curve_block(ctx, scope, pos)
+                .transpose()
+                .map(|candidate| candidate.map(|(cache, _)| cache))
+        },
+        "ASM curve_cache candidates"
+    ))
+    .map(Ok)
 }
 
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve
@@ -256,9 +344,19 @@ pub(super) fn owned_curve_cache(
     scope: toks::SubtypeScope<'_>,
 ) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
     let tokens = scope.tokens();
-    propagate_resource!(scope.owned_marker_positions(ctx))
-        .into_iter()
-        .find_map(|pos| curve_block(ctx, tokens, pos).map(|result| result.map(|(curve, _)| curve)))
+    let (positions, _marker_storage) = propagate_resource!(ctx
+        .with_scoped_storage("ASM cache marker positions", || scope
+            .owned_marker_positions(ctx)));
+    propagate_resource!(ctx.find_map(
+        positions,
+        |pos| {
+            curve_block(ctx, tokens, pos)
+                .transpose()
+                .map(|candidate| candidate.map(|(cache, _)| cache))
+        },
+        "ASM owned_curve_cache candidates"
+    ))
+    .map(Ok)
 }
 
 /// Decode the cache of each scope the `{ref N}` references in `toks` reach,
@@ -280,37 +378,36 @@ where
     ) -> Option<Result<T, cadmpeg_core::CodecError>>,
 {
     (|| -> Result<Option<T>, cadmpeg_core::CodecError> {
+        if toks.is_empty() {
+            return Ok(None);
+        }
         let mut seen = std::collections::HashSet::new();
-        let mut pending = ctx.collection_vec(1, "ASM subtype search stack")?;
-        pending.push(toks::subtype_refs(toks));
-        while let Some(references) = pending.last_mut() {
-            ctx.charge_work(1, "ASM subtype reference search")?;
-            let Some(index) = references.next() else {
+        let mut visited_storage = ctx.reserve_scoped(0, "ASM subtype search visited")?;
+        let (mut pending, mut pending_storage) =
+            ctx.temporary_vec(1, "ASM subtype search stack")?;
+        pending.push((toks, 0, ctx.enter_nested("resolve ASM cache search root")?));
+        while let Some((tokens, position, _guard)) = pending.last_mut() {
+            let Some(index) = subtypes::next_subtype_reference(ctx, tokens, position)? else {
                 pending.pop();
                 continue;
             };
-            if !ctx.insert_hash_set(&mut seen, index, "ASM subtype search visited")? {
+            if !visited_storage.with_storage(|| {
+                ctx.insert_hash_set(&mut seen, index, "ASM subtype search visited")
+            })? {
                 continue;
             }
-            // The doc states what the index means. `docs/formats/asm.md`: "A named
-            // `ref N` scope or compact `0x0F LONG N 0x10` scope nested inside a
-            // surface, curve, or pcurve body indexes a per-file subtype table, not
-            // a byte offset. Each subtype definition -- a `0x0F` opening followed
-            // by a `0x0d`/`0x0e` name token other than `ref` -- contributes one
-            // table entry in stream order." An index at or beyond the table's
-            // length therefore names no definition the stream states. What the
-            // decoder does about it is the decoder's decision: the search refuses
-            // the stream rather than skipping the reference and reading the one
-            // behind it.
             let Some(target) = table.span(index) else {
                 return Ok(None);
             };
+            let guard = ctx.enter_nested("resolve ASM cache reference")?;
             if let Some(decoded) = decode_scope(ctx, target) {
                 return decoded.map(Some);
             }
-            ctx.push_vec(
+            let frame = (target.tokens(), 0, guard);
+            ctx.push_scoped_vec(
+                &mut pending_storage,
                 &mut pending,
-                toks::subtype_refs(target.tokens()),
+                frame,
                 "ASM subtype search stack",
             )?;
         }
@@ -389,12 +486,12 @@ impl SurfacePatchLayout {
 
     /// Native v-major tagged-double payload offsets, excluding each tag byte.
     pub fn control_value_offsets(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
-        let components = if self.surface.weights().is_some() {
+        let components = if matches!(self.surface.pole_grid(), NurbsPoleGrid::Rational { .. }) {
             4
         } else {
             3
         };
-        (0..self.surface.poles().len() * components)
+        (0..self.surface.u_count() * self.surface.v_count() * components)
             .map(|ordinal| self.control_start + ordinal * 9 + 1)
     }
 }
@@ -495,12 +592,18 @@ pub fn final_surface_patch_layout(
     record: &[u8],
     int_width: RefWidth,
 ) -> Result<Option<SurfacePatchLayout>, cadmpeg_core::CodecError> {
-    let Some(positions) = construction_marker_positions(ctx, record, int_width)? else {
+    let (positions, _marker_storage) = ctx
+        .with_scoped_storage("ASM patch marker positions", || {
+            construction_marker_positions(ctx, record, int_width)
+        })?;
+    let Some(positions) = positions else {
         return Ok(None);
     };
-    Ok(positions.into_iter()
-        .filter_map(|position| decode_surface_block(record, position, int_width))
-        .next_back())
+    ctx.find_map(
+        positions.into_iter().rev(),
+        |position| Ok(decode_surface_block(record, position, int_width)),
+        "ASM final surface patch candidates",
+    )
 }
 
 /// Locate the surface block at `ordinal` among valid surface caches at the
@@ -511,12 +614,28 @@ pub fn surface_patch_layout_at(
     ordinal: usize,
     int_width: RefWidth,
 ) -> Result<Option<SurfacePatchLayout>, cadmpeg_core::CodecError> {
-    let Some(positions) = construction_marker_positions(ctx, record, int_width)? else {
+    let (positions, _marker_storage) = ctx
+        .with_scoped_storage("ASM patch marker positions", || {
+            construction_marker_positions(ctx, record, int_width)
+        })?;
+    let Some(positions) = positions else {
         return Ok(None);
     };
-    Ok(positions.into_iter()
-        .filter_map(|position| decode_surface_block(record, position, int_width))
-        .nth(ordinal))
+    let mut valid = 0;
+    ctx.find_map(
+        positions,
+        |position| {
+            let Some(candidate) = decode_surface_block(record, position, int_width) else {
+                return Ok(None);
+            };
+            if valid == ordinal {
+                return Ok(Some(candidate));
+            }
+            valid += 1;
+            Ok(None)
+        },
+        "ASM surface patch ordinal candidates",
+    )
 }
 
 /// Decode a curve `nubs`/`nurbs` block at `marker_pos`, or `None` if the bytes
@@ -541,8 +660,15 @@ impl CurvePatchLayout {
 
     /// Tagged-double payload offsets in pole/component order.
     pub fn control_value_offsets(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
-        let components = if self.curve.weights().is_some() { 4 } else { 3 };
-        (0..self.curve.control_points().len() * components)
+        let components = if matches!(
+            self.curve.pole_rows(),
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
+        ) {
+            4
+        } else {
+            3
+        };
+        (0..self.curve.pole_count() * components)
             .map(|ordinal| self.control_start + ordinal * 9 + 1)
     }
 }
@@ -606,10 +732,18 @@ pub fn first_curve_patch_layout(
     record: &[u8],
     int_width: RefWidth,
 ) -> Result<Option<CurvePatchLayout>, cadmpeg_core::CodecError> {
-    let Some(positions) = construction_marker_positions(ctx, record, int_width)? else {
+    let (positions, _marker_storage) = ctx
+        .with_scoped_storage("ASM patch marker positions", || {
+            construction_marker_positions(ctx, record, int_width)
+        })?;
+    let Some(positions) = positions else {
         return Ok(None);
     };
-    Ok(positions.into_iter().find_map(|position| decode_curve_block(record, position, int_width)))
+    ctx.find_map(
+        positions,
+        |position| Ok(decode_curve_block(record, position, int_width)),
+        "ASM first curve patch candidates",
+    )
 }
 
 /// Locate the final valid 3D curve cache at the stream's known integer width.
@@ -618,12 +752,18 @@ pub fn final_curve_patch_layout(
     record: &[u8],
     int_width: RefWidth,
 ) -> Result<Option<CurvePatchLayout>, cadmpeg_core::CodecError> {
-    let Some(positions) = construction_marker_positions(ctx, record, int_width)? else {
+    let (positions, _marker_storage) = ctx
+        .with_scoped_storage("ASM patch marker positions", || {
+            construction_marker_positions(ctx, record, int_width)
+        })?;
+    let Some(positions) = positions else {
         return Ok(None);
     };
-    Ok(positions.into_iter()
-        .filter_map(|position| decode_curve_block(record, position, int_width))
-        .next_back())
+    ctx.find_map(
+        positions.into_iter().rev(),
+        |position| Ok(decode_curve_block(record, position, int_width)),
+        "ASM final curve patch candidates",
+    )
 }
 
 /// Decode the unique well-formed surface cache across both integer widths.
@@ -646,13 +786,19 @@ pub(super) fn decode_owned_surface_cache_at(
     int_width: RefWidth,
 ) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
     let bytes = scope.bytes();
-    let positions = match scope.owned_marker_positions(ctx, int_width) {
+    let (positions, _marker_storage) = match ctx
+        .with_scoped_storage("ASM byte cache marker positions", || {
+            scope.owned_marker_positions(ctx, int_width)
+        }) {
         Ok(positions) => positions,
         Err(error) => return Some(Err(error)),
     };
-    Some(Ok(positions.into_iter().find_map(|pos| {
-        decode_surface_block(bytes, pos, int_width).map(|decoded| decoded.surface)
-    })?))
+    propagate_resource!(ctx.find_map(
+        positions,
+        |pos| Ok(decode_surface_block(bytes, pos, int_width).map(|decoded| decoded.surface)),
+        "ASM owned surface byte cache candidates"
+    ))
+    .map(Ok)
 }
 
 /// Decode the unique well-formed 3D curve cache across both integer widths.
@@ -673,13 +819,19 @@ pub fn decode_owned_curve_cache_at(
     int_width: RefWidth,
 ) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
     let bytes = scope.bytes();
-    let positions = match scope.owned_marker_positions(ctx, int_width) {
+    let (positions, _marker_storage) = match ctx
+        .with_scoped_storage("ASM byte cache marker positions", || {
+            scope.owned_marker_positions(ctx, int_width)
+        }) {
         Ok(positions) => positions,
         Err(error) => return Some(Err(error)),
     };
-    Some(Ok(positions.into_iter().find_map(|pos| {
-        decode_curve_block(bytes, pos, int_width).map(|decoded| decoded.curve)
-    })?))
+    propagate_resource!(ctx.find_map(
+        positions,
+        |pos| Ok(decode_curve_block(bytes, pos, int_width).map(|decoded| decoded.curve)),
+        "ASM owned curve byte cache candidates"
+    ))
+    .map(Ok)
 }
 
 fn decode_unique_cache<T>(
@@ -707,6 +859,86 @@ mod tests {
     use crate::nurbs::toks::SubtypeTable;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+
+    fn rectangular_surface_tokens(rational: bool) -> Vec<crate::sab::Token> {
+        use crate::sab::Token;
+        let mut tokens = vec![
+            Token::Ident(if rational { "nurbs" } else { "nubs" }.into()),
+            Token::Long(1),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Long(3),
+            Token::Double(0.0),
+            Token::Long(1),
+            Token::Double(1.0),
+            Token::Long(1),
+            Token::Double(0.0),
+            Token::Long(1),
+            Token::Double(1.0),
+            Token::Long(1),
+            Token::Double(2.0),
+            Token::Long(1),
+        ];
+        for ordinal in 0..6 {
+            tokens.extend([
+                Token::Double(f64::from(ordinal)),
+                Token::Double(0.0),
+                Token::Double(0.0),
+            ]);
+            if rational {
+                tokens.push(Token::Double(f64::from(ordinal + 1)));
+            }
+        }
+        tokens
+    }
+
+    #[test]
+    fn surface_control_grid_preserves_rectangular_stream_order_and_weights() {
+        for rational in [false, true] {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let tokens = rectangular_surface_tokens(rational);
+            let (surface, end) = super::surface_block(&ctx, &tokens, 0).unwrap().unwrap();
+            assert_eq!(end, tokens.len());
+            assert_eq!((surface.u_count(), surface.v_count()), (2, 3));
+            for u in 0..2 {
+                for v in 0..3 {
+                    assert_eq!(
+                        surface.pole(u, v).unwrap().x,
+                        f64::from(u32::try_from(v * 2 + u).unwrap()) * 10.0
+                    );
+                    assert_eq!(
+                        surface
+                            .weight(u, v)
+                            .map(cadmpeg_ir::scalar::NonZeroReal::get),
+                        rational.then_some(f64::from(u32::try_from(v * 2 + u + 1).unwrap()))
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn surface_control_grid_refuses_before_row_allocation() {
+        for rational in [false, true] {
+            let tokens = rectangular_surface_tokens(rational);
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::CollectionItems,
+                "ASM NURBS grid row poles",
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_collection_items = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    super::surface_block(&ctx, &tokens, 0).unwrap()
+                },
+            );
+            assert!(matches!(error, CodecError::ResourceLimit(_)));
+        }
+    }
 
     #[test]
     fn cached_nurbs_recovery_caps_preserve_resource_refusals() {
@@ -788,16 +1020,20 @@ mod tests {
     fn subtype_search_refuses_work_before_reference_probe() {
         use crate::sab::Token;
 
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let table = SubtypeTable::from_records(&ctx, &[]).unwrap();
-        let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
-        let Some(Err(error)) = cache_from_subtype_refs::<(), _>(&ctx, &tokens, &table, |_, _| None)
-        else {
-            panic!("reference-search admission must propagate");
-        };
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "ASM subtype reference search",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let table = SubtypeTable::from_records(&ctx, &[]).unwrap();
+                let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
+                cache_from_subtype_refs::<(), _>(&ctx, &tokens, &table, |_, _| None)
+                    .expect("recognized refusal route")
+            },
+        );
         let CodecError::ResourceLimit(limit) = error else {
             panic!("expected work refusal: {error:?}");
         };
@@ -806,34 +1042,72 @@ mod tests {
     }
 
     #[test]
-    fn subtype_search_stack_refuses_collection_limit() {
+    fn empty_subtype_search_has_no_scratch_allocation() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let table = SubtypeTable::from_records(&ctx, &[]).unwrap();
-        let error = cache_from_subtype_refs::<(), _>(&ctx, &[], &table, |_, _| None)
-            .expect("stack allocation must refuse")
-            .expect_err("stack allocation must refuse");
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("expected collection refusal: {error:?}");
+        assert!(cache_from_subtype_refs::<(), _>(&ctx, &[], &table, |_, _| None).is_none());
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn subtype_search_refuses_before_entering_a_nested_reference() {
+        use crate::sab::{Record, Token};
+        let table_ctx = cadmpeg_test_support::service_decode_context();
+        let record = Record {
+            index: 0,
+            name: "spline".into(),
+            offset: 0,
+            len: 0,
+            tokens: vec![
+                Token::SubtypeOpen,
+                Token::Ident("construction".into()),
+                Token::SubtypeClose,
+            ]
+            .into(),
         };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        let table = SubtypeTable::from_records(&table_ctx, &[record]).unwrap();
+        let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
+        for returns_cache in [false, true] {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::RecursionDepth,
+                "resolve ASM cache reference",
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_recursion_depth = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    cache_from_subtype_refs::<(), _>(&ctx, &tokens, &table, |_, _| {
+                        returns_cache.then_some(Ok(()))
+                    })
+                    .transpose()
+                },
+            );
+            assert!(matches!(error, CodecError::ResourceLimit(_)));
+        }
     }
 
     #[test]
     fn subtype_search_visited_refuses_collection_limit() {
         use crate::sab::Token;
 
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let table = SubtypeTable::from_records(&ctx, &[]).unwrap();
-        let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
-        let error = cache_from_subtype_refs::<(), _>(&ctx, &tokens, &table, |_, _| None)
-            .expect("visited allocation must refuse")
-            .expect_err("visited allocation must refuse");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "ASM subtype search visited",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let table = SubtypeTable::from_records(&ctx, &[]).unwrap();
+                let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
+                cache_from_subtype_refs::<(), _>(&ctx, &tokens, &table, |_, _| None)
+                    .expect("visited allocation must refuse")
+            },
+        );
         let CodecError::ResourceLimit(limit) = error else {
             panic!("expected collection refusal: {error:?}");
         };

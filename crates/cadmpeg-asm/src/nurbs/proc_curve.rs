@@ -25,6 +25,7 @@ use crate::nurbs::subtypes::{
 };
 use crate::nurbs::toks::{Cur, SubtypeTable};
 use crate::sab::Token;
+use cadmpeg_core::decode::bounded_len;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     ConeSurface, CylinderSurface, PlaneSurface, SphereSurface, TorusSurface,
@@ -95,14 +96,6 @@ pub enum SupportSlot {
 }
 
 impl SupportSlot {
-    fn from_parsed(surface: Option<SurfaceGeometry>, declared: bool) -> Self {
-        match surface {
-            Some(surface) => Self::Surface(surface),
-            None if declared => Self::DeclaredOnly,
-            None => Self::Absent,
-        }
-    }
-
     pub(crate) fn into_surface(self) -> Option<SurfaceGeometry> {
         match self {
             Self::Surface(surface) => Some(surface),
@@ -273,18 +266,19 @@ pub(crate) fn normalize_pcurve_for_surface_record(
     let chart = match surface_head {
         "plane" => NativeSupportChart::PlaneLengths,
         "cone" => {
-            propagate_resource!(ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(surface_tokens.len()),
-                "ASM surface chart tokens"
-            ));
-            let mut values = surface_tokens.iter().filter_map(|token| match token {
-                Token::Double(value) => Some(*value),
-                _ => None,
-            });
-            values.next()?;
-            let sine = values.next()?;
-            let cosine = values.next()?;
-            let u_scale = values.next()?;
+            let mut tokens = surface_tokens.iter();
+            let mut values = [0.0; 4];
+            for value in &mut values {
+                *value = propagate_resource!(ctx.find_map(
+                    &mut tokens,
+                    |token| Ok(match token {
+                        Token::Double(value) => Some(*value),
+                        _ => None,
+                    }),
+                    "ASM surface chart tokens"
+                ))?;
+            }
+            let [_, sine, cosine, u_scale] = values;
             NativeSupportChart::Cone {
                 axial_scale: cone_axial_scale(sine, cosine, u_scale),
             }
@@ -650,7 +644,9 @@ pub fn procedural_curve_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<Result<DecodedProceduralCurve, cadmpeg_core::CodecError>> {
-    procedural_curve_recursive(ctx, toks, table, &mut Vec::new())
+    let mut seen = std::collections::HashSet::new();
+    let mut scratch = propagate_resource!(ctx.reserve_scoped(0, "ASM procedural curve references"));
+    procedural_curve_recursive(ctx, toks, table, &mut seen, &mut scratch)
 }
 
 /// Resolve the signed pcurve slot carried by an `intcurve` reference.
@@ -673,7 +669,9 @@ pub fn pcurve_for_selector_with_chart(
         2 | -2 => 1,
         _ => return None,
     };
-    pcurve_for_selector_recursive(ctx, toks, slot, table, &mut Vec::new())
+    let mut seen = std::collections::HashSet::new();
+    let mut scratch = propagate_resource!(ctx.reserve_scoped(0, "ASM pcurve references"));
+    pcurve_for_selector_recursive(ctx, toks, slot, table, &mut seen, &mut scratch)
 }
 
 fn pcurve_for_selector_recursive(
@@ -681,7 +679,8 @@ fn pcurve_for_selector_recursive(
     toks: &[Token],
     slot: usize,
     table: &SubtypeTable,
-    seen: &mut Vec<usize>,
+    seen: &mut std::collections::HashSet<usize>,
+    scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Option<Result<(PcurveNurbs, bool), cadmpeg_core::CodecError>> {
     let _depth = propagate_resource!(ctx.enter_nested("resolve ASM pcurve reference"));
     // A record-level intcurve wrapper can carry only a compact `{ref N}`
@@ -690,17 +689,15 @@ fn pcurve_for_selector_recursive(
     // own ordered slots remain authoritative and must not be searched here.
     if let Some(index) = direct_subtype_reference(ctx, toks) {
         let index = propagate_resource!(index);
-        if !seen.contains(&index) {
-            propagate_resource!(ctx.push_vec(seen, index, "ASM pcurve references"));
-            // Not the search refusal the four `for` loops over
-            // `subtype_refs` state. This is the single record-level
-            // delegation, and the wrapper's own routes below run whenever the
-            // delegation yields no pcurve, including when it yields one from a
-            // resolvable target. An index the table does not hold takes the
-            // same route as a target that states no pcurve.
+        if propagate_resource!(scratch.with_storage(|| ctx.insert_hash_set(
+            seen,
+            index,
+            "ASM pcurve references"
+        ))) {
+            // An unresolved delegation falls back to the wrapper's own routes.
             if let Some(target) = table.span(index) {
                 if let Some(result) =
-                    pcurve_for_selector_recursive(ctx, target.tokens(), slot, table, seen)
+                    pcurve_for_selector_recursive(ctx, target.tokens(), slot, table, seen, scratch)
                 {
                     return Some(result);
                 }
@@ -708,48 +705,49 @@ fn pcurve_for_selector_recursive(
         }
     }
     let has_typed_construction =
-        propagate_resource!(crate::nurbs::toks::owned_construction_subtype(ctx, toks).transpose())
-            .is_some();
-    if let Some(decoded) = procedural_curve_resolving_refs(ctx, toks, table) {
-        let decoded = match decoded {
-            Ok(decoded) => decoded,
-            Err(error) => return Some(Err(error)),
-        };
-        if let Some(pcurve) = selected_pcurve(&decoded, slot) {
-            let pcurve = propagate_resource!(
-                pcurve.try_clone_for_decode(ctx, "ASM selected support pcurve")
-            );
-            return Some(Ok((pcurve, false)));
-        }
-        if !matches!(&decoded.construction, ProceduralCurveConstruction::Unknown(kind) if kind == "intcurve")
-        {
-            // Modern exact curves can carry the same cache-first support
-            // context as the surface-related intcurve families. Their
-            // construction remains exact, but the pcurve selector still
-            // names one of that context's ordered support slots. Parse the
-            // context only from the exact-intcurve marker; do not search
-            // arbitrary BS2/BS3 blocks in the record.
-            if let Some(marker) =
-                crate::nurbs::toks::find_owned_intcurve_subtype(ctx, toks, "exact_int_cur")
+        propagate_resource!(crate::nurbs::subtypes::has_owned_construction(ctx, toks));
+    {
+        let (decoded, _decoded_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM pcurve selector construction", || {
+                procedural_curve_resolving_refs(ctx, toks, table).transpose()
+            }));
+        if let Some(decoded) = decoded {
+            if let Some(pcurve) = selected_pcurve(&decoded, slot) {
+                let pcurve = propagate_resource!(
+                    pcurve.try_clone_for_decode(ctx, "ASM selected support pcurve")
+                );
+                return Some(Ok((pcurve, false)));
+            }
+            if !matches!(&decoded.construction, ProceduralCurveConstruction::Unknown(kind) if kind == "intcurve")
             {
-                let marker = propagate_resource!(marker);
-                let mut cur = Cur::at(toks, marker + 2);
-                if let Some(context) = cache_first_curve_context(ctx, &mut cur, table) {
-                    let context = match context {
-                        Ok(context) => context,
-                        Err(error) => return Some(Err(error)),
-                    };
-                    if let Some(pcurve) =
-                        selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
-                    {
-                        let pcurve = propagate_resource!(
-                            pcurve.try_clone_for_decode(ctx, "ASM selected support pcurve")
-                        );
-                        return Some(Ok((pcurve, false)));
+                // Modern exact curves can carry the same cache-first support
+                // context as the surface-related intcurve families. Their
+                // construction remains exact, but the pcurve selector still
+                // names one of that context's ordered support slots. Parse the
+                // context only from the exact-intcurve marker; do not search
+                // arbitrary BS2/BS3 blocks in the record.
+                if let Some(marker) =
+                    crate::nurbs::toks::find_owned_intcurve_subtype(ctx, toks, "exact_int_cur")
+                {
+                    let marker = propagate_resource!(marker);
+                    let mut cur = Cur::at(toks, marker + 2);
+                    let (context, _context_storage) = propagate_resource!(ctx
+                        .with_scoped_storage("ASM pcurve selector support", || {
+                            cache_first_curve_context(ctx, &mut cur, table).transpose()
+                        }));
+                    if let Some(context) = context {
+                        if let Some(pcurve) =
+                            selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
+                        {
+                            let pcurve = propagate_resource!(
+                                pcurve.try_clone_for_decode(ctx, "ASM selected support pcurve")
+                            );
+                            return Some(Ok((pcurve, false)));
+                        }
                     }
                 }
+                return None;
             }
-            return None;
         }
     }
     if has_typed_construction {
@@ -769,42 +767,41 @@ fn direct_subtype_reference(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
 ) -> Option<Result<usize, cadmpeg_core::CodecError>> {
-    if propagate_resource!(crate::nurbs::toks::owned_construction_subtype(ctx, toks).transpose())
-        .is_some()
-    {
-        return None;
-    }
     let mut depth = 0usize;
     let mut candidate = None;
-    for (position, token) in toks.iter().enumerate() {
-        match token {
-            Token::SubtypeOpen => {
-                if depth == 0 {
-                    let scope = crate::nurbs::toks::subtype_span(toks, position)?.tokens();
-                    let index = match scope {
-                        [Token::SubtypeOpen, Token::Long(index), Token::SubtypeClose]
-                            if *index >= 0 =>
-                        {
-                            usize::try_from(*index).ok()
-                        }
-                        [Token::SubtypeOpen, Token::Ident(name), Token::Long(index), Token::SubtypeClose]
-                            if name == "ref" && *index >= 0 =>
-                        {
-                            usize::try_from(*index).ok()
-                        }
-                        _ => None,
-                    }?;
-                    if candidate.replace(index).is_some() {
-                        return None;
+    let valid = propagate_resource!(ctx.all_by(
+        toks.iter().enumerate(),
+        |(position, token)| {
+            match token {
+                Token::SubtypeOpen => {
+                    if depth == 0 {
+                        let index = match &toks[position..] {
+                            [Token::SubtypeOpen, Token::Long(index), Token::SubtypeClose, ..]
+                                if *index >= 0 => usize::try_from(*index).ok(),
+                            [Token::SubtypeOpen, Token::Ident(name), Token::Long(index), Token::SubtypeClose, ..]
+                                if name == "ref" && *index >= 0 => usize::try_from(*index).ok(),
+                            _ => None,
+                        };
+                        let Some(index) = index else { return Ok(false); };
+                        if candidate.replace(index).is_some() { return Ok(false); }
                     }
+                    depth += 1;
                 }
-                depth += 1;
+                Token::SubtypeClose => {
+                    let Some(next) = depth.checked_sub(1) else { return Ok(false); };
+                    depth = next;
+                }
+                _ => {}
             }
-            Token::SubtypeClose => depth = depth.checked_sub(1)?,
-            _ => {}
-        }
+            Ok(true)
+        },
+        "ASM direct subtype reference tokens",
+    ));
+    if valid {
+        candidate.map(Ok)
+    } else {
+        None
     }
-    candidate.map(Ok)
 }
 
 fn selected_support_pcurve<'a>(
@@ -892,10 +889,20 @@ fn direct_pcurve_after_curve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
 ) -> Option<Result<PcurveNurbs, cadmpeg_core::CodecError>> {
-    let position = propagate_resource!(crate::nurbs::toks::owned_marker_positions(ctx, toks)?)
-        .into_iter()
-        .next()?;
-    let (_, end) = propagate_resource!(curve_block(ctx, toks, position)?);
+    let position = {
+        let (positions, _marker_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM direct pcurve marker positions", || {
+                crate::nurbs::toks::owned_marker_positions(ctx, toks).transpose()
+            }));
+        positions?.into_iter().next()?
+    };
+    let end = {
+        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
+            "ASM construction cache",
+            || curve_block(ctx, toks, position).transpose(),
+        ));
+        decoded?.1
+    };
     pcurve_block_with_end(ctx, toks, end).map(|result| result.map(|(pcurve, _)| pcurve))
 }
 
@@ -905,37 +912,39 @@ pub fn cacheless_procedural_curve_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<Result<HelixDefinition, cadmpeg_core::CodecError>> {
-    cacheless_procedural_curve_recursive(ctx, toks, table, &mut Vec::new())
+    let mut seen = std::collections::HashSet::new();
+    let mut scratch = propagate_resource!(ctx.reserve_scoped(0, "ASM cacheless curve references"));
+    cacheless_procedural_curve_recursive(ctx, toks, table, &mut seen, &mut scratch)
 }
 
 fn cacheless_procedural_curve_recursive(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     table: &SubtypeTable,
-    seen: &mut Vec<usize>,
+    seen: &mut std::collections::HashSet<usize>,
+    scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Option<Result<HelixDefinition, cadmpeg_core::CodecError>> {
     let _depth = propagate_resource!(ctx.enter_nested("resolve ASM cacheless curve reference"));
     if let Some(definition) = helix_definition(ctx, toks) {
         return Some(definition);
     }
-    for index in crate::nurbs::toks::subtype_refs(toks) {
-        if seen.contains(&index) {
+    let mut reference_position = 0;
+    while let Some(index) = propagate_resource!(crate::nurbs::subtypes::next_subtype_reference(
+        ctx,
+        toks,
+        &mut reference_position
+    )) {
+        if !propagate_resource!(scratch.with_storage(|| ctx.insert_hash_set(
+            seen,
+            index,
+            "ASM cacheless curve references"
+        ))) {
             continue;
         }
-        // The doc states what the index means. `docs/formats/asm.md`: "A named
-        // `ref N` scope or compact `0x0F LONG N 0x10` scope nested inside a
-        // surface, curve, or pcurve body indexes a per-file subtype table, not
-        // a byte offset. Each subtype definition -- a `0x0F` opening followed
-        // by a `0x0d`/`0x0e` name token other than `ref` -- contributes one
-        // table entry in stream order." An index at or beyond the table's
-        // length therefore names no definition the stream states. What the
-        // decoder does about it is the decoder's decision: the search refuses
-        // the stream rather than skipping the reference and reading the one
-        // behind it.
-        propagate_resource!(ctx.push_vec(seen, index, "ASM cacheless curve references"));
+        // An unresolved reference withholds the candidates that follow it.
         let target = table.span(index)?;
         if let Some(decoded) =
-            cacheless_procedural_curve_recursive(ctx, target.tokens(), table, seen)
+            cacheless_procedural_curve_recursive(ctx, target.tokens(), table, seen, scratch)
         {
             return Some(decoded);
         }
@@ -947,7 +956,8 @@ fn procedural_curve_recursive(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     table: &SubtypeTable,
-    seen: &mut Vec<usize>,
+    seen: &mut std::collections::HashSet<usize>,
+    scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Option<Result<DecodedProceduralCurve, cadmpeg_core::CodecError>> {
     let _depth = propagate_resource!(ctx.enter_nested("resolve ASM procedural curve reference"));
     let vector_offset = match vector_offset_definition(ctx, toks) {
@@ -971,22 +981,27 @@ fn procedural_curve_recursive(
     // tolerance; later blocks belong to nested construction machinery
     // (support surfaces, blend spines, progenitors) and are not the carrier.
     let cache_scope = propagate_resource!(crate::nurbs::toks::cache_scope(ctx, toks)?);
-    let positions = propagate_resource!(crate::nurbs::toks::owned_marker_positions(
-        ctx,
-        cache_scope
-    )?);
-    let solved = if vector_offset.is_some() || subset.is_some() || compound.is_some() {
-        positions
-            .into_iter()
-            .rev()
-            .find_map(|position| curve_block(ctx, cache_scope, position))
-    } else {
-        positions
-            .into_iter()
-            .find_map(|position| curve_block(ctx, cache_scope, position))
+    let solved = {
+        let (positions, _marker_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM procedural curve marker positions", || {
+                crate::nurbs::toks::owned_marker_positions(ctx, cache_scope).transpose()
+            }));
+        let positions = positions?;
+        if vector_offset.is_some() || subset.is_some() || compound.is_some() {
+            propagate_resource!(ctx.find_map(
+                positions.into_iter().rev(),
+                |position| curve_block(ctx, cache_scope, position).transpose(),
+                "ASM procedural curve cache candidates"
+            ))
+        } else {
+            propagate_resource!(ctx.find_map(
+                positions,
+                |position| curve_block(ctx, cache_scope, position).transpose(),
+                "ASM procedural curve cache candidates"
+            ))
+        }
     };
-    if let Some(decoded) = solved {
-        let (curve, end) = propagate_resource!(decoded);
+    if let Some((curve, end)) = solved {
         let cache_fit_tolerance = match cache_scope.get(end) {
             Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
             _ => None,
@@ -1062,23 +1077,24 @@ fn procedural_curve_recursive(
             cache_fit_tolerance,
         }));
     }
-    for index in crate::nurbs::toks::subtype_refs(toks) {
-        if seen.contains(&index) {
+    let mut reference_position = 0;
+    while let Some(index) = propagate_resource!(crate::nurbs::subtypes::next_subtype_reference(
+        ctx,
+        toks,
+        &mut reference_position
+    )) {
+        if !propagate_resource!(scratch.with_storage(|| ctx.insert_hash_set(
+            seen,
+            index,
+            "ASM procedural curve references"
+        ))) {
             continue;
         }
-        // The doc states what the index means. `docs/formats/asm.md`: "A named
-        // `ref N` scope or compact `0x0F LONG N 0x10` scope nested inside a
-        // surface, curve, or pcurve body indexes a per-file subtype table, not
-        // a byte offset. Each subtype definition -- a `0x0F` opening followed
-        // by a `0x0d`/`0x0e` name token other than `ref` -- contributes one
-        // table entry in stream order." An index at or beyond the table's
-        // length therefore names no definition the stream states. What the
-        // decoder does about it is the decoder's decision: the search refuses
-        // the stream rather than skipping the reference and reading the one
-        // behind it.
-        propagate_resource!(ctx.push_vec(seen, index, "ASM procedural curve references"));
+        // An unresolved reference withholds the candidates that follow it.
         let target = table.span(index)?;
-        if let Some(decoded) = procedural_curve_recursive(ctx, target.tokens(), table, seen) {
+        if let Some(decoded) =
+            procedural_curve_recursive(ctx, target.tokens(), table, seen, scratch)
+        {
             return Some(decoded);
         }
     }
@@ -1115,14 +1131,22 @@ mod reference_allocation_tests {
         SubtypeTable::from_records(&ctx, &[record]).unwrap()
     }
 
-    fn with_zero_items<T>(f: impl FnOnce(&DecodeContext<'_>, &[Token], &SubtypeTable) -> T) -> T {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
-        let table = table();
-        f(&ctx, &tokens, &table)
+    fn reference_refusal<T>(
+        operation: &str,
+        f: impl Fn(&DecodeContext<'_>, &[Token], &SubtypeTable) -> Result<T, CodecError>,
+    ) -> CodecError {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
+                f(&ctx, &tokens, &table())
+            },
+        )
     }
 
     fn assert_refusal(error: &CodecError, operation: &str) {
@@ -1133,33 +1157,26 @@ mod reference_allocation_tests {
         assert_eq!(limit.operation, operation);
     }
 
-    fn resource_error<T>(result: Result<T, CodecError>) -> CodecError {
-        let Err(error) = result else {
-            panic!("expected resource refusal");
-        };
-        error
-    }
-
     #[test]
     fn procedural_curve_reference_vector_refuses_collection_limit() {
-        let error = with_zero_items(|ctx, tokens, table| {
-            resource_error(procedural_curve_resolving_refs(ctx, tokens, table).unwrap())
+        let error = reference_refusal("ASM procedural curve references", |ctx, tokens, table| {
+            procedural_curve_resolving_refs(ctx, tokens, table).unwrap()
         });
         assert_refusal(&error, "ASM procedural curve references");
     }
 
     #[test]
     fn pcurve_reference_vector_refuses_collection_limit() {
-        let error = with_zero_items(|ctx, tokens, table| {
-            resource_error(pcurve_for_selector_with_chart(ctx, tokens, 1, table).unwrap())
+        let error = reference_refusal("ASM pcurve references", |ctx, tokens, table| {
+            pcurve_for_selector_with_chart(ctx, tokens, 1, table).unwrap()
         });
         assert_refusal(&error, "ASM pcurve references");
     }
 
     #[test]
     fn cacheless_curve_reference_vector_refuses_collection_limit() {
-        let error = with_zero_items(|ctx, tokens, table| {
-            resource_error(cacheless_procedural_curve_resolving_refs(ctx, tokens, table).unwrap())
+        let error = reference_refusal("ASM cacheless curve references", |ctx, tokens, table| {
+            cacheless_procedural_curve_resolving_refs(ctx, tokens, table).unwrap()
         });
         assert_refusal(&error, "ASM cacheless curve references");
     }
@@ -1220,7 +1237,12 @@ fn embedded_deformable(
                     Ok(parameter_pairs) => parameter_pairs,
                     Err(error) => return Some(Err(error)),
                 };
-            for _ in 0..count {
+            let mut visits = 0..count;
+            while propagate_resource!(
+                ctx.next_charged(&mut visits, "ASM embedded deformable entries")
+            )
+            .is_some()
+            {
                 parameter_pairs.push([cur.take_f64()?, cur.take_f64()?]);
             }
             EmbeddedDeformableData::VectorField {
@@ -1343,7 +1365,13 @@ fn embedded_law_curve(
         // record from the cache marker rather than mid-prefix.
         cur.set_pos(stamp_start);
     }
-    let (_, solved_end) = propagate_resource!(curve_block(ctx, toks, cur.pos())?);
+    let solved_end = {
+        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
+            "ASM construction cache",
+            || curve_block(ctx, toks, cur.pos()).transpose(),
+        ));
+        decoded?.1
+    };
     cur.set_pos(solved_end);
     cur.take_f64()?;
     let first_surface_start = cur.pos();
@@ -1388,7 +1416,10 @@ fn embedded_law_curve(
     }
     let mut additional =
         propagate_resource!(ctx.collection_vec(count, "ASM law curve additional formulas"));
-    for _ in 0..count {
+    let mut visits = 0..count;
+    while propagate_resource!(ctx.next_charged(&mut visits, "ASM embedded law curve entries"))
+        .is_some()
+    {
         additional.push(propagate_resource!(law_formula(ctx, &mut cur)?));
     }
     Some(Ok(EmbeddedLawCurve {
@@ -1522,63 +1553,68 @@ pub fn spring_patch_layout(
         return Ok(None);
     };
     let layout = (|| {
-    let mut position = marker + name_len + 3;
-    for _ in 0..2 {
+        let mut position = marker + name_len + 3;
+        for _ in 0..2 {
+            let saved = position;
+            let is_null = match take_native_ident(ctx, bytes, &mut position) {
+                None => false,
+                Some(Ok(ident)) => ident.0 == "null_surface",
+                Some(Err(error)) => return Some(Err(error)),
+            };
+            if is_null {
+                for _ in 0..4 {
+                    take_double_payload(bytes, &mut position)?;
+                }
+            } else {
+                position = saved;
+                propagate_resource!(decode_embedded_surface(
+                    ctx,
+                    bytes,
+                    &mut position,
+                    int_width
+                )?);
+            }
+        }
         let saved = position;
         let is_null = match take_native_ident(ctx, bytes, &mut position) {
             None => false,
-            Some(Ok(ident)) => ident.0 == "null_surface",
+            Some(Ok(ident)) => ident.0 == "nullbs",
             Some(Err(error)) => return Some(Err(error)),
         };
         if is_null {
-            for _ in 0..4 {
-                take_double_payload(bytes, &mut position)?;
-            }
+            take_double_payload(bytes, &mut position)?;
+            take_double_payload(bytes, &mut position)?;
         } else {
-            position = saved;
-            propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
+            position = decode_pcurve_block_with_end(bytes, saved, int_width)?.1;
         }
-    }
-    let saved = position;
-    let is_null = match take_native_ident(ctx, bytes, &mut position) {
-        None => false,
-        Some(Ok(ident)) => ident.0 == "nullbs",
-        Some(Err(error)) => return Some(Err(error)),
-    };
-    if is_null {
-        take_double_payload(bytes, &mut position)?;
-        take_double_payload(bytes, &mut position)?;
-    } else {
-        position = decode_pcurve_block_with_end(bytes, saved, int_width)?.1;
-    }
-    let saved = position;
-    let is_null = match take_native_ident(ctx, bytes, &mut position) {
-        None => false,
-        Some(Ok(ident)) => ident.0 == "nullbs",
-        Some(Err(error)) => return Some(Err(error)),
-    };
-    if !is_null {
-        position = decode_pcurve_block_with_end(bytes, saved, int_width)?.1;
-    }
-    let parameter_range = [
-        take_double_payload(bytes, &mut position)?,
-        take_double_payload(bytes, &mut position)?,
-    ];
-    let discontinuities = [
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-    ];
-    let discontinuity_flag = position;
-    take_bool(bytes, &mut position)?;
-    let direction = position;
-    take_tagged_int(bytes, &mut position, 0x15, int_width)?;
-    Some(Ok(SpringPatchLayout {
-        parameter_range,
-        discontinuities,
-        discontinuity_flag,
-        direction,
-    }))
+        let saved = position;
+        let is_null = match take_native_ident(ctx, bytes, &mut position) {
+            None => false,
+            Some(Ok(ident)) => ident.0 == "nullbs",
+            Some(Err(error)) => return Some(Err(error)),
+        };
+        if !is_null {
+            position = decode_pcurve_block_with_end(bytes, saved, int_width)?.1;
+        }
+        let parameter_range = [
+            take_double_payload(bytes, &mut position)?,
+            take_double_payload(bytes, &mut position)?,
+        ];
+        let discontinuities = [
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+        ];
+        let discontinuity_flag = position;
+        take_bool(bytes, &mut position)?;
+        let direction = position;
+        take_tagged_int(bytes, &mut position, 0x15, int_width)?;
+        Some(Ok(SpringPatchLayout {
+            parameter_range,
+            discontinuities,
+            discontinuity_flag,
+            direction,
+        }))
     })();
     layout.transpose()
 }
@@ -1646,24 +1682,36 @@ pub fn compound_patch_layout(
     let Some(_scope) = subtype_span(ctx, bytes, marker, int_width)? else {
         return Ok(None);
     };
-    let layout = (|| {
-    let mut position = marker + name.len() + 3;
-    let parameters = take_float_array_payloads(bytes, &mut position, int_width)?;
-    let component_count =
-        usize::try_from(take_tagged_int(bytes, &mut position, 0x04, int_width)?).ok()?;
-    if component_count == 0 {
-        return None;
-    }
-    let mut component_parameters = Vec::new();
-    for _ in 0..component_count {
-        component_parameters.push(take_double_payload(bytes, &mut position)?);
-    }
-    Some(CompoundPatchLayout {
-        parameters,
-        component_parameters,
-    })
+    let layout = (|| -> Option<Result<CompoundPatchLayout, cadmpeg_core::CodecError>> {
+        let mut position = marker + name.len() + 3;
+        let parameters = take_float_array_payloads(bytes, &mut position, int_width)?;
+        let component_count =
+            usize::try_from(take_tagged_int(bytes, &mut position, 0x04, int_width)?).ok()?;
+        if component_count == 0 {
+            return None;
+        }
+        let component_count = bounded_len(
+            cadmpeg_core::decode::u64_from_index(component_count),
+            9,
+            bytes.len().checked_sub(position)?,
+        )?;
+        let mut component_parameters = propagate_resource!(
+            ctx.collection_vec(component_count, "ASM compound patch component parameters")
+        );
+        let mut visits = 0..component_count;
+        while propagate_resource!(
+            ctx.next_charged(&mut visits, "ASM compound patch component parameters")
+        )
+        .is_some()
+        {
+            component_parameters.push(take_double_payload(bytes, &mut position)?);
+        }
+        Some(Ok(CompoundPatchLayout {
+            parameters,
+            component_parameters,
+        }))
     })();
-    Ok(layout)
+    layout.transpose()
 }
 
 /// Locate the subset range by consuming the subtype-owned parent curve.
@@ -1680,13 +1728,13 @@ pub fn subset_patch_layout(
         return Ok(None);
     };
     let layout = (|| {
-    let mut position = marker + name.len() + 3;
-    position = decode_curve_block(bytes, position, int_width)?.end();
-    let parameter_range = [
-        take_double_payload(bytes, &mut position)?,
-        take_double_payload(bytes, &mut position)?,
-    ];
-    Some(SubsetPatchLayout { parameter_range })
+        let mut position = marker + name.len() + 3;
+        position = decode_curve_block(bytes, position, int_width)?.end();
+        let parameter_range = [
+            take_double_payload(bytes, &mut position)?,
+            take_double_payload(bytes, &mut position)?,
+        ];
+        Some(SubsetPatchLayout { parameter_range })
     })();
     Ok(layout)
 }
@@ -1705,19 +1753,19 @@ pub fn vector_offset_patch_layout(
         return Ok(None);
     };
     let layout = (|| {
-    let mut position = marker + name.len() + 3;
-    take_bool(bytes, &mut position)?;
-    position = decode_curve_block(bytes, position, int_width)?.end();
-    let parameter_range = [
-        take_double_payload(bytes, &mut position)?,
-        take_double_payload(bytes, &mut position)?,
-    ];
-    let offset = position + 1;
-    take_native_vec3(bytes, &mut position, 0x14)?;
-    Some(VectorOffsetPatchLayout {
-        parameter_range,
-        offset,
-    })
+        let mut position = marker + name.len() + 3;
+        take_bool(bytes, &mut position)?;
+        position = decode_curve_block(bytes, position, int_width)?.end();
+        let parameter_range = [
+            take_double_payload(bytes, &mut position)?,
+            take_double_payload(bytes, &mut position)?,
+        ];
+        let offset = position + 1;
+        take_native_vec3(bytes, &mut position, 0x14)?;
+        Some(VectorOffsetPatchLayout {
+            parameter_range,
+            offset,
+        })
     })();
     Ok(layout)
 }
@@ -1736,37 +1784,37 @@ pub fn helix_patch_layout(
         return Ok(None);
     };
     let layout = (|| {
-    let mut position = marker + name.len() + 3;
-    let current_layout = take_optional_helix_revision(bytes, &mut position, int_width)?;
-    let take_range_payload = |position: &mut usize| {
-        if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
-            *position += 1;
+        let mut position = marker + name.len() + 3;
+        let current_layout = take_optional_helix_revision(bytes, &mut position, int_width)?;
+        let take_range_payload = |position: &mut usize| {
+            if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
+                *position += 1;
+            }
+            take_double_payload(bytes, position)
+        };
+        let angle_range = [
+            take_range_payload(&mut position)?,
+            take_range_payload(&mut position)?,
+        ];
+        let mut frame_vectors = [0usize; 4];
+        let frame_tags = if current_layout {
+            [0x13, 0x14, 0x14, 0x14]
+        } else {
+            [0x13; 4]
+        };
+        for (offset, tag) in frame_vectors.iter_mut().zip(frame_tags) {
+            *offset = position + 1;
+            take_native_vec3(bytes, &mut position, tag)?;
         }
-        take_double_payload(bytes, position)
-    };
-    let angle_range = [
-        take_range_payload(&mut position)?,
-        take_range_payload(&mut position)?,
-    ];
-    let mut frame_vectors = [0usize; 4];
-    let frame_tags = if current_layout {
-        [0x13, 0x14, 0x14, 0x14]
-    } else {
-        [0x13; 4]
-    };
-    for (offset, tag) in frame_vectors.iter_mut().zip(frame_tags) {
-        *offset = position + 1;
-        take_native_vec3(bytes, &mut position, tag)?;
-    }
-    let apex_factor = take_double_payload(bytes, &mut position)?;
-    let axis = position + 1;
-    take_native_vec3(bytes, &mut position, 0x14)?;
-    Some(HelixPatchLayout {
-        angle_range,
-        frame_vectors,
-        apex_factor,
-        axis,
-    })
+        let apex_factor = take_double_payload(bytes, &mut position)?;
+        let axis = position + 1;
+        take_native_vec3(bytes, &mut position, 0x14)?;
+        Some(HelixPatchLayout {
+            angle_range,
+            frame_vectors,
+            apex_factor,
+            axis,
+        })
     })();
     Ok(layout)
 }
@@ -1786,20 +1834,20 @@ pub fn extrusion_patch_layout(
     };
     let name_len = name.len();
     let layout = (|| {
-    let mut position = start + name_len + 3;
-    let parameter_interval = [
-        take_double_payload(bytes, &mut position)?,
-        take_double_payload(bytes, &mut position)?,
-    ];
-    let direction = position + 1;
-    take_native_vec3(bytes, &mut position, 0x14)?;
-    let native_position = position + 1;
-    take_native_vec3(bytes, &mut position, 0x13)?;
-    Some(ExtrusionPatchLayout {
-        parameter_interval,
-        direction,
-        native_position,
-    })
+        let mut position = start + name_len + 3;
+        let parameter_interval = [
+            take_double_payload(bytes, &mut position)?,
+            take_double_payload(bytes, &mut position)?,
+        ];
+        let direction = position + 1;
+        take_native_vec3(bytes, &mut position, 0x14)?;
+        let native_position = position + 1;
+        take_native_vec3(bytes, &mut position, 0x13)?;
+        Some(ExtrusionPatchLayout {
+            parameter_interval,
+            direction,
+            native_position,
+        })
     })();
     Ok(layout)
 }
@@ -1846,29 +1894,33 @@ pub fn rolling_ball_patch_layout(
         Some(Ok(radii)) => Some(radii),
         Some(Err(error)) => return Err(error),
         None => (|| {
-        let mut position = payload_start;
-        for _ in 0..2 {
-            match take_native_string(ctx, span, &mut position, int_width)? {
-                Ok(pair) => drop(pair),
-                Err(error) => return Some(Err(error)),
+            let mut position = payload_start;
+            for _ in 0..2 {
+                match take_native_string(ctx, span, &mut position, int_width)? {
+                    Ok(pair) => drop(pair),
+                    Err(error) => return Some(Err(error)),
+                }
+                let support_kind = match take_native_ident(ctx, span, &mut position)? {
+                    Ok(kind) => kind,
+                    Err(error) => return Some(Err(error)),
+                };
+                let supported = matches!(
+                    support_kind.0.as_str(),
+                    "plane" | "sphere" | "cone" | "torus"
+                );
+                drop(support_kind);
+                if !supported {
+                    return None;
+                }
+                position = decode_surface_block(span, position, int_width)?.end();
             }
-            let support_kind = match take_native_ident(ctx, span, &mut position)? {
-                Ok(kind) => kind,
-                Err(error) => return Some(Err(error)),
-            };
-            let supported = matches!(support_kind.0.as_str(), "plane" | "sphere" | "cone" | "torus");
-            drop(support_kind);
-            if !supported {
-                return None;
-            }
-            position = decode_surface_block(span, position, int_width)?.end();
-        }
-        position = decode_curve_block(span, position, int_width)?.end();
-        Some(Ok([
-            start + take_double_payload(span, &mut position)?,
-            start + take_double_payload(span, &mut position)?,
-        ]))
-        })().transpose()?
+            position = decode_curve_block(span, position, int_width)?.end();
+            Some(Ok([
+                start + take_double_payload(span, &mut position)?,
+                start + take_double_payload(span, &mut position)?,
+            ]))
+        })()
+        .transpose()?,
     };
     Ok(radii.map(|radii| RollingBallPatchLayout { radii }))
 }
@@ -2103,49 +2155,59 @@ pub fn surface_offset_patch_layout(
         return Ok(None);
     };
     let layout = (|| {
-    let mut position = marker + name_len + 3;
-    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
-    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
-    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
-    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
-    let parameter_range = [
-        take_double_payload(bytes, &mut position)?,
-        take_double_payload(bytes, &mut position)?,
-    ];
-    let discontinuities = [
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-    ];
-    let discontinuity_flag = position;
-    take_bool(bytes, &mut position)?;
-    let base_u_range = [
-        take_double_payload(bytes, &mut position)?,
-        take_double_payload(bytes, &mut position)?,
-    ];
-    let base_v_range = [
-        take_double_payload(bytes, &mut position)?,
-        take_double_payload(bytes, &mut position)?,
-    ];
-    position = decode_curve_block(bytes, position, int_width)?.end();
-    let base_range = [
-        take_double_payload(bytes, &mut position)?,
-        take_double_payload(bytes, &mut position)?,
-    ];
-    let distance = take_double_payload(bytes, &mut position)?;
-    let shift = take_double_payload(bytes, &mut position)?;
-    let scale = take_double_payload(bytes, &mut position)?;
-    Some(Ok(SurfaceOffsetPatchLayout {
-        parameter_range,
-        discontinuities,
-        discontinuity_flag,
-        base_u_range,
-        base_v_range,
-        base_range,
-        distance,
-        shift,
-        scale,
-    }))
+        let mut position = marker + name_len + 3;
+        propagate_resource!(decode_embedded_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        propagate_resource!(decode_embedded_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+        position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+        let parameter_range = [
+            take_double_payload(bytes, &mut position)?,
+            take_double_payload(bytes, &mut position)?,
+        ];
+        let discontinuities = [
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+        ];
+        let discontinuity_flag = position;
+        take_bool(bytes, &mut position)?;
+        let base_u_range = [
+            take_double_payload(bytes, &mut position)?,
+            take_double_payload(bytes, &mut position)?,
+        ];
+        let base_v_range = [
+            take_double_payload(bytes, &mut position)?,
+            take_double_payload(bytes, &mut position)?,
+        ];
+        position = decode_curve_block(bytes, position, int_width)?.end();
+        let base_range = [
+            take_double_payload(bytes, &mut position)?,
+            take_double_payload(bytes, &mut position)?,
+        ];
+        let distance = take_double_payload(bytes, &mut position)?;
+        let shift = take_double_payload(bytes, &mut position)?;
+        let scale = take_double_payload(bytes, &mut position)?;
+        Some(Ok(SurfaceOffsetPatchLayout {
+            parameter_range,
+            discontinuities,
+            discontinuity_flag,
+            base_u_range,
+            base_v_range,
+            base_range,
+            distance,
+            shift,
+            scale,
+        }))
     })();
     layout.transpose()
 }
@@ -2169,7 +2231,7 @@ fn embedded_silhouette(
             },
         ),
     ];
-    let candidates: Vec<&str> = names.iter().map(|(name, _)| *name).collect();
+    let candidates = names.each_ref().map(|(name, _)| *name);
     let (marker, name) = propagate_resource!(crate::nurbs::toks::find_owned_subtype_marker(
         ctx,
         toks,
@@ -2231,30 +2293,45 @@ pub fn silhouette_patch_layout(
         return Ok(None);
     };
     let layout = (|| {
-    let mut position = marker + name.len() + 3;
-    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
-    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
-    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
-    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
-    take_double_payload(bytes, &mut position)?;
-    take_double_payload(bytes, &mut position)?;
-    for _ in 0..3 {
-        take_float_array_payloads(bytes, &mut position, int_width)?;
-    }
-    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
-    (*bytes.get(position)? == 0x14).then_some(())?;
-    let light_direction = position + 1;
-    bytes.get(light_direction..light_direction + 24)?;
-    position = light_direction + 24;
-    let draft_factor = if tapered {
-        Some(take_double_payload(bytes, &mut position)?)
-    } else {
-        None
-    };
-    Some(Ok(SilhouettePatchLayout {
-        light_direction,
-        draft_factor,
-    }))
+        let mut position = marker + name.len() + 3;
+        propagate_resource!(decode_embedded_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        propagate_resource!(decode_embedded_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+        position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+        take_double_payload(bytes, &mut position)?;
+        take_double_payload(bytes, &mut position)?;
+        for _ in 0..3 {
+            take_float_array_payloads(bytes, &mut position, int_width)?;
+        }
+        propagate_resource!(decode_embedded_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        (*bytes.get(position)? == 0x14).then_some(())?;
+        let light_direction = position + 1;
+        bytes.get(light_direction..light_direction + 24)?;
+        position = light_direction + 24;
+        let draft_factor = if tapered {
+            Some(take_double_payload(bytes, &mut position)?)
+        } else {
+            None
+        };
+        Some(Ok(SilhouettePatchLayout {
+            light_direction,
+            draft_factor,
+        }))
     })();
     layout.transpose()
 }
@@ -2275,7 +2352,7 @@ fn embedded_surface_curve(
         ("skin_int_cur", SurfaceCurveFamilyKind::Skin),
         ("d5c2_cur", SurfaceCurveFamilyKind::Skin),
     ];
-    let candidates: Vec<&str> = names.iter().map(|(name, _)| *name).collect();
+    let candidates = names.each_ref().map(|(name, _)| *name);
     let (marker, name) = propagate_resource!(crate::nurbs::toks::find_owned_subtype_marker(
         ctx,
         toks,
@@ -2318,32 +2395,45 @@ pub fn decode_par_int_cur_isoline(
     take_range_value(scope, &mut position)?;
     take_range_value(scope, &mut position)?;
     take_tagged_int(scope, &mut position, 0x15, int_width)?;
-    let first_support = match decode_optional_rolling_ball_surface(ctx, scope, &mut position, int_width)? {
-        Ok(support) => support.value().map(|support| support.surface),
-        Err(error) => return Some(Err(error)),
-    };
-    let second_support = match decode_optional_rolling_ball_surface(ctx, scope, &mut position, int_width)? {
-        Ok(support) => support.value().map(|support| support.surface),
-        Err(error) => return Some(Err(error)),
-    };
+    let first_support =
+        match decode_optional_rolling_ball_surface(ctx, scope, &mut position, int_width)? {
+            Ok(support) => support.value().map(|support| support.surface),
+            Err(error) => return Some(Err(error)),
+        };
+    let second_support =
+        match decode_optional_rolling_ball_surface(ctx, scope, &mut position, int_width)? {
+            Ok(support) => support.value().map(|support| support.surface),
+            Err(error) => return Some(Err(error)),
+        };
     let supports = [first_support, second_support];
     let pcurves = [
-        propagate_resource!(decode_nullable_embedded_pcurve(ctx, scope, &mut position, int_width)?)
-            .value(),
-        propagate_resource!(decode_nullable_embedded_pcurve(ctx, scope, &mut position, int_width)?)
-            .value(),
+        propagate_resource!(decode_nullable_embedded_pcurve(
+            ctx,
+            scope,
+            &mut position,
+            int_width
+        )?)
+        .value(),
+        propagate_resource!(decode_nullable_embedded_pcurve(
+            ctx,
+            scope,
+            &mut position,
+            int_width
+        )?)
+        .value(),
     ];
     // The support-slot selector puts the parametric support and its parameter
     // curve in the same slot and nulls the other; a support without its pcurve,
     // or two occupied slots, is not this construction.
-    let occupied: Vec<usize> = (0..2)
-        .filter(|slot| supports[*slot].is_some() || pcurves[*slot].is_some())
-        .collect();
-    let [slot] = occupied.as_slice() else {
-        return None;
+    let occupied =
+        std::array::from_fn::<_, 2, _>(|slot| supports[slot].is_some() || pcurves[slot].is_some());
+    let slot = match occupied {
+        [true, false] => 0,
+        [false, true] => 1,
+        _ => return None,
     };
     let (Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support))), Some(pcurve)) =
-        (&supports[*slot], &pcurves[*slot])
+        (&supports[slot], &pcurves[slot])
     else {
         return None;
     };
@@ -2395,14 +2485,15 @@ pub(super) fn par_int_cur_isoline(
     // The support-slot selector puts the parametric support and its parameter
     // curve in the same slot and nulls the other; a support without its pcurve,
     // or two occupied slots, is not this construction.
-    let occupied: Vec<usize> = (0..2)
-        .filter(|slot| supports[*slot].is_some() || pcurves[*slot].is_some())
-        .collect();
-    let [slot] = occupied.as_slice() else {
-        return None;
+    let occupied =
+        std::array::from_fn::<_, 2, _>(|slot| supports[slot].is_some() || pcurves[slot].is_some());
+    let slot = match occupied {
+        [true, false] => 0,
+        [false, true] => 1,
+        _ => return None,
     };
     let (Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support))), Some(pcurve)) =
-        (&supports[*slot], &pcurves[*slot])
+        (&supports[slot], &pcurves[slot])
     else {
         return None;
     };
@@ -2520,7 +2611,13 @@ fn cache_first_curve_context(
     let cache_enum = cur.take_enum()?;
     let cache = match cache_enum {
         0 => {
-            let (_, end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
+            let end = {
+                let (decoded, _cache_storage) = propagate_resource!(ctx
+                    .with_scoped_storage("ASM construction cache", || {
+                        curve_block(ctx, cur.toks(), cur.pos()).transpose()
+                    },));
+                decoded?.1
+            };
             cur.set_pos(end);
             cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache {
                 fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(
@@ -2541,29 +2638,15 @@ fn cache_first_curve_context(
         _ => return None,
     };
     let first_surface_start = cur.pos();
-    let first_support_present = match support_slot_present(ctx, cur, table) {
-        Ok(present) => present,
-        Err(error) => return Some(Err(error)),
-    };
-    let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
+    let EmbeddedSurfaceWithBounds {
         surface: first_surface,
         bounds: first_bounds,
-    } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
-        Ok(surface) => surface,
-        Err(error) => return Some(Err(error)),
-    };
+    } = propagate_resource!(cache_first_support(ctx, cur, table)?);
     let second_surface_start = cur.pos();
-    let second_support_present = match support_slot_present(ctx, cur, table) {
-        Ok(present) => present,
-        Err(error) => return Some(Err(error)),
-    };
-    let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
+    let EmbeddedSurfaceWithBounds {
         surface: second_surface,
         bounds: second_bounds,
-    } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
-        Ok(surface) => surface,
-        Err(error) => return Some(Err(error)),
-    };
+    } = propagate_resource!(cache_first_support(ctx, cur, table)?);
     let mut pcurves = [
         propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value(),
         propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value(),
@@ -2600,10 +2683,7 @@ fn cache_first_curve_context(
             solved_range,
             extension,
         },
-        surfaces: [
-            SupportSlot::from_parsed(first_surface, first_support_present),
-            SupportSlot::from_parsed(second_surface, second_support_present),
-        ],
+        surfaces: [first_surface, second_surface],
         pcurves,
         discontinuities,
     }))
@@ -2708,24 +2788,34 @@ pub fn surface_curve_patch_layout(
         return Ok(None);
     };
     let layout = (|| {
-    let mut position = marker + name.len() + 3;
-    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
-    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
-    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
-    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
-    let parameter_range = [
-        take_double_payload(bytes, &mut position)?,
-        take_double_payload(bytes, &mut position)?,
-    ];
-    let discontinuities = [
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-    ];
-    Some(Ok(SurfaceCurvePatchLayout {
-        parameter_range,
-        discontinuities,
-    }))
+        let mut position = marker + name.len() + 3;
+        propagate_resource!(decode_embedded_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        propagate_resource!(decode_embedded_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+        position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+        let parameter_range = [
+            take_double_payload(bytes, &mut position)?,
+            take_double_payload(bytes, &mut position)?,
+        ];
+        let discontinuities = [
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+        ];
+        Some(Ok(SurfaceCurvePatchLayout {
+            parameter_range,
+            discontinuities,
+        }))
     })();
     layout.transpose()
 }
@@ -2790,29 +2880,44 @@ pub fn three_surface_patch_layout(
         return Ok(None);
     };
     let layout = (|| {
-    let mut position = marker + name_len + 3;
-    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
-    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
-    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
-    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
-    let parameter_range = [
-        take_double_payload(bytes, &mut position)?,
-        take_double_payload(bytes, &mut position)?,
-    ];
-    let discontinuities = [
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-    ];
-    let selector = position;
-    take_tagged_int(bytes, &mut position, 0x04, int_width)?;
-    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
-    decode_pcurve_block_with_end(bytes, position, int_width)?;
-    Some(Ok(ThreeSurfacePatchLayout {
-        parameter_range,
-        discontinuities,
-        selector,
-    }))
+        let mut position = marker + name_len + 3;
+        propagate_resource!(decode_embedded_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        propagate_resource!(decode_embedded_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+        position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+        let parameter_range = [
+            take_double_payload(bytes, &mut position)?,
+            take_double_payload(bytes, &mut position)?,
+        ];
+        let discontinuities = [
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+        ];
+        let selector = position;
+        take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+        propagate_resource!(decode_embedded_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        decode_pcurve_block_with_end(bytes, position, int_width)?;
+        Some(Ok(ThreeSurfacePatchLayout {
+            parameter_range,
+            discontinuities,
+            selector,
+        }))
     })();
     layout.transpose()
 }
@@ -2933,45 +3038,55 @@ pub fn projection_patch_layout(
         return Ok(None);
     };
     let layout = (|| {
-    let mut position = marker + name_len + 3;
-    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
-    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
-    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
-    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
-    let parameter_range = [
-        take_double_payload(bytes, &mut position)?,
-        take_double_payload(bytes, &mut position)?,
-    ];
-    let discontinuities = [
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-    ];
-    let discontinuity_flag = position;
-    take_bool(bytes, &mut position)?;
-    position = decode_curve_block(bytes, position, int_width)?.end();
-    let tail_flag = position;
-    take_bool(bytes, &mut position)?;
-    let tail = if bytes.get(position) == Some(&0x10) {
-        ProjectionTailPatchLayout::EarlyClose { flag: tail_flag }
-    } else {
+        let mut position = marker + name_len + 3;
+        propagate_resource!(decode_embedded_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        propagate_resource!(decode_embedded_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+        position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
         let parameter_range = [
             take_double_payload(bytes, &mut position)?,
             take_double_payload(bytes, &mut position)?,
         ];
-        let role = ProjectionRoleSlot::parse(bytes, position)?;
-        ProjectionTailPatchLayout::Ranged {
-            flag: tail_flag,
+        let discontinuities = [
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+        ];
+        let discontinuity_flag = position;
+        take_bool(bytes, &mut position)?;
+        position = decode_curve_block(bytes, position, int_width)?.end();
+        let tail_flag = position;
+        take_bool(bytes, &mut position)?;
+        let tail = if bytes.get(position) == Some(&0x10) {
+            ProjectionTailPatchLayout::EarlyClose { flag: tail_flag }
+        } else {
+            let parameter_range = [
+                take_double_payload(bytes, &mut position)?,
+                take_double_payload(bytes, &mut position)?,
+            ];
+            let role = ProjectionRoleSlot::parse(bytes, position)?;
+            ProjectionTailPatchLayout::Ranged {
+                flag: tail_flag,
+                parameter_range,
+                role,
+            }
+        };
+        Some(Ok(ProjectionPatchLayout {
             parameter_range,
-            role,
-        }
-    };
-    Some(Ok(ProjectionPatchLayout {
-        parameter_range,
-        discontinuities,
-        discontinuity_flag,
-        tail,
-    }))
+            discontinuities,
+            discontinuity_flag,
+            tail,
+        }))
     })();
     layout.transpose()
 }
@@ -3027,31 +3142,26 @@ fn cache_first_intersection(
     let mut cur = Cur::at(toks, position);
     (cur.take_long()? > 0).then_some(())?;
     (cur.take_enum()? == 0).then_some(())?;
-    let (_, cache_end) = propagate_resource!(curve_block(ctx, toks, cur.pos())?);
+    let cache_end = {
+        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
+            "ASM construction cache",
+            || curve_block(ctx, toks, cur.pos()).transpose(),
+        ));
+        decoded?.1
+    };
     cur.set_pos(cache_end);
     cur.take_f64()?;
     let first_surface_start = cur.pos();
-    let first_support_present = match support_slot_present(ctx, &cur, table) {
-        Ok(present) => present,
-        Err(error) => return Some(Err(error)),
-    };
-    let first_surface = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
-        Ok(surface) => surface.surface,
-        Err(error) => return Some(Err(error)),
-    };
+    let EmbeddedSurfaceWithBounds {
+        surface: first_surface,
+        ..
+    } = propagate_resource!(cache_first_support(ctx, &mut cur, table)?);
     let second_surface_start = cur.pos();
-    let second_support_present = match support_slot_present(ctx, &cur, table) {
-        Ok(present) => present,
-        Err(error) => return Some(Err(error)),
-    };
-    let second_surface = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
-        Ok(surface) => surface.surface,
-        Err(error) => return Some(Err(error)),
-    };
-    let surfaces = [
-        SupportSlot::from_parsed(first_surface, first_support_present),
-        SupportSlot::from_parsed(second_surface, second_support_present),
-    ];
+    let EmbeddedSurfaceWithBounds {
+        surface: second_surface,
+        ..
+    } = propagate_resource!(cache_first_support(ctx, &mut cur, table)?);
+    let surfaces = [first_surface, second_surface];
     let mut pcurves = [
         propagate_resource!(nullable_embedded_pcurve(ctx, &mut cur)?).value(),
         propagate_resource!(nullable_embedded_pcurve(ctx, &mut cur)?).value(),
@@ -3117,27 +3227,37 @@ pub fn intersection_patch_layout(
         return Ok(None);
     };
     let layout = (|| {
-    let mut position = marker + name.len() + 3;
-    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
-    propagate_resource!(decode_embedded_surface(ctx, bytes, &mut position, int_width)?);
-    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
-    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
-    let parameter_range = [
-        take_double_payload(bytes, &mut position)?,
-        take_double_payload(bytes, &mut position)?,
-    ];
-    let discontinuities = [
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-    ];
-    let discontinuity_flag = position;
-    take_bool(bytes, &mut position)?;
-    Some(Ok(IntersectionPatchLayout {
-        parameter_range,
-        discontinuities,
-        discontinuity_flag,
-    }))
+        let mut position = marker + name.len() + 3;
+        propagate_resource!(decode_embedded_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        propagate_resource!(decode_embedded_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+        position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+        let parameter_range = [
+            take_double_payload(bytes, &mut position)?,
+            take_double_payload(bytes, &mut position)?,
+        ];
+        let discontinuities = [
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+        ];
+        let discontinuity_flag = position;
+        take_bool(bytes, &mut position)?;
+        Some(Ok(IntersectionPatchLayout {
+            parameter_range,
+            discontinuities,
+            discontinuity_flag,
+        }))
     })();
     layout.transpose()
 }
@@ -3214,74 +3334,64 @@ fn optional_pcurve(
     Some(Ok(Nullable::Value(pcurve)))
 }
 
-/// Whether the next cache-first support slot contains a valid non-null
-/// surface construction.
-///
-/// The neutral `SurfaceGeometry` field cannot represent a cacheless
-/// procedural surface without assigning it a document-level construction ID.
-/// Keep that distinction separate: a typed support reference still proves that
-/// its paired native pcurve slot is eligible, while `null_surface` does not.
-fn support_slot_present(
+/// Parse a cache-first support once and preserve cacheless support presence.
+fn cache_first_support(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    cur: &Cur<'_>,
+    cur: &mut Cur<'_>,
     table: &SubtypeTable,
-) -> Result<bool, cadmpeg_core::CodecError> {
+) -> Option<Result<EmbeddedSurfaceWithBounds<SupportSlot>, cadmpeg_core::CodecError>> {
     let mut probe = *cur;
-    if probe.take_ident() == Some("null_surface") {
-        return Ok(false);
+    let parsed = propagate_resource!(optional_embedded_surface_with_bounds(ctx, cur, table)?);
+    if let Some(surface) = parsed.surface {
+        return Some(Ok(EmbeddedSurfaceWithBounds {
+            surface: SupportSlot::Surface(surface),
+            bounds: parsed.bounds,
+        }));
     }
-
-    let mut parsed = *cur;
-    if let Some(parsed) = optional_embedded_surface_with_bounds(ctx, &mut parsed, table) {
-        if parsed?.surface.is_some() {
-            return Ok(true);
-        }
-    }
-
-    let mut probe = *cur;
     if probe.take_ident() != Some("spline") {
-        return Ok(false);
+        return Some(Ok(EmbeddedSurfaceWithBounds {
+            surface: SupportSlot::Absent,
+            bounds: parsed.bounds,
+        }));
     }
-    if matches!(probe.peek(), Some(Token::True | Token::False)) && probe.take_bool().is_none() {
-        return Ok(false);
+    if matches!(probe.peek(), Some(Token::True | Token::False)) {
+        probe.take_bool()?;
     }
-    let Some(Token::SubtypeOpen) = probe.peek() else {
-        return Ok(false);
-    };
-    let start = probe.pos();
-    let Some(scope) = crate::nurbs::toks::subtype_span(probe.toks(), start) else {
-        return Ok(false);
-    };
-    let Some(Token::Ident(name)) = probe.toks().get(start + 1) else {
-        return Ok(false);
-    };
-    if name == "ref" {
-        let Some(Token::Long(index)) = probe.toks().get(start + 2) else {
-            return Ok(false);
+    let reference = probe.pos();
+    let tokens = probe.toks();
+    // Inline cacheless supports were validated by the surface parser. A
+    // referenced support with no solved cache needs its construction checked.
+    let declared = if matches!(tokens.get(reference + 1), Some(Token::Ident(name)) if name == "ref")
+    {
+        let Some(Token::Long(index)) = tokens.get(reference + 2) else {
+            return None;
         };
-        let Ok(index) = usize::try_from(*index) else {
-            return Ok(false);
-        };
-        let Some(target) = table.span(index) else {
-            return Ok(false);
-        };
-        if crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, target, table).is_some() {
-            return Ok(true);
+        let index = usize::try_from(*index).ok()?;
+        if let Some(target) = table.span(index) {
+            let (decoded, _storage) = propagate_resource!(ctx.with_scoped_storage(
+                "ASM cacheless support presence",
+                || crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                    ctx,
+                    target.tokens(),
+                    table,
+                )
+                .transpose(),
+            ));
+            decoded.is_some()
+        } else {
+            false
         }
-        return crate::nurbs::proc_surface::procedural_surface_resolving_refs(
-            ctx,
-            target.tokens(),
-            table,
-        )
-        .transpose()
-        .map(|decoded| decoded.is_some());
-    }
-    if crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, scope, table).is_some() {
-        return Ok(true);
-    }
-    crate::nurbs::proc_surface::procedural_surface_resolving_refs(ctx, scope.tokens(), table)
-        .transpose()
-        .map(|decoded| decoded.is_some())
+    } else {
+        true
+    };
+    Some(Ok(EmbeddedSurfaceWithBounds {
+        surface: if declared {
+            SupportSlot::DeclaredOnly
+        } else {
+            SupportSlot::Absent
+        },
+        bounds: parsed.bounds,
+    }))
 }
 
 /// Writable scalar locations in a retained `off_int_cur` construction.
@@ -3307,32 +3417,52 @@ pub fn two_sided_offset_patch_layout(
         return Ok(None);
     };
     let layout = (|| {
-    let mut position = marker + name_len + 3;
-    propagate_resource!(skip_offset_support_surface(ctx, bytes, &mut position, int_width)?);
-    propagate_resource!(skip_offset_support_surface(ctx, bytes, &mut position, int_width)?);
-    propagate_resource!(skip_offset_support_pcurve(ctx, bytes, &mut position, int_width)?);
-    propagate_resource!(skip_offset_support_pcurve(ctx, bytes, &mut position, int_width)?);
-    let parameter_range = [
-        take_double_payload(bytes, &mut position)?,
-        take_double_payload(bytes, &mut position)?,
-    ];
-    let discontinuities = [
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-        take_float_array_payloads(bytes, &mut position, int_width)?,
-    ];
-    let discontinuity_flag = position;
-    take_bool(bytes, &mut position)?;
-    let offsets = [
-        take_double_payload(bytes, &mut position)?,
-        take_double_payload(bytes, &mut position)?,
-    ];
-    Some(Ok(TwoSidedOffsetPatchLayout {
-        parameter_range,
-        discontinuities,
-        discontinuity_flag,
-        offsets,
-    }))
+        let mut position = marker + name_len + 3;
+        propagate_resource!(skip_offset_support_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        propagate_resource!(skip_offset_support_surface(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        propagate_resource!(skip_offset_support_pcurve(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        propagate_resource!(skip_offset_support_pcurve(
+            ctx,
+            bytes,
+            &mut position,
+            int_width
+        )?);
+        let parameter_range = [
+            take_double_payload(bytes, &mut position)?,
+            take_double_payload(bytes, &mut position)?,
+        ];
+        let discontinuities = [
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+            take_float_array_payloads(bytes, &mut position, int_width)?,
+        ];
+        let discontinuity_flag = position;
+        take_bool(bytes, &mut position)?;
+        let offsets = [
+            take_double_payload(bytes, &mut position)?,
+            take_double_payload(bytes, &mut position)?,
+        ];
+        Some(Ok(TwoSidedOffsetPatchLayout {
+            parameter_range,
+            discontinuities,
+            discontinuity_flag,
+            offsets,
+        }))
     })();
     layout.transpose()
 }
@@ -3385,7 +3515,7 @@ fn decode_embedded_surface(
     int_width: RefWidth,
 ) -> Option<Result<SurfaceGeometry, cadmpeg_core::CodecError>> {
     decode_embedded_surface_fields(ctx, bytes, position, int_width, false)
-        .map(|result| result.map(|(surface, _)| surface))
+        .map(|result| result.map(|value| value.surface))
 }
 
 /// Decode one embedded analytic or spline support surface. Token-space
@@ -3564,7 +3694,7 @@ pub(super) fn decode_embedded_surface_with_ranges(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<Result<(SurfaceGeometry, [[Option<f64>; 2]; 2]), cadmpeg_core::CodecError>> {
+) -> Option<Result<EmbeddedSurfaceWithRanges, cadmpeg_core::CodecError>> {
     decode_embedded_surface_fields(ctx, bytes, position, int_width, true)
 }
 
@@ -3574,7 +3704,7 @@ fn decode_embedded_surface_fields(
     position: &mut usize,
     int_width: RefWidth,
     preserve_ranges: bool,
-) -> Option<Result<(SurfaceGeometry, [[Option<f64>; 2]; 2]), cadmpeg_core::CodecError>> {
+) -> Option<Result<EmbeddedSurfaceWithRanges, cadmpeg_core::CodecError>> {
     let no_ranges = [[None, None], [None, None]];
     let kind = match take_native_ident(ctx, bytes, position)? {
         Ok(kind) => kind,
@@ -3588,10 +3718,10 @@ fn decode_embedded_surface_fields(
         } else {
             no_ranges
         };
-        return Some(Ok((
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(decoded.surface)),
+        return Some(Ok(EmbeddedSurfaceWithRanges {
+            surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(decoded.surface)),
             ranges,
-        )));
+        }));
     }
     let point = take_native_vec3(bytes, position, 0x13)?;
     let point = Point3::new(
@@ -3610,12 +3740,12 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             let (origin, frame) = admitted_placement(point, normal, u_axis)?;
-            Some(Ok((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
+            Some(Ok(EmbeddedSurfaceWithRanges {
+                surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
                     origin, frame,
                 ))),
                 ranges,
-            )))
+            }))
         }
         "cone" => {
             let native_axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
@@ -3659,7 +3789,7 @@ fn decode_embedded_surface_fields(
                     Angle::new(sine.abs().atan2(cosine.abs()))?,
                 )))
             };
-            Some(Ok((surface, ranges)))
+            Some(Ok(EmbeddedSurfaceWithRanges { surface, ranges }))
         }
         "sphere" => {
             let radius = take_f64(bytes, position)? * LEN_TO_MM;
@@ -3675,14 +3805,12 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             let (center, frame) = admitted_placement(point, axis, ref_direction)?;
-            Some(Ok((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(SphereSurface::new(
-                    center,
-                    frame,
-                    NonZeroLength::new(radius)?,
-                ))),
+            Some(Ok(EmbeddedSurfaceWithRanges {
+                surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                    SphereSurface::new(center, frame, NonZeroLength::new(radius)?),
+                )),
                 ranges,
-            )))
+            }))
         }
         "torus" => {
             let axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
@@ -3699,23 +3827,23 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             let (center, frame) = admitted_placement(point, axis, ref_direction)?;
-            Some(Ok((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(TorusSurface::new(
+            Some(Ok(EmbeddedSurfaceWithRanges {
+                surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(TorusSurface::new(
                     center,
                     frame,
                     PositiveLength::new(major_radius)?,
                     NonZeroLength::new(minor_radius)?,
                 ))),
                 ranges,
-            )))
+            }))
         }
         _ => None,
     }
 }
 
-/// Optional embedded support surface plus its four optional U/V bound fields.
-pub(super) struct EmbeddedSurfaceWithBounds {
-    pub(super) surface: Option<SurfaceGeometry>,
+/// Embedded support representation plus its four optional U/V bound fields.
+pub(super) struct EmbeddedSurfaceWithBounds<S = Option<SurfaceGeometry>> {
+    pub(super) surface: S,
     pub(super) bounds: [Option<f64>; 4],
 }
 
@@ -3798,14 +3926,16 @@ pub(super) fn optional_embedded_surface_with_bounds(
                         propagate_resource!(surface),
                     )))
                 } else {
-                    let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
-                        ctx,
-                        scope.tokens(),
-                        table,
-                    )?;
-                    if let Err(error) = decoded {
-                        return Some(Err(error));
-                    }
+                    let (decoded, _storage) = propagate_resource!(ctx.with_scoped_storage(
+                        "ASM cacheless embedded support",
+                        || crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                            ctx,
+                            scope.tokens(),
+                            table,
+                        )
+                        .transpose(),
+                    ));
+                    decoded?;
                     None
                 };
             cur.set_pos(cur.pos() + scope.tokens().len());
@@ -3835,12 +3965,12 @@ fn compound_definition(
     if count == 0 {
         return None;
     }
-    let mut component_parameters = match ctx.collection_vec(count, "ASM compound curve parameters")
+    let (mut component_parameters, _parameter_storage) =
+        propagate_resource!(ctx.temporary_vec(count, "ASM compound curve parameters"));
+    let mut visits = 0..count;
+    while propagate_resource!(ctx.next_charged(&mut visits, "ASM compound definition entries"))
+        .is_some()
     {
-        Ok(component_parameters) => component_parameters,
-        Err(error) => return Some(Err(error)),
-    };
-    for _ in 0..count {
         component_parameters.push(cur.take_f64()?);
     }
     if !matches!(cur.peek(), Some(Token::True | Token::False)) {
@@ -3851,7 +3981,10 @@ fn compound_definition(
         Ok(components) => components,
         Err(error) => return Some(Err(error)),
     };
-    for parameter in component_parameters {
+    for parameter in propagate_resource!(ctx
+        .admit_iter(component_parameters, "ASM compound curve components")
+        .map_err(cadmpeg_core::CodecError::from))
+    {
         let (curve, end) = propagate_resource!(curve_block(ctx, toks, cur.pos())?);
         components.push(cadmpeg_ir::geometry::CompoundComponent {
             parameter,
@@ -4077,6 +4210,76 @@ mod cache_form_tests {
     use cadmpeg_ir::geometry::{nurbs::NurbsCurve, pcurve::PcurveNurbs};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn cache_first_support_propagates_reference_cache_allocation_refusal() {
+        use crate::sab::Record;
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let mut target = vec![
+            Token::SubtypeOpen,
+            Token::Ident("exact_spl_sur".into()),
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Long(2),
+        ];
+        for _ in 0..2 {
+            target.extend([
+                Token::Double(0.0),
+                Token::Long(1),
+                Token::Double(1.0),
+                Token::Long(1),
+            ]);
+        }
+        for point in [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0],
+        ] {
+            target.extend(point.map(Token::Double));
+        }
+        target.push(Token::SubtypeClose);
+        let record = Record {
+            index: 0,
+            name: "spline".into(),
+            tokens: target.into(),
+            offset: 0,
+            len: 0,
+        };
+        let table = crate::nurbs::toks::SubtypeTable::from_records(
+            &cadmpeg_test_support::service_decode_context(),
+            &[record],
+        )
+        .unwrap();
+        let tokens = [
+            Token::Ident("spline".into()),
+            Token::SubtypeOpen,
+            Token::Ident("ref".into()),
+            Token::Long(0),
+            Token::SubtypeClose,
+            Token::False,
+            Token::False,
+            Token::False,
+            Token::False,
+        ];
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "ASM NURBS grid row poles",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                super::cache_first_support(&ctx, &mut Cur::at(&tokens, 0), &table).transpose()
+            },
+        );
+    }
 
     #[test]
     fn support_chart_mapping_propagates_the_original_work_refusal() {
@@ -4364,11 +4567,17 @@ mod trailing_surface_bounds_work_tests {
 
     #[test]
     fn trailing_surface_bounds_refuses_work_before_prefix_probe() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = record_trailing_surface_bounds(&ctx, &[]).unwrap_err();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "ASM trailing surface bounds prefix",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                record_trailing_surface_bounds(&ctx, &[])
+            },
+        );
         let CodecError::ResourceLimit(limit) = error else {
             panic!("expected work refusal: {error:?}");
         };

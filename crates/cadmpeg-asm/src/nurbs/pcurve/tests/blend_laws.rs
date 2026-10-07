@@ -528,10 +528,10 @@ fn rolling_ball_surfaces_decode_framed_spline_supports() {
             decode_rolling_ball_surface(&resource_ctx, &bytes, &mut position, int_width)
                 .transpose()
                 .expect("resource allocation did not fail"),
-            Some((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-                [[Some(-1.0), Some(2.0)], [Some(-3.0), Some(4.0)]],
-            ))
+            Some(crate::nurbs::proc_curve::EmbeddedSurfaceWithRanges {
+                surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+                ranges: [[Some(-1.0), Some(2.0)], [Some(-3.0), Some(4.0)]],
+            })
         if surface.u_degree() == 1 && surface.v_degree() == 1
         ));
         assert_eq!(position, bytes.len());
