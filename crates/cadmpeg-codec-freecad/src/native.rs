@@ -10,6 +10,7 @@ use crate::attachment::MapModeIndex;
 use cadmpeg_ir::units::FiniteVector;
 use frame::FiniteFrame;
 
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -1144,6 +1145,155 @@ impl DesignCensusRecord {
     /// Whether the operation has neutral semantics.
     pub(crate) fn neutral(&self) -> bool {
         self.semantic_kind != "native"
+    }
+}
+
+/// Sums measured byte costs, refusing on overflow.
+fn cost_sum(
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+    costs: impl IntoIterator<Item = u64>,
+) -> Result<u64, CodecError> {
+    let mut total = 0_u64;
+    for cost in costs {
+        total = total
+            .checked_add(cost)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    }
+    Ok(total)
+}
+
+/// Bytes a comparison reads from a map of names to counts.
+fn count_map_cost(
+    ctx: &DecodeContext<'_>,
+    map: &BTreeMap<String, u64>,
+    operation: &'static str,
+) -> Result<u64, CodecError> {
+    let mut total = 0_u64;
+    for (name, count) in ctx.admit_iter(map, operation)? {
+        total = cost_sum(
+            ctx,
+            operation,
+            [total, (name, count).decode_cost(ctx, operation)?],
+        )?;
+    }
+    Ok(total)
+}
+
+impl DecodeCost for DesignCensusRecord {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        cost_sum(
+            ctx,
+            operation,
+            [
+                self.id.decode_cost(ctx, operation)?,
+                self.object.decode_cost(ctx, operation)?,
+                self.type_name.decode_cost(ctx, operation)?,
+                self.feature.decode_cost(ctx, operation)?,
+                self.semantic_kind.decode_cost(ctx, operation)?,
+                1,
+            ],
+        )
+    }
+}
+
+impl DecodeCost for CarrierCensusRecord {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        cost_sum(
+            ctx,
+            operation,
+            [
+                self.id.decode_cost(ctx, operation)?,
+                self.payload.decode_cost(ctx, operation)?,
+                count_map_cost(ctx, &self.curves_2d, operation)?,
+                count_map_cost(ctx, &self.curves_3d, operation)?,
+                count_map_cost(ctx, &self.surfaces, operation)?,
+                count_map_cost(ctx, &self.topology, operation)?,
+                // Form, version and the three carrier counts.
+                2 + 3 * 8,
+            ],
+        )
+    }
+}
+
+impl DecodeCost for ExternalDocument {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        cost_sum(
+            ctx,
+            operation,
+            [1, self.as_str().decode_cost(ctx, operation)?],
+        )
+    }
+}
+
+impl DecodeCost for LinkTarget {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        cost_sum(
+            ctx,
+            operation,
+            [
+                self.document.decode_cost(ctx, operation)?,
+                self.object.decode_cost(ctx, operation)?,
+                self.subelements.decode_cost(ctx, operation)?,
+            ],
+        )
+    }
+}
+
+impl DecodeCost for AttachmentRecord {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        // Map mode and the two optional frames are fixed-size values.
+        const FIXED: u64 = 2 + 2 * (1 + 16 * 8);
+        cost_sum(
+            ctx,
+            operation,
+            [
+                self.id.decode_cost(ctx, operation)?,
+                self.object.decode_cost(ctx, operation)?,
+                self.supports.decode_cost(ctx, operation)?,
+                FIXED,
+            ],
+        )
+    }
+}
+
+impl DecodeCost for ByteCoverageRecord {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        cost_sum(
+            ctx,
+            operation,
+            [
+                self.id.decode_cost(ctx, operation)?,
+                count_map_cost(ctx, &self.classification_bytes, operation)?,
+                self.named_opaque_entries.decode_cost(ctx, operation)?,
+                // Five lengths and counts, and the closure flag.
+                5 * 8 + 1,
+            ],
+        )
     }
 }
 

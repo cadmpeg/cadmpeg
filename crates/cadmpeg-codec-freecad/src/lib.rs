@@ -82,6 +82,8 @@ impl FcstdCodec {
     }
 }
 
+const FINDINGS: &str = "FreeCAD native validation findings";
+
 fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok(Vec::new());
@@ -97,7 +99,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                     return Err(error)
                 }
                 Err(error) => {
-                    return Ok(vec![finding(Check::NativeLinks, error.to_string(), None)]);
+                    return single_finding(ctx, Check::NativeLinks, format_args!("{error}"));
                 }
             }
         };
@@ -121,6 +123,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         |value| &value.index,
         Ord::cmp,
         "FreeCAD native string tables sort",
+    )?;
+    // The shared conversion checks each record's index once.
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(string_table_records.len()),
+        "FreeCAD native string table order",
     )?;
     let string_tables = arena!(native::StringTables::try_from(string_table_records));
     let string_tables = string_tables.as_slice();
@@ -151,84 +158,155 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         arena!(namespace.arena_as_for_decode::<native::DesignCensusRecord>(ctx, "design_census"));
 
     let mut findings = Vec::new();
-    if carrier_census != brep::carrier_census(ctx, &shape_payloads)? {
-        findings.push(finding(
-            Check::PayloadIntegrity,
-            "FCStd carrier census does not match parsed shape payloads",
-            None,
-        ));
-    }
-    match design::census(ctx, &objects, &ir.model.features) {
-        Ok(expected) if design_census == expected => {}
-        Ok(expected) => {
-            let detail = design_census
-                .iter()
-                .zip(&expected)
-                .find(|(stored, derived)| stored != derived)
-                .map_or_else(
-                    || {
-                        format!(
-                            "stored {} records and derived {} records",
-                            design_census.len(),
-                            expected.len()
-                        )
-                    },
-                    |(stored, derived)| format!("stored {stored:?} but derived {derived:?}"),
-                );
-            findings.push(finding(
-                Check::ReferentialIntegrity,
-                format!("FCStd design census does not match projected feature semantics: {detail}"),
+    let findings = &mut findings;
+    {
+        let (expected, _expected_storage) = ctx
+            .with_scoped_storage("FreeCAD expected carrier census", || {
+                brep::carrier_census(ctx, &shape_payloads)
+            })?;
+        if first_difference(
+            ctx,
+            &carrier_census,
+            &expected,
+            "FreeCAD carrier census comparison",
+        )?
+        .is_some()
+        {
+            push_finding(
+                ctx,
+                findings,
+                Check::PayloadIntegrity,
+                format_args!("FCStd carrier census does not match parsed shape payloads"),
                 None,
-            ));
+            )?;
+        }
+    }
+    match ctx.with_scoped_storage("FreeCAD expected design census", || {
+        design::census(ctx, &objects, &ir.model.features)
+    }) {
+        Ok((expected, _expected_storage)) => {
+            match first_difference(ctx, &design_census, &expected, "FreeCAD design census comparison")? {
+                None => {}
+                Some(Some(index)) => push_finding(
+                    ctx,
+                    findings,
+                    Check::ReferentialIntegrity,
+                    format_args!(
+                        "FCStd design census does not match projected feature semantics: stored {:?} but derived {:?}",
+                        design_census[index], expected[index]
+                    ),
+                    None,
+                )?,
+                Some(None) => push_finding(
+                    ctx,
+                    findings,
+                    Check::ReferentialIntegrity,
+                    format_args!(
+                        "FCStd design census does not match projected feature semantics: stored {} records and derived {} records",
+                        design_census.len(),
+                        expected.len()
+                    ),
+                    None,
+                )?,
+            }
         }
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(error) => findings.push(finding(
+        Err(error) => push_finding(
+            ctx,
+            findings,
             Check::ReferentialIntegrity,
-            error.to_string(),
+            format_args!("{error}"),
             None,
-        )),
+        )?,
     }
-    let object_ids = objects
-        .iter()
-        .map(|record| record.id().as_str())
-        .collect::<HashSet<_>>();
-    let entry_names = entries
-        .iter()
-        .map(crate::native::EntryRecord::name)
-        .collect::<HashSet<_>>();
-    let property_ids = properties
-        .iter()
-        .map(|record| record.id.as_str())
-        .collect::<HashSet<_>>();
-    let extension_ids = extensions
-        .iter()
-        .map(|record| record.id.as_str())
-        .collect::<HashSet<_>>();
+    // Identity sets borrow the records; their scoped storage ends with the
+    // validation.
+    const IDENTITIES: &str = "FreeCAD validation identities";
+    let object_ids = reader_storage.with_storage(|| {
+        ctx.collect_hash_set(
+            objects.iter().map(|record| record.id().as_str()),
+            IDENTITIES,
+        )
+    })?;
+    let entry_names = reader_storage.with_storage(|| {
+        ctx.collect_hash_set(entries.iter().map(native::EntryRecord::name), IDENTITIES)
+    })?;
+    let property_ids = reader_storage.with_storage(|| {
+        ctx.collect_hash_set(
+            properties.iter().map(|record| record.id.as_str()),
+            IDENTITIES,
+        )
+    })?;
+    let extension_ids = reader_storage.with_storage(|| {
+        ctx.collect_hash_set(
+            extensions.iter().map(|record| record.id.as_str()),
+            IDENTITIES,
+        )
+    })?;
+    let gui_provider_ids = reader_storage.with_storage(|| {
+        ctx.collect_hash_set(
+            gui_providers.iter().map(|provider| provider.id.as_str()),
+            IDENTITIES,
+        )
+    })?;
     if object_ids.len() != objects.len()
         || property_ids.len() != properties.len()
         || extension_ids.len() != extensions.len()
     {
-        findings.push(finding(
+        push_finding(
+            ctx,
+            findings,
             Check::Identity,
-            "duplicate FCStd native identity",
+            format_args!("duplicate FCStd native identity"),
             None,
-        ));
+        )?;
     }
-    for object in &objects {
-        for dependency in &object.dependencies {
-            if !object_ids.contains(dependency.as_str()) {
-                findings.push(finding(
+    let has = |set: &HashSet<&str>, value: &str| {
+        ctx.contains_hash_set(set, value, "FreeCAD validation identity lookup")
+    };
+    // A local link names an object that must be present.
+    let missing_link = |link: &native::LinkTarget| -> Result<bool, CodecError> {
+        match (link.document(), link.object()) {
+            (None, Some(object)) => Ok(!has(&object_ids, object)?),
+            _ => Ok(false),
+        }
+    };
+    let missing_in = |links: &[Option<native::LinkTarget>]| {
+        ctx.any_by(
+            links,
+            |link| link.as_ref().map_or(Ok(false), missing_link),
+            "FreeCAD validation link search",
+        )
+    };
+    let missing_in_groups = |groups: &BTreeMap<String, Vec<Option<native::LinkTarget>>>| {
+        let mut groups = groups.values();
+        while let Some(links) = ctx.next_charged(&mut groups, "FreeCAD validation link search")? {
+            if missing_in(links)? {
+                return Ok::<bool, CodecError>(true);
+            }
+        }
+        Ok(false)
+    };
+    let missing_entry = |names: &[String]| {
+        ctx.any_by(
+            names,
+            |name| Ok(!has(&entry_names, name)?),
+            "FreeCAD validation entry search",
+        )
+    };
+    for object in ctx.admit_iter(&objects, "FreeCAD validation objects")? {
+        for dependency in ctx.admit_iter(&object.dependencies, "FreeCAD validation objects")? {
+            if !has(&object_ids, dependency)? {
+                push_finding(
+                    ctx,
+                    findings,
                     Check::ReferentialIntegrity,
-                    format!("{} has missing dependency {dependency}", object.id()),
-                    Some(object.id().clone()),
-                ));
+                    format_args!("{} has missing dependency {dependency}", object.id()),
+                    Some(object.id()),
+                )?;
             }
         }
     }
-    let object_by_id = objects
-        .iter()
-        .map(|object| (object.id().as_str(), object))
-        .collect::<HashMap<_, _>>();
     let applications_match =
         match application::matches_native(ctx, namespace, &objects, &properties, &entries) {
             Ok(matches) => matches,
@@ -237,597 +315,875 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             ))) => {
                 return Err(CodecError::ResourceLimit(limit));
             }
-            Err(error) => return Ok(vec![finding(Check::NativeLinks, error.to_string(), None)]),
+            Err(error) => {
+                return single_finding(ctx, Check::NativeLinks, format_args!("{error}"));
+            }
         };
     if !applications_match {
-        findings.push(finding(
+        push_finding(
+            ctx,
+            findings,
             Check::PayloadIntegrity,
-            "FCStd application preservation records do not match authoritative bytes",
+            format_args!("FCStd application preservation records do not match authoritative bytes"),
             None,
-        ));
+        )?;
     }
-    for attachment in &attachments {
-        let missing_support = attachment.supports.iter().flatten().any(|support| {
-            support.document().is_none()
-                && support
-                    .object()
-                    .is_some_and(|object| !object_ids.contains(object))
-        });
-        if !object_ids.contains(attachment.object.as_str()) || missing_support {
-            findings.push(finding(
+    for attachment in ctx.admit_iter(&attachments, "FreeCAD validation attachments")? {
+        if !has(&object_ids, &attachment.object)? || missing_in(&attachment.supports)? {
+            push_finding(
+                ctx,
+                findings,
                 Check::NativeLinks,
-                format!(
+                format_args!(
                     "{} has an invalid attachment target or frame",
                     attachment.id
                 ),
-                Some(attachment.id.clone()),
-            ));
+                Some(&attachment.id),
+            )?;
         }
     }
-    match attachment::transfer(ctx, &objects, &properties) {
-        Ok(expected) if attachments != expected => findings.push(finding(
-            Check::NativeLinks,
-            "FCStd attachment graph does not match the application property graph",
-            None,
-        )),
+    match ctx.with_scoped_storage("FreeCAD expected attachment graph", || {
+        attachment::transfer(ctx, &objects, &properties)
+    }) {
+        Ok((expected, _expected_storage)) => {
+            if first_difference(
+                ctx,
+                &attachments,
+                &expected,
+                "FreeCAD attachment comparison",
+            )?
+            .is_some()
+            {
+                push_finding(
+                    ctx,
+                    findings,
+                    Check::NativeLinks,
+                    format_args!(
+                        "FCStd attachment graph does not match the application property graph"
+                    ),
+                    None,
+                )?;
+            }
+        }
         Err(CodecError::ResourceLimit(limit)) => return Err(CodecError::ResourceLimit(limit)),
-        Err(error) => findings.push(finding(
+        Err(error) => push_finding(
+            ctx,
+            findings,
             Check::NativeLinks,
-            format!("FCStd attachment properties are malformed: {error}"),
+            format_args!("FCStd attachment properties are malformed: {error}"),
             None,
-        )),
-        _ => {}
+        )?,
     }
-    let gui_provider_ids = gui_providers
-        .iter()
-        .map(|provider| provider.id.as_str())
-        .collect::<HashSet<_>>();
-    let has_gui_entry = entry_names.contains("GuiDocument.xml");
+    let has_gui_entry = has(&entry_names, "GuiDocument.xml")?;
     if gui_documents.len() != usize::from(has_gui_entry) {
-        findings.push(finding(
+        push_finding(
+            ctx,
+            findings,
             Check::Counts,
-            "FCStd GUI document record does not match GuiDocument.xml presence",
+            format_args!("FCStd GUI document record does not match GuiDocument.xml presence"),
             None,
-        ));
+        )?;
     }
-    for document in &gui_documents {
-        if document.states.iter().any(|state| {
-            state
-                .side_entries
-                .iter()
-                .any(|entry| !entry_names.contains(entry.as_str()))
-        }) {
-            findings.push(finding(
+    for document in ctx.admit_iter(&gui_documents, "FreeCAD validation GUI documents")? {
+        if ctx.any_by(
+            &document.states,
+            |state| missing_entry(&state.side_entries),
+            "FreeCAD validation GUI states",
+        )? {
+            push_finding(
+                ctx,
+                findings,
                 Check::NativeLinks,
-                format!("{} has a missing GUI state asset", document.id),
-                Some(document.id.clone()),
-            ));
+                format_args!("{} has a missing GUI state asset", document.id),
+                Some(&document.id),
+            )?;
         }
     }
-    for provider in &gui_providers {
-        if provider
-            .object
-            .as_ref()
-            .is_some_and(|object| !object_ids.contains(object.as_str()))
-        {
-            findings.push(finding(
+    for provider in ctx.admit_iter(&gui_providers, "FreeCAD validation GUI providers")? {
+        let missing = match &provider.object {
+            Some(object) => !has(&object_ids, object.as_str())?,
+            None => false,
+        };
+        if missing {
+            push_finding(
+                ctx,
+                findings,
                 Check::ReferentialIntegrity,
-                format!("{} references a missing application object", provider.id),
-                Some(provider.id.clone()),
-            ));
+                format_args!("{} references a missing application object", provider.id),
+                Some(&provider.id),
+            )?;
         }
     }
-    for property in &gui_properties {
-        if !gui_provider_ids.contains(property.owner.as_str())
-            || property
-                .side_entries
-                .iter()
-                .any(|entry| !entry_names.contains(entry.as_str()))
-        {
-            findings.push(finding(
+    for property in ctx.admit_iter(&gui_properties, "FreeCAD validation GUI properties")? {
+        if !has(&gui_provider_ids, &property.owner)? || missing_entry(&property.side_entries)? {
+            push_finding(
+                ctx,
+                findings,
                 Check::ReferentialIntegrity,
-                format!("{} has a missing GUI owner or side entry", property.id),
-                Some(property.id.clone()),
-            ));
+                format_args!("{} has a missing GUI owner or side entry", property.id),
+                Some(&property.id),
+            )?;
         }
     }
-    let mut product_storage = ctx.reserve_scoped(0, "fcstd product validation index")?;
-    let mut product_by_object = HashMap::new();
-    product_storage.with_storage(|| {
-        ctx.reserve_map(
-            &mut product_by_object,
-            product_nodes.len(),
-            "fcstd product validation index",
-        )
-    })?;
-    for node in &product_nodes {
-        product_by_object.insert(node.object.as_str(), node);
-    }
+    let (product_by_object, _product_storage) =
+        ctx.with_scoped_storage("fcstd product validation index", || {
+            ctx.collect_hash_map(
+                product_nodes
+                    .iter()
+                    .map(|node| (node.object.as_str(), node)),
+                "fcstd product validation index",
+            )
+        })?;
     let (cyclic_products, _cycle_storage) = ctx
         .with_scoped_storage("fcstd product cycle lookup", || {
             product::product_cycle_nodes(ctx, &product_by_object)
         })?;
-    for node in &product_nodes {
-        if !object_ids.contains(node.object.as_str())
-            || node
-                .members()
-                .iter()
-                .any(|member| !object_ids.contains(member.as_str()))
-            || node.prototype().is_some_and(|prototype| {
-                !object_ids.contains(prototype) && node.external_document().is_none()
-            })
-            || node
-                .placement_property()
-                .is_some_and(|property| !property_ids.contains(property))
-            || [node.copy_on_change_source(), node.copy_on_change_group()]
-                .into_iter()
-                .flatten()
-                .filter(|target| target.document().is_none())
-                .filter_map(|target| target.object())
-                .chain(node.element_objects().iter().map(String::as_str))
-                .any(|object| !object_ids.contains(object))
+    for node in ctx.admit_iter(&product_nodes, "FreeCAD validation product nodes")? {
+        let missing_prototype = match node.prototype() {
+            Some(prototype) => !has(&object_ids, prototype)? && node.external_document().is_none(),
+            None => false,
+        };
+        let missing_placement = match node.placement_property() {
+            Some(property) => !has(&property_ids, property)?,
+            None => false,
+        };
+        // Two fixed slots.
+        let missing_copy_on_change = match node.copy_on_change_source() {
+            Some(link) => missing_link(link)?,
+            None => false,
+        } || match node.copy_on_change_group() {
+            Some(link) => missing_link(link)?,
+            None => false,
+        };
+        if !has(&object_ids, &node.object)?
+            || ctx.any_by(
+                node.members(),
+                |member| Ok(!has(&object_ids, member)?),
+                "FreeCAD validation product members",
+            )?
+            || missing_prototype
+            || missing_placement
+            || missing_copy_on_change
+            || ctx.any_by(
+                node.element_objects(),
+                |object| Ok(!has(&object_ids, object)?),
+                "FreeCAD validation product members",
+            )?
         {
-            findings.push(finding(
+            push_finding(
+                ctx,
+                findings,
                 Check::ReferentialIntegrity,
-                format!("{} has a missing product-structure link", node.id),
-                Some(node.id.clone()),
-            ));
+                format_args!("{} has a missing product-structure link", node.id),
+                Some(&node.id),
+            )?;
         }
-        if cyclic_products.contains(node.object.as_str()) {
-            findings.push(finding(
+        if has(&cyclic_products, &node.object)? {
+            push_finding(
+                ctx,
+                findings,
                 Check::NativeLinks,
-                format!("{} participates in a product-structure cycle", node.id),
-                Some(node.id.clone()),
-            ));
+                format_args!("{} participates in a product-structure cycle", node.id),
+                Some(&node.id),
+            )?;
         }
     }
-    for joint in &joints {
-        let missing_link = !object_ids.contains(joint.object())
-            || joint.references().any(|reference| {
-                reference.document().is_none()
-                    && reference
-                        .object()
-                        .is_some_and(|object| !object_ids.contains(object))
-            });
-        if missing_link {
-            findings.push(finding(
+    for joint in ctx.admit_iter(&joints, "FreeCAD validation joints")? {
+        if !has(&object_ids, joint.object())?
+            || ctx.any_by(
+                joint.references(),
+                missing_link,
+                "FreeCAD validation link search",
+            )?
+        {
+            push_finding(
+                ctx,
+                findings,
                 Check::NativeLinks,
-                format!(
+                format_args!(
                     "{} has missing operands or invalid connector frames",
                     joint.id()
                 ),
-                Some(joint.id().to_owned()),
-            ));
+                Some(joint.id()),
+            )?;
         }
     }
-    for drawing in &drawings {
-        let missing_object = !object_ids.contains(drawing.object.as_str())
-            || drawing.sources.iter().flatten().any(|source| {
-                source.document().is_none()
-                    && source
-                        .object()
-                        .is_some_and(|object| !object_ids.contains(object))
-            });
-        let missing_entry = drawing
-            .side_entries
-            .iter()
-            .any(|entry| !entry_names.contains(entry.as_str()));
-        let missing_relationship = drawing
-            .relationships
-            .values()
-            .flatten()
-            .flatten()
-            .any(|link| {
-                link.document().is_none()
-                    && link
-                        .object()
-                        .is_some_and(|object| !object_ids.contains(object))
-            });
-        if missing_object || missing_entry || missing_relationship {
-            findings.push(finding(
-                Check::NativeLinks,
-                format!("{} has a missing drawing object or side entry", drawing.id),
-                Some(drawing.id.clone()),
-            ));
-        }
-    }
-    for annotation in &annotations {
-        let object = object_by_id.get(annotation.object.as_str());
-        let missing_reference =
-            annotation
-                .references
-                .values()
-                .flatten()
-                .flatten()
-                .any(|reference| {
-                    reference.document().is_none()
-                        && reference
-                            .object()
-                            .is_some_and(|object| !object_ids.contains(object))
-                });
-        let missing_entry = annotation
-            .side_entries
-            .iter()
-            .any(|entry| !entry_names.contains(entry.as_str()));
-        if object.is_none_or(|object| object.type_name != annotation.kind.as_str())
-            || missing_reference
-            || missing_entry
+    for drawing in ctx.admit_iter(&drawings, "FreeCAD validation drawings")? {
+        if !has(&object_ids, &drawing.object)?
+            || missing_in(&drawing.sources)?
+            || missing_entry(&drawing.side_entries)?
+            || missing_in_groups(&drawing.relationships)?
         {
-            findings.push(finding(
+            push_finding(
+                ctx,
+                findings,
                 Check::NativeLinks,
-                format!(
+                format_args!("{} has a missing drawing object or side entry", drawing.id),
+                Some(&drawing.id),
+            )?;
+        }
+    }
+    let (object_by_id, _object_index_storage) =
+        ctx.with_scoped_storage("FreeCAD validation object index", || {
+            ctx.collect_hash_map(
+                objects.iter().map(|object| (object.id().as_str(), object)),
+                "FreeCAD validation object index",
+            )
+        })?;
+    let mut annotation_objects_storage =
+        ctx.reserve_scoped(0, "FreeCAD validation annotation objects")?;
+    let mut annotation_objects = HashSet::new();
+    let mut annotations_unique = true;
+    for annotation in ctx.admit_iter(&annotations, "FreeCAD validation annotations")? {
+        let kind_matches = match ctx.get_hash_map(
+            &object_by_id,
+            annotation.object.as_str(),
+            "FreeCAD validation object index",
+        )? {
+            Some(object) => ctx.equal(
+                object.type_name.as_str(),
+                annotation.kind.as_str(),
+                "FreeCAD validation annotation kind",
+            )?,
+            None => false,
+        };
+        if !kind_matches
+            || missing_in_groups(&annotation.references)?
+            || missing_entry(&annotation.side_entries)?
+        {
+            push_finding(
+                ctx,
+                findings,
+                Check::NativeLinks,
+                format_args!(
                     "{} has a missing annotation object, target, or asset",
                     annotation.id
                 ),
-                Some(annotation.id.clone()),
-            ));
+                Some(&annotation.id),
+            )?;
+        }
+        annotations_unique &= annotation_objects_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut annotation_objects,
+                annotation.object.as_str(),
+                "FreeCAD validation annotation objects",
+            )
+        })?;
+    }
+    // Every annotation object is annotated exactly once: the annotated
+    // objects are distinct, and the annotation-typed objects are exactly them.
+    let mut annotation_typed = 0_usize;
+    let mut annotated_typed = 0_usize;
+    for object in ctx.admit_iter(&objects, "FreeCAD validation objects")? {
+        if annotation::is_annotation_type(&object.type_name) {
+            annotation_typed += 1;
+            annotated_typed += usize::from(has(&annotation_objects, object.id())?);
         }
     }
-    let expected_annotation_objects = objects
-        .iter()
-        .filter(|object| annotation::is_annotation_type(&object.type_name))
-        .map(|object| object.id().as_str())
-        .collect::<HashSet<_>>();
-    let annotation_objects = annotations
-        .iter()
-        .map(|annotation| annotation.object.as_str())
-        .collect::<HashSet<_>>();
-    if annotation_objects.len() != annotations.len()
-        || annotation_objects != expected_annotation_objects
+    if !annotations_unique
+        || annotation_typed != annotated_typed
+        || annotated_typed != annotation_objects.len()
     {
-        findings.push(finding(
+        push_finding(
+            ctx,
+            findings,
             Check::Identity,
-            "FCStd semantic annotation graph does not cover every annotation object exactly once",
+            format_args!(
+                "FCStd semantic annotation graph does not cover every annotation object exactly once"
+            ),
             None,
-        ));
+        )?;
     }
+    drop((annotation_objects, annotation_objects_storage));
+    let mut extension_storage = ctx.reserve_scoped(0, "FreeCAD validation extensions")?;
     let mut extension_names = HashSet::new();
     let mut extension_types = HashSet::new();
-    for extension in &extensions {
-        if !object_ids.contains(extension.owner.as_str()) {
-            findings.push(finding(
+    for extension in ctx.admit_iter(&extensions, "FreeCAD validation extensions")? {
+        if !has(&object_ids, &extension.owner)? {
+            push_finding(
+                ctx,
+                findings,
                 Check::ReferentialIntegrity,
-                format!("{} has missing owner {}", extension.id, extension.owner),
-                Some(extension.id.clone()),
-            ));
+                format_args!("{} has missing owner {}", extension.id, extension.owner),
+                Some(&extension.id),
+            )?;
         }
-        if !extension_names.insert((extension.owner.as_str(), extension.name.as_str())) {
-            findings.push(finding(
+        if !extension_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut extension_names,
+                (extension.owner.as_str(), extension.name.as_str()),
+                "FreeCAD validation extensions",
+            )
+        })? {
+            push_finding(
+                ctx,
+                findings,
                 Check::Identity,
-                format!(
+                format_args!(
                     "{} duplicates extension name {}",
                     extension.id, extension.name
                 ),
-                Some(extension.id.clone()),
-            ));
+                Some(&extension.id),
+            )?;
         }
-        if !extension_types.insert((extension.owner.as_str(), extension.type_name.as_str())) {
-            findings.push(finding(
+        if !extension_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut extension_types,
+                (extension.owner.as_str(), extension.type_name.as_str()),
+                "FreeCAD validation extensions",
+            )
+        })? {
+            push_finding(
+                ctx,
+                findings,
                 Check::Identity,
-                format!(
+                format_args!(
                     "{} duplicates extension type {}",
                     extension.id, extension.type_name
                 ),
-                Some(extension.id.clone()),
-            ));
+                Some(&extension.id),
+            )?;
         }
     }
-    for property in &properties {
-        if property.owner != native::native_id("document", "0")
-            && !object_ids.contains(property.owner.as_str())
-            && !extension_ids.contains(property.owner.as_str())
+    drop((extension_names, extension_types, extension_storage));
+    let document_owner = native::native_id("document", "0");
+    for property in ctx.admit_iter(&properties, "FreeCAD validation properties")? {
+        if !ctx.equal(
+            property.owner.as_str(),
+            document_owner.as_str(),
+            "FreeCAD validation property owner",
+        )? && !has(&object_ids, &property.owner)?
+            && !has(&extension_ids, &property.owner)?
         {
-            findings.push(finding(
+            push_finding(
+                ctx,
+                findings,
                 Check::ReferentialIntegrity,
-                format!("{} has missing owner {}", property.id, property.owner),
-                Some(property.id.clone()),
-            ));
+                format_args!("{} has missing owner {}", property.id, property.owner),
+                Some(&property.id),
+            )?;
         }
-        for target in property
-            .links()
-            .iter()
-            .flatten()
-            .filter_map(crate::native::LinkTarget::object)
-        {
-            if target.starts_with("fcstd:native:object#") && !object_ids.contains(target) {
-                findings.push(finding(
+        for link in ctx.admit_iter(property.links(), "FreeCAD validation properties")? {
+            let Some(target) = link.as_ref().and_then(native::LinkTarget::object) else {
+                continue;
+            };
+            if ctx.starts_with(
+                target,
+                "fcstd:native:object#",
+                "FreeCAD validation link target",
+            )? && !has(&object_ids, target)?
+            {
+                push_finding(
+                    ctx,
+                    findings,
                     Check::ReferentialIntegrity,
-                    format!("{} has missing link target {target}", property.id),
-                    Some(property.id.clone()),
-                ));
+                    format_args!("{} has missing link target {target}", property.id),
+                    Some(&property.id),
+                )?;
             }
         }
     }
-    for table in string_tables {
-        if table
-            .owner_property
-            .as_ref()
-            .is_some_and(|owner| !property_ids.contains(owner.as_str()))
-            || table
-                .source_entry
-                .as_ref()
-                .is_some_and(|entry| !entry_names.contains(entry.as_str()))
-        {
+    for table in ctx.admit_iter(string_tables, "FreeCAD validation string tables")? {
+        let missing_owner = match &table.owner_property {
+            Some(owner) => !has(&property_ids, owner)?,
+            None => false,
+        };
+        let missing_source = match &table.source_entry {
+            Some(entry) => !has(&entry_names, entry)?,
+            None => false,
+        };
+        if missing_owner || missing_source {
             let table_id = table.id();
-            findings.push(finding(
+            push_finding(
+                ctx,
+                findings,
                 Check::ReferentialIntegrity,
-                format!("{table_id} has a missing property or side-entry link"),
-                Some(table_id),
-            ));
+                format_args!("{table_id} has a missing property or side-entry link"),
+                Some(&table_id),
+            )?;
         }
     }
-    let topology_ids = ir
-        .model
-        .vertices
-        .iter()
-        .map(|entity| entity.id.as_str())
-        .chain(ir.model.edges.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.loops.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.faces.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.shells.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.bodies.iter().map(|entity| entity.id.as_str()))
-        .collect::<HashSet<_>>();
-    for map in &element_maps {
-        if !property_ids.contains(map.property.as_str())
+    if !element_maps.is_empty() {
+        validate_element_maps(
+            ctx,
+            ir,
+            &element_maps,
+            string_tables,
+            &property_ids,
+            &entry_names,
+            findings,
+        )?;
+    }
+    validate_side_entry_references(
+        ctx,
+        &properties,
+        &gui_properties,
+        &gui_documents,
+        &entries,
+        findings,
+    )?;
+    let physical_end = match &ir.source {
+        Some(source) => match ctx.get_btree_map(
+            &source.attributes,
+            "physical_archive_bytes",
+            "FreeCAD physical archive length",
+        )? {
+            Some(value) => ctx
+                .parse_text::<u64>(value, "FreeCAD physical archive length")?
+                .ok(),
+            None => None,
+        },
+        None => None,
+    };
+    {
+        let (mut ordered, _ordered_storage) = ctx
+            .with_scoped_storage("FreeCAD archive span chain sort", || {
+                ctx.collect_vec(physical.iter(), "FreeCAD archive span chain sort")
+            })?;
+        ctx.stable_sort_by_key(
+            &mut ordered,
+            |value| value.span.start(),
+            Ord::cmp,
+            "FreeCAD archive span chain sort",
+        )?;
+        // With no stated end, the last span's end closes the chain.
+        let end = physical_end
+            .or_else(|| ordered.last().map(|span| span.span.end()))
+            .unwrap_or_default();
+        if !container::chain_is_exact(
+            ctx,
+            ordered.iter().map(|span| &span.span),
+            end,
+            "FreeCAD archive span chain",
+        )? {
+            push_finding(
+                ctx,
+                findings,
+                Check::PayloadIntegrity,
+                format_args!("physical archive ledger has a gap, overlap, or invalid boundary"),
+                None,
+            )?;
+        }
+    }
+    validate_logical_ledger(
+        ctx,
+        &logical,
+        &LedgerOwners {
+            entries: &entries,
+            gui_properties: &gui_properties,
+            gui_documents: &gui_documents,
+            shape_payloads: &shape_payloads,
+            string_tables,
+            element_maps: &element_maps,
+        },
+        &property_ids,
+        findings,
+    )?;
+    let (expected_coverage, _expected_coverage_storage) =
+        ctx.with_scoped_storage("FreeCAD expected byte coverage", || {
+            container::byte_coverage(
+                ctx,
+                &physical,
+                &entries,
+                &logical,
+                physical_end.unwrap_or_default(),
+            )
+        })?;
+    if first_difference(
+        ctx,
+        &coverage_records,
+        std::slice::from_ref(&expected_coverage),
+        "FreeCAD byte coverage comparison",
+    )?
+    .is_some()
+        || !expected_coverage.exact
+    {
+        push_finding(
+            ctx,
+            findings,
+            Check::PayloadIntegrity,
+            format_args!("FCStd byte coverage report is stale or does not prove exact closure"),
+            None,
+        )?;
+    }
+    Ok(std::mem::take(findings))
+}
+
+/// Element maps name a present property, string table and side entry, and
+/// their mapped names carry known string identities and neutral topology.
+fn validate_element_maps(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    element_maps: &[native::element_map::ElementMapRecord],
+    string_tables: &[native::StringTableRecord],
+    property_ids: &HashSet<&str>,
+    entry_names: &HashSet<&str>,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "FreeCAD validation element maps";
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    // Each table's string identities, built once.
+    let mut known_ids = Vec::new();
+    for table in ctx.admit_iter(string_tables, OPERATION)? {
+        let ids = storage.with_storage(|| {
+            ctx.collect_hash_set(
+                table.entries().iter().map(|entry| entry.string_id),
+                OPERATION,
+            )
+        })?;
+        ctx.push_scoped_vec(&mut storage, &mut known_ids, ids, OPERATION)?;
+    }
+    let model = &ir.model;
+    let topology_ids = storage.with_storage(|| {
+        ctx.collect_hash_set(
+            model
+                .vertices
+                .iter()
+                .map(|entity| entity.id.as_str())
+                .chain(model.edges.iter().map(|entity| entity.id.as_str()))
+                .chain(model.loops.iter().map(|entity| entity.id.as_str()))
+                .chain(model.faces.iter().map(|entity| entity.id.as_str()))
+                .chain(model.shells.iter().map(|entity| entity.id.as_str()))
+                .chain(model.bodies.iter().map(|entity| entity.id.as_str())),
+            OPERATION,
+        )
+    })?;
+    for map in ctx.admit_iter(element_maps, OPERATION)? {
+        let missing_source = match &map.source_entry {
+            Some(entry) => !ctx.contains_hash_set(entry_names, entry.as_str(), OPERATION)?,
+            None => false,
+        };
+        if !ctx.contains_hash_set(property_ids, map.property.as_str(), OPERATION)?
             || map
                 .hasher_index
                 .is_some_and(|index| index >= string_tables.len())
-            || map
-                .source_entry
-                .as_ref()
-                .is_some_and(|entry| !entry_names.contains(entry.as_str()))
+            || missing_source
         {
-            findings.push(finding(
+            push_finding(
+                ctx,
+                findings,
                 Check::ReferentialIntegrity,
-                format!(
+                format_args!(
                     "{} has a missing property, string table, or side entry",
                     map.id
                 ),
-                Some(map.id.clone()),
-            ));
+                Some(&map.id),
+            )?;
         }
-        for name in map
-            .maps
-            .root()
-            .groups
-            .iter()
-            .flat_map(|group| &group.names)
-            .flatten()
-        {
-            if let Some(table) = map.hasher_index.and_then(|index| string_tables.get(index)) {
-                let known_ids = table
-                    .entries()
-                    .iter()
-                    .map(|entry| entry.string_id)
-                    .collect::<HashSet<_>>();
-                if name.string_ids.iter().any(|id| !known_ids.contains(id)) {
-                    findings.push(finding(
-                        Check::ReferentialIntegrity,
-                        format!("{} references a missing persistent string id", map.id),
-                        Some(map.id.clone()),
-                    ));
-                }
-            }
-            if name
-                .topology_ids
-                .iter()
-                .any(|id| !topology_ids.contains(id.as_str()))
-            {
-                findings.push(finding(
-                    Check::ReferentialIntegrity,
-                    format!("{} references missing neutral topology", map.id),
-                    Some(map.id.clone()),
-                ));
-            }
-        }
-    }
-    let mut entry_lengths = HashMap::new();
-    let asset_owner_ids = property_ids
-        .iter()
-        .copied()
-        .chain(gui_properties.iter().map(|property| property.id.as_str()))
-        .chain(
-            gui_documents
-                .iter()
-                .flat_map(|document| document.states.iter().map(|state| state.id.as_str())),
-        )
-        .collect::<HashSet<_>>();
-    let mut expected_references = HashMap::<String, Vec<String>>::new();
-    for property in &properties {
-        for entry_name in property.side_entries() {
-            let owners = expected_references.entry(entry_name.clone()).or_default();
-            if !owners.contains(&property.id) {
-                owners.push(property.id.clone());
-            }
-        }
-    }
-    for property in &gui_properties {
-        for entry_name in &property.side_entries {
-            let owners = expected_references.entry(entry_name.clone()).or_default();
-            if !owners.contains(&property.id) {
-                owners.push(property.id.clone());
-            }
-        }
-    }
-    for document in &gui_documents {
-        for state in &document.states {
-            for entry_name in &state.side_entries {
-                let owners = expected_references.entry(entry_name.clone()).or_default();
-                if !owners.contains(&state.id) {
-                    owners.push(state.id.clone());
+        let known = map.hasher_index.and_then(|index| known_ids.get(index));
+        for group in ctx.admit_iter(&map.maps.root().groups, OPERATION)? {
+            for names in ctx.admit_iter(&group.names, OPERATION)? {
+                for name in ctx.admit_iter(names, OPERATION)? {
+                    if let Some(known) = known {
+                        if ctx.any_by(
+                            &name.string_ids,
+                            |id| Ok(!ctx.contains_hash_set(known, id, OPERATION)?),
+                            OPERATION,
+                        )? {
+                            push_finding(
+                                ctx,
+                                findings,
+                                Check::ReferentialIntegrity,
+                                format_args!(
+                                    "{} references a missing persistent string id",
+                                    map.id
+                                ),
+                                Some(&map.id),
+                            )?;
+                        }
+                    }
+                    if ctx.any_by(
+                        &name.topology_ids,
+                        |id| Ok(!ctx.contains_hash_set(&topology_ids, id.as_str(), OPERATION)?),
+                        OPERATION,
+                    )? {
+                        push_finding(
+                            ctx,
+                            findings,
+                            Check::ReferentialIntegrity,
+                            format_args!("{} references missing neutral topology", map.id),
+                            Some(&map.id),
+                        )?;
+                    }
                 }
             }
         }
     }
-    for entry in &entries {
-        entry_lengths.insert(entry.name(), entry.byte_len());
-        for owner in entry.referenced_by() {
-            if !asset_owner_ids.contains(owner.as_str()) {
-                findings.push(finding(
-                    Check::ReferentialIntegrity,
-                    format!("{} has missing referencing record {owner}", entry.id()),
-                    Some(entry.id().to_owned()),
-                ));
+    Ok(())
+}
+
+/// Each archive entry lists exactly the records that name it, once each, in
+/// record order: document properties, then GUI properties, then GUI states.
+fn validate_side_entry_references<'r>(
+    ctx: &DecodeContext<'_>,
+    properties: &'r [native::PropertyRecord],
+    gui_properties: &'r [native::GuiPropertyRecord],
+    gui_documents: &'r [native::GuiDocumentRecord],
+    entries: &'r [native::EntryRecord],
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "FreeCAD validation side-entry references";
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut owners = HashSet::new();
+    let mut expected = HashMap::<&str, Vec<&str>>::new();
+    let mut seen = HashSet::new();
+    let mut add_record = |names: &'r [String], owner: &'r str| -> Result<(), CodecError> {
+        storage.with_storage(|| ctx.insert_hash_set(&mut owners, owner, OPERATION))?;
+        for name in ctx.admit_iter(names, OPERATION)? {
+            if storage.with_storage(|| {
+                ctx.insert_hash_set(&mut seen, (name.as_str(), owner), OPERATION)
+            })? {
+                storage.with_storage(|| {
+                    let list = ctx
+                        .entry_hash_map(&mut expected, name.as_str(), OPERATION)?
+                        .or_default();
+                    ctx.push_vec(list, owner, OPERATION)
+                })?;
             }
         }
-        let expected = expected_references
-            .get(entry.name())
+        Ok(())
+    };
+    for property in ctx.admit_iter(properties, OPERATION)? {
+        add_record(property.side_entries(), &property.id)?;
+    }
+    for property in ctx.admit_iter(gui_properties, OPERATION)? {
+        add_record(&property.side_entries, &property.id)?;
+    }
+    for document in ctx.admit_iter(gui_documents, OPERATION)? {
+        for state in ctx.admit_iter(&document.states, OPERATION)? {
+            add_record(&state.side_entries, &state.id)?;
+        }
+    }
+    for entry in ctx.admit_iter(entries, OPERATION)? {
+        for owner in ctx.admit_iter(entry.referenced_by(), OPERATION)? {
+            if !ctx.contains_hash_set(&owners, owner.as_str(), OPERATION)? {
+                push_finding(
+                    ctx,
+                    findings,
+                    Check::ReferentialIntegrity,
+                    format_args!("{} has missing referencing record {owner}", entry.id()),
+                    Some(entry.id()),
+                )?;
+            }
+        }
+        let expected = ctx
+            .get_hash_map(&expected, entry.name(), OPERATION)?
             .map_or(&[][..], Vec::as_slice);
-        if !entry
-            .referenced_by()
-            .iter()
-            .map(String::as_str)
-            .eq(expected.iter().map(String::as_str))
-        {
-            findings.push(finding(
+        let stored = entry.referenced_by();
+        let mut pairs = stored.iter().zip(expected);
+        let mut matches = stored.len() == expected.len();
+        while matches {
+            let Some((stored, expected)) = ctx.next_charged(&mut pairs, OPERATION)? else {
+                break;
+            };
+            matches = ctx.equal(stored.as_str(), *expected, OPERATION)?;
+        }
+        if !matches {
+            push_finding(
+                ctx,
+                findings,
                 Check::ReferentialIntegrity,
-                format!("{} has a stale side-entry reference relation", entry.id()),
-                Some(entry.id().to_owned()),
-            ));
+                format_args!("{} has a stale side-entry reference relation", entry.id()),
+                Some(entry.id()),
+            )?;
         }
     }
-    let physical_end = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("physical_archive_bytes"))
-        .and_then(|value| value.parse().ok());
-    validate_span_chain(
-        ctx,
-        "physical archive",
-        &physical,
-        physical_end,
-        &mut findings,
-    )?;
-    let string_table_ids = string_tables
-        .iter()
-        .map(native::StringTableRecord::id)
-        .collect::<Vec<_>>();
-    let logical_owner_ids = property_ids
-        .iter()
-        .copied()
-        .chain(gui_properties.iter().map(|record| record.id.as_str()))
-        .chain(
-            gui_documents
+    Ok(())
+}
+
+/// The records whose identities may own logical spans besides the document
+/// properties.
+struct LedgerOwners<'r> {
+    entries: &'r [native::EntryRecord],
+    gui_properties: &'r [native::GuiPropertyRecord],
+    gui_documents: &'r [native::GuiDocumentRecord],
+    shape_payloads: &'r [brep::ShapePayloadRecord],
+    string_tables: &'r [native::StringTableRecord],
+    element_maps: &'r [native::element_map::ElementMapRecord],
+}
+
+/// Every logical span names a present entry and owner, every nonempty entry
+/// has spans, and each entry's spans tile it.
+fn validate_logical_ledger(
+    ctx: &DecodeContext<'_>,
+    logical: &[native::LogicalSpan],
+    records: &LedgerOwners<'_>,
+    property_ids: &HashSet<&str>,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "FreeCAD validation logical ledger";
+    let entries = records.entries;
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut entry_lengths = HashMap::new();
+    for entry in ctx.admit_iter(entries, OPERATION)? {
+        storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut entry_lengths,
+                entry.name(),
+                entry.byte_len(),
+                OPERATION,
+            )
+        })?;
+    }
+    let string_table_ids = storage.with_storage(|| {
+        ctx.collect_vec(
+            records
+                .string_tables
                 .iter()
-                .flat_map(|document| document.states.iter().map(|record| record.id.as_str())),
+                .map(native::StringTableRecord::id),
+            OPERATION,
         )
-        .chain(shape_payloads.iter().map(|record| record.id.as_str()))
-        .chain(string_table_ids.iter().map(String::as_str))
-        .chain(element_maps.iter().map(|record| record.id.as_str()))
-        .chain(entries.iter().map(crate::native::EntryRecord::id))
-        .collect::<HashSet<_>>();
-    let mut logical_by_entry = BTreeMap::<&str, Vec<&native::LogicalSpan>>::new();
-    for span in &logical {
-        logical_by_entry.entry(&span.entry).or_default().push(span);
+    })?;
+    let mut owner_ids = HashSet::new();
+    let mut add_owner = |owner| {
+        storage
+            .with_storage(|| ctx.insert_hash_set(&mut owner_ids, owner, OPERATION))
+            .map(drop)
+    };
+    for record in ctx.admit_iter(records.gui_properties, OPERATION)? {
+        add_owner(record.id.as_str())?;
+    }
+    for document in ctx.admit_iter(records.gui_documents, OPERATION)? {
+        for state in ctx.admit_iter(&document.states, OPERATION)? {
+            add_owner(state.id.as_str())?;
+        }
+    }
+    for record in ctx.admit_iter(records.shape_payloads, OPERATION)? {
+        add_owner(record.id.as_str())?;
+    }
+    for id in ctx.admit_iter(&string_table_ids, OPERATION)? {
+        add_owner(id.as_str())?;
+    }
+    for record in ctx.admit_iter(records.element_maps, OPERATION)? {
+        add_owner(record.id.as_str())?;
+    }
+    for entry in ctx.admit_iter(entries, OPERATION)? {
+        add_owner(entry.id())?;
+    }
+    let mut by_entry = BTreeMap::<&str, Vec<&native::LogicalSpan>>::new();
+    for span in ctx.admit_iter(logical, OPERATION)? {
+        storage.with_storage(|| {
+            let spans = ctx
+                .entry_btree_map(&mut by_entry, span.entry.as_str(), OPERATION)?
+                .or_default();
+            ctx.push_vec(spans, span, OPERATION)
+        })?;
         let owner_valid = match &span.classification {
             native::LogicalClassification::Structural => true,
             native::LogicalClassification::Typed { owner }
             | native::LogicalClassification::NamedOpaque { owner } => {
-                logical_owner_ids.contains(owner.as_str())
+                ctx.contains_hash_set(property_ids, owner.as_str(), OPERATION)?
+                    || ctx.contains_hash_set(&owner_ids, owner.as_str(), OPERATION)?
             }
         };
-        if !entry_lengths.contains_key(span.entry.as_str()) || !owner_valid {
-            findings.push(finding(
+        if !ctx.contains_key_hash_map(&entry_lengths, span.entry.as_str(), OPERATION)?
+            || !owner_valid
+        {
+            push_finding(
+                ctx,
+                findings,
                 Check::PayloadIntegrity,
-                format!("{} has an invalid logical entry or owner", span.id),
-                Some(span.id.clone()),
-            ));
+                format_args!("{} has an invalid logical entry or owner", span.id),
+                Some(&span.id),
+            )?;
         }
     }
-    let covered_entries = logical_by_entry.keys().copied().collect::<HashSet<_>>();
-    for entry in &entries {
-        if entry.byte_len() > 0 && !covered_entries.contains(entry.name()) {
-            findings.push(finding(
+    for entry in ctx.admit_iter(entries, OPERATION)? {
+        if entry.byte_len() > 0
+            && !ctx.contains_key_btree_map(&by_entry, entry.name(), OPERATION)?
+        {
+            push_finding(
+                ctx,
+                findings,
                 Check::PayloadIntegrity,
-                format!("logical ledger omits nonempty entry {}", entry.name()),
-                Some(entry.id().to_owned()),
-            ));
+                format_args!("logical ledger omits nonempty entry {}", entry.name()),
+                Some(entry.id()),
+            )?;
         }
     }
-    for (name, mut spans) in logical_by_entry {
+    for (name, mut spans) in ctx.admit_iter(by_entry, OPERATION)? {
         ctx.stable_sort_by_key(
             &mut spans,
             |value| value.span.start(),
             Ord::cmp,
             "fcstd logical spans sort",
         )?;
-        let expected = entry_lengths.get(name).copied();
-        validate_logical_chain(name, &spans, expected, &mut findings);
-    }
-    let expected_coverage = container::byte_coverage(
-        ctx,
-        &physical,
-        &entries,
-        &logical,
-        physical_end.unwrap_or_default(),
-    )?;
-    if coverage_records.as_slice() != [expected_coverage.clone()] || !expected_coverage.exact {
-        findings.push(finding(
-            Check::PayloadIntegrity,
-            "FCStd byte coverage report is stale or does not prove exact closure",
-            None,
-        ));
-    }
-    Ok(findings)
-}
-
-fn finding(check: Check, message: impl Into<String>, entity: Option<String>) -> Finding {
-    Finding {
-        check,
-        severity: FindingSeverity::Error,
-        message: message.into(),
-        entity,
-    }
-}
-
-fn validate_span_chain(
-    ctx: &DecodeContext<'_>,
-    label: &str,
-    spans: &[native::ArchiveSpan],
-    expected_end: Option<u64>,
-    findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
-    let mut ordered = spans.iter().collect::<Vec<_>>();
-    ctx.stable_sort_by_key(
-        &mut ordered,
-        |value| value.span.start(),
-        Ord::cmp,
-        "FreeCAD archive span chain sort",
-    )?;
-    let valid = ordered.first().is_some_and(|span| span.span.start() == 0)
-        && ordered
-            .windows(2)
-            .all(|pair| pair[0].span.end() == pair[1].span.start())
-        && expected_end.is_none_or(|end| ordered.last().is_some_and(|span| span.span.end() == end));
-    if !valid {
-        findings.push(finding(
-            Check::PayloadIntegrity,
-            format!("{label} ledger has a gap, overlap, or invalid boundary"),
-            None,
-        ));
+        let exact = match ctx.get_hash_map(&entry_lengths, name, OPERATION)? {
+            Some(&end) => {
+                container::chain_is_exact(ctx, spans.iter().map(|span| &span.span), end, OPERATION)?
+            }
+            None => false,
+        };
+        if !exact {
+            push_finding(
+                ctx,
+                findings,
+                Check::PayloadIntegrity,
+                format_args!("logical ledger for {name} has a gap, overlap, or invalid boundary"),
+                None,
+            )?;
+        }
     }
     Ok(())
 }
 
-fn validate_logical_chain(
-    name: &str,
-    spans: &[&native::LogicalSpan],
-    expected_end: Option<u64>,
+/// The index of the first differing pair, `Some(None)` for equal prefixes of
+/// different lengths, or `None` for equal slices; each pair compared is charged.
+fn first_difference<T: PartialEq + cadmpeg_core::decode::cost::DecodeCost>(
+    ctx: &DecodeContext<'_>,
+    stored: &[T],
+    derived: &[T],
+    operation: &'static str,
+) -> Result<Option<Option<usize>>, CodecError> {
+    let mut derived_values = derived.iter();
+    let index = ctx.position_by(
+        stored.iter().take(derived.len()),
+        |stored| {
+            let derived = derived_values
+                .next()
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            Ok(!ctx.equal(stored, derived, operation)?)
+        },
+        operation,
+    )?;
+    Ok(match index {
+        Some(index) => Some(Some(index)),
+        None if stored.len() != derived.len() => Some(None),
+        None => None,
+    })
+}
+
+fn push_finding(
+    ctx: &DecodeContext<'_>,
     findings: &mut Vec<Finding>,
-) {
-    let valid = expected_end.is_some()
-        && spans.first().is_some_and(|span| span.span.start() == 0)
-        && spans
-            .windows(2)
-            .all(|pair| pair[0].span.end() == pair[1].span.start())
-        && expected_end.is_some_and(|end| spans.last().is_some_and(|span| span.span.end() == end));
-    if !valid {
-        findings.push(finding(
-            Check::PayloadIntegrity,
-            format!("logical ledger for {name} has a gap, overlap, or invalid boundary"),
-            None,
-        ));
-    }
+    check: Check,
+    message: std::fmt::Arguments<'_>,
+    entity: Option<&str>,
+) -> Result<(), CodecError> {
+    let message = ctx.format_retained(message, "FreeCAD native validation finding")?;
+    let entity = entity
+        .map(|entity| ctx.copy_retained_text(entity, "FreeCAD finding entity"))
+        .transpose()?;
+    ctx.push_vec(
+        findings,
+        Finding {
+            check,
+            severity: FindingSeverity::Error,
+            message,
+            entity,
+        },
+        FINDINGS,
+    )
+}
+
+fn single_finding(
+    ctx: &DecodeContext<'_>,
+    check: Check,
+    message: std::fmt::Arguments<'_>,
+) -> Result<Vec<Finding>, CodecError> {
+    let mut findings = Vec::new();
+    push_finding(ctx, &mut findings, check, message, None)?;
+    Ok(findings)
 }
 
 impl CodecBackend for FcstdCodec {
@@ -1207,10 +1563,10 @@ impl EncoderBackend for FcstdCodec {
 
 /// Adds each GUI property and state as a referencing owner of the archive
 /// entries it names, once per entry, through one index of entry names.
-fn bind_gui_entry_references(
+fn bind_gui_entry_references<'g>(
     ctx: &DecodeContext<'_>,
     entry_records: &mut [native::EntryRecord],
-    gui_graph: &gui::Graph,
+    gui_graph: &'g gui::Graph,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "FCStd GUI entry references";
     let (entry_index, _entry_index_storage) = ctx.unique_index(
@@ -1222,15 +1578,7 @@ fn bind_gui_entry_references(
     let mut bound_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut bound = HashSet::new();
     let mut additions = Vec::new();
-    let property_references = ctx
-        .admit_iter(&gui_graph.properties, OPERATION)?
-        .map(|property| (property.side_entries.as_slice(), property.id.as_str()));
-    let state_references = ctx
-        .admit_iter(&gui_graph.documents, OPERATION)?
-        .flat_map(|document| document.states.iter())
-        .map(|state| (state.side_entries.as_slice(), state.id.as_str()));
-    let mut owners = property_references.chain(state_references);
-    while let Some((names, owner)) = ctx.next_charged(&mut owners, OPERATION)? {
+    let mut bind = |names: &'g [String], owner: &'g str| -> Result<(), CodecError> {
         for name in ctx.admit_iter(names, OPERATION)? {
             // Archive entry names are unique, so every named record is indexed.
             let Some(&Some(index)) = ctx.get_hash_map(&entry_index, name.as_str(), OPERATION)?
@@ -1247,6 +1595,15 @@ fn bind_gui_entry_references(
                     OPERATION,
                 )?;
             }
+        }
+        Ok(())
+    };
+    for property in ctx.admit_iter(&gui_graph.properties, OPERATION)? {
+        bind(&property.side_entries, &property.id)?;
+    }
+    for document in ctx.admit_iter(&gui_graph.documents, OPERATION)? {
+        for state in ctx.admit_iter(&document.states, OPERATION)? {
+            bind(&state.side_entries, &state.id)?;
         }
     }
     drop(entry_index);
