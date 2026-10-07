@@ -675,12 +675,8 @@ fn gui_shape_payload_prefix_refuses_at_caller_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    let error = super::super::shape_payload_prefixes(
-        &ctx,
-        &[("object", "Shape", "fcstd:payload#shape")],
-        "object",
-    )
-    .expect_err("prefix slot must be admitted");
+    let error = super::super::shape_payload_prefixes(&ctx, &["fcstd:payload#shape"])
+        .expect_err("prefix slot must be admitted");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -697,12 +693,8 @@ fn gui_shape_payload_prefix_text_refuses_at_caller_retained_limit() {
         cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    let error = super::super::shape_payload_prefixes(
-        &ctx,
-        &[("object", "Shape", "fcstd:payload#shape")],
-        "object",
-    )
-    .expect_err("prefix text must be admitted");
+    let error = super::super::shape_payload_prefixes(&ctx, &["fcstd:payload#shape"])
+        .expect_err("prefix text must be admitted");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
@@ -1659,17 +1651,20 @@ fn gui_side_entry_reference_refuses_at_caller_limit() {
     let xml = "<ViewProvider name=\"P\"><Properties Count=\"1\"><Property name=\"A\" type=\"T\"><X file=\"asset\"/></Property></Properties></ViewProvider>";
     assert_gui_provider_service(xml);
     let document = roxmltree::Document::parse(xml).expect("GUI provider XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
-            .expect("GUI provider context");
-    assert!(
-        matches!(super::super::append_native_provider(&ctx, xml, document.root_element(), 0,
-        None, &mut Vec::new(), &mut Vec::new()),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FCStd GUI side entry references")
+    crate::test_support::assert_collection_refusal_at(
+        xml.as_bytes(),
+        "FCStd GUI side entry references",
+        |ctx| {
+            super::super::append_native_provider(
+                ctx,
+                xml,
+                document.root_element(),
+                0,
+                None,
+                &mut Vec::new(),
+                &mut Vec::new(),
+            )
+        },
     );
 }
 
@@ -1782,30 +1777,21 @@ fn y4_2_gui_property_values_are_admitted_before_allocation() {
     let xml = "<ViewProvider name=\"P\"><Properties Count=\"1\"><Property name=\"P\" type=\"T\"><X/></Property></Properties></ViewProvider>";
     assert_gui_provider_service(xml);
     let document = roxmltree::Document::parse(xml).expect("GUI provider XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
-            .expect("GUI property context");
-    let mut providers = Vec::new();
-    let mut properties = Vec::new();
-    let error = super::super::append_native_provider(
-        &ctx,
-        xml,
-        document.root_element(),
-        0,
-        None,
-        &mut providers,
-        &mut properties,
-    )
-    .expect_err("GUI property values must be charged before allocation");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "FCStd GUI property values"
-    ));
+    crate::test_support::assert_collection_refusal_at(
+        xml.as_bytes(),
+        "FCStd GUI property values",
+        |ctx| {
+            super::super::append_native_provider(
+                ctx,
+                xml,
+                document.root_element(),
+                0,
+                None,
+                &mut Vec::new(),
+                &mut Vec::new(),
+            )
+        },
+    );
 }
 
 fn topology_appearance_archive(material_count: u32, two_faces: bool) -> Vec<u8> {
