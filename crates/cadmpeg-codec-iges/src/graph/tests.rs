@@ -643,3 +643,62 @@ fn native_reference_copy_refuses_nested_forms_and_types() {
         assert_eq!(edge.copy_for_native(&ctx).unwrap(), edge);
     }
 }
+
+#[test]
+fn graph_variable_traversals_refuse_at_their_own_boundaries() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let graph = BTreeMap::from([(1, vec![ReferenceEdge {
+        origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
+        raw_pointer: 1,
+        resolution: Resolution::Resolved(1),
+        expected: ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+    }])]);
+    for operation in [
+        "iges reference summary sources", "iges reference summary edges",
+        "iges transform cycle sources", "iges transform successor search",
+        "iges transform cycle starts", "iges transform reference cycle walk",
+        "iges cyclic transform nodes", "iges completed transform path",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            if operation.starts_with("iges reference summary") {
+                super::summary_notes(&graph, &ctx).map(|_| ())
+            } else {
+                cyclic_transform_nodes(&graph, &ctx).map(|_| ())
+            }
+        });
+    }
+}
+
+#[test]
+fn structure_reference_search_stops_before_unvisited_parameter_edges() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let mut edges = vec![ReferenceEdge {
+        origin: ReferenceOrigin::Directory(ReferenceKind::Structure),
+        raw_pointer: 3,
+        resolution: Resolution::Resolved(3),
+        expected: ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+    }];
+    edges.extend((0..10_000).map(|index| ReferenceEdge {
+        origin: ReferenceOrigin::Parameter { index },
+        raw_pointer: 3,
+        resolution: Resolution::Resolved(3),
+        expected: ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+    }));
+    let graph = BTreeMap::from([(1, edges)]);
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "iges structure reference search", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        super::resolved_structure_sequence(&graph, 1, &ctx)
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(super::resolved_structure_sequence(&graph, 1, &ctx).unwrap(), Some(3));
+}

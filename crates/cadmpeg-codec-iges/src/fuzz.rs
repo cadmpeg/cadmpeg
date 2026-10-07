@@ -55,7 +55,7 @@ pub fn parameters(data: &[u8]) {
     let Ok(scan) = crate::card::scan_with_context(data, &ctx) else {
         return;
     };
-    let Ok((global, _)) = crate::global::parse(&scan, &ctx) else {
+    let Ok((global, _, _global_storage)) = crate::global::parse(&scan, &ctx) else {
         return;
     };
     let Ok(global_table) = global.global_table(&ctx) else {

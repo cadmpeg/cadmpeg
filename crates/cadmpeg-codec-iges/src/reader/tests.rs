@@ -164,7 +164,7 @@ fn directory_fixture() -> (
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
+    let (global, _, _global_storage) = crate::global::parse(&scan, &ctx).unwrap();
     let table = global.global_table(&ctx).unwrap();
     let (directory, _) = crate::directory::parse(&scan, table, &ctx).unwrap();
     (directory, table)
@@ -412,7 +412,7 @@ fn source_metadata_admits_formatted_values_before_building_attributes() {
     let arena = DecodeArena::new();
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let (global, _) = global::parse(&scan, &parse_ctx).unwrap();
+    let (global, _, _global_storage) = global::parse(&scan, &parse_ctx).unwrap();
     let representation = Representation::FixedAscii;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -876,7 +876,7 @@ fn projected_directory_refuses_entry_limit() {
     let arena = DecodeArena::new();
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
+    let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, _) =
         crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx)
             .unwrap();

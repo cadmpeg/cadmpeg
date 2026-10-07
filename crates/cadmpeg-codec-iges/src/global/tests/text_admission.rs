@@ -13,7 +13,7 @@ fn global_declaration_lossy_text_refuses_before_expanded_storage() {
     crate::test_support::with_policy_context(bytes, &policy, |ctx| {
         let resolution = Resolution {
             ctx,
-            values: vec![Value::Malformed(bytes.to_vec())],
+            values: vec![Value::Malformed(bytes)],
             losses: Vec::new(),
         };
         let result = resolution.declaration_text(0);
@@ -34,7 +34,7 @@ fn global_declaration_lossy_text_preserves_replacement_boundaries() {
         crate::test_support::with_service_context(bytes, |ctx| {
             let resolution = Resolution {
                 ctx,
-                values: vec![Value::Malformed(bytes.to_vec())],
+                values: vec![Value::Malformed(bytes)],
                 losses: Vec::new(),
             };
             assert_eq!(resolution.declaration_text(0).unwrap(), expected);

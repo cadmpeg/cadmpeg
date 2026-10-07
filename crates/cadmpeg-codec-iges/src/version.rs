@@ -115,18 +115,9 @@ impl VersionFlag {
     /// Returns the exact table entry, without applying postprocessor recovery.
     pub(crate) fn exact(
         value: i64,
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
     ) -> Result<Option<Self>, CodecError> {
-        let mut index = 0;
-        while index < Self::ALL.len() {
-            ctx.charge_work(1, "iges version flag lookup")?;
-            let flag = Self::ALL[index];
-            if flag.value() == value {
-                return Ok(Some(flag));
-            }
-            index += 1;
-        }
-        Ok(None)
+        Ok(Self::ALL.into_iter().find(|flag| flag.value() == value))
     }
 
     /// Applies the IGES 5.3 postprocessor clamp to a declared value.
@@ -211,30 +202,5 @@ impl VersionFlag {
             IgesVersion::V5_2 => Self::V5_2,
             IgesVersion::V5_3 => Self::V5_3,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #![allow(clippy::unwrap_used)]
-
-    use super::VersionFlag;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    #[test]
-    fn version_flag_lookup_refuses_work_at_the_unvisited_candidate() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = VersionFlag::exact(3, &ctx).unwrap_err();
-        assert!(matches!(error,
-            CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.used == 2
-                    && limit.additional == 1
-                    && limit.operation == "iges version flag lookup"
-        ));
     }
 }
