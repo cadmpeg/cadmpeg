@@ -48,7 +48,7 @@ fn codec_error(
     Ok(match error {
         FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
         other => CodecError::Malformed(
-            ctx.format_retained(format_args!("{}", other), "Rhino codec_error text")?,
+            ctx.format_retained(format_args!("{other}"), "Rhino codec_error text")?,
         ),
     })
 }
@@ -398,7 +398,7 @@ fn parse_trace_image(
         append_file_reference_diagnostics(
             ctx,
             losses,
-            warnings,
+            &warnings,
             source_offset,
             "VIEW/TRACE_IMAGE/FILE_REFERENCE",
         )?;
@@ -452,7 +452,7 @@ fn parse_wallpaper(
         append_file_reference_diagnostics(
             ctx,
             losses,
-            warnings,
+            &warnings,
             source_offset,
             "VIEW/WALLPAPER/FILE_REFERENCE",
         )?;
@@ -476,7 +476,7 @@ fn parse_wallpaper(
 fn append_file_reference_diagnostics(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
-    diagnostics: Diagnostics,
+    diagnostics: &Diagnostics,
     source_offset: usize,
     tag: &'static str,
 ) -> Result<(), FramingError> {
@@ -1427,7 +1427,9 @@ fn parse_view(
             source_offset: cadmpeg_core::decode::u64_from_index(offset),
             byte_len: cadmpeg_core::decode::u64_from_index(child.next_offset() - offset),
             sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                ctx, &data[offset..child.next_offset()], "Rhino view child SHA-256",
+                ctx,
+                &data[offset..child.next_offset()],
+                "Rhino view child SHA-256",
             )?),
         });
         if terminated {
@@ -3777,5 +3779,4 @@ mod tests {
         }));
     }
     mod digests;
-
 }

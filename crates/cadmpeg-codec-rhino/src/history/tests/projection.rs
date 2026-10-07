@@ -12,7 +12,7 @@ fn history_value_joins_preserve_the_scalar_and_fixed_lane_spelling() {
             "1,2,3,4;5,6,7,8",
         ),
         (
-            Value::Strings(vec!["".into(), "text".into(), "".into()]),
+            Value::Strings(vec![String::new(), "text".into(), String::new()]),
             "\u{1f}text\u{1f}",
         ),
     ] {

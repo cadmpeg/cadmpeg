@@ -1818,7 +1818,7 @@ pub(crate) fn project(
     )
     .or_else(|error| {
         Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
-            format_args!("{}", error),
+            format_args!("{error}"),
             "Rhino project text",
         )?))
     })?;
@@ -1828,7 +1828,7 @@ pub(crate) fn project(
     )?)
     .or_else(|error| {
         Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
-            format_args!("{}", error),
+            format_args!("{error}"),
             "Rhino project text",
         )?))
     })?;

@@ -1314,9 +1314,15 @@ fn user_string_list_refusal(
     policy.limits.max_retained_bytes = retained_limit;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("root bytes admitted");
-    crate::objects::parse_user_string_list(&ctx, &bytes, 0..bytes.len(), archive, crate::objects::UserStringSelection::All)
-        .map(|parsed| parsed.entries)
-        .expect_err("user strings exceed configured limit")
+    crate::objects::parse_user_string_list(
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        archive,
+        crate::objects::UserStringSelection::All,
+    )
+    .map(|parsed| parsed.entries)
+    .expect_err("user strings exceed configured limit")
 }
 
 #[test]

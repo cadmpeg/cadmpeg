@@ -1357,10 +1357,7 @@ fn apply_idef_alternative_path(
 
     let mut degraded = false;
     for item in ctx
-        .admit_iter(
-            &(userdata)[..],
-            "Rhino apply idef alternative path traversal",
-        )
+        .admit_iter(userdata, "Rhino apply idef alternative path traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .filter_map(UserdataDescriptor::known)
         .filter(|item| {
@@ -1452,7 +1449,7 @@ pub(crate) fn parse_definitions(
     let mut seen_workspace = ctx.reserve_scoped(0, "Rhino definition identity workspace")?;
     let mut opaque_workspace = ctx.reserve_scoped(0, "Rhino opaque definition workspace")?;
     for (source_order, record) in ctx
-        .admit_iter(&records[..], "Rhino parse definitions traversal")?
+        .admit_iter(records, "Rhino parse definitions traversal")?
         .enumerate()
     {
         let mut warnings = Diagnostics::new();

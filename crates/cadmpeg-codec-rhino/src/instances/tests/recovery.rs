@@ -453,7 +453,9 @@ fn alternate_instance_paths_use_scratch_and_copy_only_stored_text() {
                 assert!(relative);
                 assert_eq!(relative_path.as_str(), "alternate-path");
                 assert_eq!(
-                    full_path.as_ref().map(|path| path.as_str()),
+                    full_path
+                        .as_ref()
+                        .map(cadmpeg_core::text::NonBlankString::as_str),
                     Some("/full/source.3dm")
                 );
             }
