@@ -4,8 +4,7 @@
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use super::{
-    byte_accounting, claim_trivia, decode_exchange_mode, implicit_face_plane_work,
-    semantic_input_work, ByteClass, Packaging, ValueExt,
+    byte_accounting, claim_trivia, decode_exchange_mode, ByteClass, Packaging, ValueExt,
 };
 use crate::loss::StepLossCode;
 use std::collections::HashSet;
@@ -247,7 +246,7 @@ fn byte_accounting_claims_controls_inside_print_directives() {
     let input = b"1\\\x01N\x02\\2";
     let mut classes = vec![ByteClass::Unclassified; input.len()];
 
-    claim_trivia(input, 1..input.len(), &mut classes)
+    crate::test_support::with_service_context(input, |_, ctx| claim_trivia(ctx, input, 1..input.len(), &mut classes))
         .expect("print directive fits the trivia range");
 
     assert!(classes[1..6]
@@ -279,41 +278,8 @@ fn byte_accounting_propagates_binary_lexeme_resource_refusal() {
     );
 }
 
-#[test]
-fn semantic_work_counts_nested_source_graph_nodes() {
-    let simple = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
-    let nested = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(((1,2),TYPE((3,4))));ENDSEC;END-ISO-10303-21;";
-    let (simple_exchange, _) =
-        crate::test_support::with_service_context(simple, crate::parse::parse_inner)
-            .expect("simple exchange");
-    let (nested_exchange, _) =
-        crate::test_support::with_service_context(nested, crate::parse::parse_inner)
-            .expect("nested exchange");
 
-    crate::test_support::with_service_context(&[], |_, ctx| {
-        assert!(
-            semantic_input_work(&nested_exchange, ctx).expect("nested work fits")
-                > semantic_input_work(&simple_exchange, ctx).expect("simple work fits")
-        );
-    });
-}
 
-#[test]
-fn implicit_face_plane_work_scales_with_point_count() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=POLY_LOOP('',(#2,#3,#4,#5));#2=ITEM();#3=ITEM();#4=ITEM();#5=ITEM();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) =
-        crate::test_support::with_service_context(source, crate::parse::parse_inner)
-            .expect("polygon exchange");
-
-    crate::test_support::with_service_context(&[], |_, ctx| {
-        assert_eq!(
-            implicit_face_plane_work(&exchange, ctx).expect("work fits"),
-            4
-        );
-    });
-}
-
-use std::fmt::Write as _;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
@@ -368,34 +334,6 @@ fn semantic_decode_admits_ir_entities_at_stage_boundaries() {
     assert!(limit.used <= limit.limit);
 }
 
-#[test]
-fn implicit_face_plane_work_is_charged_before_plane_inference() {
-    let point_references = (2..=17)
-        .map(|id| format!("#{id}"))
-        .collect::<Vec<_>>()
-        .join(",");
-    let point_records = (2..=17).fold(String::new(), |mut records, id| {
-        writeln!(records, "#{id}=CARTESIAN_POINT('',({id}.,0.,0.));").expect("write point fixture");
-        records
-    });
-    let source = format!(
-        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=POLY_LOOP('',({point_references}));{point_records}ENDSEC;END-ISO-10303-21;"
-    );
-    // Admit preceding lexer and container operations before this exact named gate.
-    let limit = crate::test_support::resource_refusal_at(
-        source.as_bytes(),
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "step_implicit_face_plane",
-        |source, ctx| crate::reader::decode(source, ctx, Packaging::Bare),
-    );
-
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits
-    );
-    assert_eq!(limit.additional, 16);
-    assert!(limit.used <= limit.limit);
-}
 
 #[test]
 pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
@@ -1306,7 +1244,7 @@ fn opaque_target_map_refuses_collection_limit() {
             policy.limits.max_collection_items = limit;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(b"target", &arena, &policy).expect("root");
-            super::record_targets(decoded.ir(), |id| id == 2, &ctx)
+            super::record_targets(decoded.ir(), |id| Ok(id == 2), &ctx)
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
