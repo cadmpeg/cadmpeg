@@ -373,7 +373,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     format_args!("declaration"),
                     ctx.format_retained(
                         format_args!("{}", declaration.id),
-                        "NX attach expression parameters text",
+                        "NX expression declaration identity text",
                     )?,
                 )?;
                 insert_parameter_property(
@@ -382,7 +382,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     format_args!("declaration_object_id"),
                     ctx.format_retained(
                         format_args!("{}", declaration.object_id),
-                        "NX attach expression parameters text",
+                        "NX expression declaration object identity text",
                     )?,
                 )?;
                 annotations
@@ -410,7 +410,7 @@ pub(in crate::native) fn attach_expression_parameters(
                         format_args!("parameter_use.{consumer_ordinal}"),
                         ctx.format_retained(
                             format_args!("{}", parameter_use.id),
-                            "NX attach expression parameters text",
+                            "NX expression parameter-use identity text",
                         )?,
                     )?;
                     annotations
@@ -435,11 +435,11 @@ pub(in crate::native) fn attach_expression_parameters(
                 ordinal,
                 name: ctx.format_retained(
                     format_args!("{}", expression.name.as_str()),
-                    "NX attach expression parameters text",
+                    "NX expression parameter name text",
                 )?,
                 expression: ctx.format_retained(
                     format_args!("{}", expression.expression),
-                    "NX attach expression parameters text",
+                    "NX expression formula text",
                 )?,
                 display: None,
                 value,
@@ -449,7 +449,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 pmi: None,
                 native_ref: Some(ctx.format_retained(
                     format_args!("{}", expression.id),
-                    "NX attach expression parameters text",
+                    "NX native expression reference text",
                 )?),
             });
         }

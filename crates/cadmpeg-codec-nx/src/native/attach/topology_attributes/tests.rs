@@ -53,8 +53,22 @@ fn attribute_name_index_with_limit(
             let mut reservation = ctx.reserve_scoped(0, "NX attribute name index test")?;
             let mut index = BTreeMap::<&str, Option<&u8>>::new();
             let value = 7_u8;
-            insert_sole(ctx, &mut reservation, &mut index, "first", &value)?;
-            insert_sole(ctx, &mut reservation, &mut index, "second", &value)?;
+            insert_sole(
+                ctx,
+                &mut reservation,
+                &mut index,
+                "first",
+                &value,
+                "NX insert sole values entry",
+            )?;
+            insert_sole(
+                ctx,
+                &mut reservation,
+                &mut index,
+                "second",
+                &value,
+                "NX insert sole values entry",
+            )?;
             assert_eq!(index.len(), 2);
             Ok(())
         },
@@ -1330,4 +1344,39 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
             [AttributeValue::String("μ".into())]
         );
     });
+}
+
+#[test]
+fn attribute_record_and_group_refusals_identify_the_record_family() {
+    use cadmpeg_core::decode::ResourceDimension;
+    for (route, records, groups) in [
+        (
+            AttributeRoute::String,
+            "NX Parasolid string record index",
+            "NX Parasolid string use groups",
+        ),
+        (
+            AttributeRoute::Numeric,
+            "NX Parasolid integer record index",
+            "NX Parasolid numeric use groups",
+        ),
+        (
+            AttributeRoute::Structured,
+            "NX Parasolid vector record index",
+            "NX Parasolid structured use groups",
+        ),
+    ] {
+        assert_eq!(attribute_output_route(route, |_| {}).unwrap(), 1);
+        for operation in [records, groups] {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| attribute_output_route(route, |policy| policy.limits.max_work_units = cap),
+            );
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == operation && limit.dimension == ResourceDimension::WorkUnits)
+            );
+        }
+    }
 }
