@@ -120,17 +120,16 @@ pub(super) fn cyl_spl_sur(
         let interval = [cur.take_f64()?, cur.take_f64()?];
         let direction = cur.take_vector3()?;
         let native_position = cur.take_position()?;
-        let cache = propagate_resource!(scope.owned_marker_positions(ctx))
-            .into_iter()
-            .rev()
-            .find_map(|at| surface_block(ctx, span, at));
-        let cache_fit_tolerance = match cache {
-            Some(Ok((_, cache_end))) => match span.get(cache_end) {
+        let cache_fit_tolerance = {
+        let (positions, _marker_storage) = propagate_resource!(ctx.with_scoped_storage("ASM extrusion marker positions", || scope.owned_marker_positions(ctx)));
+        let (cache, _cache_storage) = propagate_resource!(ctx.with_scoped_storage("ASM extrusion cache", || ctx.find_map(positions.into_iter().rev(), |at| surface_block(ctx, span, at).transpose(), "ASM extrusion cache candidates")));
+        match cache {
+            Some((_, cache_end)) => match span.get(cache_end) {
                 Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
                 _ => None,
             },
-            Some(Err(error)) => return Some(Err(error)),
             None => None,
+        }
         };
         Some(Ok(DecodedProceduralSurface::legacy(
             DecodedProceduralSurfaceDefinition::Extrusion {
@@ -881,7 +880,8 @@ fn variable_blend_value(
                     Ok(points) => points,
                     Err(error) => return Some(Err(error)),
                 };
-            for _ in 0..count {
+            let mut visits = 0..count;
+            while propagate_resource!(ctx.next_charged(&mut visits, "ASM variable blend value entries")).is_some() {
                 let parameter = cur.take_f64()?;
                 let radius = cur.take_f64()? * LEN_TO_MM;
                 let tangents = [cur.take_f64()?, cur.take_f64()?]
@@ -1379,7 +1379,8 @@ pub(super) fn vertex_blend_spl_sur(
         Ok(boundaries) => boundaries,
         Err(error) => return Some(Err(error)),
     };
-    for _ in 0..count {
+    let mut visits = 0..count;
+    while propagate_resource!(ctx.next_charged(&mut visits, "ASM vertex blend spl sur entries")).is_some() {
         boundaries.push(if revision.is_some() {
             match revision_vertex_blend_boundary(ctx, &mut cur, resolver)? {
                 Ok(boundary) => boundary,
@@ -1564,7 +1565,13 @@ pub(super) fn compact_rb_blend_spl_sur(
     cur.set_pos(spine_end);
     let offsets = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
     (cur.take_enum()? == -1).then_some(())?;
-    let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
+    let cache_end = {
+        let (decoded, _cache_storage) = propagate_resource!(ctx.with_scoped_storage(
+            "ASM construction cache",
+            || surface_block(ctx, span, cur.pos()).transpose(),
+        ));
+        decoded?.1
+    };
     cur.set_pos(cache_end);
     let cache_fit_tolerance = if matches!(cur.peek(), Some(Token::Double(_))) {
         Some(cur.take_f64()? * LEN_TO_MM)
@@ -1600,13 +1607,18 @@ mod compact_blend_work_tests {
             Token::Str("blend_support_surface".into()),
             Token::SubtypeClose,
         ];
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "ASM compact blend support scan",
+            |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
+        policy.limits.max_work_units = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Some(Err(error)) = compact_rb_blend_spl_sur(&ctx, &tokens) else {
-            panic!("support-label admission must propagate");
-        };
+                compact_rb_blend_spl_sur(&ctx, &tokens)
+            .expect("recognized refusal route")
+            },
+        );
         let CodecError::ResourceLimit(limit) = error else {
             panic!("expected work refusal: {error:?}");
         };
@@ -1630,16 +1642,21 @@ mod variable_blend_value_tests {
         use cadmpeg_core::CodecError;
 
         let tokens = [Token::Str("label".into())];
-        let mut cur = Cur::at(&tokens, 0);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "ASM rolling ball third-side label",
+            |cap| {
+                let mut cur = Cur::at(&tokens, 0);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 4;
+        policy.limits.max_retained_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test input fits input limit");
-        let Some(Err(CodecError::ResourceLimit(refusal))) = rolling_ball_third_side(&ctx, &mut cur)
-        else {
-            panic!("label copy must refuse retained limit");
-        };
+                rolling_ball_third_side(&ctx, &mut cur)
+            .expect("recognized refusal route")
+            },
+        );
+        let CodecError::ResourceLimit(refusal) = error else { panic!("expected resource refusal"); };
         assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(refusal.operation, "ASM rolling ball third-side label");
     }
@@ -1669,18 +1686,21 @@ mod variable_blend_value_tests {
             Token::Double(0.0),
             Token::Str("terminal".into()),
         ];
-        let mut cur = Cur::at(&tokens, 0);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "ASM variable blend terminal text",
+            |cap| {
+                let mut cur = Cur::at(&tokens, 0);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 7 + cadmpeg_core::decode::u64_from_index(
-            4 * std::mem::size_of::<f64>() + 2 * std::mem::size_of::<cadmpeg_ir::math::Point2>(),
-        );
+        policy.limits.max_retained_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test input fits input limit");
-        let Some(Err(CodecError::ResourceLimit(refusal))) = variable_blend_value(&ctx, &mut cur, 0)
-        else {
-            panic!("terminal text copy must refuse retained limit");
-        };
+                variable_blend_value(&ctx, &mut cur, 0)
+            .expect("recognized refusal route")
+            },
+        );
+        let CodecError::ResourceLimit(refusal) = error else { panic!("expected resource refusal"); };
         assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(refusal.operation, "ASM variable blend terminal text");
     }
@@ -1698,16 +1718,21 @@ mod variable_blend_value_tests {
             Token::Double(1.0),
             Token::Double(2.0),
         ];
-        let mut cur = Cur::at(&tokens, 0);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RecursionDepth,
+            "decode ASM variable blend value",
+            |cap| {
+                let mut cur = Cur::at(&tokens, 0);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_recursion_depth = 0;
+        policy.limits.max_recursion_depth = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test input fits input limit");
-        let Some(Err(CodecError::ResourceLimit(refusal))) = variable_blend_value(&ctx, &mut cur, 0)
-        else {
-            panic!("variable blend depth must refuse");
-        };
+                variable_blend_value(&ctx, &mut cur, 0)
+            .expect("recognized refusal route")
+            },
+        );
+        let CodecError::ResourceLimit(refusal) = error else { panic!("expected resource refusal"); };
         assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
         assert_eq!(refusal.operation, "decode ASM variable blend value");
     }
@@ -1946,18 +1971,22 @@ mod variable_blend_value_tests {
         }
         let tokens = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
             .expect("valid interpolation value");
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("input is within the root byte limit");
-        let mut cur = Cur::at(&tokens, 0);
-        let result = variable_blend_value(&ctx, &mut cur, 0)
-            .expect("interpolation grammar reaches its point collection");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "decode variable blend interpolation points",
+            |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("input is within the root byte limit");
+                variable_blend_value(&ctx, &mut Cur::at(&tokens, 0), 0)
+                    .expect("interpolation grammar reaches its point collection")
+            },
+        );
         assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
         ));
     }
