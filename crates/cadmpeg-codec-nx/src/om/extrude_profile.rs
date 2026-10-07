@@ -25,16 +25,29 @@ impl ExtrudeProfileReferenceField {
         ctx: &DecodeContext<'_>,
         base: u64,
     ) -> Result<Option<Self>, CodecError> {
-        let width = ctx.admit_iter(self.references.as_slice(), "NX extrude profile token widths")?
-            .map(|token| u64_from_index(token.raw().len())).sum::<u64>();
-        let Some(primary_offset) = base.checked_add(self.primary_offset)
-            .filter(|offset| offset.checked_add(width).and_then(|end| end.checked_add(3)).is_some()) else {
+        let width = ctx
+            .admit_iter(
+                self.references.as_slice(),
+                "NX extrude profile token widths",
+            )?
+            .map(|token| u64_from_index(token.raw().len()))
+            .sum::<u64>();
+        let Some(primary_offset) = base.checked_add(self.primary_offset).filter(|offset| {
+            offset
+                .checked_add(width)
+                .and_then(|end| end.checked_add(3))
+                .is_some()
+        }) else {
             return Ok(None);
         };
         self.primary_offset = primary_offset;
         if let Some(offset) = self.witness_offset {
-            let Some(offset) = base.checked_add(offset)
-                .filter(|offset| offset.checked_add(width).and_then(|end| end.checked_add(2)).is_some()) else {
+            let Some(offset) = base.checked_add(offset).filter(|offset| {
+                offset
+                    .checked_add(width)
+                    .and_then(|end| end.checked_add(2))
+                    .is_some()
+            }) else {
                 return Ok(None);
             };
             self.witness_offset = Some(offset);
@@ -69,7 +82,9 @@ pub(crate) fn extrude_profile_references(
     let mut shape = None;
     if let Some(range_end) = record.payload().len().checked_sub(6) {
         let mut starts = 0..range_end;
-        while let Some(start) = ctx.next_charged(&mut starts, "NX extrude profile candidate search")? {
+        while let Some(start) =
+            ctx.next_charged(&mut starts, "NX extrude profile candidate search")?
+        {
             if record.payload().get(start..start + 2) != Some(&[0x01, 0x02])
                 || record.payload().get(start + 3) != Some(&0x01)
             {
@@ -90,11 +105,16 @@ pub(crate) fn extrude_profile_references(
     let witness_len = 4 + encoded_references.len();
     let mut windows = record.payload().windows(witness_len).enumerate();
     let mut witness_start = None;
-    while let Some((offset, candidate)) = ctx.next_charged(&mut windows, "NX extrusion witness windows")? {
+    while let Some((offset, candidate)) =
+        ctx.next_charged(&mut windows, "NX extrusion witness windows")?
+    {
         if candidate.starts_with(&[0x01, count])
             && candidate.ends_with(&[0x00, 0x00])
-            && ctx.equal_bytes(&candidate[2..2 + encoded_references.len()], encoded_references,
-                "NX extrusion witness token equality")?
+            && ctx.equal_bytes(
+                &candidate[2..2 + encoded_references.len()],
+                encoded_references,
+                "NX extrusion witness token equality",
+            )?
         {
             if witness_start.is_some() {
                 witness_start = None;
@@ -108,7 +128,10 @@ pub(crate) fn extrude_profile_references(
     let mut references = ctx.collection_vec(count, "NX extrude profile references")?;
     let mut at = references_start;
     let mut rows = 0..count;
-    while ctx.next_charged(&mut rows, "NX extrude profile reference materialization")?.is_some() {
+    while ctx
+        .next_charged(&mut rows, "NX extrude profile reference materialization")?
+        .is_some()
+    {
         let Some(token) = record.payload().get(at..).and_then(PayloadIndexToken::read) else {
             return Ok(None);
         };
@@ -141,14 +164,20 @@ fn extrude_profile_reference_shape(
     let references_start = start + 5;
     let mut at = references_start;
     let mut rows = 1..count;
-    while ctx.next_charged(&mut rows, "NX extrude profile reference shape tokens")?.is_some() {
+    while ctx
+        .next_charged(&mut rows, "NX extrude profile reference shape tokens")?
+        .is_some()
+    {
         let Some(token) = record.payload().get(at..).and_then(PayloadIndexToken::read) else {
             return Ok(None);
         };
         at += token.raw().len();
     }
     if record.payload().get(at..at + 3) != Some(&[0x01, 0x03, 0x79])
-        || record.payload_offset().checked_add(references_start).is_none()
+        || record
+            .payload_offset()
+            .checked_add(references_start)
+            .is_none()
     {
         return Ok(None);
     }
@@ -163,12 +192,19 @@ mod tests {
         let mut bytes = shape.to_vec();
         bytes.extend(shape);
         bytes.resize(4096, 0);
-        crate::test_support::with_decode_context_over(&[],
-            |policy| { policy.limits.max_retained_bytes = 0; policy.limits.max_work_units = 20; },
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_work_units = 20;
+            },
             |ctx| {
                 let record = super::OperationPayload::new(&bytes, 0, "EXTRUDE").unwrap();
-                assert!(super::extrude_profile_references(ctx, record).unwrap().is_none());
-            });
+                assert!(super::extrude_profile_references(ctx, record)
+                    .unwrap()
+                    .is_none());
+            },
+        );
     }
 
     #[test]
@@ -177,17 +213,38 @@ mod tests {
         let witness = b"\x01\x02\xf0\x00\x00\x00";
         let mut bytes = shape.to_vec();
         for witness_count in 0..=2 {
-            let field = crate::test_support::with_decode_context(|ctx| super::extrude_profile_references(ctx,
-                super::OperationPayload::new(&bytes, 100, "EXTRUDE").unwrap())).unwrap().unwrap();
+            let field = crate::test_support::with_decode_context(|ctx| {
+                super::extrude_profile_references(
+                    ctx,
+                    super::OperationPayload::new(&bytes, 100, "EXTRUDE").unwrap(),
+                )
+            })
+            .unwrap()
+            .unwrap();
             let rows: Vec<_> = field.references().collect();
             assert_eq!(rows[0].0.value(), 0);
             assert_eq!(rows[0].1, 105);
-            assert_eq!(rows[0].2, if witness_count == 1 { Some(100 + cadmpeg_core::decode::u64_from_index(shape.len()) + 2) } else { None });
+            assert_eq!(
+                rows[0].2,
+                if witness_count == 1 {
+                    Some(100 + cadmpeg_core::decode::u64_from_index(shape.len()) + 2)
+                } else {
+                    None
+                }
+            );
             bytes.extend(witness);
         }
-        crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "NX extrusion witness windows", |ctx| super::extrude_profile_references(ctx,
-                super::OperationPayload::new(shape, 0, "EXTRUDE").unwrap()));
+        crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX extrusion witness windows",
+            |ctx| {
+                super::extrude_profile_references(
+                    ctx,
+                    super::OperationPayload::new(shape, 0, "EXTRUDE").unwrap(),
+                )
+            },
+        );
     }
 
     fn extrude_profile_references_test(
@@ -206,12 +263,15 @@ mod tests {
         let bytes = b"\x01\x02\x00\x01\x03\xf0\x00\xf1\x01\x00\x01\x03\x79\x01\x03\xf0\x00\xf1\x01\x00\x00\x00";
         let record = OperationPayload::new(bytes, 100, "EXTRUDE").unwrap();
 
-        let error = crate::test_support::resource_refusal_at(bytes,
-cadmpeg_core::decode::ResourceDimension::CollectionItems,
-"NX extrude profile references", |ctx| super::extrude_profile_references(ctx, record));
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-                );
+        let error = crate::test_support::resource_refusal_at(
+            bytes,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "NX extrude profile references",
+            |ctx| super::extrude_profile_references(ctx, record),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]

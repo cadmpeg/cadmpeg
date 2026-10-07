@@ -67,7 +67,12 @@ impl OperationTerminalDiscriminator {
         let Some(start) = origin.checked_add(17) else {
             return Ok(Err("source_offset: terminal discriminator overflows"));
         };
-        let Some(start) = start.checked_add(type_indices.iter().map(|token| u64_from_index(token.raw().len())).sum::<u64>()) else {
+        let Some(start) = start.checked_add(
+            type_indices
+                .iter()
+                .map(|token| u64_from_index(token.raw().len()))
+                .sum::<u64>(),
+        ) else {
             return Ok(Err("source_offset: terminal discriminator end overflows"));
         };
         let end = admit(trailing_indices)?.fold(Some(start), |at, token| {
@@ -126,15 +131,25 @@ pub(crate) fn operation_terminal_discriminator(
             return Ok(None);
         }
         let mut at = start + 3;
-        let Some(first) = record.payload().get(at..).and_then(CompactIndexAtom::read) else { return Ok(None); };
+        let Some(first) = record.payload().get(at..).and_then(CompactIndexAtom::read) else {
+            return Ok(None);
+        };
         at += first.raw().len();
-        let Some(second) = record.payload().get(at..).and_then(CompactIndexAtom::read) else { return Ok(None); };
+        let Some(second) = record.payload().get(at..).and_then(CompactIndexAtom::read) else {
+            return Ok(None);
+        };
         at += second.raw().len();
         if record.payload().get(at..at + 4) != Some(&[0x01, 0x03, 0x02, 0x01]) {
             return Ok(None);
         }
         at += 4;
-        let Some(flags) = record.payload().get(at..at + 4).and_then(|bytes| bytes.try_into().ok()) else { return Ok(None); };
+        let Some(flags) = record
+            .payload()
+            .get(at..at + 4)
+            .and_then(|bytes| bytes.try_into().ok())
+        else {
+            return Ok(None);
+        };
         at += 4;
         if record.payload().get(at..at + 5) != Some(&[0x00, 0x00, 0x00, 0x29, 0x29]) {
             return Ok(None);
@@ -142,19 +157,33 @@ pub(crate) fn operation_terminal_discriminator(
         at += 5;
 
         let trailing_end = record.payload().len() - 1;
-        let Some(trailing_bytes) = record.payload().get(at..trailing_end) else { return Ok(None); };
+        let Some(trailing_bytes) = record.payload().get(at..trailing_end) else {
+            return Ok(None);
+        };
         let mut scan = 0;
         let mut trailing_count = 0;
         while scan < trailing_bytes.len() {
             ctx.charge_work(1, "NX terminal discriminator trailing validation")?;
-            let Some(token) = trailing_bytes.get(scan..).and_then(CompactIndexAtom::read) else { return Ok(None); };
+            let Some(token) = trailing_bytes.get(scan..).and_then(CompactIndexAtom::read) else {
+                return Ok(None);
+            };
             scan += token.raw().len();
             trailing_count += 1;
         }
 
-        let Some(origin) = record.payload_offset().checked_add(start).map(u64_from_index) else { return Ok(None); };
+        let Some(origin) = record
+            .payload_offset()
+            .checked_add(start)
+            .map(u64_from_index)
+        else {
+            return Ok(None);
+        };
         let token_bytes = first.raw().len() + second.raw().len() + trailing_bytes.len();
-        if origin.checked_add(17).and_then(|origin| origin.checked_add(u64_from_index(token_bytes))).is_none() {
+        if origin
+            .checked_add(17)
+            .and_then(|origin| origin.checked_add(u64_from_index(token_bytes)))
+            .is_none()
+        {
             return Ok(None);
         }
 
@@ -216,14 +245,14 @@ mod tests {
     }
 
     fn terminal_limit_error(
-        dimension: cadmpeg_core::decode::ResourceDimension, operation: &str,
+        dimension: cadmpeg_core::decode::ResourceDimension,
+        operation: &str,
     ) -> cadmpeg_core::CodecError {
         let payload = b"\x01\x01\x02\x81\x5f\x80\xab\x01\x03\x02\x01\x01\x02\x01\x01\x00\x00\x00\x29\x29\x05\x80\xff\x00";
 
         crate::test_support::resource_refusal_at(payload, dimension, operation, |ctx| {
             let record = OperationPayload::new(payload, 200, "EXTRUDE").unwrap();
             operation_terminal_discriminator(ctx, record)
-
         })
     }
 

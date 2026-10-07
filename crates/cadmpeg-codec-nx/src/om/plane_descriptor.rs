@@ -14,19 +14,31 @@ pub(crate) struct PlaneDescriptor {
 
 impl PlaneDescriptor {
     fn parse(bytes: &[u8]) -> Option<(&[u8], CompactIndexAtom, &[u8])> {
-        if bytes.len() != 40 { return None; }
+        if bytes.len() != 40 {
+            return None;
+        }
         let delimiter = bytes.iter().position(|byte| *byte == b'?')?;
         let identity = bytes.get(..delimiter)?;
-        if identity.is_empty() || !identity.iter().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte)) {
+        if identity.is_empty()
+            || !identity
+                .iter()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+        {
             return None;
         }
         let suffix = bytes.get(delimiter..)?;
-        if suffix.get(..2) != Some(b"?A") { return None; }
+        if suffix.get(..2) != Some(b"?A") {
+            return None;
+        }
         let schema = CompactIndexAtom::read(suffix.get(2..)?)?;
         let label_start = 2 + schema.raw().len() + 3;
-        if suffix.get(2 + schema.raw().len()..label_start) != Some(&[0xff, 0x02, 0x01]) { return None; }
+        if suffix.get(2 + schema.raw().len()..label_start) != Some(&[0xff, 0x02, 0x01]) {
+            return None;
+        }
         let label = suffix.get(label_start..)?;
-        if label.is_empty() || !label.iter().all(u8::is_ascii_graphic) { return None; }
+        if label.is_empty() || !label.iter().all(u8::is_ascii_graphic) {
+            return None;
+        }
         Some((identity, schema, label))
     }
 
@@ -43,8 +55,7 @@ impl PlaneDescriptor {
         ctx: &DecodeContext<'_>,
         bytes: &[u8],
     ) -> Result<Option<Self>, CodecError> {
-        let Some((identity, schema, label)) = Self::parse(bytes)
-        else {
+        let Some((identity, schema, label)) = Self::parse(bytes) else {
             return Ok(None);
         };
         let identity = std::str::from_utf8(identity);

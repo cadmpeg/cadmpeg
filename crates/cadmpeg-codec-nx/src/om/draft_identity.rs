@@ -148,11 +148,13 @@ impl DraftIdentityFrame {
         let Some(tail) = bytes.get(start..) else {
             return Ok(None);
         };
-        let len = ctx.position_by(
-            tail,
-            |byte| Ok(!byte.is_ascii_digit() && !(b'a'..=b'f').contains(byte)),
-            "NX draft identity hexadecimal run",
-        )?.unwrap_or(tail.len());
+        let len = ctx
+            .position_by(
+                tail,
+                |byte| Ok(!byte.is_ascii_digit() && !(b'a'..=b'f').contains(byte)),
+                "NX draft identity hexadecimal run",
+            )?
+            .unwrap_or(tail.len());
         if len == 0 || tail.get(len) != Some(&b'?') {
             return Ok(None);
         }
@@ -248,12 +250,15 @@ mod tests {
     fn draft_identity_text_refuses_retained_limit() {
         let bytes = b"A\xf0\x27\xff\x02\x01abc123?";
 
-        let error = crate::test_support::resource_refusal_at(bytes,
-cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-"NX draft identity text", |ctx| DraftIdentityFrame::read(ctx, bytes, 0));
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-                );
+        let error = crate::test_support::resource_refusal_at(
+            bytes,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "NX draft identity text",
+            |ctx| DraftIdentityFrame::read(ctx, bytes, 0),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
     }
 
     #[test]

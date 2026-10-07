@@ -39,7 +39,9 @@ impl From<CsysIdentity> for String {
 impl CsysIdentity {
     fn validate(value: &str) -> Result<(), &'static str> {
         if !(30..=32).contains(&value.len())
-            || !value.chars().all(|ch| ch.is_ascii_digit() || ('a'..='f').contains(&ch))
+            || !value
+                .chars()
+                .all(|ch| ch.is_ascii_digit() || ('a'..='f').contains(&ch))
         {
             return Err("identity must contain 30 through 32 lowercase hexadecimal digits");
         }
@@ -113,12 +115,12 @@ impl CsysDescriptor {
     ) -> Result<Option<Self>, CodecError> {
         let Some((start, end)) = Self::identity_bounds(bytes, |input| {
             ctx.next_charged(input, "NX datum CSYS identity runs")
-        })? else {
+        })?
+        else {
             return Ok(None);
         };
         let prefix = ctx.copy_retained(&bytes[..start], "NX datum CSYS descriptor prefix")?;
-        let Ok(identity) = std::str::from_utf8(&bytes[start..end])
-        else {
+        let Ok(identity) = std::str::from_utf8(&bytes[start..end]) else {
             return Ok(None);
         };
         let identity = ctx.copy_retained_text(identity, "NX datum CSYS descriptor identity")?;
@@ -225,13 +227,23 @@ mod tests {
     fn csys_descriptor_run_scan_refusal_precedes_any_retained_copy() {
         let bytes = b"?012345678901234567890123456789?";
         let error = crate::test_support::resource_refusal_at(
-            &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "NX datum CSYS identity runs", |ctx| super::CsysDescriptor::read_charged(ctx, bytes),
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX datum CSYS identity runs",
+            |ctx| super::CsysDescriptor::read_charged(ctx, bytes),
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 1));
-        crate::test_support::with_decode_context_over(&[],
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 1)
+        );
+        crate::test_support::with_decode_context_over(
+            &[],
             |policy| policy.limits.max_retained_bytes = 0,
-            |ctx| assert!(super::CsysDescriptor::read_charged(ctx, b"??").unwrap().is_none()));
+            |ctx| {
+                assert!(super::CsysDescriptor::read_charged(ctx, b"??")
+                    .unwrap()
+                    .is_none())
+            },
+        );
     }
 
     use super::{

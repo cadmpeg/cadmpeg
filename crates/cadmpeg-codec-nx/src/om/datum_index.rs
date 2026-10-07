@@ -119,7 +119,10 @@ pub(crate) fn scan(
             let mut scan_at = start + 2;
             let mut complete = true;
             let mut rows = 1..declared_count;
-    while ctx.next_charged(&mut rows, "scan NX datum index members")?.is_some() {
+            while ctx
+                .next_charged(&mut rows, "scan NX datum index members")?
+                .is_some()
+            {
                 let Some(token) =
                     NullableCompactIndex::read(bytes, scan_at).filter(|token| token.atom.is_some())
                 else {
@@ -136,7 +139,10 @@ pub(crate) fn scan(
             let mut indices = ctx.collection_vec(member_count, operation)?;
             let mut at = start + 2;
             let mut rows = 0..member_count;
-    while ctx.next_charged(&mut rows, "NX datum index member materialization")?.is_some() {
+            while ctx
+                .next_charged(&mut rows, "NX datum index member materialization")?
+                .is_some()
+            {
                 let Some(token) = LocatedCompactIndex::read(&bytes[..scan_at], at) else {
                     break;
                 };
@@ -166,7 +172,8 @@ mod tests {
     use super::{scan, DatumIndexLane};
 
     fn datum_index_limit_error(
-        dimension: cadmpeg_core::decode::ResourceDimension, operation: &str,
+        dimension: cadmpeg_core::decode::ResourceDimension,
+        operation: &str,
     ) -> cadmpeg_core::CodecError {
         let bytes = [
             0x80, 0xab, 0x01, 0x04, 0x81, 0x01, 0x01, 0x01, 0x00, 0x12, 0x34, 0x56, 0x78,

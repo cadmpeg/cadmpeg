@@ -162,7 +162,10 @@ pub(crate) fn scan(
     let member_count = usize::from(declared_count - 1);
     let mut scan_at = at;
     let mut rows = 1..declared_count;
-    while ctx.next_charged(&mut rows, "scan NX draft leading indices")?.is_some() {
+    while ctx
+        .next_charged(&mut rows, "scan NX draft leading indices")?
+        .is_some()
+    {
         let Some(token) = LocatedCompactIndex::read(record.payload(), scan_at) else {
             return Ok(None);
         };
@@ -174,7 +177,10 @@ pub(crate) fn scan(
     let operation = "NX draft leading index members";
     let mut indices = ctx.collection_vec(member_count, operation)?;
     let mut rows = 1..declared_count;
-    while ctx.next_charged(&mut rows, "NX draft leading index materialization")?.is_some() {
+    while ctx
+        .next_charged(&mut rows, "NX draft leading index materialization")?
+        .is_some()
+    {
         let Some(token) = LocatedCompactIndex::read(record.payload(), at) else {
             return Ok(None);
         };
@@ -194,7 +200,8 @@ mod tests {
     use super::scan;
 
     fn draft_leading_limit_error(
-        dimension: cadmpeg_core::decode::ResourceDimension, operation: &str,
+        dimension: cadmpeg_core::decode::ResourceDimension,
+        operation: &str,
     ) -> cadmpeg_core::CodecError {
         let bytes = [
             0x67, 0, 0, 1, 0, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 3, 0xff, 0xff, 0xff,
@@ -203,18 +210,29 @@ mod tests {
 
         crate::test_support::resource_refusal_at(&bytes, dimension, operation, |ctx| {
             scan(ctx, OperationPayload::new(&bytes, 100, "DRAFT").unwrap())
-
         })
     }
 
     #[test]
     fn draft_leading_malformed_member_stops_before_the_declared_tail() {
-        let bytes = [0x67, 0, 0, 1, 0, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b,
-            3, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 1, 255, 0xff];
-        crate::test_support::with_decode_context_over(&[], |policy| {
-            policy.limits.max_work_units = 1;
-            policy.limits.max_retained_bytes = 0;
-        }, |ctx| assert!(scan(ctx, OperationPayload::new(&bytes, 0, "DRAFT").unwrap()).unwrap().is_none()));
+        let bytes = [
+            0x67, 0, 0, 1, 0, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 3, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 1, 255, 0xff,
+        ];
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 1;
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                assert!(
+                    scan(ctx, OperationPayload::new(&bytes, 0, "DRAFT").unwrap())
+                        .unwrap()
+                        .is_none()
+                )
+            },
+        );
     }
 
     #[test]
