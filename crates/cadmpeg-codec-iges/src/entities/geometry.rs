@@ -2872,7 +2872,16 @@ pub(crate) fn project_geometry(
         ctx,
     )?;
 
-    super::copious::project(ir, directory, &entries, &records, global, ctx, &mut sequences)?.merge_into(
+    super::copious::project(
+        ir,
+        directory,
+        &entries,
+        &records,
+        global,
+        ctx,
+        &mut sequences,
+    )?
+    .merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
