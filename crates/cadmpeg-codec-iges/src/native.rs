@@ -2784,10 +2784,8 @@ pub(crate) fn store(
                 },
             })
         })?;
-    let directions = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let directions = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native direction scan")?
             .filter(|entry| entry.entity_type == 123 && entry.form == 0),
         "iges native direction slots",
         |entry| {
