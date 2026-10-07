@@ -268,7 +268,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
             unknown: &unknown,
             scale: crate::test_support::millimeter_scale(25.4),
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
-        }, &mut expand.ctx().reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"),)
+        }, &mut expand.ctx().reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"), &mut expand.ctx().reserve_scoped(0, "Rhino fixture link scratch").expect("fixture scratch"),)
     })
     .expect("stage plane Brep");
     assert_eq!(staged.kind, BrepTransferKind::FullTopology);
@@ -289,6 +289,15 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         ),
         (1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 1)
     );
+    // Three curve links, one surface link, and one body link; each is copied once.
+    assert_eq!(staged.links.len(), 5);
+    let unique_links: std::collections::BTreeSet<_> = staged.links.iter().collect();
+    assert_eq!(unique_links.len(), staged.links.len());
+    assert!(staged.links.contains(&model.bodies[0].id.to_string()));
+    for curve in &model.curves {
+        assert!(staged.links.contains(&curve.id.to_string()));
+    }
+    assert!(staged.links.contains(&model.surfaces[0].id.to_string()));
     assert_eq!(model.points[1].position().get().x, 25.4);
     assert_eq!(
         model.vertices[0]
@@ -383,7 +392,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
             unknown: &unknown,
             scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
-        }, &mut expand.ctx().reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"),)
+        }, &mut expand.ctx().reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"), &mut expand.ctx().reserve_scoped(0, "Rhino fixture link scratch").expect("fixture scratch"),)
     })
     .expect("stage Brep with an isolated vertex");
     assert_eq!(staged.kind, BrepTransferKind::FullTopology);
@@ -453,7 +462,7 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
             unknown: &unknown,
             scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
-        }, &mut expand.ctx().reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"),)
+        }, &mut expand.ctx().reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"), &mut expand.ctx().reserve_scoped(0, "Rhino fixture link scratch").expect("fixture scratch"),)
     })
     .expect("stage Brep without one pcurve");
     assert_eq!(staged.kind, BrepTransferKind::FullTopology);
@@ -826,7 +835,7 @@ fn staged_brep_collections_refuse_just_below_each_required_count() {
             unknown: &unknown,
             scale: crate::test_support::millimeter_scale(25.4),
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
-        }, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"),);
+        }, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"), &mut ctx.reserve_scoped(0, "Rhino fixture link scratch").expect("fixture scratch"),);
         match result {
             Err(crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
                 refusal,
@@ -872,9 +881,10 @@ fn staged_brep_owned_and_scratch_copies_refuse_before_allocation() {
         .try_into()
         .expect("valid identity");
     // Names remain in the output. Link and derived identity text are temporary bridges.
+    // Link text stays below an earlier parsing/topology scratch peak here.
+    // The curve staging test isolates that admission before topology construction.
     for (dimension, operation) in [
         (cadmpeg_core::decode::ResourceDimension::RetainedBytes, "Rhino staged Brep body name"),
-        (cadmpeg_core::decode::ResourceDimension::MaterializedBytes, "Rhino staged Brep link text"),
         (cadmpeg_core::decode::ResourceDimension::MaterializedBytes, "Rhino staged Brep derived ID text"),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
@@ -888,13 +898,14 @@ fn staged_brep_owned_and_scratch_copies_refuse_before_allocation() {
             let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
                 .expect("source bytes fit root limit");
             let mut storage = ctx.reserve_scoped(0, "Rhino fixture arena scratch")?;
+            let mut metadata_storage = ctx.reserve_scoped(0, "Rhino fixture link scratch")?;
             stage_brep(BrepTransferInput {
                 expand: crate::mesh::MeshExpand::new(&ctx, root), data: &data,
                 archive: ArchiveVersion::V5, writer_version: Some(200_206_180), brep: &brep,
                 key: "plane", association: &association, unknown: &unknown,
                 scale: crate::test_support::millimeter_scale(25.4),
                 mesh_budget: &mut crate::mesh::MeshBudget::new(),
-            }, &mut storage,).map_err(|error| match error {
+            }, &mut storage, &mut metadata_storage,).map_err(|error| match error {
                 crate::curves::GeometryError::Codec(error) => error,
                 error => panic!("unexpected Brep staging error: {error}"),
             })
@@ -971,7 +982,7 @@ fn brep_mesh_cache_retention_refusal_reaches_the_caller() {
             unknown: &unknown,
             scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
-        }, &mut expand.ctx().reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"),)
+        }, &mut expand.ctx().reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"), &mut expand.ctx().reserve_scoped(0, "Rhino fixture link scratch").expect("fixture scratch"),)
     })
     .expect("mesh cache fits service limits");
     assert_eq!(staged.draft.model().tessellations.len(), 1);
@@ -995,7 +1006,7 @@ fn brep_mesh_cache_retention_refusal_reaches_the_caller() {
                 unknown: &unknown,
                 scale: MillimeterScale::IDENTITY,
                 mesh_budget: &mut crate::mesh::MeshBudget::new(),
-            }, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"),);
+            }, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"), &mut ctx.reserve_scoped(0, "Rhino fixture link scratch").expect("fixture scratch"),);
             result.map_err(|error| match error {
                 crate::curves::GeometryError::Codec(error) => {
                     if let cadmpeg_core::CodecError::ResourceLimit(ref refusal) = error {
@@ -1036,7 +1047,7 @@ fn assert_brep_carrier_slot_refusal(operation: &str) {
             unknown: &unknown,
             scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
-        }, &mut expand.ctx().reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"),)
+        }, &mut expand.ctx().reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"), &mut expand.ctx().reserve_scoped(0, "Rhino fixture link scratch").expect("fixture scratch"),)
     });
     assert!(service.is_ok(), "service Brep staging: {service:?}");
     let mut witnessed = false;
@@ -1058,7 +1069,7 @@ fn assert_brep_carrier_slot_refusal(operation: &str) {
             unknown: &unknown,
             scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
-        }, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"),);
+        }, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"), &mut ctx.reserve_scoped(0, "Rhino fixture link scratch").expect("fixture scratch"),);
         if matches!(
             result,
             Err(crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(ref refusal)))
