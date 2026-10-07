@@ -23,24 +23,24 @@ pub(super) fn clamped_nurbs_pcurve_endpoint_frames(
     };
     let [lower, upper] = domain.endpoints();
     let degree = cadmpeg_core::decode::index_from_u32(curve.degree());
-    for knot in knots.iter().take(degree + 1) {
-        ctx.charge_work_limit(1, "sketch NURBS endpoint knot scan")?;
-        if *knot != lower {
-            return Ok(None);
-        }
-    }
-    for knot in knots.iter().skip(points.count()).take(degree + 1) {
-        ctx.charge_work_limit(1, "sketch NURBS endpoint knot scan")?;
-        if *knot != upper {
-            return Ok(None);
-        }
+    if !ctx.all_by_limit(
+        &knots[..degree + 1],
+        |knot| Ok(*knot == lower),
+        "sketch NURBS endpoint knot scan",
+    )? || !ctx.all_by_limit(
+        &knots[points.count()..points.count() + degree + 1],
+        |knot| Ok(*knot == upper),
+        "sketch NURBS endpoint knot scan",
+    )? {
+        return Ok(None);
     }
     if let PcurveNurbsPoles::Rational { points } = points {
-        for pole in points {
-            ctx.charge_work_limit(1, "sketch NURBS endpoint weight scan")?;
-            if pole.weight.get() <= 0.0 {
-                return Ok(None);
-            }
+        if !ctx.all_by_limit(
+            points,
+            |pole| Ok(pole.weight.get() > 0.0),
+            "sketch NURBS endpoint weight scan",
+        )? {
+            return Ok(None);
         }
     }
     let Some(start) = points.point_at(0).map(crate::units::FinitePoint2::get) else {
