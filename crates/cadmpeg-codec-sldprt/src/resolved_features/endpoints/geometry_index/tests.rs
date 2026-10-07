@@ -177,3 +177,31 @@ fn object_sources_include_unlocated_records_and_all_owners_once() {
     assert_eq!(geometry.object_sources(&ctx, Some(7)).unwrap().as_ptr(), cached);
     assert!(geometry.object_sources(&ctx, Some(9)).unwrap().is_empty());
 }
+
+#[test]
+fn point_position_index_keeps_owner_and_point_kind_and_reuses_storage() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let marker = |id, owner: &str, kind, coordinates| {
+        let mut marker = SketchInputEntity::new(id, "lane", 0, 0, kind);
+        marker.feature_ref = Some(owner.into());
+        marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates);
+        marker
+    };
+    let point = marker("point", "owner", SketchInputKind::Point, [0.0, 0.0]);
+    let constrained = marker("constrained", "owner", SketchInputKind::ConstrainedPoint, [0.0, 2.0]);
+    let arc = marker("arc", "owner", SketchInputKind::Arc, [0.0, 3.0]);
+    let other = marker("other", "other-owner", SketchInputKind::Point, [0.0, 4.0]);
+    let geometry = MarkerGeometryIndex::new(&ctx, &[&arc, &other, &constrained, &point], MarkerPrefixIndex::new(&ctx, &[]).unwrap()).unwrap();
+    let index = geometry.point_positions(&arc).unwrap().unwrap();
+    let (mut coordinates, _storage) = index.point_candidates(&ctx,
+        super::super::arc_centers::PointPositionQuery::EqualRadii { start: Point2::new(-1.0, 0.0), end: Point2::new(1.0, 0.0) },
+        [None, None],
+    ).unwrap();
+    coordinates.sort_unstable_by(|left, right| left[1].total_cmp(&right[1]));
+    assert_eq!(coordinates, [[0.0, 0.0], [0.0, 2.0]]);
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "index SLDPRT arc center positions", None,
+    );
+    assert!(std::ptr::eq(index, geometry.point_positions(&arc).unwrap().unwrap()));
+}

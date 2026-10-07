@@ -115,3 +115,84 @@ fn position_index_releases_scratch_storage_after_each_sketch() {
         assert_eq!(index.records.len(), points.len());
     }
 }
+
+#[test]
+fn indexed_point_queries_preserve_relative_predicates_and_exclusions() {
+    use crate::resolved_features::relation_loci::same_dimension_length;
+    let ordered_bits = |mut points: Vec<[f64; 2]>| {
+        points.sort_unstable_by(|left, right| left[0].total_cmp(&right[0]).then_with(|| left[1].total_cmp(&right[1])));
+        points.into_iter().map(|point| point.map(f64::to_bits)).collect::<Vec<_>>()
+    };
+    for scale in [1.0e-250, SMALL_COORDINATE_SCALE, 1.0, 1.0e9, 1.0e150, 1.0e308] {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let start = Point2::new(-scale, 0.0);
+        let end = Point2::new(scale, 0.0);
+        let mut points = vec![(Some("excluded"), Point2::new(0.0, 0.0))];
+        for index in 0..128 {
+            let u = (f64::from(index) - 64.0) * scale * EPS_RELATIVE_POINT_MATCH;
+            let v = scale * (f64::from(index % 7) - 3.0);
+            points.push((None, Point2::new(u, v)));
+            points.push((None, Point2::new((f64::from(index) + 2.0) * scale, v)));
+        }
+        let index = ArcCenterIndex::from_points(&ctx, &points, 1.0).unwrap();
+        for query in [
+            PointPositionQuery::EqualRadii { start, end },
+            PointPositionQuery::Coordinates { point: Point2::new(scale, scale) },
+            PointPositionQuery::Coordinates { point: Point2::new(f64::INFINITY, f64::INFINITY) },
+        ] {
+            let expected = points.iter().filter_map(|&(reference, center)| {
+                if reference == Some("excluded") { return None; }
+                let matches = match query {
+                    PointPositionQuery::EqualRadii { start, end } => {
+                        let first_radius = (start.u - center.u).hypot(start.v - center.v);
+                        let second_radius = (end.u - center.u).hypot(end.v - center.v);
+                        first_radius > 0.0 && same_dimension_length(first_radius, second_radius)
+                    }
+                    PointPositionQuery::Coordinates { point } =>
+                        same_dimension_length(center.u, point.u) && same_dimension_length(center.v, point.v),
+                };
+                matches.then_some([center.u, center.v])
+            }).collect::<Vec<_>>();
+            let (actual, _storage) = index.point_candidates(&ctx, query, [Some("excluded"), None]).unwrap();
+            assert_eq!(ordered_bits(actual), ordered_bits(expected), "scale={scale}");
+        }
+    }
+}
+
+#[test]
+fn indexed_point_queries_prune_distant_positions_and_release_candidates() {
+    const MEASURE: &str = "measure SLDPRT point index query work";
+    let mut points = vec![(None, Point2::new(0.0, 0.0))];
+    for index in 1..4096 {
+        points.push((None, Point2::new(f64::from(index) * 4.0, f64::from(index % 13))));
+    }
+    for query in [
+        PointPositionQuery::EqualRadii { start: Point2::new(-1.0, 0.0), end: Point2::new(1.0, 0.0) },
+        PointPositionQuery::Coordinates { point: Point2::new(0.0, 0.0) },
+    ] {
+        let measure = |run_query: bool| crate::test_support::work_refusal_at(MEASURE, |ctx| {
+            let index = ArcCenterIndex::from_points(ctx, &points, 1.0)?;
+            if run_query {
+                let (coordinates, _storage) = index.point_candidates(ctx, query, [None, None])?;
+                assert_eq!(coordinates, [[0.0, 0.0]]);
+            }
+            ctx.charge_work(1, MEASURE)
+        });
+        let CodecError::ResourceLimit(build) = measure(false) else { panic!("work boundary"); };
+        let CodecError::ResourceLimit(query) = measure(true) else { panic!("work boundary"); };
+        assert!(query.used - build.used < cadmpeg_core::decode::u64_from_index(points.len()));
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 1 << 20;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let index = ArcCenterIndex::from_points(&ctx, &points, 1.0).unwrap();
+    for _ in 0..64 {
+        let (coordinates, _storage) = index.point_candidates(&ctx,
+            PointPositionQuery::Coordinates { point: Point2::new(f64::INFINITY, f64::INFINITY) }, [None, None],
+        ).unwrap();
+        assert_eq!(coordinates.len(), points.len());
+    }
+}

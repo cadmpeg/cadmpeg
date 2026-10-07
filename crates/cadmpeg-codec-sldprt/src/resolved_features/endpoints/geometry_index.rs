@@ -17,6 +17,7 @@ struct OwnerGeometry<'a, 'ctx> {
     native_arc_centers: std::cell::OnceCell<ArcCenterIndex<'a, 'ctx>>,
     profile_arc_centers: std::cell::OnceCell<ArcCenterIndex<'a, 'ctx>>,
     points: Vec<&'a SketchInputEntity>,
+    point_positions: std::cell::OnceCell<ArcCenterIndex<'a, 'ctx>>,
     coordinate_order: std::cell::OnceCell<Vec<(f64, &'a SketchInputEntity)>>,
     embedded_roster: std::cell::RefCell<EmbeddedRoster<'a>>,
 }
@@ -51,7 +52,7 @@ impl<'a, 'payload, 'ctx> MarkerGeometryIndex<'a, 'payload, 'ctx> {
             storage.with_storage(|| {
                 if !ctx.contains_key_hash_map(&owners, &owner, OPERATION)? {
                     ctx.insert_hash_map(&mut owners, owner, OwnerGeometry {
-                        points: Vec::new(), markers: Vec::new(), all: Vec::new(),
+                        points: Vec::new(), point_positions: std::cell::OnceCell::new(), markers: Vec::new(), all: Vec::new(),
                         all_roster: std::cell::OnceCell::new(), located_roster: std::cell::OnceCell::new(), geometry_roster: std::cell::OnceCell::new(),
                         coordinate_order: std::cell::OnceCell::new(), embedded_roster: std::cell::RefCell::new(EmbeddedRoster::default()),
                         native_arc_centers: std::cell::OnceCell::new(),
@@ -143,6 +144,17 @@ impl<'a, 'payload, 'ctx> MarkerGeometryIndex<'a, 'payload, 'ctx> {
             if profile { 1000.0 } else { 1.0 }, !profile, tolerance)?;
         Ok(Some(cache.get_or_init(|| index)))
     }
+
+    pub(in crate::resolved_features) fn point_positions<'query>(
+        &'query self, curve: &'query SketchInputEntity,
+    ) -> Result<Option<&'query ArcCenterIndex<'a, 'ctx>>, CodecError> {
+        const OPERATION: &str = "index SLDPRT point marker positions";
+        let Some(owner) = self.ctx.get_hash_map(&self.owners, &curve.feature_ref.as_deref(), OPERATION)? else { return Ok(None); };
+        if let Some(index) = owner.point_positions.get() { return Ok(Some(index)); }
+        let index = ArcCenterIndex::from_markers(self.ctx, &owner.points, 1.0, false, 1.0)?;
+        Ok(Some(owner.point_positions.get_or_init(|| index)))
+    }
+
 
 
 }
