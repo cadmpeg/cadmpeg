@@ -2,7 +2,7 @@
 //! STEP presentation style and topology color decoding.
 
 use crate::ids::{key_word, kind};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::reference::references;
 use super::{named_parameter, RecordExt, ValueExt};
@@ -34,7 +34,7 @@ pub(super) fn decode(
     product_definition_ids_by_source: &BTreeMap<u64, Vec<ProductDefinitionId>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
-    let mut typed = HashSet::new();
+    let mut typed = BTreeSet::new();
     let mut losses = Vec::new();
     let graph_limit = super::record_graph_limit(ctx);
     let face_indices = collect_identity_indices(
@@ -171,7 +171,7 @@ pub(super) fn decode(
             }
         }
         if style_targets.is_empty() && layer_targets.is_empty() && supported {
-            ctx.insert_hash_set(&mut typed, id, "step_presentation_typed_claims")?;
+            ctx.insert_btree_set(&mut typed, id, "step_presentation_typed_claims")?;
         } else if !style_targets.is_empty() || !layer_targets.is_empty() {
             ctx.insert_btree_map(
                 &mut deferred_invisibility,
@@ -269,7 +269,7 @@ pub(super) fn decode(
             },
             "step_presentation_layer_records",
         )?;
-        ctx.insert_hash_set(&mut typed, layer_id, "step_presentation_typed_claims")?;
+        ctx.insert_btree_set(&mut typed, layer_id, "step_presentation_typed_claims")?;
     }
     let mut styles = Vec::new();
     for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
@@ -297,7 +297,7 @@ pub(super) fn decode(
     let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
     for (style_id, _) in styles {
         if overridden_styles.contains(&style_id) {
-            ctx.insert_hash_set(&mut typed, style_id, "step_presentation_typed_claims")?;
+            ctx.insert_btree_set(&mut typed, style_id, "step_presentation_typed_claims")?;
             continue;
         }
         let style = &exchange.records()[&style_id];
@@ -314,7 +314,7 @@ pub(super) fn decode(
             continue;
         };
         if parts.styles.list().is_some_and(<[Value]>::is_empty) {
-            ctx.insert_hash_set(&mut typed, style_id, "step_presentation_typed_claims")?;
+            ctx.insert_btree_set(&mut typed, style_id, "step_presentation_typed_claims")?;
             continue;
         }
         let domain = style_domain(target_step, exchange, ctx)?;
@@ -512,16 +512,16 @@ pub(super) fn decode(
                 )?;
             }
         }
-        ctx.insert_hash_set(&mut typed, style_id, "step_presentation_typed_claims")?;
+        ctx.insert_btree_set(&mut typed, style_id, "step_presentation_typed_claims")?;
         if let Some(overridden) = overridden_style(ctx, style)? {
-            ctx.insert_hash_set(&mut typed, overridden, "step_presentation_typed_claims")?;
+            ctx.insert_btree_set(&mut typed, overridden, "step_presentation_typed_claims")?;
         }
         for &(id, _) in ctx.admit_iter(&(color_cache), "STEP decode map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(key, _)| key) {
             if !invalid_surface_sides.contains(&id) {
-                ctx.insert_hash_set(&mut typed, id, "step_presentation_typed_claims")?;
+                ctx.insert_btree_set(&mut typed, id, "step_presentation_typed_claims")?;
             }
         }
-        ctx.insert_hash_set(&mut typed, color_id, "step_presentation_typed_claims")?;
+        ctx.insert_btree_set(&mut typed, color_id, "step_presentation_typed_claims")?;
     }
     for (invisibility_id, (mut supported, style_targets, layer_targets)) in deferred_invisibility {
         for style_id in style_targets {
@@ -580,7 +580,7 @@ pub(super) fn decode(
             }
         }
         if supported {
-            ctx.insert_hash_set(
+            ctx.insert_btree_set(
                 &mut typed,
                 invisibility_id,
                 "step_presentation_typed_claims",
@@ -737,7 +737,7 @@ fn collect_invisible_body_ids(
 fn expand_style_targets(
     id: u64,
     exchange: &Exchange,
-    typed: &mut HashSet<u64>,
+    typed: &mut BTreeSet<u64>,
     active: &mut BTreeSet<u64>,
     depth: usize,
     graph_limit: usize,
@@ -766,7 +766,7 @@ fn expand_style_targets(
         ctx.push_vec(&mut targets, id, "step_presentation_style_target_items")?;
         return Ok(targets);
     };
-    ctx.insert_hash_set(typed, id, "step_presentation_typed_claims")?;
+    ctx.insert_btree_set(typed, id, "step_presentation_typed_claims")?;
     let mut targets = Vec::new();
     for item in named_parameter(ctx, record, set_name, 1)?
         .and_then(ValueExt::list)

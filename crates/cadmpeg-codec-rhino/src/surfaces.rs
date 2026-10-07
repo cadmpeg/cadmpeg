@@ -878,7 +878,7 @@ pub(crate) fn extrusion_nurbs(
     offset: usize,
 ) -> Result<NurbsSurface, GeometryError> {
     if start.degree() != end.degree()
-        || !ctx.equal(start.knots(), end.knots(), "Rhino extrusion knot equality")?
+        || !ctx.equal(start.knots().as_slice(), end.knots().as_slice(), "Rhino extrusion knot equality")?
         || start.pole_count() != end.pole_count()
         || !matching_pole_weights(ctx, start.pole_rows(), end.pole_rows())?
         || start.periodic() != end.periodic()

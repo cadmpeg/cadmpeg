@@ -626,7 +626,7 @@ fn association_loss_refuses(typed_id: u64) {
         };
         matches!(
             super::super::add_draughting_model_associations(
-                &exchange, &mut baseline.clone(), &targets, &mut Vec::new(), &mut HashSet::new(),
+                &exchange, &mut baseline.clone(), &targets, &mut Vec::new(), &mut std::collections::BTreeSet::new(),
             ),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems

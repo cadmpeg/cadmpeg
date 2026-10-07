@@ -91,7 +91,7 @@ fn record_graph_limit(ctx: &DecodeContext<'_>) -> usize {
 
 struct StageOutcome<T> {
     value: T,
-    claims: HashSet<u64>,
+    claims: BTreeSet<u64>,
     losses: Vec<LossNote>,
     notes: Vec<String>,
 }
@@ -108,6 +108,20 @@ impl<T> std::ops::DerefMut for StageOutcome<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.value
     }
+}
+
+/// Adds each claimed record id to a stage's claim set.
+fn claim_records(
+    ctx: &DecodeContext<'_>,
+    claims: &mut BTreeSet<u64>,
+    ids: impl IntoIterator<Item = u64>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let mut ids = ids.into_iter();
+    while let Some(id) = ctx.next_charged(&mut ids, operation)? {
+        ctx.insert_btree_set(claims, id, operation)?;
+    }
+    Ok(())
 }
 
 struct StepDecodeSession<'ctx, 'arena> {
@@ -231,13 +245,13 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
     }
 
     fn absorb<T>(&mut self, outcome: &mut StageOutcome<T>) -> Result<(), CodecError> {
-        let new_claims = self.ctx.admit_iter(&outcome
-            .claims, "STEP absorb traversal").map_err(CodecError::from)?
-            .filter(|id| !self.typed_records.contains(id))
-            .count();
-        self.ctx
-            .reserve_set(&mut self.typed_records, new_claims, "step_stage_claims")?;
-        self.typed_records.extend(outcome.claims.drain());
+        for id in self
+            .ctx
+            .admit_iter(std::mem::take(&mut outcome.claims), "step_stage_claims")?
+        {
+            self.ctx
+                .insert_hash_set(&mut self.typed_records, id, "step_stage_claims")?;
+        }
         self.ctx.reserve_vec(
             &mut self.body.losses,
             outcome.losses.len(),
@@ -971,9 +985,14 @@ fn retain_unowned_carriers(
     ctx.retain_vec(&mut ir.model.surfaces, |surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected), "STEP unowned surfaces retention")?;
     ctx.retain_vec(&mut ir.model.procedural_curves, |curve| retains_carrier(ctx, curve.id.as_str(), &removed_closure, &protected), "STEP unowned procedural_curves retention")?;
     ctx.retain_vec(&mut ir.model.procedural_surfaces, |surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected), "STEP unowned procedural_surfaces retention")?;
-    typed_records.retain(|id| {
-        !unowned_pcurves.contains(id) && (!removed_closure.contains(id) || protected.contains(id))
-    });
+    for id in ctx.admit_iter(&unowned_pcurves, "STEP unowned pcurve claim release")? {
+        ctx.remove_hash_set(typed_records, id, "STEP unowned pcurve claim release")?;
+    }
+    for id in ctx.admit_iter(&removed_closure, "STEP removed carrier claim release")? {
+        if !ctx.contains_btree_set(&protected, id, "STEP removed carrier protection lookup")? {
+            ctx.remove_hash_set(typed_records, id, "STEP removed carrier claim release")?;
+        }
+    }
     let protected_pcurves = ctx.admit_iter(&unowned_pcurves, "STEP protected pcurve traversal").map_err(cadmpeg_core::CodecError::from)?
         .filter(|id| protected.contains(id))
         .count();

@@ -187,7 +187,7 @@ pub(super) fn decode(
     if candidates.is_empty() {
         return Ok(StageOutcome {
             value: (),
-            claims: HashSet::new(),
+            claims: BTreeSet::new(),
             losses,
             notes: Vec::new(),
         });
@@ -351,7 +351,7 @@ pub(super) fn decode(
     }
 
     add_sheet_revision_usages(exchange, &mut drawings, &target_context, &mut losses, ctx)?;
-    let mut association_ids = HashSet::new();
+    let mut association_ids = BTreeSet::new();
     add_draughting_model_associations(
         exchange,
         &mut drawings,
@@ -360,12 +360,12 @@ pub(super) fn decode(
         &mut association_ids,
     )?;
 
-    let mut typed_records = HashSet::new();
+    let mut typed_records = BTreeSet::new();
     for &id in ctx.admit_iter(&(drawings), "STEP decode map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(key, _)| key) {
-        ctx.insert_hash_set(&mut typed_records, id, "step_drawing_typed_claims")?;
+        ctx.insert_btree_set(&mut typed_records, id, "step_drawing_typed_claims")?;
     }
-    for id in association_ids {
-        ctx.insert_hash_set(&mut typed_records, id, "step_drawing_typed_claims")?;
+    for id in ctx.admit_iter(association_ids, "step_drawing_typed_claims")? {
+        ctx.insert_btree_set(&mut typed_records, id, "step_drawing_typed_claims")?;
     }
     ctx.reserve_vec(
         &mut ir.model.drawings,
@@ -795,7 +795,7 @@ fn add_draughting_model_associations(
     drawings: &mut BTreeMap<u64, Drawing>,
     target_context: &TargetContext<'_>,
     losses: &mut Vec<LossNote>,
-    typed: &mut HashSet<u64>,
+    typed: &mut BTreeSet<u64>,
 ) -> Result<(), CodecError> {
     let ctx = target_context.ctx;
     for entity in exchange.matching_entity_ids(ctx, |name| DRAWING_ASSOCIATION_TYPES.contains(&name))?
@@ -955,7 +955,7 @@ fn add_draughting_model_associations(
             )?;
         }
         if complete {
-            target_context.ctx.insert_hash_set(
+            target_context.ctx.insert_btree_set(
                 typed,
                 association_id,
                 "step_drawing_typed_claims",

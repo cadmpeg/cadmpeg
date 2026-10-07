@@ -2,7 +2,7 @@
 //! STEP boundary-representation ownership and orientation decoding.
 
 use crate::ids::{key_word, kind};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 use std::rc::Rc;
 
@@ -398,7 +398,7 @@ pub(super) fn decode(
             edges_by_source: BTreeMap::new(),
             vertices_by_source: BTreeMap::new(),
         },
-        claims: HashSet::new(),
+        claims: BTreeSet::new(),
         losses: Vec::new(),
         notes: Vec::new(),
     };
@@ -468,7 +468,7 @@ pub(super) fn decode(
                 continue;
             }
             if built_wire_models.contains(&model) {
-                ctx.insert_hash_set(&mut result.claims, representation, "step_topology_claims")?;
+                ctx.insert_btree_set(&mut result.claims, representation, "step_topology_claims")?;
                 if let Some(body_ids) = result.body_by_root.get(&model) {
                     let copies = ctx.collect_indexed_vec(
                         body_ids.len(),
@@ -511,7 +511,7 @@ pub(super) fn decode(
                 } else {
                     committed += 1;
                     ctx.insert_btree_set(&mut built_wire_models, model, "step_built_wire_models")?;
-                    ctx.insert_hash_set(&mut built.typed, representation, "step_wire_typed")?;
+                    ctx.insert_btree_set(&mut built.typed, representation, "step_wire_typed")?;
                     push_topology_body_group(
                         &mut result.body_by_root,
                         model,
@@ -520,8 +520,8 @@ pub(super) fn decode(
                         "step_topology_root_groups",
                         "step_topology_root_bodies",
                     )?;
-                    for typed in std::mem::take(&mut built.typed) {
-                        ctx.insert_hash_set(&mut result.claims, typed, "step_topology_claims")?;
+                    for typed in ctx.admit_iter(std::mem::take(&mut built.typed), "step_topology_claims")? {
+                        ctx.insert_btree_set(&mut result.claims, typed, "step_topology_claims")?;
                     }
                 }
             }
@@ -591,8 +591,8 @@ pub(super) fn decode(
                     "step_topology_root_groups",
                     "step_topology_root_bodies",
                 )?;
-                for typed in std::mem::take(&mut built.typed) {
-                    ctx.insert_hash_set(&mut result.claims, typed, "step_topology_claims")?;
+                for typed in ctx.admit_iter(std::mem::take(&mut built.typed), "step_topology_claims")? {
+                    ctx.insert_btree_set(&mut result.claims, typed, "step_topology_claims")?;
                 }
             }
         }
@@ -653,7 +653,7 @@ pub(super) fn decode(
             continue;
         };
         if let Some(root_built) = built_roots.get(&key) {
-            ctx.insert_hash_set(&mut result.claims, id, "step_topology_claims")?;
+            ctx.insert_btree_set(&mut result.claims, id, "step_topology_claims")?;
             let copies = ctx.collect_indexed_vec(
                 root_built.body_ids.len(),
                 "step_topology_root_bodies",
@@ -750,8 +750,8 @@ pub(super) fn decode(
                         .try_clone_for_decode(ctx, "step_topology_built_bodies")?,
                     "step_topology_built_bodies",
                 )?;
-                for typed in std::mem::take(&mut built.typed) {
-                    ctx.insert_hash_set(&mut result.claims, typed, "step_topology_claims")?;
+                for typed in ctx.admit_iter(std::mem::take(&mut built.typed), "step_topology_claims")? {
+                    ctx.insert_btree_set(&mut result.claims, typed, "step_topology_claims")?;
                 }
                 // A rejected draft transfers no relation, so only a committed
                 // body contributes its admitted relations to the document.
@@ -876,8 +876,8 @@ pub(super) fn decode(
                 "step_topology_root_groups",
                 "step_topology_root_bodies",
             )?;
-            for typed in std::mem::take(&mut built.typed) {
-                ctx.insert_hash_set(&mut result.claims, typed, "step_topology_claims")?;
+            for typed in ctx.admit_iter(std::mem::take(&mut built.typed), "step_topology_claims")? {
+                ctx.insert_btree_set(&mut result.claims, typed, "step_topology_claims")?;
             }
         }
     }
@@ -945,7 +945,7 @@ pub(super) fn decode(
         )?
         .is_empty();
         if has_body {
-            ctx.insert_hash_set(&mut result.claims, id, "step_topology_claims")?;
+            ctx.insert_btree_set(&mut result.claims, id, "step_topology_claims")?;
         }
     }
     for face in ctx.admit_iter(&(commit_session.document().model.faces)[..], "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
@@ -1316,13 +1316,13 @@ fn build_wire_set(
     } else {
         IdentityKeyTail::empty()
     };
-    let mut typed = HashSet::new();
-    ctx.insert_hash_set(&mut typed, id, "step_wire_typed")?;
-    ctx.insert_hash_set(&mut typed, set_id, "step_wire_typed")?;
+    let mut typed = BTreeSet::new();
+    ctx.insert_btree_set(&mut typed, id, "step_wire_typed")?;
+    ctx.insert_btree_set(&mut typed, set_id, "step_wire_typed")?;
     if set_type == "CONNECTED_EDGE_SUB_SET"
         && !validate_subset_parent(set_id, set, set_type, exchange, losses, ctx)?
     {
-        typed.remove(&set_id);
+        ctx.remove_btree_set(&mut typed, &set_id, "step_wire_typed")?;
     }
     let mut used_vertices = BTreeSet::new();
     let mut wire_edges = Vec::new();
@@ -1372,9 +1372,9 @@ fn build_wire_set(
         )?;
         ctx.insert_btree_set(&mut used_vertices, start, "step_wire_used_vertices")?;
         ctx.insert_btree_set(&mut used_vertices, end, "step_wire_used_vertices")?;
-        ctx.insert_hash_set(&mut typed, edge_id, "step_wire_typed")?;
+        ctx.insert_btree_set(&mut typed, edge_id, "step_wire_typed")?;
         if let Some(parent) = edge.parent() {
-            ctx.insert_hash_set(&mut typed, parent, "step_wire_typed")?;
+            ctx.insert_btree_set(&mut typed, parent, "step_wire_typed")?;
         }
     }
     let vertex_suffix = IdentityKeyTail::empty()
@@ -1402,7 +1402,7 @@ fn build_wire_set(
             },
             "step_wire_vertices",
         )?;
-        ctx.insert_hash_set(&mut typed, vertex_id, "step_wire_typed")?;
+        ctx.insert_btree_set(&mut typed, vertex_id, "step_wire_typed")?;
     }
     let body = BodyId::from(ids::data(
         kind!("body"),
@@ -1551,9 +1551,9 @@ fn build_shell_wire_set(
     let Some(shell_record) = exchange.records().get(&shell_id) else {
         return Ok(None);
     };
-    let mut typed = HashSet::new();
-    ctx.insert_hash_set(&mut typed, id, "step_wire_typed")?;
-    ctx.insert_hash_set(&mut typed, shell_id, "step_wire_typed")?;
+    let mut typed = BTreeSet::new();
+    ctx.insert_btree_set(&mut typed, id, "step_wire_typed")?;
+    ctx.insert_btree_set(&mut typed, shell_id, "step_wire_typed")?;
     let mut edge_uses = Vec::new();
     let mut used_vertices = BTreeSet::new();
     let mut free_vertices = BTreeSet::new();
@@ -1598,10 +1598,10 @@ fn build_shell_wire_set(
                         "step_wire_used_vertices",
                     )?;
                     for claim in [loop_id, oriented_id, edge_id] {
-                        ctx.insert_hash_set(&mut typed, claim, "step_wire_typed")?;
+                        ctx.insert_btree_set(&mut typed, claim, "step_wire_typed")?;
                     }
                     if let Some(parent) = edge.parent() {
-                        ctx.insert_hash_set(&mut typed, parent, "step_wire_typed")?;
+                        ctx.insert_btree_set(&mut typed, parent, "step_wire_typed")?;
                     }
                 }
             } else if loop_record.partial(ctx, "VERTEX_LOOP")?.is_some() {
@@ -1611,7 +1611,7 @@ fn build_shell_wire_set(
                 ctx.insert_btree_set(&mut used_vertices, vertex, "step_wire_used_vertices")?;
                 ctx.insert_btree_set(&mut free_vertices, vertex, "step_wire_free_vertices")?;
                 for claim in [loop_id, vertex] {
-                    ctx.insert_hash_set(&mut typed, claim, "step_wire_typed")?;
+                    ctx.insert_btree_set(&mut typed, claim, "step_wire_typed")?;
                 }
             } else {
                 return Ok(None);
@@ -1633,7 +1633,7 @@ fn build_shell_wire_set(
         ctx.insert_btree_set(&mut used_vertices, vertex, "step_wire_used_vertices")?;
         ctx.insert_btree_set(&mut free_vertices, vertex, "step_wire_free_vertices")?;
         for claim in [loop_id, vertex] {
-            ctx.insert_hash_set(&mut typed, claim, "step_wire_typed")?;
+            ctx.insert_btree_set(&mut typed, claim, "step_wire_typed")?;
         }
     } else {
         return Ok(None);
@@ -1806,7 +1806,7 @@ fn mark_standalone_geometric_set(
     representation: &RawRecord,
     exchange: &Exchange,
     carrier_index: &CarrierIndex,
-    typed: &mut HashSet<u64>,
+    typed: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let Some(set_ids) = representation_item_values(ctx, representation)? else {
@@ -1829,12 +1829,12 @@ fn mark_standalone_geometric_set(
                 || carrier_index.surfaces.contains_key(&item)
         });
         if has_decoded_member {
-            ctx.insert_hash_set(typed, set_id, "step_topology_claims")?;
+            ctx.insert_btree_set(typed, set_id, "step_topology_claims")?;
             decoded = true;
         }
     }
     if decoded {
-        ctx.insert_hash_set(typed, id, "step_topology_claims")?;
+        ctx.insert_btree_set(typed, id, "step_topology_claims")?;
     }
     Ok(decoded)
 }
@@ -1857,8 +1857,8 @@ fn build_geometric_set(
         )?;
         return Ok(None);
     };
-    let mut typed = HashSet::new();
-    ctx.insert_hash_set(&mut typed, id, "step_geometric_set_typed")?;
+    let mut typed = BTreeSet::new();
+    ctx.insert_btree_set(&mut typed, id, "step_geometric_set_typed")?;
     let body = BodyId::from(ids::data(kind!("body"), id));
     let region = RegionId::from(ids::data(kind!("region"), id));
     let shell_id = ShellId::from(ids::data(
@@ -1886,7 +1886,7 @@ fn build_geometric_set(
             )), "step_topology_losses")?;
             continue;
         };
-        ctx.insert_hash_set(&mut typed, set_id, "step_geometric_set_typed")?;
+        ctx.insert_btree_set(&mut typed, set_id, "step_geometric_set_typed")?;
         for surface_step in items.iter().filter_map(ValueExt::reference) {
             let surface = SurfaceId::from(ids::data(kind!("surface"), surface_step));
             if carrier_index.surfaces.contains_key(&surface_step) {
@@ -2348,7 +2348,7 @@ fn edge_same_sense(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option
 }
 
 struct Built {
-    typed: HashSet<u64>,
+    typed: BTreeSet<u64>,
     draft: ModelDraft,
     body_id: BodyId,
     shell_sources: BTreeSet<u64>,
@@ -2394,7 +2394,7 @@ impl From<CodecError> for StageError {
 }
 
 struct StagedTopologyParts {
-    typed: HashSet<u64>,
+    typed: BTreeSet<u64>,
     vertices: Vec<Vertex>,
     edges: Vec<Edge>,
     coedges: Vec<Coedge>,
@@ -2817,8 +2817,8 @@ fn build_one(
     let solid = root.partial(ctx, "MANIFOLD_SOLID_BREP")?.is_some()
         || root.partial(ctx, "BREP_WITH_VOIDS")?.is_some()
         || root.partial(ctx, "FACETED_BREP")?.is_some();
-    let mut typed = HashSet::new();
-    ctx.insert_hash_set(&mut typed, id, "step_brep_typed")?;
+    let mut typed = BTreeSet::new();
+    ctx.insert_btree_set(&mut typed, id, "step_brep_typed")?;
     let mut vertices = Vec::new();
     let mut edges = Vec::new();
     let mut coedges = Vec::new();
@@ -2860,7 +2860,7 @@ fn build_one(
     let mut admissions = Vec::new();
     for &shell_reference in ctx.admit_iter(shell_steps, "STEP body topology traversal").map_err(CodecError::from)? {
         let (shell_step, shell_forward) = if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
-            ctx.insert_hash_set(&mut typed, shell_reference, "step_brep_typed")?;
+            ctx.insert_btree_set(&mut typed, shell_reference, "step_brep_typed")?;
             (shell_reference, true)
         } else {
             require_carrier(
@@ -2893,7 +2893,7 @@ fn build_one(
             if set_type == "CONNECTED_FACE_SUB_SET"
                 && !validate_subset_parent(shell_step, sr, set_type, exchange, losses, ctx)?
             {
-                typed.remove(&shell_step);
+                ctx.remove_btree_set(&mut typed, &shell_step, "step_brep_typed")?;
             }
             let members = require_carrier(
                 connected_set_members(ctx, sr, set_type)?,
@@ -2978,7 +2978,7 @@ fn build_one(
                 return Err(BuildError::Absent);
             }
             for claim in face_info.typed {
-                ctx.insert_hash_set(&mut typed, claim, "step_brep_typed")?;
+                ctx.insert_btree_set(&mut typed, claim, "step_brep_typed")?;
             }
             let face_suffix = if scope_faces {
                 if scope_root {
@@ -3139,7 +3139,7 @@ fn build_one(
                         "step_brep_used_vertices",
                     )?;
                     for claim in [bound_step, loop_step] {
-                        ctx.insert_hash_set(&mut typed, claim, "step_brep_typed")?;
+                        ctx.insert_btree_set(&mut typed, claim, "step_brep_typed")?;
                     }
                     continue;
                 }
@@ -3269,7 +3269,7 @@ fn build_one(
                             "step_brep_radial_groups",
                             "step_brep_radial_members",
                         )?;
-                        ctx.insert_hash_set(&mut typed, loop_step, "step_brep_typed")?;
+                        ctx.insert_btree_set(&mut typed, loop_step, "step_brep_typed")?;
                     }
                     let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
                         .map_err(cadmpeg_core::CodecError::from)?
@@ -3287,7 +3287,7 @@ fn build_one(
                         "step_brep_loops",
                     )?;
                     ctx.push_vec(&mut loop_ids, (is_outer_bound, lid), "step_brep_loop_ids")?;
-                    ctx.insert_hash_set(&mut typed, bound_step, "step_brep_typed")?;
+                    ctx.insert_btree_set(&mut typed, bound_step, "step_brep_typed")?;
                     continue;
                 }
                 if lr.partial(ctx, "EDGE_LOOP")?.is_none() {
@@ -3521,10 +3521,10 @@ fn build_one(
                         )?;
                     }
                     for claim in [use_step, o.edge] {
-                        ctx.insert_hash_set(&mut typed, claim, "step_brep_typed")?;
+                        ctx.insert_btree_set(&mut typed, claim, "step_brep_typed")?;
                     }
                     if let Some(parent) = edge.parent() {
-                        ctx.insert_hash_set(&mut typed, parent, "step_brep_typed")?;
+                        ctx.insert_btree_set(&mut typed, parent, "step_brep_typed")?;
                     }
                 }
                 let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
@@ -3544,7 +3544,7 @@ fn build_one(
                 )?;
                 ctx.push_vec(&mut loop_ids, (is_outer_bound, lid), "step_brep_loop_ids")?;
                 for claim in [bound_step, loop_step] {
-                    ctx.insert_hash_set(&mut typed, claim, "step_brep_typed")?;
+                    ctx.insert_btree_set(&mut typed, claim, "step_brep_typed")?;
                 }
             }
             // A face with more than one FACE_OUTER_BOUND is refused above, so
@@ -3585,7 +3585,7 @@ fn build_one(
                 "step_brep_faces",
             )?;
             ctx.push_vec(&mut face_ids, fid, "step_brep_face_ids")?;
-            ctx.insert_hash_set(&mut typed, face_step, "step_brep_typed")?;
+            ctx.insert_btree_set(&mut typed, face_step, "step_brep_typed")?;
         }
         let mut component_edge_text_storage = ctx.reserve_scoped(0, "STEP component edge identity")?;
         let mut component_edge_vertices = BTreeMap::new();
@@ -3711,7 +3711,7 @@ fn build_one(
                 "step_brep_region_shells",
             )?;
         }
-        ctx.insert_hash_set(&mut typed, shell_step, "step_brep_typed")?;
+        ctx.insert_btree_set(&mut typed, shell_step, "step_brep_typed")?;
     }
     for (shell_step, edge_id) in used_e {
         let e = require_carrier(
@@ -3773,7 +3773,7 @@ fn build_one(
             },
             "step_brep_vertices",
         )?;
-        ctx.insert_hash_set(&mut typed, vertex_id, "step_brep_typed")?;
+        ctx.insert_btree_set(&mut typed, vertex_id, "step_brep_typed")?;
     }
     for (shell_step, point_id) in poly_points {
         require_carrier(
@@ -3792,7 +3792,7 @@ fn build_one(
             },
             "step_brep_vertices",
         )?;
-        ctx.insert_hash_set(&mut typed, point_id, "step_brep_typed")?;
+        ctx.insert_btree_set(&mut typed, point_id, "step_brep_typed")?;
     }
     for indices in ctx.admit_iter(&radial, "STEP body topology radial traversal").map_err(CodecError::from)?.map(|(_, value)| value) {
         for (position, &index) in ctx.admit_iter(&(indices)[..], "STEP body topology traversal").map_err(CodecError::from)?.enumerate() {
@@ -5471,7 +5471,7 @@ fn curve_selection_parameter_domain_from_geometry(
 struct ShellDef {
     base: u64,
     forward: bool,
-    typed: HashSet<u64>,
+    typed: BTreeSet<u64>,
 }
 
 fn shell_defs(
@@ -5499,10 +5499,10 @@ fn shell_defs(
 }
 
 fn copy_shell_def(definition: &ShellDef, ctx: &DecodeContext<'_>) -> Result<ShellDef, CodecError> {
-    let mut typed = HashSet::new();
-    for &id in ctx.admit_iter(&definition.typed, "STEP copy shell def traversal").map_err(cadmpeg_core::CodecError::from)? {
-        ctx.insert_hash_set(&mut typed, id, "step_shell_definition_typed_copy")?;
-    }
+    let typed = ctx.collect_btree_set(
+        definition.typed.iter().copied(),
+        "step_shell_definition_typed_copy",
+    )?;
     Ok(ShellDef {
         base: definition.base,
         forward: definition.forward,
@@ -5541,7 +5541,7 @@ fn shell_def_cached(
             Some("OPEN_SHELL" | "CLOSED_SHELL") => Some(ShellDef {
                 base: reference,
                 forward: true,
-                typed: HashSet::new(),
+                typed: BTreeSet::new(),
             }),
             Some("ORIENTED_OPEN_SHELL" | "ORIENTED_CLOSED_SHELL") => {
                 let shell_type =
@@ -5569,7 +5569,7 @@ fn shell_def_cached(
                         shell_def_cached(element, exchange, active, cache, ctx)?
                     {
                         definition.forward = definition.forward == orientation;
-                        ctx.insert_hash_set(
+                        ctx.insert_btree_set(
                             &mut definition.typed,
                             reference,
                             "step_shell_definition_typed",
@@ -5599,14 +5599,14 @@ fn shell_def_cached(
 fn shell_def_for(
     reference: u64,
     shells: &BTreeMap<u64, ShellDef>,
-    typed: &mut HashSet<u64>,
+    typed: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(u64, bool)>, CodecError> {
     let Some(definition) = shells.get(&reference) else {
         return Ok(None);
     };
     for &id in ctx.admit_iter(&definition.typed, "STEP shell def for traversal").map_err(cadmpeg_core::CodecError::from)? {
-        ctx.insert_hash_set(typed, id, "step_shell_definition_claims")?;
+        ctx.insert_btree_set(typed, id, "step_shell_definition_claims")?;
     }
     Ok(Some((definition.base, definition.forward)))
 }
@@ -5618,7 +5618,7 @@ struct FaceInfo<'a> {
     surface: Option<u64>,
     same_sense: bool,
     reverse_bound_orientation: bool,
-    typed: HashSet<u64>,
+    typed: BTreeSet<u64>,
 }
 
 fn is_face_record(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<bool, CodecError> {
@@ -5689,7 +5689,7 @@ fn face_attributes_inner<'a>(
             if let Some(name) = face_name_value(ctx, record)? {
                 base.name = Some(name);
             }
-            ctx.insert_hash_set(&mut base.typed, face_element, "step_face_attribute_typed")?;
+            ctx.insert_btree_set(&mut base.typed, face_element, "step_face_attribute_typed")?;
             Some(base)
         }
         "SUBFACE" => {
@@ -5707,7 +5707,7 @@ fn face_attributes_inner<'a>(
             let Some(bounds) = direct_face_bounds(record, exchange, ctx)? else {
                 return Ok(None);
             };
-            ctx.insert_hash_set(&mut parent_info.typed, parent, "step_face_attribute_typed")?;
+            ctx.insert_btree_set(&mut parent_info.typed, parent, "step_face_attribute_typed")?;
             if let Some(name) = face_name_value(ctx, record)? {
                 parent_info.name = Some(name);
             }
@@ -5730,7 +5730,7 @@ fn face_attributes_inner<'a>(
                 surface: None,
                 same_sense: true,
                 reverse_bound_orientation: false,
-                typed: HashSet::new(),
+                typed: BTreeSet::new(),
             })
         }
         "ADVANCED_FACE" | "FACE_SURFACE" => {
@@ -5752,7 +5752,7 @@ fn face_attributes_inner<'a>(
                 surface: Some(surface),
                 same_sense,
                 reverse_bound_orientation: false,
-                typed: HashSet::new(),
+                typed: BTreeSet::new(),
             })
         }
         _ => None,

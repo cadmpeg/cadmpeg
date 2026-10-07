@@ -5698,20 +5698,12 @@ pub(crate) fn install(
             per_viewport_settings,
         });
     }
-    let mut group_index_counts = Vec::<(i32, usize)>::new();
-    let mut group_index_workspace = ctx.reserve_scoped(0, "Rhino group index workspace")?;
-    for group in ctx.admit_iter(&(groups)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
-        match group_index_counts.binary_search_by_key(&group.archive_index, |(index, _)| *index) {
-            Ok(position) => group_index_counts[position].1 += 1,
-            Err(position) => {
-                group_index_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(i32, usize)>(),
-                ))?;
-                ctx.reserve_vec(&mut group_index_counts, 1, "Rhino group index counts")?;
-                group_index_counts.insert(position, (group.archive_index, 1));
-            }
-        }
-    }
+    let (group_index_counts, _group_index_workspace) = crate::settings::index_occurrences(
+        ctx,
+        &groups,
+        |group| group.archive_index,
+        "Rhino group index counts",
+    )?;
     for (index, count) in ctx.admit_iter(&(group_index_counts)[..], "Rhino install traversal").map_err(cadmpeg_core::CodecError::from)? {
         if *count > 1 {
             push_presentation_loss(
@@ -5730,15 +5722,17 @@ pub(crate) fn install(
             "{disambiguated_group_count} group source identities were disambiguated by source offset"
         ))?;
     }
-    for group in &mut groups {
-        group.links = if group_index_counts
-            .binary_search_by_key(&group.archive_index, |(index, _)| *index)
+    for group in ctx.admit_iter(&mut groups[..], "Rhino group link traversal")? {
+        let index_count = ctx
+            .binary_search_by(
+                &group_index_counts,
+                |(index, _)| Ok(index.cmp(&group.archive_index)),
+                "Rhino group index count lookup",
+            )?
             .ok()
-            .and_then(|position| group_index_counts.get(position).map(|(_, count)| *count))
-            == Some(1)
-        {
-            group_members
-                .remove(&group.archive_index)
+            .and_then(|position| group_index_counts.get(position).map(|(_, count)| *count));
+        group.links = if index_count == Some(1) {
+            ctx.remove_hash_map(&mut group_members, &group.archive_index, "Rhino group member removal")?
                 .unwrap_or_default()
         } else {
             Vec::new()

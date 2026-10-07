@@ -2,7 +2,7 @@
 //! AP242 indexed tessellation decoding.
 
 use crate::ids::kind;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
@@ -49,7 +49,7 @@ pub(super) fn decode(
             })?;
         }
     }
-    let mut typed = HashSet::new();
+    let mut typed = BTreeSet::new();
     let mut losses = Vec::new();
     let mut reservations = AssociationReservations::new(ctx)?;
     let mut item_bodies = BTreeMap::<u64, BTreeSet<BodyId>>::new();
@@ -125,7 +125,7 @@ pub(super) fn decode(
         for item in item_ids {
             associator.visit(item, None)?;
         }
-        ctx.insert_hash_set(&mut typed, id, "step_tessellation_claims")?;
+        ctx.insert_btree_set(&mut typed, id, "step_tessellation_claims")?;
     }
     let mut representation_storage =
         ctx.reserve_scoped(0, "step tessellation representation storage")?;
@@ -777,8 +777,8 @@ pub(super) fn decode(
         ir.model
             .tessellations
             .push(mesh.with_body(body).with_source_object(source_object));
-        ctx.insert_hash_set(&mut typed, id, "step_tessellation_claims")?;
-        ctx.insert_hash_set(&mut typed, coordinate_id, "step_tessellation_claims")?;
+        ctx.insert_btree_set(&mut typed, id, "step_tessellation_claims")?;
+        ctx.insert_btree_set(&mut typed, coordinate_id, "step_tessellation_claims")?;
     }
     if !ir.model.tessellations.is_empty() {
         for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
@@ -786,7 +786,7 @@ pub(super) fn decode(
                 || has_entity(ctx, record, "TESSELLATED_SOLID")?
                 || has_entity(ctx, record, "TESSELLATED_SHELL")?
             {
-                ctx.insert_hash_set(&mut typed, id, "step_tessellation_claims")?;
+                ctx.insert_btree_set(&mut typed, id, "step_tessellation_claims")?;
             }
         }
     }
@@ -865,7 +865,7 @@ struct TessellationItemAssociator<'a, 'ctx, 'arena> {
     item_bodies: &'a mut BTreeMap<u64, BTreeSet<BodyId>>,
     declared_items: &'a mut BTreeSet<u64>,
     unresolved_containers: &'a mut BTreeSet<u64>,
-    typed: &'a mut HashSet<u64>,
+    typed: &'a mut BTreeSet<u64>,
     geometry: &'a GeometryData,
     placements: &'a mut BTreeMap<u64, Vec<Transform>>,
     unresolved_placements: &'a mut BTreeSet<u64>,
@@ -979,7 +979,7 @@ impl TessellationItemAssociator<'_, '_, '_> {
             }
             if self.mode != AssociationMode::DetachedAnnotation {
                 self.ctx
-                    .insert_hash_set(self.typed, id, "step_tessellation_claims")?;
+                    .insert_btree_set(self.typed, id, "step_tessellation_claims")?;
             }
             if !self.bodies.is_empty() && matches!(kind, "TESSELLATED_SOLID" | "TESSELLATED_SHELL")
             {

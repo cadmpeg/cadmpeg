@@ -12,7 +12,6 @@ use cadmpeg_ir::ids::{BodyId, RegionId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Region, Vertex};
-use std::collections::HashSet;
 use std::io::Cursor;
 
 use crate::loss::StepLossCode;
@@ -740,7 +739,7 @@ fn shared_surface_carrier_is_staged_once() {
     let region_id = RegionId::mint("step:data:region#shared-surface").expect("identity grammar");
     let built = super::super::staged_topology(
         super::super::StagedTopologyParts {
-            typed: HashSet::new(),
+            typed: std::collections::BTreeSet::new(),
             vertices: Vec::new(),
             edges: Vec::new(),
             coedges: Vec::new(),

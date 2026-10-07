@@ -18,17 +18,17 @@ fn entity_index_is_not_part_of_exchange_equality() {
 #[test]
 fn released_source_graph_drops_records_and_cached_entity_indexes() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=POINT();ENDSEC;END-ISO-10303-21;";
-    let (mut exchange, _) =
-        crate::test_support::with_service_context(source, crate::parse::parse_inner)
-            .expect("required invariant");
-    assert!(exchange.has_entity("POINT"));
+    crate::test_support::with_service_context(source, |bytes, ctx| {
+        let (mut exchange, _) = crate::parse::parse_inner(bytes, ctx).expect("required invariant");
+        assert!(exchange.has_entity(ctx, "POINT").expect("lookup fits the budget"));
 
-    let _ = exchange.release_source_graph();
+        let _ = exchange.release_source_graph();
 
-    assert!(exchange.records().is_empty());
-    assert!(exchange.header().is_empty());
-    assert!(exchange.data().is_empty());
-    assert!(!exchange.has_entity("POINT"));
+        assert!(exchange.records().is_empty());
+        assert!(exchange.header().is_empty());
+        assert!(exchange.data().is_empty());
+        assert!(!exchange.has_entity(ctx, "POINT").expect("lookup fits the budget"));
+    });
 }
 
 #[test]
