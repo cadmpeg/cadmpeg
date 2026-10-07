@@ -10648,16 +10648,24 @@ impl CatiaNative {
             }
             let mut incidences = GraphIncidences::new(ctx, &graph.records)?;
             for entity in ctx.admit_iter(&mut entities, "catia_native_graph_entity_values")? {
-                entity.definition_schema_selections = definition_schema_selections(
-                    ctx,
-                    &entity_table::parse_definition_schema_selectors(
-                        ctx,
-                        entity.definition_prefix(),
-                    )?,
-                    catalog,
-                )?;
-                let value_fields = entity.value_fields_charged(ctx)?;
-                let value_packets = entity.value_packets(ctx, &value_fields)?;
+                // Selectors, fields and packets are dropped with this entity's pass.
+                let (selectors, _selector_storage) =
+                    ctx.with_scoped_storage("catia_native_entity_selectors", || {
+                        entity_table::parse_definition_schema_selectors(
+                            ctx,
+                            entity.definition_prefix(),
+                        )
+                    })?;
+                entity.definition_schema_selections =
+                    definition_schema_selections(ctx, &selectors, catalog)?;
+                let (value_fields, _field_storage) = ctx
+                    .with_scoped_storage("catia_native_entity_value_fields", || {
+                        entity.value_fields_charged(ctx)
+                    })?;
+                let (value_packets, _packet_storage) = ctx
+                    .with_scoped_storage("catia_native_entity_value_packets", || {
+                        entity.value_packets(ctx, &value_fields)
+                    })?;
                 entity.value_schema_selections =
                     entity_value_schema_selections(ctx, &value_fields, catalog, &value_packets)?;
                 entity.parse_suffix(ctx)?;
