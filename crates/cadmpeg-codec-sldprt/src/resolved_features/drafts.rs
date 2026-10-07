@@ -107,7 +107,9 @@ fn declared_draft_operands(
         if lane.native_payload.get(offset..offset + 2) != Some(token.as_slice()) {
             continue;
         }
-        if let Some(record) = records_storage.with_storage(|| draft_plane_reference_at(ctx, &lane.native_payload, offset, end))? {
+        if let Some(record) = records_storage
+            .with_storage(|| draft_plane_reference_at(ctx, &lane.native_payload, offset, end))?
+        {
             records_storage.with_storage(|| ctx.push_vec(&mut records, record, OPERATION))?;
         }
     }
@@ -126,15 +128,27 @@ fn declared_draft_operands(
     };
     let mut faces = Vec::<Vec<FeatureInputComponentPathEntry>>::new();
     while let Some((_, path, _)) = ctx.next_charged(&mut records, OPERATION)? {
-        records_storage.with_storage(|| push_distinct_face(ctx, &mut faces, path, "collect SLDPRT declared draft faces"))?;
+        records_storage.with_storage(|| {
+            push_distinct_face(ctx, &mut faces, path, "collect SLDPRT declared draft faces")
+        })?;
     }
-    if faces.is_empty() { return Ok(None); }
+    if faces.is_empty() {
+        return Ok(None);
+    }
     let neutral_plane = ctx.collect_vec(neutral_plane.iter().cloned(), OPERATION)?;
     let mut retained_faces = Vec::new();
     for face in ctx.admit_iter(&faces, OPERATION)? {
-        ctx.push_vec(&mut retained_faces, ctx.collect_vec(face.iter().cloned(), OPERATION)?, OPERATION)?;
+        ctx.push_vec(
+            &mut retained_faces,
+            ctx.collect_vec(face.iter().cloned(), OPERATION)?,
+            OPERATION,
+        )?;
     }
-    Ok(Some(DraftOperands { anchor: DraftAnchor::NeutralPlane(neutral_plane), faces: retained_faces, pull_direction }))
+    Ok(Some(DraftOperands {
+        anchor: DraftAnchor::NeutralPlane(neutral_plane),
+        faces: retained_faces,
+        pull_direction,
+    }))
 }
 
 fn compact_parting_line_draft_operands(
@@ -168,9 +182,17 @@ fn compact_parting_line_draft_operands(
             continue;
         }
         if let Some(CompactDraftSelection(role, paths, selection_end)) =
-            storage.with_storage(|| compact_draft_selection_at(ctx, &lane.native_payload, marker, OPERATION))?
+            storage.with_storage(|| {
+                compact_draft_selection_at(ctx, &lane.native_payload, marker, OPERATION)
+            })?
         {
-            storage.with_storage(|| ctx.push_vec(&mut records, (marker, role, paths, selection_end), OPERATION))?;
+            storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut records,
+                    (marker, role, paths, selection_end),
+                    OPERATION,
+                )
+            })?;
         }
     }
     let is_parting = |record: &(usize, CompactDraftSelectionRole, _, usize)| {
@@ -223,22 +245,38 @@ fn compact_parting_line_draft_operands(
             continue;
         }
         for path in ctx.admit_iter(paths, "collect SLDPRT compact draft faces")? {
-            storage.with_storage(|| push_distinct_face(ctx, &mut faces, path, "collect SLDPRT compact draft faces"))?;
+            storage.with_storage(|| {
+                push_distinct_face(ctx, &mut faces, path, "collect SLDPRT compact draft faces")
+            })?;
         }
     }
     let Some(parting_paths) = parting_paths else {
         return Ok(None);
     };
-    if faces.is_empty() { return Ok(None); }
+    if faces.is_empty() {
+        return Ok(None);
+    }
     let mut retained_tools = Vec::new();
     for path in ctx.admit_iter(&parting_paths, OPERATION)? {
-        ctx.push_vec(&mut retained_tools, ctx.collect_vec(path.iter().cloned(), OPERATION)?, OPERATION)?;
+        ctx.push_vec(
+            &mut retained_tools,
+            ctx.collect_vec(path.iter().cloned(), OPERATION)?,
+            OPERATION,
+        )?;
     }
     let mut retained_faces = Vec::new();
     for path in ctx.admit_iter(&faces, OPERATION)? {
-        ctx.push_vec(&mut retained_faces, ctx.collect_vec(path.iter().cloned(), OPERATION)?, OPERATION)?;
+        ctx.push_vec(
+            &mut retained_faces,
+            ctx.collect_vec(path.iter().cloned(), OPERATION)?,
+            OPERATION,
+        )?;
     }
-    Ok(Some(DraftOperands { anchor: DraftAnchor::PartingTool(retained_tools), faces: retained_faces, pull_direction }))
+    Ok(Some(DraftOperands {
+        anchor: DraftAnchor::PartingTool(retained_tools),
+        faces: retained_faces,
+        pull_direction,
+    }))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

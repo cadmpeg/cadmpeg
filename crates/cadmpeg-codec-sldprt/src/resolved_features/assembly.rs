@@ -19,11 +19,15 @@ pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
 
 /// Whether a lane carries supplemental configuration objects.
 pub(crate) fn is_supplemental_config_lane_charged(
-    ctx: &DecodeContext<'_>, lane: &FeatureInputLane,
+    ctx: &DecodeContext<'_>,
+    lane: &FeatureInputLane,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     const MARKER: &[u8] = b":config-objects#";
-    ctx.any_by(lane.id.as_bytes().windows(MARKER.len()), |window| Ok(window == MARKER),
-        "classify SLDPRT supplemental configuration lane")
+    ctx.any_by(
+        lane.id.as_bytes().windows(MARKER.len()),
+        |window| Ok(window == MARKER),
+        "classify SLDPRT supplemental configuration lane",
+    )
 }
 
 pub(crate) fn lanes(

@@ -1300,7 +1300,13 @@ fn unclaimed_seeded_bore_axes_refuse_collection_growth() {
             let mut policy = DecodePolicy::default();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-            unclaimed_seeded_hole_candidates(&ctx, &[model_hole()], &[0], 4.0, vec![placement.clone()])
+            unclaimed_seeded_hole_candidates(
+                &ctx,
+                &[model_hole()],
+                &[0],
+                4.0,
+                vec![placement.clone()],
+            )
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)

@@ -1398,7 +1398,11 @@ fn compact_body_component_entries_at(
         else {
             return Ok(None);
         };
-        let mixed = ctx.any_by(&components, |component| Ok(component.instance.is_none() || component.local_id.is_none()), "decode SLDPRT body mixed path")?;
+        let mixed = ctx.any_by(
+            &components,
+            |component| Ok(component.instance.is_none() || component.local_id.is_none()),
+            "decode SLDPRT body mixed path",
+        )?;
         Ok(mixed.then_some((components, end)))
     };
     if let Some((components, _)) = parse(count)? {
@@ -2028,16 +2032,23 @@ fn compact_termination_reference_offsets(
     let end = super::DeclaredEnd::of(end, payload.len()).map_or(start, super::DeclaredEnd::get);
     let mut candidates = ReferenceOffsets::Empty;
     let mut markers = start..end;
-    while let Some(marker) = ctx.next_charged(&mut markers, "scan SLDPRT termination reference offsets")? {
+    while let Some(marker) =
+        ctx.next_charged(&mut markers, "scan SLDPRT termination reference offsets")?
+    {
         let present = if require_path {
-            let (path, _storage) = ctx.with_scoped_storage("SLDPRT termination reference candidate", || compact_termination_reference_path_at(ctx, payload, marker))?;
+            let (path, _storage) = ctx
+                .with_scoped_storage("SLDPRT termination reference candidate", || {
+                    compact_termination_reference_path_at(ctx, payload, marker)
+                })?;
             path.is_some()
         } else {
             compact_termination_reference_frame_at(payload, marker).is_some()
         };
         if present {
             candidates.insert(marker);
-            if matches!(candidates, ReferenceOffsets::Ambiguous) { break; }
+            if matches!(candidates, ReferenceOffsets::Ambiguous) {
+                break;
+            }
         }
     }
     Ok(candidates)
@@ -2268,62 +2279,72 @@ fn legacy_single_face_reference_path_at(
     if header_valid.is_none() {
         return Ok(None);
     }
-    let (selected, _storage) = ctx.with_scoped_storage("SLDPRT legacy face path workspace", || -> Result<_, cadmpeg_core::CodecError> {
-    let mut search = LegacyFacePathSearch {
-        ctx,
-        payload,
-        entries: Vec::new(),
-        complete: None,
-        ambiguous: false,
-    };
-    for control in [body + 44, body + 48, body + 84, body + 88] {
-        let Some(prefix) = payload.get(control..control + 40) else {
-            continue;
-        };
-        let Some(filler) = payload.get(body + 19..control) else {
-            continue;
-        };
-        // The filler lies between the header and a control at most 69 bytes
-        // later, so these checks read a bounded number of bytes.
-        let padded = filler.windows(16).enumerate().any(|(start, window)| {
-            window.iter().all(|byte| *byte == 0xff)
-                && filler[..start].iter().all(|byte| *byte == 0)
-                && filler[start + 16..].iter().all(|byte| *byte == 0)
-        });
-        let all_zero = filler.iter().all(|byte| *byte == 0);
-        if !all_zero && !padded {
-            continue;
-        }
-        let Some(token) = View::u16_le_at(prefix, 0) else {
-            return Ok(None);
-        };
-        let Some(count) = View::u32_le_at(prefix, 10).and_then(|count| usize::try_from(count).ok())
-        else {
-            return Ok(None);
-        };
-        if !is_class_token(token)
-            || prefix[2..6] != 1u32.to_le_bytes()
-            || prefix[6..10] != [0; 4]
-            || !(1..=64).contains(&count)
-            || !is_component_vector_selector(&prefix[14..18])
-            || prefix[22..30] != prefix[30..38]
-            || prefix[38..40] != [0, 0]
-        {
-            continue;
-        }
-        for serialized_roots in [0usize, 2] {
-            let Some(entry_count) = count
-                .checked_sub(serialized_roots)
-                .filter(|count| *count > 0)
-            else {
-                continue;
+    let (selected, _storage) = ctx.with_scoped_storage(
+        "SLDPRT legacy face path workspace",
+        || -> Result<_, cadmpeg_core::CodecError> {
+            let mut search = LegacyFacePathSearch {
+                ctx,
+                payload,
+                entries: Vec::new(),
+                complete: None,
+                ambiguous: false,
             };
-            search.visit(control + 40, entry_count, prefix[15] == 3)?;
-        }
-    }
-    Ok(if search.ambiguous { None } else { search.complete })
-    })?;
-    selected.map(|entries| ctx.collect_vec(entries.iter().cloned(), "retain SLDPRT legacy face path")).transpose()
+            for control in [body + 44, body + 48, body + 84, body + 88] {
+                let Some(prefix) = payload.get(control..control + 40) else {
+                    continue;
+                };
+                let Some(filler) = payload.get(body + 19..control) else {
+                    continue;
+                };
+                // The filler lies between the header and a control at most 69 bytes
+                // later, so these checks read a bounded number of bytes.
+                let padded = filler.windows(16).enumerate().any(|(start, window)| {
+                    window.iter().all(|byte| *byte == 0xff)
+                        && filler[..start].iter().all(|byte| *byte == 0)
+                        && filler[start + 16..].iter().all(|byte| *byte == 0)
+                });
+                let all_zero = filler.iter().all(|byte| *byte == 0);
+                if !all_zero && !padded {
+                    continue;
+                }
+                let Some(token) = View::u16_le_at(prefix, 0) else {
+                    return Ok(None);
+                };
+                let Some(count) =
+                    View::u32_le_at(prefix, 10).and_then(|count| usize::try_from(count).ok())
+                else {
+                    return Ok(None);
+                };
+                if !is_class_token(token)
+                    || prefix[2..6] != 1u32.to_le_bytes()
+                    || prefix[6..10] != [0; 4]
+                    || !(1..=64).contains(&count)
+                    || !is_component_vector_selector(&prefix[14..18])
+                    || prefix[22..30] != prefix[30..38]
+                    || prefix[38..40] != [0, 0]
+                {
+                    continue;
+                }
+                for serialized_roots in [0usize, 2] {
+                    let Some(entry_count) = count
+                        .checked_sub(serialized_roots)
+                        .filter(|count| *count > 0)
+                    else {
+                        continue;
+                    };
+                    search.visit(control + 40, entry_count, prefix[15] == 3)?;
+                }
+            }
+            Ok(if search.ambiguous {
+                None
+            } else {
+                search.complete
+            })
+        },
+    )?;
+    selected
+        .map(|entries| ctx.collect_vec(entries.iter().cloned(), "retain SLDPRT legacy face path"))
+        .transpose()
 }
 
 pub(super) fn compact_single_face_reference_record_at(

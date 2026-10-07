@@ -266,7 +266,13 @@ fn sketch_block_identity_normalization_is_inverted_for_placement() {
     payload[body + 176..body + 184].copy_from_slice(&1.0_f64.to_le_bytes());
 
     assert_eq!(
-        sketch_block_identity_normalization_origin(&cadmpeg_test_support::service_decode_context(), &payload, 200, payload.len()).unwrap(),
+        sketch_block_identity_normalization_origin(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            200,
+            payload.len()
+        )
+        .unwrap(),
         Some(Point3::new(210.0, -661.0, 0.0))
     );
 }
@@ -654,10 +660,7 @@ fn skew_reference_axes_do_not_complete_legacy_triad() {
         Some((Point3::new(0.0, 1.0, 1.0), Vector3::new(0.0, 1.0, 0.0))),
     ];
 
-    assert_eq!(
-        super::complete_reference_axis_triad(frames),
-        None
-    );
+    assert_eq!(super::complete_reference_axis_triad(frames), None);
 }
 
 #[test]

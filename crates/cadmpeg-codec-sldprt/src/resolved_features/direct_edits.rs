@@ -136,11 +136,14 @@ pub(super) fn move_body_translation_record(
         if candidate.is_some() {
             return Ok(None);
         }
-        candidate = Some((MoveBodyTranslationRecord {
-            selection_offset,
-            local_body_ids,
-            translation_m,
-        }, storage));
+        candidate = Some((
+            MoveBodyTranslationRecord {
+                selection_offset,
+                local_body_ids,
+                translation_m,
+            },
+            storage,
+        ));
     }
     let Some((candidate, storage)) = candidate else {
         return Ok(None);
@@ -154,10 +157,16 @@ pub(super) fn move_body_selection_at(
     payload: &[u8],
     offset: usize,
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    let (record, storage) = ctx.with_scoped_storage(
-        "hold SLDPRT move-body selection candidate",
-        || move_body_translation_record(ctx, payload, offset, payload.len(), u64_from_index(offset)),
-    )?;
+    let (record, storage) =
+        ctx.with_scoped_storage("hold SLDPRT move-body selection candidate", || {
+            move_body_translation_record(
+                ctx,
+                payload,
+                offset,
+                payload.len(),
+                u64_from_index(offset),
+            )
+        })?;
     let Some(record) = record.filter(|record| record.selection_offset == offset) else {
         return Ok(None);
     };
@@ -265,12 +274,14 @@ pub(crate) fn enrich_history_move_face_translations(
                 continue;
             };
             if start >= end {
-                candidate_storage.with_storage(|| push_move_face_candidate(
-                    ctx,
-                    &mut candidates,
-                    (history_index, feature_index),
-                    None,
-                ))?;
+                candidate_storage.with_storage(|| {
+                    push_move_face_candidate(
+                        ctx,
+                        &mut candidates,
+                        (history_index, feature_index),
+                        None,
+                    )
+                })?;
                 continue;
             }
             let specs_within = classes_within(
@@ -288,12 +299,14 @@ pub(crate) fn enrich_history_move_face_translations(
                 "find SLDPRT move-face line references",
             )?;
             let ([_], [line_ref]) = (specs_within, line_refs_within) else {
-                candidate_storage.with_storage(|| push_move_face_candidate(
-                    ctx,
-                    &mut candidates,
-                    (history_index, feature_index),
-                    None,
-                ))?;
+                candidate_storage.with_storage(|| {
+                    push_move_face_candidate(
+                        ctx,
+                        &mut candidates,
+                        (history_index, feature_index),
+                        None,
+                    )
+                })?;
                 continue;
             };
             let mut direction_storage =
@@ -357,15 +370,17 @@ pub(crate) fn enrich_history_move_face_translations(
                     })?;
                 }
             }
-            candidate_storage.with_storage(|| push_move_face_candidate(
-                ctx,
-                &mut candidates,
-                (history_index, feature_index),
-                match unique.as_slice() {
-                    [direction] => Some(*direction),
-                    _ => None,
-                },
-            ))?;
+            candidate_storage.with_storage(|| {
+                push_move_face_candidate(
+                    ctx,
+                    &mut candidates,
+                    (history_index, feature_index),
+                    match unique.as_slice() {
+                        [direction] => Some(*direction),
+                        _ => None,
+                    },
+                )
+            })?;
         }
     }
     for (&(history_index, feature_index), candidates) in
@@ -494,20 +509,30 @@ pub(crate) fn enrich_history_move_body_translations(
                 [class] => {
                     let (record, _storage) = ctx.with_scoped_storage(
                         "hold SLDPRT move-body translation candidate",
-                        || move_body_translation_record(ctx, &lane.native_payload, start, end, class.offset),
+                        || {
+                            move_body_translation_record(
+                                ctx,
+                                &lane.native_payload,
+                                start,
+                                end,
+                                class.offset,
+                            )
+                        },
                     )?;
                     record.map(|record| record.translation_m)
-                },
+                }
                 _ => None,
             };
             let key = (history_index, feature_index);
-            candidate_storage.with_storage(|| ctx.push_btree_group(
-                &mut candidates,
-                key,
-                candidate,
-                "index SLDPRT move-body candidates",
-                "collect SLDPRT move-body candidates",
-            ))?;
+            candidate_storage.with_storage(|| {
+                ctx.push_btree_group(
+                    &mut candidates,
+                    key,
+                    candidate,
+                    "index SLDPRT move-body candidates",
+                    "collect SLDPRT move-body candidates",
+                )
+            })?;
         }
     }
     for (&(history_index, feature_index), candidates) in
@@ -930,13 +955,18 @@ mod tests {
         );
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        let (scratch_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &policy,
-        ).unwrap();
-        assert_eq!(super::move_body_selection_at(&scratch_ctx, &payload, 0).unwrap(), None);
+        let (scratch_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(
+            super::move_body_selection_at(&scratch_ctx, &payload, 0).unwrap(),
+            None
+        );
         let mut zero_id = payload.clone();
         zero_id[selection_offset + 4..selection_offset + 8].copy_from_slice(&0u32.to_le_bytes());
-        assert_eq!(move_body_translation_record(&scratch_ctx, &zero_id, 0, zero_id.len(), 0).unwrap(), None);
+        assert_eq!(
+            move_body_translation_record(&scratch_ctx, &zero_id, 0, zero_id.len(), 0).unwrap(),
+            None
+        );
         let mut rotated = payload.clone();
         rotated[matrix_offset..matrix_offset + 8].copy_from_slice(&0.0f64.to_le_bytes());
         assert_eq!(

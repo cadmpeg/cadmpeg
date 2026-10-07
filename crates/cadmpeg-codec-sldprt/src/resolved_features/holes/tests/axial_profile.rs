@@ -45,13 +45,17 @@ fn profiled_hole_histories_report_collection_limit() {
 #[test]
 fn profiled_hole_histories_refuse_materialized_copy() {
     let histories = [native_history()];
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "clone SLDPRT history text", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_materialized_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-        project_profiled_hole_constructions(&ctx, &mut [], &[], &histories, &[])
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "clone SLDPRT history text",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+            project_profiled_hole_constructions(&ctx, &mut [], &[], &histories, &[])
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "clone SLDPRT history text"));
@@ -1096,7 +1100,13 @@ fn hole_child_index_counts_a_record_matching_both_keys_once() {
     history.features[0].source_id = FeatureSource::from_value(7);
     {
         let records = HoleHistoryIndex::new(&ctx, &history).unwrap();
-        assert_eq!(records.child(&ctx, "7").unwrap().map(|feature| feature.id.as_str()), Some("7"));
+        assert_eq!(
+            records
+                .child(&ctx, "7")
+                .unwrap()
+                .map(|feature| feature.id.as_str()),
+            Some("7")
+        );
     }
     let mut duplicate = history.features[0].clone();
     duplicate.id = "different-record".into();

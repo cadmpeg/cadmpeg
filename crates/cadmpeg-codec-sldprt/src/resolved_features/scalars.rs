@@ -85,7 +85,8 @@ pub(crate) fn named_scalars_charged(
 /// function of the retained bytes alone and never of a stored name value.
 fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
     let units = usize::from(*payload.get(name_offset.checked_add(NAME_MARKER.len())?)?);
-    let header_offset = name_offset.checked_add(NAME_MARKER.len() + 1)?
+    let header_offset = name_offset
+        .checked_add(NAME_MARKER.len() + 1)?
         .checked_add(units.checked_mul(2)?)?;
     let value_offset = header_offset.checked_add(SCALAR_HEADER.len())?;
     if payload.get(header_offset..value_offset) == Some(SCALAR_HEADER) {
@@ -94,7 +95,9 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
     let compact_value_offset = header_offset.checked_add(COMPACT_SCALAR_HEADER.len())?;
     if payload.get(header_offset..compact_value_offset) == Some(COMPACT_SCALAR_HEADER) {
         let trailer_offset = compact_value_offset.checked_add(8)?;
-        if compact_scalar_layout(payload, trailer_offset) { return Some(compact_value_offset); }
+        if compact_scalar_layout(payload, trailer_offset) {
+            return Some(compact_value_offset);
+        }
     }
     let value_only_offset = header_offset.checked_add(VALUE_ONLY_SCALAR_HEADER.len())?;
     let shifted_value_offset = value_only_offset.checked_add(4)?;
@@ -103,8 +106,11 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
         && payload.get(value_only_offset..shifted_value_offset) == Some(&[0; 4])
         && View::f64_le_at(payload, shifted_value_offset).is_some_and(f64::is_finite)
         && shifted_value_only_scalar_trailer(payload, shifted_trailer_offset)
-    { return Some(shifted_value_offset); }
-    (payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER)).then_some(value_only_offset)
+    {
+        return Some(shifted_value_offset);
+    }
+    (payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER))
+        .then_some(value_only_offset)
 }
 
 /// Whether two scalar indexes agree, field by field, with values within four
@@ -183,9 +189,7 @@ fn scalar_operands_charged(
         offset,
         kind,
         entity_index,
-    } in operand_cells(payload, trailer_offset)
-        .into_iter()
-        .flatten()
+    } in operand_cells(payload, trailer_offset).into_iter().flatten()
     {
         let offset_u64 = u64::try_from(offset).map_err(|_| {
             ctx.refuse_codec_limit("address SLDPRT scalar operand", u64::MAX - 1, u64::MAX)
@@ -215,10 +219,7 @@ struct ScalarOperandCell {
     entity_index: u16,
 }
 
-fn operand_cells(
-    payload: &[u8],
-    trailer_offset: usize,
-) -> [Option<ScalarOperandCell>; 2] {
+fn operand_cells(payload: &[u8], trailer_offset: usize) -> [Option<ScalarOperandCell>; 2] {
     let compact = compact_scalar_layout(payload, trailer_offset);
     let first = if compact || !legacy_scalar_layout(payload, trailer_offset) {
         35
@@ -291,13 +292,22 @@ impl<'lane, 'ctx> ObjectNames<'lane, 'ctx> {
         let mut by_object = std::collections::HashMap::new();
         let mut object_storage = ctx.reserve_scoped(0, "index SLDPRT object names by id")?;
         for name in ctx.admit_iter(&lane.names, "index SLDPRT object names by id")? {
-            let Some(source) = name.object_id.and_then(ObjectId::value) else { continue; };
-            if let Some(previous) = ctx.get_mut_hash_map(&mut by_object, &source,
-                "index SLDPRT object names by id")? {
+            let Some(source) = name.object_id.and_then(ObjectId::value) else {
+                continue;
+            };
+            if let Some(previous) =
+                ctx.get_mut_hash_map(&mut by_object, &source, "index SLDPRT object names by id")?
+            {
                 *previous = None;
             } else {
-                object_storage.with_storage(|| ctx.insert_hash_map(&mut by_object, source, Some(name),
-                    "index SLDPRT object names by id"))?;
+                object_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut by_object,
+                        source,
+                        Some(name),
+                        "index SLDPRT object names by id",
+                    )
+                })?;
             }
         }
         let (by_value, value_storage) = ctx.unique_index(

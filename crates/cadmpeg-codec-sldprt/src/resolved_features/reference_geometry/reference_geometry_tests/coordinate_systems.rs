@@ -32,7 +32,9 @@ fn coordinate_system_error(policy: DecodePolicy) -> CodecError {
 #[test]
 fn coordinate_system_enrichment_refuses_collection_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "collect SLDPRT coordinate system starts", |cap| {
+        ResourceDimension::CollectionItems,
+        "collect SLDPRT coordinate system starts",
+        |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
             Err::<(), CodecError>(coordinate_system_error(policy))
@@ -62,7 +64,9 @@ fn coordinate_system_enrichment_refuses_retained_limit() {
 #[test]
 fn coordinate_system_enrichment_refuses_work_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "scan SLDPRT coordinate system features", |cap| {
+        ResourceDimension::WorkUnits,
+        "scan SLDPRT coordinate system features",
+        |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             Err::<(), CodecError>(coordinate_system_error(policy))

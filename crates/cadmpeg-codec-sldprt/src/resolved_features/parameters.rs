@@ -53,8 +53,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                 )
             })?;
         }
-        let scalar_units =
-            lane_storage.with_storage(|| scalar_units(ctx, lane, &names_by_id))?;
+        let scalar_units = lane_storage.with_storage(|| scalar_units(ctx, lane, &names_by_id))?;
         let object_names = ObjectNames::new(ctx, lane)?;
         let mut starts = Vec::<(u64, usize, usize)>::new();
         for (history_index, history) in ctx
@@ -340,17 +339,20 @@ fn scalar_units<'a>(
     // The parameter class of a scalar is the last class declared before its
     // name with no other name between them.
     let mut storage = ctx.reserve_scoped(0, "SLDPRT parameter class workspace")?;
-    let mut classes = storage.with_storage(|| ctx.collect_vec(lane.classes.iter(), "sort SLDPRT parameter classes"))?;
+    let mut classes = storage
+        .with_storage(|| ctx.collect_vec(lane.classes.iter(), "sort SLDPRT parameter classes"))?;
     ctx.stable_sort_by(
         &mut classes,
         |class| &class.offset,
         Ord::cmp,
         "sort SLDPRT parameter classes",
     )?;
-    let mut name_offsets = storage.with_storage(|| ctx.collect_vec(
-        lane.names.iter().map(|name| name.offset),
-        "sort SLDPRT parameter name offsets",
-    ))?;
+    let mut name_offsets = storage.with_storage(|| {
+        ctx.collect_vec(
+            lane.names.iter().map(|name| name.offset),
+            "sort SLDPRT parameter name offsets",
+        )
+    })?;
     ctx.sort_unstable_by(
         &mut name_offsets,
         |offset| offset,
@@ -574,9 +576,15 @@ pub(crate) fn sync_changed_feature_scalars(
         let object_names = ObjectNames::new(ctx, lane)?;
         let mut starts = Vec::new();
         for history in ctx.admit_iter(histories, "index SLDPRT scalar update features")? {
-            for feature in ctx.admit_iter(&history.features, "index SLDPRT scalar update features")? {
+            for feature in
+                ctx.admit_iter(&history.features, "index SLDPRT scalar update features")?
+            {
                 if let Some(name) = object_names.of(ctx, feature)? {
-                    ctx.push_vec(&mut starts, (name.offset, feature), "index SLDPRT scalar update features")?;
+                    ctx.push_vec(
+                        &mut starts,
+                        (name.offset, feature),
+                        "index SLDPRT scalar update features",
+                    )?;
                 }
             }
         }

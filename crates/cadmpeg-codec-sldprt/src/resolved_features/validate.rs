@@ -210,7 +210,9 @@ pub(crate) fn validate_native(
     let mut history_lanes = Vec::new();
     for lane in ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT validation lanes")? {
         if !is_supplemental_config_lane_charged(ctx, lane)? {
-            temporary.with_storage(|| ctx.push_vec(&mut history_lanes, lane, "validate SLDPRT history lanes"))?;
+            temporary.with_storage(|| {
+                ctx.push_vec(&mut history_lanes, lane, "validate SLDPRT history lanes")
+            })?;
         }
     }
     history_reservation.with_storage(|| {

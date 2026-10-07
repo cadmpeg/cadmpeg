@@ -23,13 +23,17 @@ fn topology(surfaces: &[Surface]) -> HoleTopology<'_> {
 
 #[test]
 fn hole_position_axes_refuse_collection_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "index SLDPRT hole position features", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        project_hole_axes(&ctx, &mut [], &[], &topology(&[]), &[native_history()], &[])
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "index SLDPRT hole position features",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            project_hole_axes(&ctx, &mut [], &[], &topology(&[]), &[native_history()], &[])
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "index SLDPRT hole position features"));
@@ -37,13 +41,17 @@ fn hole_position_axes_refuse_collection_limit() {
 
 #[test]
 fn hole_position_axes_refuse_work_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "index SLDPRT hole position features", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        project_hole_axes(&ctx, &mut [], &[], &topology(&[]), &[native_history()], &[])
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT hole position features",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            project_hole_axes(&ctx, &mut [], &[], &topology(&[]), &[native_history()], &[])
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "index SLDPRT hole position features"));
