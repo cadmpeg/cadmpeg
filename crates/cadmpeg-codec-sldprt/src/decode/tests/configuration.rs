@@ -17,6 +17,18 @@ use cadmpeg_ir::{
 };
 use std::collections::BTreeMap;
 
+fn configuration_body<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    source: &BodyId,
+) -> crate::decode::ConfigurationBodyIdentity<'ctx> {
+    let (id, storage) = ctx
+        .with_scoped_storage("retain SLDPRT body ID", || {
+            source.try_clone_for_decode(ctx, "retain SLDPRT body ID")
+        })
+        .unwrap();
+    crate::decode::ConfigurationBodyIdentity { id, storage }
+}
+
 #[test]
 fn configuration_partitions_require_explicit_source_identity() {
     let mut ir = CadIr::empty();
@@ -47,13 +59,14 @@ fn configuration_partitions_require_explicit_source_identity() {
     let second = BodyId::mint("test:model:entity#body:second").expect("identity grammar");
     let third = BodyId::mint("test:model:entity#body:third").expect("identity grammar");
 
+    let ctx = cadmpeg_test_support::service_decode_context();
     assign_configuration_bodies(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &mut ir,
         vec![
-            (7, vec![third.clone()]),
-            (5, vec![first.clone()]),
-            (5, vec![second.clone()]),
+            (7, vec![configuration_body(&ctx, &third)]),
+            (5, vec![configuration_body(&ctx, &first)]),
+            (5, vec![configuration_body(&ctx, &second)]),
         ],
     )
     .unwrap();
@@ -100,10 +113,11 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
     }
     let body = BodyId::mint("test:model:entity#body:partition").expect("identity grammar");
 
+    let ctx = cadmpeg_test_support::service_decode_context();
     assign_configuration_bodies(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &mut ir,
-        vec![(5, vec![body.clone()])],
+        vec![(5, vec![configuration_body(&ctx, &body)])],
     )
     .unwrap();
 
@@ -137,10 +151,11 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     ));
     let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
 
+    let ctx = cadmpeg_test_support::service_decode_context();
     assign_configuration_bodies(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &mut ir,
-        vec![(3, vec![body.clone()])],
+        vec![(3, vec![configuration_body(&ctx, &body)])],
     )
     .unwrap();
     mark_active_configuration(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
@@ -571,4 +586,25 @@ fn configuration_suppression_and_override_references_are_coherent() {
     assert!(report.losses.iter().any(|loss| {
         loss.message == "1 configuration(s) have missing, repeated, or feature-state-inconsistent suppression members; 1 configuration(s) reference missing parameter overrides."
     }));
+}
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn out_of_range_partition_body_identity_is_not_retained() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ir = CadIr::empty();
+    let body = BodyId::mint("test:model:entity#body:unclaimed").unwrap();
+    let identity = configuration_body(&ctx, &body);
+    assign_configuration_bodies(
+        &ctx,
+        &mut ir,
+        vec![(usize::try_from(4_294_967_296_u64).unwrap(), vec![identity])],
+    )
+    .unwrap();
+    assert!(ir.model.configurations.is_empty());
+    ctx.finish_session().unwrap();
 }
