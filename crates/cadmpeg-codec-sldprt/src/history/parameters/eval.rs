@@ -114,7 +114,9 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
     }
 
     pub(super) fn parse(mut self) -> Result<Option<ParameterValue>, CodecError> {
-        self.parse_borrowed()?.map(|value| self.retain_value(value)).transpose()
+        self.parse_borrowed()?
+            .map(|value| self.retain_value(value))
+            .transpose()
     }
 
     /// An evaluated result that borrows referenced values.
@@ -316,8 +318,15 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                     self.ctx
                         .get_hash_map(values, id, "look up SLDPRT hash key")?
                 }
-                ParameterValues::Validation { values, configuration, excluded } => {
-                    if self.ctx.equal(id, *excluded, "check SLDPRT parameter evaluation")? {
+                ParameterValues::Validation {
+                    values,
+                    configuration,
+                    excluded,
+                } => {
+                    if self
+                        .ctx
+                        .equal(id, *excluded, "check SLDPRT parameter evaluation")?
+                    {
                         None
                     } else {
                         super::configuration_parameter_value(self.ctx, values, *configuration, id)?

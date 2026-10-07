@@ -685,13 +685,19 @@ fn parameter_value_states_borrow_stated_values() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (aliases, _storage) = ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (aliases, _storage) =
+        ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "retain SLDPRT parameter value text", None,
+        "retain SLDPRT parameter value text",
+        None,
     );
-    assert_eq!(parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).unwrap(), 0);
+    assert_eq!(
+        parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).unwrap(),
+        0
+    );
     assert!(ctx.resource_refusal().is_none());
 }
 
@@ -818,4 +824,49 @@ fn display_modifier_aliases_do_not_block_expression_evaluation() {
         Some(ParameterValue::Length(Length::new(13.0).unwrap()))
     );
     assert_eq!(parameters[1].value, None);
+}
+
+#[test]
+fn coherence_without_dependencies_builds_no_value_index() {
+    let parameters = scratch_parameters();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let (aliases, _storage) =
+        ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "collect SLDPRT parameter value states",
+        None,
+    );
+    assert_eq!(
+        super::parameters_with_incoherent_evaluated_values(&ctx, &parameters, &aliases, &[])
+            .unwrap(),
+        0
+    );
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn coherence_without_a_stated_value_leaves_expression_unread() {
+    let mut parameter = scratch_parameters().remove(0);
+    parameter.value = None;
+    parameter.expression = " ".repeat(128 * 1024);
+    parameter.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
+        vec![parameter.id.clone()],
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .unwrap();
+    let parameters = [parameter];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 4096;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (aliases, _storage) =
+        ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
+    assert_eq!(
+        super::parameters_with_incoherent_evaluated_values(&ctx, &parameters, &aliases, &[])
+            .unwrap(),
+        0
+    );
+    assert!(ctx.resource_refusal().is_none());
 }
