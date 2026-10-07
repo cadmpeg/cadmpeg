@@ -141,7 +141,8 @@ fn section_solver_midpoints_preserve_saved_geometry_and_coordinate_constraints()
             internal_id: 20,
             bitmask: 1,
             offset: 95,
-        }],
+        }]
+        .into(),
         offset: 94,
     });
     saved_line_midpoint.saved_section = Some(crate::feature::definitions::FeatureSavedSection {

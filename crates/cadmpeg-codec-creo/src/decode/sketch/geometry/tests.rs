@@ -293,7 +293,8 @@ fn numerical_ranges_saved_section_arc_rejects_different_tiny_radii() {
                     internal_id: 30,
                     bitmask: 0,
                     offset: 10,
-                }],
+                }]
+                .into(),
                 offset: 8,
             }),
             section_3d: None,
@@ -395,7 +396,8 @@ fn saved_arc_carrier_definition(
                 internal_id: 30,
                 bitmask: 0,
                 offset: 10,
-            }],
+            }]
+            .into(),
             offset: 8,
         }),
         section_3d: None,

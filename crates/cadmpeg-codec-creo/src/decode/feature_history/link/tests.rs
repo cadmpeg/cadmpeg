@@ -449,7 +449,8 @@ fn ordered_binding_fixture() -> (
             internal_id: 1,
             bitmask: 0,
             offset: 0,
-        }],
+        }]
+        .into(),
         offset: 0,
     };
     let rows = [crate::surface::SurfaceRow {

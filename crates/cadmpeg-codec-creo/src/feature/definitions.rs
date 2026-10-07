@@ -7,7 +7,6 @@ use std::num::NonZeroU32;
 use cadmpeg_core::decode::{bounded_len, index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
 
-use crate::decode::uniqueness::exactly_one_by;
 use crate::psb;
 use crate::scalar;
 
@@ -1262,7 +1261,7 @@ pub(crate) struct FeatureOrderTable {
     /// Entity-table class reference following the opener.
     pub(crate) entity_ref: Option<u32>,
     /// Complete positional triples in stored order.
-    pub(crate) rows: Vec<FeatureOrderRow>,
+    pub(crate) rows: super::order_rows::OrderRows,
     /// Byte offset of the `order_table` label in the original stream.
     pub(crate) offset: usize,
 }
@@ -1295,61 +1294,21 @@ impl FeatureOrderTable {
     }
 
     /// Resolve a generated-entity position to its section entity identifier.
-    pub(crate) fn external_id(
-        &self,
-        ctx: &DecodeContext<'_>,
-        internal_id: u32,
-    ) -> Result<Option<u32>, CodecError> {
-        const OPERATION: &str = "creo order external ID lookup";
+    pub(crate) fn external_id(&self, internal_id: u32) -> Option<u32> {
         if !self.is_complete() {
-            return Ok(None);
+            return None;
         }
-        let Some(row) = exactly_one_by(
-            ctx,
-            &self.rows,
-            |row| Ok(row.internal_id == internal_id),
-            OPERATION,
-        )?
-        else {
-            return Ok(None);
-        };
-        let external_id = row.external_id;
-        Ok(exactly_one_by(
-            ctx,
-            &self.rows,
-            |row| Ok(row.external_id == external_id),
-            OPERATION,
-        )?
-        .map(|_| external_id))
+        let external_id = self.rows.by_internal(internal_id)?.external_id;
+        self.rows.by_external(external_id).map(|_| external_id)
     }
 
     /// Resolve a section entity identifier to its generated-entity position.
-    pub(crate) fn internal_id(
-        &self,
-        ctx: &DecodeContext<'_>,
-        external_id: u32,
-    ) -> Result<Option<u32>, CodecError> {
-        const OPERATION: &str = "creo order internal ID lookup";
+    pub(crate) fn internal_id(&self, external_id: u32) -> Option<u32> {
         if !self.is_complete() {
-            return Ok(None);
+            return None;
         }
-        let Some(row) = exactly_one_by(
-            ctx,
-            &self.rows,
-            |row| Ok(row.external_id == external_id),
-            OPERATION,
-        )?
-        else {
-            return Ok(None);
-        };
-        let internal_id = row.internal_id;
-        Ok(exactly_one_by(
-            ctx,
-            &self.rows,
-            |row| Ok(row.internal_id == internal_id),
-            OPERATION,
-        )?
-        .map(|_| internal_id))
+        let internal_id = self.rows.by_external(external_id)?.internal_id;
+        self.rows.by_internal(internal_id).map(|_| internal_id)
     }
 }
 
@@ -5443,9 +5402,7 @@ fn order_table(
     if payload.get(cursor) == Some(&0xe2) {
         cursor += 1;
     }
-    let mut rows = Vec::new();
-    let mut external_ids = BTreeSet::new();
-    let mut internal_ids = BTreeSet::new();
+    let mut rows = super::order_rows::OrderRows::default();
     // A decoded prototype row is one of the declared rows. A declared count of
     // zero with the prototype row present states a body-row count the table
     // cannot hold, and refuses the table.
@@ -5485,29 +5442,17 @@ fn order_table(
         if !row_separator && !table_boundary {
             break;
         }
-        if external_ids.contains(&external_id) {
+        if !rows.push_unique(
+            ctx,
+            FeatureOrderRow {
+                external_id,
+                internal_id,
+                bitmask,
+                offset: row_offset,
+            },
+        )? {
             break;
         }
-        ctx.insert_btree_set(
-            &mut external_ids,
-            external_id,
-            "creo order external ID nodes",
-        )?;
-        if internal_ids.contains(&internal_id) {
-            break;
-        }
-        ctx.insert_btree_set(
-            &mut internal_ids,
-            internal_id,
-            "creo order internal ID nodes",
-        )?;
-        ctx.reserve_vec(&mut rows, 1, "creo order rows")?;
-        rows.push(FeatureOrderRow {
-            external_id,
-            internal_id,
-            bitmask,
-            offset: row_offset,
-        });
         if !row_separator {
             break;
         }
@@ -5571,10 +5516,8 @@ fn positional_order_table(
         }
         None => 0,
     };
-    let mut rows = Vec::new();
+    let mut rows = super::order_rows::OrderRows::default();
     let mut cursor = prototype.unwrap_or(end);
-    let mut external_ids = BTreeSet::new();
-    let mut internal_ids = BTreeSet::new();
     while cursor < end && rows.len() < row_limit {
         let row_offset = cursor;
         let (external_id, next) = segment_int(payload, cursor);
@@ -5585,22 +5528,6 @@ fn positional_order_table(
         else {
             break;
         };
-        if external_ids.contains(&external_id) {
-            break;
-        }
-        ctx.insert_btree_set(
-            &mut external_ids,
-            external_id,
-            "creo order external ID nodes",
-        )?;
-        if internal_ids.contains(&internal_id) {
-            break;
-        }
-        ctx.insert_btree_set(
-            &mut internal_ids,
-            internal_id,
-            "creo order internal ID nodes",
-        )?;
         let row = FeatureOrderRow {
             external_id,
             internal_id,
@@ -5608,17 +5535,14 @@ fn positional_order_table(
             offset: row_offset,
         };
         cursor = next;
-        if rows.len() + 1 == row_limit {
-            ctx.reserve_vec(&mut rows, 1, "creo order rows")?;
-            rows.push(row);
+        let last = rows.len() + 1 == row_limit;
+        if !last && payload.get(cursor) != Some(&0xe2) {
             break;
         }
-        if payload.get(cursor) != Some(&0xe2) {
+        if !rows.push_unique(ctx, row)? || last {
             break;
         }
         cursor += 1;
-        ctx.reserve_vec(&mut rows, 1, "creo order rows")?;
-        rows.push(row);
     }
     Ok(Some(FeatureOrderTable {
         declared_count,
@@ -8021,8 +7945,8 @@ fn saved_positional_generated_entities(
     let mut generated_storage = ctx.reserve_scoped(0, "Creo saved generated lookup storage")?;
     let mut generated_segments = BTreeMap::new();
     for row in &order_table.rows {
-        if order_table.internal_id(ctx, row.external_id)? != Some(row.internal_id)
-            || order_table.external_id(ctx, row.internal_id)? != Some(row.external_id)
+        if order_table.internal_id(row.external_id) != Some(row.internal_id)
+            || order_table.external_id(row.internal_id) != Some(row.external_id)
         {
             continue;
         }

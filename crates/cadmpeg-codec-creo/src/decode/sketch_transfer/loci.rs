@@ -1155,7 +1155,7 @@ pub(in super::super) fn section_saved_entity<'definition>(
     let Some(table) = definition.order_table.as_ref() else {
         return Ok(None);
     };
-    let Some(internal_id) = table.internal_id(ctx, external_id)? else {
+    let Some(internal_id) = table.internal_id(external_id) else {
         return Ok(None);
     };
     let mut selected = None;
@@ -2914,7 +2914,8 @@ mod tests {
                     internal_id: 30,
                     bitmask: 0,
                     offset: 30,
-                }],
+                }]
+                .into(),
                 offset: 0,
             }),
             section_3d: None,

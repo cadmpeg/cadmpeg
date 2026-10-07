@@ -329,7 +329,7 @@ pub(in crate::decode) fn saved_section_line_geometry(
     let Some(order_table) = definition.order_table.as_ref() else {
         return Ok(None);
     };
-    let mut internal_id = order_table.internal_id(ctx, segment.external_id)?;
+    let mut internal_id = order_table.internal_id(segment.external_id);
     if internal_id.is_none() {
         if let Some(segment_table) = definition
             .segments
@@ -353,7 +353,7 @@ pub(in crate::decode) fn saved_section_line_geometry(
                     ctx.admit_iter(&rows[..position], "creo saved line previous segment rows")?
                 {
                     if let SegmentRow::Ordinary(candidate) = row {
-                        if let Some(id) = order_table.internal_id(ctx, candidate.external_id)? {
+                        if let Some(id) = order_table.internal_id(candidate.external_id) {
                             previous = Some(id);
                         }
                     }
@@ -363,7 +363,7 @@ pub(in crate::decode) fn saved_section_line_geometry(
                         &rows[position + 1..],
                         |row| match row {
                             SegmentRow::Ordinary(candidate) => {
-                                order_table.internal_id(ctx, candidate.external_id)
+                                Ok(order_table.internal_id(candidate.external_id))
                             }
                             _ => Ok(None),
                         },
@@ -530,7 +530,7 @@ pub(super) fn saved_section_arc_record<'a>(
     let Some(order) = definition.order_table.as_ref() else {
         return Ok(None);
     };
-    let Some(internal_id) = order.internal_id(ctx, segment.external_id)? else {
+    let Some(internal_id) = order.internal_id(segment.external_id) else {
         return Ok(None);
     };
     if !saved_section_internal_id_is_unique(ctx, definition, internal_id)? {
@@ -1080,7 +1080,7 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
             Ok(matches!(
                 candidate.kind,
                 crate::feature::definitions::FeatureSegmentKind::Line(_)
-            ) && order.internal_id(ctx, candidate.external_id)?.is_none()
+            ) && order.internal_id(candidate.external_id).is_none()
                 && ctx.contains_btree_set(
                     &trimmed_external_ids,
                     &candidate.external_id,
@@ -1117,7 +1117,7 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
         Ok(ControlFlow::Continue(()))
     })?;
     let mut ordered_ids = BTreeSet::new();
-    for row in ctx.admit_iter(&order.rows, "creo missing-line ordered rows")? {
+    for row in ctx.admit_iter(order.rows.as_slice(), "creo missing-line ordered rows")? {
         ctx.insert_btree_set(
             &mut ordered_ids,
             row.internal_id,

@@ -10,6 +10,7 @@ pub(crate) mod definitions;
 pub(crate) mod entity;
 mod helpers;
 pub(crate) mod operations;
+pub(crate) mod order_rows;
 pub(crate) mod rows;
 pub(crate) mod schema;
 pub(crate) mod segment_rows;

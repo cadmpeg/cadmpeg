@@ -72,7 +72,8 @@ fn fixture() -> crate::feature::definitions::FeatureDefinition {
                 internal_id: 3,
                 bitmask: 0,
                 offset: 10,
-            }],
+            }]
+            .into(),
             offset: 8,
         }),
         section_3d: None,

@@ -30,7 +30,8 @@ fn section_solver_saved_points_preserve_incidence_symmetry_and_duplicate_refusal
             internal_id: 20,
             bitmask: 1,
             offset: 81,
-        }],
+        }]
+        .into(),
         offset: 80,
     });
     saved_definition.saved_section = Some(crate::feature::definitions::FeatureSavedSection {

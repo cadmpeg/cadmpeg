@@ -353,7 +353,7 @@ pub(in super::super) fn ordered_analytic_surface_id_for_feature(
     external_id: u32,
     geometry: &SurfaceGeometry,
 ) -> Result<Option<u32>, CodecError> {
-    if order.internal_id(ctx, external_id)?.is_none() {
+    if order.internal_id(external_id).is_none() {
         return Ok(None);
     }
     analytic_surface_id_for_feature(ctx, surface_rows, tables, feature_id, external_id, geometry)
@@ -391,7 +391,7 @@ pub(in super::super) fn insert_ordered_family_surface_binding(
     bindings: &mut BTreeMap<u32, u32>,
     bound_surfaces: &mut BTreeSet<u32>,
 ) -> Result<bool, CodecError> {
-    if order.internal_id(ctx, external_id)?.is_none() {
+    if order.internal_id(external_id).is_none() {
         return Ok(false);
     }
     let Some(surface_id) = generated_surface_id_for_feature(ctx, tables, feature_id, external_id)?

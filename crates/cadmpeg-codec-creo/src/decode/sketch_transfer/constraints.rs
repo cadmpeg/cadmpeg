@@ -717,7 +717,7 @@ fn section_angular_entities(
         return Ok(None);
     };
     let external_id = |internal_id| -> Result<Option<u32>, cadmpeg_core::CodecError> {
-        let Some(external_id) = order_table.external_id(ctx, internal_id)? else {
+        let Some(external_id) = order_table.external_id(internal_id) else {
             return Ok(None);
         };
         let matching_segments = ctx

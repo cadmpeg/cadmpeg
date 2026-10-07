@@ -97,7 +97,8 @@ fn saved_line_joins_through_order_table() {
                 internal_id: 3,
                 bitmask: 0,
                 offset: 10,
-            }],
+            }]
+            .into(),
             offset: 8,
         }),
         section_3d: None,
@@ -1482,7 +1483,8 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
                 internal_id: 7,
                 bitmask: 0,
                 offset: 32,
-            }],
+            }]
+            .into(),
             offset: 32,
         }),
         section_3d: None,

@@ -329,7 +329,8 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
                 bitmask: 1,
                 offset: 91,
             },
-        ],
+        ]
+        .into(),
         offset: 89,
     });
     assert_eq!(
