@@ -16,8 +16,7 @@ use crate::history::{
     terminal_edge_recipe_reference_faces, treatment_edge_candidates, treatment_face_supports,
 };
 use crate::history::{
-    edge_changes_across_state_chain, face_changes_across_state_chain, history_state_index,
-    unique_history_state,
+    edge_changes_across_state_chain, face_changes_across_state_chain, unique_history_state,
 };
 use crate::history_records::{
     AsmBulletinBoard, AsmEntityChange, AsmEntityChangeKind, AsmHistoricalCarrierBinding,
@@ -867,10 +866,12 @@ fn history_state_index_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = history_state_index(&ctx, &history).unwrap_err();
+    let error = crate::history::unique_feature_history_states(&ctx, &history)
+        .map(|_| ())
+        .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D history states")
+        if limit.operation == "index F3D feature history states")
     );
 }
 
@@ -1075,7 +1076,11 @@ fn pattern_face_candidate_index_refuses_collection_limit() {
 
 #[test]
 fn pattern_face_bound_index_refuses_collection_limit() {
-    let error = pattern_face_limit_case(1).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D pattern bound faces",
+        pattern_face_limit_case,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D pattern bound faces")
@@ -1282,7 +1287,7 @@ fn treatment_boundary_relation_index_refuses_collection_limit() {
     let error = face_boundary_edge_index(&ctx, &topology).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D boundary relations")
+        if limit.operation == "index F3D boundary face loops")
     );
 }
 

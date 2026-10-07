@@ -682,7 +682,7 @@ historical_transition_limit_test!(
 );
 historical_transition_limit_test!(
     history_transition_entity_index_refuses_limit,
-    "index F3D current transition entities"
+    "copy F3D transition entities"
 );
 historical_transition_limit_test!(
     history_transition_delta_refuses_limit,
@@ -757,38 +757,40 @@ fn history_insert_only_count_refuses_collection_limit() {
     );
 }
 
-fn historical_versions_error(max_items: u64, deletion: bool) -> cadmpeg_core::CodecError {
+fn historical_versions_error(operation: &str, deletion: bool) -> cadmpeg_core::CodecError {
     use crate::history_records::{AsmBulletinBoard, AsmEntityChange, AsmEntityChangeKind};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    let mut history = one_archived_state();
-    if deletion {
-        history.states[0].bulletin_boards.push(AsmBulletinBoard {
-            id: "board".into(),
-            parent: "state".into(),
-            byte_offset: 0,
-            owner_ref: 0,
-            number: 1,
-            changes: vec![AsmEntityChange {
-                id: "change".into(),
-                parent: "board".into(),
-                byte_offset: 0,
-                kind: AsmEntityChangeKind::Delete { old: 1 },
-            }],
-        });
-    }
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bind_historical_entity_versions(&ctx, &mut history.states).unwrap_err()
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| {
+            let mut history = one_archived_state();
+            if deletion {
+                history.states[0].bulletin_boards.push(AsmBulletinBoard {
+                    id: "board".into(),
+                    parent: "state".into(),
+                    byte_offset: 0,
+                    owner_ref: 0,
+                    number: 1,
+                    changes: vec![AsmEntityChange {
+                        id: "change".into(),
+                        parent: "board".into(),
+                        byte_offset: 0,
+                        kind: AsmEntityChangeKind::Delete { old: 1 },
+                    }],
+                });
+            }
+            super::super::bind_historical_entity_versions(ctx, &mut history.states)
+        },
+    )
 }
 
 macro_rules! historical_versions_limit_test {
-    ($name:ident, $limit:expr, $deletion:expr, $operation:literal) => {
+    ($name:ident, $deletion:expr, $operation:literal) => {
         #[test]
         fn $name() {
-            let error = historical_versions_error($limit, $deletion);
+            let error = historical_versions_error($operation, $deletion);
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == $operation));
         }
@@ -797,13 +799,11 @@ macro_rules! historical_versions_limit_test {
 
 historical_versions_limit_test!(
     history_version_archive_index_refuses_limit,
-    0,
     false,
     "index F3D archived revision IDs"
 );
 historical_versions_limit_test!(
     history_version_node_index_refuses_limit,
-    2,
     false,
     "index F3D history node ordinals"
 );
@@ -827,31 +827,21 @@ fn history_version_node_index_refuses_materialized_limit() {
 }
 historical_versions_limit_test!(
     history_version_seed_refuses_limit,
-    3,
     false,
     "seed F3D history versions"
 );
 historical_versions_limit_test!(
-    history_version_visit_refuses_limit,
-    4,
-    false,
-    "visit F3D history version state"
-);
-historical_versions_limit_test!(
     history_version_state_vector_refuses_limit,
-    5,
     false,
     "materialize F3D state versions"
 );
 historical_versions_limit_test!(
     history_version_projection_index_refuses_limit,
-    6,
     false,
     "index F3D state version projections"
 );
 historical_versions_limit_test!(
     history_version_restore_refuses_limit,
-    7,
     true,
     "restore F3D historical version"
 );
@@ -898,21 +888,6 @@ fn history_graph_index_refuses_collection_limit() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ASM history states")
-    );
-}
-
-#[test]
-fn history_graph_visit_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::graph_is_coherent_charged(&ctx, &one_state_history()).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "visit F3D ASM history state")
     );
 }
 
@@ -1086,14 +1061,26 @@ fn history_change_vector_refuses_collection_limit() {
 #[test]
 fn history_change_id_refuses_retained_limit() {
     let bytes = one_board_state();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (history, state, board, _) = history_id_lengths();
-    policy.limits.max_retained_bytes = history + state + board;
-    let error = decode_with_limits(&bytes, &policy);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D native record ID")
+    let operation = "retain F3D native record ID";
+    // The history, state and board identities precede the change identity.
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        operation,
+        3,
+        |ctx| {
+            super::super::decode(
+                ctx,
+                &bytes,
+                "history",
+                cadmpeg_asm::kernel_header::RefWidth::Four,
+                &cadmpeg_core::decode::DecodePolicy::service().limits,
+            )
+        },
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]
@@ -1282,25 +1269,25 @@ fn history_parent_copy_refuses_retained_limit() {
 
 #[test]
 fn history_delta_offsets_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
     let bytes = [super::super::DELTA, super::super::DELTA].concat();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = super::super::decode(
-        &ctx,
-        &bytes,
-        "history",
-        cadmpeg_asm::kernel_header::RefWidth::Four,
-        &policy.limits,
-    )
-    .unwrap_err();
+    let operation = "collect F3D ASM delta offsets";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| {
+            super::super::decode(
+                ctx,
+                &bytes,
+                "history",
+                cadmpeg_asm::kernel_header::RefWidth::Four,
+                &cadmpeg_core::decode::DecodePolicy::service().limits,
+            )
+        },
+    );
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "f3d history delta offsets"
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
 }
 
@@ -1596,7 +1583,7 @@ fn history_graph_parent_comparison_refuses_work_limit() {
 
 #[test]
 fn history_graph_tail_count_refuses_work_limit() {
-    let operation = "count F3D ASM history tail states";
+    let operation = "scan F3D ASM history chain ends";
     let error = graph_work_refusal(operation, &one_state_history());
     assert!(matches!(
         error,
@@ -1767,7 +1754,7 @@ fn history_version_projection_map_refuses_materialized_limit() {
 
 #[test]
 fn history_archived_revision_state_scan_refuses_work() {
-    let operation = "scan F3D archived revision states";
+    let operation = "scan F3D archived history states";
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         operation,
@@ -1785,7 +1772,7 @@ fn history_archived_revision_state_scan_refuses_work() {
 
 #[test]
 fn history_archived_revision_record_scan_refuses_work() {
-    let operation = "scan F3D archived revision records";
+    let operation = "scan F3D archived state records";
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         operation,

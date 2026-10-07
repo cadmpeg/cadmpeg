@@ -64,11 +64,18 @@ fn feature_output_history_nodes_refuse_collection_limit() {
 
 #[test]
 fn feature_output_states_refuse_collection_limit() {
-    let history = empty_transition_history();
-    let error = feature_output_error(&[history], &[], 1, u64::MAX);
+    let operation = "index F3D feature output states";
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let history = empty_transition_history();
+            Err::<(), _>(feature_output_error(&[history], &[], cap, u64::MAX))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D feature output states")
+        if limit.operation == operation)
     );
 }
 
@@ -89,16 +96,6 @@ fn feature_output_active_body_refuses_collection_limit() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D active feature output bodies")
-    );
-}
-
-#[test]
-fn feature_output_active_id_refuses_retained_limit() {
-    let body = active_body();
-    let error = feature_output_error(&[], &[body], u64::MAX, 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D active body identity")
     );
 }
 
@@ -269,10 +266,15 @@ fn bound_output_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecE
 
 #[test]
 fn feature_output_bodies_refuse_collection_limit() {
-    let error = bound_output_error(9, u64::MAX);
+    let operation = "collect F3D feature output bodies";
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |cap| Err::<(), _>(bound_output_error(cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D feature output bodies")
+        if limit.operation == operation)
     );
 }
 
@@ -375,17 +377,16 @@ fn affected_history_body_scan_refuses_work() {
 
 #[test]
 fn affected_history_bodies_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let operation = "collect F3D affected history bodies";
     let (_, _, history, _) = output_binding_inputs();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        super::super::affected_body_refs(&ctx, &history.states[0], Some(&history.states[1]))
-            .unwrap_err();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| super::super::affected_body_refs(ctx, &history.states[0], Some(&history.states[1])),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D affected history bodies")
+        if limit.operation == operation)
     );
 }

@@ -634,7 +634,15 @@ fn pattern_combine_tool_slots_refuse_collection_limit() {
 #[test]
 fn combine_recipe_tool_index_refuses_collection_limit() {
     let result = with_combine_collection_limit(0, |ctx| {
-        combine_recipe_family_tool_slots(ctx, ("f3d:design", 1), &[1], 1, 0, &[], &[])
+        combine_recipe_family_tool_slots(
+            ctx,
+            ("f3d:design", 1),
+            &[1],
+            1,
+            0,
+            &crate::history::scope_operand_index(&[]),
+            &crate::history::body_recipe_index(&[]),
+        )
     });
     assert!(matches!(
         result,
@@ -782,8 +790,8 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
                 &[1, 2, 3, 4],
                 317,
                 1,
-                &operands,
-                &recipes
+                &crate::history::scope_operand_index(&operands),
+                &crate::history::body_recipe_index(&recipes)
             )
             .unwrap(),
             Some(vec![5, 6, 7, 8])
@@ -802,8 +810,8 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
             &[1, 2, 3, 4],
             317,
             1,
-            &operands,
-            &recipes,
+            &crate::history::scope_operand_index(&operands),
+            &crate::history::body_recipe_index(&recipes),
         )
         .unwrap())
         .is_none()
@@ -825,8 +833,8 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
             &[1, 2, 3, 4],
             317,
             1,
-            &operands,
-            &duplicate_selector,
+            &crate::history::scope_operand_index(&operands),
+            &crate::history::body_recipe_index(&duplicate_selector),
         )
         .unwrap())
         .is_none()

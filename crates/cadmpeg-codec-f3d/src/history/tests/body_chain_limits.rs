@@ -62,7 +62,7 @@ fn with_limit<T>(max_items: u64, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T
 fn feature_history_state_index_refuses_collection_limit() {
     let history = history_fixture();
     let error = with_limit(0, |ctx| {
-        super::super::unique_feature_history_states(ctx, &history)
+        super::super::unique_feature_history_states(ctx, &history).map(|_| ())
     })
     .unwrap_err();
     assert!(
