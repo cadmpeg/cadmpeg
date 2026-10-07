@@ -74,20 +74,57 @@ enum Assignment<T> {
 
 impl AppearancePlan {
     fn apply(self, ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
-        for update in self.body_updates {
-            if let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == update.id) {
+        let (positions, _position_storage) =
+            ctx.with_scoped_storage("FCStd GUI body positions", || {
+                let mut positions = BTreeMap::new();
+                for (index, body) in ctx
+                    .admit_iter(&ir.model.bodies, "FCStd GUI body index")?
+                    .enumerate()
+                    .rev()
+                {
+                    ctx.insert_btree_map(
+                        &mut positions,
+                        body.id
+                            .try_clone_for_decode(ctx, "FCStd GUI body index identity")?,
+                        index,
+                        "FCStd GUI body positions",
+                    )?;
+                }
+                Ok::<_, CodecError>(positions)
+            })?;
+        for update in ctx.admit_iter(self.body_updates, "FCStd GUI body updates")? {
+            if let Some(&index) =
+                ctx.get_btree_map(&positions, &update.id, "FCStd GUI body update lookup")?
+            {
+                let body = &mut ir.model.bodies[index];
                 if let Assignment::Set(visible) = update.visible {
                     body.visible = visible;
                 }
                 body.color = update.color;
             }
         }
-        ir.model
-            .appearance_bindings
-            .retain(|binding| !self.remove_appearances.contains(&binding.appearance));
-        ir.model
-            .appearances
-            .retain(|appearance| !self.remove_appearances.contains(&appearance.id));
+        ctx.retain_vec(
+            &mut ir.model.appearance_bindings,
+            |binding| {
+                Ok(!ctx.contains_hash_set(
+                    &self.remove_appearances,
+                    &binding.appearance,
+                    "FCStd GUI appearance binding removal",
+                )?)
+            },
+            "FCStd GUI appearance binding removal",
+        )?;
+        ctx.retain_vec(
+            &mut ir.model.appearances,
+            |appearance| {
+                Ok(!ctx.contains_hash_set(
+                    &self.remove_appearances,
+                    &appearance.id,
+                    "FCStd GUI appearance removal",
+                )?)
+            },
+            "FCStd GUI appearance removal",
+        )?;
         ctx.reserve_vec(
             &mut ir.model.appearances,
             self.appearances.len(),
@@ -228,6 +265,45 @@ pub(crate) struct GuiSources<'a, 'b> {
     pub(crate) payloads: &'a [ShapePayloadRecord],
     pub(crate) element_maps: &'a [ElementMapRecord],
     pub(crate) requires_alpha_conversion: bool,
+}
+
+struct ShapeIndex<'source, 'ctx> {
+    properties: BTreeMap<&'source str, Vec<&'source PropertyRecord>>,
+    payloads: BTreeMap<&'source str, Vec<&'source ShapePayloadRecord>>,
+    maps: BTreeMap<&'source str, Vec<&'source ElementMapRecord>>,
+    _storage: [cadmpeg_core::decode::ScopedReservation<'ctx>; 3],
+}
+
+impl<'source, 'ctx> ShapeIndex<'source, 'ctx> {
+    fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        properties: &'source [PropertyRecord],
+        payloads: &'source [ShapePayloadRecord],
+        maps: &'source [ElementMapRecord],
+    ) -> Result<Self, CodecError> {
+        let (properties, property_storage) = ctx.collect_scoped_btree_groups(
+            ctx.admit_iter(properties, "FCStd GUI Shape property selection")?
+                .filter(|property| property.name == "Shape")
+                .map(|property| (property.owner.as_str(), property)),
+            "FCStd GUI Shape property owners",
+        )?;
+        let (payloads, payload_storage) = ctx.collect_scoped_btree_groups(
+            payloads
+                .iter()
+                .map(|payload| (payload.property.as_str(), payload)),
+            "FCStd GUI Shape payload properties",
+        )?;
+        let (maps, map_storage) = ctx.collect_scoped_btree_groups(
+            maps.iter().map(|map| (map.property.as_str(), map)),
+            "FCStd GUI Shape element maps",
+        )?;
+        Ok(Self {
+            properties,
+            payloads,
+            maps,
+            _storage: [property_storage, payload_storage, map_storage],
+        })
+    }
 }
 
 pub(crate) fn transfer(
@@ -379,23 +455,36 @@ fn transfer_schema_one(
     let mut native_providers = Vec::new();
     let mut native_properties = Vec::new();
     let mut losses = Vec::new();
-    let mut payload_storage = ctx.reserve_scoped(0, "FCStd GUI payload owners")?;
-    let mut payloads_by_owner = Vec::new();
-    for payload in payloads {
-        if let Some(property) = properties
+    let shape_index = ShapeIndex::new(ctx, properties, payloads, sources.element_maps)?;
+    let (properties_by_id, _property_id_storage) = ctx.collect_scoped_btree_map(
+        properties
             .iter()
-            .find(|property| property.id == payload.property)
-        {
-            payload_storage.with_storage(|| {
-                ctx.reserve_vec(&mut payloads_by_owner, 1, "FCStd GUI payload owners")
-            })?;
-            payloads_by_owner.push((
-                property.owner.as_str(),
-                property.name.as_str(),
-                payload.id.as_str(),
-            ));
+            .rev()
+            .map(|property| (property.id.as_str(), property)),
+        "FCStd GUI payload property identities",
+    )?;
+    let mut payload_storage = ctx.reserve_scoped(0, "FCStd GUI payload owners")?;
+    let mut payloads_by_owner = BTreeMap::new();
+    for payload in ctx.admit_iter(payloads, "FCStd GUI payload ownership")? {
+        if let Some(property) = ctx.get_btree_map(
+            &properties_by_id,
+            payload.property.as_str(),
+            "FCStd GUI payload property lookup",
+        )? {
+            if property.name == "Shape" {
+                ctx.push_scoped_btree_group(
+                    &mut payload_storage,
+                    &mut payloads_by_owner,
+                    property.owner.as_str(),
+                    || payload.id.as_str(),
+                    0,
+                    "FCStd GUI payload owners",
+                )?;
+            }
         }
     }
+    let mut provider_name_storage = ctx.reserve_scoped(0, "FCStd GUI provider names")?;
+    let mut provider_names = HashSet::new();
     let mut view_provider_data = xml
         .descendants()
         .filter(|node| node.has_tag_name("ViewProviderData"));
@@ -438,20 +527,18 @@ fn transfer_schema_one(
         let Some(name) = provider.attribute("name") else {
             return Err(CodecError::Malformed("ViewProvider has no name".into()));
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(native_providers.len()),
-            "FCStd GUI duplicate provider scan",
-        )?;
-        if native_providers
-            .iter()
-            .any(|record: &GuiViewProviderRecord| record.name == name)
-        {
+        if !provider_name_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut provider_names, name, "FCStd GUI provider names")
+        })? {
             return Err(CodecError::Malformed(
                 "GuiDocument.xml has duplicate ViewProvider names".into(),
             ));
         }
         let provider_key = provider_identity_key(ctx, name)?;
-        let Some(object_id) = objects_by_name.get(name).copied() else {
+        let Some(object_id) = ctx
+            .get_hash_map(&objects_by_name, name, "FCStd GUI object name lookup")?
+            .copied()
+        else {
             append_native_provider(
                 ctx,
                 text,
@@ -535,10 +622,15 @@ fn transfer_schema_one(
                 select_shape_bodies(
                     ctx,
                     ir,
-                    payloads_by_owner
-                        .iter()
-                        .filter(|(owner, property, _)| *owner == object_id && *property == "Shape")
-                        .map(|(_, _, payload)| *payload),
+                    ctx.get_btree_map(
+                        &payloads_by_owner,
+                        object_id,
+                        "FCStd GUI Shape payload owner lookup",
+                    )?
+                    .map(Vec::as_slice)
+                    .unwrap_or_default()
+                    .iter()
+                    .copied(),
                 )
             })?;
         for body_id in &body_ids {
@@ -569,12 +661,22 @@ fn transfer_schema_one(
                     provenance: property_provenance("DiffuseColor", "App::PropertyColorList")?,
                 },
                 sources,
+                &shape_index,
                 &mut losses,
             )?;
         }
-        let (payload_prefixes, _prefix_storage) = ctx
-            .with_scoped_storage("FCStd GUI payload prefixes", || {
-                shape_payload_prefixes(ctx, &payloads_by_owner, object_id)
+        let (payload_prefixes, _prefix_storage) =
+            ctx.with_scoped_storage("FCStd GUI payload prefixes", || {
+                shape_payload_prefixes(
+                    ctx,
+                    ctx.get_btree_map(
+                        &payloads_by_owner,
+                        object_id,
+                        "FCStd GUI Shape payload owner lookup",
+                    )?
+                    .map(Vec::as_slice)
+                    .unwrap_or_default(),
+                )
             })?;
         if let Some(color) = values
             .get("LineColor")
@@ -617,6 +719,7 @@ fn transfer_schema_one(
                     provenance: property_provenance("LineColorArray", "App::PropertyColorList")?,
                 },
                 sources,
+                &shape_index,
                 &mut losses,
             )?;
         }
@@ -661,6 +764,7 @@ fn transfer_schema_one(
                     provenance: property_provenance("PointColorArray", "App::PropertyColorList")?,
                 },
                 sources,
+                &shape_index,
                 &mut losses,
             )?;
         }
@@ -746,7 +850,7 @@ fn transfer_schema_one(
         &mut plan,
         &graph,
         &material_lists,
-        sources,
+        &shape_index,
         &mut material_losses,
     )?;
     append_graph_losses(ctx, &mut graph, material_losses)?;
@@ -1264,14 +1368,10 @@ struct PrimitiveAppearanceSource<'a> {
 
 fn shape_payload_prefixes(
     ctx: &DecodeContext<'_>,
-    payloads_by_owner: &[(&str, &str, &str)],
-    object_id: &str,
+    payloads: &[&str],
 ) -> Result<Vec<String>, CodecError> {
     let mut prefixes = Vec::new();
-    for (_, _, payload) in payloads_by_owner
-        .iter()
-        .filter(|(owner, property, _)| *owner == object_id && *property == "Shape")
-    {
+    for payload in ctx.admit_iter(payloads, "FCStd GUI payload prefix sources")? {
         ctx.reserve_vec(&mut prefixes, 1, "FCStd GUI payload prefixes")?;
         prefixes.push(ctx.retained_suffix(
             crate::native::id_key(payload),
@@ -1603,6 +1703,8 @@ fn append_native_provider(
             ),
         ));
     }
+    let mut name_storage = ctx.reserve_scoped(0, "FCStd GUI property names")?;
+    let mut names = HashSet::new();
     for (property_order, property) in property_nodes.into_iter().enumerate() {
         let property_name = property.attribute("name").ok_or_else(|| {
             gui_malformed(
@@ -1610,16 +1712,13 @@ fn append_native_provider(
                 format_args!("ViewProvider {name} property has no name"),
             )
         })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(property_order),
-            "FCStd GUI duplicate property scan",
-        )?;
-        if properties
-            .iter()
-            .rev()
-            .take(property_order)
-            .any(|record| record.owner == id && record.name == property_name)
-        {
+        if !name_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut names,
+                (id.as_str(), property_name),
+                "FCStd GUI property names",
+            )
+        })? {
             return Err(CodecError::Malformed(
                 "ViewProvider has duplicate property names".into(),
             ));
@@ -4503,13 +4602,19 @@ fn transfer_shape_appearances(
     plan: &mut AppearancePlan,
     graph: &Graph,
     material_lists: &HashMap<String, Vec<GuiMaterial>>,
-    sources: &GuiSources<'_, '_>,
+    shape_index: &ShapeIndex<'_, '_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    let properties = sources.properties;
-    let payloads = sources.payloads;
-    let element_maps = sources.element_maps;
-    for provider in &graph.providers {
+    let (appearance_properties, _appearance_property_storage) = ctx.collect_scoped_btree_map(
+        ctx.admit_iter(&graph.properties, "FCStd GUI ShapeAppearance selection")?
+            .filter(|property| {
+                property.name == "ShapeAppearance"
+                    && property.type_name == "App::PropertyMaterialList"
+            })
+            .map(|property| (property.owner.as_str(), property)),
+        "FCStd GUI ShapeAppearance owners",
+    )?;
+    for provider in ctx.admit_iter(&graph.providers, "FCStd GUI material providers")? {
         let provider_key = provider_identity_key(ctx, &provider.name)?;
         let Some(object_id) = provider
             .object
@@ -4518,22 +4623,27 @@ fn transfer_shape_appearances(
         else {
             continue;
         };
-        let Some(property) = graph.properties.iter().find(|property| {
-            property.owner == provider.id
-                && property.name == "ShapeAppearance"
-                && property.type_name == "App::PropertyMaterialList"
-        }) else {
+        let Some(property) = ctx.get_btree_map(
+            &appearance_properties,
+            provider.id.as_str(),
+            "FCStd GUI ShapeAppearance lookup",
+        )?
+        else {
             continue;
         };
-        let Some(materials) = material_lists.get(&property.id) else {
+        let Some(materials) = ctx.get_hash_map(
+            material_lists,
+            &property.id,
+            "FCStd GUI material list lookup",
+        )?
+        else {
             continue;
         };
         let (body_ids, _body_storage) = ctx
             .with_scoped_storage("FCStd GUI displayed bodies", || {
-                displayed_shape_bodies(ctx, ir, object_id, properties, payloads)
+                displayed_shape_bodies(ctx, ir, object_id, shape_index)
             })?;
-        let group =
-            displayed_shape_group(ctx, object_id, properties, payloads, element_maps, "Face")?;
+        let group = displayed_shape_group(ctx, object_id, shape_index, "Face")?;
         let mapped_count = match group {
             None => 0,
             Some(group) => match group.names.len() {
@@ -4636,10 +4746,9 @@ fn displayed_shape_bodies(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     object_id: &str,
-    properties: &[PropertyRecord],
-    payloads: &[ShapePayloadRecord],
+    shape_index: &ShapeIndex<'_, '_>,
 ) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
-    let Some(payload) = displayed_shape_payload(ctx, object_id, properties, payloads)? else {
+    let Some(payload) = displayed_shape_payload(ctx, object_id, shape_index)? else {
         return Ok(Vec::new());
     };
     select_shape_bodies(ctx, ir, std::iter::once(payload.id.as_str()))
@@ -4673,12 +4782,17 @@ fn select_shape_bodies<'a>(
 fn displayed_shape_payload<'a>(
     ctx: &DecodeContext<'_>,
     object_id: &str,
-    properties: &[PropertyRecord],
-    payloads: &'a [ShapePayloadRecord],
+    shape_index: &ShapeIndex<'a, '_>,
 ) -> Result<Option<&'a ShapePayloadRecord>, CodecError> {
-    let mut shape_properties = properties
-        .iter()
-        .filter(|property| property.owner == object_id && property.name == "Shape");
+    let owned = ctx
+        .get_btree_map(
+            &shape_index.properties,
+            object_id,
+            "FCStd GUI displayed Shape lookup",
+        )?
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut shape_properties = owned.iter().copied();
     let Some(property) = shape_properties.next() else {
         return Ok(None);
     };
@@ -4688,9 +4802,15 @@ fn displayed_shape_payload<'a>(
             "FCStd GUI duplicate shape property diagnostic",
         )?));
     }
-    let mut shape_payloads = payloads
-        .iter()
-        .filter(|payload| payload.property == property.id);
+    let owned = ctx
+        .get_btree_map(
+            &shape_index.payloads,
+            property.id.as_str(),
+            "FCStd GUI displayed payload lookup",
+        )?
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut shape_payloads = owned.iter().copied();
     let Some(payload) = shape_payloads.next() else {
         return Ok(None);
     };
@@ -4706,17 +4826,21 @@ fn displayed_shape_payload<'a>(
 fn displayed_shape_group<'a>(
     ctx: &DecodeContext<'_>,
     object_id: &str,
-    properties: &[PropertyRecord],
-    payloads: &[ShapePayloadRecord],
-    element_maps: &'a [ElementMapRecord],
+    shape_index: &ShapeIndex<'a, '_>,
     indexed_name: &str,
 ) -> Result<Option<&'a ElementMapGroup>, CodecError> {
-    let Some(payload) = displayed_shape_payload(ctx, object_id, properties, payloads)? else {
+    let Some(payload) = displayed_shape_payload(ctx, object_id, shape_index)? else {
         return Ok(None);
     };
-    let mut shape_maps = element_maps
-        .iter()
-        .filter(|map| map.property == payload.property);
+    let owned = ctx
+        .get_btree_map(
+            &shape_index.maps,
+            payload.property.as_str(),
+            "FCStd GUI displayed element map lookup",
+        )?
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut shape_maps = owned.iter().copied();
     let Some(map) = shape_maps.next() else {
         return Ok(None);
     };
@@ -4916,6 +5040,7 @@ fn transfer_topology_colors(
     plan: &mut AppearancePlan,
     request: TopologyColorRequest<'_>,
     sources: &GuiSources<'_, '_>,
+    shape_index: &ShapeIndex<'_, '_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let TopologyColorRequest {
@@ -4927,9 +5052,6 @@ fn transfer_topology_colors(
         provenance,
     } = request;
     let entries = sources.entries;
-    let properties = sources.properties;
-    let payloads = sources.payloads;
-    let element_maps = sources.element_maps;
     let requires_alpha_conversion = sources.requires_alpha_conversion;
     let view = *entries.get(entry_name).ok_or_else(|| {
         gui_malformed(
@@ -4942,15 +5064,7 @@ fn transfer_topology_colors(
             parse_color_list(ctx, view, entry_name, requires_alpha_conversion)
         })?;
     let count = colors.len();
-    let Some(group) = displayed_shape_group(
-        ctx,
-        object_id,
-        properties,
-        payloads,
-        element_maps,
-        kind.name(),
-    )?
-    else {
+    let Some(group) = displayed_shape_group(ctx, object_id, shape_index, kind.name())? else {
         return Ok(());
     };
     // FreeCAD uses a single list entry as a uniform color for every mapped subelement.
@@ -5244,7 +5358,7 @@ mod color_tests {
 
 #[cfg(test)]
 mod shape_association_tests {
-    use super::{displayed_shape_bodies, displayed_shape_group, select_shape_bodies};
+    use super::{displayed_shape_bodies, displayed_shape_group, select_shape_bodies, ShapeIndex};
     use crate::brep::{ShapePayload, ShapePayloadRecord};
     use crate::native::element_map::{ElementMapGroup, ElementMapNode, ElementMapRecord};
     use crate::native::{PropertyFamily, PropertyRecord};
@@ -5320,18 +5434,17 @@ mod shape_association_tests {
         let ir = shape_ir();
         let properties = [shape_property("property")];
         let payloads = [shape_payload("payload", "property")];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        let error = displayed_shape_bodies(&ctx, &ir, "object", &properties, &payloads)
-            .expect_err("displayed body collection must be charged");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && failure.operation == "FCStd GUI displayed shape bodies"),
-            "{error:?}"
+        crate::test_support::assert_collection_refusal_at(
+            &[],
+            "FCStd GUI displayed shape bodies",
+            |ctx| {
+                displayed_shape_bodies(
+                    ctx,
+                    &ir,
+                    "object",
+                    &ShapeIndex::new(ctx, &properties, &payloads, &[])?,
+                )
+            },
         );
     }
 
@@ -5340,21 +5453,17 @@ mod shape_association_tests {
         let ir = shape_ir();
         let properties = [shape_property("property")];
         let payloads = [shape_payload("payload", "property")];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            4 * std::mem::size_of::<cadmpeg_ir::ids::BodyId>()
-                + ir.model.bodies[0].id.as_str().len(),
-        ) - 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        let error = displayed_shape_bodies(&ctx, &ir, "object", &properties, &payloads)
-            .expect_err("displayed body identity must be charged");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-            if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && failure.operation == "FCStd GUI displayed body identity"),
-            "{error:?}"
+        crate::test_support::assert_retained_refusal_at(
+            &[],
+            "FCStd GUI displayed body identity",
+            |ctx| {
+                displayed_shape_bodies(
+                    ctx,
+                    &ir,
+                    "object",
+                    &ShapeIndex::new(ctx, &properties, &payloads, &[])?,
+                )
+            },
         );
     }
 
@@ -5400,9 +5509,13 @@ mod shape_association_tests {
             displayed_shape_group(
                 &ctx,
                 "object",
-                &[property.clone(), duplicate_property],
-                std::slice::from_ref(&payload),
-                std::slice::from_ref(&map),
+                &ShapeIndex::new(
+                    &ctx,
+                    &[property.clone(), duplicate_property],
+                    std::slice::from_ref(&payload),
+                    std::slice::from_ref(&map)
+                )
+                .expect("shape index"),
                 "Face"
             ),
             Err(cadmpeg_core::CodecError::Malformed(_))
@@ -5416,9 +5529,13 @@ mod shape_association_tests {
             displayed_shape_group(
                 &ctx,
                 "object",
-                std::slice::from_ref(&property),
-                &[payload.clone(), duplicate_payload],
-                std::slice::from_ref(&map),
+                &ShapeIndex::new(
+                    &ctx,
+                    std::slice::from_ref(&property),
+                    &[payload.clone(), duplicate_payload],
+                    std::slice::from_ref(&map)
+                )
+                .expect("shape index"),
                 "Face"
             ),
             Err(cadmpeg_core::CodecError::Malformed(_))
@@ -5432,9 +5549,13 @@ mod shape_association_tests {
             displayed_shape_group(
                 &ctx,
                 "object",
-                std::slice::from_ref(&property),
-                std::slice::from_ref(&payload),
-                &[map, duplicate_map],
+                &ShapeIndex::new(
+                    &ctx,
+                    std::slice::from_ref(&property),
+                    std::slice::from_ref(&payload),
+                    &[map, duplicate_map]
+                )
+                .expect("shape index"),
                 "Face"
             ),
             Err(cadmpeg_core::CodecError::Malformed(_))
@@ -5445,9 +5566,8 @@ mod shape_association_tests {
             displayed_shape_group(
                 &ctx,
                 "object",
-                &[property],
-                &[payload],
-                &[duplicate_group],
+                &ShapeIndex::new(&ctx, &[property], &[payload], &[duplicate_group])
+                    .expect("shape index"),
                 "Face"
             ),
             Err(cadmpeg_core::CodecError::Malformed(_))
@@ -5460,7 +5580,14 @@ mod shape_association_tests {
         crate::test_support::assert_retained_refusal_at(
             &[],
             "FCStd GUI duplicate shape property diagnostic",
-            |ctx| displayed_shape_group(ctx, "object", &properties, &[], &[], "Face"),
+            |ctx| {
+                displayed_shape_group(
+                    ctx,
+                    "object",
+                    &ShapeIndex::new(ctx, &properties, &[], &[])?,
+                    "Face",
+                )
+            },
         );
     }
 
@@ -5474,7 +5601,14 @@ mod shape_association_tests {
         crate::test_support::assert_retained_refusal_at(
             &[],
             "FCStd GUI duplicate shape payload diagnostic",
-            |ctx| displayed_shape_group(ctx, "object", &properties, &payloads, &[], "Face"),
+            |ctx| {
+                displayed_shape_group(
+                    ctx,
+                    "object",
+                    &ShapeIndex::new(ctx, &properties, &payloads, &[])?,
+                    "Face",
+                )
+            },
         );
     }
 
@@ -5489,7 +5623,14 @@ mod shape_association_tests {
         crate::test_support::assert_retained_refusal_at(
             &[],
             "FCStd GUI duplicate element map diagnostic",
-            |ctx| displayed_shape_group(ctx, "object", &properties, &payloads, &maps, "Face"),
+            |ctx| {
+                displayed_shape_group(
+                    ctx,
+                    "object",
+                    &ShapeIndex::new(ctx, &properties, &payloads, &maps)?,
+                    "Face",
+                )
+            },
         );
     }
 
@@ -5501,7 +5642,14 @@ mod shape_association_tests {
         crate::test_support::assert_retained_refusal_at(
             &[],
             "FCStd GUI duplicate element group diagnostic",
-            |ctx| displayed_shape_group(ctx, "object", &properties, &payloads, &maps, "Face"),
+            |ctx| {
+                displayed_shape_group(
+                    ctx,
+                    "object",
+                    &ShapeIndex::new(ctx, &properties, &payloads, &maps)?,
+                    "Face",
+                )
+            },
         );
     }
 }
