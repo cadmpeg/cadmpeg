@@ -1,5 +1,8 @@
 //! Curve endpoint index decoders.
 
+pub(super) mod geometry_index;
+use geometry_index::{MarkerGeometryIndex, MarkerPrefixIndex};
+
 use super::curves::compact_bounded_curve_tangent;
 use super::dimensions::compact_legacy_radial_circle_index;
 use super::grid::quantize;
@@ -22,7 +25,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputScalarRole, SketchInputEntity,
     SketchInputKind,
 };
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length};
@@ -2642,10 +2645,12 @@ pub(super) fn implicit_profile_chain_closure_endpoints(
 }
 
 pub(super) fn extended_declared_inline_line_endpoints(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
-    markers: &[&SketchInputEntity],
-) -> Option<[cadmpeg_ir::units::FiniteVector<2>; 2]> {
+    geometry: &MarkerGeometryIndex<'_, '_>,
+) -> Result<Option<[cadmpeg_ir::units::FiniteVector<2>; 2]>, CodecError> {
+    let record = (|| {
     let offset = usize::try_from(curve.offset()).ok()?;
     let declaration = payload.get(offset + 96..offset + 106)?;
     let declaration_id = View::u16_le_at(declaration, 0)?;
@@ -2684,27 +2689,21 @@ pub(super) fn extended_declared_inline_line_endpoints(
         return None;
     }
     let index = u32::from(View::u16_le_at(cell, 2)?);
-    let mut candidates = markers.iter().copied().filter(|marker| {
-        marker.feature_ref == curve.feature_ref
-            && marker.object_index() == Some(index)
-            && marker.coordinates_m.is_some()
-            && matches!(
-                marker.kind(),
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-            )
-    });
-    let external = match (candidates.next(), candidates.next()) {
-        (Some(external), None) => external.coordinates_m?,
-        _ => return None,
-    };
-    Some([external, finite_coordinate_pair(payload, offset + 58)?])
+    Some((index, finite_coordinate_pair(payload, offset + 58)?))
+    })();
+    let Some((index, inline)) = record else { return Ok(None); };
+    let external = geometry.endpoint(ctx, curve, index, false)?
+        .and_then(|marker| marker.coordinates_m);
+    Ok(external.map(|external| [external, inline]))
 }
 
 pub(super) fn extended_linked_inline_line_endpoints(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
-    markers: &[&SketchInputEntity],
-) -> Option<[cadmpeg_ir::units::FiniteVector<2>; 2]> {
+    geometry: &MarkerGeometryIndex<'_, '_>,
+) -> Result<Option<[cadmpeg_ir::units::FiniteVector<2>; 2]>, CodecError> {
+    let record = (|| {
     let offset = usize::try_from(curve.offset()).ok()?;
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
@@ -2732,50 +2731,32 @@ pub(super) fn extended_linked_inline_line_endpoints(
         (None, Some(position)) => record.references[1 - position],
         _ => return None,
     };
-    let mut candidates = markers.iter().copied().filter(|marker| {
-        marker.feature_ref == curve.feature_ref
-            && marker.object_index() == Some(external_index)
-            && marker.coordinates_m.is_some()
-            && matches!(
-                marker.kind(),
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-            )
-    });
-    let external = match (candidates.next(), candidates.next()) {
-        (Some(external), None) => external.coordinates_m?,
-        _ => return None,
-    };
-    Some([external, record.inline])
+    Some((external_index, record.inline))
+    })();
+    let Some((index, inline)) = record else { return Ok(None); };
+    let external = geometry.endpoint(ctx, curve, index, false)?
+        .and_then(|marker| marker.coordinates_m);
+    Ok(external.map(|external| [external, inline]))
 }
 
 pub(super) fn extended_identity_inline_line_endpoints(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
-    markers: &[&SketchInputEntity],
-) -> Option<[cadmpeg_ir::units::FiniteVector<2>; 2]> {
+    geometry: &MarkerGeometryIndex<'_, '_>,
+) -> Result<Option<[cadmpeg_ir::units::FiniteVector<2>; 2]>, CodecError> {
+    let record = (|| {
     let offset = usize::try_from(curve.offset()).ok()?;
     if !extended_identity_inline_line_record(payload, offset) {
         return None;
     }
     let identity = View::u32_le_at(payload, offset + 130)?;
-    let mut candidates = markers.iter().copied().filter(|marker| {
-        marker.feature_ref == curve.feature_ref
-            && marker.id() != curve.id()
-            && marker.object_index() == Some(identity)
-            && marker.coordinates_m.is_some()
-            && matches!(
-                marker.kind(),
-                SketchInputKind::Point
-                    | SketchInputKind::ConstrainedPoint
-                    | SketchInputKind::LineOrCircle
-                    | SketchInputKind::Arc
-            )
-    });
-    let endpoint = candidates.next()?;
-    candidates.next().is_none().then_some([
-        finite_coordinate_pair(payload, offset + 58)?,
-        endpoint.coordinates_m?,
-    ])
+    Some((identity, finite_coordinate_pair(payload, offset + 58)?))
+    })();
+    let Some((index, inline)) = record else { return Ok(None); };
+    let external = geometry.endpoint(ctx, curve, index, true)?
+        .and_then(|marker| marker.coordinates_m);
+    Ok(external.map(|external| [inline, external]))
 }
 
 pub(super) fn extended_identity_inline_line_record(payload: &[u8], offset: usize) -> bool {
@@ -3967,7 +3948,8 @@ pub(super) fn compact_legacy_profile_full_circle(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     circle: &SketchInputEntity,
-    markers: &[&SketchInputEntity],
+    geometry: &MarkerGeometryIndex<'_, '_>,
+    prefixes: &MarkerPrefixIndex<'_, '_>,
 ) -> Result<Option<([f64; 2], f64)>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT compact legacy profile full circle";
     let eligibility = (|| {
@@ -4018,20 +4000,7 @@ pub(super) fn compact_legacy_profile_full_circle(
     let Some((offset, radial_index)) = eligibility else {
         return Ok(None);
     };
-    let mut points = collect_endpoint_markers(
-        ctx,
-        markers.iter().copied(),
-        circle,
-        |marker| {
-            marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-        },
-        OPERATION,
-    )?;
-    sort_endpoint_markers(ctx, &mut points, OPERATION)?;
+    let points = geometry.points(ctx, circle)?;
     let Some((center, feature_start)) = points.first().and_then(|first| {
         Some((
             first.coordinates_m?.get(),
@@ -4042,26 +4011,11 @@ pub(super) fn compact_legacy_profile_full_circle(
     };
     // The radial point is the record at the `radial_index`-th marker prefix from the
     // feature's first point.
-    let mut preceding = 0usize;
-    let radial_offset = ctx.find_by(
-        feature_start..=offset,
-        |candidate| {
-            if !sketch_marker_prefix_at(payload, *candidate) {
-                return Ok(false);
-            }
-            if preceding == radial_index {
-                return Ok(true);
-            }
-            preceding += 1;
-            Ok(false)
-        },
-        OPERATION,
-    )?;
-    let Some(radial_offset) = radial_offset.map(u64_from_index) else {
+    let Some(radial_offset) = prefixes.nth(ctx, feature_start, offset, radial_index)? else {
         return Ok(None);
     };
     let at = ctx.partition_point(
-        &points,
+        points,
         |marker| Ok(marker.offset() < radial_offset),
         OPERATION,
     )?;

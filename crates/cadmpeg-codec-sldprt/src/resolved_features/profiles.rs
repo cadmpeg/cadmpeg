@@ -14,6 +14,7 @@ use super::curves::{
     resolve_two_center_semicircle_profile, tangent_bounded_curve,
     unique_dimensioned_rectangle_markers, LaneFrameIndex,
 };
+use super::endpoints::geometry_index::{MarkerGeometryIndex, MarkerPrefixIndex};
 use super::endpoints::{
     auxiliary_profile_record, compact_legacy_code_one_line_endpoint_indices,
     compact_legacy_curve_endpoint_indices, compact_legacy_profile_full_circle,
@@ -1732,6 +1733,7 @@ pub(crate) fn project_marker_backed_sketches(
     let mut replaced = HashSet::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT profiles records")? {
         let slots = super::curves::SlotReferences::new(ctx, &lane.native_payload)?;
+        let prefixes = MarkerPrefixIndex::new(ctx, &lane.native_payload)?;
         let object_names = ObjectNames::new(ctx, lane)?;
         let mut plane_frames_storage = ctx.reserve_scoped(0, "resolve SLDPRT feature frames")?;
         let plane_frames = plane_frames_storage
@@ -1875,6 +1877,7 @@ pub(crate) fn project_marker_backed_sketches(
                     })?;
                 }
             }
+            let geometry_index = MarkerGeometryIndex::new(ctx, &object_markers)?;
             let context_start = object_index
                 .checked_sub(1)
                 .and_then(|index| objects.get(index))
@@ -2212,7 +2215,8 @@ pub(crate) fn project_marker_backed_sketches(
                                     ctx,
                                     &lane.native_payload,
                                     marker,
-                                    &object_markers,
+                                    &geometry_index,
+                                    &prefixes,
                                 )?;
                             }
                             if circle_geometry.is_none() {
@@ -2297,34 +2301,20 @@ pub(crate) fn project_marker_backed_sketches(
                                         .ok_or(MarkerGeometryFailure::Absent)?
                                     }
                                 } else if let Some([start, end]) = {
-                                    let mut endpoints = extended_declared_inline_line_endpoints(
-                                        &lane.native_payload,
-                                        marker,
-                                        &object_markers,
-                                    )
-                                    .map(|endpoints| {
-                                        endpoints.map(cadmpeg_ir::units::FiniteVector::get)
-                                    })
-                                    .or_else(|| {
-                                        extended_linked_inline_line_endpoints(
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                        )
-                                        .map(|endpoints| {
-                                            endpoints.map(cadmpeg_ir::units::FiniteVector::get)
-                                        })
-                                    })
-                                    .or_else(|| {
-                                        extended_identity_inline_line_endpoints(
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                        )
-                                        .map(|endpoints| {
-                                            endpoints.map(cadmpeg_ir::units::FiniteVector::get)
-                                        })
-                                    });
+                                    let mut inline = extended_declared_inline_line_endpoints(
+                                        ctx, &lane.native_payload, marker, &geometry_index,
+                                    )?;
+                                    if inline.is_none() {
+                                        inline = extended_linked_inline_line_endpoints(
+                                            ctx, &lane.native_payload, marker, &geometry_index,
+                                        )?;
+                                    }
+                                    if inline.is_none() {
+                                        inline = extended_identity_inline_line_endpoints(
+                                            ctx, &lane.native_payload, marker, &geometry_index,
+                                        )?;
+                                    }
+                                    let mut endpoints = inline.map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get));
                                     if endpoints.is_none() {
                                         let inferred = match inferred_points.get() {
                                             Some(inferred) => inferred,

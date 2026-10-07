@@ -116,7 +116,7 @@ fn extended_linked_line_uses_inline_self_endpoint() {
     };
 
     assert_eq!(
-        (extended_linked_inline_line_endpoints(&payload, &curve, &[&external, &curve]))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_linked_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.0, 0.0075], [0.007, 0.0075]])
     );
@@ -126,13 +126,13 @@ fn extended_linked_line_uses_inline_self_endpoint() {
     external = external.with_test_identity(Some(1), external.local_id());
     curve = curve.with_test_identity(Some(4), curve.local_id());
     assert_eq!(
-        (extended_linked_inline_line_endpoints(&payload, &curve, &[&external, &curve]))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_linked_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.0, 0.0075], [0.007, 0.0075]])
     );
     payload[140] = 1;
     assert_eq!(
-        (extended_linked_inline_line_endpoints(&payload, &curve, &[&external, &curve]))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_linked_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         None
     );
@@ -187,7 +187,7 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
     };
 
     assert_eq!(
-        (extended_identity_inline_line_endpoints(&payload, &curve, &[&point, &curve]))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&point, &curve]).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.007, 0.0075], [0.01, 0.012]])
     );
@@ -198,13 +198,13 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
         constructed_marker
     };
     assert_eq!(
-        (extended_identity_inline_line_endpoints(&payload, &curve, &[&chained_curve, &curve],))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&chained_curve, &curve]).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.007, 0.0075], [0.01, 0.012]])
     );
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        (extended_identity_inline_line_endpoints(&payload, &curve, &[&point, &curve]))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&point, &curve]).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.007, 0.0075], [0.01, 0.012]])
     );
@@ -220,11 +220,7 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
         constructed_marker
     };
     assert_eq!(
-        (extended_identity_inline_line_endpoints(
-            &payload,
-            &direct_curve,
-            &[&chained_curve, &direct_curve],
-        ))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &direct_curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&chained_curve, &direct_curve]).unwrap()).unwrap(); result })
         .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.007, 0.0075], [0.01, 0.012]])
     );
@@ -234,11 +230,7 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
     );
     payload[126..130].fill(0);
     assert_eq!(
-        (extended_identity_inline_line_endpoints(
-            &payload,
-            &direct_curve,
-            &[&chained_curve, &direct_curve],
-        ))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &direct_curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&chained_curve, &direct_curve]).unwrap()).unwrap(); result })
         .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         None
     );
@@ -249,13 +241,13 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
         constructed_marker
     };
     assert_eq!(
-        (extended_identity_inline_line_endpoints(&payload, &curve, &[&point, &duplicate, &curve],))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&point, &duplicate, &curve]).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         None
     );
     payload[130..134].fill(0);
     assert_eq!(
-        (extended_identity_inline_line_endpoints(&payload, &curve, &[&point, &curve]))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_identity_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&point, &curve]).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         None
     );
@@ -315,32 +307,32 @@ fn extended_declared_line_uses_its_typed_point_selector() {
     };
 
     assert_eq!(
-        (extended_declared_inline_line_endpoints(&payload, &curve, &[&external, &curve]))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.014, 0.016], [0.0165, 0.029]])
     );
     payload[96..98].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        (extended_declared_inline_line_endpoints(&payload, &curve, &[&external, &curve]))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         Some([[0.014, 0.016], [0.0165, 0.029]])
     );
     payload[96..98].fill(0);
     assert_eq!(
-        (extended_declared_inline_line_endpoints(&payload, &curve, &[&external, &curve]))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         None
     );
     payload[96..98].fill(0xff);
     assert_eq!(
-        (extended_declared_inline_line_endpoints(&payload, &curve, &[&external, &curve]))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         None
     );
     payload[96..98].copy_from_slice(&8u16.to_le_bytes());
     payload[110] = 0;
     assert_eq!(
-        (extended_declared_inline_line_endpoints(&payload, &curve, &[&external, &curve]))
+        ({ let ctx = cadmpeg_test_support::service_decode_context(); let result = extended_declared_inline_line_endpoints(&ctx, &payload, &curve, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &[&external, &curve]).unwrap()).unwrap(); result })
             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)),
         None
     );
