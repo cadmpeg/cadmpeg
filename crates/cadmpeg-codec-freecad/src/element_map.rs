@@ -43,24 +43,11 @@ enum ElementMapCarrier<'a, 'input> {
 /// Recover every string table and element map carried by `Document.xml`.
 pub(crate) fn parse(
     ctx: &DecodeContext<'_>,
-    document: &[u8],
+    xml: &roxmltree::Document<'_>,
     file_version: usize,
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(document.len()),
-        "validate FreeCAD XML UTF-8",
-    )?;
-    let text = std::str::from_utf8(document)
-        .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
-    let admitted_xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else {
-            return error;
-        };
-        element_map_malformed(ctx, format_args!("invalid Document.xml: {error}"))
-    })?;
-    let xml = admitted_xml.document();
     validate_string_hasher_framing(xml.root_element())?;
     let mut entry_data = HashMap::new();
     for entry in entries {
