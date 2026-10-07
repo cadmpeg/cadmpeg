@@ -3,7 +3,7 @@
 
 use crate::classification::{classify, native_object_class, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{
@@ -28,6 +28,54 @@ use crate::history::literals::{
 /// Records of one history by identity, `None` where an identity repeats.
 pub(super) type RecordsById<'a> = HashMap<&'a str, Option<&'a Feature>>;
 
+/// Source records and non-origin sketches in source-key order. Repeated source
+/// keys select the last record in history order.
+pub(super) struct SourceFeatures<'f, 'c> {
+    pub(super) records: BTreeMap<crate::records::FeatureSource, &'f Feature>,
+    profiles: Vec<(crate::records::FeatureSource, &'f Feature)>,
+    _storage: ScopedReservation<'c>,
+}
+
+impl<'f, 'c> SourceFeatures<'f, 'c> {
+    pub(super) fn new(
+        ctx: &'c DecodeContext<'_>,
+        features: &'f [Feature],
+    ) -> Result<Self, CodecError> {
+        const OPERATION: &str = "index SLDPRT source profiles";
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut records = BTreeMap::new();
+        for feature in ctx.admit_iter(features, OPERATION)? {
+            if let Some(source) = feature.source_id {
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(&mut records, source, feature, OPERATION)
+                })?;
+            }
+        }
+        let mut profiles = Vec::new();
+        for (&source, &feature) in ctx.admit_iter(&records, OPERATION)? {
+            if classify(feature) == Some(FeatureClass::Sketch)
+                && feature.input_class.as_deref() != Some("moOriginProfileFeature_c")
+            {
+                ctx.push_scoped_vec(&mut storage, &mut profiles, (source, feature), OPERATION)?;
+            }
+        }
+        Ok(Self { records, profiles, _storage: storage })
+    }
+
+    fn preceding_profile(
+        &self,
+        ctx: &DecodeContext<'_>,
+        source: crate::records::FeatureSource,
+    ) -> Result<Option<&'f str>, CodecError> {
+        let end = ctx.partition_point(
+            &self.profiles,
+            |(key, _)| Ok(*key < source),
+            "find SLDPRT preceding source profile",
+        )?;
+        Ok(end.checked_sub(1).map(|index| self.profiles[index].1.id.as_str()))
+    }
+}
+
 /// A length from its literal, in millimetres or as a bare dimension value.
 fn positive_length(value: &str) -> Option<PositiveLength> {
     parse_positive_length_mm(value).or_else(|| parse_positive_dimension_length_mm(value))
@@ -37,7 +85,7 @@ pub(super) fn project_extrude(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
-    features_by_source: &BTreeMap<crate::records::FeatureSource, &Feature>,
+    source_features: &SourceFeatures<'_, '_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     const OPERATION: &str = "scan SLDPRT extrusion dimensions";
     // The one dimension name the content lists, however often it repeats.
@@ -82,18 +130,7 @@ pub(super) fn project_extrude(
     let implicit_modern_blind =
         feature.input_class.as_deref() == Some("moExtrusion_c") && source_depth.is_some();
     let history_profile = match feature.source_id {
-        // The nearest earlier profile sketch, searched back from the
-        // extrusion's own source.
-        Some(source) if history_profile_extrusion => ctx
-            .find_by(
-                features_by_source.range(..source).rev(),
-                |(_, candidate)| {
-                    Ok(classify(candidate) == Some(FeatureClass::Sketch)
-                        && candidate.input_class.as_deref() != Some("moOriginProfileFeature_c"))
-                },
-                "scan SLDPRT extrusion source profiles",
-            )?
-            .map(|(_, profile)| profile.id.as_str()),
+        Some(source) if history_profile_extrusion => source_features.preceding_profile(ctx, source)?,
         _ => None,
     };
     let op = match property_value(ctx, feature, "Operation")?.and_then(parse_boolean_op) {
@@ -888,4 +925,49 @@ pub(crate) fn is_hole_profile_construction(
     feature: &Feature,
 ) -> Result<bool, CodecError> {
     Ok(hole_sketch_construction(ctx, feature)?.is_some())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SourceFeatures;
+    use crate::history::tests::feature;
+    use crate::records::{Feature, FeatureSource};
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    fn sketch(id: &str, source: &str) -> Feature {
+        let mut record = feature(id, Some(source), 0);
+        record.kind = "Sketch".into();
+        record.xml_tag = "Sketch".into();
+        record
+    }
+
+    #[test]
+    fn source_profile_index_preserves_key_order_and_last_duplicate() {
+        let mut origin = sketch("origin", "18");
+        origin.input_class = Some("moOriginProfileFeature_c".into());
+        let features = [
+            sketch("later", "19"),
+            sketch("overwritten", "10"),
+            origin,
+            sketch("first", "9"),
+            feature("last-duplicate-is-not-a-sketch", Some("10"), 0),
+        ];
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let index = SourceFeatures::new(&ctx, &features).unwrap();
+        for (source, expected) in [("9", None), ("19", Some("first")), ("20", Some("later"))] {
+            assert_eq!(index.preceding_profile(&ctx, FeatureSource::try_from(source).unwrap()).unwrap(), expected);
+        }
+        assert_eq!(index.records.get(&FeatureSource::try_from("10").unwrap()).unwrap().id, "last-duplicate-is-not-a-sketch");
+    }
+
+    #[test]
+    fn source_profile_index_refuses_before_search() {
+        let features = [sketch("first", "9"), sketch("second", "19")];
+        let error = crate::test_support::work_refusal_at("find SLDPRT preceding source profile", |ctx| {
+            let index = SourceFeatures::new(ctx, &features)?;
+            index.preceding_profile(ctx, FeatureSource::try_from("20").unwrap())
+        });
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits));
+    }
 }
