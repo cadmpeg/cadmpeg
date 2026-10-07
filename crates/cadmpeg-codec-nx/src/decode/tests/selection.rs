@@ -752,13 +752,13 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
     assert!(matches!(
         graph
             .get(NodeKind::Plane, 6)
-            .and_then(|node| crate::test_support::with_decode_context(|ctx| node.surface_geometry(ctx)).unwrap()),
+            .and_then(crate::topology::Node::surface_geometry),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)))
     ));
     assert!(matches!(
         graph
             .get(NodeKind::Line, 9)
-            .and_then(|node| crate::test_support::with_decode_context(|ctx| node.curve_geometry(ctx)).unwrap()),
+            .and_then(crate::topology::Node::curve_geometry),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
 
@@ -1966,14 +1966,18 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
         native_ref: None,
     };
 
-    assert!(output_free_local_body_construction(&feature));
+    assert!(crate::decode::feature_completeness::decode_check(|ctx| {
+        output_free_local_body_construction(ctx, &feature)
+    }));
 
     feature.source_properties.remove("primary_body_reference");
     feature.source_properties.insert(
         cadmpeg_core::nonblank_literal!("body_reference.0"),
         "42".to_string(),
     );
-    assert!(!output_free_local_body_construction(&feature));
+    assert!(!crate::decode::feature_completeness::decode_check(|ctx| {
+        output_free_local_body_construction(ctx, &feature)
+    }));
 
     feature.source_properties.insert(
         cadmpeg_core::nonblank_literal!("primary_body_reference"),
@@ -1983,5 +1987,7 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
         cadmpeg_core::nonblank_literal!("primary_body_segment_use"),
         "segment-use".to_string(),
     );
-    assert!(!output_free_local_body_construction(&feature));
+    assert!(!crate::decode::feature_completeness::decode_check(|ctx| {
+        output_free_local_body_construction(ctx, &feature)
+    }));
 }

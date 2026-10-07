@@ -360,7 +360,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         seen.push(expression.hir_id);
         let value = self.expr_ty(expression).peel_refs();
-        if types::admitted_iterator(self.tcx, value) {
+        if self.prepaid_iterator(value) {
             return Shape::Fixed;
         }
         let constant_container = match value.kind() {

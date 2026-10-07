@@ -8,9 +8,12 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 impl DecodeContext<'_> {
-    /// Builds a scoped table. Repeated keys become tombstones until the final
-    /// in-place removal, so a third occurrence cannot restore a duplicate.
-    /// Surviving values are Some; no second table is allocated.
+    /// Builds a scoped table for keyed lookup. A key that occurred once maps
+    /// to `Some`; a repeated key keeps a `None` tombstone, so a third
+    /// occurrence cannot restore it. Test uniqueness with `get` and
+    /// `Option::as_ref`, not `contains_key`. Nothing is removed, because a
+    /// removal leaves a deleted slot that hash growth accounting cannot see,
+    /// and the table is not scanned.
     pub fn unique_index<K: Eq + Hash + DecodeCost, V>(
         &self,
         entries: impl IntoIterator<Item = (K, V)>,
@@ -31,7 +34,6 @@ impl DecodeContext<'_> {
             let _ = storage
                 .with_storage(|| self.insert_hash_map(&mut table, key, Some(value), operation))?;
         }
-        self.retain_hash_map(&mut table, |_, value| Ok(value.is_some()), operation)?;
         Ok((table, storage))
     }
 }
@@ -44,7 +46,7 @@ mod tests {
     use crate::CodecError;
 
     #[test]
-    fn unique_index_removes_all_duplicate_occurrences_in_one_table() {
+    fn unique_index_tombstones_every_repeated_key() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 2;
@@ -54,9 +56,8 @@ mod tests {
         let (table, storage) = ctx
             .unique_index([(1_u32, 2), (1, 3), (1, 4), (2, 5)], "unique test")
             .expect("two slots");
-        assert_eq!(table.len(), 1);
         assert_eq!(table.get(&2), Some(&Some(5)));
-        assert!(!table.contains_key(&1));
+        assert_eq!(table.get(&1), Some(&None));
         drop((table, storage));
         ctx.reserve_scoped(policy.limits.max_materialized_bytes, "released table")
             .expect("storage released");
@@ -96,11 +97,11 @@ mod tests {
     }
 
     #[test]
-    fn unique_index_charges_shared_lookup_insertion_and_bucket_retention() {
+    fn unique_index_charges_shared_lookup_and_insertion() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Two source steps, three three-byte key operations, and three hash bucket visits.
-        policy.limits.max_work_units = 14;
+        // Two source steps and three three-byte key operations.
+        policy.limits.max_work_units = 11;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (values, _scope) = ctx
             .unique_index([(String::from("key"), 7_u8)], "index")
@@ -111,12 +112,12 @@ mod tests {
         else {
             panic!("refusal")
         };
-        assert_eq!(limit.used, 14);
-        policy.limits.max_work_units = 13;
+        assert_eq!(limit.used, 11);
+        policy.limits.max_work_units = 10;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let CodecError::ResourceLimit(first) = ctx
             .unique_index([(String::from("key"), 7_u8)], "index")
-            .expect_err("bucket refusal")
+            .expect_err("insertion key refusal")
         else {
             panic!("refusal")
         };

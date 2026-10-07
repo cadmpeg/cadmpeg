@@ -359,60 +359,6 @@ pub(crate) struct CurveScan {
     pub(crate) rejected: RejectionCounts,
 }
 
-impl CurveScan {
-    pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let mut curves = Vec::new();
-        ctx.reserve_vec(&mut curves, self.curves.len(), "NX intersection curve copy")?;
-        for curve in &self.curves {
-            ctx.charge_work(1, "copy NX intersection curves")?;
-            let [support_first, support_second] = [0, 1].map(|side| {
-                curve.support_uv[side]
-                    .as_ref()
-                    .map(|lane| {
-                        crate::intersection::SupportUvLane::from_checked(
-                            ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
-                            lane.as_slice().len(),
-                        )
-                        .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
-                    })
-                    .transpose()
-            });
-            let [ext_first, ext_second] = [0, 1].map(|side| {
-                curve.ext_support_uv[side]
-                    .as_ref()
-                    .map(|lane| {
-                        crate::intersection::SupportUvLane::from_checked(
-                            ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
-                            lane.as_slice().len(),
-                        )
-                        .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
-                    })
-                    .transpose()
-            });
-            curves.push(IntersectionCurve {
-                references: curve.references,
-                xmt: curve.xmt,
-                primary_support: curve.primary_support,
-                secondary_support: curve.secondary_support,
-                pos: curve.pos,
-                samples: curve.samples.clone_charged(ctx)?,
-                fit_tolerance: curve.fit_tolerance,
-                support_uv: [support_first?, support_second?],
-                ext_support_uv: [ext_first?, ext_second?],
-            });
-        }
-        Ok(Self {
-            source_constructions: ctx
-                .copy_slice(&self.source_constructions, "NX source intersection copy")?,
-            constructions: ctx
-                .copy_slice(&self.constructions, "NX intersection construction copy")?,
-            curves,
-            uncharted: ctx.copy_slice(&self.uncharted, "NX uncharted intersection copy")?,
-            rejected: self.rejected,
-        })
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 enum Rejection {
     MissingSupport,

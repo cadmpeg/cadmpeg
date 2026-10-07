@@ -430,18 +430,9 @@ fn decode_frames(
 
 /// Whether the Protein archive packages schema XML documents.
 pub fn has_schemas(ctx: &DecodeContext<'_>, protein: &[u8]) -> Result<bool, CodecError> {
-    let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(protein)) else {
-        return Ok(false);
-    };
-    for index in ctx.admit_iter(&(0..archive.len()), "Protein schema entry scan")? {
-        let Ok(entry) = archive.by_index(index) else {
-            continue;
-        };
-        if is_schema_entry(ctx, entry.name())? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    cadmpeg_container::ArchiveSnapshot::probe_readable_names(ctx, protein, |name| {
+        is_schema_entry(ctx, name)
+    })
 }
 
 fn is_schema_entry(ctx: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
@@ -501,26 +492,19 @@ fn parse_schema_document(
             ))
         })?;
     let document = admitted_document.document();
-    let node_count = document.descendants().len();
-    let mut root = None;
-    let mut descendants = document.descendants();
-    for _ in ctx.admit_iter(&(0..node_count), "Protein schema root search")? {
-        let Some(node) = descendants.next() else {
-            break;
-        };
-        if node.is_element() {
-            root = Some(node);
-            break;
+    let root = match ctx.xml_root_element(document, "Protein schema root search") {
+        Ok(root) => root,
+        Err(CodecError::Malformed(_)) => {
+            return Err(CodecError::malformed(format_args!(
+                "Protein schema {name} has no root"
+            )));
         }
-    }
-    let root = root
-        .ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no root")))?;
+        Err(error) => return Err(error),
+    };
     let mut uid_node = None;
     let mut children = root.children();
-    for _ in ctx.admit_iter(&(0..node_count), "Protein schema UID node search")? {
-        let Some(node) = children.next() else {
-            break;
-        };
+    // The tag comparison is against a fixed three-byte name.
+    while let Some(node) = ctx.next_charged(&mut children, "Protein schema UID node search")? {
         if node.has_tag_name("UID") {
             uid_node = Some(node);
             break;
@@ -528,19 +512,17 @@ fn parse_schema_document(
     }
     let uid_node = uid_node
         .ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no UID")))?;
-    let uid = schema_attribute(ctx, uid_node, "val", "Protein schema UID search")?
+    let uid = ctx
+        .xml_attribute(uid_node, "val", "Protein schema UID search")?
         .ok_or_else(|| CodecError::malformed(format_args!("Protein schema {name} has no UID")))?;
     let mut schema = Schema::default();
     let mut children = root.children();
-    for _ in ctx.admit_iter(&(0..node_count), "Protein schema child scan")? {
-        let Some(node) = children.next() else {
-            break;
-        };
+    while let Some(node) = ctx.next_charged(&mut children, "Protein schema child scan")? {
         if !node.is_element() {
             continue;
         }
         if node.has_tag_name("Base") {
-            if let Some(value) = schema_attribute(ctx, node, "val", "Protein schema base search")? {
+            if let Some(value) = ctx.xml_attribute(node, "val", "Protein schema base search")? {
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(value.len()),
                     "Protein schema base name",
@@ -552,13 +534,11 @@ fn parse_schema_document(
         if node.has_tag_name("PropertyAlias") {
             continue;
         }
-        if schema_attribute(ctx, node, "readonly", "Protein readonly attribute search")?
-            == Some("true")
+        if ctx.xml_attribute(node, "readonly", "Protein readonly attribute search")? == Some("true")
         {
             continue;
         }
-        if schema_attribute(
-            ctx,
+        if ctx.xml_attribute(
             node,
             "definitionIteratorData",
             "Protein definition attribute search",
@@ -569,7 +549,7 @@ fn parse_schema_document(
         let Some(property) = schema_property(ctx, node)? else {
             continue;
         };
-        let Some(id) = schema_attribute(ctx, node, "id", "Protein property id search")? else {
+        let Some(id) = ctx.xml_attribute(node, "id", "Protein property id search")? else {
             continue;
         };
         if ctx.contains_key_btree_map(
@@ -605,42 +585,22 @@ fn parse_schema_document(
     Ok(())
 }
 
-fn schema_attribute<'node>(
-    ctx: &DecodeContext<'_>,
-    node: roxmltree::Node<'node, '_>,
-    name: &str,
-    operation: &'static str,
-) -> Result<Option<&'node str>, CodecError> {
-    let mut attributes = node.attributes();
-    let count = attributes.len();
-    for _ in ctx.admit_iter(&(0..count), operation)? {
-        let Some(attribute) = attributes.next() else {
-            break;
-        };
-        if ctx.equal(attribute.name(), name, operation)? {
-            return Ok(Some(attribute.value()));
-        }
-    }
-    Ok(None)
-}
-
 fn schema_property(
     ctx: &DecodeContext<'_>,
     node: roxmltree::Node<'_, '_>,
 ) -> Result<Option<Property>, CodecError> {
-    let multiple = schema_attribute(
-        ctx,
+    let multiple = ctx.xml_attribute(
         node,
         "allowmultiplevalues",
         "Protein multiple-values attribute search",
     )? == Some("true");
-    let connectable = schema_attribute(
-        ctx,
-        node,
-        "allowconnectedassets",
-        "Protein connected-assets attribute search",
-    )?
-    .is_some();
+    let connectable = ctx
+        .xml_attribute(
+            node,
+            "allowconnectedassets",
+            "Protein connected-assets attribute search",
+        )?
+        .is_some();
     let carrier = match node.tag_name().name() {
         "Reference" => return Ok(Some(Property::Reference { multiple })),
         "TextureURI" => {
@@ -652,7 +612,10 @@ fn schema_property(
         "Boolean" => ValueCarrier::Boolean,
         "Integer" | "Choice" => ValueCarrier::Integer,
         "Float" => {
-            if schema_attribute(ctx, node, "unit", "Protein unit attribute search")?.is_some() {
+            if ctx
+                .xml_attribute(node, "unit", "Protein unit attribute search")?
+                .is_some()
+            {
                 ValueCarrier::UnitFloat
             } else {
                 ValueCarrier::Float
@@ -1046,12 +1009,12 @@ mod tests {
                 .unwrap();
         with_service_context(&[], |ctx| {
             assert_eq!(
-                super::schema_attribute(ctx, document.root_element(), "val", "attribute test")
+                ctx.xml_attribute(document.root_element(), "val", "attribute test")
                     .unwrap(),
                 Some("first")
             );
             assert_eq!(
-                super::schema_attribute(ctx, document.root_element(), "missing", "attribute test")
+                ctx.xml_attribute(document.root_element(), "missing", "attribute test")
                     .unwrap(),
                 None
             );
@@ -1065,7 +1028,8 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::schema_attribute(&ctx, document.root_element(), "val", "attribute test")
+        let error = ctx
+            .xml_attribute(document.root_element(), "val", "attribute test")
             .unwrap_err();
         let CodecError::ResourceLimit(ref refusal) = error else {
             panic!("expected work refusal")

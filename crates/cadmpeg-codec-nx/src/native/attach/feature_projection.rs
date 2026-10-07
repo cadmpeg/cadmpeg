@@ -1329,7 +1329,10 @@ pub(super) struct NewBodyEvidence<'a> {
     pub(super) history: &'a BodyWriterHistory,
 }
 
-pub(super) fn new_body_boolean_op(evidence: &NewBodyEvidence<'_>) -> BooleanOp {
+pub(super) fn new_body_boolean_op(
+    ctx: &DecodeContext<'_>,
+    evidence: &NewBodyEvidence<'_>,
+) -> Result<BooleanOp, CodecError> {
     // A unique offset-store body field proves the operation's local writer
     // namespace, but the fallback body selected for placement is not that
     // writer. Likewise, multiple body fields have no primary role until the
@@ -1340,20 +1343,21 @@ pub(super) fn new_body_boolean_op(evidence: &NewBodyEvidence<'_>) -> BooleanOp {
         && evidence.offset_store_primary_body.is_none()
         && !evidence.has_complete_primitive_construction
     {
-        return BooleanOp::Unresolved;
+        return Ok(BooleanOp::Unresolved);
     }
     if evidence.has_complete_projection
         && matches!(evidence.outputs, [_])
         && !evidence.history.has_preceding_writer(
+            ctx,
             evidence.provisional_feature,
             evidence.native_primary_body,
             evidence.offset_store_primary_body,
             evidence.outputs,
-        )
+        )?
     {
-        BooleanOp::NewBody
+        Ok(BooleanOp::NewBody)
     } else {
-        BooleanOp::Unresolved
+        Ok(BooleanOp::Unresolved)
     }
 }
 

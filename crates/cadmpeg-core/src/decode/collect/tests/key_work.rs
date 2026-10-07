@@ -103,7 +103,7 @@ fn rehash_charges_stored_visits_and_key_bytes() {
     else {
         panic!("resource refusal")
     };
-    // Three measuring visits, three rehash visits, six key bytes and the old bucket storage move.
+    // Three rehash visits, three measuring visits, six key bytes and the old bucket storage move.
     let old_storage = 4 * std::mem::size_of::<(&str, i32)>() + 15 + 4 + 16;
     assert_eq!(
         limit.used,
@@ -172,7 +172,7 @@ fn hash_growth_refuses_inline_slot_moves_before_rehashing() {
     hashes.set(0);
     let capacity = map.capacity();
     let arena = DecodeArena::new();
-    // Three measuring visits, three rehash visits and three key bytes precede bucket movement.
+    // Bucket movement is charged before any key is rehashed or measured.
     let ctx = operation_context(&arena, ResourceDimension::WorkUnits, 9);
     let CodecError::ResourceLimit(limit) = ctx
         .reserve_map(&mut map, 1, "large slots")
@@ -180,9 +180,95 @@ fn hash_growth_refuses_inline_slot_moves_before_rehashing() {
     else {
         panic!("resource refusal")
     };
-    assert_eq!(limit.used, 9);
+    assert_eq!(limit.used, 0);
     assert!(limit.additional > 3 * 4096);
     assert_eq!(hashes.get(), 0);
     assert_eq!(map.capacity(), capacity);
     assert_eq!(map.len(), 3);
+}
+
+/// Returns the work one insertion charges into a collection of `len` keys.
+fn insertion_work<C>(
+    len: u32,
+    new: impl Fn() -> C,
+    insert: impl Fn(&DecodeContext<'_>, &mut C, u32) -> bool,
+) -> u64 {
+    let used = |count: u32| {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let mut values = new();
+        for value in 0..count {
+            assert!(insert(&ctx, &mut values, value));
+        }
+        let CodecError::ResourceLimit(limit) =
+            ctx.charge_work(u64::MAX, "probe").expect_err("probe")
+        else {
+            panic!("resource refusal")
+        };
+        limit.used
+    };
+    used(len + 1) - used(len)
+}
+
+#[test]
+fn set_insertion_work_does_not_grow_with_the_stored_length() {
+    use std::collections::{BTreeSet, HashSet};
+    // Both lengths have the same B-tree depth bound, so equal work shows that
+    // no charge is proportional to the number of stored keys.
+    let btree = |len| {
+        insertion_work(len, BTreeSet::new, |ctx, values, value| {
+            ctx.insert_btree_set(values, value, "insert")
+                .expect("insertion fits")
+        })
+    };
+    assert_eq!(btree(1024), btree(2046));
+    let scoped = |len| {
+        insertion_work(len, BTreeSet::new, |ctx, values, value| {
+            let mut storage = ctx.reserve_scoped(0, "scope").expect("scope");
+            ctx.insert_scoped_btree_set(&mut storage, values, value, "lookup", "insert")
+                .expect("insertion fits")
+        })
+    };
+    assert_eq!(scoped(1024), scoped(2046));
+    let groups = |len| {
+        insertion_work(len, std::collections::BTreeMap::new, |ctx, groups, key| {
+            let mut storage = ctx.reserve_scoped(0, "scope").expect("scope");
+            ctx.push_scoped_btree_group(&mut storage, groups, key, || (), 0, "group")
+                .expect("insertion fits");
+            true
+        })
+    };
+    assert_eq!(groups(1024), groups(2046));
+    let collected = |len: u32| {
+        let used = |count: u32| {
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                .expect("context");
+            let (map, storage) = ctx
+                .collect_scoped_btree_map((0..count).map(|key| (key, ())), "collect")
+                .expect("collection fits");
+            drop((map, storage));
+            let CodecError::ResourceLimit(limit) =
+                ctx.charge_work(u64::MAX, "probe").expect_err("probe")
+            else {
+                panic!("resource refusal")
+            };
+            limit.used
+        };
+        used(len + 1) - used(len)
+    };
+    assert_eq!(collected(1024), collected(2046));
+    // Capacity for every key is reserved first, so no insertion grows the table.
+    let hash = |len| {
+        insertion_work(
+            len,
+            || HashSet::with_capacity(4096),
+            |ctx, values, value| {
+                ctx.insert_hash_set(values, value, "insert")
+                    .expect("insertion fits")
+            },
+        )
+    };
+    assert_eq!(hash(1024), hash(2046));
 }

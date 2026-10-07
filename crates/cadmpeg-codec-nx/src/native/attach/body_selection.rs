@@ -422,11 +422,13 @@ pub(super) fn boolean_participant_writer<'a>(
                     .all(|body| offset_store_identity(body).is_some())
     );
     if offset_store_selection {
-        return Ok(offset_store_body_blocks
-            .and_then(|blocks| blocks.get(&object_index))
-            .and_then(|data_block| history.offset_store_writer(data_block)));
+        return match offset_store_body_blocks.and_then(|blocks| blocks.get(&object_index)) {
+            Some(data_block) => history.offset_store_writer(ctx, data_block),
+            None => Ok(None),
+        };
     }
-    Ok(history.native_writer(
+    history.native_writer(
+        ctx,
         body_alias_roots
             .get(&object_index)
             .copied()
