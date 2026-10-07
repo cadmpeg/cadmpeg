@@ -32,6 +32,8 @@ const MAX_TRANSFORM_DEPTH: usize = 64;
 const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 const CURVE_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
 
+pub(super) type ScopedValues<'ctx, T> = (Vec<T>, cadmpeg_core::decode::ScopedReservation<'ctx>);
+
 pub(super) fn planar_polyline_has_self_intersection(
     points: &[[f64; 2]],
     ctx: &DecodeContext<'_>,
@@ -126,7 +128,7 @@ pub(super) fn plane_coordinates<'ctx>(
     points: &[Point3],
     plane: (Point3, Vector3),
     ctx: &'ctx DecodeContext<'_>,
-) -> Result<Option<(Vec<[f64; 2]>, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
+) -> Result<Option<ScopedValues<'ctx, [f64; 2]>>, CodecError> {
     let Some(normal) = plane.1.unit() else {
         return Ok(None);
     };
@@ -167,7 +169,7 @@ pub(super) fn linear_nurbs_parameters<'ctx>(
     periodic: bool,
     range: [f64; 2],
     ctx: &'ctx DecodeContext<'_>,
-) -> Result<Option<(Vec<f64>, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
+) -> Result<Option<ScopedValues<'ctx, f64>>, CodecError> {
     let Some((degree, expected_knot_count)) = usize::try_from(degree).ok().and_then(|degree| {
         control_count
             .checked_add(degree)?
@@ -1147,8 +1149,8 @@ fn consumed_support_sequences<'ctx>(
     let mut transform_sequences = BTreeSet::new();
     for entry in ctx.admit_iter(directory, "iges consumed-support directory traversal")? {
         if let Some(sequence) = positive_sequence(entry.transform) {
-            if !crate::directory::entry_by_sequence(directory, sequence, ctx)?
-                .is_some_and(|target| target.entity_type == 124)
+            if crate::directory::entry_by_sequence(directory, sequence, ctx)?
+                .is_none_or(|target| target.entity_type != 124)
             {
                 continue;
             }
@@ -1179,8 +1181,8 @@ fn consumed_support_sequences<'ctx>(
                 .integer(2 + count + index)
                 .and_then(positive_sequence)
             {
-                if !crate::directory::entry_by_sequence(directory, sequence, ctx)?
-                    .is_some_and(|target| target.entity_type == 124)
+                if crate::directory::entry_by_sequence(directory, sequence, ctx)?
+                    .is_none_or(|target| target.entity_type != 124)
                 {
                     continue;
                 }
@@ -1233,14 +1235,10 @@ fn consumed_support_sequences<'ctx>(
     }
 
     let mut consumed = direction_sequences;
-    loop {
-        let Some(sequence) = ctx.next_charged(
-            &mut std::iter::from_fn(|| transform_sequences.pop_first()),
-            "iges consumed-support closure traversal",
-        )?
-        else {
-            break;
-        };
+    while let Some(sequence) = ctx.next_charged(
+        &mut std::iter::from_fn(|| transform_sequences.pop_first()),
+        "iges consumed-support closure traversal",
+    )? {
         if !consumed_storage.with_storage(|| {
             ctx.insert_btree_set(&mut consumed, sequence, "iges consumed-support closure")
         })? {
@@ -1250,8 +1248,8 @@ fn consumed_support_sequences<'ctx>(
             continue;
         };
         if let Some(parent) = positive_sequence(entry.transform) {
-            if !crate::directory::entry_by_sequence(directory, parent, ctx)?
-                .is_some_and(|target| target.entity_type == 124)
+            if crate::directory::entry_by_sequence(directory, parent, ctx)?
+                .is_none_or(|target| target.entity_type != 124)
             {
                 continue;
             }

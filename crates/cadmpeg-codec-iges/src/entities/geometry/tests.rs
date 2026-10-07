@@ -1934,7 +1934,9 @@ fn transform_chain_path_refuses_collection_limit_before_insertion() {
             )
             .map_err(|error| match error {
                 super::TransformResolutionError::Resource(error) => error,
-                other => panic!("unexpected transform refusal: {other:?}"),
+                other @ super::TransformResolutionError::Invalid(_) => {
+                    panic!("unexpected transform refusal: {other:?}")
+                }
             })
         },
     );

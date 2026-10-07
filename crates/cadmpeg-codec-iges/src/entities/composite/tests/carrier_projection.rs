@@ -406,7 +406,9 @@ fn concatenated_range_is_exactly_the_canonical_knot_domain() {
             concatenated.nurbs.knots().last()
         );
         assert_eq!(
-            concatenated.endpoints.map(|point| point.get()),
+            concatenated
+                .endpoints
+                .map(cadmpeg_ir::features::FinitePoint3::get),
             [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]
         );
     });

@@ -71,7 +71,9 @@ fn analytic_arc_conversion_refuses_each_decode_lane() {
             };
             result.map_err(|error| match error {
                 CurveConversionError::Resource(error) => error,
-                other => panic!("unexpected arc conversion failure: {other}"),
+                other @ CurveConversionError::Carrier(_) => {
+                    panic!("unexpected arc conversion failure: {other}")
+                }
             })
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)

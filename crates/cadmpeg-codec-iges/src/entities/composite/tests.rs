@@ -268,13 +268,13 @@ fn composite_child_carriers_refuse_nested_collection_admission() {
 
 #[test]
 fn composite_child_curve_id_copies_refuse_storage_budget() {
+    const CHILD_COUNT: usize = 32;
     let bytes = composite_curve_file();
     assert_decode_refusal(
         &bytes,
         ResourceDimension::RetainedBytes,
         "iges composite projected child curve IDs",
     );
-    const CHILD_COUNT: usize = 32;
     let pointers = (0..CHILD_COUNT)
         .map(|index| if index % 2 == 0 { "1" } else { "3" })
         .collect::<Vec<_>>()

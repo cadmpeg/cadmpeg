@@ -34,6 +34,8 @@ const MAX_COMPOSITE_CHILDREN: usize = 100_000;
 const MAX_COMPOSITE_DEGREE: usize = 1024;
 const MAX_COMPOSITE_DEPTH: usize = 64;
 
+type HomogeneousNet<'ctx> = (Vec<[f64; 4]>, cadmpeg_core::decode::ScopedReservation<'ctx>);
+
 fn composite_minimum_child_count(global_table: GlobalTable) -> usize {
     if matches!(global_table, GlobalTable::V4_0) {
         2
@@ -541,7 +543,7 @@ fn homogeneous_point_is_valid(point: &[f64; 4]) -> bool {
 fn homogeneous_control_points<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     curve: &NurbsCurve,
-) -> Result<Option<(Vec<[f64; 4]>, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
+) -> Result<Option<HomogeneousNet<'ctx>>, CodecError> {
     let control_count = curve.pole_count();
     let (mut homogeneous, storage) =
         ctx.temporary_vec(control_count, "iges composite homogeneous control points")?;
@@ -612,7 +614,7 @@ fn elevate_bezier_homogeneous<'ctx>(
     control_points: &[[f64; 4]],
     source_degree: usize,
     target_degree: usize,
-) -> Result<Option<(Vec<[f64; 4]>, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
+) -> Result<Option<HomogeneousNet<'ctx>>, CodecError> {
     let Some(source_count) = source_degree.checked_add(1) else {
         return Ok(None);
     };
@@ -770,10 +772,10 @@ fn reverse_nurbs(
     }
     match &mut poles {
         NurbsPoles3::Polynomial { points } => {
-            ctx.reverse(points, "iges reversed NURBS pole reversal")?
+            ctx.reverse(points, "iges reversed NURBS pole reversal")?;
         }
         NurbsPoles3::Rational { points } => {
-            ctx.reverse(points, "iges reversed NURBS pole reversal")?
+            ctx.reverse(points, "iges reversed NURBS pole reversal")?;
         }
     }
     let reversed = NurbsCurve::new(ctx, source_degree, knots, poles, periodic)??;
