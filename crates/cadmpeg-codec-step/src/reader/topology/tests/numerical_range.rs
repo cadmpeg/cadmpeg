@@ -558,18 +558,19 @@ fn pcurve_selection_helpers_preserve_session_depth_refusal() {
         } else {
             mapped_pcurve_closest(&ctx, &index, &id, &pcurve, target, 0.0)
         }
-        .expect_err("first seed or inverse step charges work");
+        .expect_err("first seed or geometry domain visit charges work");
         let CodecError::ResourceLimit(limit) = limit else {
             panic!("selection must preserve the original resource error");
         };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        // The first seed visit or the first geometry-domain node costs one unit.
         assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
         assert_eq!(
             limit.operation,
             if seeded {
                 "step pcurve seed visit"
             } else {
-                "step pcurve inverse step"
+                "STEP pcurve parameter domain traversal"
             }
         );
         assert_eq!(

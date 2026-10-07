@@ -9,23 +9,24 @@ use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::CadIr;
 
 #[test]
-fn topology_subtype_any_preserves_equality_refusal() {
+fn topology_subtype_partial_search_preserves_refusal() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=FACE();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
     let record = exchange.records().get(&1).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // One dispatch-chain visit and one partial visit fit; equality refuses.
-    policy.limits.max_work_units = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
-    let error = super::super::most_specific(&ctx, record, &["FACE"]).unwrap_err();
-    let CodecError::ResourceLimit(refusal) = error else {
-        panic!("subtype comparison must preserve its resource refusal");
-    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits,
+        "STEP topology subtype partial traversal", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+            let error = super::super::most_specific(&ctx, record, &["FACE"]);
+            if let Err(CodecError::ResourceLimit(limit)) = &error { assert_eq!(ctx.resource_refusal(), Some(*limit)); }
+            error
+        });
+    let CodecError::ResourceLimit(refusal) = error else { panic!("subtype scan must preserve its resource refusal"); };
     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(refusal.operation, "STEP most specific equality");
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert_eq!(refusal.operation, "STEP topology subtype partial traversal");
 }
 
 #[test]
