@@ -10,6 +10,8 @@ use cadmpeg_ir::native::{NativeConvertError, NativeNamespace, NativeRecord};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use std::num::NonZeroU64;
 
+use super::MAX_RECORD_ORDINAL_DIGITS;
+
 /// Hexadecimal text for exactly sixteen identifier bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Identifier16(NonBlankString);
@@ -721,34 +723,14 @@ impl ExternalReferenceRecordWire {
         self,
         ctx: &DecodeContext<'_>,
     ) -> Result<ExternalReferenceRecord, CodecError> {
-        let suffix = required(ctx.strip_prefix(
-                &self.id,
-                "inventor:ufrx:external-reference#",
-                "validate Inventor UFRx external reference identity prefix",
-            )?, "external reference id has an invalid namespace")?;
-        if suffix.is_empty() {
+        let suffix = required(self.id.strip_prefix("inventor:ufrx:external-reference#"), "external reference id has an invalid namespace")?;
+        if suffix.is_empty() || suffix.len() > MAX_RECORD_ORDINAL_DIGITS {
             return Err(CodecError::malformed("external reference id disagrees with ordinal"));
         }
-        let digits = ctx.all_by(
-            suffix.as_bytes(),
-            |byte| Ok(byte.is_ascii_digit()),
-            "validate Inventor UFRx external reference ordinal digits",
-        )?;
-        if !digits {
-            return Err(CodecError::malformed("external reference id disagrees with ordinal"));
-        }
-        if suffix.len() > 1
-            && ctx.starts_with(
-                suffix,
-                "0",
-                "validate Inventor UFRx external reference ordinal spelling",
-            )?
+        if !suffix.bytes().all(|byte| byte.is_ascii_digit())
+            || (suffix.len() > 1 && suffix.starts_with('0'))
+            || suffix.parse::<u32>().ok() != Some(self.ordinal)
         {
-            return Err(CodecError::malformed("external reference id disagrees with ordinal"));
-        }
-        let parsed_ordinal =
-            ctx.parse_text::<u32>(suffix, "parse Inventor UFRx external reference ordinal")?;
-        if parsed_ordinal.ok() != Some(self.ordinal) {
             return Err(CodecError::malformed("external reference id disagrees with ordinal"));
         }
 
@@ -825,10 +807,7 @@ impl ExternalReferenceRecord {
                     .try_clone_for_decode(ctx, "copy Inventor UFRx external document path")?,
             },
             ExternalReferenceIdentity::DocumentId(document_id) => ExternalDocument::DocumentId {
-                document_id: document_id
-                    .0
-                     .0
-                    .try_clone_for_decode(ctx, "copy Inventor UFRx external document identifier")?,
+                document_id: document_id.0 .0.clone(),
             },
         })
     }
@@ -1071,7 +1050,7 @@ impl UfrxRecord {
             },
         )?;
         if record_count != 1 {
-            return Err(NativeConvertError::ConversionMessage(std::fmt::format(format_args!("Inventor native data has {record_count} UFRxDoc state records"))));
+            return Err(NativeConvertError::ConversionMessage(format!("Inventor native data has {record_count} UFRxDoc state records")));
         }
         let Some((wire, representation)) = record else {
             return Err(NativeConvertError::ConversionMessage("native record disappeared during UFRx conversion".into()));
@@ -1414,6 +1393,95 @@ mod tests {
             .expect_err("blank path and zero document ID")
             .contains("path or a nonzero document_id is required")
         );
+    }
+
+    #[test]
+    fn external_reference_identity_admits_only_variable_validation() {
+        use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+        let valid = serde_json::json!({
+            "id": "inventor:ufrx:external-reference#0", "ordinal": 0,
+            "path": "", "document_id": "0123456789abcdef0123456789abcdef",
+            "library_id": 0, "library_name": "", "display_name": "",
+            "state_groups": [], "state": [0, 0], "database_id": "0".repeat(32),
+            "reference_id": 1, "occurrence_count": 0, "version": 0, "flags": 0
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The empty path has no scan. The ordinal has at most ten bytes;
+        // prefix spelling and both 32-byte identifiers have fixed extents.
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let wire: super::ExternalReferenceRecordWire = serde_json::from_value(valid.clone()).expect("wire");
+        wire.into_record(&ctx).expect("variable work fits");
+        assert!(matches!(ctx.charge_work(1, "probe identity work"),
+            Err(CodecError::ResourceLimit(limit)) if limit.used == 0 && limit.additional == 1));
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut invalid = valid;
+        invalid["id"] = serde_json::json!("wrong:namespace#0");
+        let wire: super::ExternalReferenceRecordWire = serde_json::from_value(invalid).expect("wire");
+        assert!(matches!(wire.into_record(&ctx), Err(CodecError::Malformed(detail))
+            if detail == "external reference id has an invalid namespace"));
+    }
+
+    #[test]
+    fn external_document_identifier_clone_uses_no_decode_budget() {
+        use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+        let id = "0123456789abcdef0123456789abcdef";
+        let wire = serde_json::json!({
+            "id": "inventor:ufrx:external-reference#0", "ordinal": 0,
+            "path": "", "document_id": id,
+            "library_id": 0, "library_name": "", "display_name": "",
+            "state_groups": [], "state": [0, 0], "database_id": "0".repeat(32),
+            "reference_id": 1, "occurrence_count": 0, "version": 0, "flags": 0
+        });
+        let reference = decode_external_reference(wire).expect("reference");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Admission proves exactly 32 bytes; cloning has a fixed extent.
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let document = reference.document(&ctx).expect("fixed clone");
+        assert!(matches!(document, cadmpeg_ir::products::ExternalDocument::DocumentId { document_id }
+            if document_id.as_str() == id));
+    }
+
+    #[test]
+    fn external_reference_ordinal_spelling_has_a_fixed_bound() {
+        use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+        let fixture = serde_json::json!({
+            "id": "inventor:ufrx:external-reference#0", "ordinal": 0,
+            "path": "", "document_id": "0123456789abcdef0123456789abcdef",
+            "library_id": 0, "library_name": "", "display_name": "",
+            "state_groups": [], "state": [0, 0], "database_id": "0".repeat(32),
+            "reference_id": 1, "occurrence_count": 0, "version": 0, "flags": 0
+        });
+        for (ordinal, spelling, accepted) in [
+            (u32::MAX, u32::MAX.to_string(), true),
+            (u32::MAX, "4294967296".into(), false),
+            (0, "1".repeat(4096), false),
+            (0, "00".into(), false),
+            (0, "+0".into(), false),
+        ] {
+            let mut value = fixture.clone();
+            value["id"] = serde_json::json!(format!("inventor:ufrx:external-reference#{spelling}"));
+            value["ordinal"] = serde_json::json!(ordinal);
+            let wire: super::ExternalReferenceRecordWire = serde_json::from_value(value).expect("wire");
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 0;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            let result = wire.into_record(&ctx);
+            if accepted {
+                assert_eq!(result.expect("bounded ordinal").ordinal(), ordinal);
+            } else {
+                assert!(matches!(result, Err(CodecError::Malformed(detail))
+                    if detail == "external reference id disagrees with ordinal"));
+            }
+        }
     }
 
     #[test]
