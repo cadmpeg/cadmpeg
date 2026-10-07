@@ -252,11 +252,6 @@ pub(crate) fn parse_meta_tables<'a>(
             "RSe type table has more than 256 entries".into(),
         ));
     }
-    // The eleven metadata sections occupy eleven collection slots.
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(SECTION_COUNT),
-        "admit Inventor RSe metadata tables",
-    )?;
     let mut types = ctx.vector_storage(type_count, "admit Inventor RSe metadata tables")?;
     for index in ctx.admit_iter(&(0..type_count), "visit Inventor RSe table entries")? {
         let entry = child(
@@ -540,10 +535,9 @@ fn parse_extended_record_trailer(
             "RSe record trailer property count exceeds 65536".into(),
         ));
     }
-    ctx.charge_collection_items(
-        u64::from(property_count),
-        "admit Inventor RSe record trailer properties",
-    )?;
+    // A property is at least its name length and type words; the trailer is
+    // skipped, not collected.
+    cursor.fits(property_count, 8, "record trailer property count")?;
     for _ in ctx.admit_iter(&(0..property_count), "visit Inventor RSe table entries")? {
         cursor.sized_bytes(65_536, "record trailer property name")?;
         match cursor.u32("record trailer property type")? {
@@ -583,12 +577,10 @@ fn parse_extended_record_trailer(
             "RSe record trailer reference count exceeds 65536".into(),
         ));
     }
-    ctx.charge_collection_items(
-        u64::from(reference_count),
-        "admit Inventor RSe record trailer references",
-    )?;
     if reference_count != 0 {
         cursor.skip(8, "record trailer reference header")?;
+        // A reference is at least its name length and value words.
+        cursor.fits(reference_count, 8, "record trailer reference count")?;
         for _ in ctx.admit_iter(&(0..reference_count), "visit Inventor RSe table entries")? {
             cursor.sized_bytes(65_536, "record trailer reference name")?;
             cursor.skip(4, "record trailer reference value")?;
@@ -703,6 +695,17 @@ impl<'a> Cursor<'a> {
 
     fn u16(&mut self, name: &'static str) -> Result<u16, CodecError> {
         crate::reader::u16(&mut self.source, name)
+    }
+
+    /// Refuses a count whose entries, at `min_entry_bytes` each (nonzero),
+    /// cannot fit in the unread bytes, before their traversal is admitted.
+    fn fits(&self, count: u32, min_entry_bytes: usize, name: &str) -> Result<(), CodecError> {
+        self.source
+            .counted(u64::from(count), min_entry_bytes)
+            .map(|_| ())
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("RSe {name} exceeds remaining payload"))
+            })
     }
 
     fn u32(&mut self, name: &'static str) -> Result<u32, CodecError> {
