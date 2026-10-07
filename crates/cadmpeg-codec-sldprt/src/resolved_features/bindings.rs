@@ -1848,29 +1848,51 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
     Ok(())
 }
 
-/// Assigns every marker, reference and scalar of the lane in `start..end`
-/// to `owner`.
+struct ObjectRangeIndex<'ctx> {
+    markers: Vec<(u64, usize)>,
+    references: Vec<(u64, usize)>,
+    scalars: Vec<(u64, usize)>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx> ObjectRangeIndex<'ctx> {
+    fn new(ctx: &'ctx DecodeContext<'_>, lane: &FeatureInputLane) -> Result<Self, cadmpeg_core::CodecError> {
+        const OPERATION: &str = "index SLDPRT detached sketch offsets";
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut markers = storage.with_storage(|| ctx.collect_vec(lane.sketch_entities.iter().enumerate().map(|(i, value)| (value.offset(), i)), OPERATION))?;
+        let mut references = storage.with_storage(|| ctx.collect_vec(lane.references.iter().enumerate().map(|(i, value)| (value.offset, i)), OPERATION))?;
+        let mut scalars = storage.with_storage(|| ctx.collect_vec(lane.scalars.iter().enumerate().map(|(i, value)| (value.offset, i)), OPERATION))?;
+        for values in [&mut markers, &mut references, &mut scalars] {
+            ctx.sort_unstable_by(values, |value| value, Ord::cmp, OPERATION)?;
+        }
+        Ok(Self { markers, references, scalars, _storage: storage })
+    }
+}
+
+/// Assigns the selected marker, reference and scalar ranges to `owner`.
 fn assign_object_range(
     ctx: &DecodeContext<'_>,
     lane: &mut FeatureInputLane,
-    range: impl Fn(u64) -> bool,
+    index: &ObjectRangeIndex<'_>,
+    start: u64,
+    end: u64,
+    include_start: bool,
     owner: &str,
 ) -> Result<(), cadmpeg_core::CodecError> {
     const OPERATION: &str = "bind SLDPRT detached sketch objects";
-    for entity in ctx.admit_iter(&mut lane.sketch_entities, OPERATION)? {
-        if range(entity.offset()) {
-            entity.feature_ref = Some(copy_binding_text(ctx, owner)?);
-        }
+    let range = |values: &[(u64, usize)]| -> Result<std::ops::Range<usize>, cadmpeg_core::CodecError> {
+        let first = ctx.partition_point(values, |(offset, _)| Ok(if include_start { *offset < start } else { *offset <= start }), OPERATION)?;
+        let last = ctx.partition_point(values, |(offset, _)| Ok(*offset < end), OPERATION)?;
+        Ok(first..last.max(first))
+    };
+    for &(_, i) in ctx.admit_iter(&index.markers[range(&index.markers)?], OPERATION)? {
+        lane.sketch_entities[i].feature_ref = Some(copy_binding_text(ctx, owner)?);
     }
-    for reference in ctx.admit_iter(&mut lane.references, OPERATION)? {
-        if range(reference.offset) {
-            reference.feature_ref = Some(copy_binding_text(ctx, owner)?);
-        }
+    for &(_, i) in ctx.admit_iter(&index.references[range(&index.references)?], OPERATION)? {
+        lane.references[i].feature_ref = Some(copy_binding_text(ctx, owner)?);
     }
-    for scalar in ctx.admit_iter(&mut lane.scalars, OPERATION)? {
-        if range(scalar.offset) {
-            scalar.feature_ref = Some(copy_binding_text(ctx, owner)?);
-        }
+    for &(_, i) in ctx.admit_iter(&index.scalars[range(&index.scalars)?], OPERATION)? {
+        lane.scalars[i].feature_ref = Some(copy_binding_text(ctx, owner)?);
     }
     Ok(())
 }
@@ -1964,6 +1986,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
         return Ok(());
     }
 
+    let ranges = ObjectRangeIndex::new(ctx, lane)?;
     for (index, (&start, (_, owner))) in
         ctx.admit_iter(&starts, OPERATION)?.zip(&owners).enumerate()
     {
@@ -1971,7 +1994,10 @@ pub(super) fn bind_detached_legacy_sketch_objects(
         assign_object_range(
             ctx,
             lane,
-            |offset| offset >= start && offset < end,
+            &ranges,
+            start,
+            end,
+            true,
             &owner.id,
         )?;
     }
@@ -2095,14 +2121,18 @@ fn bind_detached_spatial_relation_objects(
             }
         }
     }
+    let mut scalar_offsets = storage.with_storage(|| ctx.collect_vec(lane.scalars.iter().enumerate().map(|(index, scalar)| (scalar.offset, index)), MATCH))?;
+    ctx.sort_unstable_by(&mut scalar_offsets, |value| value, Ord::cmp, MATCH)?;
     let mut candidates = Vec::new();
     for &(start, end) in ctx.admit_iter(&ranges, MATCH)? {
+        let mut range_storage = ctx.reserve_scoped(0, "SLDPRT spatial sketch dimension workspace")?;
+        let first = ctx.partition_point(&scalar_offsets, |(offset, _)| Ok(*offset <= start), MATCH)?;
+        let last = ctx.partition_point(&scalar_offsets, |(offset, _)| Ok(*offset < end), MATCH)?;
         // The range's dimension scalars by name, with every value per name.
         let mut scalars = BTreeMap::<&str, Vec<f64>>::new();
-        for scalar in ctx.admit_iter(&lane.scalars, MATCH)? {
-            if scalar.offset <= start
-                || scalar.offset >= end
-                || scalar.role == crate::records::FeatureInputScalarRole::Display
+        for &(_, index) in ctx.admit_iter(&scalar_offsets[first..last.max(first)], MATCH)? {
+            let scalar = &lane.scalars[index];
+            if scalar.role == crate::records::FeatureInputScalarRole::Display
             {
                 continue;
             }
@@ -2113,7 +2143,7 @@ fn bind_detached_spatial_relation_objects(
                 continue;
             };
             if is_dimension_name(ctx, name)? {
-                storage.with_storage(|| {
+                range_storage.with_storage(|| {
                     ctx.push_btree_group(&mut scalars, name, scalar.value.get(), MATCH, MATCH)
                 })?;
             }
@@ -2182,8 +2212,11 @@ fn bind_detached_spatial_relation_objects(
         }
     }
     drop((range_counts, owner_counts, candidates, owners));
+    if !bound.is_empty() {
+    let index = ObjectRangeIndex::new(ctx, lane)?;
     for (start, end, owner) in ctx.admit_iter(&bound, "bind SLDPRT spatial sketch objects")? {
-        assign_object_range(ctx, lane, |offset| offset > *start && offset < *end, owner)?;
+        assign_object_range(ctx, lane, &index, *start, *end, false, owner)?;
+    }
     }
     Ok(bound)
 }

@@ -456,11 +456,14 @@ fn bind_sweep_operations_with(
 
 /// Inline extrusion trailer fields: the family word and operation byte.
 pub(super) fn feature_inline_operation_fields(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     name: &FeatureInputName,
-) -> Option<(u16, u8)> {
+) -> Result<Option<(u16, u8)>, CodecError> {
+    let name_units = ctx.admit_iter(name.value.as_str(), "measure SLDPRT inline operation name")?.encode_utf16().count();
+    Ok((|| {
     let name_offset = usize::try_from(name.offset).ok()?;
-    let name_bytes = name.value.encode_utf16().count().checked_mul(2)?;
+    let name_bytes = name_units.checked_mul(2)?;
     let trailer = name_offset.checked_add(6 + name_bytes)?;
     let bytes = lane.native_payload.get(trailer..trailer + 19)?;
     let terminated = bytes[sparse_tr::SPARSE_ZERO_PREFIX..19] == [0xff, 0xfe, 0xff]
@@ -518,15 +521,16 @@ pub(super) fn feature_inline_operation_fields(
         View::u16_le_at(bytes, sparse_tr::FAMILY)?,
         bytes[sparse_tr::OPERATION],
     ))
+    })())
 }
 
 /// Project an inline Boolean operation from a recognized complete family.
-fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) -> Option<BooleanOp> {
-    match feature_inline_operation_fields(lane, name)? {
-        (0x0140, 0) => Some(BooleanOp::Join),
-        (0x01ca, 0 | 2) => Some(BooleanOp::Cut),
+fn feature_inline_operation(ctx: &DecodeContext<'_>, lane: &FeatureInputLane, name: &FeatureInputName) -> Result<Option<BooleanOp>, CodecError> {
+    Ok(match feature_inline_operation_fields(ctx, lane, name)? {
+        Some((0x0140, 0)) => Some(BooleanOp::Join),
+        Some((0x01ca, 0 | 2)) => Some(BooleanOp::Cut),
         _ => None,
-    }
+    })
 }
 
 /// Project the feature-input operation discriminator onto typed extrusions.
@@ -569,7 +573,7 @@ fn bind_extrusion_operations_with(
             indexes,
             history,
             |lane, direct, name| {
-                if let Some(operation) = feature_inline_operation(lane, name) {
+                if let Some(operation) = feature_inline_operation(ctx, lane, name)? {
                     return Ok(Some(operation));
                 }
                 Ok(
@@ -701,7 +705,7 @@ fn operation_carrier_present(
         NameLookup::One(name) => name,
     };
     if matches!(kind, OperationKind::Extrusion)
-        && feature_inline_operation_fields(lane, name).is_some()
+        && feature_inline_operation_fields(ctx, lane, name)?.is_some()
     {
         return Ok(true);
     }
