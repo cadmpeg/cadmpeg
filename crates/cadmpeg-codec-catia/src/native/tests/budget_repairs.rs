@@ -317,3 +317,79 @@ fn native_inventory_index_preserves_transitive_and_equal_start_containment() {
     assert_eq!(catalogs.len(), 1);
     assert_eq!(catalogs[0].pos, 0);
 }
+
+#[test]
+fn native_inventory_with_no_comparisons_requires_no_index_work() {
+    with_work_limit(0, |ctx| -> Result<_, CodecError> {
+        let mut graphs: Vec<_> = (0..1024)
+            .map(|pos| crate::object_graph::ObjectGraph {
+                pos,
+                total_len: 8,
+                catalog_pos: None,
+                records: Vec::new(),
+            })
+            .collect();
+        super::super::filter_nested_inventory(ctx, &mut graphs, &mut Vec::new(), &mut Vec::new())?;
+        assert_eq!(graphs.len(), 1024);
+        let mut blocks: Vec<_> = (0..1024)
+            .map(|pos| crate::value_block::ValueBlock {
+                pos,
+                payload: Vec::new(),
+            })
+            .collect();
+        super::super::filter_nested_inventory(ctx, &mut Vec::new(), &mut blocks, &mut Vec::new())?;
+        assert_eq!(blocks.len(), 1024);
+        let mut catalogs: Vec<_> = (0..1024)
+            .map(|pos| crate::catalog::Catalog {
+                pos,
+                total_len: 8,
+                entries: Vec::new(),
+            })
+            .collect();
+        super::super::filter_nested_inventory(
+            ctx,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut catalogs,
+        )?;
+        assert_eq!(catalogs.len(), 1024);
+        Ok(())
+    })
+    .expect("single-inventory filters perform no work");
+}
+
+#[test]
+fn native_empty_alias_rows_require_no_extent_index_work() {
+    let graphs: Vec<_> = (0..1024)
+        .map(|byte_offset| super::super::CatiaObjectGraph {
+            id: String::new(),
+            byte_offset,
+            byte_len: 8,
+            finjpl_segment: None,
+            outer_container: None,
+            catalog_byte_offset: None,
+            catalog: None,
+            records: Vec::new(),
+        })
+        .collect();
+    let blocks: Vec<_> = (0..1024)
+        .map(|pos| crate::value_block::ValueBlock {
+            pos,
+            payload: Vec::new(),
+        })
+        .collect();
+    let catalogs: Vec<_> = (0..1024)
+        .map(|byte_offset| super::super::CatiaCatalog {
+            id: String::new(),
+            byte_offset,
+            byte_len: 8,
+            entries: Vec::new(),
+        })
+        .collect();
+    let mut rows = Vec::new();
+    with_work_limit(0, |ctx| {
+        super::super::filter_nested_alias_rows(ctx, &mut rows, &graphs, &blocks, &catalogs)
+    })
+    .expect("no alias rows require no index work");
+    assert!(rows.is_empty());
+}

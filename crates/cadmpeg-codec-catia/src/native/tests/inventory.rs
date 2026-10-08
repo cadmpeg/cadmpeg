@@ -1091,7 +1091,8 @@ fn native_overlap_graph_retain_propagates_work_refusal() {
             catalog_pos: None,
             records: Vec::new(),
         }];
-        super::super::filter_nested_inventory(ctx, &mut graphs, &mut Vec::new(), &mut Vec::new())
+        let mut blocks = vec![native_value_block_for_overlap_test(200)];
+        super::super::filter_nested_inventory(ctx, &mut graphs, &mut blocks, &mut Vec::new())
     });
 }
 
@@ -1122,7 +1123,13 @@ fn native_overlap_catalog_retain_propagates_work_refusal() {
             total_len: 8,
             entries: Vec::new(),
         }];
-        super::super::filter_nested_inventory(ctx, &mut Vec::new(), &mut Vec::new(), &mut catalogs)
+        let mut graphs = vec![crate::object_graph::ObjectGraph {
+            pos: 0,
+            total_len: 100,
+            catalog_pos: None,
+            records: Vec::new(),
+        }];
+        super::super::filter_nested_inventory(ctx, &mut graphs, &mut Vec::new(), &mut catalogs)
     });
 }
 
