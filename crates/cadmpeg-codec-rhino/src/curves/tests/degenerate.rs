@@ -23,16 +23,16 @@ fn degree_elevation_rejects_zero_active_domain_before_allocating() {
 fn chunk(typecode: u32, body: &[u8], protected: bool) -> Vec<u8> {
     let mut body = body.to_vec();
     if protected {
-        let crc = crate::chunks::crc16(
-            &cadmpeg_test_support::service_decode_context(),
-            0,
-            &body,
-        )
-        .expect("fixture checksum admission");
+        let crc = crate::chunks::crc16(&cadmpeg_test_support::service_decode_context(), 0, &body)
+            .expect("fixture checksum admission");
         body.extend(crc.to_le_bytes());
     }
     let mut bytes = typecode.to_le_bytes().to_vec();
-    bytes.extend(i32::try_from(body.len()).expect("fixture length").to_le_bytes());
+    bytes.extend(
+        i32::try_from(body.len())
+            .expect("fixture length")
+            .to_le_bytes(),
+    );
     bytes.extend(body);
     bytes
 }
@@ -41,7 +41,11 @@ fn face_archive(first_end: f64) -> Vec<u8> {
     let corners = [[0.0_f64, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
     let mut boundary = 4_i32.to_le_bytes().to_vec();
     boundary.extend(0_i32.to_le_bytes());
-    boundary.extend([0.0_f64, 0.0, 1.0, 1.0].into_iter().flat_map(f64::to_le_bytes));
+    boundary.extend(
+        [0.0_f64, 0.0, 1.0, 1.0]
+            .into_iter()
+            .flat_map(f64::to_le_bytes),
+    );
     for index in 0..4 {
         let from = corners[index];
         let to = corners[(index + 1) % 4];
@@ -82,14 +86,34 @@ fn face_archive(first_end: f64) -> Vec<u8> {
     let mut surface = vec![3, 0, 1, 1];
     surface.extend([1_u16; 2].into_iter().flat_map(u16::to_le_bytes));
     surface.extend([0; 6]);
-    surface.extend([0.0_f64, 0.0, 0.0, 1.0, 1.0, 0.0].into_iter().flat_map(f64::to_le_bytes));
-    surface.extend([0.0_f64, 1.0, 0.0, 1.0].into_iter().flat_map(f64::to_le_bytes));
-    for point in [[0.0_f64, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]] {
+    surface.extend(
+        [0.0_f64, 0.0, 0.0, 1.0, 1.0, 0.0]
+            .into_iter()
+            .flat_map(f64::to_le_bytes),
+    );
+    surface.extend(
+        [0.0_f64, 1.0, 0.0, 1.0]
+            .into_iter()
+            .flat_map(f64::to_le_bytes),
+    );
+    for point in [
+        [0.0_f64, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+    ] {
         surface.extend(point.into_iter().flat_map(f64::to_le_bytes));
     }
     let surface = chunk(0x0001_0007, &chunk(0x0001_0107, &surface, true), true);
-    let mut face = [0_i32, 0, 3].into_iter().flat_map(i32::to_le_bytes).collect::<Vec<_>>();
-    face.extend([0.0_f64, 0.0, 0.0, 1.0, 1.0, 0.0].into_iter().flat_map(f64::to_le_bytes));
+    let mut face = [0_i32, 0, 3]
+        .into_iter()
+        .flat_map(i32::to_le_bytes)
+        .collect::<Vec<_>>();
+    face.extend(
+        [0.0_f64, 0.0, 0.0, 1.0, 1.0, 0.0]
+            .into_iter()
+            .flat_map(f64::to_le_bytes),
+    );
     face.extend(0_i32.to_le_bytes());
     face.extend(surface);
     face.extend(boundary);
@@ -122,12 +146,19 @@ fn v1_trim_zero_domain_returns_geometry_diagnostic_and_retains_source() {
             assert_eq!(result.ir().model.pcurves.len(), 4);
         } else {
             assert_eq!(result.ir().model.entity_count(), 0);
-            assert!(result.report().notes.iter().any(|note|
-                note.contains("polycurve segment has no nonempty span")));
-            let comment = crate::chunks::chunk_at(&bytes, 32, bytes.len(), ArchiveVersion::V1, false)
-                .expect("fixture comment");
-            assert!(result.source_fidelity().retained_records().values().any(|record|
-                record.data() == Some(&bytes[comment.next_offset()..])));
+            assert!(result
+                .report()
+                .notes
+                .iter()
+                .any(|note| note.contains("polycurve segment has no nonempty span")));
+            let comment =
+                crate::chunks::chunk_at(&bytes, 32, bytes.len(), ArchiveVersion::V1, false)
+                    .expect("fixture comment");
+            assert!(result
+                .source_fidelity()
+                .retained_records()
+                .values()
+                .any(|record| record.data() == Some(&bytes[comment.next_offset()..])));
         }
     }
 }

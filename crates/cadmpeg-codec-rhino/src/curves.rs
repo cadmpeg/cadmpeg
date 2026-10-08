@@ -2760,7 +2760,9 @@ mod tests {
         let knot_address = curve.knots().as_slice().as_ptr();
         let pole_address = match curve.pole_rows() {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => points.as_ptr(),
-            _ => panic!("fixture is rational"),
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => {
+                panic!("fixture is rational")
+            }
         };
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -2780,38 +2782,41 @@ mod tests {
                 assert_eq!(points[0].weight.get(), 2.0);
                 assert_eq!(points[1].weight.get(), 1.0);
             }
-            _ => panic!("remapping preserves rational poles"),
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => {
+                panic!("remapping preserves rational poles")
+            }
         }
         ctx.finish_session().expect("no remapping resource refusal");
     }
 
-
-#[test]
-fn remapped_nurbs_knots_refuse_work_before_mutation() {
-    let target = [FiniteReal::new(2.0).unwrap(), FiniteReal::new(3.0).unwrap()];
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "Rhino remap nurbs domain traversal",
-        |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty remapping root");
-            super::remap_nurbs_domain(&ctx, rational_line_for_limits(), target, 0)
-                .map_err(|error| match error {
-                    GeometryError::Codec(error) => error,
-                    other => panic!("unexpected knot remapping rejection: {other:?}"),
-                })
-        },
-    );
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected knot remapping resource refusal");
-    };
-    // Remapping visits four existing knots before the IR validates the new values.
-    assert_eq!(limit.used, 0);
-    assert_eq!(limit.additional, 4);
-}
+    #[test]
+    fn remapped_nurbs_knots_refuse_work_before_mutation() {
+        let target = [FiniteReal::new(2.0).unwrap(), FiniteReal::new(3.0).unwrap()];
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "Rhino remap nurbs domain traversal",
+            |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("empty remapping root");
+                super::remap_nurbs_domain(&ctx, rational_line_for_limits(), target, 0).map_err(
+                    |error| match error {
+                        GeometryError::Codec(error) => error,
+                        other => panic!("unexpected knot remapping rejection: {other:?}"),
+                    },
+                )
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected knot remapping resource refusal");
+        };
+        // Remapping visits four existing knots before the IR validates the new values.
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 4);
+    }
 
     fn assert_elevation_refusal(target: usize, operation: &'static str) {
         let curve = rational_line_for_limits();
