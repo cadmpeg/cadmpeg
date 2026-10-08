@@ -2342,7 +2342,10 @@ mod tests {
                     if limit.operation == operation {
                         return;
                     }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
+                    cap = limit
+                        .used
+                        .checked_add(limit.additional)
+                        .expect("resource need fits");
                 }
                 Err(error) => panic!("unexpected error before {operation}: {error}"),
                 Ok(_) => panic!("operation {operation} was not admitted"),

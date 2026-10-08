@@ -631,9 +631,9 @@ fn frame_sections<'a>(
         });
         runs[current.index()].end = scanned.len();
     }
-    if !scanned
+    if scanned
         .first()
-        .is_some_and(|card| card.section == Section::Start)
+        .is_none_or(|card| card.section != Section::Start)
         || !terminated
     {
         return Err(CodecError::Malformed(

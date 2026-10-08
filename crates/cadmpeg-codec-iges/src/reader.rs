@@ -377,7 +377,6 @@ fn parameter_tokens(
                 .checked_add(cadmpeg_core::decode::u64_from_index(record.tokens().len()))
                 .ok_or_else(|| {
                     cadmpeg_core::decode::refuse_local_limit("iges parameter tokens", u64::MAX, 1)
-                        .into()
                 })
         },
         "iges parameter token census",

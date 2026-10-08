@@ -3006,7 +3006,7 @@ pub(crate) fn layout_parameter_cards(
         }
         loop {
             ctx.charge_work(1, "iges parameter layout field bytes")?;
-            if !(end < bytes.len() && !matches!(bytes[end], b',' | b';')) {
+            if end >= bytes.len() || matches!(bytes[end], b',' | b';') {
                 break;
             }
             end += 1;
@@ -3358,9 +3358,8 @@ fn macro_integer(
     let Some(bytes) = bytes.get(span.clone()) else {
         return Ok(None);
     };
-    let text = match ctx.validate_utf8(bytes, "iges macro integer")? {
-        Ok(text) => text,
-        Err(_) => return Ok(None),
+    let Ok(text) = ctx.validate_utf8(bytes, "iges macro integer")? else {
+        return Ok(None);
     };
     Ok(ctx
         .parse_text::<i64>(text, "iges macro integer value")?
@@ -4613,7 +4612,7 @@ pub(crate) fn summary_notes(
                 records,
                 0_usize,
                 |total, record| total.checked_add(record.tokens.len()).ok_or_else(|| {
-                    refuse_local_limit("iges parameter token census", u64::MAX, 1).into()
+                    refuse_local_limit("iges parameter token census", u64::MAX, 1)
                 }),
                 "iges parameter summary token census",
             )?

@@ -1615,7 +1615,7 @@ pub(crate) fn project_geometry(
         let admitted_count = directory.iter().filter(|entry| admitted(entry)).count();
         let mut admitted_entries =
             ctx.collection_vec(admitted_count, "iges admitted geometry directory")?;
-        admitted_entries.extend(directory.iter().filter(|entry| admitted(entry)).cloned());
+        admitted_entries.extend(directory.iter().filter(|entry| admitted(entry)).copied());
         Some(admitted_entries)
     } else {
         None

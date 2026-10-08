@@ -686,12 +686,12 @@ fn decode_enforces_each_iges_session_resource_dimension() {
             let mut options = DecodeOptions::default();
             match expected {
                 ResourceDimension::MaterializedBytes => {
-                    options.policy.limits.max_materialized_bytes = cap
+                    options.policy.limits.max_materialized_bytes = cap;
                 }
                 ResourceDimension::RetainedBytes => options.policy.limits.max_retained_bytes = cap,
                 ResourceDimension::Entities => options.policy.limits.max_entities = cap,
                 ResourceDimension::CollectionItems => {
-                    options.policy.limits.max_collection_items = cap
+                    options.policy.limits.max_collection_items = cap;
                 }
                 other => panic!("unexpected test dimension: {other:?}"),
             }
