@@ -79,7 +79,10 @@ impl NativeUnknownRecord {
             })?;
             links.push(identity);
         }
-        Ok(Self { id: record.id, links })
+        Ok(Self {
+            id: record.id,
+            links,
+        })
     }
 }
 

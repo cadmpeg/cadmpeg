@@ -86,7 +86,10 @@ fn typed_identity_cache_comparison_refusal_cannot_return_a_cached_target() {
                 panic!("comparison must refuse");
             };
             assert_eq!(original.operation, "refused identity comparison");
-            assert_eq!(original.additional, cadmpeg_core::decode::u64_from_index(source.len()));
+            assert_eq!(
+                original.additional,
+                cadmpeg_core::decode::u64_from_index(source.len())
+            );
             assert!(
                 matches!(map.identity(&ctx, "another identity"), Err(CodecError::ResourceLimit(limit)) if limit == *original)
             );

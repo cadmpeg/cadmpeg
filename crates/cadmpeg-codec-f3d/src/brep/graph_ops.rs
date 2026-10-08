@@ -586,11 +586,8 @@ impl Brep {
         let mut map =
             IdentityMap::new(ctx, "rewrite F3D qualified BREP fields", |source: &str| {
                 ctx.charge_work(0, "find F3D BREP replacement")?;
-                let replacement = ctx.get_btree_map(
-                    &replacements.0,
-                    source,
-                    "find F3D BREP replacement",
-                )?;
+                let replacement =
+                    ctx.get_btree_map(&replacements.0, source, "find F3D BREP replacement")?;
                 ctx.charge_work(0, "find F3D BREP replacement")?;
                 ctx.copy_retained_text(
                     replacement.map_or(source, String::as_str),

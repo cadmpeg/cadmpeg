@@ -52,13 +52,9 @@ fn replacement_lookup_preserves_each_comparison_refusal_and_empty_fuse() {
         .reserve_scoped_limit(0, "empty replacement index")
         .unwrap();
     let empty = std::collections::BTreeMap::<String, String>::new();
-    let empty_index = super::ReplacementIndex::build(
-        &ctx,
-        &empty,
-        &mut empty_storage,
-        "empty replacement index",
-    )
-    .unwrap();
+    let empty_index =
+        super::ReplacementIndex::build(&ctx, &empty, &mut empty_storage, "empty replacement index")
+            .unwrap();
     assert_eq!(
         empty_index
             .get(&ctx, "absent", "empty replacement lookup")
@@ -128,13 +124,9 @@ fn replacement_index_admits_storage_and_preserves_byte_order() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut storage = ctx.reserve_scoped_limit(0, "replacement storage").unwrap();
-    let index = super::ReplacementIndex::build(
-        &ctx,
-        &replacements,
-        &mut storage,
-        "replacement storage",
-    )
-    .unwrap();
+    let index =
+        super::ReplacementIndex::build(&ctx, &replacements, &mut storage, "replacement storage")
+            .unwrap();
     assert_eq!(
         index.values,
         [("alpha", "first"), ("beta", "second"), ("é", "third")]
