@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod ownership;
+
 use super::{
     cap_coedge_ids_admitted, cap_record, copy_extrusion_identity, copy_ring_coedges,
     generated_extrusion_identity, missing_cap_message, push_rejected_extrusion,

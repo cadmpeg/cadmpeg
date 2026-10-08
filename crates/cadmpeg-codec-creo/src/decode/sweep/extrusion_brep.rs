@@ -807,13 +807,19 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 vertical_edges.push(edge_id);
             }
 
+            drop(bottom_vertices);
+            drop(bottom_vertices_storage);
+            drop(top_vertices);
+            drop(top_vertices_storage);
             let bottom_loop = extrusion_id!(LoopId, "loop:{}:bottom", profile_index);
             let top_loop = extrusion_id!(LoopId, "loop:{}:top", profile_index);
             ctx.reserve_vec(&mut bottom_loops, 1, "creo extrusion bottom loop IDs")?;
-            bottom_loops.push(copy_id!(bottom_loop));
+            bottom_loops.push(bottom_loop);
             ctx.reserve_vec(&mut top_loops, 1, "creo extrusion top loop IDs")?;
-            top_loops.push(copy_id!(top_loop));
-            let (bottom_coedges, _bottom_coedge_storage) =
+            top_loops.push(top_loop);
+            let bottom_loop = &bottom_loops[profile_index];
+            let top_loop = &top_loops[profile_index];
+            let (bottom_coedges, bottom_coedge_storage) =
                 ctx.with_scoped_storage("creo extrusion cap coedge scratch", || {
                     cap_coedge_ids_admitted(
                         ctx,
@@ -825,7 +831,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         "creo extrusion bottom cap coedge IDs",
                     )
                 })?;
-            let (top_coedges, _top_coedge_storage) =
+            let (top_coedges, top_coedge_storage) =
                 ctx.with_scoped_storage("creo extrusion cap coedge scratch", || {
                     cap_coedge_ids_admitted(
                         ctx,
@@ -1150,7 +1156,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     profile[index].end(),
                     span,
                 );
-                for use_index in 0..4 {
+                for (use_index, (coedge, (edge, sense))) in
+                    coedges.into_iter().zip(edge_uses).enumerate()
+                {
                     let radial_next = match use_index {
                         0 => copy_id!(bottom_coedges[count - 1 - index]),
                         1 => extrusion_id!(
@@ -1194,11 +1202,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         ctx,
                         ir,
                         Coedge {
-                            id: copy_id!(coedges[use_index]),
+                            id: coedge,
                             owner_loop: copy_id!(loop_id),
-                            edge: copy_id!(edge_uses[use_index].0),
+                            edge,
                             radial_next,
-                            sense: edge_uses[use_index].1,
+                            sense,
                             pcurves: {
                                 let mut uses = ctx
                                     .collection_vec(1, "creo extrusion side coedge pcurve uses")?;
@@ -1218,7 +1226,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ctx,
                     ir,
                     Face {
-                        id: copy_id!(face_id),
+                        id: face_id,
                         shell: copy_id!(shell_id),
                         surface: surface_id,
                         sense: if forward_sides {
@@ -1238,6 +1246,16 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     },
                 )?;
             }
+            drop(bottom_edges);
+            drop(bottom_edges_storage);
+            drop(top_edges);
+            drop(top_edges_storage);
+            drop(vertical_edges);
+            drop(vertical_edges_storage);
+            drop(bottom_coedges);
+            drop(bottom_coedge_storage);
+            drop(top_coedges);
+            drop(top_coedge_storage);
         }
         ctx.charge_entities(1, "admit Creo model faces")?;
         source_carriers.admit_face(
