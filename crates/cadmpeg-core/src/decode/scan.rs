@@ -567,8 +567,9 @@ impl DecodeContext<'_> {
         )
     }
 
-    /// Compares equal-length byte slices after admitting the complete scan.
-    /// Unequal lengths need no input-sized comparison.
+    /// Compares byte slices. Unequal lengths need no input-sized comparison;
+    /// equal lengths admit each byte pair before comparing it and stop at the
+    /// first pair that differs.
     pub fn equal_bytes(
         &self,
         left: &[u8],
@@ -588,8 +589,13 @@ impl DecodeContext<'_> {
         if left.len() != right.len() {
             return Ok(false);
         }
-        self.charge_work_limit(u64_from_index(left.len()), operation)?;
-        Ok(left == right)
+        for (left, right) in left.iter().zip(right) {
+            self.charge_work_limit(1, operation)?;
+            if left != right {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     /// Tests every slice value until a resource-only predicate fails, charging
