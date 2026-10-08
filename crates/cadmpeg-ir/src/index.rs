@@ -444,14 +444,13 @@ fn build_identity_index<T: EntitySchema, S: IndexStorage>(
     entities: &[T],
     storage: &S,
 ) -> Result<IdentityIndex, S::Error> {
-    let mut index = storage.map(0, "model identity index slots")?;
+    let mut index = storage.map(entities.len(), "model identity index slots")?;
     for (slot, entity) in storage
         .admit_iter(entities, "model identity index scan")?
         .enumerate()
     {
         storage.work(entity.identity().len(), "model identity hash")?;
         let hash = identity_hash(entity.identity());
-        storage.entry(&mut index, &hash, "model identity index slots")?;
         match index.entry(hash) {
             Entry::Vacant(entry) => {
                 entry.insert(IdentityEntry::One(slot));
@@ -873,12 +872,11 @@ macro_rules! define_model_index {
             pub fn identities<'index, P: IndexQuery + 'index>(
                 &'index self, query: P,
             ) -> impl Iterator<Item = P::Output<&'a str>> + 'index {
-                let identities = query.admit_iter(&self.identity_set().values, "model identity universe iteration");
-                match identities {
-                    Ok(identities) => Some(identities.map(move |identity| query.finish(Ok(identity.0))))
-                        .into_iter().flatten().chain(None.into_iter()),
-                    Err(error) => None.into_iter().flatten().chain(Some(query.finish(Err(error))).into_iter()),
-                }
+                let mut identities = query.admit_iter(&self.identity_set().values, "model identity universe iteration").map_err(Some);
+                std::iter::from_fn(move || match &mut identities {
+                    Ok(identities) => identities.next().map(|identity| query.finish(Ok(identity.0))),
+                    Err(error) => error.take().map(|error| query.finish(Err(error))),
+                })
             }
 
             /// Looks up the procedural construction that owns a surface.
@@ -990,7 +988,13 @@ mod tests {
                 1 => index
                     .procedural_curves_for_curve(id.as_str(), &ctx)
                     .unwrap_err(),
-                _ => index.identities(&ctx).next().unwrap().unwrap_err(),
+                _ => {
+                    let mut identities = index.identities(&ctx);
+                    let first = identities.next().unwrap().unwrap_err();
+                    assert!(identities.next().is_none());
+                    assert!(identities.next().is_none());
+                    first
+                }
             };
             assert_eq!(first.dimension, ResourceDimension::WorkUnits);
             assert_eq!(
@@ -1322,6 +1326,50 @@ mod tests {
         assert!(
             matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
         );
+    }
+
+    #[test]
+    fn typed_identity_index_reserves_the_full_arena_before_visiting() {
+        let points = (0..8)
+            .map(|slot| {
+                crate::topology::Point::new(
+                    crate::ids::PointId::mint(format!("test:model:point#{slot}")).unwrap(),
+                    crate::features::FinitePoint3::ZERO,
+                    None,
+                )
+            })
+            .collect::<Vec<_>>();
+        let hash_bytes = points.iter().map(|point| point.id.as_str().len()).sum::<usize>();
+        for cap in [7, 8] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            policy.limits.max_materialized_bytes = 0;
+            // Eight slots need sixteen buckets at a 7/8 load: fourteen usable slots.
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+                14 * std::mem::size_of::<(u64, super::IdentityEntry)>(),
+            );
+            // One visit per point and one hash work unit per identity byte.
+            policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(points.len() + hash_bytes);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::build_identity_index(&points, &super::DecodeStorage(&ctx));
+            let original = if cap < 8 {
+                let original = result.unwrap_err();
+                assert_eq!(original.dimension, ResourceDimension::CollectionItems);
+                assert_eq!((original.limit, original.used, original.additional), (7, 0, 8));
+                assert_eq!(original.operation, "model identity index slots");
+                original
+            } else {
+                let index = result.unwrap();
+                assert_eq!(index.len(), points.len());
+                let original = ctx.charge_collection_items_limit(1, "test next identity slot").unwrap_err();
+                assert_eq!(original.dimension, ResourceDimension::CollectionItems);
+                assert_eq!((original.limit, original.used, original.additional), (8, 8, 1));
+                assert_eq!(original.operation, "test next identity slot");
+                original
+            };
+            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == original));
+        }
     }
 
     #[test]

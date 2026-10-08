@@ -2208,9 +2208,12 @@ fn validated_nurbs_curve_weights(
     if nurbs_curve_parameter_domain(curve).is_none() {
         return Ok(None);
     }
-    if curve.pole_rows().weight_at(0).is_none() {
-        return Ok(Some(ValidatedNurbsWeights::Unit));
-    }
+    let points = match curve.pole_rows() {
+        crate::geometry::nurbs::NurbsPoles3::Polynomial { .. } => {
+            return Ok(Some(ValidatedNurbsWeights::Unit));
+        }
+        crate::geometry::nurbs::NurbsPoles3::Rational { points } => points,
+    };
     let mut weights = Vec::new();
     ctx.reserve_scoped_vec(
         storage,
@@ -2218,9 +2221,6 @@ fn validated_nurbs_curve_weights(
         curve.pole_count(),
         "IR curve inversion weights",
     )?;
-    let crate::geometry::nurbs::NurbsPoles3::Rational { points } = curve.pole_rows() else {
-        return Ok(None);
-    };
     if !ctx.all_by_limit(
         points,
         |pole| {
