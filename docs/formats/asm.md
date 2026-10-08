@@ -656,15 +656,15 @@ A `.sat` or `.smt` stream carries the same entity model as a binary stream in a 
 
 ### 7.1 Header lines
 
-Three header lines precede the records.
+Save formats 200 and later store three header lines before the records. Save formats below 200 store only the first line; their records begin on the second line, and the stream declares no product strings, length unit, or tolerances.
 
 The first line holds exactly four binary header words as ASCII integers in the binary order: the save-format version, the record-count word (`0` when unwritten), the entity-count word, and the flags word. The words keep their binary semantics (§1): the entity-count word is the RecordTable index of the first referenced record, flag bit 0 marks a history partition, and flag bits 1 to 7 hold the revision. Trailing spaces after the flags word are padding.
 
 The second line holds exactly three UTF-8 product strings — product family, product version, and save date — as counted strings. A counted string in a header line is a decimal byte count, one whitespace separator byte, and that many UTF-8 bytes; header lines do not use the record encoding's `@` prefix. Only whitespace can follow the third string.
 
-The third line holds exactly three kernel doubles in the binary order: `scale`, `resabs`, and `resnor`. The `resabs` and `resnor` tolerances are finite nonnegative error bounds. A negative value, infinity, or NaN makes the stream malformed.
+The third line holds exactly three kernel doubles in the binary order: `scale`, `resabs`, and `resnor`. The `resabs` and `resnor` tolerances are finite nonnegative error bounds.
 
-**Unit rule.** In the text encoding, `scale` is a finite positive number and is the stream's length unit in millimetres per unit. Zero, a negative number, infinity, or NaN makes the stream malformed. A model-space length equals its stored value multiplied by `scale` millimetres. This differs from the binary encoding, whose lengths are centimetres and whose `scale` word is not a coordinate multiplier (§4). Dimensionless values — unit vectors, ratios, angles, knots, parameters, and pcurve coordinates — do not take the unit.
+**Unit rule.** In the text encoding, a finite positive `scale` is the stream's length unit in millimetres per unit. The value `-1` declares the unit unset. A model-space length equals its stored value multiplied by `scale` millimetres. A stream with no units line or an unset unit declares no length unit. This differs from the binary encoding, whose lengths are centimetres and whose `scale` word is not a coordinate multiplier (§4). Dimensionless values — unit vectors, ratios, angles, knots, parameters, and pcurve coordinates — do not take the unit.
 
 ### 7.2 Record grammar
 
@@ -679,13 +679,15 @@ Field forms:
 - A boolean is a word. A sense slot writes `forward` for `FALSE` and `reversed` for `TRUE`. A face sides slot writes `single` for `FALSE` and `double` for `TRUE`. A surface v-sense slot writes `forward_v` for `FALSE` and `reverse_v` for `TRUE`. A plain logical slot writes `F` for `FALSE` and `T` for `TRUE`. An optional range bound (§6.3) writes `I` for the absent bound (`FALSE`, no value follows) and `F` for the present bound (`TRUE`, one value follows). The word `F` therefore takes its meaning from the slot class.
 - An enumeration (`ENUM_VALUE`) is a word from the slot's vocabulary. Closure slots write `open` (0), `closed` (1), and `periodic` (2). Singularity slots write `none` (0). Approximation-cache form slots write the `law_spl_sur` selector names: `full` (0), `summary` (1), `none` (2), `historical` (3), and `optimal` (4). Curve extension slots write `UNEXTENDED` (0).
 
+A stream saved with sequence numbers writes the field `-N` before each record name, where `N` is the record's index. The sequence number does not change record indexing (§7.3).
+
 The `$` and `@` prefixes are reserved for references and counted strings. A field that starts with either prefix is malformed when its decimal operand is absent, invalid, or outside the supported integer range.
 
 ### 7.3 Record indexing and stream end
 
 Record indices count records in file order from zero, starting at the first record after the header lines. A stream that begins with an `asmheader` record gives it index 0; a save-format 700 stream stores no `asmheader` record and gives index 0 to its first entity record. `$N` references index this table directly.
 
-The stream ends with a terminator line that identifies the serialization branch: `End-of-ASM-data` on the ASM branch and `End-of-ACIS-data` on the ACIS branch. Only whitespace can follow this terminator. Save-format 700 streams use the ACIS terminator and the legacy subtype spellings (§6.6); later save formats use the ASM terminator and the modern spellings.
+The stream ends with a terminator line that identifies the serialization branch: `End-of-ASM-data` on the ASM branch and `End-of-ACIS-data` on the ACIS branch. Only whitespace can follow this terminator. The save format also selects the branch: a save-format major version of 100 or more (save format 10000 or more) is on the ASM branch, and lower save formats are on the ACIS branch. Save-format 700 streams use the ACIS terminator and the legacy subtype spellings (§6.6); later save formats use the ASM terminator and the modern spellings.
 
 ### 7.4 Save-format 700 record layouts
 

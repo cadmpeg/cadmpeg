@@ -36,22 +36,51 @@ pub enum Terminator {
     Acis,
 }
 
-/// An independently framed header value that could not be interpreted.
+/// A recovered stream value or extent that could not be interpreted as written.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HeaderDiagnostic {
-    /// Whether the omitted value is descriptive metadata or a kernel tolerance.
-    pub kind: HeaderDiagnosticKind,
+pub struct StreamDiagnostic {
+    /// What the recovery omitted or assumed.
+    pub kind: StreamDiagnosticKind,
     /// Source location and reason.
     pub error: StreamError,
 }
 
-/// Header recovery classes shared by SAT and Fusion SMT callers.
+/// Text-stream recovery classes shared by SAT and Fusion SMT callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HeaderDiagnosticKind {
+pub enum StreamDiagnosticKind {
     /// Independently framed descriptive strings or count words were unreadable.
     Metadata,
     /// A tolerance cannot enter the normalized kernel header.
     Tolerance,
+    /// The stream declares no usable length unit; lengths are read unscaled as
+    /// millimetres.
+    Units,
+    /// The input ends without a terminator line after its last complete record.
+    Terminator,
+    /// Bytes after the last framed record were not read as records: an
+    /// incomplete final record or data after the terminator line.
+    Unread,
+}
+
+/// The length unit of a text stream ([`asm.md` §7.1]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TextUnits {
+    /// The units line declares this many millimetres per stream unit.
+    Declared(PositiveReal),
+    /// The stream declares no usable unit. Save formats below 200 store no
+    /// units line, and the units word `-1` declares the unit unset. Lengths
+    /// are read unscaled as millimetres.
+    Unspecified,
+}
+
+impl TextUnits {
+    /// Millimetres per stream unit used to read lengths.
+    pub const fn millimetres_per_unit(self) -> PositiveReal {
+        match self {
+            Self::Declared(scale) => scale,
+            Self::Unspecified => PositiveReal::ONE,
+        }
+    }
 }
 
 /// The three header lines of a text stream: the four binary header words, the
@@ -70,23 +99,28 @@ pub struct TextHeader {
     pub product_version: Option<String>,
     /// Save date string.
     pub save_date: Option<String>,
-    /// Length unit of the stream, in millimetres per unit.
-    scale: PositiveReal,
+    /// Length unit of the stream.
+    units: TextUnits,
     /// Absolute distance tolerance in stream length units.
     resabs: Option<NonNegativeReal>,
     /// Normal tolerance.
     resnor: Option<NonNegativeReal>,
     normalized_resabs_cm: Option<NonNegativeReal>,
-    /// Recovery notes; framing, unit, and resource failures remain fatal.
-    pub diagnostics: Vec<HeaderDiagnostic>,
-    /// Exact source extent of the three independently framed header lines.
+    /// Header recovery notes; framing and resource failures remain fatal.
+    pub diagnostics: Vec<StreamDiagnostic>,
+    /// Exact source extent of the independently framed header lines.
     pub source_span: std::ops::Range<usize>,
 }
 
 impl TextHeader {
-    /// Length unit of the stream, in millimetres per unit.
+    /// Millimetres per stream unit used to read lengths.
     pub const fn scale(&self) -> PositiveReal {
-        self.scale
+        self.units.millimetres_per_unit()
+    }
+
+    /// The length unit the stream declares, if any.
+    pub const fn units(&self) -> TextUnits {
+        self.units
     }
 
     /// Absolute distance tolerance in stream length units.
@@ -102,6 +136,16 @@ impl TextHeader {
     /// Normal tolerance.
     pub const fn resnor(&self) -> Option<NonNegativeReal> {
         self.resnor
+    }
+
+    /// The branch the save format selects ([`asm.md` §7.3]): ASM save formats
+    /// have a major version of 100 or more.
+    pub const fn save_format_branch(&self) -> Terminator {
+        if self.save_format_version >= FIRST_ASM_SAVE_FORMAT {
+            Terminator::Asm
+        } else {
+            Terminator::Acis
+        }
     }
 
     /// The header as a [`KernelHeader`] for the shared decode path.
@@ -146,8 +190,16 @@ pub struct TextStream {
     /// Records in file order. Index 0 is the first record after the header
     /// lines; the stream does not always begin with `asmheader`.
     pub records: Vec<Record>,
-    /// Which terminator line closed the stream.
+    /// The terminator line that closed the stream, or the branch the save
+    /// format selects when the input ends without one.
     pub terminator: Terminator,
+    /// Whether a terminator line closed the stream.
+    pub has_terminator_line: bool,
+    /// Framing recovery notes for bytes after the last framed record.
+    pub framing: Vec<StreamDiagnostic>,
+    /// Source bytes after the last framed record that were not read as
+    /// records: an incomplete final record or data after the terminator line.
+    pub unread: Option<std::ops::Range<usize>>,
 }
 
 /// Whether `bytes` begins like a text ASM stream: an ASCII digit run (the
@@ -187,6 +239,8 @@ fn is_ws(b: u8) -> bool {
 struct FieldReader<'a> {
     bytes: &'a [u8],
     pos: usize,
+    /// Offset of the first field that is not valid UTF-8, and the field count.
+    invalid_utf8: Option<(usize, usize)>,
 }
 
 impl FieldReader<'_> {
@@ -213,20 +267,29 @@ impl FieldReader<'_> {
         while self.pos < self.bytes.len() && !is_ws(self.bytes[self.pos]) {
             self.pos += 1;
         }
-        let word =
-            std::str::from_utf8(&self.bytes[start..self.pos]).map_err(|error| StreamError {
-                format: StreamFormat::Text,
-                offset: start + error.valid_up_to(),
-                reason: "field is not valid UTF-8".to_string(),
-            })?;
+        let word = self.text(start, self.pos);
         let word = if retained {
-            ctx.copy_retained_text(word, "retain SAT record name")
+            ctx.copy_retained_text(&word, "retain SAT record name")
                 .map_err(StreamFailure::from_operation)?
         } else {
-            ctx.copy_scoped_text(word, scratch, "SAT field")
+            ctx.copy_scoped_text(&word, scratch, "SAT field")
                 .map_err(StreamFailure::from_operation)?
         };
         Ok(Some((start, word)))
+    }
+
+    /// The field bytes `start..end` as text. A field that is not valid UTF-8
+    /// keeps its framed boundary; it is read with replacement characters and
+    /// reported once per stream.
+    fn text(&mut self, start: usize, end: usize) -> std::borrow::Cow<'_, str> {
+        let raw = &self.bytes[start..end];
+        if let Err(error) = std::str::from_utf8(raw) {
+            let (_, count) = self
+                .invalid_utf8
+                .get_or_insert((start + error.valid_up_to(), 0));
+            *count += 1;
+        }
+        String::from_utf8_lossy(raw)
     }
 
     /// Consume the `@N` payload after its length field: one separator byte,
@@ -251,14 +314,9 @@ impl FieldReader<'_> {
             }
             .into());
         };
-        let payload =
-            std::str::from_utf8(&self.bytes[self.pos..end]).map_err(|error| StreamError {
-                format: StreamFormat::Text,
-                offset: self.pos + error.valid_up_to(),
-                reason: format!("@{len} string is not valid UTF-8"),
-            })?;
+        let payload = self.text(self.pos, end);
         let payload = ctx
-            .copy_scoped_text(payload, scratch, "SAT string payload")
+            .copy_scoped_text(&payload, scratch, "SAT string payload")
             .map_err(StreamFailure::from_operation)?;
         self.pos = end;
         Ok(payload)
@@ -344,6 +402,37 @@ fn counted_string<'a>(
     Ok(value)
 }
 
+/// The first save format whose header stores the product and units lines.
+const FIRST_UNITS_LINE_SAVE_FORMAT: u32 = 200;
+
+/// The first save format whose major version selects the ASM branch.
+const FIRST_ASM_SAVE_FORMAT: u32 = 10_000;
+
+fn push_diagnostic(
+    ctx: &DecodeContext<'_>,
+    diagnostics: &mut Vec<StreamDiagnostic>,
+    kind: StreamDiagnosticKind,
+    offset: usize,
+    reason: std::fmt::Arguments<'_>,
+) -> Result<(), StreamFailure> {
+    let reason = ctx
+        .format_retained(reason, "SAT stream diagnostic text")
+        .map_err(StreamFailure::from_operation)?;
+    ctx.push_vec(
+        diagnostics,
+        StreamDiagnostic {
+            kind,
+            error: StreamError {
+                format: StreamFormat::Text,
+                offset,
+                reason,
+            },
+        },
+        "SAT stream diagnostics",
+    )
+    .map_err(StreamFailure::from_operation)
+}
+
 fn parse_header(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -374,13 +463,40 @@ fn parse_header(
         .map_err(StreamFailure::from_operation)?;
         ctx.push_vec(
             &mut diagnostics,
-            HeaderDiagnostic {
-                kind: HeaderDiagnosticKind::Metadata,
+            StreamDiagnostic {
+                kind: StreamDiagnosticKind::Metadata,
                 error,
             },
             "SAT header diagnostics",
         )
         .map_err(StreamFailure::from_operation)?;
+    }
+
+    if save_format_version < FIRST_UNITS_LINE_SAVE_FORMAT {
+        push_diagnostic(
+            ctx,
+            &mut diagnostics,
+            StreamDiagnosticKind::Units,
+            at,
+            format_args!(
+                "save format {save_format_version} stores no product or units line; \
+                 lengths are read unscaled as millimetres"
+            ),
+        )?;
+        return Ok(TextHeader {
+            save_format_version,
+            entity_count,
+            flags,
+            product_family: None,
+            product_version: None,
+            save_date: None,
+            units: TextUnits::Unspecified,
+            resabs: None,
+            resnor: None,
+            normalized_resabs_cm: None,
+            diagnostics,
+            source_span: header_start..*pos,
+        });
     }
 
     let at = *pos;
@@ -426,8 +542,8 @@ fn parse_header(
                 .map_err(StreamFailure::from_operation)?;
                 ctx.push_vec(
                     &mut diagnostics,
-                    HeaderDiagnostic {
-                        kind: HeaderDiagnosticKind::Metadata,
+                    StreamDiagnostic {
+                        kind: StreamDiagnosticKind::Metadata,
                         error,
                     },
                     "SAT header diagnostics",
@@ -445,8 +561,8 @@ fn parse_header(
     if line2[cursor..].iter().any(|byte| !is_ws(*byte)) {
         ctx.push_vec(
             &mut diagnostics,
-            HeaderDiagnostic {
-                kind: HeaderDiagnosticKind::Metadata,
+            StreamDiagnostic {
+                kind: StreamDiagnosticKind::Metadata,
                 error: StreamError {
                     format: StreamFormat::Text,
                     offset: at + cursor,
@@ -474,20 +590,30 @@ fn parse_header(
             .and_then(|field| std::str::from_utf8(field).ok())
             .and_then(|field| field.parse().ok())
     };
-    let scale = float(line3[0]).and_then(PositiveReal::new).ok_or_else(|| {
-        StreamFailure::Malformed(StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "header scale must be finite and positive".to_string(),
-        })
-    })?;
+    let units = match float(line3[0]).and_then(PositiveReal::new) {
+        Some(scale) => TextUnits::Declared(scale),
+        None => {
+            push_diagnostic(
+                ctx,
+                &mut diagnostics,
+                StreamDiagnosticKind::Units,
+                at,
+                format_args!(
+                    "header units word declares no finite positive length unit; \
+                     lengths are read unscaled as millimetres"
+                ),
+            )?;
+            TextUnits::Unspecified
+        }
+    };
+    let scale = units.millimetres_per_unit();
     let mut tolerance = |field, what| -> Result<Option<NonNegativeReal>, StreamFailure> {
         let value = float(field)
             .and_then(NonNegativeReal::new)
             .filter(|value| value.get() > 0.0);
         if value.is_none() {
-            ctx.push_vec(&mut diagnostics, HeaderDiagnostic {
-                kind: HeaderDiagnosticKind::Tolerance,
+            ctx.push_vec(&mut diagnostics, StreamDiagnostic {
+                kind: StreamDiagnosticKind::Tolerance,
                 error: StreamError { format: StreamFormat::Text, offset: at,
                     reason: ctx.format_retained(format_args!("header {what} must be finite and positive for document tolerance; tolerance omitted"), "SAT header diagnostic text").map_err(StreamFailure::from_operation)? },
             }, "SAT header diagnostics").map_err(StreamFailure::from_operation)?;
@@ -509,8 +635,8 @@ fn parse_header(
     {
         ctx.push_vec(
             &mut diagnostics,
-            HeaderDiagnostic {
-                kind: HeaderDiagnosticKind::Tolerance,
+            StreamDiagnostic {
+                kind: StreamDiagnosticKind::Tolerance,
                 error: StreamError {
                     format: StreamFormat::Text,
                     offset: at,
@@ -530,7 +656,7 @@ fn parse_header(
         product_family,
         product_version,
         save_date,
-        scale,
+        units,
         resabs,
         resnor,
         normalized_resabs_cm,
@@ -575,19 +701,28 @@ pub fn parse_container(
     let branch = match marker {
         Some(b"End-of-ASM-data") => Terminator::Asm,
         Some(b"End-of-ACIS-data") => Terminator::Acis,
-        _ => {
-            return Err(StreamError {
-                format: StreamFormat::Text,
-                offset: position,
-                reason: "text container has no final branch marker".to_string(),
-            }
-            .into())
-        }
+        // Full parsing reports the missing terminator line.
+        _ => header.save_format_branch(),
     };
     Ok((header, branch))
 }
 
-/// Parse a complete text stream into its header and typed record table.
+fn is_sequence_number(field: &str) -> bool {
+    field
+        .strip_prefix('-')
+        .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+}
+
+const fn terminator_name(branch: Terminator) -> &'static str {
+    match branch {
+        Terminator::Asm => "ASM",
+        Terminator::Acis => "ACIS",
+    }
+}
+
+/// Parse a text stream into its header and typed record table. Records end at
+/// the terminator line, or at the last complete record when the input ends
+/// without one.
 pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, StreamFailure> {
     let mut pos = 0usize;
     let header = parse_header(ctx, bytes, &mut pos)?;
@@ -595,9 +730,15 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
     // stores lengths in `scale` millimetres per unit.
     let scale = header.scale().get();
 
-    let mut reader = FieldReader { bytes, pos };
+    let mut reader = FieldReader {
+        bytes,
+        pos,
+        invalid_utf8: None,
+    };
     let mut records = Vec::new();
     let mut terminator = None;
+    let mut framing = Vec::new();
+    let mut incomplete = None;
     let mut admitted_entities = 0_u64;
     ctx.admit_entities(
         header.entity_count,
@@ -610,9 +751,18 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
         let mut scratch = ctx
             .reserve_scoped(0, "frame SAT record")
             .map_err(StreamFailure::from_operation)?;
-        let Some((rec_start, name)) = reader.next_field(ctx, &mut scratch, true)? else {
+        let Some((rec_start, mut name)) = reader.next_field(ctx, &mut scratch, true)? else {
             break;
         };
+        // A stream saved with sequence numbers writes `-N` before each record
+        // name. The record table index remains the file-order position.
+        if is_sequence_number(&name) {
+            let Some((_, record_name)) = reader.next_field(ctx, &mut scratch, true)? else {
+                incomplete = Some((rec_start, name));
+                break;
+            };
+            name = record_name;
+        }
         match name.as_str() {
             "End-of-ASM-data" => {
                 terminator = Some(Terminator::Asm);
@@ -629,12 +779,8 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
         let mut subtype_depth = 0usize;
         loop {
             let Some((at, field)) = reader.next_field(ctx, &mut scratch, false)? else {
-                return Err(StreamError {
-                    format: StreamFormat::Text,
-                    offset: rec_start,
-                    reason: record_error_reason(ctx, &name, "has no `#` terminator")?,
-                }
-                .into());
+                incomplete = Some((rec_start, name));
+                break 'stream;
             };
             if field == "#" {
                 if subtype_depth != 0 {
@@ -738,27 +884,77 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             len: reader.pos - rec_start,
         });
     }
-    let Some(terminator) = terminator else {
-        return Err(StreamError {
-            format: StreamFormat::Text,
-            offset: reader.pos,
-            reason: "stream has no End-of-ASM-data or End-of-ACIS-data line".to_string(),
+    let mut unread = None;
+    let has_terminator_line = terminator.is_some();
+    let terminator = match terminator {
+        Some(terminator) => {
+            reader.skip_ws();
+            if reader.pos != bytes.len() {
+                push_diagnostic(
+                    ctx,
+                    &mut framing,
+                    StreamDiagnosticKind::Unread,
+                    reader.pos,
+                    format_args!(
+                        "{} bytes after the terminator line are not read as records",
+                        bytes.len() - reader.pos
+                    ),
+                )?;
+                unread = Some(reader.pos..bytes.len());
+            }
+            terminator
         }
-        .into());
+        None => {
+            let branch = header.save_format_branch();
+            match incomplete {
+                Some((start, name)) => {
+                    push_diagnostic(
+                        ctx,
+                        &mut framing,
+                        StreamDiagnosticKind::Unread,
+                        start,
+                        format_args!(
+                            "input ends inside record `{name}` before its `#` terminator; \
+                             the incomplete record is not read, and the stream is read on \
+                             the {} branch its save format selects",
+                            terminator_name(branch)
+                        ),
+                    )?;
+                    unread = Some(start..bytes.len());
+                }
+                None => push_diagnostic(
+                    ctx,
+                    &mut framing,
+                    StreamDiagnosticKind::Terminator,
+                    reader.pos,
+                    format_args!(
+                        "input ends without an End-of-ASM-data or End-of-ACIS-data line; \
+                         the stream is read on the {} branch its save format selects",
+                        terminator_name(branch)
+                    ),
+                )?,
+            }
+            branch
+        }
     };
-    reader.skip_ws();
-    if reader.pos != bytes.len() {
-        return Err(StreamError {
-            format: StreamFormat::Text,
-            offset: reader.pos,
-            reason: "non-whitespace data follows the stream terminator".to_string(),
-        }
-        .into());
+    if let Some((first, count)) = reader.invalid_utf8 {
+        push_diagnostic(
+            ctx,
+            &mut framing,
+            StreamDiagnosticKind::Metadata,
+            first,
+            format_args!(
+                "{count} field(s) are not valid UTF-8; they are read with replacement characters"
+            ),
+        )?;
     }
     Ok(TextStream {
         header,
         records,
         terminator,
+        has_terminator_line,
+        framing,
+        unread,
     })
 }
 
@@ -2319,7 +2515,6 @@ mod tests {
     #[test]
     fn sat_record_error_text_refuses_each_input_name_limit() {
         for (body, description) in [
-            ("mystery 1\n", "has no `#` terminator"),
             ("mystery { #\n", "terminates inside a subtype scope"),
             ("mystery } #\n", "closes an unopened subtype scope"),
         ] {
@@ -2500,7 +2695,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_header_scales_are_rejected() {
+    fn unusable_header_units_read_lengths_as_millimetres() {
         for scale in ["0", "-1", "NaN", "inf"] {
             let mut stream = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n");
             let scale_start = stream
@@ -2509,10 +2704,116 @@ mod tests {
                 .expect("tolerance line");
             stream.splice(scale_start..=scale_start, scale.bytes());
 
-            let error = parse(&stream).expect_err("invalid scale must fail");
-            assert_eq!(error.offset, scale_start);
-            assert_eq!(error.reason, "header scale must be finite and positive");
+            let parsed = parse(&stream).expect("records survive an unusable units word");
+            assert_eq!(parsed.header.units(), super::TextUnits::Unspecified);
+            assert_eq!(parsed.header.scale(), PositiveReal::ONE);
+            assert_eq!(parsed.records.len(), 1);
+            let units: Vec<_> = parsed
+                .header
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.kind == super::StreamDiagnosticKind::Units)
+                .collect();
+            assert_eq!(units.len(), 1);
+            assert_eq!(units[0].error.offset, scale_start);
         }
+    }
+
+    #[test]
+    fn legacy_save_formats_store_one_header_line() {
+        let stream = parse(
+            b"106 0 1 0           \nbody $-1 $1 $-1 $-1 #\nlump $-1 $-1 $-1 $0 #\nEnd-of-ACIS-data \n",
+        )
+        .expect("legacy stream frames");
+        assert_eq!(stream.header.save_format_version, 106);
+        assert_eq!(stream.header.product_family, None);
+        assert_eq!(stream.header.units(), super::TextUnits::Unspecified);
+        assert_eq!(stream.header.resabs(), None);
+        assert_eq!(stream.header.source_span, 0..21);
+        assert_eq!(
+            stream
+                .records
+                .iter()
+                .map(|record| record.name.as_str())
+                .collect::<Vec<_>>(),
+            ["body", "lump"]
+        );
+        assert_eq!(stream.header.diagnostics.len(), 1);
+        assert_eq!(
+            stream.header.diagnostics[0].kind,
+            super::StreamDiagnosticKind::Units
+        );
+    }
+
+    #[test]
+    fn sequence_numbers_do_not_change_record_indices() {
+        let stream = parse(
+            b"106 0 1 0 \n-0 body $-1 $1 $-1 $-1 #\n-1 lump $-1 $-1 $-1 $0 #\nEnd-of-ACIS-data \n",
+        )
+        .expect("sequence-numbered stream frames");
+        let framed: Vec<_> = stream
+            .records
+            .iter()
+            .map(|record| (record.index, record.name.as_str()))
+            .collect();
+        assert_eq!(framed, [(0, "body"), (1, "lump")]);
+        assert!(stream.framing.is_empty());
+    }
+
+    #[test]
+    fn unterminated_streams_keep_complete_records() {
+        let mut asm = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\nbody $-1 -1 ");
+        asm.truncate(asm.len() - b"End-of-ASM-data \n".len());
+        let incomplete = asm.len() - b"body $-1 -1 ".len();
+        let stream = parse(&asm).expect("complete records survive truncation");
+        assert_eq!(stream.records.len(), 1);
+        assert_eq!(stream.terminator, Terminator::Asm);
+        assert!(!stream.has_terminator_line);
+        assert_eq!(stream.unread, Some(incomplete..asm.len()));
+        assert_eq!(stream.framing.len(), 1);
+        assert_eq!(stream.framing[0].kind, super::StreamDiagnosticKind::Unread);
+        assert_eq!(stream.framing[0].error.offset, incomplete);
+
+        let header_only = b"700 0 1 0 \n14 cadmpeg-tests 4 ACIS 0 \n-1 1e-06 1e-10 \n";
+        let stream = parse(header_only).expect("a header-only stream frames no records");
+        assert!(stream.records.is_empty());
+        assert_eq!(stream.terminator, Terminator::Acis);
+        assert_eq!(stream.unread, None);
+        assert_eq!(stream.framing.len(), 1);
+        assert_eq!(
+            stream.framing[0].kind,
+            super::StreamDiagnosticKind::Terminator
+        );
+    }
+
+    #[test]
+    fn data_after_the_terminator_line_is_left_unread() {
+        let mut source = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n");
+        let tail = source.len();
+        source.extend_from_slice(b"body $-1 #\n");
+        let stream = parse(&source).expect("terminated records survive trailing data");
+        assert_eq!(stream.records.len(), 1);
+        assert!(stream.has_terminator_line);
+        assert_eq!(stream.unread, Some(tail..source.len()));
+        assert_eq!(stream.framing[0].kind, super::StreamDiagnosticKind::Unread);
+    }
+
+    #[test]
+    fn non_utf8_fields_keep_their_record_boundaries() {
+        let mut source = asm_stream("");
+        let body_start = source.len() - b"End-of-ASM-data \n".len();
+        let body = b"name_attrib-attrib $-1 $-1 $-1 $-1 7 \x02y\xff\x87 0 #\nbody $-1 #\n";
+        source.splice(body_start..body_start, body.iter().copied());
+        let stream = parse(&source).expect("record boundaries survive invalid UTF-8");
+        assert_eq!(stream.records.len(), 2);
+        assert_eq!(stream.records[1].name, "body");
+        let notes: Vec<_> = stream
+            .framing
+            .iter()
+            .filter(|diagnostic| diagnostic.kind == super::StreamDiagnosticKind::Metadata)
+            .collect();
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].error.reason.starts_with("1 field(s)"));
     }
 
     #[test]
@@ -2642,7 +2943,7 @@ mod tests {
     }
 
     #[test]
-    fn text_fields_reject_invalid_utf8_at_the_source_byte() {
+    fn text_fields_report_invalid_utf8_at_the_source_byte() {
         let mut header = asm_stream("mystery 1 #\n");
         let header_offset = header
             .windows(b"Autodesk".len())
@@ -2675,8 +2976,14 @@ mod tests {
         assert!(recovered.header.save_date.is_some());
         assert_eq!(recovered.records.len(), 1);
         for (bytes, expected_offset) in [(bare, bare_offset), (counted, counted_offset)] {
-            let error = parse(&bytes).expect_err("invalid UTF-8 must fail");
-            assert_eq!(error.offset, expected_offset);
+            let stream = parse(&bytes).expect("framed fields survive invalid UTF-8");
+            assert_eq!(stream.records.len(), 1);
+            assert_eq!(stream.framing.len(), 1);
+            assert_eq!(
+                stream.framing[0].kind,
+                super::StreamDiagnosticKind::Metadata
+            );
+            assert_eq!(stream.framing[0].error.offset, expected_offset);
         }
     }
 
@@ -2718,16 +3025,6 @@ mod tests {
         let stream = parse(&asm_stream("point $-1 -1 $-1 1 \n\t2 \n\t3 #\n")).expect("wrapped");
         assert_eq!(stream.records.len(), 1);
         assert_eq!(stream.records[0].tokens.len(), 4);
-    }
-
-    #[test]
-    fn stream_terminator_rejects_trailing_data() {
-        let mut stream = asm_stream("point $-1 -1 $-1 1 2 3 #\n");
-        let trailing_offset = stream.len();
-        stream.extend_from_slice(b"point $-1 -1 $-1 4 5 6 #\n");
-
-        let error = parse(&stream).expect_err("record after stream terminator must fail");
-        assert_eq!(error.offset, trailing_offset);
     }
 
     #[test]
@@ -3012,9 +3309,18 @@ mod tests {
     }
 
     #[test]
-    fn a_stream_without_a_terminator_line_is_an_error() {
+    fn a_stream_without_a_terminator_line_takes_its_save_format_branch() {
         let text = "700 0 1 0 \n30 Autodesk Translation Framework 21 ASM 232.4.0.65535 OSX 24 \
                     Fri Jul 17 14:48:06 2026 \n1 1e-06 1.0e-10 \nbody $-1 -1 $-1 $-1 $-1 $-1 #\n";
-        assert!(parse(text.as_bytes()).is_err());
+        let stream = parse(text.as_bytes()).expect("complete records frame");
+        assert_eq!(stream.records.len(), 1);
+        assert_eq!(stream.terminator, Terminator::Acis);
+        assert!(!stream.has_terminator_line);
+        assert_eq!(stream.unread, None);
+        assert_eq!(stream.framing.len(), 1);
+        assert_eq!(
+            stream.framing[0].kind,
+            super::StreamDiagnosticKind::Terminator
+        );
     }
 }

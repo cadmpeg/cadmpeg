@@ -106,7 +106,12 @@ fn decode_asm_binary(
         &kernel,
     )?;
     if header.metadata.unreadable_product_fields().next().is_some() {
-        retain_header(ctx, &mut result, bytes, 0..stream.offset())?;
+        retain_source(
+            ctx,
+            &mut result,
+            bytes,
+            [("sat:source:header#0", 0..stream.offset())],
+        )?;
     }
     Ok(result)
 }
@@ -186,13 +191,18 @@ fn decode_acis_binary(
         &kernel,
     )?;
     if header.metadata.unreadable_product_fields().next().is_some() {
-        retain_header(ctx, &mut result, bytes, 0..stream.offset())?;
+        retain_source(
+            ctx,
+            &mut result,
+            bytes,
+            [("sat:source:header#0", 0..stream.offset())],
+        )?;
     }
     Ok(result)
 }
 
 fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
-    let (text_header, branch, records) = if ctx.container_only() {
+    let (text_header, branch, records, framing, unread) = if ctx.container_only() {
         let (header, branch) = sat::parse_container(ctx, bytes).map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
                 unsupported_unframed(
@@ -201,7 +211,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
                 )
             })
         })?;
-        (header, branch, None)
+        (header, branch, None, Vec::new(), None)
     } else {
         let stream = sat::parse(ctx, bytes).map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
@@ -211,17 +221,25 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
                 )
             })
         })?;
-        (stream.header, stream.terminator, Some(stream.records))
+        (
+            stream.header,
+            stream.terminator,
+            Some(stream.records),
+            stream.framing,
+            stream.unread,
+        )
     };
     let header = text_header.as_kernel_header(ctx)?;
     let mut attributes = BTreeMap::new();
     header_attributes(ctx, &header, branch.into(), &mut attributes)?;
-    let key = ctx.copy_retained_text("scale", "retain SAT scale attribute key")?;
-    let value = ctx.format_retained(
-        format_args!("{}", text_header.scale().get()),
-        "retain SAT scale attribute",
-    )?;
-    ctx.insert_btree_map(&mut attributes, key, value, "collect SAT scale attribute")?;
+    if let sat::TextUnits::Declared(scale) = text_header.units() {
+        let key = ctx.copy_retained_text("scale", "retain SAT scale attribute key")?;
+        let value = ctx.format_retained(
+            format_args!("{}", scale.get()),
+            "retain SAT scale attribute",
+        )?;
+        ctx.insert_btree_map(&mut attributes, key, value, "collect SAT scale attribute")?;
+    }
     // The ACIS branch carries the same save-format band as the ACIS binary
     // stream, so it takes the same admission — literally the same code path,
     // through `classify`. Neither branch gates the record decode on it.
@@ -251,29 +269,49 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         matched,
         &kernel,
     )?;
-    crate::loss::text_header_losses(ctx, &text_header, &mut result.body.losses)?;
-    if !text_header.diagnostics.is_empty() {
-        retain_header(ctx, &mut result, bytes, text_header.source_span)?;
-    }
+    crate::loss::text_stream_losses(
+        ctx,
+        text_header.diagnostics.iter().chain(&framing),
+        &mut result.body.losses,
+    )?;
+    let header_span = (!text_header.diagnostics.is_empty())
+        .then_some(("sat:source:header#0", text_header.source_span));
+    let unread_span = unread.map(|span| ("sat:source:unread#0", span));
+    retain_source(
+        ctx,
+        &mut result,
+        bytes,
+        header_span.into_iter().chain(unread_span),
+    )?;
     Ok(result)
 }
 
-fn retain_header(
+/// Retain recovered source extents that no framed record carries.
+fn retain_source<'a>(
     ctx: &DecodeContext<'_>,
     result: &mut Decoded,
     bytes: &[u8],
-    span: std::ops::Range<usize>,
+    extents: impl IntoIterator<Item = (&'a str, std::ops::Range<usize>)>,
 ) -> Result<(), CodecError> {
-    let mut retained = ctx.collection_vec(1, "SAT recovered header records")?;
-    retained.push(cadmpeg_ir::UnknownRecord::retained(
-        cadmpeg_ir::ids::UnknownId::mint(
-            ctx.copy_retained_text("sat:source:header#0", "SAT header identity")?,
-        )
-        .map_err(CodecError::malformed)?,
-        cadmpeg_core::decode::u64_from_index(span.start),
-        ctx.copy_retained(&bytes[span], "SAT recovered header bytes")?,
-        Vec::new(),
-    ));
+    let mut retained = Vec::new();
+    for (id, span) in extents {
+        ctx.push_vec(
+            &mut retained,
+            cadmpeg_ir::UnknownRecord::retained(
+                cadmpeg_ir::ids::UnknownId::mint(
+                    ctx.copy_retained_text(id, "SAT recovered source identity")?,
+                )
+                .map_err(CodecError::malformed)?,
+                cadmpeg_core::decode::u64_from_index(span.start),
+                ctx.copy_retained(&bytes[span], "SAT recovered source bytes")?,
+                Vec::new(),
+            ),
+            "SAT recovered source records",
+        )?;
+    }
+    if retained.is_empty() {
+        return Ok(());
+    }
     result
         .source_fidelity
         .attach_native_unknown_records(&mut result.ir, FORMAT, retained, ctx)

@@ -667,7 +667,7 @@ fn sat_header_conversion_keeps_geometry_with_default_tolerance() {
 }
 
 #[test]
-fn sat_recognized_header_values_refuse_as_malformed() {
+fn sat_unusable_header_values_keep_independent_records() {
     for line in [
         "0 1 0", "-1 1 0", "NaN 1 0", "inf 1 0", "bad 1 0", "1 -1 0", "1 NaN 0", "1 inf 0",
         "1 bad 0", "1 1 -1", "1 1 NaN", "1 1 inf", "1 1 bad",
@@ -678,33 +678,31 @@ fn sat_recognized_header_values_refuse_as_malformed() {
             line,
             1,
         );
+        let expected = if line.starts_with("1 ") {
+            SatLossCode::HeaderToleranceUnresolved
+        } else {
+            SatLossCode::HeaderLengthUnitUnresolved
+        };
         for container_only in [false, true] {
             let options = cadmpeg_ir::codec::DecodeOptions {
                 container_only,
                 ..Default::default()
             };
-            let result = SatCodec.decode(&mut Cursor::new(bytes.as_bytes()), &options);
-            if line.starts_with("1 ") {
-                let recovered = result.expect("invalid tolerance does not control record decode");
-                assert!(recovered
+            let recovered = SatCodec
+                .decode(&mut Cursor::new(bytes.as_bytes()), &options)
+                .expect("an unusable header value does not control record framing");
+            assert!(
+                recovered
                     .report()
                     .losses
                     .iter()
-                    .any(|loss| loss.code == SatLossCode::HeaderToleranceUnresolved.kind()));
-                assert_eq!(
-                    recovered.ir().model.faces.len(),
-                    usize::from(!container_only)
-                );
-            } else {
-                let error = result.expect_err("invalid scale prevents geometry interpretation");
-                assert!(
-                    matches!(
-                        error,
-                        cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(_))
-                    ),
-                    "{line}: {error:?}"
-                );
-            }
+                    .any(|loss| loss.code == expected.kind()),
+                "{line}"
+            );
+            assert_eq!(
+                recovered.ir().model.faces.len(),
+                usize::from(!container_only)
+            );
         }
     }
 }

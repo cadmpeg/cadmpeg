@@ -36,6 +36,13 @@ pub(crate) enum SatLossCode {
     HeaderToleranceUnresolved,
     /// Independently framed product metadata is malformed.
     HeaderMetadataNoncanonical,
+    /// The stream declares no usable length unit; lengths are read unscaled as
+    /// millimetres.
+    HeaderLengthUnitUnresolved,
+    /// The input ends without a terminator line after its last complete record.
+    FramingTerminatorMissing,
+    /// Bytes after the last framed record were not read as records.
+    FramingRecordsUnread,
     /// The stream was read with a grammar its own save-format declaration does
     /// not select.
     SourceDialectUnverified,
@@ -49,6 +56,9 @@ impl SatLossCode {
         Self::GeometryProceduralSurfaceUntyped,
         Self::HeaderToleranceUnresolved,
         Self::HeaderMetadataNoncanonical,
+        Self::HeaderLengthUnitUnresolved,
+        Self::FramingTerminatorMissing,
+        Self::FramingRecordsUnread,
         Self::SourceDialectUnverified,
     ];
 
@@ -60,6 +70,9 @@ impl SatLossCode {
             Self::GeometryProceduralSurfaceUntyped => "geometry.procedural-surface-untyped",
             Self::HeaderToleranceUnresolved => "header.tolerance-unresolved",
             Self::HeaderMetadataNoncanonical => "header.metadata-noncanonical",
+            Self::HeaderLengthUnitUnresolved => "header.length-unit-unresolved",
+            Self::FramingTerminatorMissing => "framing.terminator-missing",
+            Self::FramingRecordsUnread => "framing.records-unread",
             Self::SourceDialectUnverified => "source.kernel-dialect-unverified",
         }
     }
@@ -72,6 +85,9 @@ impl SatLossCode {
             Self::GeometryProceduralSurfaceUntyped
             | Self::HeaderToleranceUnresolved
             | Self::HeaderMetadataNoncanonical
+            | Self::HeaderLengthUnitUnresolved
+            | Self::FramingTerminatorMissing
+            | Self::FramingRecordsUnread
             | Self::SourceDialectUnverified => Severity::Warning,
         }
     }
@@ -80,9 +96,13 @@ impl SatLossCode {
         match self {
             Self::GeometryFramedWithoutCarriers
             | Self::GeometryProceduralSurfaceUntyped
-            | Self::HeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
+            | Self::HeaderToleranceUnresolved
+            | Self::HeaderLengthUnitUnresolved
+            | Self::FramingRecordsUnread => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
-            Self::HeaderMetadataNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::HeaderMetadataNoncanonical | Self::FramingTerminatorMissing => {
+                LossTaxonomy::NoncanonicalSourceSyntax
+            }
         }
     }
 
@@ -102,23 +122,26 @@ impl SatLossCode {
     }
 }
 
-/// Project shared text-header recovery into codec losses for decode and inspection.
-pub(crate) fn text_header_losses(
+/// Project shared text-stream recovery into codec losses for decode and inspection.
+pub(crate) fn text_stream_losses<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    header: &cadmpeg_asm::sat::TextHeader,
+    diagnostics: impl IntoIterator<Item = &'a cadmpeg_asm::sat::StreamDiagnostic>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for diagnostic in &header.diagnostics {
+    use cadmpeg_asm::sat::StreamDiagnosticKind;
+    for diagnostic in diagnostics {
         let code = match diagnostic.kind {
-            cadmpeg_asm::sat::HeaderDiagnosticKind::Metadata => {
-                SatLossCode::HeaderMetadataNoncanonical
-            }
-            cadmpeg_asm::sat::HeaderDiagnosticKind::Tolerance => {
-                SatLossCode::HeaderToleranceUnresolved
-            }
+            StreamDiagnosticKind::Metadata => SatLossCode::HeaderMetadataNoncanonical,
+            StreamDiagnosticKind::Tolerance => SatLossCode::HeaderToleranceUnresolved,
+            StreamDiagnosticKind::Units => SatLossCode::HeaderLengthUnitUnresolved,
+            StreamDiagnosticKind::Terminator => SatLossCode::FramingTerminatorMissing,
+            StreamDiagnosticKind::Unread => SatLossCode::FramingRecordsUnread,
         };
         let message = ctx.format_retained(
-            format_args!("{}; independent records retained", diagnostic.error),
+            format_args!(
+                "byte {}: {}; independent records retained",
+                diagnostic.error.offset, diagnostic.error.reason
+            ),
             "SAT header loss text",
         )?;
         ctx.push_vec(
@@ -170,6 +193,9 @@ mod tests {
                 "geometry.procedural-surface-untyped",
                 "header.tolerance-unresolved",
                 "header.metadata-noncanonical",
+                "header.length-unit-unresolved",
+                "framing.terminator-missing",
+                "framing.records-unread",
                 "source.kernel-dialect-unverified",
             ]
         );

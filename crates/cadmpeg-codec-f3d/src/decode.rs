@@ -2234,7 +2234,10 @@ fn try_decode_text_model(
         // stream's own unit; the decoded token values are already in the
         // centimetre convention.
         let mut header = stream.header.as_kernel_header(ctx)?;
-        header.scale = Some(stream.header.scale().get());
+        header.scale = match stream.header.units() {
+            cadmpeg_asm::sat::TextUnits::Declared(scale) => Some(scale.get()),
+            cadmpeg_asm::sat::TextUnits::Unspecified => None,
+        };
 
         ctx.reserve_vec(&mut parts, 1, "collect F3D text B-rep parts")?;
         parts.push((

@@ -181,11 +181,11 @@ pub(crate) fn header_losses(
                 .map(cadmpeg_ir::scalar::NonNegativeReal::get),
             losses,
         )?;
-        for diagnostic in &stream.header.diagnostics {
+        for diagnostic in stream.header.diagnostics.iter().chain(&stream.framing) {
             let message = ctx.format_retained(
                 format_args!(
-                    "text BREP {name}: {}; independent records retained",
-                    diagnostic.error
+                    "text BREP {name} byte {}: {}; independent records retained",
+                    diagnostic.error.offset, diagnostic.error.reason
                 ),
                 "F3D text header loss text",
             )?;

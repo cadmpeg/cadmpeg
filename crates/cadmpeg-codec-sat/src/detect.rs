@@ -188,31 +188,39 @@ pub(crate) fn inspect(
             };
             let text = match &parsed {
                 Ok((kernel, stream)) => {
-                    crate::loss::text_header_losses(ctx, &stream.header, &mut losses)?;
+                    crate::loss::text_stream_losses(
+                        ctx,
+                        stream.header.diagnostics.iter().chain(&stream.framing),
+                        &mut losses,
+                    )?;
                     header_attributes(ctx, kernel, stream.terminator.into(), &mut attributes)?;
+                    let scale = match stream.header.units() {
+                        sat::TextUnits::Declared(scale) => Some(ctx.format_retained(
+                            format_args!("{}", scale.get()),
+                            "retain SAT scale attribute",
+                        )?),
+                        sat::TextUnits::Unspecified => None,
+                    };
+                    let terminator = if stream.has_terminator_line {
+                        Some(ctx.format_retained(
+                            format_args!("{}", terminator_line(stream.terminator)),
+                            "retain SAT terminator attribute",
+                        )?)
+                    } else {
+                        None
+                    };
+                    let records = Some(ctx.format_retained(
+                        format_args!("{}", stream.records.len()),
+                        "retain SAT record count attribute",
+                    )?);
                     for (key, value) in [
-                        (
-                            "scale",
-                            ctx.format_retained(
-                                format_args!("{}", stream.header.scale().get()),
-                                "retain SAT scale attribute",
-                            )?,
-                        ),
-                        (
-                            "records",
-                            ctx.format_retained(
-                                format_args!("{}", stream.records.len()),
-                                "retain SAT record count attribute",
-                            )?,
-                        ),
-                        (
-                            "terminator",
-                            ctx.format_retained(
-                                format_args!("{}", terminator_line(stream.terminator)),
-                                "retain SAT terminator attribute",
-                            )?,
-                        ),
-                    ] {
+                        ("scale", scale),
+                        ("records", records),
+                        ("terminator", terminator),
+                    ]
+                    .into_iter()
+                    .filter_map(|(key, value)| Some((key, value?)))
+                    {
                         let key = ctx.format_retained(
                             format_args!("{key}"),
                             "retain SAT inspect attribute key",

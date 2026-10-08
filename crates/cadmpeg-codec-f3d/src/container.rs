@@ -294,7 +294,7 @@ pub(crate) struct ContainerScan<'a> {
 
 /// The framing outcome of one text B-rep member.
 pub(crate) enum TextBrepFraming {
-    Parsed(cadmpeg_asm::sat::TextStream),
+    Parsed(Box<cadmpeg_asm::sat::TextStream>),
     Unframed(cadmpeg_asm::stream_error::StreamError),
     Malformed(cadmpeg_asm::stream_error::StreamError),
     UnsupportedLength(cadmpeg_asm::stream_error::StreamError),
@@ -766,7 +766,7 @@ pub(crate) fn scan<'a>(
         }
         let bytes = scan.entry_bytes(&entry.name)?;
         let framing = match cadmpeg_asm::sat::parse(ctx, bytes) {
-            Ok(stream) => TextBrepFraming::Parsed(stream),
+            Ok(stream) => TextBrepFraming::Parsed(Box::new(stream)),
             Err(cadmpeg_asm::stream_error::StreamFailure::Parse(error)) => {
                 TextBrepFraming::Unframed(error)
             }
