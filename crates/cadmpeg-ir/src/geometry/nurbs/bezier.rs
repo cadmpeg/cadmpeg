@@ -348,18 +348,13 @@ pub fn boundaries_within_resolution(
     let product_degree = value!(degree.checked_mul(2));
     let binomial = |n: usize, k: usize| -> Result<Option<f64>, ResourceLimit> {
         let k = k.min(n - k);
-        let mut result = 1.0;
-        for factor in 1..=k {
-            ctx.charge_work_limit(1, "IR Bezier boundary binomial factors")?;
-            let (Some(numerator), Some(denominator)) = (
-                cadmpeg_core::convert::f64_from_index(n - k + factor),
-                cadmpeg_core::convert::f64_from_index(factor),
-            ) else {
-                return Ok(None);
-            };
-            result = result * numerator / denominator;
-        }
-        Ok(Some(result))
+        ctx.charge_work_limit(u64_from_index(k), "IR Bezier boundary binomial factors")?;
+        Ok((1..=k).try_fold(1.0, |result, factor| {
+            Some(
+                result * cadmpeg_core::convert::f64_from_index(n - k + factor)?
+                    / cadmpeg_core::convert::f64_from_index(factor)?,
+            )
+        }))
     };
     let mut first_weight = f64::INFINITY;
     for control in ctx.admit_iter(first, "IR Bezier boundary first weight visit")? {
@@ -379,6 +374,7 @@ pub fn boundaries_within_resolution(
     let threshold = threshold.finish();
     for index in 0..=product_degree {
         ctx.charge_work_limit(1, "IR Bezier boundary product coefficient")?;
+        let denominator = value!(binomial(product_degree, index)?);
         let mut cross = [ExactSignedSum::default(); 3];
         // A control pair contributes when its indices sum to the product index.
         let end = index.min(degree);
@@ -398,9 +394,6 @@ pub fn boundaries_within_resolution(
                     return Ok(false);
                 };
                 let product = first_coefficient * second_coefficient;
-                let Some(denominator) = binomial(product_degree, index)? else {
-                    return Ok(false);
-                };
                 let coefficient = product / denominator;
                 if !coefficient.is_finite() {
                     return Ok(false);
@@ -503,6 +496,10 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = 4096;
         policy.limits.max_recursion_depth = 0;
+        // Four finite knots, three order pairs, two finite controls, four knot copies,
+        // two control copies, endpoint multiplicity probes (3+2 and 2+1), four internal
+        // knot visits, one active span and two span-control copies: 30.
+        policy.limits.max_work_units = 4 + 3 + 2 + 4 + 2 + (3 + 2 + 2 + 1) + 4 + 1 + 2;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let output = homogeneous_spans(&ctx, 1, &knots, &controls)
@@ -637,11 +634,11 @@ mod tests {
 
     #[test]
     fn boundary_certificate_preserves_every_caller_work_refusal() {
-        const WORK: u64 = 17;
+        const WORK: u64 = 16;
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let controls = [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
         // Four finite visits, four weight visits, three coefficients, four contributing
-        // control pairs and two binomial factors.
+        // control pairs and one product-degree binomial factor: 4+4+3+4+1 = 16.
         for operation in [
             "IR Bezier boundary finite control visit",
             "IR Bezier boundary first weight visit",
