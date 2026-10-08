@@ -5578,14 +5578,22 @@ fn parse_reference_suffix(
     maximum: usize,
 ) -> Result<(usize, Option<String>), CodecError> {
     let token = cursor.next(label)?;
-    // The digit search and the number parse each read at most the token.
-    cursor.ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(token.len()),
-        "FreeCAD text B-rep number",
-    )?;
-    let split = token
-        .find(|character: char| !character.is_ascii_digit())
-        .unwrap_or(token.len());
+    // The first non-ASCII digit starts the suffix. A non-ASCII byte is at
+    // the start of its UTF-8 scalar because preceding bytes are ASCII digits.
+    let mut split = token.len();
+    let mut bytes = token.as_bytes().iter().enumerate();
+    while bytes.len() != 0 {
+        let Some((index, byte)) = cursor.ctx.next_charged(
+            &mut bytes,
+            "FreeCAD text B-rep number",
+        )? else {
+            break;
+        };
+        if !byte.is_ascii_digit() {
+            split = index;
+            break;
+        }
+    }
     let (reference, suffix) = token.split_at(split);
     let value = cursor
         .ctx
@@ -6319,21 +6327,27 @@ fn grid_rows<T>(
     values: Vec<T>,
     width: usize,
 ) -> Result<Vec<Vec<T>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if width == 0 || !values.len().is_multiple_of(width) {
         return Err(CodecError::malformed(
             "surface grid dimensions do not match pole count",
         ));
     }
     let mut rows = ctx.collection_vec(values.len() / width, "FreeCAD B-rep surface rows")?;
-    // Each value moves once into its row.
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(values.len()),
-        "FreeCAD B-rep surface row values",
-    )?;
     let mut values = values.into_iter();
     while values.len() != 0 {
         let mut row = ctx.collection_vec(width, "FreeCAD B-rep surface row values")?;
-        row.extend(values.by_ref().take(width));
+        while row.len() < width {
+            let Some(value) = ctx.next_charged(
+                &mut values,
+                "FreeCAD B-rep surface row values",
+            )? else {
+                break;
+            };
+            row.push(value);
+        }
         rows.push(row);
     }
     Ok(rows)
@@ -6451,8 +6465,15 @@ impl<'a, 'c, 'r> TokenCursor<'a, 'c, 'r> {
     /// Takes the next token, charging the step; readers of its bytes charge
     /// them.
     fn next(&mut self, label: &str) -> Result<&'a str, CodecError> {
-        self.ctx.charge_work(1, "FreeCAD text B-rep token")?;
-        let token = self.tokens.get(self.index).copied().ok_or_else(|| {
+        if let Some(refusal) = self.ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let mut tokens = self.tokens.get(self.index..).unwrap_or(&[]).iter().copied();
+        let token = if tokens.len() == 0 {
+            None
+        } else {
+            self.ctx.next_charged(&mut tokens, "FreeCAD text B-rep token")?
+        }.ok_or_else(|| {
             CodecError::malformed(format_args!("truncated {label} in text B-rep Curves table"))
         })?;
         self.index += 1;
