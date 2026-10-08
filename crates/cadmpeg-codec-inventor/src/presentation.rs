@@ -2,6 +2,7 @@
 //! Typed `PmApp` document-default and rendering-style records.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -335,18 +336,8 @@ fn project_default_bindings(
     let mut bindings = Vec::new();
     for body in ctx.admit_iter(bodies, "visit Inventor presentation items")? {
         ctx.charge_entities(1, "project Inventor default appearance binding")?;
-        let compose_work = "inventor:presentation:body-default#"
-            .len()
-            .checked_add(16)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("compose Inventor default binding key", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(compose_work),
-            "compose Inventor default binding key",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index("inventor:presentation:body-default#".len() + 16),
+        let mut binding_text = ctx.retained_string(
+            "inventor:presentation:body-default#".len() + 16,
             "retain Inventor default binding id",
         )?;
         let binding_id = {
@@ -359,10 +350,10 @@ fn project_default_bindings(
                     "compose Inventor default binding key",
                 )
             })?;
-            let binding_id = AppearanceBindingId::compose(
-                &cadmpeg_ir::identity_namespace!("inventor", "presentation", "body-default"),
-                key,
-            );
+            binding_text.push_str("inventor:presentation:body-default#");
+            binding_text.push_str(key.as_str());
+            let binding_id = AppearanceBindingId::mint(binding_text)
+                .map_err(CodecError::malformed)?;
             drop(digest_storage);
             binding_id
         };
@@ -383,7 +374,11 @@ fn project_default_bindings(
                     "retain Inventor presentation binding source id",
                 )?),
                 object_type: Some(
-                    ctx.copy_retained_text("Body", "retain Inventor body binding object type")?,
+                    {
+                        let mut text = ctx.retained_string("Body".len(), "retain Inventor body binding object type")?;
+                        text.push_str("Body");
+                        text
+                    },
                 ),
                 visible: None,
                 channels: BTreeMap::default(),
@@ -412,12 +407,21 @@ fn project_face_bindings(
         .map(|(_, value)| value)
     {
         key_counts_storage.with_storage(|| {
-            ctx.admit_hash_map_entry(
+            match ctx.get_mut_hash_map(
                 &mut key_counts,
                 key,
                 "count Inventor presentation face keys",
-            )?;
-            *key_counts.entry(*key).or_insert(0_usize) += 1;
+            )? {
+                Some(count) => *count += 1,
+                None => {
+                    ctx.insert_hash_map(
+                        &mut key_counts,
+                        *key,
+                        1_usize,
+                        "count Inventor presentation face keys",
+                    )?;
+                }
+            }
             Ok::<_, CodecError>(())
         })?;
     }
@@ -648,10 +652,11 @@ fn project_face_bindings(
                     library_id: None,
                     visual_guid: None,
                     physical_token: None,
-                    schema: Some(ctx.copy_retained_text(
-                        "InventorPrimaryColorStyle",
-                        "retain Inventor face appearance schema",
-                    )?),
+                    schema: Some({
+                        let mut text = ctx.retained_string("InventorPrimaryColorStyle".len(), "retain Inventor face appearance schema")?;
+                        text.push_str("InventorPrimaryColorStyle");
+                        text
+                    }),
                     category: None,
                     base_color: Some(color),
                     properties: BTreeMap::new(),
@@ -672,25 +677,19 @@ fn project_face_bindings(
         };
 
         ctx.charge_entities(1, "project Inventor face appearance binding")?;
-        let compose_work = "inventor:presentation:face-override#"
-            .len()
-            .checked_add(16)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("compose Inventor face binding key", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(compose_work),
-            "compose Inventor face binding key",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index("inventor:presentation:face-override#".len() + 16),
+        let mut binding_text = ctx.retained_string(
+            "inventor:presentation:face-override#".len() + 16,
             "retain Inventor face binding id",
         )?;
         let mut channels = BTreeMap::new();
         ctx.insert_btree_map(
             &mut channels,
             cadmpeg_core::nonblank_literal!("precedence"),
-            ctx.copy_retained_text("face_over_body", "retain Inventor face binding precedence")?,
+            {
+                        let mut text = ctx.retained_string("face_over_body".len(), "retain Inventor face binding precedence")?;
+                        text.push_str("face_over_body");
+                        text
+                    },
             "project Inventor face binding channel",
         )?;
         let binding_id = {
@@ -702,10 +701,10 @@ fn project_face_bindings(
                     "compose Inventor face binding key",
                 )
             })?;
-            let binding_id = AppearanceBindingId::compose(
-                &cadmpeg_ir::identity_namespace!("inventor", "presentation", "face-override"),
-                key,
-            );
+            binding_text.push_str("inventor:presentation:face-override#");
+            binding_text.push_str(key.as_str());
+            let binding_id = AppearanceBindingId::mint(binding_text)
+                .map_err(CodecError::malformed)?;
             drop(digest_storage);
             binding_id
         };
@@ -725,7 +724,11 @@ fn project_face_bindings(
                     "retain Inventor presentation binding source id",
                 )?),
                 object_type: Some(
-                    ctx.copy_retained_text("Face", "retain Inventor face binding object type")?,
+                    {
+                        let mut text = ctx.retained_string("Face".len(), "retain Inventor face binding object type")?;
+                        text.push_str("Face");
+                        text
+                    },
                 ),
                 visible: None,
                 channels,
@@ -765,7 +768,7 @@ pub(crate) fn inventory<'a>(
             let ordinal = record.ordinal;
             let parsed = match record.type_id {
                 DEFAULT_STYLE_TYPE => {
-                    parse_default_style(ctx, record.payload, version).and_then(|value| {
+                    parse_default_style(record.payload, version).and_then(|value| {
                         push_presentation_record(
                             ctx,
                             &mut default_styles,
@@ -1067,7 +1070,6 @@ const RELATED_REFERENCE_FIELDS: [&str; 7] = [
 ];
 
 fn parse_default_style<'a>(
-    ctx: &DecodeContext<'a>,
     source: View<'a>,
     version: u8,
 ) -> Result<PmAppDefaultStyle<'a>, CodecError> {
@@ -1097,7 +1099,7 @@ fn parse_default_style<'a>(
     }
     let terminal_reference = cursor.reference("default-style terminal reference")?;
     if version > 19 {
-        cursor.zeroes(ctx, 8, "default-style suffix padding")?;
+        cursor.zeroes::<8>("default-style suffix padding")?;
     }
     let suffix = cursor.remainder()?;
     if !suffix.window().is_empty() {
@@ -1134,7 +1136,7 @@ fn parse_rendering_style<'a>(
     let state = cursor.u8("rendering-style state")?;
     let flags = cursor.u16("rendering-style flags")?;
     if version > 23 {
-        cursor.zeroes(ctx, 2, "rendering-style alignment padding")?;
+        cursor.zeroes::<2>("rendering-style alignment padding")?;
     }
     let values = [
         cursor.u16("rendering-style value 0")?,
@@ -1223,13 +1225,8 @@ impl<'a> Cursor<'a> {
         self.take(len, field).map(|_| ())
     }
 
-    fn zeroes(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        len: usize,
-        field: &'static str,
-    ) -> Result<(), CodecError> {
-        if ctx.any_by(self.take(len, field)?, |byte| Ok(*byte != 0), field)? {
+    fn zeroes<const N: usize>(&mut self, field: &'static str) -> Result<(), CodecError> {
+        if self.take(N, field)?.iter().any(|byte| *byte != 0) {
             return Err(CodecError::malformed(format_args!(
                 "Inventor presentation {field} is not zero-filled"
             )));
@@ -1362,10 +1359,13 @@ impl<'a> Cursor<'a> {
         let tail: [u8; 8] = self.source.array().ok_or_else(|| {
             CodecError::malformed(format_args!("truncated Inventor presentation {field}"))
         })?;
-        ctx.format_retained(format_args!(
+        let mut text = ctx.retained_string(36, "retain Inventor rendering-style GUID")?;
+        write!(
+            text,
             "{first:08x}-{second:04x}-{third:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
             tail[0], tail[1], tail[2], tail[3], tail[4], tail[5], tail[6], tail[7]
-        ), "retain Inventor rendering-style GUID")
+        ).map_err(|_| CodecError::malformed("Inventor rendering-style GUID formatting failed"))?;
+        Ok(text)
     }
 
     fn remainder(&mut self) -> Result<View<'a>, CodecError> {
@@ -1404,6 +1404,7 @@ fn short_digest_key(
 mod tests {
     use std::collections::BTreeMap;
 
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::appearance::AppearanceTarget;
@@ -1428,6 +1429,68 @@ mod tests {
     use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::ids::{BodyId, FaceId};
     use cadmpeg_ir::topology::Color;
+
+    #[test]
+    fn rendering_guid_admits_fixed_storage_without_work() {
+        let bytes = [0xff; 16];
+        let arena = DecodeArena::new();
+        for capacity in [35, 36] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 0;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = capacity;
+            let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("fixed GUID context");
+            let result = Cursor::new(view).guid(&ctx, "fixed GUID test");
+            if capacity == 35 {
+                let Err(CodecError::ResourceLimit(limit)) = result else {
+                    panic!("36-byte GUID output must refuse a 35-byte allowance");
+                };
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                assert_eq!(limit.used, 0);
+                assert_eq!(limit.additional, 36);
+                assert!(matches!(ctx.finish_session(),
+                    Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+            } else {
+                assert_eq!(result.expect("exact GUID allowance"),
+                    "ffffffff-ffff-ffff-ffff-ffffffffffff");
+                ctx.finish_session().expect("fixed GUID needs no work");
+            }
+        }
+    }
+
+    #[test]
+    fn default_binding_key_charges_hash_input_before_fixed_text() {
+        let default_bytes = default_style_fixture();
+        let style_bytes = rendering_style_fixture();
+        let arena = DecodeArena::new();
+        let (parse_ctx, default_root) = DecodeContext::from_root_bytes(
+            &default_bytes, &arena, &DecodePolicy::service(),
+        ).expect("default style context");
+        let (_, style_root) = DecodeContext::from_root_bytes(
+            &style_bytes, &arena, &DecodePolicy::service(),
+        ).expect("rendering style context");
+        let (inventory, appearance, body) =
+            default_binding_projection_fixture(&parse_ctx, default_root, style_root);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("binding refusal context");
+        let probe = RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "compose Inventor default binding key", None,
+        );
+        let Err(CodecError::ResourceLimit(limit)) = project_default_bindings(
+            &ctx, &inventory, std::slice::from_ref(&appearance), std::slice::from_ref(&body),
+        ) else {
+            panic!("binding key must admit input hashing");
+        };
+        drop(probe);
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "compose Inventor default binding key");
+        assert_eq!(limit.additional, cadmpeg_core::decode::u64_from_index(body.as_str().len()));
+        assert!(matches!(ctx.finish_session(),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
 
     #[test]
     fn short_digest_key_preserves_the_first_eight_sha256_bytes() {
@@ -1682,7 +1745,7 @@ mod tests {
         default_root: View<'a>,
         style_root: View<'a>,
     ) -> (PresentationInventory<'a>, Appearance, BodyId) {
-        let default = parse_default_style(parse_ctx, default_root, 26).expect("default style");
+        let default = parse_default_style(default_root, 26).expect("default style");
         let style = parse_rendering_style(parse_ctx, style_root, 26).expect("rendering style");
         let inventory = PresentationInventory {
             default_styles: vec![Located::new(
@@ -1956,10 +2019,10 @@ mod tests {
     fn parses_current_default_style_and_one_based_rendering_reference() {
         let bytes = default_style_fixture();
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+        let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic default style fits policy");
 
-        let style = parse_default_style(&ctx, root, 26).expect("default style parses");
+        let style = parse_default_style(root, 26).expect("default style parses");
 
         assert_eq!(style.material_reference, 8);
         assert_eq!(style.rendering_style_reference, 9);
@@ -1973,10 +2036,10 @@ mod tests {
         let mut bytes = default_style_fixture();
         bytes[10..14].copy_from_slice(&9_u32.to_le_bytes());
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+        let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic default style fits policy");
 
-        let error = parse_default_style(&ctx, root, 26).expect_err("reference must be qualified");
+        let error = parse_default_style(root, 26).expect_err("reference must be qualified");
 
         assert!(error.to_string().contains("lacks its reference qualifier"));
     }
@@ -2016,7 +2079,7 @@ mod tests {
         let (_, style_root) =
             DecodeContext::from_root_bytes(&style_bytes, &arena, &DecodePolicy::default())
                 .expect("synthetic rendering style fits policy");
-        let default = parse_default_style(&ctx, default_root, 26).expect("default parses");
+        let default = parse_default_style(default_root, 26).expect("default parses");
         let style = parse_rendering_style(&ctx, style_root, 26).expect("style parses");
         let inventory = PresentationInventory {
             default_styles: vec![Located::new(
@@ -2488,14 +2551,28 @@ mod tests {
         let face_keys = BTreeMap::from([(face_id, 42)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // One face-key traversal, an eight-byte hash key and the key-count table's growth
-        // bound (four buckets, their control bytes, alignment and trailing controls) precede
-        // the graphics-face index.
+        // Preserve the original cap: one visit, one u64 hash and table growth.
         let key_count_table = 4 * std::mem::size_of::<(&u64, usize)>() + 15 + 4 + 16;
         policy.limits.max_work_units =
             cadmpeg_core::decode::u64_from_index(face_keys.len() + 8 + key_count_table);
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
+        let Err(CodecError::ResourceLimit(limit)) =
+            project_bindings(&ctx, &inventory, &[], &[], &face_keys) else {
+            panic!("the original cap must refuse the newly admitted hash probes");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "count Inventor presentation face keys");
+        assert!(matches!(ctx.finish_session(),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+
+        // A miss now executes get_mut, contains_key, growth and insert. Each
+        // hash reads one u64. The empty map has no keys to rehash.
+        let key_count_table = 4 * std::mem::size_of::<(u64, usize)>() + 15 + 4 + 16;
+        policy.limits.max_work_units =
+            cadmpeg_core::decode::u64_from_index(face_keys.len() + 3 * 8 + key_count_table);
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("index boundary context");
         assert!(matches!(
             project_bindings(&ctx, &inventory, &[], &[], &face_keys),
             Err(CodecError::ResourceLimit(limit))
@@ -2615,11 +2692,7 @@ mod tests {
             ),
             (
                 "default-style suffix padding",
-                displayed_truncation(Cursor::new(View::over_retained(empty)).zeroes(
-                    &cadmpeg_test_support::service_decode_context(),
-                    8,
-                    "default-style suffix padding",
-                )),
+                displayed_truncation(Cursor::new(View::over_retained(empty)).zeroes::<8>("default-style suffix padding")),
             ),
             (
                 "default-style material reference",

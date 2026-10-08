@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native records projected from presentation inventory.
 
+use std::borrow::Cow;
+
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
@@ -73,79 +75,95 @@ pub(super) fn project(
     )? {
         let token = style.identity.segment_token.as_str();
         let extension = style.extension.as_ref();
-        let wire = PmAppRenderingStyleRecordWire {
-            id: ctx.format_retained(
-                format_args!(
-                    "inventor:presentation:rendering-style#{token}-{}",
-                    style.identity.record_ordinal
-                ),
-                "retain Inventor rendering style id",
-            )?,
-            segment_token: ctx
-                .copy_retained_text(token, "retain Inventor rendering style token")?,
-            record_ordinal: style.identity.record_ordinal,
-            segment_version_major: style.segment_version_major,
-            header_value: style.header_value,
-            header_id: style.header_id,
-            state: style.state,
-            flags: style.flags,
-            values: style.values,
-            default_state: style.default_state,
-            value: style.value,
-            name_reference: style.name_reference,
-            name: ctx.copy_retained_text(&style.name, "retain Inventor rendering style text")?,
-            comment: ctx
-                .copy_retained_text(&style.comment, "retain Inventor rendering style text")?,
-            long_name: ctx
-                .copy_retained_text(&style.long_name, "retain Inventor rendering style text")?,
-            style_state: extension.map(|value| value.style_state),
-            style_label: extension
-                .map(|value| {
-                    ctx.copy_retained_text(
-                        &value.style_label,
-                        "retain Inventor rendering extension text",
-                    )
-                })
-                .transpose()?,
-            asset_guid: extension
-                .map(|value| {
-                    ctx.copy_retained_text(
-                        &value.asset_guid,
-                        "retain Inventor rendering extension text",
-                    )
-                })
-                .transpose()?,
-            material_id: extension
-                .map(|value| {
-                    ctx.copy_retained_text(
-                        &value.material_id,
-                        "retain Inventor rendering extension text",
-                    )
-                })
-                .transpose()?,
-            asset_library_id: extension
-                .map(|value| {
-                    ctx.copy_retained_text(
-                        &value.asset_library_id,
-                        "retain Inventor rendering extension text",
-                    )
-                })
-                .transpose()?,
-            style_values: extension.map(|value| value.style_values),
-            guid: extension
-                .map(|value| {
-                    ctx.copy_retained_text(&value.guid, "retain Inventor rendering extension text")
-                })
-                .transpose()?,
-            suffix_len: cadmpeg_core::decode::u64_from_index(style.suffix.window().len()),
-            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                ctx,
-                style.suffix.window(),
-                "retain Inventor rendering style suffix digest",
-            )
-            .map(String::from)?,
+        let conversion = if let Some(detail) = crate::native::rendering_style_issue(
+            style.segment_version_major,
+            &style.comment,
+            extension.is_some(),
+        ) {
+            Err(Cow::Borrowed(detail))
+        } else {
+            let wire = PmAppRenderingStyleRecordWire {
+                id: ctx.format_retained(
+                    format_args!(
+                        "inventor:presentation:rendering-style#{token}-{}",
+                        style.identity.record_ordinal
+                    ),
+                    "retain Inventor rendering style id",
+                )?,
+                segment_token: ctx
+                    .copy_retained_text(token, "retain Inventor rendering style token")?,
+                record_ordinal: style.identity.record_ordinal,
+                segment_version_major: style.segment_version_major,
+                header_value: style.header_value,
+                header_id: style.header_id,
+                state: style.state,
+                flags: style.flags,
+                values: style.values,
+                default_state: style.default_state,
+                value: style.value,
+                name_reference: style.name_reference,
+                name: ctx.copy_retained_text(&style.name, "retain Inventor rendering style text")?,
+                comment: ctx
+                    .copy_retained_text(&style.comment, "retain Inventor rendering style text")?,
+                long_name: ctx
+                    .copy_retained_text(&style.long_name, "retain Inventor rendering style text")?,
+                style_state: extension.map(|value| value.style_state),
+                style_label: extension
+                    .map(|value| {
+                        ctx.copy_retained_text(
+                            &value.style_label,
+                            "retain Inventor rendering extension text",
+                        )
+                    })
+                    .transpose()?,
+                asset_guid: extension
+                    .map(|value| {
+                        ctx.copy_retained_text(
+                            &value.asset_guid,
+                            "retain Inventor rendering extension text",
+                        )
+                    })
+                    .transpose()?,
+                material_id: extension
+                    .map(|value| {
+                        ctx.copy_retained_text(
+                            &value.material_id,
+                            "retain Inventor rendering extension text",
+                        )
+                    })
+                    .transpose()?,
+                asset_library_id: extension
+                    .map(|value| {
+                        ctx.copy_retained_text(
+                            &value.asset_library_id,
+                            "retain Inventor rendering extension text",
+                        )
+                    })
+                    .transpose()?,
+                style_values: extension.map(|value| value.style_values),
+                guid: extension
+                    .map(|value| {
+                        ctx.copy_retained_text(
+                            &value.guid,
+                            "retain Inventor rendering extension text",
+                        )
+                    })
+                    .transpose()?,
+                suffix_len: cadmpeg_core::decode::u64_from_index(style.suffix.window().len()),
+                suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                    ctx,
+                    style.suffix.window(),
+                    "retain Inventor rendering style suffix digest",
+                )
+                .map(String::from)?,
+            };
+            match wire.into_record(ctx) {
+                Ok(record) => Ok(record),
+                Err(CodecError::Malformed(detail)) => Err(Cow::Owned(detail)),
+                Err(error) => return Err(error),
+            }
         };
-        match wire.into_record(ctx) {
+        match conversion {
             Ok(record) => {
                 ctx.charge_entities(1, "admit Inventor native rendering style")?;
                 ctx.push_vec(
@@ -154,8 +172,7 @@ pub(super) fn project(
                     "collect Inventor native rendering style",
                 )?;
             }
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(CodecError::Malformed(detail)) => {
+            Err(detail) => {
                 ctx.charge_entities(1, "admit Inventor rendering conversion issue")?;
                 ctx.reserve_capacity(
                     &mut inventory.issues,
@@ -172,14 +189,13 @@ pub(super) fn project(
                             .try_clone_for_decode(ctx, "retain Inventor rendering issue token")?,
                         record_ordinal: style.identity.record_ordinal,
                         detail: ctx.copy_retained_text(
-                            &detail,
+                            detail.as_ref(),
                             "retain Inventor rendering issue detail",
                         )?,
                     },
                     "collect Inventor rendering conversion issue",
                 )?;
             }
-            Err(error) => return Err(error),
         }
     }
     for face in ctx.admit_iter(
