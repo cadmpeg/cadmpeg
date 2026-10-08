@@ -109,10 +109,11 @@ pub(super) fn build(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<NativeFemEntity>, CodecError> {
     let mut result = Vec::new();
-    for entry in ctx
-        .admit_iter(directory, "iges FEM directory scan")?
-        .filter(|entry| is_fem(entry))
-    {
+    let mut source = directory.iter();
+    while let Some(entry) = ctx.next_charged(&mut source, "iges FEM directory scan")? {
+        if !is_fem(entry) {
+            continue;
+        }
         ctx.reserve_vec(&mut result, 1, "iges FEM native entities")?;
         let record = record_by_sequence(records, entry.sequence, ctx)?;
         let native = match entry.entity_type {

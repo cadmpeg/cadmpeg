@@ -1281,9 +1281,9 @@ mod occurrence {
             let (local_transform, world_transform) = frames;
             let mut id =
                 ctx.copy_retained_text("iges:product:occurrence#", "iges native occurrence id")?;
-            for (index, sequence) in ctx
-                .admit_iter(path, "iges native occurrence id path scan")?
-                .enumerate()
+            let mut path_source = path.iter().enumerate();
+            while let Some((index, sequence)) =
+                ctx.next_charged(&mut path_source, "iges native occurrence id path scan")?
             {
                 if index != 0 {
                     ctx.append_retained(&mut id, "/", "iges native occurrence id")?;
@@ -2284,7 +2284,8 @@ impl OccurrenceExpansion<'_, '_> {
 
 fn copy_native_tokens(ctx: &DecodeContext<'_>, tokens: &[Token]) -> Result<Vec<Token>, CodecError> {
     let mut copies = ctx.collection_vec(tokens.len(), "iges native token slots")?;
-    for token in ctx.admit_iter(tokens, "iges native token scan")? {
+    let mut token_source = tokens.iter();
+    while let Some(token) = ctx.next_charged(&mut token_source, "iges native token scan")? {
         let value = match &token.value {
             TokenValue::String(bytes) => {
                 TokenValue::String(ctx.copy_retained(bytes, "iges native token bytes")?)
@@ -2479,7 +2480,8 @@ pub(crate) fn store<'ctx>(
     } = collect_native_inputs(scan, quarantine, ctx)?;
     let mut directory_index_storage = ctx.reserve_scoped(0, "iges native directory index")?;
     let mut entries = BTreeMap::new();
-    for entry in ctx.admit_iter(directory, "iges native directory index scan")? {
+    let mut directory_source = directory.iter();
+    while let Some(entry) = ctx.next_charged(&mut directory_source, "iges native directory index scan")? {
         directory_index_storage.with_storage(|| {
             ctx.insert_btree_map(
                 &mut entries,
@@ -2525,7 +2527,8 @@ pub(crate) fn store<'ctx>(
             continue;
         };
         let mut language_statements = Vec::new();
-        for span in ctx.admit_iter(language_spans, "iges native macro statement scan")? {
+        let mut statement_source = language_spans.iter();
+        while let Some(span) = ctx.next_charged(&mut statement_source, "iges native macro statement scan")? {
             ctx.reserve_vec(&mut language_statements, 1, "iges native macro statements")?;
             language_statements.push(ctx.copy_retained(
                 &record.bytes[span.clone()],
@@ -2618,7 +2621,8 @@ pub(crate) fn store<'ctx>(
     let mut property_owner_storage = ctx.reserve_scoped(0, "iges native property owner index")?;
     let mut property_owners = BTreeMap::<u32, BTreeSet<u32>>::new();
     let no_property_owners = BTreeSet::new();
-    for record in ctx.admit_iter(parameters, "iges native primary ends")? {
+    let mut primary_source = parameters.iter();
+    while let Some(record) = ctx.next_charged(&mut primary_source, "iges native primary ends")? {
         let layout_end = crate::parameter::entity_primary_end_for_global_table(
             record,
             &entries,
@@ -2637,9 +2641,11 @@ pub(crate) fn store<'ctx>(
         }
         .min(layout_end);
         if let Some(TrailingPointerAnalysis::Unambiguous(groups)) = analysis {
-            for property in
-                ctx.admit_iter(groups.properties(), "iges native property owner index scan")?
-            {
+            let mut property_source = groups.properties().iter();
+            while let Some(property) = ctx.next_charged(
+                &mut property_source,
+                "iges native property owner index scan",
+            )? {
                 property_owner_storage.with_storage(|| {
                     ctx.insert_btree_group_set(
                         &mut property_owners,
@@ -2722,7 +2728,8 @@ pub(crate) fn store<'ctx>(
         }
     }
     let mut ambiguous_parameter_boundaries = Vec::new();
-    for record in ctx.admit_iter(parameters, "iges native ambiguous boundary scan")? {
+    let mut boundary_source = parameters.iter();
+    while let Some(record) = ctx.next_charged(&mut boundary_source, "iges native ambiguous boundary scan")? {
         let sequence = &record.directory_sequence;
         let Some(analysis) = ctx.get_btree_map(
             trailing_pointer_analysis,
@@ -2792,13 +2799,11 @@ pub(crate) fn store<'ctx>(
                 None
             };
             if let Some(groups) = trailing {
-                for (index, sequence) in ctx
-                    .admit_iter(
-                        groups.associations(),
-                        "iges native trailing association scan",
-                    )?
-                    .enumerate()
-                {
+                let mut association_source = groups.associations().iter().enumerate();
+                while let Some((index, sequence)) = ctx.next_charged(
+                    &mut association_source,
+                    "iges native trailing association scan",
+                )? {
                     let _association = parameter_resolver.resolve_any_of(
                         entry.sequence,
                         groups.token_start + 1 + index,
@@ -2809,8 +2814,9 @@ pub(crate) fn store<'ctx>(
                 }
             }
             if let Some(groups) = invalid_trailing {
-                for pointer in ctx.admit_iter(
-                    &groups.association_pointers,
+                let mut association_source = groups.association_pointers.iter();
+                while let Some(pointer) = ctx.next_charged(
+                    &mut association_source,
                     "iges native invalid trailing association scan",
                 )? {
                     let _association = parameter_resolver.resolve_any_of(
@@ -2823,10 +2829,11 @@ pub(crate) fn store<'ctx>(
                 }
             }
             if let Some(groups) = trailing {
-                for (index, sequence) in ctx
-                    .admit_iter(groups.properties(), "iges native trailing property scan")?
-                    .enumerate()
-                {
+                let mut property_source = groups.properties().iter().enumerate();
+                while let Some((index, sequence)) = ctx.next_charged(
+                    &mut property_source,
+                    "iges native trailing property scan",
+                )? {
                     let _property = parameter_resolver.resolve_any_of(
                         entry.sequence,
                         groups.token_start + groups.associations().len() + 2 + index,
@@ -2837,8 +2844,9 @@ pub(crate) fn store<'ctx>(
                 }
             }
             if let Some(groups) = invalid_trailing {
-                for pointer in ctx.admit_iter(
-                    &groups.property_pointers,
+                let mut property_source = groups.property_pointers.iter();
+                while let Some(pointer) = ctx.next_charged(
+                    &mut property_source,
                     "iges native invalid trailing property scan",
                 )? {
                     let _property = parameter_resolver.resolve_any_of(
@@ -3717,7 +3725,8 @@ pub(crate) fn store<'ctx>(
                     let end = record.map(|record| clamped_primary_end(entry.sequence, record)).transpose()?.unwrap_or(0);
                     let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 1, 1)?;
                     let mut terms = Vec::new();
-                    for index in ctx.admit_iter(0..count, "iges native counted item scan")? {
+                    let mut term_source = 0..count;
+                    while let Some(index) = ctx.next_charged(&mut term_source, "iges native counted item scan")? {
                         let Some(value) = record.and_then(|record| record.integer(2 + index)) else {
                             continue;
                     };
@@ -5958,8 +5967,9 @@ pub(crate) fn store<'ctx>(
                                 Vec::new()
                     };
                             if entry.form == 2 {
-                                for offset in ctx.admit_iter(
-                                    0..value_count,
+                                let mut display_source = 0..value_count;
+                                while let Some(offset) = ctx.next_charged(
+                                    &mut display_source,
                                     "iges native attribute display sequence scan",
                                 )? {
                                     let pointer_index = value_start + offset * stride + 1;
@@ -7265,7 +7275,8 @@ pub(crate) fn store<'ctx>(
             "iges occurrence presence search",
         )?
     {
-        for record in ctx.admit_iter(parameters, "iges occurrence parameter index scan")? {
+        let mut parameter_source = parameters.iter();
+        while let Some(record) = ctx.next_charged(&mut parameter_source, "iges occurrence parameter index scan")? {
             parameter_index_storage.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut by_directory,
@@ -7336,7 +7347,8 @@ pub(crate) fn store<'ctx>(
         };
         let mut malformed = false;
         let mut members = Vec::new();
-        for index in ctx.admit_iter(0..count, "iges native counted item scan")? {
+        let mut member_source = 0..count;
+        while let Some(index) = ctx.next_charged(&mut member_source, "iges native counted item scan")? {
             let member = record
                 .integer(4 + index)
                 .and_then(|value| u32::try_from(value).ok())
@@ -7416,7 +7428,8 @@ pub(crate) fn store<'ctx>(
     }
     let mut neutral_storage = ctx.reserve_scoped(0, "iges occurrence neutral link storage")?;
     let mut occurrence_neutral_links = BTreeMap::<u32, Vec<&str>>::new();
-    for curve in ctx.admit_iter(&ir.model.curves, "iges occurrence curve scan")? {
+    let mut curve_source = ir.model.curves.iter();
+    while let Some(curve) = ctx.next_charged(&mut curve_source, "iges occurrence curve scan")? {
         if let Some(sequence) = curve
             .source_object
             .as_ref()
@@ -7436,7 +7449,8 @@ pub(crate) fn store<'ctx>(
             })?;
         }
     }
-    for surface in ctx.admit_iter(&ir.model.surfaces, "iges occurrence surface scan")? {
+    let mut surface_source = ir.model.surfaces.iter();
+    while let Some(surface) = ctx.next_charged(&mut surface_source, "iges occurrence surface scan")? {
         if let Some(sequence) = surface
             .source_object
             .as_ref()
@@ -7456,7 +7470,8 @@ pub(crate) fn store<'ctx>(
             })?;
         }
     }
-    for body in ctx.admit_iter(&ir.model.bodies, "iges occurrence body scan")? {
+    let mut body_source = ir.model.bodies.iter();
+    while let Some(body) = ctx.next_charged(&mut body_source, "iges occurrence body scan")? {
         if let Some(sequence) = sequences.body_neutral_form(&body.id, ctx)? {
             neutral_storage.with_storage(|| {
                 ctx.push_btree_group(
@@ -7469,7 +7484,8 @@ pub(crate) fn store<'ctx>(
             })?;
         }
     }
-    for point in ctx.admit_iter(&ir.model.points, "iges occurrence point scan")? {
+    let mut point_source = ir.model.points.iter();
+    while let Some(point) = ctx.next_charged(&mut point_source, "iges occurrence point scan")? {
         if let Some(sequence) = sequences.point(&point.id, ctx)? {
             neutral_storage.with_storage(|| {
                 ctx.push_btree_group(
@@ -7617,7 +7633,8 @@ pub(crate) fn store<'ctx>(
                     "iges:topology:boundary-vertex#",
                     "iges boundary vertex sewing id",
                 )?;
-                for character in ctx.admit_iter(suffix, "iges boundary vertex sewing id source")? {
+                let mut character_source = suffix.chars();
+                while let Some(character) = ctx.next_charged(&mut character_source, "iges boundary vertex sewing id source")? {
                     ctx.push_retained_char(
                         &mut id,
                         if character == ':' { '_' } else { character },
@@ -7680,7 +7697,8 @@ pub(crate) fn store<'ctx>(
         })?;
     let reference_storage = parameter_resolver.append_to(references)?;
     entities_storage.with_storage(|| {
-        for entity in ctx.admit_iter(&mut entities, "iges native resolved entity scan")? {
+        let mut entity_source = entities.iter_mut();
+        while let Some(entity) = ctx.next_charged(&mut entity_source, "iges native resolved entity scan")? {
             let edges = ctx.get_btree_map(
                 references,
                 &entity.directory_sequence,
@@ -7697,7 +7715,8 @@ pub(crate) fn store<'ctx>(
                 Some(edges) => {
                     let mut copies =
                         ctx.collection_vec(edges.len(), "iges resolved native reference slots")?;
-                    for edge in ctx.admit_iter(edges, "iges native reference copy scan")? {
+                    let mut edge_source = edges.iter();
+                    while let Some(edge) = ctx.next_charged(&mut edge_source, "iges native reference copy scan")? {
                         copies.push(edge.copy_for_native(ctx, &mut reference_copy_storage)?);
                     }
                     copies
