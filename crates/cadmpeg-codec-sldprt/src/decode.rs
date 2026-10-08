@@ -2215,6 +2215,14 @@ fn unbound_feature_input_operation_objects(
     use crate::classification::{classify, native_object_class, FeatureClass};
     use crate::records::FeatureInputClassRole;
     const OPERATION: &str = "count SLDPRT unbound feature-input operation objects";
+    const CONSUMER: &str = "find SLDPRT feature-input operation consumer";
+    if !ctx.any_by(
+        &native.feature_input_lanes,
+        |lane| ctx.any_by(&lane.classes, |class| Ok(class.role() == FeatureInputClassRole::Feature), CONSUMER),
+        CONSUMER,
+    )? {
+        return Ok(0);
+    }
     fn increment<K: Ord + cadmpeg_core::decode::cost::DecodeCost>(
         ctx: &DecodeContext<'_>,
         counts: &mut BTreeMap<K, usize>,
@@ -2286,20 +2294,28 @@ fn unbound_feature_input_operation_objects(
     }
     let mut count = 0_usize;
     for lane in ctx.admit_iter(&native.feature_input_lanes, OPERATION)? {
-        // The first name at an offset answers, so the index is filled in
-        // reverse and the last write wins.
-        let mut names_by_offset = HashMap::new();
-        for name in ctx.admit_iter(&lane.names, OPERATION)?.rev() {
-            workspace.with_storage(|| {
-                ctx.insert_hash_map(&mut names_by_offset, name.offset, name, OPERATION)
-            })?;
-        }
+        let mut offset_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut names_by_offset = None;
         for class in ctx
             .admit_iter(&lane.classes, OPERATION)?
             .filter(|class| class.role() == FeatureInputClassRole::Feature)
         {
+            let names = match &names_by_offset {
+                Some(names) => names,
+                None => {
+                    // The first name at an offset answers. Reverse insertion
+                    // keeps that name when an offset is repeated.
+                    let mut names = HashMap::new();
+                    for name in ctx.admit_iter(&lane.names, OPERATION)?.rev() {
+                        offset_storage.with_storage(|| {
+                            ctx.insert_hash_map(&mut names, name.offset, name, OPERATION)
+                        })?;
+                    }
+                    names_by_offset.insert(names)
+                }
+            };
             let name_offset = class.offset + 6 + u64_from_index(class.name.len());
-            let Some(name) = ctx.get_hash_map(&names_by_offset, &name_offset, OPERATION)? else {
+            let Some(name) = ctx.get_hash_map(names, &name_offset, OPERATION)? else {
                 continue;
             };
             let source_bound = match name.object_id.and_then(ObjectId::value) {
@@ -3225,18 +3241,13 @@ fn build_geometry_ir(
         &ir.model.features,
         &pmi_dimensions,
     )?;
-    let (identity_lanes, identity_lane_storage) = ctx
-        .with_scoped_storage("SLDPRT parameter identity lane workspace", || {
-            parameter_identity_lanes(ctx, &lanes)
-        })?;
     crate::resolved_features::projections::bind_parameter_scalars(
         ctx,
         &mut ir.model.parameters,
         &ir.model.features,
         &histories,
-        identity_lanes,
+        &lanes,
     )?;
-    drop(identity_lane_storage);
     crate::resolved_features::projections::synthesize_display_relation_parameters(
         ctx,
         &mut ir.model.parameters,
@@ -4871,18 +4882,13 @@ fn build_metadata_ir(
         &ir.model.features,
         &pmi_dimensions,
     )?;
-    let (identity_lanes, identity_lane_storage) = ctx
-        .with_scoped_storage("SLDPRT parameter identity lane workspace", || {
-            parameter_identity_lanes(ctx, &lanes)
-        })?;
     crate::resolved_features::projections::bind_parameter_scalars(
         ctx,
         &mut ir.model.parameters,
         &ir.model.features,
         &histories,
-        identity_lanes,
+        &lanes,
     )?;
-    drop(identity_lane_storage);
     crate::resolved_features::projections::synthesize_display_relation_parameters(
         ctx,
         &mut ir.model.parameters,
@@ -5229,16 +5235,9 @@ fn project_design_history(
                 histories,
                 "clone SLDPRT semantic histories",
             )?;
-            let (scene_feature_classes, scene_storage) = ctx
-                .with_scoped_storage("SLDPRT scene feature class workspace", || {
-                    crate::tessellation::scene_feature_classes(ctx, scan)
-                })?;
-            crate::history::enrich_scene_classes(
-                ctx,
-                &mut semantic_projection,
-                &scene_feature_classes,
-            )?;
-            drop((scene_feature_classes, scene_storage));
+            crate::history::enrich_scene_classes(ctx, &mut semantic_projection, || {
+                crate::tessellation::scene_feature_classes(ctx, scan)
+            })?;
             crate::history::configuration::enrich_history_semantic(
                 ctx,
                 &mut semantic_projection,
@@ -5344,33 +5343,6 @@ fn project_design_history(
     }
 
     Ok(())
-}
-
-fn parameter_identity_lanes<'a>(
-    ctx: &DecodeContext<'_>,
-    lanes: &'a [crate::records::FeatureInputLane],
-) -> Result<Vec<&'a crate::records::FeatureInputLane>, CodecError> {
-    const OPERATION: &str = "select SLDPRT parameter identity lanes";
-    let mut selected = Vec::new();
-    let mut eligible_count = 0;
-    let mut scoped = None;
-    for lane in ctx.admit_iter(lanes, OPERATION)? {
-        if crate::resolved_features::assembly::is_supplemental_config_lane(lane) {
-            continue;
-        }
-        eligible_count += 1;
-        if lane.configuration.is_none() {
-            ctx.push_vec(&mut selected, lane, OPERATION)?;
-        } else {
-            scoped = Some(lane);
-        }
-    }
-    if selected.is_empty() && eligible_count == 1 {
-        if let Some(lane) = scoped {
-            ctx.push_vec(&mut selected, lane, OPERATION)?;
-        }
-    }
-    Ok(selected)
 }
 
 fn stamp_parameter_baseline(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {

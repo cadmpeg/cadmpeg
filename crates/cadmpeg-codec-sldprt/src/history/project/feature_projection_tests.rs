@@ -763,7 +763,7 @@ fn scene_class_binds_only_its_explicit_source_identifier() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    enrich_scene_classes(&ctx, &mut histories, &scene).unwrap();
+    enrich_scene_classes(&ctx, &mut histories, || Ok(scene.clone())).unwrap();
 
     assert_eq!(
         histories[0].features[0].input_class.as_deref(),

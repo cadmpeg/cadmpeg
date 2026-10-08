@@ -129,6 +129,30 @@ fn parameter_scalar_binding_preserves_native_reference_and_value() {
     );
 }
 
+#[test]
+fn parameter_scalar_binding_skips_lane_selection_without_native_owners() {
+    use cadmpeg_core::decode::{
+        refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
+    let (mut parameters, features, histories, lanes) = parameter_scalar_binding_fixture();
+    parameters[0].owner = None;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "select SLDPRT parameter identity lanes",
+        None,
+    );
+    bind_parameter_scalars(&ctx, &mut parameters, &features, &histories, &lanes)
+        .expect("no lane selection");
+    assert_eq!(parameters[0].native_ref, None);
+    assert!(matches!(parameters[0].value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if value.get() == 1.0));
+    ctx.finish_session().expect("accepted session");
+}
+
 fn parameter_scalar_limit_result(
     dimension: cadmpeg_core::decode::ResourceDimension,
 ) -> cadmpeg_core::CodecError {
