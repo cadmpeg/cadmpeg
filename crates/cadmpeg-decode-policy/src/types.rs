@@ -210,6 +210,31 @@ pub(crate) fn checked(tcx: TyCtxt<'_>, definition: rustc_span::def_id::DefId) ->
         || definition.is_local() && std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
 }
 
+/// An imported first-party leaf with no type or const parameters. Its owner
+/// crate checks the body, and it has no call-site-specific implementation to
+/// instantiate.
+pub(crate) fn checked_imported_leaf(
+    tcx: TyCtxt<'_>,
+    definition: rustc_span::def_id::DefId,
+) -> bool {
+    if definition.is_local() || !checked(tcx, definition) || tcx.is_mir_available(definition) {
+        return false;
+    }
+    let mut current = Some(definition);
+    while let Some(definition) = current {
+        let generics = tcx.generics_of(definition);
+        if generics
+            .own_params
+            .iter()
+            .any(|parameter| !matches!(parameter.kind, ty::GenericParamDefKind::Lifetime))
+        {
+            return false;
+        }
+        current = generics.parent;
+    }
+    true
+}
+
 pub(crate) fn slot_storage<'tcx>(tcx: TyCtxt<'tcx>, element: Ty<'tcx>) -> Shape {
     if element.has_aliases() || element.has_non_region_param() || element.has_escaping_bound_vars()
     {

@@ -485,7 +485,7 @@ pub(crate) fn bind_configuration_parameter_overrides(
         let overrides = &mut configuration.parameter_overrides;
         ctx.retain_btree_map(
             &mut configuration.properties,
-            |key, expression| {
+            |key, expression| -> Result<bool, CodecError> {
                 let Some(name) = ctx.strip_prefix(
                     key.as_str(),
                     "parameter:",
@@ -536,7 +536,7 @@ pub(crate) fn bind_configuration_suppressed_features(
         let feature_states = &mut configuration.feature_states;
         ctx.retain_btree_map(
             &mut configuration.properties,
-            |key, _| {
+            |key, _| -> Result<bool, CodecError> {
                 let Some(name) = ctx.strip_prefix(
                     key.as_str(),
                     "suppressed:",

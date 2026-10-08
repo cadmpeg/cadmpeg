@@ -4,6 +4,7 @@
 //! [`DecodeArena`] owns stable buffers, [`DecodeContext`] owns session state,
 //! and [`View`] provides bounded navigation within one address space.
 
+pub mod admission;
 mod arena;
 mod budget;
 pub mod collect;
