@@ -117,20 +117,23 @@ Supported schema carriers map to [`PropertyValue`][property-value] as follows:
 | ----------------------- | ------------------------------------------- | ------------------------------------------------------ |
 | `Boolean`               | one byte                                    | `Boolean(bool)`                                        |
 | `Integer`, `Choice`     | little-endian `u32`                         | `Integer(u32)`                                         |
-| `Float`                 | little-endian `f64`                         | `Float(f64)`                                           |
-| unit-bearing `Float`    | a unit `u32`, then an `f64`                 | `Float(f64)`; the unit tag is consumed but not exposed |
+| `Float`                 | little-endian `f64`                         | `Float(FiniteReal)`                                    |
+| unit-bearing `Float`    | a unit `u32`, then an `f64`                 | `Float(FiniteReal)`; the unit tag is consumed but not exposed |
 | `Distance`              | a unit `u32`, then an `f64`                 | `Distance { unit, value }`                             |
 | `String`, `Uuid`, `URL` | length-prefixed UTF-8                       | `String(String)`                                       |
-| `Color`                 | four little-endian `f64` channels           | `Color([r, g, b, a])`                                  |
-| `Reference`             | no value bytes                              | `Reference`                                            |
+| `Color`                 | four little-endian `f64` channels           | `Color([FiniteReal; 4])`                               |
 | `TextureURI`            | kind `0` counted paths or kind `1` one path | `TextureUri(Vec<String>)`                              |
 
 Properties declared with `allowmultiplevalues="true"`, except `TextureURI`,
-start with a `u32` value count and become `Multiple(Vec<PropertyValue>)`.
+start with a `u32` value count. Non-reference carriers become
+`Multiple(RepeatedValues)`, a homogeneous sequence of scalar values.
+`Reference` has no value bytes and uses `PropertyContent::Reference`.
+Repeated references use `PropertyContent::MultipleReferences` with one
+connection block; a zero count uses an empty repeated-value sequence.
 Connectable properties and `Reference` values are followed by a connection
 block. Its form is a presence byte, kind byte `1`, a `u32` count, and that many
 length-prefixed connected asset identifiers. The identifiers remain in
-`DecodedProperty::connections`; the crate does not interpret their ownership.
+`DecodedProperty::connections()`; the crate does not interpret their ownership.
 
 Floating-point values must be finite. Length-prefixed strings are bounded, and
 schema XML entries are bounded to 128 MiB. Implausible value and connection
@@ -185,7 +188,7 @@ any CAD vendor. See the [clean-room and legal policy][legal].
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
 [protein-layout]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/layouts/protein.md
 [protein-spec]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/protein.md
-[property-value]: https://docs.rs/cadmpeg-protein/latest/cadmpeg_protein/enum.PropertyValue.html
+[property-value]: https://docs.rs/cadmpeg-protein/latest/cadmpeg_protein/property/enum.PropertyValue.html
 [rejected-record]: https://docs.rs/cadmpeg-protein/latest/cadmpeg_protein/struct.RejectedRecord.html
 [repo]: https://github.com/cadmpeg/cadmpeg
 [support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md
