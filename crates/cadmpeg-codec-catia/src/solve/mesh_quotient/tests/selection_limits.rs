@@ -7,7 +7,7 @@ use crate::solve::mesh_quotient::{
 };
 use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 #[test]
 fn edge_class_constraint_refuses_normalized_row_collection_limit() {
@@ -260,7 +260,7 @@ fn mesh_selection_selected_edges_refuse_before_set_growth() {
         search.selected_edges()
     };
     crate::test_support::with_service_context(|ctx| {
-        assert_eq!(run(ctx).expect("service budget"), HashSet::from([7]));
+        assert_eq!(run(ctx).expect("service budget"), BTreeSet::from([7]));
     });
     assert!(matches!(crate::test_support::with_collection_limit(0, run),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_selection_selected_edges"));

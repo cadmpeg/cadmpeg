@@ -206,9 +206,15 @@ fn endpoint_port_propagation_closes_equal_port_edges() {
 
 #[test]
 fn mesh_endpoint_validation_accepts_equal_points_only_for_closed_ports() {
-    assert!(mesh_edge_points_compatible(true, &[[2, 2]], [2, 2]));
-    assert!(!mesh_edge_points_compatible(false, &[[2, 2]], [2, 2]));
-    assert!(!mesh_edge_points_compatible(true, &[[1, 1]], [2, 2]));
+    let compatible = |closed_ports, candidates: &[[usize; 2]], points| {
+        crate::test_support::with_service_context(|ctx| {
+            mesh_edge_points_compatible(ctx, closed_ports, candidates, points)
+        })
+        .expect("service resource budget")
+    };
+    assert!(compatible(true, &[[2, 2]], [2, 2]));
+    assert!(!compatible(false, &[[2, 2]], [2, 2]));
+    assert!(!compatible(true, &[[1, 1]], [2, 2]));
 }
 
 #[test]
@@ -989,8 +995,12 @@ fn quotient_retains_diagonal_pairs_until_ports_are_merged() {
         .edge_domains_viable(&ctx, &[vec![[2, 2]]])
         .expect("service resource budget"));
     assert_eq!(
-        quotient.domains(),
-        vec![Arc::new(HashSet::from([2])), Arc::new(HashSet::from([2]))]
+        quotient
+            .domains()
+            .iter()
+            .map(|domain| domain.to_vec())
+            .collect::<Vec<_>>(),
+        vec![vec![2], vec![2]]
     );
     crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 1))
         .expect("service merge")
@@ -1203,9 +1213,9 @@ fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
     .expect("service resource budget")
     .expect("bounded layered-cycle support");
 
-    assert_eq!(support.by_edge[&0], HashSet::from([[0, 1]]));
-    assert_eq!(support.by_edge[&1], HashSet::from([[1, 3]]));
-    assert_eq!(support.by_edge[&2], HashSet::from([[0, 3]]));
+    assert_eq!(support.by_edge[&0], vec![[0, 1]]);
+    assert_eq!(support.by_edge[&1], vec![[1, 3]]);
+    assert_eq!(support.by_edge[&2], vec![[0, 3]]);
     assert!(!budget.exhausted());
 }
 
@@ -1238,7 +1248,7 @@ fn layered_endpoint_relations_and_support_maps_refuse_before_growth() {
     let support = crate::test_support::with_service_context(run)
         .expect("service resource budget")
         .expect("bounded layered support");
-    assert_eq!(support.by_edge[&0], HashSet::from([[0, 1]]));
+    assert_eq!(support.by_edge[&0], vec![[0, 1]]);
     let mut operations = HashSet::new();
     for cap in 0..256 {
         match crate::test_support::with_collection_limit(cap, run) {
@@ -1648,11 +1658,7 @@ fn mesh_endpoint_pair_support_refuses_before_incident_faces_and_snapshot() {
         }
     }
     assert!(completed, "fixture must fit the final cap");
-    for operation in [
-        "catia_prune_incident_faces",
-        "catia_prune_snapshot_rows",
-        "catia_prune_snapshot_pairs",
-    ] {
+    for operation in ["catia_prune_incident_faces", "catia_prune_retained_pairs"] {
         assert!(refusals.contains(operation), "no refusal at {operation}");
     }
 }

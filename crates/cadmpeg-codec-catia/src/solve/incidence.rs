@@ -27,7 +27,7 @@ use crate::solve::missing_edge::{
 };
 use crate::solve::union_find::UnionFind;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
@@ -2147,13 +2147,10 @@ fn copy_quotient_states<'storage>(
         "catia incidence quotient state rows",
     )?;
     for (quotient, oriented) in states {
-        let mut oriented_copy = HashSet::new();
-        ctx.reserve_set(
-            &mut oriented_copy,
-            oriented.len(),
+        let oriented_copy = ctx.collect_btree_set(
+            oriented.iter().copied(),
             "catia incidence quotient oriented edges",
         )?;
-        oriented_copy.extend(oriented.iter().copied());
         copy.push((quotient.clone_charged(ctx)?, oriented_copy));
     }
     Ok(copy)
@@ -2372,16 +2369,16 @@ fn advance_compact_boundary_domains<'storage, 'a>(
                     remaining,
                     Some(budget),
                 )? {
-                    let mut next_oriented = HashSet::new();
+                    let mut next_oriented = BTreeSet::new();
                     for &edge in &oriented_edges {
-                        ctx.insert_hash_set(
+                        ctx.insert_btree_set(
                             &mut next_oriented,
                             edge,
                             "catia_compact_boundary_oriented_copy",
                         )?;
                     }
                     for use_ in face.boundaries.iter().flatten() {
-                        ctx.insert_hash_set(
+                        ctx.insert_btree_set(
                             &mut next_oriented,
                             use_.edge,
                             "catia_compact_boundary_oriented_edges",
@@ -2456,7 +2453,7 @@ pub(super) fn compact_boundary_domains_jointly_viable<'storage, 'a>(
 ) -> Result<bool, CodecError> {
     let mut initial = Vec::new();
     ctx.reserve_vec(&mut initial, 1, "catia compact initial quotient state")?;
-    initial.push((quotient.clone_charged(ctx)?, HashSet::new()));
+    initial.push((quotient.clone_charged(ctx)?, BTreeSet::new()));
     Ok(matches!(
         advance_compact_boundary_domains(
             ctx, domains, choices, assignment, selected, initial, budget,
@@ -2682,9 +2679,13 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                         .contains(&supporting_pair)
                         || coordinate_domains
                             .filter(|_| self.choices[supporting_edge].is_empty())
-                            .is_some_and(|domains| {
-                                domains.supports_edge_candidate(supporting_edge, supporting_pair)
-                            });
+                            .map_or(Ok(false), |domains| {
+                                domains.supports_edge_candidate(
+                                    self.ctx,
+                                    supporting_edge,
+                                    supporting_pair,
+                                )
+                            })?;
                     if !self.degree_support_budget.charge() {
                         return Ok(true);
                     }
@@ -2723,11 +2724,12 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                         coordinate_domains.filter(|_| self.choices[supporting_edge].is_empty())
                     {
                         if let Some(witness) = domains.implicit_edge_candidate_with_point(
+                            self.ctx,
                             supporting_edge,
                             point,
                             Some(self.degree_support_budget),
                             fits,
-                        ) {
+                        )? {
                             self.remember_degree_support_witness(
                                 face,
                                 point,
@@ -2995,8 +2997,9 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                     viable
                 } else {
                     let viable = self.candidate_fits_in(edge, pair, coordinate_domains)?
-                        && coordinate_domains
-                            .is_none_or(|domains| domains.supports_edge_candidate(edge, pair));
+                        && coordinate_domains.map_or(Ok(true), |domains| {
+                            domains.supports_edge_candidate(self.ctx, edge, pair)
+                        })?;
                     self.search_storage.borrow_mut().with_storage(|| {
                         self.ctx.insert_hash_map(
                             viability,
@@ -3057,8 +3060,9 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
     ) -> Result<IncidenceBranch, CodecError> {
         let viable = |edge, pair| -> Result<bool, CodecError> {
             Ok(self.candidate_fits_in(edge, pair, coordinate_domains)?
-                && coordinate_domains
-                    .is_none_or(|domains| domains.supports_edge_candidate(edge, pair)))
+                && coordinate_domains.map_or(Ok(true), |domains| {
+                    domains.supports_edge_candidate(self.ctx, edge, pair)
+                })?)
         };
         let mut best = None::<(usize, usize, Option<Vec<(usize, [usize; 2])>>)>;
         let mut ordered_edges = Vec::new();

@@ -85,7 +85,6 @@ fn face_equation_projection_and_cache_refuse_before_growth() {
         "catia_forced_equation_queue",
         "catia_forced_equation_queued",
         "catia_face_projection_roots",
-        "catia_face_projection_root_order",
         "catia_face_projection_signature_rows",
         "catia_face_projection_domain_points",
         "catia_face_projection_member_nodes",
@@ -103,7 +102,7 @@ fn face_equation_projection_and_cache_refuse_before_growth() {
             .expect("fixture fits input budget");
         match run(&ctx) {
             Err(CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_forced_equation_cache_key" =>
+                if limit.operation == "catia_face_projection_domain_points" =>
             {
                 reached = true;
                 break;

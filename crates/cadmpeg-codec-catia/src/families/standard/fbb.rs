@@ -18,7 +18,7 @@ use crate::families::standard::topology::{
 use crate::families::standard::trim_packet::TrimPacket;
 use crate::layout::fbb_face_row as fbb_row;
 use crate::solve::incidence::{reconstruct_incidence_candidates, IncidenceEndpointDomains};
-use crate::solve::mesh_quotient::MeshQuotient;
+use crate::solve::mesh_quotient::{domain_contains, point_domain, MeshQuotient};
 use crate::solve::missing_edge::{expand_deferred_edge_port_components, motif_port_points};
 use crate::solve::union_find::UnionFind;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -468,37 +468,29 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
         return Ok(None);
     }
     let is_deferred = |edge: usize| effective_deferred[edge];
-    let mut all_points = HashSet::new();
-    for candidates in ctx.admit_iter(edge_candidates, "catia_standard_iteration")? {
-        for pair in ctx.admit_iter(candidates, "catia_standard_iteration")? {
-            for &point in ctx.admit_iter(pair, "catia_standard_iteration")? {
-                ctx.insert_hash_set(&mut all_points, point, "catia_port_all_points")?;
-            }
-        }
-    }
+    let all_points = point_domain(
+        ctx,
+        edge_candidates.iter().flatten().flatten().copied(),
+        "catia_port_all_points",
+    )?;
+    let mut domain_storage = ctx.reserve_scoped(0, "catia_port_domains")?;
     let mut domains = Vec::new();
     for (edge, candidates) in ctx
         .admit_iter(edge_candidates, "catia_standard_iteration")?
         .enumerate()
     {
-        let domain = Arc::new(if is_deferred(edge) {
-            let mut copy = HashSet::new();
-            ctx.reserve_set(&mut copy, all_points.len(), "catia_port_deferred_domain")?;
-            copy.extend(all_points.iter().copied());
-            copy
+        let domain = if is_deferred(edge) {
+            Arc::clone(&all_points)
         } else {
-            let mut points = HashSet::new();
-            for pair in ctx.admit_iter(candidates, "catia_standard_iteration")? {
-                for &point in ctx.admit_iter(pair, "catia_standard_iteration")? {
-                    ctx.insert_hash_set(&mut points, point, "catia_port_candidate_domain")?;
-                }
-            }
-            points
-        });
-        ctx.push_vec(&mut domains, domain.clone(), "catia_port_domains")?;
-        ctx.push_vec(&mut domains, domain, "catia_port_domains")?;
+            point_domain(
+                ctx,
+                candidates.iter().flatten().copied(),
+                "catia_port_candidate_domain",
+            )?
+        };
+        domain_storage.with_storage(|| ctx.push_vec(&mut domains, domain, "catia_port_domains"))?;
     }
-    let mut quotient = MeshQuotient::new_charged(ctx, domains)?;
+    let mut quotient = MeshQuotient::from_edge_domains(ctx, &domains)?;
     let mut node_by_port = HashMap::new();
     for (edge, ports) in ctx
         .admit_iter(edge_ports, "catia_standard_iteration")?
@@ -541,13 +533,19 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
         let right = quotient.find(ctx, edge * 2 + 1)?;
         let mut filtered = Vec::new();
         for &pair in ctx.admit_iter(candidates, "catia_standard_iteration")? {
+            let contains = |root: usize, point: usize| {
+                domain_contains(
+                    ctx,
+                    &quotient.domains()[root],
+                    point,
+                    "catia_port_domain_lookup",
+                )
+            };
             let supported = if left == right {
-                pair[0] == pair[1] && quotient.domains()[left].contains(&pair[0])
+                pair[0] == pair[1] && contains(left, pair[0])?
             } else {
-                (quotient.domains()[left].contains(&pair[0])
-                    && quotient.domains()[right].contains(&pair[1]))
-                    || (quotient.domains()[left].contains(&pair[1])
-                        && quotient.domains()[right].contains(&pair[0]))
+                (contains(left, pair[0])? && contains(right, pair[1])?)
+                    || (contains(left, pair[1])? && contains(right, pair[0])?)
             };
             if supported {
                 ctx.push_vec(&mut filtered, pair, "catia_port_filtered_pairs")?;

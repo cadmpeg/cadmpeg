@@ -14,7 +14,7 @@ use crate::solve::missing_edge::{
 use crate::solve::tests::repeated_domain;
 use cadmpeg_core::decode::WorkBudget;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 #[test]
@@ -87,15 +87,22 @@ fn orientation_fingerprint_preserves_exact_quotient_and_direction_equality() {
         Ok::<_, cadmpeg_core::CodecError>(())
     };
     crate::test_support::with_service_context(run).expect("service resource budget");
-    for (cap, operation) in [
-        (0, "catia_orientation_fingerprint_keys"),
-        (1, "catia_orientation_fingerprint_indices"),
+    let mut refused = BTreeSet::new();
+    for cap in 0..=256 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(()) => break,
+            Err(error) => panic!("unexpected orientation refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_orientation_fingerprint",
+        "catia_orientation_fingerprint_keys",
+        "catia_orientation_fingerprint_indices",
     ] {
-        let refusal = crate::test_support::with_collection_limit(cap, run)
-            .expect_err("fingerprint admission exceeds the collection limit");
-        assert!(
-            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
-        );
+        assert!(refused.contains(operation), "no refusal at {operation}");
     }
 }
 
@@ -235,7 +242,6 @@ fn possible_face_equations_charge_each_face_and_equation() {
         }
     }
     for operation in [
-        "catia_possible_face_equation_keys",
         "catia_possible_face_equation_values",
         "catia_possible_face_equation_faces",
     ] {
@@ -315,7 +321,7 @@ fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
             &ctx,
             &assignment,
             &candidates,
-            &HashSet::new(),
+            &BTreeSet::new(),
             2,
             Some(&budget),
         )
@@ -356,7 +362,7 @@ fn mesh_option_enumeration_preserves_asymmetric_endpoint_directions() {
             &ctx,
             &assignment,
             &[vec![[0, 1]], vec![[0, 1]]],
-            &HashSet::new(),
+            &BTreeSet::new(),
             4,
             None,
         )
@@ -514,8 +520,12 @@ fn selected_edge_pair_propagates_through_shared_coordinate_roots() {
         .expect("service resource budget")
         .expect("selected edge pair");
 
-    assert!(domains.supports_edge_candidate(1, [1, 3]));
-    assert!(!domains.supports_edge_candidate(1, [2, 3]));
+    assert!(domains
+        .supports_edge_candidate(&ctx, 1, [1, 3])
+        .expect("service resource budget"));
+    assert!(!domains
+        .supports_edge_candidate(&ctx, 1, [2, 3])
+        .expect("service resource budget"));
 }
 
 #[test]
@@ -617,16 +627,18 @@ fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product(
 
     let mut visited = Vec::new();
     assert!(domains
-        .implicit_edge_candidate_with_point(0, 1, None, |pair| {
+        .implicit_edge_candidate_with_point(&ctx, 0, 1, None, |pair| {
             visited.push(pair);
             pair == [1, 3]
         })
+        .expect("service resource budget")
         .is_some());
     assert_eq!(visited, vec![[0, 1], [1, 2], [1, 3]]);
 
     let budget = WorkBudget::new(2);
     assert!(domains
-        .implicit_edge_candidate_with_point(0, 1, Some(&budget), |_| false)
+        .implicit_edge_candidate_with_point(&ctx, 0, 1, Some(&budget), |_| false)
+        .expect("service resource budget")
         .is_none());
     assert!(budget.exhausted());
 }
@@ -643,7 +655,7 @@ fn coordinate_domain_preparation_scales_with_constraint_graph_work() {
             ]
         })
         .collect::<Vec<_>>();
-    let mut quotient =
+    let quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &candidates, 200, &ports)
             .expect("service resource budget")
             .expect("initial quotient");
@@ -949,7 +961,6 @@ fn common_full_quotient_refuses_each_collection_limit() {
     }
     for operation in [
         "catia_common_quotient_signature",
-        "catia_common_quotient_members",
         "catia_common_quotient_classes",
         "catia_quotient_intersection",
         "catia_quotient_merged_members",
@@ -976,10 +987,10 @@ fn quotient_pair_domains_propagate_through_shared_components() {
     assert!(quotient
         .edge_domains_viable(&ctx, &[vec![[0, 2]], vec![[0, 3], [1, 4]],])
         .expect("service resource budget"));
-    assert_eq!(*quotient.domains()[root], HashSet::from([0]));
+    assert_eq!(quotient.domains()[root][..], [0]);
     let third_root = crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
         .expect("service forest traversal");
-    assert_eq!(*quotient.domains()[third_root], HashSet::from([3]));
+    assert_eq!(quotient.domains()[third_root][..], [3]);
 }
 
 #[test]
@@ -1118,7 +1129,6 @@ fn face_choice_materialization_charges_nested_collections_before_absence() {
         "catia_possible_face_choice_direction_rows",
         "catia_possible_face_choice_equations",
         "catia_possible_face_choice_keys",
-        "catia_possible_face_choice_values",
         "catia_possible_face_choice_faces",
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
@@ -1217,7 +1227,7 @@ fn quotient_options_reject_an_interior_pair_contradiction() {
     let unrestricted = [Vec::new(), Vec::new(), Vec::new()];
     let options = quotient.assignment_options(&ctx, &assignment, &unrestricted);
     let limited = quotient
-        .assignment_options_limited(&ctx, &assignment, &unrestricted, &HashSet::new(), 1, None)
+        .assignment_options_limited(&ctx, &assignment, &unrestricted, &BTreeSet::new(), 1, None)
         .expect("service resource budget");
     assert_eq!(limited.len(), 1);
     assert_eq!(limited[0].0, options[0].0);
@@ -1226,7 +1236,7 @@ fn quotient_options_reject_an_interior_pair_contradiction() {
             &ctx,
             &assignment,
             &unrestricted,
-            &HashSet::new(),
+            &BTreeSet::new(),
             4_096,
             None,
         )
@@ -1255,7 +1265,7 @@ fn quotient_options_decline_when_their_work_budget_is_exhausted() {
             &ctx,
             &assignment,
             &[vec![[0, 0]]],
-            &HashSet::new(),
+            &BTreeSet::new(),
             1,
             Some(&budget),
         )
@@ -1320,7 +1330,6 @@ fn point_assignment_refuses_before_matching_collections_grow() {
         "catia_point_assignment_root_indices",
         "catia_point_assignment_edge_roots",
         "catia_point_assignment_neighbor_rows",
-        "catia_point_assignment_neighbor_keys",
         "catia_point_assignment_neighbor_points",
         "catia_point_assignment_values",
         "catia_point_assignment_value_rows",
@@ -1695,7 +1704,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
     let propagation_budget = WorkBudget::new(0);
     let changed_edges = HashSet::from([0]);
 
-    let mut prepared = search
+    let prepared = search
         .prepare_selected_branch(&quotient, &changed_edges, &propagation_budget)
         .expect("service resource budget")
         .expect("partial quotient remains viable");
