@@ -1390,21 +1390,32 @@ pub(crate) fn scan_curve_carriers(
             continue;
         }
         let expected = points.len() + index_from_u32(descriptor.degree) + 1;
-        let Some(knots) = expanded_knots(ctx, unique_knots, multiplicities, expected)? else {
+        let mut carrier_storage = ctx.reserve_scoped(0, "retain Parasolid curve candidate")?;
+        let Some(nurbs) = carrier_storage.with_storage(|| {
+            let Some(knots) = expanded_knots(ctx, unique_knots, multiplicities, expected)? else {
+                return Ok(None);
+            };
+            if knots.len() != expected {
+                return Ok(None);
+            }
+            Ok::<_, cadmpeg_core::CodecError>(Some(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    ctx,
+                    descriptor.degree,
+                    knots,
+                    points,
+                    weights,
+                    false,
+                )?,
+            ))
+        })? else {
             continue;
         };
-        if knots.len() != expected {
-            continue;
-        }
-        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            ctx,
-            descriptor.degree,
-            knots,
-            points,
-            weights,
-            false,
-        )? {
-            Ok(nurbs) => nurbs,
+        let nurbs = match nurbs {
+            Ok(nurbs) => {
+                carrier_storage.commit()?;
+                nurbs
+            }
             Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
                 return Err(limit.into())
             }
@@ -1413,6 +1424,8 @@ pub(crate) fn scan_curve_carriers(
                     ctx,
                     format_args!("curve carrier attribute {attr}: {error}"),
                 )?;
+                drop(error);
+                drop(carrier_storage);
                 ctx.push_vec(refusals, note, "collect Parasolid spline refusals")?;
                 continue;
             }
@@ -1822,31 +1835,42 @@ pub(crate) fn scan_surface_carriers(
         if !valid || pole_rows.len() != descriptor.u_count {
             continue;
         }
-        let (Some(u_knots), Some(v_knots)) = (
-            expanded_knots(ctx, &u_unique, &u_mult, u_expected)?,
-            expanded_knots(ctx, &v_unique, &v_mult, v_expected)?,
-        ) else {
+        let mut carrier_storage = ctx.reserve_scoped(0, "retain Parasolid surface candidate")?;
+        let Some(nurbs) = carrier_storage.with_storage(|| {
+            let (Some(u_knots), Some(v_knots)) = (
+                expanded_knots(ctx, &u_unique, &u_mult, u_expected)?,
+                expanded_knots(ctx, &v_unique, &v_mult, v_expected)?,
+            ) else {
+                return Ok(None);
+            };
+            if u_knots.len() != u_expected || v_knots.len() != v_expected {
+                return Ok(None);
+            }
+            Ok::<_, cadmpeg_core::CodecError>(Some(
+                cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+                    ctx,
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        descriptor.u_degree,
+                        u_knots,
+                        descriptor.u_periodic,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        descriptor.v_degree,
+                        v_knots,
+                        descriptor.v_periodic,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(pole_rows, weight_rows),
+                    false,
+                )?,
+            ))
+        })? else {
             continue;
         };
-        if u_knots.len() != u_expected || v_knots.len() != v_expected {
-            continue;
-        }
-        let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-            ctx,
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                descriptor.u_degree,
-                u_knots,
-                descriptor.u_periodic,
-            ),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                descriptor.v_degree,
-                v_knots,
-                descriptor.v_periodic,
-            ),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(pole_rows, weight_rows),
-            false,
-        )? {
-            Ok(nurbs) => nurbs,
+        let nurbs = match nurbs {
+            Ok(nurbs) => {
+                carrier_storage.commit()?;
+                nurbs
+            }
             Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => {
                 return Err(limit.into())
             }
@@ -1855,6 +1879,8 @@ pub(crate) fn scan_surface_carriers(
                     ctx,
                     format_args!("surface carrier attribute {attr}: {error}"),
                 )?;
+                drop(error);
+                drop(carrier_storage);
                 ctx.push_vec(refusals, note, "collect Parasolid spline refusals")?;
                 continue;
             }
