@@ -150,10 +150,10 @@ pub(super) fn surface_block(
         while propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
             .is_some()
         {
-            for row in propagate_resource!(ctx
-                .admit_iter(&mut rows, "ASM surface control points")
-                .map_err(cadmpeg_core::CodecError::from))
-            {
+            let mut rows = rows.iter_mut();
+            while let Some(row) = propagate_resource!(
+                ctx.next_charged(&mut rows, "ASM surface control points")
+            ) {
                 let point = FinitePoint3::new(Point3::new(
                     cur.take_f64()? * LEN_TO_MM,
                     cur.take_f64()? * LEN_TO_MM,
@@ -176,10 +176,10 @@ pub(super) fn surface_block(
         while propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
             .is_some()
         {
-            for row in propagate_resource!(ctx
-                .admit_iter(&mut rows, "ASM surface control points")
-                .map_err(cadmpeg_core::CodecError::from))
-            {
+            let mut rows = rows.iter_mut();
+            while let Some(row) = propagate_resource!(
+                ctx.next_charged(&mut rows, "ASM surface control points")
+            ) {
                 row.push(FinitePoint3::new(Point3::new(
                     cur.take_f64()? * LEN_TO_MM,
                     cur.take_f64()? * LEN_TO_MM,
@@ -937,6 +937,42 @@ mod tests {
                 },
             );
             assert!(matches!(error, CodecError::ResourceLimit(_)));
+        }
+    }
+
+    #[test]
+    fn invalid_first_surface_control_skips_unvisited_rows() {
+        use crate::sab::Token;
+        for (rational, invalid_weight) in [(false, false), (true, false), (true, true)] {
+            let mut tokens = rectangular_surface_tokens(rational);
+            if invalid_weight {
+                tokens[22] = Token::Double(0.0);
+            } else {
+                tokens[19] = Token::Double(f64::NAN);
+            }
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                "ASM surface control points",
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    super::surface_block(&ctx, &tokens, 0).transpose().map(|_| ())
+                },
+            );
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("expected first-control work refusal");
+            };
+            assert_eq!(limit.additional, 1);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // Admit the first control step. Its invalid value ends the block,
+            // so the second row and later columns need no work allowance.
+            policy.limits.max_work_units = limit.used + 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(super::surface_block(&ctx, &tokens, 0).is_none());
+            ctx.finish_session().unwrap();
         }
     }
 
