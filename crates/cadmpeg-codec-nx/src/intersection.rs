@@ -60,11 +60,11 @@ impl SupportUvLane {
 
     pub(crate) fn from_present_values_scoped<'ctx>(
         ctx: &'ctx DecodeContext<'_>,
-        values: Vec<[f64; 2]>,
+        values: &[[f64; 2]],
     ) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
         let mut reservation = ctx.reserve_scoped(0, "NX chart support-UV lane")?;
         let lane = Self::present_with_storage(
-            &values,
+            values,
             Vec::new(),
             |values| {
                 Ok(ctx
@@ -94,14 +94,14 @@ impl SupportUvLane {
         (values.len() == sample_count).then_some(Self(values))
     }
 
-    pub(crate) fn from_present_values(values: Vec<[f64; 2]>) -> Option<Self> {
+    pub(crate) fn from_present_values(values: &[[f64; 2]]) -> Option<Self> {
         let checked = {
             let mut storage = Vec::new();
             storage.try_reserve_exact(values.len()).map(|()| storage)
         }
         .ok()?;
         match Self::present_with_storage(
-            &values,
+            values,
             checked,
             |values| Ok::<_, Infallible>(values.next().copied()),
             |checked, pair| {
@@ -1404,7 +1404,7 @@ fn chart_points(
             };
             points.push(Point3::from(point.get()));
         }
-        return Ok(SourceChartData::xyz3_charged(ctx, points)?.map(|data| (data, end)));
+        return Ok(SourceChartData::xyz3_charged(ctx, &points)?.map(|data| (data, end)));
     }
 
     let operation = "NX raw ext11 chart fields";
@@ -1448,7 +1448,7 @@ fn chart_points(
         }
     }
     Ok(
-        SourceChartData::ext11_charged(ctx, points, native_parameters, ext_support_uv)?
+        SourceChartData::ext11_charged(ctx, &points, &native_parameters, ext_support_uv)?
             .map(|data| (data, end)),
     )
 }
@@ -1749,7 +1749,7 @@ fn uv_at(
         };
         scalars.push(value);
     }
-    let Some(values) = SupportUvValues::new_charged(ctx, packing, scalars)? else {
+    let Some(values) = SupportUvValues::new_charged(ctx, packing, &scalars)? else {
         return Ok(None);
     };
     Ok(Some((
