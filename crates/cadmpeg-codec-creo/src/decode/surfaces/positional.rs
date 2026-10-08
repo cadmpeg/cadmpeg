@@ -37,6 +37,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     if !matches!(scan.framing.layout, crate::container::Layout::Nd) {
         return Ok(0);
     }
@@ -115,15 +116,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                 row.id,
                 "creo decoded model identity",
             )?;
-            let mut identity_present = false;
-            for surface in
-                ctx.admit_iter(&ir.model.surfaces, "creo positional model surface search")?
-            {
-                if ctx.equal(&surface.id, &id, "creo model identity comparison")? {
-                    identity_present = true;
-                    break;
-                }
-            }
+            let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
             if identity_present {
                 continue;
             }
@@ -184,6 +177,7 @@ pub(in super::super) fn transfer_positional_tori(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut round_feature_ids = BTreeSet::new();
     for row in ctx.admit_iter(
         &*scan.surfaces.rows,
@@ -254,13 +248,7 @@ pub(in super::super) fn transfer_positional_tori(
             row.id,
             "creo decoded model identity",
         )?;
-        let mut identity_present = false;
-        for surface in ctx.admit_iter(&ir.model.surfaces, "creo positional model surface search")? {
-            if ctx.equal(&surface.id, &id, "creo model identity comparison")? {
-                identity_present = true;
-                break;
-            }
-        }
+        let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
         if identity_present {
             continue;
         }
@@ -334,6 +322,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut replay_bound_surfaces = BTreeSet::new();
     for replay in ctx.admit_iter(
         &scan.curves.tabulated_cylinder_replays,
@@ -379,13 +368,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             record.surface_id,
             "creo decoded model identity",
         )?;
-        let mut identity_present = false;
-        for surface in ctx.admit_iter(&ir.model.surfaces, "creo positional model surface search")? {
-            if ctx.equal(&surface.id, &surface_id, "creo model identity comparison")? {
-                identity_present = true;
-                break;
-            }
-        }
+        let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), surface_id.as_str())?.is_some();
         if identity_present {
             continue;
         }
@@ -567,6 +550,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut replay_counts = BTreeMap::<u32, usize>::new();
     for replay in ctx.admit_iter(
         &scan.curves.tabulated_cylinder_replays,
@@ -661,13 +645,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             replay.surface_id,
             "creo decoded model identity",
         )?;
-        let mut identity_present = false;
-        for surface in ctx.admit_iter(&ir.model.surfaces, "creo positional model surface search")? {
-            if ctx.equal(&surface.id, &surface_id, "creo model identity comparison")? {
-                identity_present = true;
-                break;
-            }
-        }
+        let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), surface_id.as_str())?.is_some();
         if identity_present {
             continue;
         }

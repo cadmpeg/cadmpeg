@@ -100,6 +100,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
+    let mut curves_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut transferred = BTreeSet::new();
     let carriers = placed_carriers(ctx, scan, ir, source_carriers)?;
     let solved_vertices = solved_topological_vertices(
@@ -176,13 +177,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             continue;
         };
         let id = curve_id;
-        let mut identity_present = false;
-        for curve in ctx.admit_iter(&ir.model.curves, "creo transferred model curve search")? {
-            if ctx.equal(&curve.id, &id, "creo model identity comparison")? {
-                identity_present = true;
-                break;
-            }
-        }
+        let identity_present = curves_index.lookup(ctx, &ir.model.curves, |record| record.id.as_str(), id.as_str())?.is_some();
         if identity_present {
             continue;
         }
@@ -333,6 +328,8 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<TransferredNurbsBoundaryCurves, CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
+    let mut curves_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut result = TransferredNurbsBoundaryCurves {
         ids: BTreeSet::new(),
         endpoint_witnesses: BTreeSet::new(),
@@ -361,25 +358,15 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         else {
             continue;
         };
-        let geometry =
-            |surface_id: u32| -> Result<Option<&SurfaceGeometry>, cadmpeg_core::CodecError> {
-                let mut found = None;
-                for surface in
-                    ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")?
-                {
-                    if crate::identity::matches_numbered_identity(
-                        surface.id.as_str(),
-                        "creo:visibgeom:surface#",
-                        surface_id,
-                    ) {
-                        if found.is_some() {
-                            return Ok(None);
-                        }
-                        found = Some(surface);
-                    }
-                }
-                Ok(found.map(|surface| source_carriers.surface_geometry(surface)))
-            };
+        let mut geometry = |surface_id: u32| -> Result<Option<&SurfaceGeometry>, CodecError> {
+            let (id, _id_storage) = crate::identity::compose_scoped::<cadmpeg_ir::ids::SurfaceId>(
+                ctx, &crate::identity::VISIBGEOM_SURFACE, surface_id,
+                "creo boundary surface query identity",
+            )?;
+            Ok(surfaces_index.lookup(ctx, &ir.model.surfaces,
+                |record| record.id.as_str(), id.as_str())?.flatten()
+                .map(|index| source_carriers.surface_geometry(&ir.model.surfaces[index])))
+        };
         let Some(first_geometry) = geometry(first.id)? else {
             continue;
         };
@@ -447,13 +434,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             row.id,
             "creo NURBS boundary curve identity",
         )?;
-        let mut identity_present = false;
-        for curve in ctx.admit_iter(&ir.model.curves, "creo transferred model curve search")? {
-            if ctx.equal(&curve.id, &id, "creo model identity comparison")? {
-                identity_present = true;
-                break;
-            }
-        }
+        let identity_present = curves_index.lookup(ctx, &ir.model.curves, |record| record.id.as_str(), id.as_str())?.is_some();
         if identity_present {
             continue;
         }

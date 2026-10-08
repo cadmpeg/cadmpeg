@@ -2281,6 +2281,9 @@ pub(in super::super) fn transfer_native_brep(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<NativeBrepTransferSummary, cadmpeg_core::CodecError> {
+    let mut curves_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
+    let mut pcurves_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let carriers = placed_carriers(ctx, scan, ir, source_carriers)?;
     let BrepSourceIndexes {
         planes,
@@ -2781,25 +2784,9 @@ pub(in super::super) fn transfer_native_brep(
         let param_range = if model_curve_count == 0 {
             None
         } else {
-            let mut matching_curve = None;
-            for (index, candidate) in ctx
-                .admit_iter(&ir.model.curves, "creo B-rep mutable curve index search")?
-                .enumerate()
-            {
-                if !ctx.equal(
-                    &candidate.id,
-                    &curve,
-                    "creo B-rep mutable curve identity comparison",
-                )? {
-                    continue;
-                }
-                if matching_curve.is_some() {
-                    matching_curve = None;
-                    break;
-                }
-                matching_curve = Some(index);
-            }
-            let candidate = matching_curve.map(|index| &mut ir.model.curves[index]);
+            let candidate = curves_index.lookup(ctx, &ir.model.curves,
+                |record| record.id.as_str(), curve.as_str())?.flatten()
+                .map(|index| &mut ir.model.curves[index]);
             if let Some(candidate) = candidate {
                 let mut geometry = source_carriers
                     .curve_geometry(candidate)
@@ -2894,13 +2881,7 @@ pub(in super::super) fn transfer_native_brep(
                 tolerance: None,
             },
         )?;
-        let mut identity_present = false;
-        for item in ctx.admit_iter(&ir.model.curves, "creo B-rep model curve search")? {
-            if ctx.equal(&item.id, &curve, "creo model identity comparison")? {
-                identity_present = true;
-                break;
-            }
-        }
+        let identity_present = curves_index.lookup(ctx, &ir.model.curves, |record| record.id.as_str(), curve.as_str())?.is_some();
         if !identity_present {
             let offset = row_offsets.get(curve_id).copied().unwrap_or(0);
             annotate(
@@ -3144,13 +3125,7 @@ pub(in super::super) fn transfer_native_brep(
                 "VisibGeom"
             };
             let surface = native_surface_id(ctx, scan, *face_id)?;
-            let mut identity_present = false;
-            for item in ctx.admit_iter(&ir.model.surfaces, "creo B-rep model surface search")? {
-                if ctx.equal(&item.id, &surface, "creo model identity comparison")? {
-                    identity_present = true;
-                    break;
-                }
-            }
+            let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), surface.as_str())?.is_some();
             if !identity_present {
                 annotate(
                     ctx,
@@ -3466,13 +3441,7 @@ pub(in super::super) fn transfer_native_brep(
                                 format_args!("{}:{face_id}", half_edge.curve_id),
                                 "creo B-rep pcurve identities",
                             )?;
-                            let mut identity_present = false;
-                            for item in ctx.admit_iter(&ir.model.pcurves, "creo B-rep model pcurve search")? {
-                                if ctx.equal(&item.id, &pcurve, "creo model identity comparison")? {
-                                    identity_present = true;
-                                    break;
-                                }
-                            }
+                            let identity_present = pcurves_index.lookup(ctx, &ir.model.pcurves, |record| record.id.as_str(), pcurve.as_str())?.is_some();
                             if !identity_present {
                                 annotate(ctx,
                                     annotations,
@@ -3551,6 +3520,8 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut curves_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     for pair in ctx.admit_iter(
         &scan.curves.fc05_cylinder_cap_pairs,
         "creo transfer cap pair cylinders fc05 cylinder cap pairs traversal",
@@ -3564,13 +3535,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             pair.surface_id,
             "creo decoded model identity",
         )?;
-        let mut identity_present = false;
-        for surface in ctx.admit_iter(&ir.model.surfaces, "creo B-rep model surface search")? {
-            if ctx.equal(&surface.id, &id, "creo model identity comparison")? {
-                identity_present = true;
-                break;
-            }
-        }
+        let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
         if identity_present {
             continue;
         }
@@ -3643,13 +3608,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 curve_id,
                 "creo decoded model identity",
             )?;
-            let mut identity_present = false;
-            for curve in ctx.admit_iter(&ir.model.curves, "creo B-rep model curve search")? {
-                if ctx.equal(&curve.id, &id, "creo model identity comparison")? {
-                    identity_present = true;
-                    break;
-                }
-            }
+            let identity_present = curves_index.lookup(ctx, &ir.model.curves, |record| record.id.as_str(), id.as_str())?.is_some();
             if identity_present {
                 continue;
             }

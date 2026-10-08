@@ -109,26 +109,14 @@ pub(in super::super) fn transfer_active_datum_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut transferred = 0;
     for datum in ctx.admit_iter(
         &scan.planes.datum_cylinders,
         "creo transfer active datum cylinders datum cylinders traversal",
     )? {
         let id = super::native_surface_id(ctx, scan, datum.id)?;
-        let mut surface_exists = false;
-        for surface in ctx.admit_iter(
-            &ir.model.surfaces,
-            "creo active datum cylinder existing surfaces",
-        )? {
-            if ctx.equal(
-                &surface.id,
-                &id,
-                "creo active datum cylinder surface ID comparison",
-            )? {
-                surface_exists = true;
-                break;
-            }
-        }
+        let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
         if surface_exists {
             continue;
         }
@@ -354,6 +342,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut round_feature_ids = BTreeSet::new();
     for row in ctx
         .admit_iter(&scan.features.rows, "creo rowless round feature rows")?
@@ -375,22 +364,14 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
     for (rowless_id, sibling_id, offset) in
         ctx.admit_iter(&pairs, "creo rowless round cylinder candidates")?
     {
-        let mut selected_surface = None;
-        let mut ambiguous_surface = false;
-        for surface in ctx.admit_iter(&ir.model.surfaces, "creo rowless round model surfaces")? {
-            if crate::identity::matches_numbered_identity(
-                surface.id.as_str(),
-                "creo:visibgeom:surface#",
-                *sibling_id,
-            ) {
-                if selected_surface.is_some() {
-                    ambiguous_surface = true;
-                    break;
-                }
-                selected_surface = Some(surface);
-            }
-        }
-        let Some(cylinder_surface) = selected_surface.filter(|_| !ambiguous_surface).and_then(
+        let (sibling, _sibling_storage) = crate::identity::compose_scoped::<SurfaceId>(
+            ctx, &crate::identity::VISIBGEOM_SURFACE, *sibling_id,
+            "creo rowless sibling query identity",
+        )?;
+        let selected_surface = surfaces_index.lookup(ctx, &ir.model.surfaces,
+            |record| record.id.as_str(), sibling.as_str())?.flatten()
+            .map(|index| &ir.model.surfaces[index]);
+        let Some(cylinder_surface) = selected_surface.and_then(
             |surface| match source_carriers.surface_geometry(surface) {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => {
                     Some(*cylinder)
@@ -406,16 +387,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
             *rowless_id,
             "creo rowless round cylinder identity",
         )?;
-        let mut surface_exists = false;
-        for surface in ctx.admit_iter(
-            &ir.model.surfaces,
-            "creo rowless round existing model surfaces",
-        )? {
-            if ctx.equal(&surface.id, &id, "creo rowless round surface ID comparison")? {
-                surface_exists = true;
-                break;
-            }
-        }
+        let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
         if surface_exists {
             continue;
         }
@@ -470,6 +442,7 @@ pub(in super::super) fn transfer_hole_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut hole_feature_ids = BTreeSet::new();
     for feature_id in ctx
@@ -504,15 +477,7 @@ pub(in super::super) fn transfer_hole_cylinders(
                     cylinder_id,
                     "creo hole cylinder identity",
                 )?;
-                let mut surface_exists = false;
-                for surface in
-                    ctx.admit_iter(&ir.model.surfaces, "creo hole existing cylinder search")?
-                {
-                    if ctx.equal(&surface.id, &id, "creo hole cylinder surface ID comparison")? {
-                        surface_exists = true;
-                        break;
-                    }
-                }
+                let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
                 if surface_exists {
                     return Ok(());
                 }
@@ -586,6 +551,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let local_planes = placed_planes(ctx, scan)?;
     let mut cylinders_by_plane = BTreeMap::<(u32, u32), BTreeSet<u32>>::new();
     let unique_topologies = crate::identity::uniquely_identified_rows_checked(
@@ -686,19 +652,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 cylinder_id,
                 "creo split cylinder identities",
             )?;
-            let mut surface_exists = false;
-            for surface in
-                ctx.admit_iter(&ir.model.surfaces, "creo split cylinder existing surfaces")?
-            {
-                if ctx.equal(
-                    &surface.id,
-                    &id,
-                    "creo split cylinder surface ID comparison",
-                )? {
-                    surface_exists = true;
-                    break;
-                }
-            }
+            let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
             if surface_exists {
                 continue;
             }
@@ -1167,6 +1121,7 @@ pub(in super::super) fn transfer_positional_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut round_feature_ids = BTreeSet::new();
     for row in ctx.admit_iter(
         &*scan.surfaces.rows,
@@ -1501,58 +1456,16 @@ pub(in super::super) fn transfer_positional_cylinders(
             record.surface_id,
             "creo positional cylinder identity",
         )?;
-        let mut surface_exists = false;
-        for surface in ctx.admit_iter(
-            &ir.model.surfaces,
-            "creo positional existing cylinder search",
-        )? {
-            if ctx.equal(
-                &surface.id,
-                &id,
-                "creo positional cylinder existence comparison",
-            )? {
-                surface_exists = true;
-                break;
-            }
-        }
-        if surface_exists {
-            if row_local_frame_selected {
-                let mut surface_index = None;
-                let mut ambiguous = false;
-                for (index, surface) in ctx.admit_iter(
-                    &ir.model.surfaces,
-                    "creo positional duplicate cylinder count",
-                )?.enumerate() {
-                    if ctx.equal(&surface.id, &id, "creo positional cylinder duplicate comparison")? {
-                        if surface_index.is_some() {
-                            ambiguous = true;
-                            break;
-                        }
-                        surface_index = Some(index);
-                    }
-                }
-                if !ambiguous {
-                    if let Some(surface) =
-                        surface_index.and_then(|index| ir.model.surfaces.get_mut(index))
-                    {
-                        source_carriers.replace_surface_geometry(
-                            ctx,
-                            surface,
-                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                                cylinder_surface,
-                            )),
-                        )?;
-                        annotate(
-                            ctx,
-                            annotations,
-                            &id,
-                            "VisibGeom",
-                            cadmpeg_core::decode::u64_from_index(row.offset),
-                            "positional_cylinder_frame_reconciled",
-                            Exactness::Derived,
-                        )?;
-                    }
-                }
+        let existing = surfaces_index.lookup(ctx, &ir.model.surfaces,
+            |record| record.id.as_str(), id.as_str())?;
+        if let Some(position) = existing {
+            if let Some(surface) = position.filter(|_| row_local_frame_selected)
+                .and_then(|index| ir.model.surfaces.get_mut(index)) {
+                source_carriers.replace_surface_geometry(ctx, surface,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))?;
+                annotate(ctx, annotations, &id, "VisibGeom",
+                    cadmpeg_core::decode::u64_from_index(row.offset),
+                    "positional_cylinder_frame_reconciled", Exactness::Derived)?;
             }
             continue;
         }
@@ -1801,6 +1714,7 @@ pub(in super::super) fn transfer_positional_cones(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut transferred = 0;
     for record in ctx.admit_iter(
         &*scan.surfaces.parameters,
@@ -1825,19 +1739,7 @@ pub(in super::super) fn transfer_positional_cones(
             record.surface_id,
             "creo positional cone identity",
         )?;
-        let mut surface_exists = false;
-        for surface in
-            ctx.admit_iter(&ir.model.surfaces, "creo positional cone existing surfaces")?
-        {
-            if ctx.equal(
-                &surface.id,
-                &id,
-                "creo positional cone surface ID comparison",
-            )? {
-                surface_exists = true;
-                break;
-            }
-        }
+        let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
         if surface_exists {
             continue;
         }
@@ -1891,6 +1793,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut sweep_feature_ids = BTreeSet::new();
     for row in ctx.admit_iter(&scan.features.rows, "creo circular sweep feature rows")? {
@@ -1926,19 +1829,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                 cylinder_id,
                 "creo circular sweep cylinder identity",
             )?;
-            let mut surface_exists = false;
-            for surface in
-                ctx.admit_iter(&ir.model.surfaces, "creo circular sweep existing surfaces")?
-            {
-                if ctx.equal(
-                    &surface.id,
-                    &id,
-                    "creo circular sweep surface ID comparison",
-                )? {
-                    surface_exists = true;
-                    break;
-                }
-            }
+            let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
             if surface_exists {
                 continue;
             }
@@ -1996,6 +1887,7 @@ pub(in super::super) fn transfer_cross_section_planes(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut transferred = 0;
     for frame in ctx.admit_iter(
         &scan.planes.cross_section_local_systems,
@@ -2018,17 +1910,7 @@ pub(in super::super) fn transfer_cross_section_planes(
             frame.surface_id,
             "creo cross-section local-system plane identity",
         )?;
-        let mut surface_exists = false;
-        for surface in ctx.admit_iter(&ir.model.surfaces, "creo cross-section existing surfaces")? {
-            if ctx.equal(
-                &surface.id,
-                &id,
-                "creo cross-section local-system surface ID comparison",
-            )? {
-                surface_exists = true;
-                break;
-            }
-        }
+        let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
         if surface_exists {
             continue;
         }
@@ -2088,17 +1970,7 @@ pub(in super::super) fn transfer_cross_section_planes(
             plane.surface_id,
             "creo cross-section outline plane identity",
         )?;
-        let mut surface_exists = false;
-        for surface in ctx.admit_iter(&ir.model.surfaces, "creo cross-section existing surfaces")? {
-            if ctx.equal(
-                &surface.id,
-                &id,
-                "creo cross-section outline surface ID comparison",
-            )? {
-                surface_exists = true;
-                break;
-            }
-        }
+        let surface_exists = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
         if surface_exists {
             continue;
         }

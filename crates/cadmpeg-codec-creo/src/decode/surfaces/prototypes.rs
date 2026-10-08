@@ -411,6 +411,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     if !matches!(scan.framing.layout, crate::container::Layout::Nd) {
         return Ok(0);
     }
@@ -542,13 +543,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             row.id,
             "creo decoded model identity",
         )?;
-        let mut identity_present = false;
-        for surface in ctx.admit_iter(&ir.model.surfaces, "creo prototype model surface search")? {
-            if ctx.equal(&surface.id, &id, "creo model identity comparison")? {
-                identity_present = true;
-                break;
-            }
-        }
+        let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
         if identity_present {
             continue;
         }
@@ -624,6 +619,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     if !matches!(scan.framing.layout, crate::container::Layout::Nd) {
         return Ok(0);
     }
@@ -719,13 +715,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             row.id,
             "creo decoded model identity",
         )?;
-        let mut identity_present = false;
-        for surface in ctx.admit_iter(&ir.model.surfaces, "creo prototype model surface search")? {
-            if ctx.equal(&surface.id, &id, "creo model identity comparison")? {
-                identity_present = true;
-                break;
-            }
-        }
+        let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
         if identity_present {
             continue;
         }
@@ -791,6 +781,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     if !matches!(
         scan.framing.layout,
         crate::container::Layout::LegacyAscii(_)
@@ -919,13 +910,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             carrier.surface_id,
             "creo decoded model identity",
         )?;
-        let mut identity_present = false;
-        for surface in ctx.admit_iter(&ir.model.surfaces, "creo prototype model surface search")? {
-            if ctx.equal(&surface.id, &id, "creo model identity comparison")? {
-                identity_present = true;
-                break;
-            }
-        }
+        let identity_present = surfaces_index.lookup(ctx, &ir.model.surfaces, |record| record.id.as_str(), id.as_str())?.is_some();
         if identity_present {
             continue;
         }
