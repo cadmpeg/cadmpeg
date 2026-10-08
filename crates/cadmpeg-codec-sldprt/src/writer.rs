@@ -2395,20 +2395,33 @@ fn body_material<'ir>(
     ctx: &DecodeContext<'_>,
     ir: &'ir CadIr,
 ) -> Result<Option<(&'ir str, Color)>, CodecError> {
-    let mut appearances = HashMap::new();
+    let mut appearances =
+        HashMap::<&cadmpeg_ir::ids::AppearanceId, &cadmpeg_ir::appearance::Appearance>::new();
     for appearance in &ir.model.appearances {
-        let work = cadmpeg_core::decode::u64_from_index(appearances.len())
-            .checked_add(2)
-            .and_then(|count| {
-                count.checked_mul(
-                    cadmpeg_core::decode::u64_from_index(appearance.id.as_str().len())
-                        .checked_add(1)?,
-                )
-            })
+        let work = cadmpeg_core::decode::u64_from_index(appearance.id.as_str().len())
+            .checked_add(1)
+            .and_then(|bytes| bytes.checked_mul(4))
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("index SLDPRT material appearances", u64::MAX - 1, u64::MAX)
             })?;
         ctx.charge_work(work, "index SLDPRT material appearances")?;
+        if appearances.len() == appearances.capacity() && !appearances.contains_key(&appearance.id)
+        {
+            for id in appearances.keys() {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(id.as_str().len())
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "index SLDPRT material appearances",
+                                u64::MAX - 1,
+                                u64::MAX,
+                            )
+                        })?,
+                    "index SLDPRT material appearances",
+                )?;
+            }
+        }
         ctx.insert_hash_map(
             &mut appearances,
             &appearance.id,
@@ -2423,14 +2436,9 @@ fn body_material<'ir>(
         let AppearanceTarget::Body(_) = &binding.target else {
             continue;
         };
-        let work = cadmpeg_core::decode::u64_from_index(appearances.len())
-            .checked_add(2)
-            .and_then(|count| {
-                count.checked_mul(
-                    cadmpeg_core::decode::u64_from_index(binding.appearance.as_str().len())
-                        .checked_add(1)?,
-                )
-            })
+        let work = cadmpeg_core::decode::u64_from_index(binding.appearance.as_str().len())
+            .checked_add(1)
+            .and_then(|bytes| bytes.checked_mul(2))
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "find SLDPRT body material appearance",

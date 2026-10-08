@@ -3240,21 +3240,14 @@ fn decode_graph(
         "index retained Parasolid entities",
     )?;
     let mut keep = |id: &str| {
-        let work = retained_ids
-            .len()
-            .checked_add(1)
-            .and_then(|count| {
-                id.len()
-                    .checked_add(1)
-                    .and_then(|bytes| count.checked_mul(bytes))
-            })
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "Parasolid annotation identity lookup",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
+        // Hash the queried identity; the index does not scan retained entities.
+        let work = id.len().checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "Parasolid annotation identity lookup",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(work),
             "Parasolid annotation identity lookup",

@@ -1647,3 +1647,5 @@ mod dynamic_angles;
 mod repeated_circle_dimensions;
 
 mod physical_loci;
+
+mod admission;

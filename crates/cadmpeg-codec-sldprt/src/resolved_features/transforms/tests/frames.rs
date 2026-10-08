@@ -1778,3 +1778,59 @@ fn marker_circle_projection_refuses_collection_limit() {
 fn marker_circle_projection_refuses_work_limit() {
     assert_marker_circle_projection_refusal(cadmpeg_core::decode::ResourceDimension::WorkUnits);
 }
+
+#[test]
+fn direct_marker_votes_do_not_build_unused_fallback_matches() {
+    let DimensionedCircleFixture {
+        mut lane, feature, ..
+    } = dimensioned_circle_fixture();
+    lane.sketch_entities.truncate(2);
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let mut entities = Vec::new();
+    for (i, marker) in lane.sketch_entities.iter_mut().enumerate() {
+        marker.reclassify(SketchInputKind::Point);
+        let [u, v] = marker.coordinates_m.unwrap().get();
+        entities.push(
+            SketchEntity::new(
+                SketchEntityId::mint(format!("synthetic:test:point#{i}")).unwrap(),
+                sketch.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                    position: Point2::new(u * 1000.0 + 7.0, v * 1000.0 + 11.0),
+                })
+                .unwrap(),
+            )
+            .with_native_ref(Some(marker.id().into())),
+        );
+    }
+    for i in 0..4096 {
+        entities.push(SketchEntity::new(
+            SketchEntityId::mint(format!("synthetic:test:unbound#{i}")).unwrap(),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: Point2::new(f64::from(i), f64::from(i * i)),
+            })
+            .unwrap(),
+        ));
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 1_000_000;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let features = [feature];
+    let result = crate::resolved_features::relation_loci::marker_transform_candidates_by_feature(
+        &ctx,
+        &features,
+        &[],
+        &entities,
+        &[lane],
+    )
+    .unwrap();
+    let candidates = &result["feature-native"];
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(
+        candidates[0].apply((0, 0)),
+        Some((700_000_000, 1_100_000_000))
+    );
+    assert!(ctx.resource_refusal().is_none());
+}
