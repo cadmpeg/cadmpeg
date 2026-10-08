@@ -999,7 +999,7 @@ fn terminal_null_entity_id_scan_propagates_caller_work_refusal() {
         |ctx| {
             let result = super::super::terminal_null_entity_id(ctx, records);
             if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
             }
             result.map(|_| ())
         },
@@ -1645,7 +1645,7 @@ fn native_input_ordinal_scan_propagates_caller_work_refusal() {
         crate::test_support::with_work_refusal("catia_native_input_ordinal_visits", |ctx| {
             let result = crate::native::dependency_matches_input(ctx, &dependency, &input);
             if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
             }
             result
         });
