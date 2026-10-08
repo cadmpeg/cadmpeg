@@ -103,7 +103,9 @@ fn append_summary_notes(
     notes: &mut Vec<String>,
     additional: (Vec<String>, ScopedReservation<'_>),
 ) -> Result<(), CodecError> {
-    let (mut additional, storage) = additional;
+    let storage;
+    let (mut additional, result_storage) = additional;
+    storage = result_storage;
     ctx.append_vec(notes, &mut additional, "iges combined summary notes")?;
     drop(additional);
     drop(storage);
@@ -194,8 +196,10 @@ fn projection_directory<'ctx>(
     if quarantined.is_empty() {
         return Ok(None);
     }
-    let (mut projected, storage) =
+    let storage;
+    let (mut projected, result_storage) =
         ctx.temporary_vec(directory.len(), "iges projected directory entries")?;
+    storage = result_storage;
     let mut source = directory.iter();
     while let Some(entry) = ctx.next_charged(&mut source, "iges projected directory entries")? {
         if !ctx.contains_btree_set(
@@ -417,12 +421,18 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         // The card framing borrows the source and is dropped with this parse.
         let mut scan_storage = ctx.reserve_scoped(0, card_storage)?;
         let scan = scan_storage.with_storage(|| card::scan_with_context(bytes, ctx))?;
-        let (global, (mut global_losses, mut global_loss_storage), global_storage) =
+        let global_storage;
+        let mut global_loss_storage;
+        let (global, (mut global_losses, result_loss_storage), result_global_storage) =
             global::parse(&scan, ctx)?;
-        let ((directory, quarantined_directory), directory_storage) =
+        global_storage = result_global_storage;
+        global_loss_storage = result_loss_storage;
+        let directory_storage;
+        let ((directory, quarantined_directory), result_directory_storage) =
             ctx.with_scoped_storage("iges parsed directory storage", || {
                 directory::parse(&scan, global.global_table(), ctx)
             })?;
+        directory_storage = result_directory_storage;
         if mode == ParseMode::Decode {
             entities::geometry::enforce_transform_depth(&directory, ctx)?;
         }
@@ -447,10 +457,12 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         parameter_storage = records_storage;
         parameter_analysis_storage = analysis_storage;
         parameter_quarantine_storage = quarantine_storage;
-        let (mut conditional_losses, conditional_loss_storage) = global.conditional_double_precision_losses(
+        let conditional_loss_storage;
+        let (mut conditional_losses, result_conditional_storage) = global.conditional_double_precision_losses(
             parameter::uses_double_precision(&parameters, ctx)?,
             ctx,
         )?;
+        conditional_loss_storage = result_conditional_storage;
         global_loss_storage.with_storage(|| ctx.append_vec(
             &mut global_losses,
             &mut conditional_losses,
@@ -458,7 +470,9 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         ))?;
         drop(conditional_losses);
         drop(conditional_loss_storage);
-        let (references, reference_storage) = graph::build(&directory, ctx)?;
+        let reference_storage;
+        let (references, result_reference_storage) = graph::build(&directory, ctx)?;
+        reference_storage = result_reference_storage;
         let mut scan = scan;
         let mut framing_recoveries = std::mem::take(&mut scan.recoveries);
         framing_recoveries.merge(parameter_recoveries, ctx)?;
@@ -519,7 +533,9 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         &self,
         ctx: &'loss DecodeContext<'_>,
     ) -> Result<(Vec<LossNote>, ScopedReservation<'loss>), CodecError> {
-        let (mut losses, mut storage) = self.framing_recoveries.notes(ctx)?;
+        let mut storage;
+        let (mut losses, result_storage) = self.framing_recoveries.notes(ctx)?;
+        storage = result_storage;
         let mut directory_records = self.quarantined_directory.iter();
         while let Some(record) = ctx.next_charged(&mut directory_records, "iges record loss slots")? {
             ctx.push_scoped_vec(
@@ -551,7 +567,9 @@ pub(crate) fn inspect(
     let mut parse = PhysicalParse::run(window, ctx, ParseMode::Inspect)?;
     let primary = crate::dialect::classify(ctx, representation, &parse.global)?;
     let mut losses = parse.admission_losses(ctx)?;
-    let (mut record_losses, record_loss_storage) = parse.record_losses(ctx)?;
+    let record_loss_storage;
+    let (mut record_losses, result_record_storage) = parse.record_losses(ctx)?;
+    record_loss_storage = result_record_storage;
     ctx.append_vec(
         &mut losses,
         &mut record_losses,
@@ -727,12 +745,16 @@ fn decode_with_occurrence_limits(
         &mut projection.losses,
         "iges combined projection losses",
     )?;
-    let (mut graph_losses, graph_loss_storage) =
+    let graph_loss_storage;
+    let (mut graph_losses, result_graph_storage) =
         graph::losses(&parse.references, &parse.scan, &parse.parameters, ctx)?;
+    graph_loss_storage = result_graph_storage;
     ctx.append_vec(&mut losses, &mut graph_losses, "iges combined graph losses")?;
     drop(graph_losses);
     drop(graph_loss_storage);
-    let (mut record_losses, record_loss_storage) = parse.record_losses(ctx)?;
+    let record_loss_storage;
+    let (mut record_losses, result_record_storage) = parse.record_losses(ctx)?;
+    record_loss_storage = result_record_storage;
     ctx.append_vec(
         &mut losses,
         &mut record_losses,
