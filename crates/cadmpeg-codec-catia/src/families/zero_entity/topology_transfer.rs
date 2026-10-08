@@ -159,7 +159,11 @@ pub(super) fn transfer_closed_face_topology(
         // Identity indexes, occurrence rows and copied identities that only
         // link the emitted records are scratch for this transfer.
         let mut scratch = admitted!(ctx.reserve_scoped(0, "catia_zero_topology_workspace"));
-        let positions = admitted!(crate::families::ModelCurvePositions::new(ctx, ir));
+        let positions = admitted!(crate::families::ModelCurvePositions::new(
+            ctx,
+            &ir.model.curves,
+            &ir.model.procedural_curves
+        ));
         let surface_positions = admitted!(scratch.with_storage(|| {
             let mut surface_positions = std::collections::BTreeMap::new();
             for (position, surface) in ctx

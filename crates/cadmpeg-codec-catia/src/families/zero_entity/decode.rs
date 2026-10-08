@@ -95,13 +95,14 @@ fn closed_wire_loop_members<'a, 'ctx>(
     })?;
     let mut members =
         scratch.with_storage(|| ctx.collection_vec(member_count, "catia_zero_wire_members"))?;
-    for ((record_ordinal, endpoints), forward) in loop_record
+    let mut source = loop_record
         .support_record_ordinals
         .iter()
         .zip(&loop_record.oriented_model_endpoints)
-        .zip(&loop_record.forward_senses)
+        .zip(&loop_record.forward_senses);
+    while let Some(((record_ordinal, endpoints), forward)) =
+        ctx.next_charged(&mut source, "catia_zero_wire_ordinal_visits")?
     {
-        ctx.charge_work(1, "catia_zero_wire_ordinal_visits")?;
         let (Some(&support), Some(curve)) = (
             ctx.get_hash_map(
                 &supports_by_ordinal,
@@ -252,7 +253,6 @@ fn copy_zero_procedural_definition(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &ProceduralCurveDefinition,
 ) -> Result<ProceduralCurveDefinition, cadmpeg_core::CodecError> {
-    ctx.charge_work(1, "catia_zero_wire_procedural_context_copy")?;
     match definition {
         ProceduralCurveDefinition::Helix(_) => Ok(definition.clone()),
         ProceduralCurveDefinition::SurfaceCurve {
@@ -357,7 +357,11 @@ fn transfer_closed_wire_loops(
             };
             let member_count = members.len();
             if positions.is_none() {
-                positions = Some(ModelCurvePositions::new(ctx, ir)?);
+                positions = Some(ModelCurvePositions::new(
+                    ctx,
+                    &ir.model.curves,
+                    &ir.model.procedural_curves,
+                )?);
             }
             let Some(positions) = positions.as_mut() else {
                 continue;

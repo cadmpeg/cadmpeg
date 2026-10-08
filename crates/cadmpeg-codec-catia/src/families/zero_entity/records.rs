@@ -3,7 +3,7 @@
 //! Decodes analytic (plane, cylinder, cone, torus) and inline non-rational
 //! NURBS surface carriers from a zero-entity record stream.
 
-use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+use cadmpeg_core::decode::index_from_u32;
 
 use std::collections::{HashMap, HashSet};
 use std::num::{NonZeroU32, NonZeroUsize};
@@ -597,7 +597,11 @@ fn zero_entity_nurbs_logical_end(
     data: &[u8],
     record: usize,
 ) -> Result<Option<usize>, CodecError> {
-    Ok(zero_entity_nurbs_layout(ctx, data, record)?.map(|layout| layout.end))
+    let (layout, _storage) = ctx
+        .with_scoped_storage("catia_zero_nurbs_layout_workspace", || {
+            zero_entity_nurbs_layout(ctx, data, record)
+        })?;
+    Ok(layout.map(|layout| layout.end))
 }
 
 fn zero_entity_nurbs_layout(
@@ -632,34 +636,34 @@ fn zero_entity_nurbs_layout(
             return None;
         }
         let mut candidate = None;
-        let candidate_start = knot_start.checked_add(13)?;
-        let candidate_end = knot_start.checked_add(max_u_distinct.checked_mul(13)?)?;
-        let candidate_bytes = data.get(candidate_start..candidate_end)?;
-        let admitted = match ctx.admit_iter(candidate_bytes, "catia_zero_nurbs_lane_boundary_bytes")
-        {
-            Ok(source) => source,
-            Err(error) => return Some(Err(error.into())),
-        };
-        for (index, _) in admitted
-            .chunks(NonZeroUsize::MIN.checked_add(12)?)
-            .enumerate()
-        {
-            let u_distinct_count = index.checked_add(2)?;
-            let u_after = knot_start.checked_add(u_distinct_count.checked_mul(13)?)?;
-            let u_lane = match zero_entity_nurbs_knot_lane(
-                ctx,
-                data,
-                knot_start,
-                u_distinct_count,
-                expected_u_count,
-            ) {
-                Ok(Some(lane)) => lane,
-                Ok(None) => continue,
+        let mut widths = 2..=max_u_distinct;
+        while let Some(u_distinct_count) =
+            match ctx.next_charged(&mut widths, "catia_zero_nurbs_lane_boundary_bytes") {
+                Ok(value) => value,
                 Err(error) => return Some(Err(error)),
-            };
-            let after_dimensions = match u32_tokens(ctx, data, u_after, 2) {
-                Ok(Some((_, end))) => end,
-                Ok(None) => continue,
+            }
+        {
+            let u_after = knot_start.checked_add(u_distinct_count.checked_mul(13)?)?;
+            let (u_lane, u_storage) =
+                match ctx.with_scoped_storage("catia_zero_nurbs_u_lane_workspace", || {
+                    zero_entity_nurbs_knot_lane(
+                        ctx,
+                        data,
+                        knot_start,
+                        u_distinct_count,
+                        expected_u_count,
+                    )
+                }) {
+                    Ok((Some(lane), storage)) => (lane, storage),
+                    Ok((None, _)) => continue,
+                    Err(error) => return Some(Err(error)),
+                };
+            let after_dimensions = match ctx
+                .with_scoped_storage("catia_zero_nurbs_dimensions_workspace", || {
+                    u32_tokens(ctx, data, u_after, 2)
+                }) {
+                Ok((Some((_, end)), _)) => end,
+                Ok((None, _)) => continue,
                 Err(error) => return Some(Err(error)),
             };
             let v_start = after_dimensions.checked_add(1)?;
@@ -674,23 +678,31 @@ fn zero_entity_nurbs_layout(
             if v_distinct_count < 2 {
                 continue;
             }
-            let v_lane = match zero_entity_nurbs_knot_lane(
-                ctx,
-                data,
-                v_start,
-                v_distinct_count,
-                expected_v_count,
-            ) {
-                Ok(Some(lane)) => lane,
-                Ok(None) => continue,
-                Err(error) => return Some(Err(error)),
-            };
+            let (v_lane, v_storage) =
+                match ctx.with_scoped_storage("catia_zero_nurbs_v_lane_workspace", || {
+                    zero_entity_nurbs_knot_lane(
+                        ctx,
+                        data,
+                        v_start,
+                        v_distinct_count,
+                        expected_v_count,
+                    )
+                }) {
+                    Ok((Some(lane), storage)) => (lane, storage),
+                    Ok((None, _)) => continue,
+                    Err(error) => return Some(Err(error)),
+                };
             if candidate.is_some() {
                 return None;
             }
-            candidate = Some((u_lane, v_lane));
+            candidate = Some((u_lane, v_lane, u_storage, v_storage));
         }
-        let (u_lane, v_lane) = candidate?;
+        let (u_lane, v_lane, u_storage, v_storage) = candidate?;
+        for storage in [u_storage, v_storage] {
+            if let Err(error) = storage.commit() {
+                return Some(Err(error));
+            }
+        }
         Some(Ok(ZeroEntityNurbsLayout {
             u_distinct: u_lane.distinct,
             u_mults: u_lane.multiplicities,
@@ -725,11 +737,13 @@ fn zero_entity_nurbs_knot_lane(
             return Some(Err(error));
         }
         let lane = data.get(start..distinct_end)?;
-        let admitted = match ctx.admit_iter(lane, "catia_zero_nurbs_distinct_knot_bytes") {
-            Ok(source) => source,
-            Err(error) => return Some(Err(error.into())),
-        };
-        for chunk in admitted.chunks(NonZeroUsize::MIN.checked_add(7)?) {
+        let mut chunks = lane.chunks_exact(8);
+        while let Some(chunk) =
+            match ctx.next_charged(&mut chunks, "catia_zero_nurbs_distinct_knot_bytes") {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            }
+        {
             let value = f64_le(chunk, 0)?;
             if distinct.last().is_some_and(|last| value <= *last) {
                 return None;
@@ -742,12 +756,26 @@ fn zero_entity_nurbs_knot_lane(
             Err(error) => return Some(Err(error)),
         };
         let degree = mults.first().copied()?.checked_sub(1)?;
-        let control_count = (match ctx.admit_iter(&mults, "catia_zero_nurbs_multiplicity_visits") {
-            Ok(source) => source,
-            Err(error) => return Some(Err(error.into())),
-        })
-        .try_fold(0u32, |sum, value| sum.checked_add(*value))?
-        .checked_sub(degree + 1)?;
+        let mut sum = 0u32;
+        let valid = match ctx.all_by(
+            &mults,
+            |value| {
+                if let Some(next) = sum.checked_add(*value) {
+                    sum = next;
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            },
+            "catia_zero_nurbs_multiplicity_visits",
+        ) {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        };
+        if !valid {
+            return None;
+        }
+        let control_count = sum.checked_sub(degree.checked_add(1)?)?;
         if !(1..=9).contains(&degree)
             || usize::try_from(control_count).ok()? != expected_control_count
             || end != distinct_end.checked_add(distinct_count.checked_mul(5)?)?
@@ -778,7 +806,10 @@ pub(crate) fn zero_entity_record_inventory_in_range(
     data: &[u8],
     range: Range<usize>,
 ) -> Result<Vec<ZeroEntityRecordIdentity>, CodecError> {
-    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let (records, _record_storage) = ctx
+        .with_scoped_storage("catia_zero_record_workspace", || {
+            zero_entity_records_in_range(ctx, data, range)
+        })?;
     let mut output = Vec::new();
     ctx.reserve_vec(&mut output, records.len(), "catia_zero_record_inventory")?;
     for record in ctx
@@ -833,7 +864,10 @@ pub(crate) fn zero_entity_ownership_roots_in_range(
     data: &[u8],
     range: Range<usize>,
 ) -> Result<Vec<ZeroEntityOwnershipRoot>, CodecError> {
-    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let (records, _record_storage) = ctx
+        .with_scoped_storage("catia_zero_record_workspace", || {
+            zero_entity_records_in_range(ctx, data, range)
+        })?;
     let mut roots = Vec::new();
     for window in ctx
         .admit_iter(&records, "catia_zero_three_record_window_visits")?
@@ -950,7 +984,10 @@ pub(super) fn zero_entity_surfaces_in_range(
     range: Range<usize>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<ZeroEntitySurface>, CodecError> {
-    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let (records, _record_storage) = ctx
+        .with_scoped_storage("catia_zero_record_workspace", || {
+            zero_entity_records_in_range(ctx, data, range)
+        })?;
     let mut surfaces = Vec::new();
     for record in ctx
         .admit_iter(&records, "catia_zero_framed_record_visits")?
@@ -992,7 +1029,10 @@ pub(crate) fn zero_entity_support_runs_in_range(
     range: Range<usize>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<ZeroEntitySupportRun>, CodecError> {
-    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let (records, _record_storage) = ctx
+        .with_scoped_storage("catia_zero_record_workspace", || {
+            zero_entity_records_in_range(ctx, data, range)
+        })?;
     let mut runs = Vec::new();
     let mut index = 0usize;
     while index + 1 < records.len() {
@@ -1008,14 +1048,16 @@ pub(crate) fn zero_entity_support_runs_in_range(
             index += 1;
             continue;
         }
-        let mut supports = Vec::new();
+        let (mut supports, mut support_storage) =
+            ctx.scoped_vector_storage(0, "catia_zero_support_occurrences")?;
+        let mut supports_are_valid = true;
         let mut next = index + 1;
-        while records
-            .get(next)
-            .is_some_and(|record| record.tag[0] == 0x21)
+        let mut support_records = records[index + 1..]
+            .iter()
+            .take_while(|record| record.tag[0] == 0x21);
+        while let Some(&record) =
+            ctx.next_charged(&mut support_records, "catia_zero_support_run_records")?
         {
-            ctx.charge_work(1, "catia_zero_support_run_records")?;
-            let record = records[next];
             if let Some(support) = zero_entity_support_occurrence(ctx, data, record, refusal)? {
                 let mut support = support;
                 let model_curve = if let (Some(pcurve), Some(uv_endpoints)) =
@@ -1072,14 +1114,20 @@ pub(crate) fn zero_entity_support_runs_in_range(
                     support.model_endpoints =
                         first?.zip(second?).map(|(first, second)| [first, second]);
                 }
-                ctx.push_vec(&mut supports, support, "catia_zero_support_occurrences")?;
+                ctx.push_scoped_vec(
+                    &mut support_storage,
+                    &mut supports,
+                    support,
+                    "catia_zero_support_occurrences",
+                )?;
             } else {
-                supports.clear();
+                supports_are_valid = false;
                 break;
             }
             next += 1;
         }
-        if !supports.is_empty() {
+        if supports_are_valid && !supports.is_empty() {
+            support_storage.commit()?;
             ctx.push_vec(
                 &mut runs,
                 ZeroEntitySupportRun {
@@ -1093,83 +1141,73 @@ pub(crate) fn zero_entity_support_runs_in_range(
         }
         index = next.max(index + 1);
     }
-    let mut faces = zero_entity_faces_from_records(ctx, data, &records)?;
-    let loops = zero_entity_loops_from_records(ctx, data, &records)?;
-    let mut flattened_terminals = Vec::new();
-    let mut face_terminals = Vec::new();
-    ctx.reserve_vec(
-        &mut face_terminals,
-        faces.len(),
-        "catia_zero_face_terminal_rows",
-    )?;
-    for face in ctx.admit_iter(&faces, "catia_zero_face_visits")? {
-        let mut terminals = Vec::new();
-        if let Some(&first) = face.allocations.first() {
-            for allocation in
-                ctx.admit_iter(&face.allocations[1..], "catia_zero_face_allocation_visits")?
-            {
-                if let Some(terminal) = first.checked_sub(*allocation) {
-                    ctx.push_vec(&mut terminals, terminal, "catia_zero_face_terminals")?;
-                    ctx.push_vec(
-                        &mut flattened_terminals,
-                        terminal,
-                        "catia_zero_flattened_terminals",
-                    )?;
-                }
-            }
+    let ((mut faces, face_backing_storage), mut face_storage) = ctx
+        .with_scoped_storage("catia_zero_face_roster_workspace", || {
+            zero_entity_faces_from_records(ctx, data, &records)
+        })?;
+    let ((loops, loop_backing_storage), loop_storage) = ctx
+        .with_scoped_storage("catia_zero_loop_roster_workspace", || {
+            zero_entity_loops_from_records(ctx, data, &records)
+        })?;
+    let mut loop_index = 0usize;
+    let mut loop_roster_is_valid = true;
+    let mut face_records = faces.iter();
+    while let Some(face) = ctx.next_charged(&mut face_records, "catia_zero_face_visits")? {
+        let Some((&first, allocations)) = face.allocations.split_first() else {
+            loop_roster_is_valid = false;
+            break;
+        };
+        let Some(loop_end) = loop_index.checked_add(allocations.len()) else {
+            loop_roster_is_valid = false;
+            break;
+        };
+        let Some(face_loops) = loops.get(loop_index..loop_end) else {
+            loop_roster_is_valid = false;
+            break;
+        };
+        if !ctx.all_by(
+            allocations.iter().zip(face_loops),
+            |(allocation, loop_record)| {
+                Ok(first.checked_sub(*allocation) == Some(loop_record.members.terminal_id()))
+            },
+            "catia_zero_loop_terminal_roster",
+        )? {
+            loop_roster_is_valid = false;
+            break;
         }
-        face_terminals.push(terminals);
-    }
-    let mut loop_terminals = Vec::new();
-    ctx.reserve_vec(
-        &mut loop_terminals,
-        loops.len(),
-        "catia_zero_loop_terminals",
-    )?;
-    for loop_record in ctx.admit_iter(&loops, "catia_zero_loop_visits")? {
-        loop_terminals.push(loop_record.members.terminal_id());
-    }
-    let mut loop_roster_is_valid = ctx.equal(
-        &flattened_terminals,
-        &loop_terminals,
-        "catia_zero_loop_terminal_roster",
-    )?;
-    if loop_roster_is_valid {
-        let mut loop_index = 0;
-        for terminals in ctx.admit_iter(&face_terminals, "catia_zero_face_terminal_visits")? {
-            let loop_end = loop_index + terminals.len();
-            let face_loops = &loops[loop_index..loop_end];
-            loop_index = loop_end;
-            let Some(outer) = face_loops.first() else {
-                loop_roster_is_valid = false;
-                break;
-            };
-            if !matches!(
-                outer.loop_class,
-                ZeroEntityLoopClass::Outer41 | ZeroEntityLoopClass::ReversedC1
-            ) || !ctx.all_by(
-                &face_loops[1..],
-                |inner| Ok(inner.loop_class == ZeroEntityLoopClass::Bound50),
-                "catia_zero_bound_loop_visits",
-            )? {
-                loop_roster_is_valid = false;
-                break;
-            }
+        let Some(outer) = face_loops.first() else {
+            loop_roster_is_valid = false;
+            break;
+        };
+        if !matches!(
+            outer.loop_class,
+            ZeroEntityLoopClass::Outer41 | ZeroEntityLoopClass::ReversedC1
+        ) || !ctx.all_by(
+            &face_loops[1..],
+            |inner| Ok(inner.loop_class == ZeroEntityLoopClass::Bound50),
+            "catia_zero_bound_loop_visits",
+        )? {
+            loop_roster_is_valid = false;
+            break;
         }
+        loop_index = loop_end;
     }
+    loop_roster_is_valid &= loop_index == loops.len();
     if loop_roster_is_valid {
         let mut remaining_loops = loops.into_iter();
-        for (face_index, terminals) in ctx
-            .admit_iter(&face_terminals, "catia_zero_face_loop_binding_rows")?
-            .enumerate()
-        {
-            let face_loops = ctx.collect_vec(
-                remaining_loops.by_ref().take(terminals.len()),
-                "catia_zero_bound_face_loops",
-            )?;
-            faces[face_index].loops = Some(face_loops);
+        for face in ctx.admit_iter(&mut faces, "catia_zero_face_loop_binding_rows")? {
+            let face_loops = face_storage.with_storage(|| {
+                ctx.collect_vec(
+                    remaining_loops.by_ref().take(face.allocations.len() - 1),
+                    "catia_zero_bound_face_loops",
+                )
+            })?;
+            face.loops = Some(face_loops);
         }
+    } else {
+        drop(loops);
     }
+    drop(loop_backing_storage);
     let face_population = ctx
         .admit_iter(&records, "catia_zero_face_population_visits")?
         .filter(|record| record.tag[0] == 0x5f)
@@ -1184,6 +1222,10 @@ pub(crate) fn zero_entity_support_runs_in_range(
         && runs.len() == surface_population
         && faces.len() == runs.len();
     if rosters_are_complete {
+        face_storage.commit()?;
+        if loop_roster_is_valid {
+            loop_storage.commit()?;
+        }
         for (mut face, run) in ctx
             .admit_iter(faces, "catia_zero_face_run_bindings")?
             .zip(runs.iter_mut())
@@ -1192,6 +1234,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
             run.face = Some(face);
         }
     }
+    drop(face_backing_storage);
     Ok(runs)
 }
 
@@ -1225,17 +1268,23 @@ fn bind_face_support_occurrences(
             })?;
         }
     }
-    let mut bindings = Vec::new();
-    ctx.reserve_vec(&mut bindings, face_loops.len(), "catia_zero_binding_rows")?;
-    for loop_record in ctx.admit_iter(&*face_loops, "catia_zero_binding_loop_visits")? {
-        let slots = loop_record.members.support_slots();
-        let mut row = ctx.collection_vec(
-            usize::try_from(loop_record.members.member_count.get()).map_err(|_| {
-                ctx.refuse_codec_limit("catia_zero_binding_values", u64::MAX, u64::MAX)
-            })?,
-            "catia_zero_binding_values",
-        )?;
-        for slot in slots {
+    let (mut bindings, binding_storage) =
+        ctx.scoped_vector_storage(face_loops.len(), "catia_zero_binding_rows")?;
+    let mut row_storage = ctx.reserve_scoped(0, "catia_zero_binding_values")?;
+    let mut loop_records = face_loops.iter();
+    while let Some(loop_record) =
+        ctx.next_charged(&mut loop_records, "catia_zero_binding_loop_visits")?
+    {
+        let mut slots = loop_record.members.support_slots();
+        let mut row = row_storage.with_storage(|| {
+            ctx.collection_vec(
+                usize::try_from(loop_record.members.member_count.get()).map_err(|_| {
+                    ctx.refuse_codec_limit("catia_zero_binding_values", u64::MAX, u64::MAX)
+                })?,
+                "catia_zero_binding_values",
+            )
+        })?;
+        while let Some(slot) = ctx.next_charged(&mut slots, "catia_zero_binding_slot_visits")? {
             let Some(ordinal) = ctx
                 .get_hash_map(&supports_by_slot, &slot, "catia_zero_binding_slot_lookup")?
                 .copied()
@@ -1266,12 +1315,14 @@ fn bind_face_support_occurrences(
     if bound.len() != supports.len() {
         return Ok(());
     }
+    row_storage.commit()?;
     for (loop_record, support_record_ordinals) in ctx
         .admit_iter(&mut *face_loops, "catia_zero_binding_assignments")?
         .zip(bindings)
     {
         loop_record.support_record_ordinals = support_record_ordinals;
     }
+    drop(binding_storage);
     let mut supports_by_ordinal = HashMap::new();
     for support in ctx.admit_iter(supports, "catia_zero_binding_support_visits")? {
         scratch.with_storage(|| {
@@ -1284,12 +1335,13 @@ fn bind_face_support_occurrences(
         })?;
     }
     for loop_record in ctx.admit_iter(face_loops, "catia_zero_endpoint_loop_visits")? {
-        let mut endpoints = scratch.with_storage(|| {
-            ctx.collection_vec(
-                loop_record.support_record_ordinals.len(),
-                "catia_zero_support_endpoints",
-            )
-        })?;
+        let (mut endpoints, _endpoint_storage) =
+            ctx.with_scoped_storage("catia_zero_support_endpoint_workspace", || {
+                ctx.collection_vec(
+                    loop_record.support_record_ordinals.len(),
+                    "catia_zero_support_endpoints",
+                )
+            })?;
         for ordinal in ctx.admit_iter(
             &loop_record.support_record_ordinals,
             "catia_zero_endpoint_ordinal_visits",
@@ -1318,70 +1370,86 @@ pub(crate) fn oriented_closed_model_endpoints(
     forward_senses: &[bool],
 ) -> Result<Option<Vec<[FinitePoint3; 2]>>, CodecError> {
     const CLOSURE_TOLERANCE: f64 = 2e-3;
-
     if endpoints.is_empty() || endpoints.len() != forward_senses.len() {
         return Ok(None);
     }
-    let mut oriented = Vec::new();
-    ctx.reserve_vec(
-        &mut oriented,
-        endpoints.len(),
-        "catia_zero_oriented_endpoint_options",
+    let (oriented, oriented_storage) =
+        ctx.with_scoped_storage("catia_zero_oriented_endpoint_options", || {
+            let mut oriented = Vec::new();
+            let mut missing = None;
+            let mut indices = 0..endpoints.len();
+            while let Some(index) =
+                ctx.next_charged(&mut indices, "catia_zero_endpoint_pair_visits")?
+            {
+                let pair = endpoints[index].map(|[start, end]| {
+                    if forward_senses[index] {
+                        [start, end]
+                    } else {
+                        [end, start]
+                    }
+                });
+                if pair.is_none() && missing.replace(index).is_some() {
+                    return Ok::<_, CodecError>(None);
+                }
+                ctx.push_vec(&mut oriented, pair, "catia_zero_oriented_endpoint_options")?;
+            }
+            if let Some(index) = missing {
+                if oriented.len() <= 1 {
+                    return Ok(None);
+                }
+                let previous = (index + oriented.len() - 1) % oriented.len();
+                let next = (index + 1) % oriented.len();
+                let (Some(previous), Some(next)) = (oriented[previous], oriented[next]) else {
+                    return Ok(None);
+                };
+                oriented[index] = Some([previous[1], next[0]]);
+            }
+            Ok(Some(oriented))
+        })?;
+    let Some(oriented) = oriented else {
+        return Ok(None);
+    };
+    let (complete, complete_storage) = ctx
+        .with_scoped_storage("catia_zero_oriented_endpoints", || {
+            ctx.collect_options(oriented, "catia_zero_oriented_endpoints")
+        })?;
+    drop(oriented_storage);
+    let Some(complete) = complete else {
+        return Ok(None);
+    };
+    let closed = ctx.all_by(
+        complete.iter().enumerate(),
+        |(index, pair)| {
+            Ok(
+                pair[1].distance(complete[(index + 1) % complete.len()][0].get())
+                    <= CLOSURE_TOLERANCE,
+            )
+        },
+        "catia_zero_endpoint_closure_visits",
     )?;
-    let mut missing = None;
-    for (index, (endpoints, forward)) in ctx
-        .admit_iter(endpoints, "catia_zero_endpoint_pair_visits")?
-        .zip(ctx.admit_iter(forward_senses, "catia_zero_endpoint_sense_visits")?)
-        .enumerate()
-    {
-        let pair = endpoints.map(|[start, end]| if *forward { [start, end] } else { [end, start] });
-        if pair.is_none() && missing.replace(index).is_some() {
-            return Ok(None);
-        }
-        oriented.push(pair);
+    if !closed {
+        return Ok(None);
     }
-    if let Some(index) = missing {
-        if oriented.len() <= 1 {
-            return Ok(None);
-        }
-        let previous = (index + oriented.len() - 1) % oriented.len();
-        let next = (index + 1) % oriented.len();
-        let (Some(previous), Some(next)) = (oriented[previous], oriented[next]) else {
-            return Ok(None);
-        };
-        oriented[index] = Some([previous[1], next[0]]);
-    }
-    let mut complete = Vec::new();
-    ctx.reserve_vec(
-        &mut complete,
-        oriented.len(),
-        "catia_zero_oriented_endpoints",
-    )?;
-    for &pair in ctx.admit_iter(&oriented, "catia_zero_complete_endpoint_visits")? {
-        let Some(pair) = pair else {
-            return Ok(None);
-        };
-        complete.push(pair);
-    }
-    Ok(ctx
-        .admit_iter(&complete, "catia_zero_endpoint_closure_visits")?
-        .enumerate()
-        .all(|(index, endpoints)| {
-            endpoints[1].distance(complete[(index + 1) % complete.len()][0].get())
-                <= CLOSURE_TOLERANCE
-        })
-        .then_some(complete))
+    complete_storage.commit()?;
+    Ok(Some(complete))
 }
 
-fn zero_entity_faces_from_records(
-    ctx: &DecodeContext<'_>,
+fn zero_entity_faces_from_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     data: &[u8],
     records: &[ZeroEntityRecord],
-) -> Result<Vec<ZeroEntityFace>, CodecError> {
-    let mut faces = Vec::new();
+) -> Result<
+    (
+        Vec<ZeroEntityFace>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    let (mut faces, mut backing_storage) = ctx.scoped_vector_storage(0, "catia_zero_faces")?;
     for record in ctx.admit_iter(records, "catia_zero_framed_record_visits")? {
-        let face =
-            (|| -> Result<Option<ZeroEntityFace>, CodecError> {
+        let (face, storage) = ctx.with_scoped_storage(
+            "catia_zero_face_workspace",
+            || -> Result<Option<ZeroEntityFace>, CodecError> {
                 if record.tag[0] != 0x5f || tagged_u32(data, record.pos + 7) != Some(1) {
                     return Ok(None);
                 }
@@ -1396,7 +1464,6 @@ fn zero_entity_faces_from_records(
                     return Ok(None);
                 }
                 let mut allocations = Vec::new();
-                ctx.reserve_vec(&mut allocations, count, "catia_zero_face_allocations")?;
                 let Some(allocation_end) = count
                     .checked_mul(5)
                     .and_then(|size| record.pos.checked_add(13)?.checked_add(size))
@@ -1410,47 +1477,32 @@ fn zero_entity_faces_from_records(
                 let Some(allocation_bytes) = data.get(record.pos + 13..allocation_end) else {
                     return Ok(None);
                 };
-                for chunk in
-                    ctx.admit_iter(allocation_bytes, "catia_zero_face_allocation_bytes")?
-                        .chunks(NonZeroUsize::MIN.checked_add(4).ok_or_else(|| {
-                            CodecError::malformed("CATIA allocation width is zero")
-                        })?)
+                let mut first = None;
+                let mut previous_terminal = None;
+                let mut chunks = allocation_bytes.chunks_exact(5).enumerate();
+                while let Some((index, chunk)) =
+                    ctx.next_charged(&mut chunks, "catia_zero_face_allocation_bytes")?
                 {
-                    let Some(value) = tagged_u32(chunk, 0) else {
+                    let Some(value) = tagged_u32(chunk, 0).filter(|value| *value != 0) else {
                         return Ok(None);
                     };
-                    allocations.push(value);
-                }
-                if allocations.contains(&0) {
-                    return Ok(None);
-                }
-                let first = allocations[0];
-                let mut loop_terminals = Vec::new();
-                ctx.reserve_vec(
-                    &mut loop_terminals,
-                    count - 1,
-                    "catia_zero_face_loop_terminals",
-                )?;
-                for allocation in
-                    ctx.admit_iter(&allocations[1..], "catia_zero_loop_allocation_visits")?
-                {
-                    let Some(terminal) = first.checked_sub(*allocation) else {
-                        return Ok(None);
-                    };
-                    loop_terminals.push(terminal);
-                }
-                if loop_terminals.contains(&0)
-                    || !ctx
-                        .admit_iter(
-                            &loop_terminals[1..],
-                            "catia_zero_loop_terminal_order_visits",
-                        )?
-                        .windows(NonZeroUsize::MIN.checked_add(1).ok_or_else(|| {
-                            CodecError::malformed("CATIA loop window width is zero")
-                        })?)
-                        .all(|pair| pair[0] < pair[1])
-                {
-                    return Ok(None);
+                    if let Some(first) = first {
+                        let Some(terminal) =
+                            u32::checked_sub(first, value).filter(|value| *value != 0)
+                        else {
+                            return Ok(None);
+                        };
+                        // The first terminal is the outer loop; bounds form the ordered suffix.
+                        if index >= 2 {
+                            if previous_terminal.is_some_and(|previous| previous >= terminal) {
+                                return Ok(None);
+                            }
+                            previous_terminal = Some(terminal);
+                        }
+                    } else {
+                        first = Some(value);
+                    }
+                    ctx.push_vec(&mut allocations, value, "catia_zero_face_allocations")?;
                 }
                 let Some(terminal_control) = data
                     .get(record.end - 1)
@@ -1466,157 +1518,171 @@ fn zero_entity_faces_from_records(
                     loops: None,
                     terminal_control,
                 }))
-            })()?;
+            },
+        )?;
         if let Some(face) = face {
-            ctx.push_vec(&mut faces, face, "catia_zero_faces")?;
+            storage.commit()?;
+            ctx.push_scoped_vec(&mut backing_storage, &mut faces, face, "catia_zero_faces")?;
         }
     }
-    Ok(faces)
+    Ok((faces, backing_storage))
 }
 
-fn zero_entity_loops_from_records(
-    ctx: &DecodeContext<'_>,
+fn zero_entity_loops_from_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     data: &[u8],
     records: &[ZeroEntityRecord],
-) -> Result<Vec<ZeroEntityLoop>, CodecError> {
-    let mut loops = Vec::new();
+) -> Result<
+    (
+        Vec<ZeroEntityLoop>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    let (mut loops, mut backing_storage) = ctx.scoped_vector_storage(0, "catia_zero_loops")?;
     for record in ctx.admit_iter(records, "catia_zero_framed_record_visits")? {
-        let loop_record = (|| -> Result<Option<ZeroEntityLoop>, CodecError> {
-            if record.tag[0] != 0x62 {
-                return Ok(None);
-            }
-            let Some(reference_count) = data
-                .get(record.pos + 12)
-                .and_then(|value| value.checked_sub(0x80))
-            else {
-                return Ok(None);
-            };
-            let reference_count = usize::from(reference_count);
-            if reference_count < 3 || reference_count % 2 == 0 {
-                return Ok(None);
-            }
-            let edge_count = (reference_count - 1) / 2;
-            let mut references = Vec::new();
-            ctx.reserve_vec(
-                &mut references,
-                reference_count,
-                "catia_zero_loop_references",
-            )?;
-            let Some(reference_end) = reference_count
-                .checked_mul(5)
-                .and_then(|size| record.pos.checked_add(13)?.checked_add(size))
-            else {
-                return Err(ctx.refuse_codec_limit(
-                    "catia_zero_loop_reference_bytes",
-                    u64::MAX,
-                    u64::MAX,
-                ));
-            };
-            let Some(reference_bytes) = data.get(record.pos + 13..reference_end) else {
-                return Ok(None);
-            };
-            for chunk in ctx
-                .admit_iter(reference_bytes, "catia_zero_loop_reference_bytes")?
-                .chunks(
-                    NonZeroUsize::MIN
-                        .checked_add(4)
-                        .ok_or_else(|| CodecError::malformed("CATIA reference width is zero"))?,
-                )
-            {
-                let Some(value) = tagged_u32(chunk, 0) else {
+        let (loop_record, storage) = ctx.with_scoped_storage(
+            "catia_zero_loop_workspace",
+            || -> Result<Option<ZeroEntityLoop>, CodecError> {
+                if record.tag[0] != 0x62 {
+                    return Ok(None);
+                }
+                let Some(reference_count) = data
+                    .get(record.pos + 12)
+                    .and_then(|value| value.checked_sub(0x80))
+                else {
                     return Ok(None);
                 };
-                references.push(value);
-            }
-            let mut typed_references = Vec::new();
-            ctx.reserve_vec(
-                &mut typed_references,
-                edge_count,
-                "catia_zero_loop_typed_references",
-            )?;
-            typed_references.extend(
-                references[1..reference_count - 1]
-                    .iter()
-                    .step_by(2)
-                    .copied(),
-            );
-            if typed_references.contains(&0) {
-                return Ok(None);
-            }
-            let terminal_id = references[reference_count - 1];
-            let Some(gap) = terminal_id.checked_sub(references[0]) else {
-                return Ok(None);
-            };
-            let Some(member_count) = NonZeroUsize::new(edge_count) else {
-                return Ok(None);
-            };
-            let Some(members) = ZeroEntityLoopMembers::try_new(terminal_id, gap, member_count)
-            else {
-                return Ok(None);
-            };
-            if !members
-                .member_ids()
-                .eq(references[..reference_count - 1].iter().step_by(2).copied())
-            {
-                return Ok(None);
-            }
-            let Some(trailer) = record.pos.checked_add(13 + reference_count * 5) else {
-                return Ok(None);
-            };
-            let Some(loop_class) = data
-                .get(trailer + 1)
-                .and_then(|value| ZeroEntityLoopClass::from_byte(*value))
-            else {
-                return Ok(None);
-            };
-            let Ok(edge_count_byte) = u8::try_from(edge_count) else {
-                return Ok(None);
-            };
-            if data.get(trailer) != Some(&(0x80 + edge_count_byte)) {
-                return Ok(None);
-            }
-            let packed_length = (edge_count * 3).div_ceil(8);
-            if trailer.checked_add(3 + packed_length) != Some(record.end)
-                || data.get(trailer + 2 + packed_length) != Some(&0x01)
-            {
-                return Ok(None);
-            }
-            let Some(packed) = data.get(trailer + 2..trailer + 2 + packed_length) else {
-                return Ok(None);
-            };
-            let mut forward_senses = Vec::new();
-            ctx.reserve_vec(&mut forward_senses, edge_count, "catia_zero_loop_senses")?;
-            for (index, _) in ctx
-                .admit_iter(&typed_references, "catia_zero_loop_sense_indices")?
-                .enumerate()
-            {
-                let bit = index * 3;
-                let code = (0..3).fold(0, |code, offset| {
-                    code | (((packed[(bit + offset) / 8] >> ((bit + offset) % 8)) & 1) << offset)
-                });
-                match code {
-                    2 => forward_senses.push(false),
-                    7 => forward_senses.push(true),
-                    _ => return Ok(None),
+                let reference_count = usize::from(reference_count);
+                if reference_count < 3 || reference_count % 2 == 0 {
+                    return Ok(None);
                 }
-            }
-            Ok(Some(ZeroEntityLoop {
-                pos: record.pos,
-                record_ordinal: record.ordinal,
-                tag: record.tag,
-                members,
-                typed_references,
-                support_record_ordinals: Vec::new(),
-                loop_class,
-                forward_senses,
-                oriented_model_endpoints: Vec::new(),
-            }))
-        })()?;
+                let edge_count = (reference_count - 1) / 2;
+                let mut references = Vec::new();
+                let mut reference_storage = ctx.reserve_scoped(0, "catia_zero_loop_references")?;
+                let Some(reference_end) = reference_count
+                    .checked_mul(5)
+                    .and_then(|size| record.pos.checked_add(13)?.checked_add(size))
+                else {
+                    return Err(ctx.refuse_codec_limit(
+                        "catia_zero_loop_reference_bytes",
+                        u64::MAX,
+                        u64::MAX,
+                    ));
+                };
+                let Some(reference_bytes) = data.get(record.pos + 13..reference_end) else {
+                    return Ok(None);
+                };
+                let mut chunks = reference_bytes.chunks_exact(5);
+                while let Some(chunk) =
+                    ctx.next_charged(&mut chunks, "catia_zero_loop_reference_bytes")?
+                {
+                    let Some(value) = tagged_u32(chunk, 0) else {
+                        return Ok(None);
+                    };
+                    reference_storage.with_storage(|| {
+                        ctx.push_vec(&mut references, value, "catia_zero_loop_references")
+                    })?;
+                }
+                let mut typed_references = Vec::new();
+                let mut values = references[1..reference_count - 1].iter().step_by(2);
+                while let Some(&value) =
+                    ctx.next_charged(&mut values, "catia_zero_loop_typed_reference_visits")?
+                {
+                    if value == 0 {
+                        return Ok(None);
+                    }
+                    ctx.push_vec(
+                        &mut typed_references,
+                        value,
+                        "catia_zero_loop_typed_references",
+                    )?;
+                }
+                let terminal_id = references[reference_count - 1];
+                let Some(gap) = terminal_id.checked_sub(references[0]) else {
+                    return Ok(None);
+                };
+                let Some(member_count) = NonZeroUsize::new(edge_count) else {
+                    return Ok(None);
+                };
+                let Some(members) = ZeroEntityLoopMembers::try_new(terminal_id, gap, member_count)
+                else {
+                    return Ok(None);
+                };
+                if !ctx.all_by(
+                    members
+                        .member_ids()
+                        .zip(references[..reference_count - 1].iter().step_by(2)),
+                    |(identity, reference)| Ok(identity == *reference),
+                    "catia_zero_loop_member_identity_visits",
+                )? {
+                    return Ok(None);
+                }
+                let Some(trailer) = record.pos.checked_add(13 + reference_count * 5) else {
+                    return Ok(None);
+                };
+                let Some(loop_class) = data
+                    .get(trailer + 1)
+                    .and_then(|value| ZeroEntityLoopClass::from_byte(*value))
+                else {
+                    return Ok(None);
+                };
+                let Ok(edge_count_byte) = u8::try_from(edge_count) else {
+                    return Ok(None);
+                };
+                if data.get(trailer) != Some(&(0x80 + edge_count_byte)) {
+                    return Ok(None);
+                }
+                let packed_length = (edge_count * 3).div_ceil(8);
+                if trailer.checked_add(3 + packed_length) != Some(record.end)
+                    || data.get(trailer + 2 + packed_length) != Some(&0x01)
+                {
+                    return Ok(None);
+                }
+                let Some(packed) = data.get(trailer + 2..trailer + 2 + packed_length) else {
+                    return Ok(None);
+                };
+                let mut forward_senses = Vec::new();
+                ctx.reserve_vec(&mut forward_senses, edge_count, "catia_zero_loop_senses")?;
+                for (index, _) in ctx
+                    .admit_iter(&typed_references, "catia_zero_loop_sense_indices")?
+                    .enumerate()
+                {
+                    let bit = index * 3;
+                    let code = (0..3).fold(0, |code, offset| {
+                        code | (((packed[(bit + offset) / 8] >> ((bit + offset) % 8)) & 1)
+                            << offset)
+                    });
+                    match code {
+                        2 => forward_senses.push(false),
+                        7 => forward_senses.push(true),
+                        _ => return Ok(None),
+                    }
+                }
+                Ok(Some(ZeroEntityLoop {
+                    pos: record.pos,
+                    record_ordinal: record.ordinal,
+                    tag: record.tag,
+                    members,
+                    typed_references,
+                    support_record_ordinals: Vec::new(),
+                    loop_class,
+                    forward_senses,
+                    oriented_model_endpoints: Vec::new(),
+                }))
+            },
+        )?;
         if let Some(loop_record) = loop_record {
-            ctx.push_vec(&mut loops, loop_record, "catia_zero_loops")?;
+            storage.commit()?;
+            ctx.push_scoped_vec(
+                &mut backing_storage,
+                &mut loops,
+                loop_record,
+                "catia_zero_loops",
+            )?;
         }
     }
-    Ok(loops)
+    Ok((loops, backing_storage))
 }
 
 fn zero_entity_support_occurrence(
@@ -1698,207 +1764,174 @@ fn zero_entity_support_pcurve(
     record: ZeroEntityRecord,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<PcurveGeometry>, CodecError> {
-    (|| -> Option<Result<PcurveGeometry, CodecError>> {
-        let (
-            knot_offsets,
-            multiplicity_start,
-            expected_multiplicities,
-            pole_start,
-            control_count,
-            weight_start,
-            required_end,
-        ) = match record.tag {
-            [0x21, 0x18] => (
-                &[67, 75, 83, 91, 99][..],
-                107,
-                &[4, 2, 2, 2, 4][..],
-                132,
-                10,
-                None,
-                292,
-            ),
-            [0x21, 0x45] => (
-                &[67, 75, 83, 91, 99, 107][..],
-                115,
-                &[4, 2, 2, 2, 2, 4][..],
-                145,
-                12,
-                None,
-                337,
-            ),
-            [0x21, 0x71] => (
-                &[pcurve_2171::KNOTS, pcurve_2171::KNOTS + 8][..],
-                pcurve_2171::MULTIPLICITIES,
-                &[2, 2][..],
-                pcurve_2171::POLES,
-                2,
-                None,
-                pcurve_2171::LEN,
-            ),
-            [0x21, 0x72] => (
-                &[67, 75, 83, 91, 99, 107, 115][..],
-                123,
-                &[4, 2, 2, 2, 2, 2, 4][..],
-                158,
-                14,
-                None,
-                382,
-            ),
-            [0x21, 0x91] => (&[67, 75][..], 83, &[4, 4][..], 93, 4, None, 157),
-            [0x21, 0x99] => (&[67, 75][..], 83, &[3, 3][..], 93, 3, Some(141), 165),
-            [0x21, 0x9f] => (
-                &[67, 75, 83, 91, 99, 107, 115, 123][..],
-                131,
-                &[4, 2, 2, 2, 2, 2, 2, 4][..],
-                171,
-                16,
-                None,
-                427,
-            ),
-            [0x21, 0xd6] => (&[67, 75, 83][..], 91, &[3, 2, 3][..], 106, 5, None, 186),
-            [0x21, 0xe8] => (
-                &[67, 75, 83, 91, 99][..],
-                107,
-                &[4, 1, 1, 1, 4][..],
-                132,
-                7,
-                None,
-                244,
-            ),
-            _ => return None,
-        };
-        if record.pos.checked_add(required_end)? > record.end {
-            return None;
-        }
-        let mut distinct_knots = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut distinct_knots,
-            knot_offsets.len(),
-            "catia_zero_support_distinct_knots",
-        ) {
-            return Some(Err(error));
-        }
-        for offset in match ctx.admit_iter(knot_offsets, "catia_zero_support_knot_offset_visits") {
-            Ok(source) => source,
-            Err(error) => return Some(Err(error.into())),
-        } {
-            distinct_knots.push(f64_le(data, record.pos.checked_add(*offset)?)?.get());
-        }
-        if !(match ctx.admit_iter(&distinct_knots, "catia_zero_support_knot_order_visits") {
-            Ok(source) => source,
-            Err(error) => return Some(Err(error.into())),
-        })
-        .windows(NonZeroUsize::MIN.checked_add(1)?)
-        .all(|pair| pair[0] < pair[1])
-        {
-            return None;
-        }
-        let mut multiplicities = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut multiplicities,
-            distinct_knots.len(),
-            "catia_zero_support_multiplicities",
-        ) {
-            return Some(Err(error));
-        }
-        for (index, _) in
-            (match ctx.admit_iter(&distinct_knots, "catia_zero_support_multiplicity_indices") {
-                Ok(source) => source,
-                Err(error) => return Some(Err(error.into())),
-            })
-            .enumerate()
-        {
-            multiplicities.push(tagged_u32(
-                data,
-                record
-                    .pos
-                    .checked_add(multiplicity_start + index.checked_mul(5)?)?,
-            )?);
-        }
-        if multiplicities != expected_multiplicities {
-            return None;
-        }
-        let degree = multiplicities.first().copied()?.checked_sub(1)?;
-        let derived_control_count =
-            (match ctx.admit_iter(&multiplicities, "catia_zero_support_multiplicity_visits") {
-                Ok(source) => source,
-                Err(error) => return Some(Err(error.into())),
-            })
-            .try_fold(0u32, |sum, multiplicity| sum.checked_add(*multiplicity))?
-            .checked_sub(degree.checked_add(1)?)?;
-        if derived_control_count != u32::try_from(control_count).ok()? {
-            return None;
-        }
-        let knots = match zero_entity_expand_knots(ctx, &distinct_knots, &multiplicities) {
-            Ok(knots) => knots,
-            Err(error) => return Some(Err(error)),
-        };
-        let mut control_points = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut control_points,
-            control_count,
-            "catia_zero_support_poles",
-        ) {
-            return Some(Err(error));
-        }
-        let pole_start = record.pos.checked_add(pole_start)?;
-        let pole_end = pole_start.checked_add(control_count.checked_mul(16)?)?;
-        let pole_bytes = data.get(pole_start..pole_end)?;
-        let admitted = match ctx.admit_iter(pole_bytes, "catia_zero_support_pole_bytes") {
-            Ok(source) => source,
-            Err(error) => return Some(Err(error.into())),
-        };
-        for chunk in admitted.chunks(NonZeroUsize::MIN.checked_add(15)?) {
-            control_points.push(FinitePoint2::from_coordinates(
-                f64_le(chunk, 0)?,
-                f64_le(chunk, 8)?,
-            ));
-        }
-        let weights = if let Some(weight_start) = weight_start {
-            let mut weights = Vec::new();
-            if let Err(error) =
-                ctx.reserve_vec(&mut weights, control_count, "catia_zero_support_weights")
-            {
-                return Some(Err(error));
-            }
-            let weight_start = record.pos.checked_add(weight_start)?;
-            let weight_end = weight_start.checked_add(control_count.checked_mul(8)?)?;
-            let weight_bytes = data.get(weight_start..weight_end)?;
-            let admitted = match ctx.admit_iter(weight_bytes, "catia_zero_support_weight_bytes") {
-                Ok(source) => source,
-                Err(error) => return Some(Err(error.into())),
-            };
-            for chunk in admitted.chunks(NonZeroUsize::MIN.checked_add(7)?) {
-                let weight = f64_le(chunk, 0)?;
-                weights.push(PositiveReal::new(weight.get()).map(NonZeroReal::from)?);
-            }
-            Some(weights)
-        } else {
-            None
-        };
-        let nurbs = match crate::nurbs::note_refusal(
-            ctx,
-            match PcurveNurbs::from_checked_lanes(
-                ctx,
-                degree,
-                knots,
-                control_points,
-                weights,
-                false,
-            ) {
-                Ok(result) => result,
-                Err(error) => return Some(Err(error)),
-            },
-            refusal,
-            format_args!("zero-entity NURBS pcurve record at byte {}", record.pos),
-        ) {
-            Ok(Some(nurbs)) => nurbs,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        Some(Ok(PcurveGeometry::Nurbs { nurbs }))
-    })()
-    .transpose()
+    let (candidate, storage) =
+        ctx.with_scoped_storage("catia_zero_support_pcurve_workspace", || {
+            (|| -> Option<_> {
+                let (
+                    knot_offsets,
+                    multiplicity_start,
+                    expected_multiplicities,
+                    pole_start,
+                    control_count,
+                    weight_start,
+                    required_end,
+                ) = match record.tag {
+                    [0x21, 0x18] => (
+                        &[67, 75, 83, 91, 99][..],
+                        107,
+                        &[4, 2, 2, 2, 4][..],
+                        132,
+                        10,
+                        None,
+                        292,
+                    ),
+                    [0x21, 0x45] => (
+                        &[67, 75, 83, 91, 99, 107][..],
+                        115,
+                        &[4, 2, 2, 2, 2, 4][..],
+                        145,
+                        12,
+                        None,
+                        337,
+                    ),
+                    [0x21, 0x71] => (
+                        &[pcurve_2171::KNOTS, pcurve_2171::KNOTS + 8][..],
+                        pcurve_2171::MULTIPLICITIES,
+                        &[2, 2][..],
+                        pcurve_2171::POLES,
+                        2,
+                        None,
+                        pcurve_2171::LEN,
+                    ),
+                    [0x21, 0x72] => (
+                        &[67, 75, 83, 91, 99, 107, 115][..],
+                        123,
+                        &[4, 2, 2, 2, 2, 2, 4][..],
+                        158,
+                        14,
+                        None,
+                        382,
+                    ),
+                    [0x21, 0x91] => (&[67, 75][..], 83, &[4, 4][..], 93, 4, None, 157),
+                    [0x21, 0x99] => (&[67, 75][..], 83, &[3, 3][..], 93, 3, Some(141), 165),
+                    [0x21, 0x9f] => (
+                        &[67, 75, 83, 91, 99, 107, 115, 123][..],
+                        131,
+                        &[4, 2, 2, 2, 2, 2, 2, 4][..],
+                        171,
+                        16,
+                        None,
+                        427,
+                    ),
+                    [0x21, 0xd6] => (&[67, 75, 83][..], 91, &[3, 2, 3][..], 106, 5, None, 186),
+                    [0x21, 0xe8] => (
+                        &[67, 75, 83, 91, 99][..],
+                        107,
+                        &[4, 1, 1, 1, 4][..],
+                        132,
+                        7,
+                        None,
+                        244,
+                    ),
+                    _ => return None,
+                };
+                let control_count: usize = control_count;
+                if record.pos.checked_add(required_end)? > record.end {
+                    return None;
+                }
+                // Each tag fixes at most eight distinct knots and sixteen poles.
+                let mut distinct_knots = [FiniteReal::ZERO; 8];
+                for (index, offset) in knot_offsets.iter().enumerate() {
+                    distinct_knots[index] = f64_le(data, record.pos.checked_add(*offset)?)?;
+                }
+                let distinct_knots = &distinct_knots[..knot_offsets.len()];
+                if !distinct_knots.windows(2).all(|pair| pair[0] < pair[1]) {
+                    return None;
+                }
+                for (index, expected) in expected_multiplicities.iter().enumerate() {
+                    if tagged_u32(
+                        data,
+                        record
+                            .pos
+                            .checked_add(multiplicity_start + index.checked_mul(5)?)?,
+                    )? != *expected
+                    {
+                        return None;
+                    }
+                }
+                let degree = expected_multiplicities.first().copied()?.checked_sub(1)?;
+                let derived_control_count = expected_multiplicities
+                    .iter()
+                    .try_fold(0u32, |sum, multiplicity| sum.checked_add(*multiplicity))?
+                    .checked_sub(degree.checked_add(1)?)?;
+                if derived_control_count != u32::try_from(control_count).ok()? {
+                    return None;
+                }
+                let (knots, _knot_storage) = match ctx
+                    .with_scoped_storage("catia_zero_support_expanded_knot_workspace", || {
+                        zero_entity_expand_knots(ctx, distinct_knots, expected_multiplicities)
+                    }) {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                };
+                let pole_start = record.pos.checked_add(pole_start)?;
+                let pole_end = pole_start.checked_add(control_count.checked_mul(16)?)?;
+                let pole_bytes = data.get(pole_start..pole_end)?;
+                let poles = if let Some(weight_start) = weight_start {
+                    let weight_start = record.pos.checked_add(weight_start)?;
+                    let weight_end = weight_start.checked_add(control_count.checked_mul(8)?)?;
+                    let weight_bytes = data.get(weight_start..weight_end)?;
+                    let mut points =
+                        match ctx.collection_vec(control_count, "catia_zero_support_poles") {
+                            Ok(points) => points,
+                            Err(error) => return Some(Err(error)),
+                        };
+                    for (point, weight) in pole_bytes
+                        .chunks_exact(16)
+                        .zip(weight_bytes.chunks_exact(8))
+                    {
+                        points.push(cadmpeg_ir::geometry::pcurve::WeightedPole2 {
+                            point: FinitePoint2::from_coordinates(
+                                f64_le(point, 0)?,
+                                f64_le(point, 8)?,
+                            ),
+                            weight: PositiveReal::new(f64_le(weight, 0)?.get())
+                                .map(NonZeroReal::from)?,
+                        });
+                    }
+                    cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points }
+                } else {
+                    let mut points =
+                        match ctx.collection_vec(control_count, "catia_zero_support_poles") {
+                            Ok(points) => points,
+                            Err(error) => return Some(Err(error)),
+                        };
+                    for point in pole_bytes.chunks_exact(16) {
+                        points.push(FinitePoint2::from_coordinates(
+                            f64_le(point, 0)?,
+                            f64_le(point, 8)?,
+                        ));
+                    }
+                    cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points }
+                };
+                Some(PcurveNurbs::new(ctx, degree, knots, poles, false))
+            })()
+            .transpose()
+        })?;
+    let Some(candidate) = candidate else {
+        return Ok(None);
+    };
+    let pcurve = crate::nurbs::note_refusal(
+        ctx,
+        candidate,
+        refusal,
+        format_args!("zero-entity NURBS pcurve record at byte {}", record.pos),
+    )?
+    .map(|nurbs| PcurveGeometry::Nurbs { nurbs });
+    if pcurve.is_some() {
+        storage.commit()?;
+    }
+    Ok(pcurve)
 }
 
 /// Convert a zero-entity support pcurve from the carrier's native chart into
@@ -1936,66 +1969,52 @@ pub(super) fn zero_entity_neutral_pcurve(
     let PcurveGeometry::Nurbs { nurbs } = pcurve else {
         return Ok(None);
     };
-    let mut control_points = Vec::new();
-    ctx.reserve_vec(
-        &mut control_points,
-        nurbs.pole_rows().count(),
-        "catia_zero_neutral_pcurve_poles",
-    )?;
-    match nurbs.pole_rows() {
-        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => {
-            for point in ctx.admit_iter(points, "catia_zero_neutral_polynomial_pole_visits")? {
-                let point = point.get();
-                let Some(scaled) =
-                    FinitePoint2::new(Point2::new(point.u * u_scale, point.v * v_scale))
-                else {
-                    return Ok(None);
-                };
-                control_points.push(scaled);
-            }
+    let mut storage = ctx.reserve_scoped(0, "catia_zero_neutral_pcurve_workspace")?;
+    let poles = storage.with_storage(|| {
+        use cadmpeg_ir::geometry::pcurve::{PcurveNurbsPoles, WeightedPole2};
+        let scaled = |point: FinitePoint2| {
+            let point = point.get();
+            FinitePoint2::new(Point2::new(point.u * u_scale, point.v * v_scale))
+        };
+        match nurbs.pole_rows() {
+            PcurveNurbsPoles::Polynomial { points } => Ok::<_, CodecError>(
+                ctx.collect_options(
+                    points.iter().map(|point| scaled(*point)),
+                    "catia_zero_neutral_pcurve_poles",
+                )?
+                .map(|points| PcurveNurbsPoles::Polynomial { points }),
+            ),
+            PcurveNurbsPoles::Rational { points } => Ok::<_, CodecError>(
+                ctx.collect_options(
+                    points.iter().map(|pole| {
+                        Some(WeightedPole2 {
+                            point: scaled(pole.point)?,
+                            weight: pole.weight,
+                        })
+                    }),
+                    "catia_zero_neutral_pcurve_poles",
+                )?
+                .map(|points| PcurveNurbsPoles::Rational { points }),
+            ),
         }
-        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
-            for pole in ctx.admit_iter(points, "catia_zero_neutral_rational_pole_visits")? {
-                let point = pole.point.get();
-                let Some(scaled) =
-                    FinitePoint2::new(Point2::new(point.u * u_scale, point.v * v_scale))
-                else {
-                    return Ok(None);
-                };
-                control_points.push(scaled);
-            }
-        }
-    }
-    let weights = match nurbs.pole_rows() {
-        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { .. } => None,
-        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
-            let mut weights = Vec::new();
-            ctx.reserve_vec(
-                &mut weights,
-                points.len(),
-                "catia_zero_neutral_pcurve_weights",
-            )?;
-            weights.extend(points.iter().map(|pole| pole.weight));
-            Some(weights)
-        }
+    })?;
+    let Some(poles) = poles else {
+        return Ok(None);
     };
     let knots = nurbs
         .knots()
         .try_clone_for_decode(ctx, "catia_zero_neutral_pcurve_knots")?;
-    crate::nurbs::note_refusal(
+    let result = crate::nurbs::note_refusal(
         ctx,
-        PcurveNurbs::from_checked_lanes(
-            ctx,
-            nurbs.degree(),
-            knots,
-            control_points,
-            weights,
-            nurbs.periodic(),
-        )?,
+        PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())?,
         refusal,
         format_args!("zero-entity pcurve scaled onto its surface parameters: {record}"),
     )
-    .map(|nurbs| nurbs.map(|nurbs| PcurveGeometry::Nurbs { nurbs }))
+    .map(|nurbs| nurbs.map(|nurbs| PcurveGeometry::Nurbs { nurbs }))?;
+    if result.is_some() {
+        storage.commit()?;
+    }
+    Ok(result)
 }
 
 fn zero_entity_model_curve(
@@ -2036,23 +2055,28 @@ fn zero_entity_model_curve(
             let value = if dimension == 0 { point.u } else { point.v };
             let same = match nurbs.pole_rows() {
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => ctx
-                    .admit_iter(points, "catia_zero_constant_coordinate_poles")?
-                    .all(|point| {
-                        if dimension == 0 {
-                            point.u == value
-                        } else {
-                            point.v == value
-                        }
-                    }),
-                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => ctx
-                    .admit_iter(points, "catia_zero_constant_coordinate_poles")?
-                    .all(|pole| {
-                        if dimension == 0 {
+                    .all_by(
+                        points,
+                        |point| {
+                            Ok(if dimension == 0 {
+                                point.u == value
+                            } else {
+                                point.v == value
+                            })
+                        },
+                        "catia_zero_constant_coordinate_poles",
+                    )?,
+                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => ctx.all_by(
+                    points,
+                    |pole| {
+                        Ok(if dimension == 0 {
                             pole.point.u == value
                         } else {
                             pole.point.v == value
-                        }
-                    }),
+                        })
+                    },
+                    "catia_zero_constant_coordinate_poles",
+                )?,
             };
             Ok(same.then_some(value))
         };
@@ -2314,29 +2338,37 @@ fn zero_entity_lift_pcurve(
     refusal: &mut crate::nurbs::LaneRefusals,
     record: &dyn std::fmt::Display,
 ) -> Result<Option<NurbsCurve>, CodecError> {
-    let mut points = Vec::new();
-    ctx.reserve_vec(
-        &mut points,
-        nurbs.pole_rows().count(),
-        "catia_zero_lifted_pcurve_poles",
-    )?;
-    let weights = match nurbs.pole_rows() {
-        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points: source } => {
-            points.extend(source.iter().map(|point| lift(point.get())));
-            None
-        }
-        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points: source } => {
-            points.extend(source.iter().map(|pole| lift(pole.point.get())));
-            let mut weights = Vec::new();
+    let ((points, weights), _pole_storage) =
+        ctx.with_scoped_storage("catia_zero_lifted_pcurve_workspace", || {
+            let mut points = Vec::new();
             ctx.reserve_vec(
-                &mut weights,
-                source.len(),
-                "catia_zero_lifted_pcurve_weights",
+                &mut points,
+                nurbs.pole_rows().count(),
+                "catia_zero_lifted_pcurve_poles",
             )?;
-            weights.extend(source.iter().map(|pole| pole.weight));
-            Some(weights)
-        }
-    };
+            let weights = match nurbs.pole_rows() {
+                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points: source } => {
+                    for point in ctx.admit_iter(source, "catia_zero_lifted_pcurve_pole_visits")? {
+                        points.push(lift(point.get()));
+                    }
+                    None
+                }
+                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points: source } => {
+                    let mut weights = Vec::new();
+                    ctx.reserve_vec(
+                        &mut weights,
+                        source.len(),
+                        "catia_zero_lifted_pcurve_weights",
+                    )?;
+                    for pole in ctx.admit_iter(source, "catia_zero_lifted_pcurve_pole_visits")? {
+                        points.push(lift(pole.point.get()));
+                        weights.push(pole.weight);
+                    }
+                    Some(weights)
+                }
+            };
+            Ok::<_, CodecError>((points, weights))
+        })?;
     let knots = nurbs
         .knots()
         .try_clone_for_decode(ctx, "catia_zero_lifted_pcurve_knots")?;
@@ -2546,7 +2578,10 @@ pub(crate) fn zero_entity_edge_strides_in_range(
     data: &[u8],
     range: Range<usize>,
 ) -> Result<Vec<ZeroEntityEdgeStride>, CodecError> {
-    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let (records, _record_storage) = ctx
+        .with_scoped_storage("catia_zero_record_workspace", || {
+            zero_entity_records_in_range(ctx, data, range)
+        })?;
     let mut output = Vec::new();
     for record in ctx
         .admit_iter(&records, "catia_zero_framed_record_visits")?
@@ -2603,7 +2638,10 @@ pub(crate) fn zero_entity_oriented_use_pairs_in_range(
     data: &[u8],
     range: Range<usize>,
 ) -> Result<Vec<ZeroEntityOrientedUsePair>, CodecError> {
-    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let (records, _record_storage) = ctx
+        .with_scoped_storage("catia_zero_record_workspace", || {
+            zero_entity_records_in_range(ctx, data, range)
+        })?;
     let mut output = Vec::new();
     for records in ctx
         .admit_iter(&records, "catia_zero_three_record_window_visits")?
@@ -2682,7 +2720,10 @@ pub(crate) fn zero_entity_vertex_incidences_in_range(
     data: &[u8],
     range: Range<usize>,
 ) -> Result<Vec<ZeroEntityVertexIncidence>, CodecError> {
-    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let (records, _record_storage) = ctx
+        .with_scoped_storage("catia_zero_record_workspace", || {
+            zero_entity_records_in_range(ctx, data, range)
+        })?;
     let mut output = Vec::new();
     for records in ctx
         .admit_iter(&records, "catia_zero_two_record_window_visits")?
@@ -2814,7 +2855,11 @@ fn zero_entity_nurbs_surface(
     record: usize,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<SurfaceGeometry>, CodecError> {
-    let Some(layout) = zero_entity_nurbs_layout(ctx, data, record)? else {
+    let (layout, mut workspace) = ctx
+        .with_scoped_storage("catia_zero_nurbs_layout_workspace", || {
+            zero_entity_nurbs_layout(ctx, data, record)
+        })?;
+    let Some(layout) = layout else {
         return Ok(None);
     };
     let Some(pole_count) = crate::nurbs_surface_control_count(
@@ -2823,8 +2868,6 @@ fn zero_entity_nurbs_surface(
     ) else {
         return Ok(None);
     };
-    let mut control_points = Vec::new();
-    ctx.reserve_vec(&mut control_points, pole_count, "catia_zero_nurbs_poles")?;
     let Some(pole_end) = pole_count
         .checked_mul(24)
         .and_then(|size| layout.grid.checked_add(size))
@@ -2834,34 +2877,35 @@ fn zero_entity_nurbs_surface(
     let Some(pole_bytes) = data.get(layout.grid..pole_end) else {
         return Ok(None);
     };
-    for chunk in ctx
-        .admit_iter(pole_bytes, "catia_zero_nurbs_pole_bytes")?
-        .chunks(
-            NonZeroUsize::MIN
-                .checked_add(23)
-                .ok_or_else(|| CodecError::malformed("CATIA pole width is zero"))?,
-        )
-    {
-        let Some(point) = f64_point(chunk, 0) else {
-            return Ok(None);
-        };
-        control_points.push(point);
-    }
-    let u_knots = zero_entity_expand_knots(ctx, &layout.u_distinct, &layout.u_mults)?;
-    let v_knots = zero_entity_expand_knots(ctx, &layout.v_distinct, &layout.v_mults)?;
     let mut rows = Vec::new();
-    let row_count = pole_count / index_from_u32(layout.v_count);
-    ctx.reserve_vec(&mut rows, row_count, "catia_zero_nurbs_pole_rows")?;
-    for row in ctx
-        .admit_iter(&control_points, "catia_zero_nurbs_row_visits")?
-        .chunks(
-            NonZeroUsize::new(index_from_u32(layout.v_count))
-                .ok_or_else(|| CodecError::malformed("CATIA NURBS row width is zero"))?,
-        )
+    let mut row_storage = ctx.reserve_scoped(0, "catia_zero_nurbs_grid_workspace")?;
+    let mut indices = 0..index_from_u32(layout.u_count);
+    let mut chunks = pole_bytes.chunks_exact(24);
+    while ctx
+        .next_charged(&mut indices, "catia_zero_nurbs_row_visits")?
+        .is_some()
     {
-        rows.push(ctx.copy_slice(row, "catia_zero_nurbs_pole_row_points")?);
+        let mut row = Vec::new();
+        let mut columns = 0..index_from_u32(layout.v_count);
+        while ctx
+            .next_charged(&mut columns, "catia_zero_nurbs_pole_bytes")?
+            .is_some()
+        {
+            let Some(chunk) = chunks.next() else {
+                return Ok(None);
+            };
+            let Some(point) = f64_point(chunk, 0) else {
+                return Ok(None);
+            };
+            row_storage.with_storage(|| ctx.push_vec(&mut row, point, "catia_zero_nurbs_poles"))?;
+        }
+        row_storage.with_storage(|| ctx.push_vec(&mut rows, row, "catia_zero_nurbs_pole_rows"))?;
     }
-    crate::nurbs::note_refusal(
+    let u_knots = workspace
+        .with_storage(|| zero_entity_expand_knots(ctx, &layout.u_distinct, &layout.u_mults))?;
+    let v_knots = workspace
+        .with_storage(|| zero_entity_expand_knots(ctx, &layout.v_distinct, &layout.v_mults))?;
+    let surface = crate::nurbs::note_refusal(
         ctx,
         cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
             ctx,
@@ -2875,7 +2919,11 @@ fn zero_entity_nurbs_surface(
     )
     .map(|surface| {
         surface.map(|surface| SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)))
-    })
+    })?;
+    if surface.is_some() {
+        row_storage.commit()?;
+    }
+    Ok(surface)
 }
 
 fn zero_entity_expand_knots(
@@ -2883,31 +2931,34 @@ fn zero_entity_expand_knots(
     distinct: &[impl Copy + Into<f64>],
     multiplicities: &[u32],
 ) -> Result<Vec<f64>, CodecError> {
-    ctx.charge_work(
-        u64_from_index(multiplicities.len()),
-        "catia_zero_knot_expansion_scan",
-    )?;
     let mut total = 0usize;
-    for &multiplicity in multiplicities {
-        let Ok(count) = usize::try_from(multiplicity) else {
-            return Err(ctx.refuse_codec_limit("catia_zero_expanded_knots", u64::MAX, u64::MAX));
-        };
-        let Some(next) = total.checked_add(count) else {
-            return Err(ctx.refuse_codec_limit("catia_zero_expanded_knots", u64::MAX, u64::MAX));
-        };
-        total = next;
+    let mut values = multiplicities.iter();
+    while let Some(&value) = ctx.next_charged(&mut values, "catia_zero_knot_expansion_scan")? {
+        total = usize::try_from(value)
+            .ok()
+            .and_then(|value| total.checked_add(value))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_zero_expanded_knots", u64::MAX, u64::MAX)
+            })?;
     }
-    ctx.charge_work(u64_from_index(total), "catia_zero_knot_expansion_emit")?;
     let mut knots = Vec::new();
-    ctx.reserve_vec(&mut knots, total, "catia_zero_expanded_knots")?;
+    ctx.reserve_capacity(&mut knots, total, "catia_zero_expanded_knots")?;
     for (knot, &multiplicity) in ctx
         .admit_iter(distinct, "catia_zero_distinct_knot_visits")?
-        .zip(ctx.admit_iter(multiplicities, "catia_zero_multiplicity_visits")?)
+        .zip(multiplicities)
     {
-        let knot = (*knot).into();
-        let count = usize::try_from(multiplicity)
-            .map_err(|_| ctx.refuse_codec_limit("catia_zero_expanded_knots", u64::MAX, u64::MAX))?;
-        knots.extend(std::iter::repeat_with(|| knot).take(count));
+        let length = usize::try_from(multiplicity)
+            .ok()
+            .and_then(|count| knots.len().checked_add(count))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_zero_expanded_knots", u64::MAX, u64::MAX)
+            })?;
+        ctx.resize_vec(
+            &mut knots,
+            length,
+            (*knot).into(),
+            "catia_zero_knot_expansion_emit",
+        )?;
     }
     Ok(knots)
 }
@@ -3086,8 +3137,12 @@ mod tests {
         data: &[u8],
         records: &[super::ZeroEntityRecord],
     ) -> Vec<super::ZeroEntityLoop> {
-        crate::test_support::with_service_context(|ctx| loops_with_context(ctx, data, records))
-            .expect("test loops fit the service profile")
+        crate::test_support::with_service_context(|ctx| {
+            let (loops, storage) = loops_with_context(ctx, data, records)?;
+            storage.commit()?;
+            Ok::<_, cadmpeg_core::CodecError>(loops)
+        })
+        .expect("test loops fit the service profile")
     }
 
     fn oriented_closed_model_endpoints(
@@ -3270,7 +3325,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_entity_fixed_support_lanes_propagate_caller_work_refusals() {
+    fn zero_entity_fixed_support_construction_propagates_caller_work_refusals() {
         let bytes = support_pcurve_record(0x99);
         let record = super::ZeroEntityRecord {
             pos: 0,
@@ -3278,10 +3333,7 @@ mod tests {
             tag: [0x21, 0x99],
             ordinal: 1,
         };
-        for operation in [
-            "catia_zero_support_pole_bytes",
-            "catia_zero_support_weight_bytes",
-        ] {
+        for operation in ["catia_zero_knot_expansion_emit", "IR NURBS knot order"] {
             let result = crate::test_support::with_work_refusal(operation, |ctx| {
                 let result = super::zero_entity_support_pcurve(
                     ctx,
@@ -3369,7 +3421,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_entity_nurbs_surface_refuses_before_pole_growth() {
+    fn zero_entity_nurbs_surface_propagates_pole_work_refusal() {
         let bytes = nurbs_carrier(
             [0x34, 0xc8],
             &[10.0, 20.0, 30.0, 40.0, 50.0],
@@ -3380,13 +3432,14 @@ mod tests {
         assert!(
             zero_entity_surface_at(&bytes, 0, &mut crate::nurbs::LaneRefusals::new()).is_some()
         );
-        let limited = crate::test_support::with_collection_limit(100, |ctx| {
-            surface_at_with_context(ctx, &bytes, 0, &mut crate::nurbs::LaneRefusals::new())
-        });
+        let limited =
+            crate::test_support::with_work_refusal("catia_zero_nurbs_pole_bytes", |ctx| {
+                surface_at_with_context(ctx, &bytes, 0, &mut crate::nurbs::LaneRefusals::new())
+            });
         let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
-            panic!("NURBS pole grid must refuse the collection limit");
+            panic!("NURBS pole reader must refuse its work operation");
         };
-        assert_eq!(error.operation, "catia_zero_nurbs_poles");
+        assert_eq!(error.operation, "catia_zero_nurbs_pole_bytes");
     }
 
     #[test]
@@ -3704,7 +3757,7 @@ mod tests {
         let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
             panic!("support knot lane must refuse the collection limit");
         };
-        assert_eq!(error.operation, "catia_zero_support_distinct_knots");
+        assert_eq!(error.operation, "catia_zero_knot_expansion_emit");
     }
 
     #[test]
@@ -4622,21 +4675,18 @@ mod tests {
 #[cfg(test)]
 mod knot_work_tests {
     #[test]
-    fn zero_entity_knot_zip_sources_propagate_caller_refusals() {
-        for (cap, operation) in [
-            (7, "catia_zero_distinct_knot_visits"),
-            (9, "catia_zero_multiplicity_visits"),
-        ] {
-            crate::test_support::with_work_limit(cap, |ctx| {
-                let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-                    super::zero_entity_expand_knots(ctx, &[0.0, 1.0], &[2, 2])
-                else {
-                    panic!("zipped source admission must refuse")
-                };
-                assert_eq!(limit.operation, operation);
-                assert_eq!(ctx.resource_refusal(), Some(limit));
-            });
-        }
+    fn zero_entity_knot_lane_propagates_caller_refusal() {
+        const OPERATION: &str = "catia_zero_distinct_knot_visits";
+        let result = crate::test_support::with_work_refusal(OPERATION, |ctx| {
+            let result = super::zero_entity_expand_knots(ctx, &[0.0, 1.0], &[2, 2]);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+            }
+            result
+        });
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == OPERATION)
+        );
     }
 
     #[test]
@@ -4655,8 +4705,8 @@ mod knot_work_tests {
             );
         }
         assert_eq!(
-            // Two count visits, four knot writes, and two visits to each zipped source.
-            crate::test_support::with_work_limit(10, |ctx| {
+            // Two count visits plus the end probe, two paired visits and four knot writes.
+            crate::test_support::with_work_limit(9, |ctx| {
                 super::zero_entity_expand_knots(ctx, &[0.0, 1.0], &[2, 2])
             })
             .expect("scan and emission work"),
