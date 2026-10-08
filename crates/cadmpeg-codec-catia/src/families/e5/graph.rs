@@ -51,18 +51,23 @@ impl E5Topology {
         ctx: &DecodeContext<'_>,
         edge_ref: u32,
         representation: u32,
+        bound_parameters: &E5BoundParameters,
     ) -> Result<Option<[FiniteReal; 2]>, CodecError> {
         let Some(edge) = ctx.get_btree_map(&self.edges, &edge_ref, "catia_e5_edge_lookup")? else {
             return Ok(None);
         };
         let start = bound_representation_parameter(
             ctx,
-            &self.bounds,
+            bound_parameters,
             edge.parameter_start,
             representation,
         )?;
-        let end =
-            bound_representation_parameter(ctx, &self.bounds, edge.parameter_end, representation)?;
+        let end = bound_representation_parameter(
+            ctx,
+            bound_parameters,
+            edge.parameter_end,
+            representation,
+        )?;
         Ok(start.zip(end).map(|(start, end)| [start, end]))
     }
 }
@@ -546,6 +551,7 @@ pub(crate) fn parse_topology(
         return Ok(None);
     }
 
+    let (bound_parameters, _bound_storage) = index_bound_parameters(ctx, &bounds)?;
     let mut faces = Vec::new();
     let mut reachable_edges = HashSet::new();
     let mut closed_supports = HashSet::new();
@@ -606,8 +612,13 @@ pub(crate) fn parse_topology(
                     return Ok(None);
                 }
                 for bound_ref in [edge.parameter_start, edge.parameter_end] {
-                    if bound_representation_parameter(ctx, &bounds, bound_ref, *pcurve_id)?
-                        .is_none()
+                    if bound_representation_parameter(
+                        ctx,
+                        &bound_parameters,
+                        bound_ref,
+                        *pcurve_id,
+                    )?
+                    .is_none()
                     {
                         return Ok(None);
                     }
@@ -649,7 +660,7 @@ pub(crate) fn parse_topology(
                     edges: &edges,
                     pcurves: &pcurves,
                     curve_supports: &curve_supports,
-                    bounds: &bounds,
+                    bound_parameters: &bound_parameters,
                 },
             )?;
             let mut members = ctx.vector_storage(raw.pcurves.len(), "catia_e5_loop_members")?;
@@ -878,28 +889,53 @@ fn curve_support_reference_closes(
     Ok(true)
 }
 
-/// The parameter a bound record states for `representation`, when the bound
-/// exists and names it exactly once.
+/// Unique parameters by bound and representation; duplicates remain ambiguous.
+pub(super) type E5BoundParameters = HashMap<(u32, u32), Option<FiniteReal>>;
+
+pub(super) fn index_bound_parameters<'storage>(
+    ctx: &'storage DecodeContext<'_>,
+    bounds: &BTreeMap<u32, E5Bounds>,
+) -> Result<(E5BoundParameters, ScopedReservation<'storage>), CodecError> {
+    const OPERATION: &str = "catia_e5_bound_parameter_index";
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let parameters = storage.with_storage(|| {
+        let mut parameters = HashMap::new();
+        for (&bound, entries) in ctx.admit_iter(bounds, OPERATION)? {
+            for entry in ctx.admit_iter(&entries.entries, OPERATION)? {
+                match ctx.entry_hash_map(
+                    &mut parameters,
+                    (bound, entry.representation),
+                    OPERATION,
+                )? {
+                    std::collections::hash_map::Entry::Vacant(slot) => {
+                        slot.insert(Some(entry.parameter));
+                    }
+                    std::collections::hash_map::Entry::Occupied(mut slot) => {
+                        slot.insert(None);
+                    }
+                }
+            }
+        }
+        Ok::<_, CodecError>(parameters)
+    })?;
+    Ok((parameters, storage))
+}
+
+/// The parameter stated exactly once for a bound and representation.
 fn bound_representation_parameter(
     ctx: &DecodeContext<'_>,
-    bounds: &BTreeMap<u32, E5Bounds>,
+    parameters: &E5BoundParameters,
     bound_ref: u32,
     representation: u32,
 ) -> Result<Option<FiniteReal>, CodecError> {
-    let Some(bounds) = ctx.get_btree_map(bounds, &bound_ref, "catia_e5_bound_lookup")? else {
-        return Ok(None);
-    };
-    let mut parameter = None;
-    let mut steps = bounds.entries.iter();
-    while let Some(entry) = ctx.next_charged(&mut steps, "catia_e5_bound_entry_lookup")? {
-        if entry.representation == representation {
-            if parameter.is_some() {
-                return Ok(None);
-            }
-            parameter = Some(entry.parameter);
-        }
-    }
-    Ok(parameter)
+    Ok(ctx
+        .get_hash_map(
+            parameters,
+            &(bound_ref, representation),
+            "catia_e5_bound_parameter_lookup",
+        )?
+        .copied()
+        .flatten())
 }
 
 fn parse_curve_support(
@@ -1435,7 +1471,7 @@ struct PlaneDigonOrientationHintInputs<
     edges: &'input3 BTreeMap<u32, E5Edge>,
     pcurves: &'input4 BTreeMap<u32, E5Pcurve>,
     curve_supports: &'input5 BTreeMap<u32, E5CurveSupport>,
-    bounds: &'input6 BTreeMap<u32, E5Bounds>,
+    bound_parameters: &'input6 E5BoundParameters,
 }
 
 fn plane_digon_orientation_hint(
@@ -1454,7 +1490,7 @@ fn plane_digon_orientation_hint(
         edges,
         pcurves,
         curve_supports,
-        bounds,
+        bound_parameters,
     } = inputs;
 
     let (
@@ -1604,8 +1640,8 @@ fn plane_digon_orientation_hint(
                                       reversed: bool|
      -> Result<Option<Sign>, CodecError> {
         let (Some(start), Some(end)) = (
-            bound_representation_parameter(ctx, bounds, edge.parameter_start, pcurve_id)?,
-            bound_representation_parameter(ctx, bounds, edge.parameter_end, pcurve_id)?,
+            bound_representation_parameter(ctx, bound_parameters, edge.parameter_start, pcurve_id)?,
+            bound_representation_parameter(ctx, bound_parameters, edge.parameter_end, pcurve_id)?,
         ) else {
             return Ok(None);
         };
@@ -2278,11 +2314,11 @@ fn solve_loop_chain(
 #[cfg(test)]
 mod tests {
     use super::{
-        curve_support_reference_closes, parse_body_root, parse_bounds, parse_jet_pcurve,
-        parse_nurbs_pcurve, parse_pcurve, parse_topology, plane_digon_orientation_hint, records,
-        solve_absolute_orientation, solve_loop_chain, E5BoundEntry, E5Bounds, E5CurveSupport,
-        E5CurveSupportKind, E5Edge, E5Face, E5Loop, E5LoopMember, E5Pcurve, E5PcurveJetSite,
-        E5Topology, Record, Sign,
+        curve_support_reference_closes, index_bound_parameters, parse_body_root, parse_bounds,
+        parse_jet_pcurve, parse_nurbs_pcurve, parse_pcurve, parse_topology,
+        plane_digon_orientation_hint, records, solve_absolute_orientation, solve_loop_chain,
+        E5BoundEntry, E5Bounds, E5CurveSupport, E5CurveSupportKind, E5Edge, E5Face, E5Loop,
+        E5LoopMember, E5Pcurve, E5PcurveJetSite, E5Topology, Record, Sign,
     };
     use crate::families::e5::tests::e5_loop_members;
     use crate::test_support::test_b5::{finite, finite_lane, finite_pair};
@@ -2897,6 +2933,8 @@ mod tests {
                 },
             ),
         ]);
+        let (bound_parameters, _bound_storage) =
+            index_bound_parameters(&ctx, &bounds).expect("bound index");
         let hint = plane_digon_orientation_hint(
             &ctx,
             crate::families::e5::graph::PlaneDigonOrientationHintInputs {
@@ -2909,7 +2947,7 @@ mod tests {
                 edges: &edges,
                 pcurves: &pcurves,
                 curve_supports: &supports,
-                bounds: &bounds,
+                bound_parameters: &bound_parameters,
             },
         )
         .expect("service resource budget");
@@ -2928,7 +2966,7 @@ mod tests {
                         edges: &edges,
                         pcurves: &pcurves,
                         curve_supports: &supports,
-                        bounds: &bounds,
+                        bound_parameters: &bound_parameters,
                     },
                 )
             }),
@@ -2950,6 +2988,8 @@ mod tests {
                 f64::MAX
             });
         }
+        let (wide_parameters, _wide_storage) =
+            index_bound_parameters(&ctx, &wide_bounds).expect("wide bound index");
         assert_eq!(
             plane_digon_orientation_hint(
                 &ctx,
@@ -2963,7 +3003,7 @@ mod tests {
                     edges: &edges,
                     pcurves: &wide_pcurves,
                     curve_supports: &supports,
-                    bounds: &wide_bounds
+                    bound_parameters: &wide_parameters
                 }
             )
             .expect("service resource budget"),
@@ -3030,9 +3070,10 @@ mod tests {
         };
 
         assert_eq!(
-            crate::test_support::with_service_context(
-                |ctx| topology.edge_representation_parameters(ctx, 1, 20)
-            )
+            crate::test_support::with_service_context(|ctx| {
+                let (parameters, _storage) = index_bound_parameters(ctx, &topology.bounds)?;
+                topology.edge_representation_parameters(ctx, 1, 20, &parameters)
+            })
             .expect("service resource budget"),
             Some(crate::test_support::test_b5::finite_pair([0.25, 0.75]))
         );
@@ -3047,9 +3088,10 @@ mod tests {
                 code: 8,
             });
         assert_eq!(
-            crate::test_support::with_service_context(
-                |ctx| topology.edge_representation_parameters(ctx, 1, 20)
-            )
+            crate::test_support::with_service_context(|ctx| {
+                let (parameters, _storage) = index_bound_parameters(ctx, &topology.bounds)?;
+                topology.edge_representation_parameters(ctx, 1, 20, &parameters)
+            })
             .expect("service resource budget"),
             None
         );
@@ -3412,3 +3454,6 @@ mod knot_work_tests {
 
 #[cfg(test)]
 mod budget_tests;
+
+#[cfg(test)]
+mod index_tests;

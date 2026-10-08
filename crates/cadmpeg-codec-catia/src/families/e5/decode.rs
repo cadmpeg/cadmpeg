@@ -14,7 +14,7 @@ use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve,
+    nurbs::{NurbsCurve, NurbsPoles3},
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
     Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
     ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, SolvedCurveGeometry,
@@ -473,6 +473,8 @@ fn derive_e5_vertices(
     surfaces: &[crate::families::e5::records::E5Surface],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<Vec<Point3>>, cadmpeg_core::CodecError> {
+    let (bound_parameters, _bound_storage) =
+        crate::families::e5::graph::index_bound_parameters(ctx, &topology.bounds)?;
     let mut surface_for_ref = HashMap::new();
     for surface in ctx.admit_iter(surfaces, "catia_e5_derived_surface_scan")? {
         ctx.insert_hash_map(
@@ -511,8 +513,14 @@ fn derive_e5_vertices(
                 else {
                     return Ok(None);
                 };
-                let Some(reversed) =
-                    e5_stored_pcurve_reversed(ctx, topology, edge_ref, pcurve_ref, range)?
+                let Some(reversed) = e5_stored_pcurve_reversed(
+                    ctx,
+                    topology,
+                    &bound_parameters,
+                    edge_ref,
+                    pcurve_ref,
+                    range,
+                )?
                 else {
                     return Ok(None);
                 };
@@ -1637,6 +1645,8 @@ fn plan_e5_boundary<'a>(
     vertices: E5VertexPoints<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<E5BoundaryPlan<'a>>, cadmpeg_core::CodecError> {
+    let (bound_parameters, _bound_storage) =
+        crate::families::e5::graph::index_bound_parameters(ctx, &topology.bounds)?;
     let mut faces = Vec::new();
     for face in ctx.admit_iter(&topology.faces, "catia_e5_boundary_face_plan_scan")? {
         let mut loops = Vec::new();
@@ -1716,9 +1726,15 @@ fn plan_e5_boundary<'a>(
                 // positions are an independent constraint, but they only
                 // select a direction when exactly one order meets the model
                 // tolerance. Never choose the smaller of two failing errors.
-                let reversed =
-                    e5_stored_pcurve_reversed(ctx, topology, edge_ref, pcurve_ref, range)?
-                        .or_else(|| unique_endpoint_direction(forward, reverse_error));
+                let reversed = e5_stored_pcurve_reversed(
+                    ctx,
+                    topology,
+                    &bound_parameters,
+                    edge_ref,
+                    pcurve_ref,
+                    range,
+                )?
+                .or_else(|| unique_endpoint_direction(forward, reverse_error));
                 let Some(reversed) = reversed else {
                     return Ok(None);
                 };
@@ -1804,9 +1820,9 @@ fn plan_e5_boundary<'a>(
                         if let Some(existing) =
                             ctx.get_btree_map(&edge_curves, &edge_ref, "catia_e5_edge_curve_plan")?
                         {
-                            // Both carriers were built and charged by the
-                            // lift; core has no charged geometry equality.
-                            if existing != &(curve, curve_range) {
+                            if existing.1 != curve_range
+                                || !equal_e5_boundary_curves(ctx, &existing.0, &curve)?
+                            {
                                 return Ok(None);
                             }
                         } else {
@@ -1841,9 +1857,9 @@ fn plan_e5_boundary<'a>(
                 if let Some((existing, existing_range)) =
                     ctx.get_btree_map(&pcurves, &pcurve_ref, "catia_e5_pcurve_plan")?
                 {
-                    // Both pcurves were built and charged by the lift; core
-                    // has no charged geometry equality.
-                    if existing != &geometry || existing_range != &range {
+                    if existing_range != &range
+                        || !equal_e5_pcurve_geometry(ctx, existing, &geometry)?
+                    {
                         return Ok(None);
                     }
                 } else {
@@ -1906,8 +1922,15 @@ fn plan_e5_boundary<'a>(
             };
             let forward = endpoints[0].distance(start).max(endpoints[1].distance(end));
             let reverse_error = endpoints[0].distance(end).max(endpoints[1].distance(start));
-            let reversed = e5_stored_pcurve_reversed(ctx, topology, edge_ref, pcurve_ref, range)?
-                .or_else(|| unique_endpoint_direction(forward, reverse_error));
+            let reversed = e5_stored_pcurve_reversed(
+                ctx,
+                topology,
+                &bound_parameters,
+                edge_ref,
+                pcurve_ref,
+                range,
+            )?
+            .or_else(|| unique_endpoint_direction(forward, reverse_error));
             let Some(reversed) = reversed else {
                 continue;
             };
@@ -2028,7 +2051,7 @@ fn plan_e5_boundary<'a>(
         };
         let same_parameterization =
             parameter_range_agreement_tolerance(left.curve_range, right.curve_range).is_some();
-        let same_carrier = equivalent_e5_curve_carriers(&left.curve, &right.curve);
+        let same_carrier = equivalent_e5_curve_carriers(ctx, &left.curve, &right.curve)?;
         let same_ordered_sweep = e5_circle_carriers_have_same_ordered_sweep(
             ctx,
             &left.curve,
@@ -2206,8 +2229,7 @@ fn push_occurrence_intersection_side(
         if sides.len() == MAX_DISTINCT_SIDES {
             return Ok(());
         }
-        // At most two stored sides are compared; each pcurve was built and
-        // charged by the lift, and core has no charged geometry equality.
+        // Each stored side compares its identity and its pcurve lanes.
         let repeated = ctx.any_by(
             sides,
             |existing| {
@@ -2215,7 +2237,7 @@ fn push_occurrence_intersection_side(
                     &existing.surface,
                     surface,
                     "catia_e5_occurrence_side_surface",
-                )? && existing.pcurve == *pcurve
+                )? && equal_e5_pcurve_geometry(ctx, &existing.pcurve, pcurve)?
                     && existing.pcurve_range == pcurve_range)
             },
             "catia_e5_occurrence_side_duplicate_scan",
@@ -3092,12 +3114,13 @@ fn emit_e5_faces_loops_coedges(
 fn e5_stored_pcurve_reversed(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     topology: &crate::families::e5::graph::E5Topology,
+    bound_parameters: &crate::families::e5::graph::E5BoundParameters,
     edge_ref: u32,
     pcurve_ref: u32,
     native_range: [f64; 2],
 ) -> Result<Option<bool>, cadmpeg_core::CodecError> {
     Ok(topology
-        .edge_representation_parameters(ctx, edge_ref, pcurve_ref)?
+        .edge_representation_parameters(ctx, edge_ref, pcurve_ref, bound_parameters)?
         .and_then(|parameters| {
             parameter_ranges_reversed(parameters.map(FiniteReal::get), native_range)
         }))
@@ -3701,7 +3724,7 @@ fn e5_support_occurrence_intersection_context(
 fn e5_occurrence_intersection_cache<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sides: &'a [E5OccurrenceIntersectionSide],
-) -> Result<Option<(&'a CurveGeometry, [f64; 2])>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<(&'a CurveGeometry, [f64; 2])>, cadmpeg_core::CodecError> {
     let [left, right] = sides else {
         return Ok(None);
     };
@@ -3710,7 +3733,7 @@ fn e5_occurrence_intersection_cache<'a>(
     else {
         return Ok(None);
     };
-    if equivalent_e5_curve_carriers(left_curve, right_curve)
+    if equivalent_e5_curve_carriers(ctx, left_curve, right_curve)?
         && parameter_span_agreement(*left_range, *right_range).is_some()
     {
         return Ok(Some((left_curve, *left_range)));
@@ -3866,8 +3889,84 @@ fn e5_circle_carriers_have_same_ordered_sweep(
     )
 }
 
-fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> bool {
-    match (left, right) {
+/// Compare the admitted boundary carriers without copying their lanes.
+fn equal_e5_nurbs_curves(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    left: &NurbsCurve,
+    right: &NurbsCurve,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "catia_e5_curve_geometry_compare";
+    if left.degree() != right.degree()
+        || left.periodic() != right.periodic()
+        || !ctx.equal(left.knots().as_slice(), right.knots().as_slice(), OPERATION)?
+    {
+        return Ok(false);
+    }
+    Ok(match (left.pole_rows(), right.pole_rows()) {
+        (NurbsPoles3::Polynomial { points: left }, NurbsPoles3::Polynomial { points: right }) => {
+            left.len() == right.len()
+                && ctx.all_by(
+                    left.iter().zip(right),
+                    |(left, right)| Ok(left == right),
+                    OPERATION,
+                )?
+        }
+        (NurbsPoles3::Rational { points: left }, NurbsPoles3::Rational { points: right }) => {
+            left.len() == right.len()
+                && ctx.all_by(
+                    left.iter().zip(right),
+                    |(left, right)| Ok(left == right),
+                    OPERATION,
+                )?
+        }
+        _ => false,
+    })
+}
+
+/// E5 boundary lifts produce line, circle, or NURBS carriers.
+fn equal_e5_boundary_curves(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    left: &CurveGeometry,
+    right: &CurveGeometry,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(match (left, right) {
+        (
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(left)),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(right)),
+        ) => equal_e5_nurbs_curves(ctx, left, right)?,
+        (
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(left)),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(right)),
+        ) => left == right,
+        (
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(left)),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(right)),
+        ) => left == right,
+        _ => false,
+    })
+}
+
+/// E5 boundary pcurves are lines or NURBS payloads.
+fn equal_e5_pcurve_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    left: &PcurveGeometry,
+    right: &PcurveGeometry,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(match (left, right) {
+        (PcurveGeometry::Nurbs { nurbs: left }, PcurveGeometry::Nurbs { nurbs: right }) => {
+            ctx.equal(left, right, "catia_e5_pcurve_geometry_compare")?
+        }
+        (PcurveGeometry::Line(left), PcurveGeometry::Line(right)) => left == right,
+        _ => false,
+    })
+}
+
+fn equivalent_e5_curve_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    left: &CurveGeometry,
+    right: &CurveGeometry,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(match (left, right) {
         (
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve_2)),
@@ -3899,9 +3998,9 @@ fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> 
         (
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(left)),
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(right)),
-        ) => left == right,
+        ) => equal_e5_nurbs_curves(ctx, left, right)?,
         _ => false,
-    }
+    })
 }
 
 fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f64, Vector3)> {
@@ -4812,13 +4911,11 @@ mod route_tests {
         };
 
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| e5_stored_pcurve_reversed(
-                ctx,
-                &topology,
-                1,
-                20,
-                [0.0, 1.0]
-            ))
+            crate::test_support::with_service_context(|ctx| {
+                let (parameters, _storage) =
+                    crate::families::e5::graph::index_bound_parameters(ctx, &topology.bounds)?;
+                e5_stored_pcurve_reversed(ctx, &topology, &parameters, 1, 20, [0.0, 1.0])
+            })
             .expect("service resource budget"),
             None
         );
@@ -5605,3 +5702,6 @@ mod route_tests {
 
     mod boundary_cases;
 }
+
+#[cfg(test)]
+mod budget_tests;
