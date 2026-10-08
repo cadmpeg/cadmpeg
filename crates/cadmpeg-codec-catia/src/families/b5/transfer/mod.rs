@@ -1736,9 +1736,9 @@ fn curve_on_parameter_range(
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
             if source_per_target != 1.0 {
-                let mut knots = ctx.vector_storage(4, "catia_b5_reparameterized_line_knots")?;
+                let mut knots = ctx.collection_vec(4, "catia_b5_reparameterized_line_knots")?;
                 knots.extend([target[0], target[0], target[1], target[1]]);
-                let mut points = ctx.vector_storage(2, "catia_b5_reparameterized_line_points")?;
+                let mut points = ctx.collection_vec(2, "catia_b5_reparameterized_line_points")?;
                 points.extend(source.map(|parameter| {
                     Point3::new(
                         origin.x + parameter * direction.x,

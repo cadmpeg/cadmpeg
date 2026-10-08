@@ -27,7 +27,13 @@ fn parse_offset_surface(
     let views = record_views(records);
     let refs = views.iter().map(|(&id, record)| (id, record)).collect();
     crate::test_support::with_service_context(|ctx| {
-        super::super::parse_offset_surface(ctx, record, surfaces, extrusion_surfaces, &refs)
+        let Some(fields) = super::super::parse_offset_surface_fields(record) else {
+            return Ok(None);
+        };
+        Ok::<_, cadmpeg_core::CodecError>(
+            super::super::offset_surface_agrees(ctx, &fields, surfaces, extrusion_surfaces, &refs)?
+                .then_some(fields),
+        )
     })
     .expect("service budget")
 }

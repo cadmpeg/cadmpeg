@@ -336,9 +336,9 @@ fn profile_nurbs(
         B5Profile::Line {
             point, direction, ..
         } => {
-            let mut knots = ctx.vector_storage(4, "catia_b5_revolution_line_profile_knots")?;
+            let mut knots = ctx.collection_vec(4, "catia_b5_revolution_line_profile_knots")?;
             knots.extend([interval[0], interval[0], interval[1], interval[1]]);
-            let mut points = ctx.vector_storage(2, "catia_b5_revolution_line_profile_points")?;
+            let mut points = ctx.collection_vec(2, "catia_b5_revolution_line_profile_points")?;
             points.extend(interval.map(|parameter| {
                 point3(add(coordinates(*point), scale(direction.get(), parameter)))
             }));

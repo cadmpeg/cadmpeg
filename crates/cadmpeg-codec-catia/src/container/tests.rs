@@ -310,7 +310,7 @@ fn outer_container_stream_identity_refuses_retained_limit() {
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_container_stream_name")
+        if limit.operation == "catia_container_declarations")
     );
     assert_eq!(outer_declarations_service(&scan.data, outer).len(), 1);
 }

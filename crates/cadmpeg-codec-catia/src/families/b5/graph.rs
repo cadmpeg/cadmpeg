@@ -4894,22 +4894,6 @@ fn parse_offset_surface_fields(record: &B5Record) -> Option<B5OffsetSurface> {
     })
 }
 
-fn parse_offset_surface(
-    ctx: &DecodeContext<'_>,
-    record: &B5Record<'_>,
-    surfaces: &BTreeMap<u32, B5Surface>,
-    extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
-    records: &HashMap<u32, &B5Record<'_>>,
-) -> Result<Option<B5OffsetSurface>, CodecError> {
-    let Some(fields) = parse_offset_surface_fields(record) else {
-        return Ok(None);
-    };
-    Ok(
-        offset_surface_agrees(ctx, &fields, surfaces, extrusion_surfaces, records)?
-            .then_some(fields),
-    )
-}
-
 /// Tests an offset construction against its carrier: the declared carrier
 /// kind must match the carrier geometry, and the carrier must sit at the
 /// stated distance from the source.
@@ -6287,7 +6271,7 @@ fn parse_pcurve(
                 wire::tokens::compact_uint(&record.payload, &mut position)?,
                 wire::tokens::compact_uint(&record.payload, &mut position)?,
             ];
-            let mut multiplicities = match ctx.vector_storage(2, "catia_b5_class21_multiplicities")
+            let mut multiplicities = match ctx.collection_vec(2, "catia_b5_class21_multiplicities")
             {
                 Ok(values) => values,
                 Err(error) => return Some(Err(error)),
@@ -6827,11 +6811,11 @@ fn parse_line_pcurve(
     else {
         return Ok(None);
     };
-    let mut distinct_knots = ctx.vector_storage(2, "catia_b5_line_pcurve_knots")?;
+    let mut distinct_knots = ctx.collection_vec(2, "catia_b5_line_pcurve_knots")?;
     distinct_knots.extend([start, end]);
-    let mut multiplicities = ctx.vector_storage(2, "catia_b5_line_pcurve_multiplicities")?;
+    let mut multiplicities = ctx.collection_vec(2, "catia_b5_line_pcurve_multiplicities")?;
     multiplicities.extend([2, 2]);
-    let mut control_points = ctx.vector_storage(2, "catia_b5_line_pcurve_points")?;
+    let mut control_points = ctx.collection_vec(2, "catia_b5_line_pcurve_points")?;
     control_points.extend([start_point, end_point]);
     Ok(Some(B5Pcurve {
         object_id: record.object_id,
@@ -8754,7 +8738,7 @@ mod nested_frame_work_tests {
             crate::families::b5::graph::collect_object_stream_frames(ctx, &bytes)
         });
         assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_b5_object_frame_scan"));
+        if limit.operation == "catia_b5_object_frames"));
         assert!(!crate::test_support::with_service_context(|ctx| {
             crate::families::b5::graph::collect_object_stream_frames(ctx, &bytes)
         })

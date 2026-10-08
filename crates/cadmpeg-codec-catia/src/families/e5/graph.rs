@@ -3267,7 +3267,7 @@ mod tests {
     }
 
     #[test]
-    fn e5_edge_tail_refuses_retained_limit_before_absent_topology() {
+    fn e5_edge_tail_scopes_storage_before_absent_topology() {
         let mut bytes = Vec::new();
         append_e5_record(
             &mut bytes,
@@ -3277,13 +3277,26 @@ mod tests {
         );
         let service = crate::test_support::with_service_context(|ctx| parse_topology(ctx, &bytes));
         assert!(matches!(service, Ok(None)));
-        let limited =
-            crate::test_support::with_retained_refusal(&[], "catia_e5_edge_tail", |ctx| {
-                parse_topology(ctx, &bytes)
-            });
+        let zero_retained =
+            crate::test_support::with_retained_limit(0, |ctx| parse_topology(ctx, &bytes));
+        assert!(matches!(zero_retained, Ok(None)));
+        let limited = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            "catia_e5_edge_tail",
+            |cap| {
+                crate::test_support::with_materialized_limit(cap, |ctx| {
+                    let result = parse_topology(ctx, &bytes);
+                    if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                        assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                    }
+                    result
+                })
+            },
+        );
         assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_e5_edge_tail")
+            matches!(limited, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "catia_e5_edge_tail")
         );
     }
 
