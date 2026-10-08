@@ -10,6 +10,7 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 mod exhaustion;
+mod storage_lifetimes;
 
 #[test]
 fn persistence_invalid_xml_diagnostic_refuses_at_retained_limit() {
