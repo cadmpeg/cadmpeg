@@ -81,7 +81,10 @@ fn incident_carrier_references_admit_work_and_preserve_service_result() {
     // The shared endpoint fixes vertex 10; each incident line fixes its other endpoint.
     let expected = BTreeMap::from([(10, [1.0, 0.0]), (11, [0.0, 0.0]), (12, [1.0, 1.0])]);
     let coordinates = crate::test_support::assert_work_boundaries(
-        &["creo incident carrier IDs", "creo sketch intersection carrier lookup"],
+        &[
+            "creo incident carrier IDs",
+            "creo sketch intersection carrier lookup",
+        ],
         |ctx| resolved_trim_vertex_coordinates(ctx, &definition, &points, &BTreeMap::new()),
     );
     assert_eq!(coordinates, expected);

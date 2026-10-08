@@ -105,27 +105,44 @@ fn coefficient_index_preserves_scalar_equality_and_all_rhs_witnesses() {
     const EPS_RHS_WITNESS_AGREEMENT: f64 = 1.0e-9;
     crate::decode::with_test_decode_ctx(|ctx| {
         let equation = |coefficient, rhs| SectionCoordinateEquation {
-            terms: BTreeMap::from([((7, SectionAxis::U), coefficient)]), rhs,
+            terms: BTreeMap::from([((7, SectionAxis::U), coefficient)]),
+            rhs,
         };
-        let rows = [equation(1.0, 1.0), equation(1.0, 1.0 + 0.75 * EPS_RHS_WITNESS_AGREEMENT)];
+        let rows = [
+            equation(1.0, 1.0),
+            equation(1.0, 1.0 + 0.75 * EPS_RHS_WITNESS_AGREEMENT),
+        ];
         let index = super::super::CoordinateEquationIndex::from_equations(ctx, &rows)?;
         assert!(index.contains(ctx, &equation(1.0, 1.0 + 1.5 * EPS_RHS_WITNESS_AGREEMENT))?);
-        let zero = super::super::CoordinateEquationIndex::from_equations(ctx, &[equation(-0.0, 2.0)])?;
+        let zero =
+            super::super::CoordinateEquationIndex::from_equations(ctx, &[equation(-0.0, 2.0)])?;
         assert!(zero.contains(ctx, &equation(0.0, 2.0))?);
         assert!(!zero.contains(ctx, &equation(f64::NAN, 2.0))?);
         assert!(!zero.contains(ctx, &equation(0.0, f64::INFINITY))?);
         Ok::<_, cadmpeg_core::CodecError>(())
-    }).expect("coefficient index admission");
+    })
+    .expect("coefficient index admission");
 }
 
 #[test]
 fn coefficient_index_lookup_refuses_before_key_and_rhs_search() {
-    let equation = SectionCoordinateEquation { terms: BTreeMap::from([((7, SectionAxis::U), 1.0)]), rhs: 2.0 };
-    let found = crate::test_support::assert_work_boundaries(&[
-        "creo coordinate equation index terms", "creo coordinate equation index lookup", "creo coordinate equation right-hand-side witnesses",
-    ], |ctx| {
-        let index = super::super::CoordinateEquationIndex::from_equations(ctx, std::slice::from_ref(&equation))?;
-        index.contains(ctx, &equation)
-    });
+    let equation = SectionCoordinateEquation {
+        terms: BTreeMap::from([((7, SectionAxis::U), 1.0)]),
+        rhs: 2.0,
+    };
+    let found = crate::test_support::assert_work_boundaries(
+        &[
+            "creo coordinate equation index terms",
+            "creo coordinate equation index lookup",
+            "creo coordinate equation right-hand-side witnesses",
+        ],
+        |ctx| {
+            let index = super::super::CoordinateEquationIndex::from_equations(
+                ctx,
+                std::slice::from_ref(&equation),
+            )?;
+            index.contains(ctx, &equation)
+        },
+    );
     assert!(found);
 }

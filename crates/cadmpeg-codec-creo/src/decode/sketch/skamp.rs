@@ -60,15 +60,30 @@ fn section_line_entity_fixed_coordinate_with_mode(
     entity_id: u32,
     include_unique_rows: bool,
 ) -> Result<Option<SectionAxis>, CodecError> {
-    let mut scratch = ctx.reserve_scoped(0, "creo section line entity fixed coordinate with mode scratch")?;
+    let mut scratch = ctx.reserve_scoped(
+        0,
+        "creo section line entity fixed coordinate with mode scratch",
+    )?;
     let mut adjacency = BTreeMap::<u32, Vec<(u32, bool)>>::new();
     let mut skamp_coordinates = std::collections::HashMap::<u32, [bool; 2]>::new();
     let ControlFlow::Continue(()) =
         visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
             if let (1 | 2, [item]) = (skamp.kind, skamp.items.as_slice()) {
                 if item.sense == 0 {
-                    let coordinate = if skamp.kind == 1 { SectionAxis::V } else { SectionAxis::U };
-                    scratch.with_storage(|| ctx.entry_hash_map(&mut skamp_coordinates, item.entity_id, "creo fixed-coordinate skamp index nodes"))?.or_insert([false; 2])[coordinate.index()] = true;
+                    let coordinate = if skamp.kind == 1 {
+                        SectionAxis::V
+                    } else {
+                        SectionAxis::U
+                    };
+                    scratch
+                        .with_storage(|| {
+                            ctx.entry_hash_map(
+                                &mut skamp_coordinates,
+                                item.entity_id,
+                                "creo fixed-coordinate skamp index nodes",
+                            )
+                        })?
+                        .or_insert([false; 2])[coordinate.index()] = true;
                 }
             }
             let (parity, first, second) = match (skamp.kind, skamp.items.as_slice()) {
@@ -86,26 +101,39 @@ fn section_line_entity_fixed_coordinate_with_mode(
                 (first.entity_id, second.entity_id),
                 (second.entity_id, first.entity_id),
             ] {
-                let neighbors = scratch.with_storage(|| ctx
-                    .entry_btree_map(
-                        &mut adjacency,
-                        entity_id,
-                        "creo fixed-coordinate adjacency nodes",
-                    ))?
+                let neighbors = scratch
+                    .with_storage(|| {
+                        ctx.entry_btree_map(
+                            &mut adjacency,
+                            entity_id,
+                            "creo fixed-coordinate adjacency nodes",
+                        )
+                    })?
                     .or_default();
-                scratch.with_storage(|| ctx.reserve_vec(neighbors, 1, "creo fixed-coordinate adjacency links"))?;
+                scratch.with_storage(|| {
+                    ctx.reserve_vec(neighbors, 1, "creo fixed-coordinate adjacency links")
+                })?;
                 neighbors.push((neighbor, parity));
             }
             Ok(ControlFlow::Continue(()))
         })?;
     let mut parities = BTreeMap::new();
-    scratch.with_storage(|| ctx.insert_btree_map(&mut parities, entity_id, false, "creo fixed-coordinate parity seed"))?;
+    scratch.with_storage(|| {
+        ctx.insert_btree_map(
+            &mut parities,
+            entity_id,
+            false,
+            "creo fixed-coordinate parity seed",
+        )
+    })?;
     let mut pending = std::collections::VecDeque::new();
-    scratch.with_storage(|| ctx.push_back(
-        &mut pending,
-        entity_id,
-        "creo fixed-coordinate pending seed",
-    ))?;
+    scratch.with_storage(|| {
+        ctx.push_back(
+            &mut pending,
+            entity_id,
+            "creo fixed-coordinate pending seed",
+        )
+    })?;
     while let Some(entity_id) = pending.pop_front() {
         ctx.charge_work(1, "creo fixed-coordinate graph traversal")?;
         let Some(&parity) =
@@ -122,23 +150,29 @@ fn section_line_entity_fixed_coordinate_with_mode(
             continue;
         };
         let mut links = neighbors.iter();
-        while let Some(&(neighbor, edge_parity)) = ctx.next_charged(&mut links, "creo fixed-coordinate adjacency links")? {
+        while let Some(&(neighbor, edge_parity)) =
+            ctx.next_charged(&mut links, "creo fixed-coordinate adjacency links")?
+        {
             let neighbor_parity = parity ^ edge_parity;
             match ctx.get_btree_map(&parities, &neighbor, "creo fixed-coordinate parity lookup")? {
                 Some(stored) if *stored != neighbor_parity => return Ok(None),
                 Some(_) => {}
                 None => {
-                    scratch.with_storage(|| ctx.insert_btree_map(
-                        &mut parities,
-                        neighbor,
-                        neighbor_parity,
-                        "creo fixed-coordinate parity nodes",
-                    ))?;
-                    scratch.with_storage(|| ctx.push_back(
-                        &mut pending,
-                        neighbor,
-                        "creo fixed-coordinate pending nodes",
-                    ))?;
+                    scratch.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut parities,
+                            neighbor,
+                            neighbor_parity,
+                            "creo fixed-coordinate parity nodes",
+                        )
+                    })?;
+                    scratch.with_storage(|| {
+                        ctx.push_back(
+                            &mut pending,
+                            neighbor,
+                            "creo fixed-coordinate pending nodes",
+                        )
+                    })?;
                 }
             }
         }
@@ -146,26 +180,31 @@ fn section_line_entity_fixed_coordinate_with_mode(
     let mut coordinates = BTreeSet::new();
     for (entity_id, parity) in ctx.admit_iter(&parities, "creo fixed-coordinate parity rows")? {
         let mut direct_storage = ctx.reserve_scoped(0, "creo direct fixed-coordinate scratch")?;
-        let direct_coordinates = direct_storage.with_storage(|| section_line_direct_fixed_coordinates_with_mode(
-            ctx,
-            definition,
-            *entity_id,
-            include_unique_rows,
-            skamp_coordinates.get(entity_id).copied().unwrap_or([false; 2]),
-        ))?;
-        for coordinate in
-            &direct_coordinates
-        {
+        let direct_coordinates = direct_storage.with_storage(|| {
+            section_line_direct_fixed_coordinates_with_mode(
+                ctx,
+                definition,
+                *entity_id,
+                include_unique_rows,
+                skamp_coordinates
+                    .get(entity_id)
+                    .copied()
+                    .unwrap_or([false; 2]),
+            )
+        })?;
+        for coordinate in &direct_coordinates {
             let coordinate = if *parity {
                 coordinate.other()
             } else {
                 *coordinate
             };
-            scratch.with_storage(|| ctx.insert_btree_set(
-                &mut coordinates,
-                coordinate,
-                "creo fixed-coordinate result nodes",
-            ))?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut coordinates,
+                    coordinate,
+                    "creo fixed-coordinate result nodes",
+                )
+            })?;
         }
     }
     Ok(coordinates
@@ -222,7 +261,13 @@ fn section_line_direct_fixed_coordinates_with_mode(
         )?;
     }
     for (coordinate, present) in SectionAxis::ALL.into_iter().zip(skamp_coordinates) {
-        if present { ctx.insert_btree_set(&mut coordinates, coordinate, "creo direct fixed-coordinate nodes")?; }
+        if present {
+            ctx.insert_btree_set(
+                &mut coordinates,
+                coordinate,
+                "creo direct fixed-coordinate nodes",
+            )?;
+        }
     }
     if saved_section_line_witness_allowed(definition, entity_id) {
         if let Some(crate::feature::definitions::FeatureSavedEntity::Line(line)) =
@@ -817,23 +862,35 @@ mod tests {
 
     fn assert_fixed_coordinate_graph_refusal(operations: &[&str]) {
         let definition = fixed_coordinate_graph_fixture();
-        crate::test_support::assert_refusal_order(cadmpeg_core::decode::ResourceDimension::CollectionItems, operations, |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-            super::section_line_entity_fixed_coordinate(&ctx, &definition, 20)
-        });
+        crate::test_support::assert_refusal_order(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operations,
+            |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                        .expect("test decode context");
+                super::section_line_entity_fixed_coordinate(&ctx, &definition, 20)
+            },
+        );
     }
 
     #[test]
     fn fixed_coordinate_adjacency_node_refuses_before_insertion() {
-        assert_fixed_coordinate_graph_refusal(&["creo fixed-coordinate adjacency nodes", "creo fixed-coordinate adjacency nodes"]);
+        assert_fixed_coordinate_graph_refusal(&[
+            "creo fixed-coordinate adjacency nodes",
+            "creo fixed-coordinate adjacency nodes",
+        ]);
     }
 
     #[test]
     fn fixed_coordinate_adjacency_link_refuses_before_reservation() {
-        assert_fixed_coordinate_graph_refusal(&["creo fixed-coordinate adjacency links", "creo fixed-coordinate adjacency links"]);
+        assert_fixed_coordinate_graph_refusal(&[
+            "creo fixed-coordinate adjacency links",
+            "creo fixed-coordinate adjacency links",
+        ]);
     }
 
     #[test]
@@ -910,8 +967,12 @@ mod tests {
     #[test]
     fn section_segment_rows_refuse_before_vector_growth() {
         let definition = point_definition(2, vec![ordinary_point(7, 42, 1)], Vec::new());
-        let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            "creo section segment rows", |ctx| super::section_segment_rows(ctx, &definition));
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "creo section segment rows",
+            |ctx| super::section_segment_rows(ctx, &definition),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.operation == "creo section segment rows"),
@@ -928,8 +989,12 @@ mod tests {
     #[test]
     fn complete_section_segment_rows_refuse_before_vector_growth() {
         let definition = point_definition(1, vec![ordinary_point(7, 42, 1)], Vec::new());
-        let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            "creo complete section segment rows", |ctx| super::complete_section_segment_rows(ctx, &definition));
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "creo complete section segment rows",
+            |ctx| super::complete_section_segment_rows(ctx, &definition),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.operation == "creo complete section segment rows"),
