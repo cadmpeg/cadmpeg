@@ -103,3 +103,24 @@ fn vertex_graph_mints_separate_orbits_for_unrelated_starts() {
     assert_eq!(orbits.vertices[0].half_edges(), [ids[0]]);
     assert_eq!(orbits.vertices[1].half_edges(), [ids[1]]);
 }
+
+#[test]
+fn face_component_validation_stops_at_first_invalid_pair() {
+    let short = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo face component validation work",
+        |ctx| super::super::FaceComponent::new(ctx, vec![2, 1], vec![1]),
+    );
+    let long = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo face component validation work",
+        |ctx| super::super::FaceComponent::new(ctx, vec![2, 1, 3, 4, 5], vec![1]),
+    );
+    let (cadmpeg_core::CodecError::ResourceLimit(short), cadmpeg_core::CodecError::ResourceLimit(long)) = (short, long) else {
+        panic!("work refusals");
+    };
+    assert_eq!(short.used, long.used);
+    assert_eq!(short.additional, long.additional);
+}
