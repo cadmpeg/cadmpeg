@@ -290,9 +290,10 @@ pub(crate) fn parse_document(
             ctx.get_hash_map(&data_by_name, declared_name, "FCStd object data lookup")?;
         let mut attributes = std::collections::BTreeMap::new();
         let mut attribute_nodes = node.attributes();
-        while let Some(attribute) =
-            ctx.next_charged(&mut attribute_nodes, "FCStd object attribute records")?
-        {
+        while attribute_nodes.len() != 0 {
+            let Some(attribute) = ctx.next_charged(&mut attribute_nodes, "FCStd object attribute records")? else {
+                break;
+            };
             if matches!(attribute.name(), "name" | "type" | "id" | "ViewType") {
                 continue;
             }
@@ -732,9 +733,10 @@ fn parse_properties(
         let mut side_entries = Vec::new();
         let mut value_order = 0usize;
         let mut descendants = node.descendants();
-        while let Some(value) =
-            ctx.next_charged(&mut descendants, "FCStd property value elements")?
-        {
+        while descendants.len() != 0 {
+            let Some(value) = ctx.next_charged(&mut descendants, "FCStd property value elements")? else {
+                break;
+            };
             if !value.is_element() || value == node {
                 continue;
             }
@@ -756,9 +758,10 @@ fn parse_properties(
             retained_value_bytes = total;
             let mut attributes = std::collections::BTreeMap::new();
             let mut attribute_nodes = value.attributes();
-            while let Some(attribute) =
-                ctx.next_charged(&mut attribute_nodes, "FCStd value attribute records")?
-            {
+            while attribute_nodes.len() != 0 {
+                let Some(attribute) = ctx.next_charged(&mut attribute_nodes, "FCStd value attribute records")? else {
+                    break;
+                };
                 let name =
                     ctx.copy_retained_text(attribute.name(), "FCStd value attribute name")?;
                 let text = ctx.copy_retained_text(attribute.value(), "FCStd value attribute")?;
@@ -1275,6 +1278,9 @@ fn reject_link_aliases(
     allowed: &[&str],
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     const CARRIERS: &[&str] = &[
         "value", "Value", "object", "Object", "obj", "Obj", "name", "Name", "document", "Document",
         "doc", "Doc", "file", "File", "sub", "Sub",
@@ -1282,7 +1288,10 @@ fn reject_link_aliases(
     // Each comparison is against a literal carrier name, so it reads at most
     // that literal's bytes; the attribute step is the input-sized work.
     let mut attributes = node.attributes();
-    while let Some(attribute) = ctx.next_charged(&mut attributes, "FCStd link carrier search")? {
+    while attributes.len() != 0 {
+        let Some(attribute) = ctx.next_charged(&mut attributes, "FCStd link carrier search")? else {
+            break;
+        };
         let name = attribute.name();
         if CARRIERS.contains(&name) && !allowed.contains(&name) {
             return Err(crate::resource::malformed_charged(
