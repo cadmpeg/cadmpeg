@@ -6360,7 +6360,7 @@ impl<'a, 'ctx> JtTessellationIndex<'a, 'ctx> {
 struct JtSceneGraph<'a, 'ctx> {
     by_object: BTreeMap<u32, &'a DisplayJtBaseNodeData>,
     parents: HashMap<u32, Vec<u32>>,
-    instance_ids: HashMap<u32, String>,
+    instance_ids: HashMap<u32, &'a str>,
     transforms: HashMap<u32, JtKeyed<&'a DisplayJtGeometricTransformAttribute>>,
     materials: HashMap<u32, JtKeyed<&'a DisplayJtMaterialAttribute>>,
     _storage: ScopedReservation<'ctx>,
@@ -6446,13 +6446,11 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
             if ctx.contains_key_hash_map(&instance_ids, &node.object_id, "nx JT instance index")? {
                 return Ok(None);
             }
-            let id = storage
-                .with_storage(|| ctx.copy_retained_text(&node.id, "nx JT instance identity"))?;
             storage.with_storage(|| {
                 ctx.insert_hash_map(
                     &mut instance_ids,
                     node.object_id,
-                    id,
+                    node.id.as_str(),
                     "nx JT instance index",
                 )
             })?;
@@ -6565,10 +6563,15 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
                     return Ok(None);
                 };
                 let JtResolvedPaths { values, storage } = paths;
-                paths_storage.with_storage(|| {
-                    ctx.extend_vec(&mut parent_states, values, "nx JT parent path states")
-                })?;
-                drop(storage);
+                if parent_states.capacity() == 0 {
+                    parent_states = values;
+                    paths_storage = storage;
+                } else {
+                    paths_storage.with_storage(|| {
+                        ctx.extend_vec(&mut parent_states, values, "nx JT parent path states")
+                    })?;
+                    drop(storage);
+                }
             }
         } else {
             ctx.push_scoped_vec(
