@@ -3,10 +3,11 @@ use super::super::super::graph::{
     B5ParameterIncidence, B5Pcurve, B5PcurveParameterization, B5Profile, B5SphereGreatCirclePcurve,
     B5Surface,
 };
+use super::build_plan;
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use crate::families::b5::transfer::{
-    build_plan, resolved_surface_carrier_in_graph, transfer, CurvePlan, ResolvedPcurveSurface,
+    resolved_surface_carrier_in_graph, transfer, CurvePlan, ResolvedPcurveSurface,
 };
 const EPS_PCURVE_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 

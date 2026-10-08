@@ -518,10 +518,17 @@ pub(super) fn revolve_nurbs(
     if crate::nurbs_surface_control_count(profile.pole_count(), angular_count).is_none() {
         return Ok(None);
     }
+    let mut angular_storage = ctx.reserve_scoped(0, "catia_b5_revolution_angular_scratch")?;
     let mut angles = Vec::new();
-    ctx.reserve_vec(&mut angles, angular_count, "catia b5 revolution angles")?;
+    ctx.reserve_scoped_vec(
+        &mut angular_storage,
+        &mut angles,
+        angular_count,
+        "catia b5 revolution angles",
+    )?;
     let mut angular_weights = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_scoped_vec(
+        &mut angular_storage,
         &mut angular_weights,
         angular_count,
         "catia b5 revolution angular weights",
@@ -1508,3 +1515,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod budget_tests;
