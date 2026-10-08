@@ -2,7 +2,6 @@
 //! Surface point witnesses for standard NURBS membership.
 
 use cadmpeg_core::convert::f64_from_index;
-use std::num::NonZeroUsize;
 
 use super::{
     nurbs_surface_parameter_domain, NURBS_SURFACE_BACKTRACK_STEPS, NURBS_SURFACE_MAX_SEEDS,
@@ -38,7 +37,6 @@ fn refine_nurbs_surface_point(
     ctx.charge_work_limit(0, "catia surface refinement boundary")?;
     let mut parameters = seed;
     for _ in 0..NURBS_SURFACE_REFINEMENT_ITERATIONS {
-        ctx.charge_work_limit(1, "catia surface refinement step")?;
         let Some(partials) = cadmpeg_ir::eval::finite_or_refusal(
             cadmpeg_ir::eval::nurbs_surface_partials(ctx, surface, parameters.u, parameters.v),
         )?
@@ -58,7 +56,6 @@ fn refine_nurbs_surface_point(
         let mut scale = 1.0;
         let mut accepted = None;
         for _ in 0..NURBS_SURFACE_BACKTRACK_STEPS {
-            ctx.charge_work_limit(1, "catia surface refinement backtrack")?;
             let candidate = Point2::new(
                 (parameters.u - scale * step.u).clamp(domains[0][0], domains[0][1]),
                 (parameters.v - scale * step.v).clamp(domains[1][0], domains[1][1]),
@@ -84,6 +81,28 @@ fn refine_nurbs_surface_point(
     nurbs_surface_point_distance(ctx, surface, point, parameters)
 }
 
+fn visit_knot_spans(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    knots: &[f64],
+    mut visit: impl FnMut([f64; 2]) -> Result<bool, cadmpeg_core::decode::ResourceLimit>,
+    operation: &'static str,
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    ctx.charge_work_limit(0, operation)?;
+    let Some((&first, rest)) = knots.split_first() else {
+        return Ok(true);
+    };
+    let mut previous = first;
+    ctx.all_by_limit(
+        rest,
+        |next| {
+            let pair = [previous, *next];
+            previous = *next;
+            visit(pair)
+        },
+        operation,
+    )
+}
+
 pub(super) fn nurbs_surface_witness_distance(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &NurbsSurface,
@@ -105,23 +124,16 @@ pub(super) fn nurbs_surface_witness_distance(
     let Some(v_knots) = surface.v_knots().get(v_degree..=surface.v_count()) else {
         return Ok(None);
     };
-    let Some(knot_window_size) = NonZeroUsize::new(2) else {
-        return Ok(None);
+    let count_spans = |knots: &[f64]| -> Result<usize, cadmpeg_core::decode::ResourceLimit> {
+        let mut spans = 0_usize;
+        visit_knot_spans(ctx, knots, |pair| {
+            spans += usize::from(pair[0] != pair[1]);
+            Ok(true)
+        }, "catia surface knot span count")?;
+        Ok(spans)
     };
-    let mut u_spans = 0_usize;
-    for pair in ctx
-        .admit_iter(u_knots, "catia surface knot span count")?
-        .windows(knot_window_size)
-    {
-        u_spans += usize::from(pair[0] != pair[1]);
-    }
-    let mut v_spans = 0_usize;
-    for pair in ctx
-        .admit_iter(v_knots, "catia surface knot span count")?
-        .windows(knot_window_size)
-    {
-        v_spans += usize::from(pair[0] != pair[1]);
-    }
+    let u_spans = count_spans(u_knots)?;
+    let v_spans = count_spans(v_knots)?;
     if u_spans == 0 || v_spans == 0 {
         return Ok(None);
     }
@@ -134,7 +146,6 @@ pub(super) fn nurbs_surface_witness_distance(
     };
     let mut best: Option<f64> = None;
     let mut consider = |seed: Point2| -> Result<(), cadmpeg_core::decode::ResourceLimit> {
-        ctx.charge_work_limit(1, "catia surface witness seed")?;
         if let Some(distance) = refine_nurbs_surface_point(ctx, surface, point, seed, domains)? {
             best = Some(best.map_or(distance, |previous| {
                 if previous.total_cmp(&distance).is_le() {
@@ -149,26 +160,26 @@ pub(super) fn nurbs_surface_witness_distance(
     if samples > NURBS_SURFACE_MAX_SEEDS {
         const SIDE: usize = 16;
         for knots in [u_knots, v_knots] {
-            for pair in ctx
-                .admit_iter(knots, "catia surface knot span visit")?
-                .windows(knot_window_size)
-            {
+            let valid = visit_knot_spans(ctx, knots, |pair| {
                 if pair[0] == pair[1] {
-                    continue;
+                    return Ok(true);
                 }
                 for step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
-                    ctx.charge_work_limit(1, "catia surface knot sample")?;
                     let fraction = match f64_from_index(step) {
                         Some(value) => value,
-                        None => return Ok(None),
+                        None => return Ok(false),
                     } / match f64_from_index(NURBS_SURFACE_SEEDS_PER_SPAN - 1) {
                         Some(value) => value,
-                        None => return Ok(None),
+                        None => return Ok(false),
                     };
                     if cadmpeg_ir::math::interpolate(pair[0], pair[1], fraction).is_none() {
-                        return Ok(None);
+                        return Ok(false);
                     }
                 }
+                Ok(true)
+            }, "catia surface knot span visit")?;
+            if !valid {
+                return Ok(None);
             }
         }
         for u in 0..SIDE {
@@ -201,51 +212,50 @@ pub(super) fn nurbs_surface_witness_distance(
             }
         }
     } else {
-        for u_pair in ctx
-            .admit_iter(u_knots, "catia surface knot span visit")?
-            .windows(knot_window_size)
-        {
+        let valid = visit_knot_spans(ctx, u_knots, |u_pair| {
             if u_pair[0] == u_pair[1] {
-                continue;
+                return Ok(true);
             }
             for u_step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
-                ctx.charge_work_limit(1, "catia surface u seed")?;
                 let u_fraction = match f64_from_index(u_step) {
                     Some(value) => value,
-                    None => return Ok(None),
+                    None => return Ok(false),
                 } / match f64_from_index(NURBS_SURFACE_SEEDS_PER_SPAN - 1) {
                     Some(value) => value,
-                    None => return Ok(None),
+                    None => return Ok(false),
                 };
                 let Some(u) = cadmpeg_ir::math::interpolate(u_pair[0], u_pair[1], u_fraction)
                 else {
-                    return Ok(None);
+                    return Ok(false);
                 };
-                for v_pair in ctx
-                    .admit_iter(v_knots, "catia surface knot span visit")?
-                    .windows(knot_window_size)
-                {
+                let valid = visit_knot_spans(ctx, v_knots, |v_pair| {
                     if v_pair[0] == v_pair[1] {
-                        continue;
+                        return Ok(true);
                     }
                     for v_step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
                         let v_fraction = match f64_from_index(v_step) {
                             Some(value) => value,
-                            None => return Ok(None),
-                        } / match f64_from_index(NURBS_SURFACE_SEEDS_PER_SPAN - 1)
-                        {
+                            None => return Ok(false),
+                        } / match f64_from_index(NURBS_SURFACE_SEEDS_PER_SPAN - 1) {
                             Some(value) => value,
-                            None => return Ok(None),
+                            None => return Ok(false),
                         };
-                        let Some(v) =
-                            cadmpeg_ir::math::interpolate(v_pair[0], v_pair[1], v_fraction)
+                        let Some(v) = cadmpeg_ir::math::interpolate(v_pair[0], v_pair[1], v_fraction)
                         else {
-                            return Ok(None);
+                            return Ok(false);
                         };
                         consider(Point2::new(u.get(), v.get()))?;
                     }
+                    Ok(true)
+                }, "catia surface knot span visit")?;
+                if !valid {
+                    return Ok(false);
                 }
             }
+            Ok(true)
+        }, "catia surface knot span visit")?;
+        if !valid {
+            return Ok(None);
         }
     }
     Ok(best)
@@ -279,6 +289,41 @@ mod tests {
     }
 
     #[test]
+    fn knot_span_visit_admits_exact_pairs_and_stops_before_unvisited_tail() {
+        crate::test_support::with_work_limit(1, |ctx| {
+            let mut visited = 0;
+            assert!(!super::visit_knot_spans(ctx, &[0.0, 0.0, 1.0, 2.0], |pair| {
+                visited += 1;
+                assert_eq!(pair, [0.0, 0.0]);
+                Ok(false)
+            }, "test knot span visit").expect("one pair fits"));
+            assert_eq!(visited, 1);
+            let original = ctx.charge_work_limit(1, "test second visit").expect_err("one actual pair exhausted the limit");
+            assert_eq!((original.used, original.additional), (1, 1));
+        });
+        crate::test_support::with_work_limit(3, |ctx| {
+            let mut visited = 0;
+            assert!(super::visit_knot_spans(ctx, &[0.0, 0.0, 1.0, 2.0], |_| {
+                visited += 1;
+                Ok(true)
+            }, "test knot span visit").expect("three pairs fit without an end probe"));
+            assert_eq!(visited, 3);
+            assert!(ctx.resource_refusal().is_none());
+        });
+    }
+
+    #[test]
+    fn empty_knot_span_visit_is_free_and_preserves_fusion() {
+        crate::test_support::with_work_limit(0, |ctx| {
+            for knots in [&[][..], &[0.0][..]] {
+                assert!(super::visit_knot_spans(ctx, knots, |_| panic!("no pair"), "test empty span").expect("no pair is free"));
+            }
+            let original = ctx.charge_work_limit(1, "test refusal").expect_err("zero work limit");
+            assert_eq!(super::visit_knot_spans(ctx, &[], |_| panic!("no pair"), "test empty span"), Err(original));
+        });
+    }
+
+    #[test]
     fn surface_witness_refuses_knot_scan_work() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -289,10 +334,10 @@ mod tests {
             .expect_err("knot span work refuses");
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.operation, "catia surface knot span count");
-        // The two-knot span lane is admitted before its one window is visited.
+        // The first adjacent pair is admitted before comparing its two knots.
         assert_eq!(
             (original.limit, original.used, original.additional),
-            (0, 0, 2)
+            (0, 0, 1)
         );
         assert_eq!(ctx.resource_refusal(), Some(original));
     }
@@ -314,8 +359,8 @@ mod tests {
         )
         .expect_err("refinement work refuses");
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original.operation, "catia surface refinement step");
-        // Each refinement iteration charges one step before it evaluates.
+        assert_eq!(original.operation, "IR homogeneous pole traversal");
+        // The bilinear evaluator first visits the homogeneous control terms.
         assert_eq!(
             (original.limit, original.used, original.additional),
             (0, 0, 1)
