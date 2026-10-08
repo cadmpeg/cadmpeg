@@ -23,16 +23,18 @@ const MIN_EMBEDDED_REFERENCE_BYTES: usize = 3 * 4 + 8 + 3 * 4 + 4 + 2 + 8;
 // Four u32 values and title marker, five header bytes, two section state/count
 // pairs, setting count, ten export bytes and an empty export count word.
 const MIN_OCCURRENCE_BYTES: usize = 5 * 4 + 5 + 2 * (4 + 4) + 4 + 10 + 4;
-// Presence, tag, state word, repeated tag, one-byte value and trailer word.
-const MIN_OCCURRENCE_PROPERTY_BYTES: usize = 1 + 1 + 4 + 1 + 1 + 4;
+// Presence, tag, state word and repeated tag identify the property before its
+// value and trailer are read.
+const MIN_OCCURRENCE_PROPERTY_HEADER_BYTES: usize = 1 + 1 + 4 + 1;
 // Name count, sixteen-byte id and value count.
 const MIN_OCCURRENCE_SETTING_BYTES: usize = 4 + 16 + 4;
 // Name count, item count and repeated count, twelve-byte trailer.
 const MIN_OCCURRENCE_EXPORT_BYTES: usize = 4 + 4 + 4 + 12;
-// Presence, tag, value count and trailer word.
-const MIN_OCCURRENCE_ITEM_BYTES: usize = 1 + 1 + 4 + 4;
-// Repeated tag and one-byte value.
-const MIN_OCCURRENCE_VALUE_BYTES: usize = 1 + 1;
+// Presence, tag and value count identify an export item before its values and
+// trailer are read.
+const MIN_OCCURRENCE_ITEM_HEADER_BYTES: usize = 1 + 1 + 4;
+// Each declared export value starts with a repeated tag.
+const MIN_OCCURRENCE_VALUE_BYTES: usize = 1;
 // Prefix, name count, two state words, prefix count, parameter count and suffix.
 const MIN_MODEL_STATE_BYTES: usize = 1 + 4 + 2 * 2 + 4 + 4 + 77;
 // Name count, tag, kind, state, value count and trailer.
@@ -626,7 +628,7 @@ fn parse_occurrence_section(
     let count = cursor.count32("occurrence section property count", 65_536)?;
     cursor.fits(
         count,
-        MIN_OCCURRENCE_PROPERTY_BYTES,
+        MIN_OCCURRENCE_PROPERTY_HEADER_BYTES,
         "occurrence section property count",
     )?;
     for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc occurrence properties")? {
@@ -713,7 +715,7 @@ fn parse_occurrence_items(
     }
     cursor.fits(
         count,
-        MIN_OCCURRENCE_ITEM_BYTES,
+        MIN_OCCURRENCE_ITEM_HEADER_BYTES,
         "occurrence export item count",
     )?;
     for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc occurrence export items")? {
@@ -1128,16 +1130,56 @@ mod tests {
     }
 
     #[test]
-    fn occurrence_properties_reject_impossible_ufrx_count() {
+    fn occurrence_property_tag_is_reported_before_missing_value_and_trailer() {
         let mut bytes = vec![0; 4];
         push_u32(&mut bytes, 1);
-        bytes.resize(8 + super::MIN_OCCURRENCE_PROPERTY_BYTES - 1, 0);
+        bytes.resize(8 + 11, 0);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &DecodePolicy::service(),
+        )
+        .expect("property header context");
+        assert!(matches!(
+            super::parse_occurrence_section(&ctx, &mut Cursor::new(root)),
+            Err(CodecError::NotImplemented(detail))
+                if detail == "UFRxDoc occurrence property tag 0x00 is not implemented"
+        ));
+    }
+
+    #[test]
+    fn occurrence_properties_reject_count_with_truncated_header() {
+        let mut bytes = vec![0; 4];
+        push_u32(&mut bytes, 1);
+        bytes.resize(8 + super::MIN_OCCURRENCE_PROPERTY_HEADER_BYTES - 1, 0);
         assert_impossible_count(
             &bytes,
             "occurrence section property count",
             0,
             |ctx, root| super::parse_occurrence_section(ctx, &mut Cursor::new(root)),
         );
+    }
+
+    #[test]
+    fn occurrence_property_unsupported_tag_survives_truncated_record() {
+        let mut bytes = vec![0; 4];
+        push_u32(&mut bytes, 1);
+        bytes.extend_from_slice(&[0, 0xff]);
+        push_u32(&mut bytes, 0);
+        bytes.push(0xff);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &DecodePolicy::service(),
+        )
+        .expect("unsupported property context");
+        assert!(matches!(
+            super::parse_occurrence_section(&ctx, &mut Cursor::new(root)),
+            Err(CodecError::NotImplemented(detail))
+                if detail == "UFRxDoc occurrence property tag 0xff is not implemented"
+        ));
     }
 
     #[test]
@@ -1165,24 +1207,144 @@ mod tests {
     }
 
     #[test]
-    fn occurrence_items_reject_impossible_ufrx_count() {
+    fn occurrence_export_item_truncated_trailer_remains_truncated() {
         let mut bytes = 1_u32.to_le_bytes().to_vec();
         push_u32(&mut bytes, 1);
-        bytes.resize(8 + super::MIN_OCCURRENCE_ITEM_BYTES - 1, 0);
+        bytes.resize(8 + 9, 0);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &DecodePolicy::service(),
+        )
+        .expect("item header context");
+        assert!(matches!(
+            super::parse_occurrence_items(&ctx, &mut Cursor::new(root)),
+            Err(CodecError::Truncated {
+                operation: "occurrence export item trailer",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn occurrence_items_reject_count_with_truncated_header() {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        push_u32(&mut bytes, 1);
+        bytes.resize(8 + super::MIN_OCCURRENCE_ITEM_HEADER_BYTES - 1, 0);
         assert_impossible_count(&bytes, "occurrence export item count", 0, |ctx, root| {
             super::parse_occurrence_items(ctx, &mut Cursor::new(root))
         });
     }
 
     #[test]
-    fn occurrence_values_reject_impossible_ufrx_count() {
+    fn occurrence_export_unknown_tag_with_no_values_is_accepted() {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        push_u32(&mut bytes, 1);
+        bytes.extend_from_slice(&[0, 0xff]);
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 0);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &DecodePolicy::service(),
+        )
+        .expect("unsupported export item context");
+        super::parse_occurrence_items(&ctx, &mut Cursor::new(root))
+            .expect("an empty unsupported item has no value tag to reject");
+    }
+
+    #[test]
+    fn occurrence_export_unsupported_tag_is_reported_after_matching_repeated_tag() {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        push_u32(&mut bytes, 1);
+        bytes.extend_from_slice(&[0, 0xff]);
+        push_u32(&mut bytes, 1);
+        bytes.push(0xff);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &DecodePolicy::service(),
+        )
+        .expect("unsupported export item context");
+        assert!(matches!(
+            super::parse_occurrence_items(&ctx, &mut Cursor::new(root)),
+            Err(CodecError::NotImplemented(detail))
+                if detail == "UFRxDoc occurrence export item tag 0xff is not implemented"
+        ));
+    }
+
+    #[test]
+    fn occurrence_export_tag_mismatch_precedes_unsupported_dispatch() {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        push_u32(&mut bytes, 1);
+        bytes.extend_from_slice(&[0, 0xff]);
+        push_u32(&mut bytes, 1);
+        bytes.push(0);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &DecodePolicy::service(),
+        )
+        .expect("mismatched export item context");
+        assert!(matches!(
+            super::parse_occurrence_items(&ctx, &mut Cursor::new(root)),
+            Err(CodecError::Malformed(detail))
+                if detail == "UFRxDoc repeated occurrence tag is 0x00, expected 0xff"
+        ));
+    }
+
+    #[test]
+    fn occurrence_export_unknown_tag_with_missing_repeated_tag_is_malformed() {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        push_u32(&mut bytes, 1);
+        bytes.extend_from_slice(&[0, 0xff]);
+        push_u32(&mut bytes, 1);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &DecodePolicy::service(),
+        )
+        .expect("truncated export item context");
+        assert!(matches!(
+            super::parse_occurrence_items(&ctx, &mut Cursor::new(root)),
+            Err(CodecError::Malformed(detail))
+                if detail == "UFRxDoc occurrence export item value count exceeds remaining payload"
+        ));
+    }
+
+    #[test]
+    fn occurrence_values_check_repeated_tag_before_payload_dispatch() {
         let mut bytes = 1_u32.to_le_bytes().to_vec();
         push_u32(&mut bytes, 1);
         bytes.extend_from_slice(&[0, 7]);
         push_u32(&mut bytes, 3);
         bytes.extend_from_slice(&[0; 4]);
-        // The one outer item visit is admitted; three tag/value pairs need
-        // six unread bytes and only four remain. No inner visit is admitted.
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &DecodePolicy::service(),
+        )
+        .expect("export value context");
+        assert!(matches!(
+            super::parse_occurrence_items(&ctx, &mut Cursor::new(root)),
+            Err(CodecError::Malformed(detail))
+                if detail == "UFRxDoc repeated occurrence tag is 0x00, expected 0x07"
+        ));
+    }
+
+    #[test]
+    fn occurrence_values_reject_count_without_repeated_tags() {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        push_u32(&mut bytes, 1);
+        bytes.extend_from_slice(&[0, 7]);
+        push_u32(&mut bytes, 3);
+        // The outer item is admitted; three repeated tags need three bytes.
         assert_impossible_count(
             &bytes,
             "occurrence export item value count",

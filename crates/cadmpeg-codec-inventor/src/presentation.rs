@@ -1391,9 +1391,13 @@ fn short_digest_key(
 ) -> Result<IdentityKey, CodecError> {
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), operation)?;
     let digest = cadmpeg_ir::hash::sha256(bytes);
-    let mut text = ctx.retained_string(16, operation)?;
-    crate::pmdc::push_hex(ctx, &mut text, &digest[..8], operation)?;
-    crate::record_identity::try_identity_key(ctx, text, operation, None)
+    let [first, second, third, fourth, fifth, sixth, seventh, eighth, ..] = digest;
+    let text = crate::pmdc::fixed_hex(
+        ctx,
+        &[first, second, third, fourth, fifth, sixth, seventh, eighth],
+        operation,
+    )?;
+    IdentityKey::try_new(text).map_err(CodecError::malformed)
 }
 
 #[cfg(test)]
@@ -1437,6 +1441,33 @@ mod tests {
             .with_storage(|| short_digest_key(&ctx, b"abc", "short digest key test storage"))
             .expect("admitted digest key");
         assert_eq!(key.as_str(), "ba7816bf8f01cfea");
+    }
+
+    #[test]
+    fn short_digest_key_charges_hash_input_and_fixed_output_storage() {
+        let arena = DecodeArena::new();
+        for cap in [2, 3] {
+            let mut policy = DecodePolicy::service();
+            // Three source bytes are hashed. The fixed eight-byte digest
+            // prefix renders sixteen bytes without input-sized formatting.
+            policy.limits.max_work_units = cap;
+            policy.limits.max_retained_bytes = 16;
+            policy.limits.max_materialized_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("digest context");
+            let result = short_digest_key(&ctx, b"abc", "short digest admission");
+            if cap == 2 {
+                let error = result.expect_err("hash input needs three visits");
+                assert!(matches!(error, CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.operation == "short digest admission"
+                        && limit.used == 0 && limit.additional == 3
+                        && Some(limit) == ctx.resource_refusal()));
+            } else {
+                assert_eq!(result.expect("fixed digest prefix" ).as_str(),
+                    "ba7816bf8f01cfea");
+            }
+        }
     }
 
     #[test]

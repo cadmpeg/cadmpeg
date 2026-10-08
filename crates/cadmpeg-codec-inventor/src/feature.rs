@@ -1470,24 +1470,28 @@ fn project_extrusion(
     let mut seen_storage =
         option_result_value!(ctx.reserve_scoped(0, "check distinct Inventor extrusion selections"));
     let mut seen = std::collections::HashSet::new();
-    for selection in
-        option_result_value!(ctx.admit_iter(boundary.references(), "visit Inventor feature items"))
-    {
-        let first = option_result_value!(seen_storage.with_storage(|| ctx.insert_hash_set(
-            &mut seen,
-            selection.index(),
-            "check distinct Inventor extrusion selections",
-        )));
-        if !first {
+    let mut references = boundary.references().iter();
+    while let Some(reference) = option_result_value!(
+        ctx.next_charged(&mut references, "visit Inventor feature items")
+    ) {
+        let first = seen_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut seen,
+                reference.index(),
+                "check distinct Inventor extrusion selections",
+            )
+        });
+        if !option_result_value!(first) {
             return None;
         }
     }
     drop(seen);
     drop(seen_storage);
     let mut selections = Vec::new();
-    for reference in
-        option_result_value!(ctx.admit_iter(boundary.references(), "visit Inventor feature items"))
-    {
+    let mut references = boundary.references().iter();
+    while let Some(reference) = option_result_value!(
+        ctx.next_charged(&mut references, "resolve Inventor extrusion selections")
+    ) {
         let property = option_result_value!(resolve_property(
             ctx,
             source.identity.segment_token.as_str(),
@@ -1631,7 +1635,9 @@ fn admit_projected_feature(
     tag: &'static str,
 ) -> Result<String, CodecError> {
     ctx.charge_entities(1, "project Inventor feature")?;
-    ctx.copy_retained_text(tag, "retain Inventor projected feature tag")
+    let mut value = ctx.retained_string(tag.len(), "retain Inventor projected feature tag")?;
+    value.push_str(tag);
+    Ok(value)
 }
 
 fn project_fillet(
@@ -1660,8 +1666,9 @@ fn project_fillet(
         index
     ))?;
     let mut groups = Vec::new();
-    for reference in
-        option_result_value!(ctx.admit_iter(sets.references(), "visit Inventor feature items"))
+    let mut references = sets.references().iter();
+    while let Some(reference) =
+        option_result_value!(ctx.next_charged(&mut references, "visit Inventor feature items"))
     {
         let set = option_result_value!(resolve_property(
             ctx,
@@ -2027,8 +2034,9 @@ fn feature_result(
         return None;
     };
     let mut bodies = Vec::new();
-    for reference in
-        option_result_value!(ctx.admit_iter(items.references(), "visit Inventor feature items"))
+    let mut references = items.references().iter();
+    while let Some(reference) =
+        option_result_value!(ctx.next_charged(&mut references, "visit Inventor feature items"))
     {
         let body = option_result_value!(resolve_property(
             ctx,
@@ -2459,6 +2467,7 @@ mod tests {
     use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
     use crate::test_support::test_fixtures::{content, parse, primary_envelope_fixture};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::{
         edge_treatments::{ChamferSpec, RadiusSpec},
@@ -2665,6 +2674,48 @@ mod tests {
     }
 
     #[test]
+    fn feature_result_stops_at_first_missing_body_reference() {
+        let run = |references: &[u32], max_work_units: u64, measure_work: bool| {
+            let source = test_feature(0, 1, &[(0, 1)]);
+            let properties = [test_property(
+                1,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::ObjectCollection,
+                    items: reference_list(references),
+                },
+            )];
+            let index = test_projection_index(&properties, &[], &[], &[], &[], &[], &[], &[]);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = max_work_units;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
+            let skipped = super::feature_result(&ctx, &source, 0, &index).is_none();
+            let used = measure_work.then(|| {
+                let refusal = ctx
+                    .charge_work_limit(max_work_units, "measure Inventor feature-result prefix")
+                    .expect_err("the probe exceeds the remaining work allowance");
+                assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+                refusal.used
+            });
+            if !measure_work {
+                ctx.finish_session()
+                    .expect("early result rejection leaves the session clean");
+            }
+            (skipped, used)
+        };
+
+        let (single_skipped, Some(prefix_work)) = run(&[0], 1_000_000, true) else {
+            panic!("a null first body reference skips the candidate and measures its prefix");
+        };
+        assert!(single_skipped);
+        let tail_len = usize::try_from(prefix_work.checked_add(1).expect("tail length fits"))
+            .expect("tail length fits usize");
+        let references = vec![0; tail_len];
+        assert!(run(&references, prefix_work, false).0);
+    }
+
+    #[test]
     fn feature_label_errors_do_not_retain_error_text() {
         let label = test_label(0, 1, EXTRUSION_CLASS_ID, &[]);
         for (name, class_id) in [("", "ab".repeat(16)), ("valid", "z".repeat(32))] {
@@ -2689,28 +2740,30 @@ mod tests {
     }
 
     #[test]
-    fn projected_feature_tag_copies_text_without_a_collection_slot() {
-        let source = test_feature(0, 0, &[]);
+    fn projected_feature_tags_retain_literals_without_variable_work() {
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_entities = 1;
-        // The tag copy retains seven bytes and uses seven work units; no native ID exists yet.
-        policy.limits.max_work_units = 7;
-        policy.limits.max_retained_bytes = 7;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert_eq!(
-            super::admit_projected_feature(&ctx, "extrude").expect("charged tag copy"),
-            "extrude"
-        );
-        assert!(matches!(ctx.charge_work(1, "probe"),
+        for tag in ["extrude", "fillet", "chamfer", "hole"] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_entities = 1;
+            policy.limits.max_work_units = 0;
+            policy.limits.max_retained_bytes =
+                cadmpeg_core::decode::u64_from_index(tag.len());
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            assert_eq!(
+                super::admit_projected_feature(&ctx, tag).expect("retained tag"),
+                tag
+            );
+            assert!(matches!(ctx.charge_work(1, "probe"),
             Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits && limit.used == 7));
+                if limit.dimension == ResourceDimension::WorkUnits && limit.used == 0));
+        }
 
+        let source = test_feature(0, 0, &[]);
         let native_id = "inventor:pmdc:feature#generated-0";
         // The caller retains the tag and one formatted native ID: 7 + ID length bytes.
         let retained_needed = "extrude".len() + native_id.len();
-        policy = DecodePolicy::service();
+        let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         policy.limits.max_entities = 1;
         for shortfall in [1, 0] {
@@ -3524,6 +3577,59 @@ mod tests {
     }
 
     #[test]
+    fn fillet_set_projection_stops_at_first_missing_set_reference() {
+        let run = |references: &[u32], max_work_units: u64, measure_work: bool| {
+            let properties = [
+                test_property(
+                    0,
+                    PmDcFeaturePropertyKind::Enumeration {
+                        family: PmDcFeatureEnumFamily::Fillet,
+                        type_value: 2,
+                        value: 0,
+                    },
+                ),
+                test_property(
+                    1,
+                    PmDcFeaturePropertyKind::References {
+                        family: PmDcFeatureReferenceFamily::FilletEdgeSets,
+                        items: reference_list(references),
+                    },
+                ),
+            ];
+            let source = test_feature(100, 12, &[(0, 1), (11, 0)]);
+            let label = test_label(100, 7, FILLET_CLASS_ID, &[]);
+            let index = test_projection_index(&properties, &[], &[], &[], &[], &[], &[], &[]);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = max_work_units;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
+            let skipped = super::project_fillet(&ctx, &source, &label, &index).is_none();
+            let used = measure_work.then(|| {
+                let refusal = ctx
+                    .charge_work_limit(max_work_units, "measure Inventor fillet-set prefix")
+                    .expect_err("the probe exceeds the remaining work allowance");
+                assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+                refusal.used
+            });
+            if !measure_work {
+                ctx.finish_session()
+                    .expect("early fillet rejection leaves the session clean");
+            }
+            (skipped, used)
+        };
+
+        let (single_skipped, Some(prefix_work)) = run(&[0], 1_000_000, true) else {
+            panic!("a null first fillet-set reference skips the candidate and measures its prefix");
+        };
+        assert!(single_skipped);
+        let tail_len = usize::try_from(prefix_work.checked_add(1).expect("tail length fits"))
+            .expect("tail length fits usize");
+        let references = vec![0; tail_len];
+        assert!(run(&references, prefix_work, false).0);
+    }
+
+    #[test]
     fn projects_generated_fillet_and_chamfer() {
         let raw_radius = raw_parameter(20);
         let neutral_radius = neutral_parameter(
@@ -3740,6 +3846,22 @@ mod tests {
         selections: &[u32],
         policy: DecodePolicy,
     ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+        let (projection, _, session) = generated_extrusion_with_work(selections, policy, false);
+        if projection.is_none() {
+            assert!(session.is_ok(), "a skipped projection leaves the session clean");
+        }
+        projection
+    }
+
+    fn generated_extrusion_with_work(
+        selections: &[u32],
+        policy: DecodePolicy,
+        measure_work: bool,
+    ) -> (
+        Option<Result<(Feature, FeatureResultTopology), CodecError>>,
+        Option<u64>,
+        Result<(), CodecError>,
+    ) {
         let raw_length = raw_parameter(70);
         let raw_taper = raw_parameter(71);
         let neutral_parameters = vec![
@@ -3936,7 +4058,16 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        project_extrusion(&ctx, &feature, &label, &index)
+        let projection = project_extrusion(&ctx, &feature, &label, &index);
+        let used = measure_work.then(|| {
+            let refusal = ctx
+                .charge_work_limit(policy.limits.max_work_units, "measure Inventor extrusion prefix")
+                .expect_err("the probe exceeds the remaining work allowance");
+            assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+            refusal.used
+        });
+        let session = ctx.finish_session();
+        (projection, used, session)
     }
 
     #[test]
@@ -3944,6 +4075,41 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_entities = 0;
         assert!(generated_extrusion(&[4, 4], policy).is_none());
+    }
+
+    #[test]
+    fn duplicate_extrusion_selection_stops_before_tail_precharge() {
+        let mut measurement_policy = DecodePolicy::service();
+        measurement_policy.limits.max_work_units = 1_000_000;
+        let (projection, Some(prefix_work), _) =
+            generated_extrusion_with_work(&[4, 4], measurement_policy, true)
+        else {
+            panic!("duplicate selections skip the candidate and measure their work");
+        };
+        assert!(projection.is_none());
+
+        let tail_len = usize::try_from(prefix_work.checked_add(1).expect("tail length fits"))
+            .expect("tail length fits usize");
+        let selections = vec![4; tail_len];
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = prefix_work;
+        assert!(generated_extrusion(&selections, policy).is_none());
+    }
+
+    #[test]
+    fn extrusion_selection_resolution_stops_at_first_null_reference() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let probe = RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "resolve Inventor extrusion selections",
+            Some(3),
+        );
+        let (projection, _, session) =
+            generated_extrusion_with_work(&[0, 4, 5], policy, false);
+        drop(probe);
+        assert!(projection.is_none());
+        session.expect("stepwise selection rejection leaves the session clean");
     }
 
     #[test]

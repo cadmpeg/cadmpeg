@@ -846,7 +846,17 @@ impl ExternalReferenceRecord {
                     .try_clone_for_decode(ctx, "copy Inventor UFRx external document path")?,
             },
             ExternalReferenceIdentity::DocumentId(document_id) => ExternalDocument::DocumentId {
-                document_id: document_id.0 .0.clone(),
+                document_id: {
+                    let text = document_id.as_str();
+                    let mut copy = ctx.retained_string(
+                        text.len(),
+                        "copy Inventor UFRx external document ID",
+                    )?;
+                    copy.push_str(text);
+                    NonBlankString::from_ascii_leading(copy).ok_or_else(|| {
+                        CodecError::malformed("identifier must contain 32 hexadecimal digits")
+                    })?
+                },
             },
         })
     }
@@ -1491,8 +1501,8 @@ mod tests {
     }
 
     #[test]
-    fn external_document_identifier_clone_uses_no_decode_budget() {
-        use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    fn external_document_identifier_copy_admits_storage_without_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
         let id = "0123456789abcdef0123456789abcdef";
         let wire = serde_json::json!({
             "id": "inventor:ufrx:external-reference#0", "ordinal": 0,
@@ -1504,15 +1514,43 @@ mod tests {
         let reference = decode_external_reference(wire).expect("reference");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Admission proves exactly 32 bytes; cloning has a fixed extent.
         policy.limits.max_work_units = 0;
-        policy.limits.max_retained_bytes = 0;
+        for retained_cap in [0, 31] {
+            policy.limits.max_retained_bytes = retained_cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            let Err(CodecError::ResourceLimit(limit)) = reference.document(&ctx) else {
+                panic!("32-byte document ID copy must refuse at {retained_cap} bytes");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.operation, "copy Inventor UFRx external document ID");
+            assert_eq!(limit.used, 0);
+            assert_eq!(limit.additional, 32);
+            assert!(matches!(
+                ctx.finish_session(),
+                Err(CodecError::ResourceLimit(sticky)) if sticky == limit
+            ));
+        }
+
+        policy.limits.max_retained_bytes = 32;
+        policy.limits.max_materialized_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let document = reference.document(&ctx).expect("fixed clone");
+        let document = reference.document(&ctx).expect("fixed output fits storage cap");
         assert!(
             matches!(document, cadmpeg_ir::products::ExternalDocument::DocumentId { document_id }
             if document_id.as_str() == id)
         );
+        let Err(CodecError::ResourceLimit(limit)) =
+            ctx.charge_work(1, "probe fixed document ID copy work")
+        else {
+            panic!("fixed document ID copy must admit with zero work");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 1);
+        assert!(matches!(
+            ctx.finish_session(),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit
+        ));
     }
 
     #[test]

@@ -978,6 +978,21 @@ fn ufrx_state_id_refuses_retained_limit_before_record_creation() {
 }
 
 #[test]
+fn ufrx_fixed_state_id_uses_storage_without_input_work() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let id = "inventor:ufrx:state#root";
+    policy.limits.max_retained_bytes = u64::try_from(id.len()).expect("id length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_ufrx_state(&ctx, &UfrxState::Absent, &mut Vec::new())
+            .expect("fixed state id needs no input work"),
+        UfrxRecord::Absent { id: actual } if actual == id
+    ));
+}
+
+#[test]
 fn ufrx_state_refuses_collection_limit_before_native_record_insert() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
