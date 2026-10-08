@@ -607,6 +607,15 @@ pub(crate) fn check_imported<'tcx>(
                     rustc_middle::ty::EarlyBinder::bind(tcx, operand.node.ty(body, tcx)),
                 )
             });
+            if receiver.is_some_and(|receiver| crate::admission::standard_admission(tcx, receiver))
+            {
+                reporter.report(
+                    root.span,
+                    "uncharged_decode_work",
+                    "the standard admission charges nothing, so decode code does not use it; replacement: pass the DecodeContext as the admission",
+                );
+                continue;
+            }
             if let Some(bounded) = receiver.and_then(|receiver| {
                 charged_reference_equality(
                     tcx,
@@ -842,6 +851,9 @@ pub(crate) fn check_imported<'tcx>(
                 }
                 scheduled.insert(next_state);
                 pending.push_back((resolved, fixed, paid, next_depth));
+                continue;
+            }
+            if types::checked_imported_leaf(tcx, resolved.def_id()) {
                 continue;
             }
             let receiver = args.first().map(|operand| {
