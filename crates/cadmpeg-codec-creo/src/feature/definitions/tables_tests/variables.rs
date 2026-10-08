@@ -14,8 +14,15 @@ fn positional_variable_row_capacity_refuses_before_reservation() {
             .len(),
         2
     );
-    let error =
-        positional_variable_rows_with_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo variable rows"), |cap| positional_variable_rows_with_limits(cap, u64::MAX)), u64::MAX).expect_err("two slots need two items");
+    let error = positional_variable_rows_with_limits(
+        crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo variable rows"),
+            |cap| positional_variable_rows_with_limits(cap, u64::MAX),
+        ),
+        u64::MAX,
+    )
+    .expect_err("two slots need two items");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo variable rows"));
@@ -26,7 +33,14 @@ fn positional_variable_value_body_refuses_before_retention() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    let error = positional_variable_rows_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo variable value body"), |cap| positional_variable_rows_with_limits(u64::MAX, cap)))
+    let error = positional_variable_rows_with_limits(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo variable value body"),
+            |cap| positional_variable_rows_with_limits(u64::MAX, cap),
+        ),
+    )
     .expect_err("value needs one byte");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -38,7 +52,14 @@ fn positional_variable_guess_body_refuses_before_retention() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    let error = positional_variable_rows_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo variable guess body"), |cap| positional_variable_rows_with_limits(u64::MAX, cap)))
+    let error = positional_variable_rows_with_limits(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo variable guess body"),
+            |cap| positional_variable_rows_with_limits(u64::MAX, cap),
+        ),
+    )
     .expect_err("guess needs one byte");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -216,10 +237,12 @@ fn reconciled_points_refuses_before_point_id_node() {
             v: Some(3.0),
         }],
     );
-    assert!(matches!(crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo reconciled point ID nodes", |ctx| table.reconciled_points(ctx)),
+    assert!(
+        matches!(crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, "creo reconciled point ID nodes", |ctx| table.reconciled_points(ctx)),
 CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo reconciled point ID nodes"));
+                && limit.operation == "creo reconciled point ID nodes")
+    );
     assert_eq!(
         reconciled_points(&table).0.get(&7),
         Some(&[Some(2.0), Some(3.0)])
@@ -251,4 +274,3 @@ fn variable_coordinate_7e_and_c6_are_the_f3_dict_sign_pair() {
         )
     );
 }
-

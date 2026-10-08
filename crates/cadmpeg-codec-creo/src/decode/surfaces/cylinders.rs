@@ -217,7 +217,8 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         &round_feature_ids,
         "creo constrained slot round feature IDs",
     )? {
-        let named = agreed_feature_affected_ids(ctx,
+        let named = agreed_feature_affected_ids(
+            ctx,
             &scan.features.affected_ids,
             *feature_id,
             crate::feature::rows::AffectedIdKind::Geometry,

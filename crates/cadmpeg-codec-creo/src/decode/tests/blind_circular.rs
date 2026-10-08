@@ -404,7 +404,9 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         .expect("admitted surface roster"),
         Some(117)
     );
-    table.entries.edit(2, |entry| entry.payload = crate::feature::entity::EntryPayload::Source { entity: None });
+    table.entries.edit(2, |entry| {
+        entry.payload = crate::feature::entity::EntryPayload::Source { entity: None }
+    });
     assert!(
         crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
             ctx,
@@ -415,7 +417,9 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         .expect("admitted surface roster")
         .is_none()
     );
-    table.entries.edit(2, |entry| entry.payload = crate::feature::entity::EntryPayload::Source { entity: Some(0) });
+    table.entries.edit(2, |entry| {
+        entry.payload = crate::feature::entity::EntryPayload::Source { entity: Some(0) }
+    });
     table.table_class_id = 28;
     assert!(
         crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
@@ -428,8 +432,11 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         .is_none()
     );
     table.table_class_id = 29;
-    table.entries.edit(3, |entry| entry.payload = crate::feature::entity::EntryPayload::Plain {
-        class: crate::feature::entity::PlainClass::new(201).expect("201 is not the source class"),
+    table.entries.edit(3, |entry| {
+        entry.payload = crate::feature::entity::EntryPayload::Plain {
+            class: crate::feature::entity::PlainClass::new(201)
+                .expect("201 is not the source class"),
+        }
     });
     assert!(
         crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
@@ -441,7 +448,9 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         .expect("admitted surface roster")
         .is_none()
     );
-    table.entries.edit(3, |entry| entry.payload = crate::feature::entity::EntryPayload::Source { entity: None });
+    table.entries.edit(3, |entry| {
+        entry.payload = crate::feature::entity::EntryPayload::Source { entity: None }
+    });
     table.mark_surface_ids([109, 117]);
     assert!(
         crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(

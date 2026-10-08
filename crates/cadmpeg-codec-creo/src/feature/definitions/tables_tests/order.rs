@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::feature::definitions::{FeatureOrderRow, FeatureOrderTable, order_table as parse_order_table, positional_order_table as parse_positional_order_table};
+use crate::feature::definitions::{
+    order_table as parse_order_table, positional_order_table as parse_positional_order_table,
+    FeatureOrderRow, FeatureOrderTable,
+};
 
-fn order_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-) -> Option<FeatureOrderTable> {
+fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderTable> {
     crate::decode::with_test_decode_ctx(|ctx| parse_order_table(ctx, payload, start, end))
         .expect("named order table admitted")
 }
@@ -156,4 +155,3 @@ fn incomplete_order_tables_do_not_resolve_identifiers() {
     assert!(!order.is_complete());
     assert_eq!(order.internal_id(10), None);
 }
-

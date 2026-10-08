@@ -57,9 +57,12 @@ fn field_choice(payload: Vec<u8>) -> FeatureChoice {
 fn choice_hit_refuses_before_vec_growth() {
     let row = row();
     item(
-        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo choice label hits", |ctx| {
-            super::super::choices(ctx, std::slice::from_ref(&row))
-        }),
+        &crate::test_support::last_refusal_at(
+            &row.body,
+            ResourceDimension::CollectionItems,
+            "creo choice label hits",
+            |ctx| super::super::choices(ctx, std::slice::from_ref(&row)),
+        ),
         "creo choice label hits",
     );
 }
@@ -104,9 +107,12 @@ fn choice_record_refuses_before_vec_growth() {
         1
     );
     item(
-        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo feature choices", |ctx| {
-            super::super::choices(ctx, std::slice::from_ref(&row))
-        }),
+        &crate::test_support::last_refusal_at(
+            &row.body,
+            ResourceDimension::CollectionItems,
+            "creo feature choices",
+            |ctx| super::super::choices(ctx, std::slice::from_ref(&row)),
+        ),
         "creo feature choices",
     );
 }
@@ -129,9 +135,12 @@ fn raw_feature_field_refuses_before_retained_copy() {
 fn scalar_feature_field_cache_refuses_before_hashset_growth() {
     let payload = [0xf9, 0x01, 0x01, 0x46, 0, 0, 0, 0, 0, 0, 0];
     item(
-        &crate::test_support::last_refusal_at(&payload, ResourceDimension::CollectionItems, "creo scalar cache unique images", |ctx| {
-            super::super::field_value(ctx, &payload)
-        }),
+        &crate::test_support::last_refusal_at(
+            &payload,
+            ResourceDimension::CollectionItems,
+            "creo scalar cache unique images",
+            |ctx| super::super::field_value(ctx, &payload),
+        ),
         "creo scalar cache unique images",
     );
 }
@@ -147,9 +156,12 @@ fn scalar_feature_values_refuse_before_vec_growth() {
         matches!(value, FeatureFieldValue::ScalarArray { decoded_values: Some(values), .. } if values == [0.0])
     );
     item(
-        &crate::test_support::last_refusal_at(&payload, ResourceDimension::CollectionItems, "creo feature scalar values", |ctx| {
-            super::super::field_value(ctx, &payload)
-        }),
+        &crate::test_support::last_refusal_at(
+            &payload,
+            ResourceDimension::CollectionItems,
+            "creo feature scalar values",
+            |ctx| super::super::field_value(ctx, &payload),
+        ),
         "creo feature scalar values",
     );
 }
@@ -172,9 +184,12 @@ fn scalar_feature_body_refuses_before_retained_copy() {
 fn compact_feature_integer_refuses_before_vec_growth() {
     let payload = [0xf8, 0x01, 0x07];
     item(
-        &crate::test_support::last_refusal_at(&payload, ResourceDimension::CollectionItems, "creo feature compact integer values", |ctx| {
-            super::super::field_value(ctx, &payload)
-        }),
+        &crate::test_support::last_refusal_at(
+            &payload,
+            ResourceDimension::CollectionItems,
+            "creo feature compact integer values",
+            |ctx| super::super::field_value(ctx, &payload),
+        ),
         "creo feature compact integer values",
     );
 }
@@ -183,9 +198,12 @@ fn compact_feature_integer_refuses_before_vec_growth() {
 fn choice_field_header_refuses_before_vec_growth() {
     let choice = field_choice(b"\xe0\x01foo\0\xf8\x01\x07".to_vec());
     item(
-        &crate::test_support::last_refusal_at(&choice.payload, ResourceDimension::CollectionItems, "creo choice field headers", |ctx| {
-            super::super::choice_fields(ctx, std::slice::from_ref(&choice))
-        }),
+        &crate::test_support::last_refusal_at(
+            &choice.payload,
+            ResourceDimension::CollectionItems,
+            "creo choice field headers",
+            |ctx| super::super::choice_fields(ctx, std::slice::from_ref(&choice)),
+        ),
         "creo choice field headers",
     );
 }
@@ -230,9 +248,12 @@ fn choice_field_record_refuses_before_vec_growth() {
         1
     );
     item(
-        &crate::test_support::last_refusal_at(&choice.payload, ResourceDimension::CollectionItems, "creo choice fields", |ctx| {
-            super::super::choice_fields(ctx, std::slice::from_ref(&choice))
-        }),
+        &crate::test_support::last_refusal_at(
+            &choice.payload,
+            ResourceDimension::CollectionItems,
+            "creo choice fields",
+            |ctx| super::super::choice_fields(ctx, std::slice::from_ref(&choice)),
+        ),
         "creo choice fields",
     );
 }
@@ -256,9 +277,12 @@ fn named_datum_row() -> FeatureRow {
 fn named_datum_ids_refuse_before_vec_growth() {
     let row = named_datum_row();
     item(
-        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo named datum ids", |ctx| {
-            super::super::geometry_tables(ctx, std::slice::from_ref(&row))
-        }),
+        &crate::test_support::last_refusal_at(
+            &row.body,
+            ResourceDimension::CollectionItems,
+            "creo named datum ids",
+            |ctx| super::super::geometry_tables(ctx, std::slice::from_ref(&row)),
+        ),
         "creo named datum ids",
     );
 }
@@ -267,9 +291,12 @@ fn named_datum_ids_refuse_before_vec_growth() {
 fn feature_geometry_table_refuses_before_vec_growth() {
     let row = named_datum_row();
     item(
-        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo feature geometry tables", |ctx| {
-            super::super::geometry_tables(ctx, std::slice::from_ref(&row))
-        }),
+        &crate::test_support::last_refusal_at(
+            &row.body,
+            ResourceDimension::CollectionItems,
+            "creo feature geometry tables",
+            |ctx| super::super::geometry_tables(ctx, std::slice::from_ref(&row)),
+        ),
         "creo feature geometry tables",
     );
 }
@@ -286,9 +313,12 @@ fn datum_class_stream_refuses_before_btree_insertion() {
         1
     );
     item(
-        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo datum class by stream", |ctx| {
-            super::super::geometry_tables(ctx, std::slice::from_ref(&row))
-        }),
+        &crate::test_support::last_refusal_at(
+            &row.body,
+            ResourceDimension::CollectionItems,
+            "creo datum class by stream",
+            |ctx| super::super::geometry_tables(ctx, std::slice::from_ref(&row)),
+        ),
         "creo datum class by stream",
     );
 }
@@ -300,10 +330,15 @@ fn positional_datum_ids_refuse_before_counted_vec_reserve() {
         0xe2, 0x80, 0x92, 0xf6, 0xe3,
     ];
     item(
-        &crate::test_support::last_refusal_at(&body, ResourceDimension::CollectionItems, "creo positional datum ids", |ctx| {
-            super::super::positional_datum_geometry_table_at(ctx, &body, 1, 87)
-                .map(|decoded| decoded.map(|(_, ids)| ids))
-        }),
+        &crate::test_support::last_refusal_at(
+            &body,
+            ResourceDimension::CollectionItems,
+            "creo positional datum ids",
+            |ctx| {
+                super::super::positional_datum_geometry_table_at(ctx, &body, 1, 87)
+                    .map(|decoded| decoded.map(|(_, ids)| ids))
+            },
+        ),
         "creo positional datum ids",
     );
 }
@@ -326,9 +361,12 @@ fn affected_row() -> FeatureRow {
 fn affected_ids_refuse_before_counted_vec_reserve() {
     let row = affected_row();
     item(
-        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo affected ids", |ctx| {
-            super::super::affected_ids(ctx, std::slice::from_ref(&row))
-        }),
+        &crate::test_support::last_refusal_at(
+            &row.body,
+            ResourceDimension::CollectionItems,
+            "creo affected ids",
+            |ctx| super::super::affected_ids(ctx, std::slice::from_ref(&row)),
+        ),
         "creo affected ids",
     );
 }
@@ -345,9 +383,12 @@ fn affected_id_record_refuses_before_vec_growth() {
         1
     );
     item(
-        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo affected-id records", |ctx| {
-            super::super::affected_ids(ctx, std::slice::from_ref(&row))
-        }),
+        &crate::test_support::last_refusal_at(
+            &row.body,
+            ResourceDimension::CollectionItems,
+            "creo affected-id records",
+            |ctx| super::super::affected_ids(ctx, std::slice::from_ref(&row)),
+        ),
         "creo affected-id records",
     );
 }
@@ -372,9 +413,12 @@ fn round_replay_scalar_refuses_before_vec_growth() {
         1
     );
     item(
-        &crate::test_support::last_refusal_at(body, ResourceDimension::CollectionItems, "creo round replay scalars", |ctx| {
-            super::super::round_replay_scalars(ctx, std::slice::from_ref(&row))
-        }),
+        &crate::test_support::last_refusal_at(
+            body,
+            ResourceDimension::CollectionItems,
+            "creo round replay scalars",
+            |ctx| super::super::round_replay_scalars(ctx, std::slice::from_ref(&row)),
+        ),
         "creo round replay scalars",
     );
 }
@@ -399,9 +443,12 @@ fn loop_restore_direction_refuses_before_vec_growth() {
         1
     );
     item(
-        &crate::test_support::last_refusal_at(body, ResourceDimension::CollectionItems, "creo loop restore directions", |ctx| {
-            super::super::loop_restore_directions(ctx, std::slice::from_ref(&row))
-        }),
+        &crate::test_support::last_refusal_at(
+            body,
+            ResourceDimension::CollectionItems,
+            "creo loop restore directions",
+            |ctx| super::super::loop_restore_directions(ctx, std::slice::from_ref(&row)),
+        ),
         "creo loop restore directions",
     );
 }
@@ -427,9 +474,12 @@ fn feature_revolution_extent_refuses_before_vec_growth() {
         1
     );
     item(
-        &crate::test_support::last_refusal_at(body, ResourceDimension::CollectionItems, "creo feature revolution extents", |ctx| {
-            super::super::revolution_extents(ctx, std::slice::from_ref(&row))
-        }),
+        &crate::test_support::last_refusal_at(
+            body,
+            ResourceDimension::CollectionItems,
+            "creo feature revolution extents",
+            |ctx| super::super::revolution_extents(ctx, std::slice::from_ref(&row)),
+        ),
         "creo feature revolution extents",
     );
 }
@@ -438,20 +488,25 @@ fn feature_revolution_extent_refuses_before_vec_growth() {
 fn replay_id_array_refuses_before_nested_vec_growth() {
     let bytes = [10, 11];
     item(
-        &crate::test_support::last_refusal_at(&bytes, ResourceDimension::CollectionItems, "creo replay affected ids", |ctx| {
-            super::super::replay_ids(ctx, &bytes, 2, 0)
-                .transpose()?
-                .ok_or_else(|| CodecError::malformed("replay ids"))
-                .and_then(|(ids, _)| ids.materialize(ctx))
-                .map(|_| ())
-        }),
+        &crate::test_support::last_refusal_at(
+            &bytes,
+            ResourceDimension::CollectionItems,
+            "creo replay affected ids",
+            |ctx| {
+                super::super::replay_ids(ctx, &bytes, 2, 0)
+                    .transpose()?
+                    .ok_or_else(|| CodecError::malformed("replay ids"))
+                    .and_then(|(ids, _)| ids.materialize(ctx))
+                    .map(|_| ())
+            },
+        ),
         "creo replay affected ids",
     );
     assert!(run(&bytes, u64::MAX, u64::MAX, |ctx| {
         super::super::replay_ids(ctx, &bytes, 2, 0)
             .transpose()?
             .ok_or_else(|| CodecError::malformed("replay ids"))
-                .and_then(|(ids, _)| ids.materialize(ctx))
+            .and_then(|(ids, _)| ids.materialize(ctx))
     })
     .is_ok());
 }
@@ -460,9 +515,12 @@ fn replay_id_array_refuses_before_nested_vec_growth() {
 fn replay_extent_state_refuses_before_btree_insertion() {
     let row = super::replay_row(1, &[0xf8, 1, 10, 0xf8, 1, 20]);
     item(
-        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo replay extent states", |ctx| {
-            super::super::replay_affected_ids(ctx, std::slice::from_ref(&row))
-        }),
+        &crate::test_support::last_refusal_at(
+            &row.body,
+            ResourceDimension::CollectionItems,
+            "creo replay extent states",
+            |ctx| super::super::replay_affected_ids(ctx, std::slice::from_ref(&row)),
+        ),
         "creo replay extent states",
     );
 }
@@ -471,9 +529,12 @@ fn replay_extent_state_refuses_before_btree_insertion() {
 fn replay_affected_record_refuses_before_vec_growth() {
     let row = super::replay_row(1, &[0xf8, 1, 10, 0xf8, 1, 20]);
     item(
-        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo replay affected-id records", |ctx| {
-            super::super::replay_affected_ids(ctx, std::slice::from_ref(&row))
-        }),
+        &crate::test_support::last_refusal_at(
+            &row.body,
+            ResourceDimension::CollectionItems,
+            "creo replay affected-id records",
+            |ctx| super::super::replay_affected_ids(ctx, std::slice::from_ref(&row)),
+        ),
         "creo replay affected-id records",
     );
     assert_eq!(
@@ -490,9 +551,18 @@ fn replay_affected_record_refuses_before_vec_growth() {
 fn surface_merge_extent_state_refuses_before_btree_insertion() {
     let row = super::surface_merge_row(1, 40, &[]);
     item(
-        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo surface merge extent states", |ctx| {
-            super::super::surface_merge_replay_affected_ids(ctx, std::slice::from_ref(&row), &[])
-        }),
+        &crate::test_support::last_refusal_at(
+            &row.body,
+            ResourceDimension::CollectionItems,
+            "creo surface merge extent states",
+            |ctx| {
+                super::super::surface_merge_replay_affected_ids(
+                    ctx,
+                    std::slice::from_ref(&row),
+                    &[],
+                )
+            },
+        ),
         "creo surface merge extent states",
     );
 }
@@ -509,17 +579,20 @@ fn surface_merge_nested_arrays_refuse_before_each_vec_growth() {
     crate::test_support::assert_refusal_order(
         ResourceDimension::CollectionItems,
         &["creo replay affected ids"; 3],
-        |cap| run(&row.body, cap, u64::MAX, |ctx| {
-            super::super::positional_surface_merge_affected_ids(ctx, &row, [None; 3])
-                .transpose()?
-                .ok_or_else(|| CodecError::malformed("surface merge arrays"))
-        }),
+        |cap| {
+            run(&row.body, cap, u64::MAX, |ctx| {
+                super::super::positional_surface_merge_affected_ids(ctx, &row, [None; 3])
+                    .transpose()?
+                    .ok_or_else(|| CodecError::malformed("surface merge arrays"))
+            })
+        },
     );
     assert!(run(&row.body, u64::MAX, u64::MAX, |ctx| {
         super::super::positional_surface_merge_affected_ids(ctx, &row, [None; 3])
             .transpose()?
             .ok_or_else(|| CodecError::malformed("surface merge arrays"))
-    }).is_ok());
+    })
+    .is_ok());
 }
 
 #[test]
@@ -532,9 +605,18 @@ fn surface_merge_record_refuses_before_vec_growth() {
         ],
     );
     item(
-        &crate::test_support::last_refusal_at(&row.body, ResourceDimension::CollectionItems, "creo surface merge affected-id records", |ctx| {
-            super::super::surface_merge_replay_affected_ids(ctx, std::slice::from_ref(&row), &[])
-        }),
+        &crate::test_support::last_refusal_at(
+            &row.body,
+            ResourceDimension::CollectionItems,
+            "creo surface merge affected-id records",
+            |ctx| {
+                super::super::surface_merge_replay_affected_ids(
+                    ctx,
+                    std::slice::from_ref(&row),
+                    &[],
+                )
+            },
+        ),
         "creo surface merge affected-id records",
     );
     assert_eq!(
@@ -553,12 +635,14 @@ fn loop_history_fields_refuse_before_each_retained_copy() {
     crate::test_support::assert_refusal_order(
         ResourceDimension::RetainedBytes,
         &["creo loop history field bytes"; 4],
-        |cap| run(&body, u64::MAX, cap, |ctx| {
-            super::super::loop_history_roster(ctx, &body, 0, 1)
-                .transpose()?
-                .ok_or_else(|| CodecError::malformed("loop history fields"))
-                .map(|_| ())
-        }),
+        |cap| {
+            run(&body, u64::MAX, cap, |ctx| {
+                super::super::loop_history_roster(ctx, &body, 0, 1)
+                    .transpose()?
+                    .ok_or_else(|| CodecError::malformed("loop history fields"))
+                    .map(|_| ())
+            })
+        },
     );
 }
 
@@ -580,10 +664,10 @@ fn loop_history_trailing_field_refuses_before_retained_copy() {
         "creo loop history trailing bytes",
     );
     assert!(run(body, u64::MAX, u64::MAX, |ctx| {
-            super::super::loop_history_roster(ctx, body, 0, 1)
-                .transpose()?
-                .ok_or_else(|| CodecError::malformed("loop history trailing field"))
-        })
+        super::super::loop_history_roster(ctx, body, 0, 1)
+            .transpose()?
+            .ok_or_else(|| CodecError::malformed("loop history trailing field"))
+    })
     .is_ok());
 }
 
@@ -607,13 +691,18 @@ fn loop_history_result_refuses_before_vec_growth() {
         offset: 1000,
     };
     item(
-        &crate::test_support::last_refusal_at(body, ResourceDimension::CollectionItems, "creo loop history entries", |ctx| {
-            super::super::loop_history_entries(
-                ctx,
-                std::slice::from_ref(&row),
-                std::slice::from_ref(&table),
-            )
-        }),
+        &crate::test_support::last_refusal_at(
+            body,
+            ResourceDimension::CollectionItems,
+            "creo loop history entries",
+            |ctx| {
+                super::super::loop_history_entries(
+                    ctx,
+                    std::slice::from_ref(&row),
+                    std::slice::from_ref(&table),
+                )
+            },
+        ),
         "creo loop history entries",
     );
     assert_eq!(
@@ -650,7 +739,12 @@ fn choice_field_utf8_refuses_work() {
 fn replay_row_work_refuses_at_actual_id_and_candidate_steps() {
     let row = super::unanchored_replay_row(1, 40, None, &[0xf8, 1, 10, 0xf8, 1, 20]);
     let records = crate::test_support::assert_work_boundaries(
-        &["creo unanchored replay suffix traversal", "creo explicit replay array traversal", "creo replay ID traversal", "creo replay ID materialization"],
+        &[
+            "creo unanchored replay suffix traversal",
+            "creo explicit replay array traversal",
+            "creo replay ID traversal",
+            "creo replay ID materialization",
+        ],
         |ctx| super::super::replay_affected_ids(ctx, std::slice::from_ref(&row)),
     );
     assert_eq!(records.len(), 1);
@@ -665,11 +759,16 @@ fn incomplete_loop_history_keeps_fields_borrowed() {
     body.extend_from_slice(&[0, 2, 3, 4, 0xe3]);
     let decoded = run(&body, u64::MAX, 0, |ctx| {
         super::super::loop_history_roster(ctx, &body, 0, 2).transpose()
-    }).expect("incomplete roster uses no retained fields");
+    })
+    .expect("incomplete roster uses no retained fields");
     assert!(decoded.is_none());
     let complete = crate::test_support::assert_work_boundaries(
-        &["creo loop history name terminator", "creo loop history roster traversal"],
+        &[
+            "creo loop history name terminator",
+            "creo loop history roster traversal",
+        ],
         |ctx| super::super::loop_history_roster(ctx, &body, 0, 1).transpose(),
-    ).expect("complete roster");
+    )
+    .expect("complete roster");
     assert_eq!(complete[0].field_bytes[0], body[1..104]);
 }

@@ -59,7 +59,6 @@ pub(super) fn reconciled_points(
     .expect("test point reconciliation")
 }
 
-
 pub(super) fn with_trim_limits<T>(
     collection_limit: u64,
     work_limit: u64,

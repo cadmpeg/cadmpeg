@@ -2,7 +2,8 @@
 
 use super::variable_table;
 use crate::feature::definitions::{
-    decode_section_coordinate_scalar as decode_section_coordinate_scalar_checked, decode_variable_scalar as decode_variable_scalar_checked, saved_section_scalar, ScalarLane,
+    decode_section_coordinate_scalar as decode_section_coordinate_scalar_checked,
+    decode_variable_scalar as decode_variable_scalar_checked, saved_section_scalar, ScalarLane,
 };
 use crate::scalar;
 
@@ -219,12 +220,26 @@ fn decodes_var_arr_positional_dict_lattice() {
     );
 }
 
-fn decode_variable_scalar(payload: &[u8], offset: usize, end: usize, cache: &scalar::ScalarCache) -> (ScalarLane, usize) {
-    crate::decode::with_test_decode_ctx(|ctx| decode_variable_scalar_checked(ctx, payload, offset, end, cache))
-        .expect("scalar lane admission")
+fn decode_variable_scalar(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> (ScalarLane, usize) {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        decode_variable_scalar_checked(ctx, payload, offset, end, cache)
+    })
+    .expect("scalar lane admission")
 }
 
-fn decode_section_coordinate_scalar(payload: &[u8], offset: usize, end: usize, cache: &scalar::ScalarCache) -> (ScalarLane, usize) {
-    crate::decode::with_test_decode_ctx(|ctx| decode_section_coordinate_scalar_checked(ctx, payload, offset, end, cache))
-        .expect("scalar lane admission")
+fn decode_section_coordinate_scalar(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> (ScalarLane, usize) {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        decode_section_coordinate_scalar_checked(ctx, payload, offset, end, cache)
+    })
+    .expect("scalar lane admission")
 }

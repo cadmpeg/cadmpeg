@@ -27,4 +27,3 @@ fn decodes_compact_feature_scalar_array_extents() {
     assert_eq!(body.len(), 408);
     assert_eq!(decoded_values, Some(vec![0.0; 408]));
 }
-

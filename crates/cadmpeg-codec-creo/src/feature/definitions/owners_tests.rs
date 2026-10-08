@@ -650,11 +650,19 @@ fn section_owner_binding_refuses_each_collection_boundary() {
         ),
     ] {
         let limit = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some(operation), |cap| {
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some(operation),
+            |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root admitted");
-                super::bind_section_owners(&ctx, definitions.clone(), &operations, &[(0, usize::MAX)])
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root admitted");
+                super::bind_section_owners(
+                    &ctx,
+                    definitions.clone(),
+                    &operations,
+                    &[(0, usize::MAX)],
+                )
             },
         );
         let mut policy = DecodePolicy::service();
@@ -787,10 +795,12 @@ fn definition_revolution_extent_refuses_before_vec_growth() {
             std::slice::from_ref(&revolve),
         )
     };
-    let admitted = crate::test_support::allocation_limit_at(
-        ResourceDimension::CollectionItems, None, run,
+    let admitted =
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run);
+    assert_eq!(
+        run(admitted).expect("one definition extent admitted").len(),
+        1
     );
-    assert_eq!(run(admitted).expect("one definition extent admitted").len(), 1);
     let boundary = crate::test_support::allocation_limit_at(
         ResourceDimension::CollectionItems,
         Some("creo definition revolution extents"),
@@ -1537,25 +1547,54 @@ fn depdb_definition_identity_utf8_refuses_work() {
     );
 }
 
-
-fn bind_definition_owners(definitions: Vec<FeatureDefinition>, tables: &[FeatureGeometryTable]) -> Vec<FeatureDefinition> {
-    crate::decode::with_test_decode_ctx(|ctx| bind_definition_owners_checked(ctx, definitions, tables)).expect("datum owner admission")
+fn bind_definition_owners(
+    definitions: Vec<FeatureDefinition>,
+    tables: &[FeatureGeometryTable],
+) -> Vec<FeatureDefinition> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        bind_definition_owners_checked(ctx, definitions, tables)
+    })
+    .expect("datum owner admission")
 }
 
 #[test]
 fn owner_join_scans_refuse_at_work_boundaries() {
     let definition = pending_trimmed_definition(&[9]);
     let table = generated_entity_table(42, &[9]);
-    crate::test_support::assert_work_boundaries(&[
-        "creo trimmed definition candidate traversal", "creo generated owner table traversal",
-        "creo generated source entry traversal", "creo trimmed source set traversal",
-        "creo trimmed source set agreement", "creo trimmed candidate owner traversal",
-        "creo trimmed bound definition traversal",
-    ], |ctx| bind_trimmed_definition_owners(ctx, vec![definition.clone()], std::slice::from_ref(&table)));
+    crate::test_support::assert_work_boundaries(
+        &[
+            "creo trimmed definition candidate traversal",
+            "creo generated owner table traversal",
+            "creo generated source entry traversal",
+            "creo trimmed source set traversal",
+            "creo trimmed source set agreement",
+            "creo trimmed candidate owner traversal",
+            "creo trimmed bound definition traversal",
+        ],
+        |ctx| {
+            bind_trimmed_definition_owners(
+                ctx,
+                vec![definition.clone()],
+                std::slice::from_ref(&table),
+            )
+        },
+    );
     let replay = pending_replay(&[9]);
-    crate::test_support::assert_work_boundaries(&[
-        "creo replay definition candidate traversal", "creo replay subset source traversal",
-        "creo replay subset membership", "creo replay candidate owner traversal",
-        "creo replay bound definition traversal",
-    ], |ctx| bind_replay_definition_owners(ctx, vec![replay.clone()], std::slice::from_ref(&table), &BTreeSet::new()));
+    crate::test_support::assert_work_boundaries(
+        &[
+            "creo replay definition candidate traversal",
+            "creo replay subset source traversal",
+            "creo replay subset membership",
+            "creo replay candidate owner traversal",
+            "creo replay bound definition traversal",
+        ],
+        |ctx| {
+            bind_replay_definition_owners(
+                ctx,
+                vec![replay.clone()],
+                std::slice::from_ref(&table),
+                &BTreeSet::new(),
+            )
+        },
+    );
 }

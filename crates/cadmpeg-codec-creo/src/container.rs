@@ -2637,7 +2637,11 @@ fn feature_entity_graph(
     Ok((entities, references))
 }
 
-fn offset_feature_definition(ctx: &DecodeContext<'_>, definition: &mut FeatureDefinition, section_offset: usize) -> Result<(), CodecError> {
+fn offset_feature_definition(
+    ctx: &DecodeContext<'_>,
+    definition: &mut FeatureDefinition,
+    section_offset: usize,
+) -> Result<(), CodecError> {
     definition.offset += section_offset;
     for frame in &mut definition.parameter_frames {
         frame.offset += section_offset;
@@ -2942,7 +2946,11 @@ fn positional_replay_definitions(
             continue;
         }
         let decoded = feature::definitions::positional_replay_definitions(ctx, section.region)?;
-        ctx.reserve_vec(&mut records, decoded.len(), "creo section record aggregation")?;
+        ctx.reserve_vec(
+            &mut records,
+            decoded.len(),
+            "creo section record aggregation",
+        )?;
         for mut record in ctx.admit_iter(decoded, "creo relocated positional replay definitions")? {
             offset_feature_definition(ctx, &mut record, section.section.offset())?;
             records.push(record);
@@ -3599,8 +3607,11 @@ pub(crate) fn scan_bytes<'a>(
         feature::rows::loop_restore_directions(ctx, &feature_rows)?;
     let feature_entity_tables = feature_entity_tables(ctx, &sections, &feature_ids, &surface_rows)?;
     let feature_definitions = feature_definitions(ctx, &sections)?;
-    let feature_definitions =
-        feature::definitions::bind_definition_owners(ctx, feature_definitions, &feature_geometry_tables)?;
+    let feature_definitions = feature::definitions::bind_definition_owners(
+        ctx,
+        feature_definitions,
+        &feature_geometry_tables,
+    )?;
     let mut feature_definitions = feature::definitions::bind_trimmed_definition_owners(
         ctx,
         feature_definitions,

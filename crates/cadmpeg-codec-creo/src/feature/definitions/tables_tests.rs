@@ -23,7 +23,7 @@ use crate::feature::definitions::positional_variable_table as parse_positional_v
 use crate::feature::definitions::relation_table as parse_relation_table;
 use crate::feature::definitions::section_3d as parse_section_3d;
 use crate::feature::definitions::self_described_positional_dimension_table as parse_self_described_positional_dimension_table;
-use crate::feature::definitions::test_support::{with_points, reconciled_points, with_trim_limits};
+use crate::feature::definitions::test_support::{reconciled_points, with_points, with_trim_limits};
 
 use crate::feature::definitions::variable_table as parse_variable_table;
 use crate::feature::definitions::BinaryFlag;
@@ -42,10 +42,6 @@ use crate::psb;
 use crate::scalar;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-
-
-
-
 
 const NAMED_DIMENSION_LIMIT_INPUT: &[u8] = b"dimtab_ptr\0\xf3\xf8\x01\xf7\x58\xfb\xe2\
     \xe0\x01type\0\x02\xe0\x02value\0\x18\xe0\x01direct\0\x00\
@@ -70,7 +66,10 @@ fn with_dimension_limits<T>(
     run(&ctx)
 }
 
-fn named_dimension_with_limits(collection_limit: u64, retained_limit: u64) -> Result<Option<crate::feature::definitions::FeatureDimensionTable>, CodecError> {
+fn named_dimension_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Option<crate::feature::definitions::FeatureDimensionTable>, CodecError> {
     with_dimension_limits(
         NAMED_DIMENSION_LIMIT_INPUT,
         collection_limit,
@@ -118,13 +117,7 @@ named_dimension_collection_limit_test!(
     "creo dimension rows"
 );
 
-
-
-
-
 const POSITIONAL_DIMENSION_LIMIT_INPUT: &[u8] = &[1, 0x00, 0x04, 0xa6, 0, 0x18, 44];
-
-
 
 const POSITIONAL_DIMENSION_TABLE_LIMIT_INPUT: &[u8] = b"prefix\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
     \x02\xe4\x00\x18\x2b\xf3\xf7\x58\xe2\x02\xe4\x00\x18\x2c";
@@ -148,12 +141,6 @@ fn positional_dimension_table_with_limit(
         },
     )
 }
-
-
-
-
-
-
 
 fn dimension_table(
     payload: &[u8],
@@ -238,7 +225,15 @@ fn positional_feature_skamps(
     table_class: u32,
 ) -> Vec<crate::feature::definitions::FeatureSkamp> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        parse_positional_feature_skamps(ctx, payload, start, end, table_class).map(|table| match table { Some(crate::feature::definitions::SolverSubtable::Declared { rows, .. }) => rows, None => Vec::new(), Some(crate::feature::definitions::SolverSubtable::Unframed(_)) => panic!("positional solver table is declared") })
+        parse_positional_feature_skamps(ctx, payload, start, end, table_class).map(|table| {
+            match table {
+                Some(crate::feature::definitions::SolverSubtable::Declared { rows, .. }) => rows,
+                None => Vec::new(),
+                Some(crate::feature::definitions::SolverSubtable::Unframed(_)) => {
+                    panic!("positional solver table is declared")
+                }
+            }
+        })
     })
     .expect("positional skamps admitted")
 }
@@ -261,7 +256,15 @@ fn positional_relation_triples(
     table_class: u32,
 ) -> Vec<crate::feature::definitions::FeatureRelationTriple> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        parse_positional_relation_triples(ctx, payload, start, end, table_class).map(|table| match table { Some(crate::feature::definitions::SolverSubtable::Declared { rows, .. }) => rows, None => Vec::new(), Some(crate::feature::definitions::SolverSubtable::Unframed(_)) => panic!("positional solver table is declared") })
+        parse_positional_relation_triples(ctx, payload, start, end, table_class).map(|table| {
+            match table {
+                Some(crate::feature::definitions::SolverSubtable::Declared { rows, .. }) => rows,
+                None => Vec::new(),
+                Some(crate::feature::definitions::SolverSubtable::Unframed(_)) => {
+                    panic!("positional solver table is declared")
+                }
+            }
+        })
     })
     .expect("positional triples admitted")
 }
@@ -291,7 +294,10 @@ const POSITIONAL_RELATION_LIMIT_INPUT: &[u8] = b"prefix\xf8\x03\xf7\x64\xfb\xe2\
     prototype\xf1\xf7\x64\xe2\
     \x08\x00\x03\x0f\xf6\xe4\x01\xe4\x00\xe4\x0f\x10\x0f\x18\x00\xf6\x00\xe2";
 
-fn positional_relation_with_limits(collection_limit: u64, retained_limit: u64) -> Result<Option<crate::feature::definitions::FeatureRelationTable>, CodecError> {
+fn positional_relation_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Option<crate::feature::definitions::FeatureRelationTable>, CodecError> {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -307,26 +313,14 @@ fn positional_relation_with_limits(collection_limit: u64, retained_limit: u64) -
     )
 }
 
-
-
-
-
-
-
 const POSITIONAL_SECTION_LIMIT_INPUT: &[u8] = b"prefix\x07S2D0004\0\x01\xf6\xe1\xf6\x82\x01\xf6\
     \xf8\x02\xf7\x39\xfb\xe2\xf7\x3a\
     \x06\x05\xf6\x03\xf6\x00\xe3tail\xf2\xf7\x39\xe2\
     \x07\x05\xf6\x04\xf6\x01";
 
-
-
 const NAMED_SECTION_LIMIT_INPUT: &[u8] = b"\xe0\x00gsec3d_ptr\0\
     \xe0\x00ref_planes\0\xf8\x01\xf7\x01\xfb\xe2\
     dim_id_tab\0\xf8\x01\x2a";
-
-
-
-
 
 fn variable_table(
     payload: &[u8],
@@ -351,7 +345,10 @@ fn positional_variable_table(
     .expect("variable table admitted")
 }
 
-fn positional_variable_rows_with_limits(collection_limit: u64, retained_limit: u64) -> Result<FeatureVariableTable, cadmpeg_core::CodecError> {
+fn positional_variable_rows_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<FeatureVariableTable, cadmpeg_core::CodecError> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let payload = b"prefix\xf8\x02\xf7\x77\xfb\xe2\xf7\x78\
@@ -373,65 +370,14 @@ fn positional_variable_rows_with_limits(collection_limit: u64, retained_limit: u
     .expect("complete positional variable table"))
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 const EQUATION_LIMIT_INPUT: &[u8] = b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
     \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
     \x01\x04\x11\x12\xf6\xe2";
 
-fn equation_with_limits(collection_limit: u64, retained_limit: u64) -> Result<Option<crate::feature::definitions::FeatureEquationTable>, CodecError> {
+fn equation_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Option<crate::feature::definitions::FeatureEquationTable>, CodecError> {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -441,73 +387,18 @@ fn equation_with_limits(collection_limit: u64, retained_limit: u64) -> Result<Op
     parse_equation_table(&ctx, EQUATION_LIMIT_INPUT, 0, EQUATION_LIMIT_INPUT.len())
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 mod order;
 
-fn decode_variable_scalar(payload: &[u8], offset: usize, end: usize, cache: &scalar::ScalarCache) -> (ScalarLane, usize) {
-    crate::decode::with_test_decode_ctx(|ctx| decode_variable_scalar_checked(ctx, payload, offset, end, cache))
-        .expect("scalar lane admission")
+fn decode_variable_scalar(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> (ScalarLane, usize) {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        decode_variable_scalar_checked(ctx, payload, offset, end, cache)
+    })
+    .expect("scalar lane admission")
 }
 
 mod dimensions;

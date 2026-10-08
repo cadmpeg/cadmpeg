@@ -33,8 +33,11 @@ fn trim_endpoint_radius_preserves_missing_agreement_and_refusal() {
     ] {
         let points = points.into_iter().collect();
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| super::super::trim_endpoint_radius(ctx, &segment, [0.0; 2], &points)).expect("endpoint budget")
-                .map(|radius| radius.map(cadmpeg_ir::scalar::PositiveReal::get)),
+            crate::decode::with_test_decode_ctx(|ctx| super::super::trim_endpoint_radius(
+                ctx, &segment, [0.0; 2], &points
+            ))
+            .expect("endpoint budget")
+            .map(|radius| radius.map(cadmpeg_ir::scalar::PositiveReal::get)),
             expected
         );
     }
@@ -105,4 +108,3 @@ fn numerical_audit_trim_line_circle_rejects_disjoint_small_carriers() {
         );
     }
 }
-

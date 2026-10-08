@@ -6,7 +6,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use super::{FeatureVariableTable, ReconciledPoints, VariableType, EPS_PARAMETER_AGREEMENT, TRIM_COORDINATE_EPS};
+use super::{
+    FeatureVariableTable, ReconciledPoints, VariableType, EPS_PARAMETER_AGREEMENT,
+    TRIM_COORDINATE_EPS,
+};
 
 #[derive(Clone, Copy)]
 struct CoordinateAgreement {
@@ -79,7 +82,9 @@ pub(super) struct TrimGeometry {
 
 impl TrimGeometry {
     pub(super) fn radius(&self, key: u32) -> Result<Option<cadmpeg_ir::scalar::FiniteReal>, ()> {
-        self.radii.get(&key).map_or(Ok(None), RadiusAgreement::value)
+        self.radii
+            .get(&key)
+            .map_or(Ok(None), RadiusAgreement::value)
     }
 }
 
@@ -110,15 +115,18 @@ impl FeatureVariableTable {
         for row in ctx.admit_iter(&self.rows, "creo point variable traversal")? {
             if include_radii && row.variable_type == VariableType::Radius {
                 ctx.entry_hash_map(&mut radii, row.key, "creo trim radius groups")?
-                    .or_default().add(row.value.value());
+                    .or_default()
+                    .add(row.value.value());
             }
             let coordinate = match row.variable_type {
                 VariableType::U => 0,
                 VariableType::V => 1,
                 _ => continue,
             };
-            let point = storage.with_storage(|| ctx.entry_btree_map(
-                &mut coordinates, row.key, "creo reconciled point ID nodes"))?
+            let point = storage
+                .with_storage(|| {
+                    ctx.entry_btree_map(&mut coordinates, row.key, "creo reconciled point ID nodes")
+                })?
                 .or_default();
             if let Some(value) = row.value.value() {
                 match &mut point[coordinate] {
@@ -147,7 +155,10 @@ impl FeatureVariableTable {
                 ctx.insert_btree_map(&mut points, point_id, point, "creo reconciled point nodes")?;
             }
         }
-        Ok(TrimGeometry { coordinates: ReconciledPoints { points, ambiguous }, radii })
+        Ok(TrimGeometry {
+            coordinates: ReconciledPoints { points, ambiguous },
+            radii,
+        })
     }
 }
 #[cfg(test)]
@@ -158,7 +169,9 @@ mod tests {
     fn coordinate_agreement_preserves_nonfinite_scale_rules() {
         let agrees = |values: &[f64]| {
             let mut agreement = CoordinateAgreement::new(values[0]);
-            for &value in &values[1..] { agreement.add(value); }
+            for &value in &values[1..] {
+                agreement.add(value);
+            }
             agreement.agrees()
         };
         assert!(agrees(&[0.0, -0.0]));

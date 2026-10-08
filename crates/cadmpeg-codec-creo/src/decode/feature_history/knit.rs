@@ -111,7 +111,10 @@ pub(in super::super) fn knit_class_100_operand_entity_ids(
                     continue;
                 }
                 for (source_entry_index, source_entry) in ctx
-                    .admit_iter(source_table.entries.as_slice(), "creo knit source table entries")?
+                    .admit_iter(
+                        source_table.entries.as_slice(),
+                        "creo knit source table entries",
+                    )?
                     .enumerate()
                 {
                     let source_position = (
@@ -355,7 +358,9 @@ pub(in super::super) fn feature_surface_transitions(
     let mut outputs = 0usize;
     for table in ctx.admit_iter(tables, "creo transition entity tables")? {
         if table.feature_id == feature_id {
-            for entry in ctx.admit_iter(table.entries.as_slice(), "creo transition table entries")? {
+            for entry in
+                ctx.admit_iter(table.entries.as_slice(), "creo transition table entries")?
+            {
                 if entry.class_id() == 210 {
                     outputs = outputs.checked_add(1).ok_or_else(|| {
                         ctx.refuse_codec_limit(
@@ -374,7 +379,9 @@ pub(in super::super) fn feature_surface_transitions(
     let mut predecessors = 0usize;
     for table in ctx.admit_iter(tables, "creo predecessor entity tables")? {
         if table.feature_id == feature_id {
-            for entry in ctx.admit_iter(table.entries.as_slice(), "creo predecessor table entries")? {
+            for entry in
+                ctx.admit_iter(table.entries.as_slice(), "creo predecessor table entries")?
+            {
                 if entry.class_id() == 214 && entry.related_entity_id().is_some() {
                     predecessors = predecessors.checked_add(1).ok_or_else(|| {
                         ctx.refuse_codec_limit(
@@ -400,7 +407,10 @@ pub(in super::super) fn feature_surface_transitions(
             continue;
         }
         for output in ctx
-            .admit_iter(output_table.entries.as_slice(), "creo transition output entries")?
+            .admit_iter(
+                output_table.entries.as_slice(),
+                "creo transition output entries",
+            )?
             .filter(|entry| entry.class_id() == 210)
         {
             let Some(intermediate_id) = output.related_entity_id() else {
@@ -408,7 +418,10 @@ pub(in super::super) fn feature_surface_transitions(
             };
             if output.related_entity_state() != Some(0)
                 || ctx
-                    .admit_iter(output_table.entries.as_slice(), "creo transition surface entries")?
+                    .admit_iter(
+                        output_table.entries.as_slice(),
+                        "creo transition surface entries",
+                    )?
                     .filter(|entry| output_table.contains_surface_id(entry.entity_id))
                     .map(|entry| entry.entity_id)
                     .filter(|surface_id| *surface_id == output.entity_id)
@@ -436,7 +449,10 @@ pub(in super::super) fn feature_surface_transitions(
                 )
             })?;
             let mut matches = ctx
-                .admit_iter(output_table.entries.as_slice(), "creo transition predecessor entries")?
+                .admit_iter(
+                    output_table.entries.as_slice(),
+                    "creo transition predecessor entries",
+                )?
                 .filter(|predecessor| {
                     predecessor.class_id() == 214
                         && predecessor.entity_id == intermediate_id
@@ -584,7 +600,10 @@ pub(in super::super) fn feature_result_surface_ids(
         .filter(|table| table.feature_id == feature_id)
     {
         for surface_id in ctx
-            .admit_iter(table.entries.as_slice(), "creo feature result surface entries")?
+            .admit_iter(
+                table.entries.as_slice(),
+                "creo feature result surface entries",
+            )?
             .filter(|entry| table.contains_surface_id(entry.entity_id))
             .map(|entry| entry.entity_id)
         {

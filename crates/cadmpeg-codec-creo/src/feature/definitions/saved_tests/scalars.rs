@@ -15,13 +15,13 @@ CodecError::ResourceLimit(limit)
     );
     assert_eq!(
         with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, u64::MAX, u64::MAX, |ctx| {
-                parse_saved_dummy_entities(
-                    ctx,
-                    SAVED_DUMMY_LIMIT_INPUT,
-                    0,
-                    SAVED_DUMMY_LIMIT_INPUT.len(),
-                )
-            })
+            parse_saved_dummy_entities(
+                ctx,
+                SAVED_DUMMY_LIMIT_INPUT,
+                0,
+                SAVED_DUMMY_LIMIT_INPUT.len(),
+            )
+        })
         .expect("dummy admitted")
         .len(),
         1
@@ -160,14 +160,23 @@ fn saved_section_negative_dict_forms_supply_ieee_high_bytes() {
 fn saved_section_assembly_uses_one_entity_output_buffer() {
     let mut payload = b"\xe0\x00p_saved_result\0".to_vec();
     payload.extend_from_slice(SAVED_SPLINE_LIMIT_INPUT);
-    for dimension in [ResourceDimension::CollectionItems, ResourceDimension::RetainedBytes] {
+    for dimension in [
+        ResourceDimension::CollectionItems,
+        ResourceDimension::RetainedBytes,
+    ] {
         let leaf = |limit| {
             let (collection, retained) = match dimension {
                 ResourceDimension::CollectionItems => (limit, u64::MAX),
                 _ => (u64::MAX, limit),
             };
             with_saved_leaf_limits(&payload, collection, retained, |ctx| {
-                parse_saved_spline_entities(ctx, &payload, 0, payload.len(), &scalar::ScalarCache::default())
+                parse_saved_spline_entities(
+                    ctx,
+                    &payload,
+                    0,
+                    payload.len(),
+                    &scalar::ScalarCache::default(),
+                )
             })
         };
         let limit = crate::test_support::allocation_limit_at(dimension, None, leaf);
@@ -177,10 +186,19 @@ fn saved_section_assembly_uses_one_entity_output_buffer() {
             _ => (u64::MAX, limit),
         };
         let section = with_saved_leaf_limits(&payload, collection, retained, |ctx| {
-            parse_saved_section(ctx, &payload, 0, payload.len(), &scalar::ScalarCache::default(), None, None)
-        }).expect("assembly has the leaf storage bound").expect("saved section");
+            parse_saved_section(
+                ctx,
+                &payload,
+                0,
+                payload.len(),
+                &scalar::ScalarCache::default(),
+                None,
+                None,
+            )
+        })
+        .expect("assembly has the leaf storage bound")
+        .expect("saved section");
         assert_eq!(section.entities, expected);
         assert_eq!(section.entities.len(), 1);
     }
 }
-

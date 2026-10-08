@@ -239,7 +239,9 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         .expect("admitted test lookup"),
         Some(43)
     );
-    first_table.entries.edit(0, |entry| entry.payload = crate::feature::entity::EntryPayload::Source { entity: Some(9) });
+    first_table.entries.edit(0, |entry| {
+        entry.payload = crate::feature::entity::EntryPayload::Source { entity: Some(9) }
+    });
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| generated_surface_id_for_feature(
             ctx,
@@ -251,8 +253,11 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         None
     );
     let mut wrong_class = table.clone();
-    wrong_class.entries.edit(2, |entry| entry.payload = crate::feature::entity::EntryPayload::Plain {
-        class: crate::feature::entity::PlainClass::new(201).expect("201 is not the source class"),
+    wrong_class.entries.edit(2, |entry| {
+        entry.payload = crate::feature::entity::EntryPayload::Plain {
+            class: crate::feature::entity::PlainClass::new(201)
+                .expect("201 is not the source class"),
+        }
     });
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| generated_surface_id_for_feature(

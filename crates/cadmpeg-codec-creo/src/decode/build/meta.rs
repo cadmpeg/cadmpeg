@@ -847,7 +847,8 @@ pub(super) fn source_meta(
         &scan.features.definitions,
         "creo feature definition coverage traversal",
     )? {
-        let count = crate::feature::definitions::placement_instructions(ctx, definition)?.count(ctx)?;
+        let count =
+            crate::feature::definitions::placement_instructions(ctx, definition)?.count(ctx)?;
         placement_instruction_count =
             placement_instruction_count
                 .checked_add(count)
