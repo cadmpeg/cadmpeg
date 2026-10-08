@@ -9,6 +9,7 @@ mod string_limits;
 mod style_indices;
 mod surface_styles;
 mod target_expansion;
+mod stage_caches;
 
 /// A style whose override walk does not terminate states no depth. Its
 /// position is stated as absence and sorts after every stated depth; the
