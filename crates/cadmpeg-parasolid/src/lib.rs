@@ -620,6 +620,84 @@ mod tests {
     }
 
     #[test]
+    fn schema_token_searches_have_exact_early_match_work_boundaries() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        for prefixed in [false, true] {
+            let mut bytes = if prefixed { b"\x08SCH_TEST".to_vec() } else { b"SCH_TEST\0".to_vec() };
+            bytes.resize(1 << 20, 0);
+            // Ordinary: one marker window, four token-body bytes and its
+            // delimiter, then eight UTF-8 bytes. Prefixed: two marker windows,
+            // eight grammar bytes and its end probe, then eight UTF-8 bytes.
+            let work = if prefixed { 2 + 8 + 1 + 8 } else { 1 + 4 + 1 + 8 };
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+            let token = if prefixed {
+                find_u8_length_prefixed_schema_token(&ctx, &bytes)
+            } else {
+                find_schema_token(&ctx, &bytes)
+            }.expect("exact early token work").expect("token");
+            assert_eq!(token.value(), "SCH_TEST");
+            assert_eq!(token.offset, usize::from(prefixed));
+            assert!(matches!(ctx.charge_work(1, "after exact token"),
+                Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.used == work));
+            policy.limits.max_work_units = work - 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+            let error = if prefixed {
+                find_u8_length_prefixed_schema_token(&ctx, &bytes)
+            } else {
+                find_schema_token(&ctx, &bytes)
+            }.expect_err("UTF-8 validation cannot fit");
+            let CodecError::ResourceLimit(limit) = error else { panic!("work refusal expected"); };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "Parasolid schema token UTF-8");
+            assert_eq!(limit.used, work - 8);
+            assert_eq!(limit.additional, 8);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
+    }
+
+    #[test]
+    fn schema_marker_misses_charge_each_window_and_the_end_probe() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let bytes = [0_u8; 12];
+        // Nine four-byte windows and one end probe; the marker comparison has
+        // a fixed four-byte extent and needs no input-sized child charge.
+        const WORK: u64 = 12 - 4 + 1 + 1;
+        for prefixed in [false, true] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = WORK;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+            let token = if prefixed {
+                find_u8_length_prefixed_schema_token(&ctx, &bytes)
+            } else {
+                find_schema_token(&ctx, &bytes)
+            }.expect("all windows and end probe fit");
+            assert!(token.is_none());
+            policy.limits.max_work_units = WORK - 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+            let error = if prefixed {
+                find_u8_length_prefixed_schema_token(&ctx, &bytes)
+            } else {
+                find_schema_token(&ctx, &bytes)
+            }.expect_err("end probe is admitted before advancing");
+            let CodecError::ResourceLimit(limit) = error else { panic!("work refusal expected"); };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, if prefixed { "Parasolid prefixed schema marker search" } else { "Parasolid schema marker search" });
+            assert_eq!(limit.used, WORK - 1);
+            assert_eq!(limit.additional, 1);
+            assert!(matches!(find_schema_token(&ctx, &bytes),
+                Err(CodecError::ResourceLimit(original)) if original == limit));
+        }
+    }
+
+    #[test]
     fn schema_token_searches_pay_only_for_the_bytes_they_visit() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let mut prologue = b"SCH_TEST\0".to_vec();
