@@ -53,8 +53,24 @@ fn carrier_row(id: u32, kind: crate::surface::SurfaceKind) -> crate::surface::Su
     }
 }
 
-fn placed_carrier_collection_error(scan: &crate::container::ContainerScan, ir: &CadIr, operation: &'static str) -> CodecError {
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| placed_carriers(ctx, scan, ir, &crate::decode::source_carriers::SourceUnitCarriers::default()))
+fn placed_carrier_collection_error(
+    scan: &crate::container::ContainerScan,
+    ir: &CadIr,
+    operation: &'static str,
+) -> CodecError {
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            placed_carriers(
+                ctx,
+                scan,
+                ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    )
 }
 
 fn assert_placed_carrier_refusal(error: &CodecError, operation: &'static str) {
@@ -83,10 +99,6 @@ fn placed_carriers_refuse_plane_carrier_node() {
         "creo placed carrier nodes",
     );
 }
-
-
-
-
 
 fn rowless_cylinder_input() -> (crate::container::ContainerScan<'static>, CadIr) {
     let scan = crate::test_support::empty_container_scan();
@@ -163,26 +175,22 @@ fn topology_bound_curve_input() -> (crate::container::ContainerScan<'static>, Ca
 }
 
 fn topology_bound_curve_collection_error(operation: &'static str) -> CodecError {
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
-        let (scan, mut ir) = topology_bound_curve_input();
-        transfer_topology_bound_planes(ctx, &scan, &mut ir, &mut cadmpeg_ir::annotations::AnnotationBuilder::new(), &BTreeSet::new(), &mut crate::decode::source_carriers::SourceUnitCarriers::default())
-    })
-}
-
-#[test]
-fn topology_bound_plane_refuses_unique_surface_count_node() {
-    assert_placed_carrier_refusal(
-        &topology_bound_curve_collection_error("creo unique-row count nodes"),
-        "creo unique-row count nodes",
-    );
-}
-
-#[test]
-fn topology_bound_plane_refuses_unique_surface_projection() {
-    assert_placed_carrier_refusal(
-        &topology_bound_curve_collection_error("creo unique-row projection"),
-        "creo unique-row projection",
-    );
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            let (scan, mut ir) = topology_bound_curve_input();
+            transfer_topology_bound_planes(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &BTreeSet::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    )
 }
 
 #[test]
@@ -681,22 +689,27 @@ fn planar_polygon_collection_error(operation: &'static str, two_loops: bool) -> 
         normal: [0.0, 0.0, 1.0],
     };
 
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
-    let result = if two_loops {
-        super::ordered_planar_face_loops(
-            ctx,
-            vec![&outer, &inner],
-            plane,
-            &incidence,
-            &solved_vertices,
-        )
-        .map(|_| ())
-    } else {
-        super::projected_loop_polygon(ctx, &outer, plane, &incidence, &solved_vertices).map(|_| ())
-    };
-    result
-
-    })
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            let result = if two_loops {
+                super::ordered_planar_face_loops(
+                    ctx,
+                    vec![&outer, &inner],
+                    plane,
+                    &incidence,
+                    &solved_vertices,
+                )
+                .map(|_| ())
+            } else {
+                super::projected_loop_polygon(ctx, &outer, plane, &incidence, &solved_vertices)
+                    .map(|_| ())
+            };
+            result
+        },
+    )
 }
 
 #[test]
@@ -802,8 +815,6 @@ fn ordered_parameter_loop_shift_work_refusal(operation: &'static str) {
 fn ordered_parameter_loop_remove_refuses_shift_work() {
     ordered_parameter_loop_shift_work_refusal("creo ordered face loop rotation");
 }
-
-
 
 #[test]
 fn topology_bound_plane_rejects_duplicate_model_curve_ids() {

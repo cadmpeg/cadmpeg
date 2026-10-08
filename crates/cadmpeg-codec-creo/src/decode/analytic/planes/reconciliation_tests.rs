@@ -52,14 +52,32 @@ fn one_positional_plane_scan() -> crate::container::ContainerScan<'static> {
 
 fn positional_plane_limit_error(operation: &'static str, surface: bool) -> CodecError {
     let scan = one_positional_plane_scan();
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
-        if surface { crate::decode::analytic::planes::placed_plane_surfaces(ctx, &scan).map(|planes| planes.len()) }
-        else { crate::decode::analytic::planes::placed_planes(ctx, &scan).map(|planes| planes.len()) }
-    })
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            if surface {
+                crate::decode::analytic::planes::placed_plane_surfaces(ctx, &scan)
+                    .map(|planes| planes.len())
+            } else {
+                crate::decode::analytic::planes::placed_planes(ctx, &scan)
+                    .map(|planes| planes.len())
+            }
+        },
+    )
 }
 
-fn candidate_limit_error(scan: &crate::container::ContainerScan<'_>, operation: &'static str) -> CodecError {
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| plane_candidates(ctx, scan))
+fn candidate_limit_error(
+    scan: &crate::container::ContainerScan<'_>,
+    operation: &'static str,
+) -> CodecError {
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| plane_candidates(ctx, scan),
+    )
 }
 
 fn one_held_plane_scan() -> crate::container::ContainerScan<'static> {
@@ -158,7 +176,10 @@ fn held_plane_with_frame_scan() -> crate::container::ContainerScan<'static> {
 
 #[test]
 fn frame_bound_outline_node_refuses_collection_limit() {
-    let error = candidate_limit_error(&held_plane_with_frame_scan(), "creo frame-bound outline nodes");
+    let error = candidate_limit_error(
+        &held_plane_with_frame_scan(),
+        "creo frame-bound outline nodes",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo frame-bound outline nodes"));
@@ -466,24 +487,29 @@ fn every_solved_boundary_vertex_must_lie_on_the_analytic_plane() {
 }
 
 fn boundary_plane_collection_error(operation: &'static str) -> CodecError {
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
-    let points = [[0.0, 0.0, 0.0]];
-    let planes = [PlaneEquation {
-        origin: [0.0, 0.0, 0.0],
-        normal: [0.0, 0.0, 1.0],
-    }];
-    let lines = [BoundaryLine {
-        origin: [0.0, 0.0, 0.0],
-        direction: [1.0, 0.0, 0.0],
-    }];
-    agreed_topology_bound_plane(ctx, &points, &planes, |admitted| {
-        for line in ctx.admit_iter(&lines, "test topology boundary lines")? {
-            ctx.reserve_vec(admitted, 1, "creo plane boundary lines")?;
-            admitted.push(*line);
-        }
-        Ok(())
-    })
-    })
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            let points = [[0.0, 0.0, 0.0]];
+            let planes = [PlaneEquation {
+                origin: [0.0, 0.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
+            }];
+            let lines = [BoundaryLine {
+                origin: [0.0, 0.0, 0.0],
+                direction: [1.0, 0.0, 0.0],
+            }];
+            agreed_topology_bound_plane(ctx, &points, &planes, |admitted| {
+                for line in ctx.admit_iter(&lines, "test topology boundary lines")? {
+                    ctx.reserve_vec(admitted, 1, "creo plane boundary lines")?;
+                    admitted.push(*line);
+                }
+                Ok(())
+            })
+        },
+    )
 }
 
 fn boundary_plane_line_scan_error() -> CodecError {
@@ -513,8 +539,6 @@ fn assert_boundary_plane_refusal(operation: &'static str) {
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == operation));
 }
-
-
 
 #[test]
 fn agreed_topology_plane_refuses_boundary_line_vector() {
@@ -911,15 +935,13 @@ fn held_envelope_assigns_mixed_support_frame_roles() {
         row_offset: 10,
         offset: 20,
     };
-    let candidate = envelope_reconciled_plane_candidate(&frame, equation)
-    .expect("mixed frame");
+    let candidate = envelope_reconciled_plane_candidate(&frame, equation).expect("mixed frame");
     assert_eq!(candidate.equation.origin, equation.origin);
     assert_eq!(candidate.equation.normal, equation.normal);
     assert_eq!(candidate.chart.expect("chart").u_axis, [1.0, 0.0, 0.0]);
 
     frame.slots[11] = Some(1.0);
-    assert!(envelope_reconciled_plane_candidate(&frame, equation)
-    .is_none());
+    assert!(envelope_reconciled_plane_candidate(&frame, equation).is_none());
 }
 
 #[test]
@@ -1460,8 +1482,6 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
 }
 
 mod branch_witnesses;
-
-
 
 #[test]
 fn topology_bound_plane_refuses_point_coordinate_scan() {

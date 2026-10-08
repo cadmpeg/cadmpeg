@@ -26,9 +26,9 @@ fn valid_parameter_polygon_refuses_normalized_points() {
 fn numerical_audit_polygon_incidence_ignores_length_scale() {
     for scale in [1., 1e-5] {
         assert!(segments_intersect(
-                [[-scale, 0.], [scale, 0.]],
-                [[0., -scale], [0., scale]],
-));
+            [[-scale, 0.], [scale, 0.]],
+            [[0., -scale], [0., scale]],
+        ));
         assert!(crate::decode::with_test_decode_ctx(|ctx| {
             polygon_strictly_contains(
                 ctx,
@@ -61,20 +61,17 @@ fn numerical_audit_polygon_admission_ignores_translation() {
     ]));
 }
 
-
-
-
-
-
-
 #[test]
 fn valid_parameter_polygon_propagates_variable_work_refusals() {
-    let valid = crate::test_support::assert_work_boundaries(&[
-        "creo parameter polygon finite-coordinate scan",
-        "creo parameter polygon scale",
-        "creo parameter polygon normalization",
-        "creo polygon area finite points",
-        "creo polygon area edge products",
-    ], |ctx| valid_parameter_polygon(ctx, &[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]));
+    let valid = crate::test_support::assert_work_boundaries(
+        &[
+            "creo parameter polygon finite-coordinate scan",
+            "creo parameter polygon scale",
+            "creo parameter polygon normalization",
+            "creo polygon area finite points",
+            "creo polygon area edge products",
+        ],
+        |ctx| valid_parameter_polygon(ctx, &[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]),
+    );
     assert!(valid);
 }
