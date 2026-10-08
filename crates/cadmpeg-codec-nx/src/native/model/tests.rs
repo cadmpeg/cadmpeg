@@ -360,3 +360,136 @@ fn terminal_body_selection_returns_first_missing_binding_before_suffix_work() {
         },
     );
 }
+
+#[test]
+fn terminal_body_selection_late_missing_binding_retains_no_discarded_identity() {
+    let (emitted, bindings, statuses) = one_terminal_body();
+    let mut missing = bindings[0].clone();
+    missing.id = "binding#missing".into();
+    missing.stream_ordinal = 1;
+    let bindings = [bindings[0].clone(), missing];
+    crate::test_support::with_decode_context_over(&[], |policy| {
+        policy.limits.max_retained_bytes = 0;
+    }, |ctx| {
+        assert!(terminal_feature_body_ids(ctx, &emitted, &bindings, &statuses).unwrap().is_none());
+        assert!(ctx.resource_refusal().is_none());
+    });
+}
+
+#[test]
+fn terminal_body_selection_unmatched_status_retains_no_discarded_identity() {
+    let (emitted, bindings, statuses) = one_terminal_body();
+    let mut unmatched = statuses[0].clone();
+    unmatched.id = "status#extra".into();
+    unmatched.segment_body_binding = "binding#extra".into();
+    let statuses = [statuses[0].clone(), unmatched];
+    crate::test_support::with_decode_context_over(&[], |policy| {
+        policy.limits.max_retained_bytes = 0;
+    }, |ctx| {
+        assert!(terminal_feature_body_ids(ctx, &emitted, &bindings, &statuses).unwrap().is_none());
+        assert!(ctx.resource_refusal().is_none());
+    });
+}
+
+#[test]
+fn terminal_body_selection_unmapped_body_retains_no_discarded_identity() {
+    let (mut emitted, bindings, statuses) = one_terminal_body();
+    emitted.insert(BodyId::mint("nx:s1:body#0").unwrap());
+    crate::test_support::with_decode_context_over(&[], |policy| {
+        policy.limits.max_retained_bytes = 0;
+    }, |ctx| {
+        assert!(terminal_feature_body_ids(ctx, &emitted, &bindings, &statuses).unwrap().is_none());
+        assert!(ctx.resource_refusal().is_none());
+    });
+}
+
+#[test]
+fn terminal_body_selection_combines_terminal_flags_for_one_stream() {
+    let (emitted, bindings, statuses) = one_terminal_body();
+    let mut second = bindings[0].clone();
+    second.id = "binding#1".into();
+    let bindings = [bindings[0].clone(), second];
+    let mut second_status = statuses[0].clone();
+    second_status.id = "status#1".into();
+    second_status.segment_body_binding = bindings[1].id.clone();
+    for first_terminal in [false, true] {
+        let mut statuses = [statuses[0].clone(), second_status.clone()];
+        statuses[0].terminal = first_terminal;
+        statuses[1].terminal = !first_terminal;
+        crate::test_support::with_decode_context(|ctx| {
+            assert_eq!(terminal_feature_body_ids(ctx, &emitted, &bindings, &statuses).unwrap(), Some(emitted.clone()));
+            assert!(ctx.resource_refusal().is_none());
+        });
+    }
+}
+
+#[test]
+fn terminal_body_selection_without_terminal_bodies_skips_output_traversal() {
+    let (emitted, bindings, mut statuses) = one_terminal_body();
+    statuses[0].terminal = false;
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "nx selected terminal body traversal",
+        None,
+    );
+    crate::test_support::with_decode_context_over(&[], |policy| {
+        policy.limits.max_work_units = u64::MAX;
+        policy.limits.max_retained_bytes = 0;
+    }, |ctx| {
+        assert!(terminal_feature_body_ids(ctx, &emitted, &bindings, &statuses).unwrap().is_none());
+        assert!(ctx.resource_refusal().is_none());
+    });
+}
+
+#[test]
+fn terminal_body_selection_preserves_first_match_identity_copy_order() {
+    let (mut emitted, bindings, statuses) = one_terminal_body();
+    let longer_body = BodyId::mint("nx:s1:body#10000").unwrap();
+    emitted.insert(longer_body.clone());
+    let mut second_binding = bindings[0].clone();
+    second_binding.id = "binding#1".into();
+    second_binding.stream_ordinal = 1;
+    let mut second_status = statuses[0].clone();
+    second_status.id = "status#1".into();
+    second_status.segment_body_binding = second_binding.id.clone();
+    let bindings = [second_binding, bindings[0].clone()];
+    let statuses = [statuses[0].clone(), second_status];
+    let first_bytes = cadmpeg_core::decode::u64_from_index(longer_body.as_str().len());
+    crate::test_support::with_decode_context_over(&[], |policy| {
+        policy.limits.max_retained_bytes = first_bytes - 1;
+    }, |ctx| {
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            terminal_feature_body_ids(ctx, &emitted, &bindings, &statuses)
+        else {
+            panic!("the first binding selects the longer body identity");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.operation, "nx selected terminal body identity");
+        assert_eq!((limit.used, limit.additional), (0, first_bytes));
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(terminal_feature_body_ids(ctx, &emitted, &bindings, &statuses).unwrap(), Some(emitted));
+        assert!(ctx.resource_refusal().is_none());
+    });
+}
+
+#[test]
+fn terminal_body_selection_refuses_scan_link_and_projection_work() {
+    let (mut emitted, bindings, statuses) = one_terminal_body();
+    emitted.insert(BodyId::mint("nx:s0:body#1").unwrap());
+    for operation in ["nx terminal body scan", "nx terminal body selection link", "nx selected terminal body traversal"] {
+        let error = crate::test_support::resource_refusal_at(
+            &[], ResourceDimension::WorkUnits, operation,
+            |ctx| terminal_feature_body_ids(ctx, &emitted, &bindings, &statuses),
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("ordering and output lookups must propagate resource refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, operation);
+        if operation == "nx terminal body scan" {
+            assert_eq!(limit.additional, 1);
+        }
+    }
+}

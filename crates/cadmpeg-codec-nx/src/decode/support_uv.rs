@@ -460,8 +460,11 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
         }
     }
     let mut assigned = [None, None];
-    for support in 0..2 {
-        let Some(lane) = assigned_lanes[support].and_then(|lane| lanes[lane].as_ref()) else {
+    for lane in 0..2 {
+        let Some(support) = assigned_lanes.iter().position(|assigned| *assigned == Some(lane)) else {
+            continue;
+        };
+        let Some(lane) = lanes[lane].as_ref() else {
             continue;
         };
         assigned[support] = Some(
@@ -3443,6 +3446,57 @@ mod tests {
             assert_eq!((limit.used, limit.additional), (0, bytes));
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });
+    }
+
+    #[test]
+    fn crossed_ext11_assignment_preserves_serialized_copy_order_and_values() {
+        use cadmpeg_ir::geometry::analytic::PlaneSurface;
+        use cadmpeg_ir::math::Vector3;
+        let surfaces = ["nx:test:surface#x", "nx:test:surface#y"]
+            .map(|id| SurfaceId::mint(id).unwrap());
+        let mut ir = CadIr::empty();
+        for (id, axis) in surfaces.iter().zip([Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0)]) {
+            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+                id: id.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    PlaneSurface::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0), axis).unwrap(),
+                )),
+                source_object: None,
+            });
+        }
+        let lanes = [
+            SupportUvLane::new(vec![[0.0, 0.0], [0.0, -0.125], [0.0, -0.25]], 3),
+            SupportUvLane::new(vec![[0.0, 0.0], [0.125, 0.0]], 2),
+        ];
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let slot = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::units::FiniteVector<2>>());
+        let first_bytes = 3 * slot;
+        let total_bytes = first_bytes + 2 * slot;
+        for cap in [first_bytes - 1, total_bytes] {
+            crate::test_support::with_decode_context_over(&[], |policy| {
+                policy.limits.max_retained_bytes = cap;
+            }, |ctx| {
+                let budget = GeometryWorkBudget::from_context(ctx,
+                    cadmpeg_core::decode::u64_from_index(super::super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK));
+                let result = super::assign_ext11_support_uv_to_surfaces_with_index(
+                    ctx, &index, [&surfaces[0], &surfaces[1]],
+                    &[Point3::new(0.0, 0.0, 0.0), Point3::new(125.0, 0.0, 0.0)],
+                    0.0, &lanes, &budget,
+                );
+                if cap == total_bytes {
+                    assert_eq!(result.unwrap().unwrap(), [lanes[1].clone(), lanes[0].clone()]);
+                    assert!(ctx.resource_refusal().is_none());
+                } else {
+                    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+                        panic!("the first serialized lane needs its three slots");
+                    };
+                    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                    assert_eq!(limit.operation, "NX solved support-UV lane copy");
+                    assert_eq!((limit.used, limit.additional), (0, first_bytes));
+                    assert_eq!(ctx.resource_refusal(), Some(limit));
+                }
+            });
+        }
     }
 
     #[test]
