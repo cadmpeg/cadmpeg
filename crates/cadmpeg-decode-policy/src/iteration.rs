@@ -58,7 +58,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
             || match value.kind() {
                 ty::Alias(_, alias) => match alias.kind {
                     ty::AliasTyKind::Projection { def_id }
-                        if self.tcx.item_name(def_id).as_str() == "IntoIter" =>
+                        if self
+                            .tcx
+                            .opt_item_name(def_id)
+                            .is_some_and(|name| name.as_str() == "IntoIter") =>
                     {
                         alias
                             .args

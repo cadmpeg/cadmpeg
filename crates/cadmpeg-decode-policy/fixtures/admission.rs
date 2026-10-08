@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::admission::{Admission, AdmissionScope, StandardAdmission};
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap};
@@ -30,7 +30,20 @@ pub fn decode(
     ctx: &DecodeContext<'_>,
     groups: &mut BTreeMap<u32, Vec<u32>>,
 ) -> Result<String, CodecError> {
+    let mut values = [2_u32, 1];
+    let _ = complete_operations(ctx, &mut values)?;
     shared(ctx, "name", groups)
+}
+
+pub fn complete_operations<A: Admission>(
+    admission: &A,
+    values: &mut [u32],
+) -> Result<(bool, bool), A::Error> {
+    let _depth = admission.enter_nested("nested")?;
+    let was_active = admission.resource_refusal().is_none();
+    let sorted = admission.is_sorted_by(values, |value| value, Ord::cmp, "sorted")?;
+    admission.stable_sort_by(values, |value| value, Ord::cmp, "sort")?;
+    Ok((was_active, sorted))
 }
 
 #[derive(PartialEq, Eq)]
