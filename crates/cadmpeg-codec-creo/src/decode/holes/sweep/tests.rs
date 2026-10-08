@@ -35,12 +35,7 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::compact_simple_hole_cylinder_id(
-            ctx,
-            107,
-            std::slice::from_ref(&table),
-            std::slice::from_ref(&row),
-        ))
+        crate::decode::with_test_decode_ctx(|ctx| super::compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())))
         .expect("admitted surface roster"),
         Some(117)
     );
@@ -50,12 +45,7 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
         .entries
         .push(crate::feature::entity::dummy_table_entry(117));
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::compact_simple_hole_cylinder_id(
-            ctx,
-            107,
-            std::slice::from_ref(&duplicate),
-            std::slice::from_ref(&row),
-        ))
+        crate::decode::with_test_decode_ctx(|ctx| super::compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&duplicate), &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())))
         .expect("admitted surface roster"),
         None
     );
@@ -110,16 +100,12 @@ fn extrusion_span_refuses_offsets_whose_length_overflows() {
         ([0.0, 0.0, f64::MAX], [0.0, 0.0, 1.0]),
         ([0.0, 0.0, -f64::MAX], [0.0, 0.0, 1.0]),
     ];
-    assert!(super::extrusion_span([0.0; 3], [0.0, 0.0, 1.0], planes).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(ctx, [0.0; 3], [0.0, 0.0, 1.0], planes)).expect("service resources").is_none());
     assert_eq!(
-        super::extrusion_span(
-            [0.0; 3],
-            [0.0, 0.0, 1.0],
-            [
+        crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(ctx, [0.0; 3], [0.0, 0.0, 1.0], [
                 ([0.0, 0.0, 2.0], [0.0, 0.0, 1.0]),
                 ([0.0, 0.0, -1.0], [0.0, 0.0, -1.0]),
-            ],
-        ),
+            ])).expect("service resources"),
         Some(super::ExtrusionSpan::new(-1.0, 2.0).expect("valid span fixture"))
     );
 }
@@ -128,15 +114,11 @@ fn extrusion_span_refuses_offsets_whose_length_overflows() {
 fn extrusion_span_keeps_the_first_offset_in_a_near_duplicate_pair() {
     let plane = |z| ([0.0, 0.0, z], [0.0, 0.0, 1.0]);
     assert_eq!(
-        super::extrusion_span(
-            [0.0; 3],
-            [0.0, 0.0, 1.0],
-            [plane(1.0), plane(1.0 + 5.0e-10)]
-        ),
+        crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(ctx, [0.0; 3], [0.0, 0.0, 1.0], [plane(1.0), plane(1.0 + 5.0e-10)])).expect("service resources"),
         super::ExtrusionSpan::new(0.0, 1.0)
     );
     assert_eq!(
-        super::extrusion_span([0.0; 3], [0.0, 0.0, 1.0], [plane(5.0e-10), plane(-5.0e-10)]),
+        crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(ctx, [0.0; 3], [0.0, 0.0, 1.0], [plane(5.0e-10), plane(-5.0e-10)])).expect("service resources"),
         super::ExtrusionSpan::new(0.0, 5.0e-10)
     );
 }

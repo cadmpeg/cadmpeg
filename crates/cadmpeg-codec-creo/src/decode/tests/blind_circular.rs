@@ -374,12 +374,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
-            ctx,
-            107,
-            std::slice::from_ref(&table),
-            std::slice::from_ref(&row),
-        ))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())))
         .expect("admitted surface roster"),
         Some(117)
     );
@@ -395,35 +390,20 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         offset: 0,
     };
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
-            ctx,
-            107,
-            std::slice::from_ref(&exact_class_203_plane),
-            &[topology_plane, row.clone()],
-        ))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&exact_class_203_plane), &crate::surface::SurfaceRows::from_rows((&[topology_plane, row.clone()]).to_vec())))
         .expect("admitted surface roster"),
         Some(117)
     );
     table.entries[2].payload = crate::feature::entity::EntryPayload::Source { entity: None };
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
-            ctx,
-            107,
-            std::slice::from_ref(&table),
-            std::slice::from_ref(&row),
-        ))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())))
         .expect("admitted surface roster")
         .is_none()
     );
     table.entries[2].payload = crate::feature::entity::EntryPayload::Source { entity: Some(0) };
     table.table_class_id = 28;
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
-            ctx,
-            107,
-            std::slice::from_ref(&table),
-            std::slice::from_ref(&row),
-        ))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())))
         .expect("admitted surface roster")
         .is_none()
     );
@@ -432,24 +412,14 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         class: crate::feature::entity::PlainClass::new(201).expect("201 is not the source class"),
     };
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
-            ctx,
-            107,
-            std::slice::from_ref(&table),
-            std::slice::from_ref(&row),
-        ))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())))
         .expect("admitted surface roster")
         .is_none()
     );
     table.entries[3].payload = crate::feature::entity::EntryPayload::Source { entity: None };
     table.mark_surface_ids([109, 117]);
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
-            ctx,
-            107,
-            std::slice::from_ref(&table),
-            std::slice::from_ref(&row),
-        ))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())))
         .expect("admitted surface roster")
         .is_none()
     );
@@ -484,12 +454,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     };
     let rows = [plane.clone(), row.clone()];
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
-            ctx,
-            107,
-            std::slice::from_ref(&extended),
-            &rows
-        ))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&extended), &crate::surface::SurfaceRows::from_rows((&rows).to_vec())))
         .expect("admitted surface roster"),
         Some(117)
     );
@@ -499,23 +464,13 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     second_topology_plane.id = 112;
     let second_topology_rows = [second_topology_plane, row];
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
-            ctx,
-            107,
-            std::slice::from_ref(&class_203_plane),
-            &second_topology_rows,
-        ))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&class_203_plane), &crate::surface::SurfaceRows::from_rows((&second_topology_rows).to_vec())))
         .expect("admitted surface roster"),
         Some(117)
     );
     extended.mark_surface_ids([109, 117, 120]);
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(
-            ctx,
-            107,
-            std::slice::from_ref(&extended),
-            &rows
-        ))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&extended), &crate::surface::SurfaceRows::from_rows((&rows).to_vec())))
         .expect("admitted surface roster")
         .is_none()
     );
@@ -1485,14 +1440,10 @@ fn coaxial_reference_circles_define_a_cylinder_frame() {
 #[test]
 fn asymmetric_cap_planes_define_two_sided_extent() {
     assert_eq!(
-        extrusion_extent_and_direction(
-            [0.0; 3],
-            [0.0, 0.0, 1.0],
-            [
+        crate::decode::with_test_decode_ctx(|ctx| extrusion_extent_and_direction(ctx, [0.0; 3], [0.0, 0.0, 1.0], [
                 ([0.0, 0.0, -2.0], [0.0, 0.0, 1.0]),
                 ([0.0, 0.0, 3.0], [0.0, 0.0, 1.0]),
-            ],
-        ),
+            ])).expect("service resources"),
         Some((
             ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
@@ -1518,11 +1469,7 @@ fn asymmetric_cap_planes_define_two_sided_extent() {
 #[test]
 fn one_negative_cap_offset_reverses_blind_direction() {
     assert_eq!(
-        extrusion_extent_and_direction(
-            [0.0; 3],
-            [0.0, -1.0, 0.0],
-            [([0.0, 48.0, 0.0], [0.0, 1.0, 0.0])],
-        ),
+        crate::decode::with_test_decode_ctx(|ctx| extrusion_extent_and_direction(ctx, [0.0; 3], [0.0, -1.0, 0.0], [([0.0, 48.0, 0.0], [0.0, 1.0, 0.0])])).expect("service resources"),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -1541,14 +1488,10 @@ fn one_negative_cap_offset_reverses_blind_direction() {
 #[test]
 fn zero_offset_support_plane_does_not_obscure_blind_cap() {
     assert_eq!(
-        extrusion_extent_and_direction(
-            [0.0; 3],
-            [0.0, 1.0, 0.0],
-            [
+        crate::decode::with_test_decode_ctx(|ctx| extrusion_extent_and_direction(ctx, [0.0; 3], [0.0, 1.0, 0.0], [
                 ([20.0, 0.0, 6.0], [0.0, 1.0, 0.0]),
                 ([0.0, 48.0, 0.0], [0.0, 1.0, 0.0]),
-            ],
-        ),
+            ])).expect("service resources"),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -1567,15 +1510,11 @@ fn zero_offset_support_plane_does_not_obscure_blind_cap() {
 #[test]
 fn interior_axis_normal_planes_do_not_shorten_blind_extent() {
     assert_eq!(
-        extrusion_extent_and_direction(
-            [0.0; 3],
-            [0.0, -1.0, 0.0],
-            [
+        crate::decode::with_test_decode_ctx(|ctx| extrusion_extent_and_direction(ctx, [0.0; 3], [0.0, -1.0, 0.0], [
                 ([0.0, 38.0, 0.0], [0.0, 1.0, 0.0]),
                 ([3.0, 2.5, 7.0], [0.0, -1.0, 0.0]),
                 ([-4.0, 5.75, 1.0], [0.0, 1.0, 0.0]),
-            ],
-        ),
+            ])).expect("service resources"),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {

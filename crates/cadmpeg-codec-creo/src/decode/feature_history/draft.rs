@@ -304,11 +304,11 @@ pub(super) fn linear_extrusion_extent_and_direction(
                 feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)?
             {
                 extent = extrusion_extent_and_direction(
+                    ctx,
                     transform.origin(),
                     transform.normal(),
-                    ctx.admit_iter(&planes, "creo extrusion plane equations")?
-                        .map(|plane| (plane.origin, plane.normal)),
-                );
+                    planes.iter().map(|plane| (plane.origin, plane.normal)),
+                )?;
             }
         }
         if let Some(extent) = extent {

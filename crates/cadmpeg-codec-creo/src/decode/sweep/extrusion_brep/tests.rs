@@ -311,8 +311,7 @@ fn closed_extrusion_reaches_brep_admission() {
 }
 
 fn extrusion_refuses_at_collection_boundary(operation: &'static str) {
-    let mut last_refusal = None;
-    for limit in 0..4096 {
+    let run = |limit| {
         let (scan, mut ir) = admitted_extrusion_fixture();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -320,29 +319,17 @@ fn extrusion_refuses_at_collection_boundary(operation: &'static str) {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         let mut diagnostics = crate::decode::surfaces::brep::BrepTransferDiagnostics::default();
-        let result = super::transfer_resolved_extrusion_breps(
+        super::transfer_resolved_extrusion_breps(
             &ctx,
             &scan,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &mut diagnostics,
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-        );
-        match result {
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-                if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation =>
-            {
-                return
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
-                last_refusal = Some((limit, resource.dimension, resource.operation));
-            }
-            Err(error) => panic!("unexpected extrusion error at limit {limit}: {error:?}"),
-            Ok(_) => panic!("extrusion succeeded before the named {operation} refusal"),
-        }
-    }
-    panic!("the named {operation} boundary was not reached; last refusal: {last_refusal:?}");
+        )
+    };
+    let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some(operation), &run);
+    assert!(matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.dimension == ResourceDimension::CollectionItems && resource.operation == operation));
 }
 
 macro_rules! extrusion_collection_limit_test {
@@ -758,7 +745,7 @@ fn generated_side_profile_entity_nodes_refuse_limit() {
 
 #[test]
 fn generated_side_expected_entity_text_refuses_materialized_limit() {
-    assert!(matches!(generated_side_coverage_at_limits(2, 0),
+    assert!(matches!(generated_side_coverage_at_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, Some("creo extrusion expected sketch entity ID"), |limit| generated_side_coverage_at_limits(u64::MAX, limit))),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo extrusion expected sketch entity ID"));
 }
