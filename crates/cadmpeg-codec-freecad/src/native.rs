@@ -10,6 +10,7 @@ use crate::attachment::MapModeIndex;
 use cadmpeg_ir::units::FiniteVector;
 use frame::FiniteFrame;
 
+use cadmpeg_core::decode::admission::{Admission, StandardAdmission};
 use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
@@ -188,26 +189,29 @@ fn encoded_segment_len(
     if key.is_empty() {
         return Ok(6);
     }
-    ctx.admit_iter(key.as_bytes(), operation)?
-        .try_fold(0_usize, |len, byte| {
-            len.checked_add(
+    let mut encoded_len = 0_usize;
+    for byte in key.as_bytes() {
+        ctx.charge_work(1, operation)?;
+        encoded_len = encoded_len
+            .checked_add(
                 if byte.is_ascii_alphanumeric() || matches!(*byte, b'.' | b'_' | b'-' | b'/') {
                     1
                 } else {
                     3
                 },
             )
-        })
-        .ok_or_else(|| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                    ctx.policy().limits.max_retained_bytes,
-                    u64::MAX,
-                    operation,
-                ),
-            )
-        })
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                        ctx.policy().limits.max_retained_bytes,
+                        u64::MAX,
+                        operation,
+                    ),
+                )
+            })?;
+    }
+    Ok(encoded_len)
 }
 
 fn encoded_segment_bytes(key: &str) -> impl Iterator<Item = u8> + '_ {
@@ -590,8 +594,8 @@ mod tests {
             };
             for result in [
                 super::is_safe_entry_name_charged(ctx, "").map(|_| ()),
-                facts.document_kind_with_admission(admit).map(|_| ()),
-                super::StringTables::from_records_with_admission(Vec::new(), admit).map(|_| ()),
+                facts.document_kind_with_admission(ctx).map(|_| ()),
+                super::StringTables::from_records_with_admission(Vec::new(), ctx).map(|_| ()),
                 super::StringTableRecord::from_parts_with_admission(
                     (0, None, false, 0, None),
                     Vec::new(),
@@ -701,6 +705,31 @@ mod tests {
     }
 
     #[test]
+    fn link_clone_refuses_first_subelement_text_before_a_long_suffix() {
+        let link = super::LinkTarget::try_new(
+            None,
+            None,
+            vec!["x".into(), "unvisited".repeat(8192)],
+        )
+        .unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            link.clone_with_context(&ctx).unwrap_err()
+        else {
+            panic!("the first subelement copy must refuse at its work boundary");
+        };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "FreeCAD link subelement text");
+        assert_eq!(limit.used, 1);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    }
+
+    #[test]
     fn owned_numeric_spellings_share_context_free_and_admitted_parsers() {
         use cadmpeg_core::CodecError;
         for raw in ["+00099", "-2", "abc", "", "9223372036854775808"] {
@@ -784,10 +813,7 @@ mod tests {
             assert_eq!(facts.document_kind(), expected);
             crate::test_support::with_service_context(&[], |ctx| {
                 assert_eq!(
-                    facts
-                        .document_kind_with_admission(|length, operation| ctx
-                            .charge_work(cadmpeg_core::decode::u64_from_index(length), operation))
-                        .unwrap(),
+                    facts.document_kind_with_admission(ctx).unwrap(),
                     expected
                 );
             });
@@ -795,10 +821,7 @@ mod tests {
         let facts = facts(&["Assembly", "Unused", "Unused"]);
         crate::test_support::with_service_context(&[], |ctx| {
             assert_eq!(
-                facts
-                    .document_kind_with_admission(|length, operation| ctx
-                        .charge_work(cadmpeg_core::decode::u64_from_index(length), operation))
-                    .unwrap(),
+                facts.document_kind_with_admission(ctx).unwrap(),
                 super::DocumentKind::Assembly
             );
             let cadmpeg_core::CodecError::ResourceLimit(limit) =
@@ -812,12 +835,46 @@ mod tests {
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
             &[],
             "FreeCAD document domain visits",
-            |ctx| {
-                facts.document_kind_with_admission(|length, operation| {
-                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
-                })
-            },
+            |ctx| facts.document_kind_with_admission(ctx),
         );
+    }
+
+    #[test]
+    fn standard_admission_matches_context_free_native_routes() {
+        let standard = super::StandardAdmission;
+        let facts = super::DocumentFacts {
+            id: "document".into(),
+            file_version: "1".to_owned().try_into().unwrap(),
+            program_version: None,
+            root_name: "Document".into(),
+            object_count: 1,
+            domains: vec!["Part".into(), "TechDraw".into(), "Assembly".into()],
+        };
+        assert_eq!(
+            facts.document_kind_with_admission(&standard).unwrap(),
+            facts.document_kind()
+        );
+
+        for (name, expected) in [
+            ("Body.brp", true),
+            ("safe/../unused", false),
+            ("safe\\unused", false),
+        ] {
+            assert_eq!(super::is_safe_entry_name(name), expected);
+            assert_eq!(super::safe_entry_name(&standard, name).unwrap(), expected);
+        }
+
+        let records = (0..2)
+            .map(|index| {
+                super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new())
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let expected = super::StringTables::try_from(records.clone()).unwrap();
+        let admitted = super::StringTables::from_records_with_admission(records, &standard)
+            .unwrap()
+            .unwrap();
+        assert_eq!(admitted, expected);
     }
 
     #[test]
@@ -959,12 +1016,98 @@ mod tests {
                             .unwrap()
                     })
                     .collect();
-                super::StringTables::from_records_with_admission(records, |length, operation| {
-                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
-                })?
-                .map_err(cadmpeg_core::CodecError::malformed)
+                super::StringTables::from_records_with_admission(records, ctx)?
+                    .map_err(cadmpeg_core::CodecError::from)
             },
         );
+    }
+
+    #[test]
+    fn string_table_position_diagnostic_is_admitted_at_first_invalid_record() {
+        let records = || {
+            vec![
+                super::StringTableRecord::try_new(0, None, false, 0, None, Vec::new()).unwrap(),
+                super::StringTableRecord::try_new(9, None, false, 0, None, Vec::new()).unwrap(),
+                super::StringTableRecord::try_new(
+                    2,
+                    Some("unvisited".repeat(8192)),
+                    false,
+                    0,
+                    None,
+                    Vec::new(),
+                )
+                .unwrap(),
+            ]
+        };
+        let standard_error = super::StringTables::from_records_with_admission(
+            records(),
+            &super::StandardAdmission,
+        )
+        .unwrap()
+        .unwrap_err();
+        let cadmpeg_ir::native::NativeConvertError::InvalidCollection(message) = standard_error
+        else {
+            panic!("invalid string table positions use the collection diagnostic");
+        };
+        assert_eq!(message, "string_tables[1].index must equal 1, got 9");
+
+        let diagnostic_work = {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy::service();
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let error = super::StringTables::from_records_with_admission(records(), &ctx)
+                .unwrap()
+                .unwrap_err();
+            let cadmpeg_ir::native::NativeConvertError::InvalidCollection(message) = error else {
+                panic!("invalid string table positions use the collection diagnostic");
+            };
+            assert_eq!(message, "string_tables[1].index must equal 1, got 9");
+            let cadmpeg_core::CodecError::ResourceLimit(prefix) =
+                ctx.charge_work(u64::MAX, "successful-prefix work oracle")
+                    .unwrap_err()
+            else {
+                panic!("the successful prefix work oracle must refuse");
+            };
+            prefix.used
+        };
+
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = diagnostic_work;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::StringTables::from_records_with_admission(records(), &ctx)
+            .unwrap()
+            .unwrap_err();
+        let cadmpeg_ir::native::NativeConvertError::InvalidCollection(message) = error else {
+            panic!("invalid string table positions use the collection diagnostic");
+        };
+        assert_eq!(message, "string_tables[1].index must equal 1, got 9");
+        let cadmpeg_core::CodecError::ResourceLimit(prefix) =
+            ctx.charge_work(u64::MAX, "visited-prefix oracle").unwrap_err()
+        else {
+            panic!("the successful prefix exhausts the work limit");
+        };
+        assert_eq!(prefix.used, diagnostic_work);
+
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = diagnostic_work;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let refusal = super::StringTables::from_records_with_admission(records(), &ctx)
+            .expect_err("diagnostic formatting must return its outer admission refusal");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = refusal else {
+            panic!("diagnostic formatting must return a resource refusal");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        );
+        assert_eq!(limit.operation, "FreeCAD string table position diagnostic");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 
     #[test]
@@ -1060,6 +1203,41 @@ mod tests {
             finding.message.contains("string table id")
                 && finding.check == cadmpeg_ir::report::check::Check::NativeLinks
         }));
+    }
+
+    #[test]
+    fn string_table_identity_uses_admitted_exact_native_spelling() {
+        for index in [0, 10, usize::MAX] {
+            let table = super::StringTableRecord::try_new(
+                index,
+                None,
+                false,
+                0,
+                None,
+                Vec::new(),
+            )
+            .expect("valid string table");
+            let expected = native_id("string-table", &index.to_string());
+            assert_eq!(table.id(), expected);
+            crate::test_support::with_service_context(&[], |ctx| {
+                assert_eq!(table.id_with_admission(ctx).unwrap(), expected);
+            });
+        }
+
+        let table = super::StringTableRecord::try_new(
+            usize::MAX,
+            None,
+            false,
+            0,
+            None,
+            Vec::new(),
+        )
+        .expect("valid string table");
+        crate::test_support::assert_retained_refusal_at(
+            &[],
+            "FreeCAD string table identity",
+            |ctx| table.id_with_admission(ctx),
+        );
     }
 
     #[test]
@@ -1705,7 +1883,9 @@ fn count_map_cost(
     operation: &'static str,
 ) -> Result<u64, CodecError> {
     let mut total = 0_u64;
-    for (name, count) in ctx.admit_iter(map, operation)? {
+    ctx.charge_work(0, operation)?;
+    for (name, count) in map {
+        ctx.charge_work(1, operation)?;
         total = cost_sum(
             ctx,
             operation,
@@ -3465,18 +3645,18 @@ pub(crate) struct DocumentFacts {
 impl DocumentFacts {
     /// Structural document-kind classification.
     pub(crate) fn document_kind(&self) -> DocumentKind {
-        match self.document_kind_with_admission(|_, _| Ok::<(), std::convert::Infallible>(())) {
+        match self.document_kind_with_admission(&StandardAdmission) {
             Ok(kind) => kind,
             Err(never) => match never {},
         }
     }
 
     /// Classifies domains in one pass, stopping at the highest-priority domain.
-    pub(crate) fn document_kind_with_admission<E>(
+    pub(crate) fn document_kind_with_admission<A: Admission>(
         &self,
-        mut admit: impl FnMut(usize, &'static str) -> Result<(), E>,
-    ) -> Result<DocumentKind, E> {
-        admit(0, "FreeCAD document domain visits")?;
+        admission: &A,
+    ) -> Result<DocumentKind, A::Error> {
+        admission.charge_work(0, "FreeCAD document domain visits")?;
         let mut kind = if self.object_count == 0 {
             DocumentKind::Empty
         } else {
@@ -3484,7 +3664,7 @@ impl DocumentFacts {
         };
         let mut index = 0;
         while index < self.domains.len() {
-            admit(1, "FreeCAD document domain visits")?;
+            admission.charge_work(1, "FreeCAD document domain visits")?;
             match self.domains[index].as_str() {
                 "Assembly" => return Ok(DocumentKind::Assembly),
                 "TechDraw" => kind = DocumentKind::Drawing,
@@ -3808,7 +3988,9 @@ impl LinkTarget {
             .transpose()?;
         let mut subelements =
             ctx.collection_vec(self.subelements.len(), "FreeCAD link subelement copies")?;
-        for subelement in ctx.admit_iter(&self.subelements, "FreeCAD link subelement visits")? {
+        ctx.charge_work(0, "FreeCAD link subelement visits")?;
+        for subelement in &self.subelements {
+            ctx.charge_work(1, "FreeCAD link subelement visits")?;
             subelements.push(ctx.copy_retained_text(subelement, "FreeCAD link subelement text")?);
         }
         Ok(Self {
@@ -4285,7 +4467,7 @@ impl TryFrom<Vec<String>> for EntryReferences {
 
 /// Check the exact ZIP name used by source scans and retained entry records.
 pub(crate) fn is_safe_entry_name(name: &str) -> bool {
-    match safe_entry_name(name, |_, _| Ok::<(), std::convert::Infallible>(())) {
+    match safe_entry_name(&StandardAdmission, name) {
         Ok(safe) => safe,
         Err(never) => match never {},
     }
@@ -4296,22 +4478,20 @@ pub(crate) fn is_safe_entry_name_charged(
     ctx: &DecodeContext<'_>,
     name: &str,
 ) -> Result<bool, CodecError> {
-    safe_entry_name(name, |length, operation| {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
-    })
+    safe_entry_name(ctx, name)
 }
 
 /// Reads each byte once, stopping at the first unsafe path component.
-fn safe_entry_name<E>(
+fn safe_entry_name<A: Admission>(
+    admission: &A,
     name: &str,
-    mut admit: impl FnMut(usize, &'static str) -> Result<(), E>,
-) -> Result<bool, E> {
-    admit(0, "FCStd entry name check")?;
+) -> Result<bool, A::Error> {
+    admission.charge_work(0, "FCStd entry name check")?;
     let bytes = name.as_bytes();
     let mut start = 0;
     let mut index = 0;
     while index < bytes.len() {
-        admit(1, "FCStd entry name check")?;
+        admission.charge_work(1, "FCStd entry name check")?;
         let byte = bytes[index];
         if byte == b'\\' {
             return Ok(false);
@@ -4633,21 +4813,25 @@ pub(crate) struct StringTables(Vec<StringTableRecord>);
 
 impl StringTables {
     /// Checks contiguous positions after admission of each record visit.
-    pub(crate) fn from_records_with_admission<E>(
+    pub(crate) fn from_records_with_admission<A: Admission>(
         records: Vec<StringTableRecord>,
-        mut admit: impl FnMut(usize, &'static str) -> Result<(), E>,
-    ) -> Result<Result<Self, cadmpeg_ir::native::NativeConvertError>, E> {
-        admit(0, "FreeCAD string table position visits")?;
+        admission: &A,
+    ) -> Result<Result<Self, cadmpeg_ir::native::NativeConvertError>, A::Error> {
+        admission.charge_work(0, "FreeCAD string table position visits")?;
         let mut position = 0;
         while position < records.len() {
-            admit(1, "FreeCAD string table position visits")?;
+            admission.charge_work(1, "FreeCAD string table position visits")?;
             let record = &records[position];
             if record.index != position {
-                return Ok(Err(
-                    cadmpeg_ir::native::NativeConvertError::InvalidCollection(format!(
+                let diagnostic = admission.format_retained(
+                    format_args!(
                         "string_tables[{position}].index must equal {position}, got {}",
                         record.index
-                    )),
+                    ),
+                    "FreeCAD string table position diagnostic",
+                )?;
+                return Ok(Err(
+                    cadmpeg_ir::native::NativeConvertError::InvalidCollection(diagnostic),
                 ));
             }
             position += 1;
@@ -4664,9 +4848,7 @@ impl TryFrom<Vec<StringTableRecord>> for StringTables {
     type Error = cadmpeg_ir::native::NativeConvertError;
 
     fn try_from(records: Vec<StringTableRecord>) -> Result<Self, Self::Error> {
-        match Self::from_records_with_admission(records, |_, _| {
-            Ok::<(), std::convert::Infallible>(())
-        }) {
+        match Self::from_records_with_admission(records, &StandardAdmission) {
             Ok(result) => result,
             Err(never) => match never {},
         }
@@ -4755,7 +4937,21 @@ impl StringTableRecord {
 
     /// Stable table identity derived from the document table index.
     pub(crate) fn id(&self) -> String {
-        native_id("string-table", self.index.to_string())
+        match self.id_with_admission(&StandardAdmission) {
+            Ok(id) => id,
+            Err(never) => match never {},
+        }
+    }
+
+    /// Formats the stable table identity in retained or scoped storage.
+    pub(crate) fn id_with_admission<A: Admission>(
+        &self,
+        admission: &A,
+    ) -> Result<String, A::Error> {
+        admission.format_retained(
+            format_args!("fcstd:native:string-table#{}", self.index),
+            "FreeCAD string table identity",
+        )
     }
 
     pub(crate) fn entries(&self) -> &[StringTableEntry] {

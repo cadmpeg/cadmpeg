@@ -128,12 +128,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         Ord::cmp,
         "FreeCAD native string tables sort",
     )?;
-    // The shared conversion checks each record's index once.
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(string_table_records.len()),
-        "FreeCAD native string table order",
-    )?;
-    let string_tables = arena!(native::StringTables::try_from(string_table_records));
+    // The shared conversion admits each visited position and its diagnostic.
+    let string_tables = arena!(
+        native::StringTables::from_records_with_admission(string_table_records, ctx)
+            .map_err(cadmpeg_ir::native::NativeConvertError::from)?
+    );
     let string_tables = string_tables.as_slice();
     let element_maps =
         arena!(namespace
@@ -767,7 +766,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             None => false,
         };
         if missing_owner || missing_source {
-            let table_id = table.id();
+            let mut table_id_storage =
+                ctx.reserve_scoped(0, "FreeCAD validation string table identity")?;
+            let table_id = table_id_storage.with_storage(|| table.id_with_admission(ctx))?;
             push_finding(
                 ctx,
                 findings,
@@ -775,6 +776,8 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                 format_args!("{table_id} has a missing property or side-entry link"),
                 Some(&table_id),
             )?;
+            drop(table_id);
+            drop(table_id_storage);
         }
     }
     if !element_maps.is_empty() {
@@ -1179,11 +1182,11 @@ fn validate_logical_ledger(
         })?;
     }
     let string_table_ids = storage.with_storage(|| {
-        ctx.collect_vec(
+        ctx.try_collect_vec(
             records
                 .string_tables
                 .iter()
-                .map(native::StringTableRecord::id),
+                .map(|table| table.id_with_admission(ctx)),
             OPERATION,
         )
     })?;
