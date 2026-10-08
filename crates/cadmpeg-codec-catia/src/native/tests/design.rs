@@ -189,7 +189,12 @@ fn parallel_reference_table_refuses_nested_collection_limit() {
     })
     .expect("service profile admits record index");
     let refused = crate::test_support::with_collection_limit(2, |ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &record_index)
+        super::super::projection::design_parallel_reference_table(
+            ctx,
+            &fields,
+            graph,
+            &record_index,
+        )
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -197,14 +202,24 @@ fn parallel_reference_table_refuses_nested_collection_limit() {
     );
     let retained =
         crate::test_support::with_retained_refusal(&[], "catia_design_column_field", |ctx| {
-            super::super::design_parallel_reference_table(ctx, &fields, graph, &record_index)
+            super::super::projection::design_parallel_reference_table(
+                ctx,
+                &fields,
+                graph,
+                &record_index,
+            )
         });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_design_column_field")
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &record_index)
+        super::super::projection::design_parallel_reference_table(
+            ctx,
+            &fields,
+            graph,
+            &record_index,
+        )
     })
     .expect("service profile admits parallel reference table");
     assert_eq!(admitted, native.design_objects[0].parallel_reference_table);
