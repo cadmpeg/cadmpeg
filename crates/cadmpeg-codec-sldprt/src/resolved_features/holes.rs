@@ -2510,7 +2510,9 @@ pub(crate) fn project_hole_position_sketches(
             Ok::<_, CodecError>(())
         })?;
     }
-    let mut markers = None;
+    let mut markers = HashMap::new();
+    let mut marker_storage =
+        ctx.reserve_scoped(0, "index SLDPRT hole position marker lanes")?;
     let mut source_items = features.iter_mut();
     while let Some(feature) = ctx.next_charged(&mut source_items, OPERATION)? {
         let (projection, _projection_storage) =
@@ -2595,24 +2597,18 @@ pub(crate) fn project_hole_position_sketches(
                     let Some((origin, normal, u_axis)) = sketch.resolved_placement() else {
                         break 'feature_edit;
                     };
-                    let markers = match &mut markers {
-                        Some((markers, _)) => markers,
-                        slot @ None => {
-                            &mut slot
-                                .insert(ctx.with_scoped_storage(OPERATION, || {
-                                    ctx.try_collect_vec(
-                                        lanes.iter().map(|lane| HoleMarkers::new(ctx, lane, true)),
-                                        OPERATION,
-                                    )
-                                })?)
-                                .0
-                        }
-                    };
                     let mut authored_markers = Vec::new();
-                    for (lane, markers) in ctx.admit_iter(lanes, OPERATION)?.zip(markers.iter()) {
+                    for (lane_index, lane) in ctx.admit_iter(lanes, OPERATION)?.enumerate() {
                         if !ctx.equal(&lane.configuration, &sketch.configuration, OPERATION)? {
                             continue;
                         }
+                        let markers = hole_marker_index(
+                            ctx,
+                            &mut markers,
+                            &mut marker_storage,
+                            lane_index,
+                            lane,
+                        )?;
                         for marker in ctx.admit_iter(
                             ctx.get_hash_map(
                                 &markers.by_feature,
@@ -2647,11 +2643,20 @@ pub(crate) fn project_hole_position_sketches(
                             [f64; 2],
                         )> = None;
                         let mut complete_unindexed_encoding = true;
-                        for (lane, markers) in ctx.admit_iter(lanes, OPERATION)?.zip(markers.iter())
+                        for (lane_index, lane) in
+                            ctx.admit_iter(lanes, OPERATION)?.enumerate()
                         {
                             if !ctx.equal(&lane.configuration, &sketch.configuration, OPERATION)? {
                                 continue;
                             }
+                            let markers = hole_marker_index(
+                                ctx,
+                                &mut markers,
+                                &mut marker_storage,
+                                lane_index,
+                                lane,
+                            )?;
+                            markers.index_pairs(ctx, lane)?;
                             let position_marker =
                         |marker: &crate::records::SketchInputEntity| -> Result<bool, CodecError> {
                             Ok(marker.coordinates_m.is_some())
@@ -2907,6 +2912,7 @@ pub(crate) fn project_hole_position_sketches(
 struct HoleMarkers<'lane, 'ctx> {
     by_feature: HashMap<&'lane str, Vec<&'lane crate::records::SketchInputEntity>>,
     paired: HashMap<&'lane str, Vec<(&'lane crate::records::SketchInputEntity, [f64; 2])>>,
+    pairs_indexed: bool,
     _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
@@ -2914,12 +2920,10 @@ impl<'lane, 'ctx> HoleMarkers<'lane, 'ctx> {
     fn new(
         ctx: &'ctx DecodeContext<'_>,
         lane: &'lane FeatureInputLane,
-        include_pairs: bool,
     ) -> Result<Self, CodecError> {
         const OPERATION: &str = "index SLDPRT hole position markers";
         let mut storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut by_feature = HashMap::new();
-        let mut paired = HashMap::new();
         for marker in ctx.admit_iter(&lane.sketch_entities, OPERATION)? {
             if let Some(feature) = marker.feature_ref.as_deref() {
                 storage.with_storage(|| {
@@ -2927,49 +2931,77 @@ impl<'lane, 'ctx> HoleMarkers<'lane, 'ctx> {
                 })?;
             }
         }
-        if include_pairs {
-            let window = std::num::NonZeroUsize::new(2)
-                .ok_or_else(|| CodecError::malformed("empty paired object locus window"))?;
-            for pair in ctx
-                .admit_iter(&lane.sketch_entities, OPERATION)?
-                .windows(window)
-            {
-                let object = &pair[0];
-                let anchor = &pair[1];
-                let (Some(feature), Some(coordinates)) = (
-                    object.feature_ref.as_deref(),
-                    object
-                        .coordinates_m
-                        .map(cadmpeg_ir::units::FiniteVector::get),
-                ) else {
-                    continue;
-                };
-                if ctx.equal(&anchor.feature_ref.as_deref(), &Some(feature), OPERATION)?
-                    && object.object_index().is_some()
-                    && anchor.object_index().is_none()
-                    && anchor.kind() == SketchInputKind::Point
-                    && anchor
-                        .coordinates_m
-                        .is_some_and(|coordinates| coordinates == [0.0, 0.0])
-                {
-                    storage.with_storage(|| {
-                        ctx.push_hash_group(
-                            &mut paired,
-                            feature,
-                            (object, coordinates),
-                            OPERATION,
-                            OPERATION,
-                        )
-                    })?;
-                }
-            }
-        }
         Ok(Self {
             by_feature,
-            paired,
+            paired: HashMap::new(),
+            pairs_indexed: false,
             _storage: storage,
         })
     }
+
+    fn index_pairs(
+        &mut self,
+        ctx: &'ctx DecodeContext<'_>,
+        lane: &'lane FeatureInputLane,
+    ) -> Result<(), CodecError> {
+        const OPERATION: &str = "index SLDPRT hole position marker pairs";
+        if self.pairs_indexed {
+            return Ok(());
+        }
+        let window = std::num::NonZeroUsize::new(2)
+            .ok_or_else(|| CodecError::malformed("empty paired object locus window"))?;
+        for pair in ctx
+            .admit_iter(&lane.sketch_entities, OPERATION)?
+            .windows(window)
+        {
+            let object = &pair[0];
+            let anchor = &pair[1];
+            let (Some(feature), Some(coordinates)) = (
+                object.feature_ref.as_deref(),
+                object
+                    .coordinates_m
+                    .map(cadmpeg_ir::units::FiniteVector::get),
+            ) else {
+                continue;
+            };
+            if ctx.equal(&anchor.feature_ref.as_deref(), &Some(feature), OPERATION)?
+                && object.object_index().is_some()
+                && anchor.object_index().is_none()
+                && anchor.kind() == SketchInputKind::Point
+                && anchor
+                    .coordinates_m
+                    .is_some_and(|coordinates| coordinates == [0.0, 0.0])
+            {
+                self._storage.with_storage(|| {
+                    ctx.push_hash_group(
+                        &mut self.paired,
+                        feature,
+                        (object, coordinates),
+                        OPERATION,
+                        OPERATION,
+                    )
+                })?;
+            }
+        }
+        self.pairs_indexed = true;
+        Ok(())
+    }
+}
+
+fn hole_marker_index<'index, 'lane, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    indexes: &'index mut HashMap<usize, HoleMarkers<'lane, 'ctx>>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    lane_index: usize,
+    lane: &'lane FeatureInputLane,
+) -> Result<&'index mut HoleMarkers<'lane, 'ctx>, CodecError> {
+    const OPERATION: &str = "index SLDPRT hole position marker lanes";
+    if ctx.get_hash_map(indexes, &lane_index, OPERATION)?.is_none() {
+        let markers = HoleMarkers::new(ctx, lane)?;
+        storage.with_storage(|| ctx.insert_hash_map(indexes, lane_index, markers, OPERATION))?;
+    }
+    ctx.get_mut_hash_map(indexes, &lane_index, OPERATION)?
+        .ok_or_else(|| CodecError::malformed("missing SLDPRT hole marker lane index"))
 }
 
 struct PositionSketches<'history, 'ctx> {
@@ -3201,7 +3233,9 @@ pub(crate) fn project_spatial_hole_position_sketches(
             Ok::<_, CodecError>(())
         })?;
     }
-    let mut markers = None;
+    let mut markers = HashMap::new();
+    let mut marker_storage =
+        ctx.reserve_scoped(0, "index SLDPRT hole position marker lanes")?;
     let mut source_items = 0..features.len();
     while let Some(index) =
         ctx.next_charged(&mut source_items, "project SLDPRT spatial hole positions")?
@@ -3260,23 +3294,10 @@ pub(crate) fn project_spatial_hole_position_sketches(
         };
         let (solution, _solution_storage) =
             ctx.with_scoped_storage(INDEX_OPERATION, || -> Result<_, CodecError> {
-                let markers = match &mut markers {
-                    Some((markers, _)) => markers,
-                    slot @ None => {
-                        &mut slot
-                            .insert(ctx.with_scoped_storage(INDEX_OPERATION, || {
-                                ctx.try_collect_vec(
-                                    lanes.iter().map(|lane| HoleMarkers::new(ctx, lane, false)),
-                                    INDEX_OPERATION,
-                                )
-                            })?)
-                            .0
-                    }
-                };
                 let mut authored_markers = Vec::new();
-                for (lane, markers) in ctx
+                for (lane_index, lane) in ctx
                     .admit_iter(lanes, "scan SLDPRT holes records")?
-                    .zip(markers.iter())
+                    .enumerate()
                 {
                     if !ctx.equal(
                         &lane.configuration,
@@ -3285,6 +3306,13 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     )? {
                         continue;
                     }
+                    let markers = hole_marker_index(
+                        ctx,
+                        &mut markers,
+                        &mut marker_storage,
+                        lane_index,
+                        lane,
+                    )?;
                     let mut source_items = ctx
                         .get_hash_map(
                             &markers.by_feature,
@@ -5054,7 +5082,9 @@ pub(crate) fn project_hole_axes(
     }
     let object_names = hole_lane_names(ctx, &mut names_storage, lanes)?;
     let positions = PositionSketches::new(ctx, histories, &object_names)?;
-    let mut markers = None;
+    let mut markers = HashMap::new();
+    let mut marker_storage =
+        ctx.reserve_scoped(0, "index SLDPRT hole position marker lanes")?;
     let mut records = None;
     let surfaces = topology.surfaces;
     let mut model_sketches_storage = ctx.reserve_scoped(0, INDEX_OPERATION)?;
@@ -5381,24 +5411,17 @@ pub(crate) fn project_hole_axes(
                         } else {
                             None
                         };
-                        let markers = match &mut markers {
-                            Some((markers, _)) => markers,
-                            slot @ None => {
-                                &mut slot
-                                    .insert(ctx.with_scoped_storage(INDEX_OPERATION, || {
-                                        ctx.try_collect_vec(
-                                            lanes
-                                                .iter()
-                                                .map(|lane| HoleMarkers::new(ctx, lane, true)),
-                                            INDEX_OPERATION,
-                                        )
-                                    })?)
-                                    .0
-                            }
-                        };
+                        let markers = hole_marker_index(
+                            ctx,
+                            &mut markers,
+                            &mut marker_storage,
+                            lane_index,
+                            lane,
+                        )?;
+                        markers.index_pairs(ctx, lane)?;
                         if let Some(solution) = marker_pattern_bore_axes(
                             ctx,
-                            &markers[lane_index],
+                            markers,
                             position_feature.id.as_str(),
                             radius,
                             surfaces,

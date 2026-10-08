@@ -331,7 +331,9 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
 #[test]
 fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let hole = model_hole();
     let sketch_feature = cadmpeg_ir::features::Feature {
         id: FeatureId::mint("synthetic:test:id#position-sketch").expect("identity grammar"),
@@ -486,6 +488,67 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let mut alternate_configuration = lane.clone();
     alternate_configuration.id = "alternate-lane".into();
     alternate_configuration.configuration = Some("alternate".into());
+    for index in 0..5 {
+        let mut marker = alternate_configuration.sketch_entities[0].clone();
+        marker.set_test_id(&format!("unmatched-{index}"));
+        alternate_configuration.sketch_entities.push(marker);
+    }
+
+    let (marker_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let marker_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT hole position markers",
+        Some(10),
+    );
+    let mut probe_features = vec![model_hole(), features[1].clone()];
+    project_hole_position_sketches(
+        &marker_ctx,
+        &mut probe_features,
+        std::slice::from_ref(&sketch),
+        &entities,
+        std::slice::from_ref(&history),
+        &[lane.clone(), alternate_configuration.clone()],
+    )
+    .expect("unmatched configuration markers are not indexed");
+    let marker_limit = marker_ctx
+        .charge_work(10, "index SLDPRT hole position markers")
+        .expect_err("the probe remains armed when the unmatched lane is skipped");
+    drop(marker_probe);
+    assert!(matches!(
+        marker_limit,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "index SLDPRT hole position markers"
+                && limit.additional == 10
+    ));
+
+    let (pair_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let pair_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT hole position marker pairs",
+        Some(10),
+    );
+    let mut authored_features = vec![model_hole(), features[1].clone()];
+    project_hole_position_sketches(
+        &pair_ctx,
+        &mut authored_features,
+        std::slice::from_ref(&sketch),
+        &entities,
+        std::slice::from_ref(&history),
+        &[lane.clone(), alternate_configuration.clone()],
+    )
+    .expect("authored point markers do not need the pair fallback");
+    let pair_limit = pair_ctx
+        .charge_work(10, "index SLDPRT hole position marker pairs")
+        .expect_err("the pair-index probe remains armed on the authored-point route");
+    drop(pair_probe);
+    assert!(matches!(
+        pair_limit,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "index SLDPRT hole position marker pairs"
+                && limit.additional == 10
+    ));
 
     project_hole_position_sketches(
         &ctx,
@@ -523,6 +586,31 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         features[0].dependencies.as_slice(),
         [FeatureId::mint("synthetic:test:id#position-sketch").expect("identity grammar")]
     );
+
+    let (pair_index_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let pair_index_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT hole position marker pairs",
+        Some(4),
+    );
+    let mut refused_pair_features = vec![model_hole(), features[1].clone()];
+    let pair_index_error = project_hole_position_sketches(
+        &pair_index_ctx,
+        &mut refused_pair_features,
+        std::slice::from_ref(&sketch),
+        &[],
+        std::slice::from_ref(&history),
+        std::slice::from_ref(&paired_lane),
+    )
+    .expect_err("paired fallback traverses and admits the pair roster");
+    drop(pair_index_probe);
+    assert!(matches!(
+        pair_index_error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "index SLDPRT hole position marker pairs"
+                && limit.additional == 4
+    ));
 
     let mut paired_features = vec![model_hole(), features[1].clone()];
     project_hole_position_sketches(

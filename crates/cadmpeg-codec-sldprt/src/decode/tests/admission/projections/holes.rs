@@ -129,17 +129,6 @@ fn geometry_hole_ownership_scratch_refuses_work_limit() {
     );
 }
 
-fn hole_bound_sketch_source() -> Vec<u8> {
-    let mut source =
-        crate::test_support::history::sldprt_with_nested_sketch_profile(&triangle_body());
-    source.extend(make_block(
-        0x42,
-        "Contents/Keywords",
-        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
-    ));
-    source
-}
-
 #[test]
 fn metadata_profiled_hole_projection_refuses_collection_limit() {
     let options = DecodeOptions {
@@ -189,7 +178,7 @@ fn metadata_profiled_hole_projection_scratch_refuses_work_limit() {
         |cap| {
             let mut options = options;
             options.policy.limits.max_work_units = cap;
-            match SldprtCodec.decode(&mut Cursor::new(hole_bound_sketch_source()), &options) {
+            match SldprtCodec.decode(&mut Cursor::new(hole_ownership_source(false)), &options) {
                 Ok(decoded) => Ok(decoded),
                 Err(cadmpeg_ir::DecodeFailure::Codec(error)) => Err(error),
                 Err(error) => panic!("unexpected decode refusal: {error:?}"),
@@ -243,7 +232,7 @@ fn geometry_profiled_hole_projection_scratch_refuses_work_limit() {
         |cap| {
             let mut options = options;
             options.policy.limits.max_work_units = cap;
-            match SldprtCodec.decode(&mut Cursor::new(hole_bound_sketch_source()), &options) {
+            match SldprtCodec.decode(&mut Cursor::new(hole_ownership_source(true)), &options) {
                 Ok(decoded) => Ok(decoded),
                 Err(cadmpeg_ir::DecodeFailure::Codec(error)) => Err(error),
                 Err(error) => panic!("unexpected decode refusal: {error:?}"),
@@ -306,7 +295,7 @@ fn metadata_hole_position_projection_scratch_refuses_work_limit() {
         |cap| {
             let mut options = options;
             options.policy.limits.max_work_units = cap;
-            match SldprtCodec.decode(&mut Cursor::new(hole_bound_sketch_source()), &options) {
+            match SldprtCodec.decode(&mut Cursor::new(hole_ownership_source(false)), &options) {
                 Ok(decoded) => Ok(decoded),
                 Err(cadmpeg_ir::DecodeFailure::Codec(error)) => Err(error),
                 Err(error) => panic!("unexpected decode refusal: {error:?}"),
@@ -360,7 +349,7 @@ fn geometry_hole_position_projection_scratch_refuses_work_limit() {
         |cap| {
             let mut options = options;
             options.policy.limits.max_work_units = cap;
-            match SldprtCodec.decode(&mut Cursor::new(hole_bound_sketch_source()), &options) {
+            match SldprtCodec.decode(&mut Cursor::new(hole_ownership_source(true)), &options) {
                 Ok(decoded) => Ok(decoded),
                 Err(cadmpeg_ir::DecodeFailure::Codec(error)) => Err(error),
                 Err(error) => panic!("unexpected decode refusal: {error:?}"),
