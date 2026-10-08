@@ -1843,6 +1843,13 @@ pub(super) fn non_modeling_history_definition(
     relation_counts: [usize; 3],
     source_properties: &BTreeMap<String, String>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
+    if kind != "EXTRACT_STRING"
+        || object_indices.iter().any(Option::is_some)
+        || !outputs.is_empty()
+        || relation_counts != [0; 3]
+    {
+        return Ok(None);
+    }
     let operation_identity_only = ctx.all_by(
         source_properties,
         |(key, _)| {
@@ -1857,11 +1864,7 @@ pub(super) fn non_modeling_history_definition(
         },
         "NX history source property keys",
     )?;
-    Ok((kind == "EXTRACT_STRING"
-        && object_indices.iter().all(Option::is_none)
-        && outputs.is_empty()
-        && relation_counts == [0; 3]
-        && ctx.contains_key_btree_map(
+    Ok((ctx.contains_key_btree_map(
             source_properties,
             "operation_record",
             "NX history operation record membership",
