@@ -701,6 +701,7 @@ pub(super) fn emit_surfaces(
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
     id_storage: &mut ScopedReservation<'_>,
 ) -> Result<BTreeMap<u32, SurfaceId>, cadmpeg_core::CodecError> {
+    const LOOKUP: &str = "catia_b5_emitted_surface_lookup";
     let surface_plan: BTreeMap<u32, SurfacePlan> = std::mem::take(&mut plan.surface_plan);
     let namespace = cadmpeg_ir::identity_namespace!("catia", "b5", "surface");
     let mut surface_ids = BTreeMap::new();
@@ -750,7 +751,6 @@ pub(super) fn emit_surfaces(
             )
         })?;
     }
-    const LOOKUP: &str = "catia_b5_emitted_surface_lookup";
     for (object_id, plan) in admission
         .context()
         .admit_iter(surface_plan, "catia_b5_emitted_surface_scan")?

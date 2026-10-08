@@ -1022,7 +1022,10 @@ fn parse_bounds(
         let mut position = 1;
         let mut entries = ctx.collection_vec(count, "catia_e5_bound_entries")?;
         let mut steps = 0..count;
-        while let Some(_) = ctx.next_charged(&mut steps, "catia_e5_bound_reference_scan")? {
+        while ctx
+            .next_charged(&mut steps, "catia_e5_bound_reference_scan")?
+            .is_some()
+        {
             let Some(representation) =
                 wire::tokens::object_ref(record.payload, &mut position, false)
             else {
@@ -2062,7 +2065,10 @@ fn parse_body_root(
         };
         let mut faces = Vec::new();
         let mut steps = 0..count;
-        while let Some(_) = ctx.next_charged(&mut steps, "catia_e5_body_root_face_scan")? {
+        while ctx
+            .next_charged(&mut steps, "catia_e5_body_root_face_scan")?
+            .is_some()
+        {
             let Some(face) = wire::tokens::object_ref(payload, &mut position, false) else {
                 return Ok(None);
             };
@@ -2133,7 +2139,10 @@ fn parse_face(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<Raw
     };
     let mut loops = Vec::new();
     let mut steps = 0..count;
-    while let Some(_) = ctx.next_charged(&mut steps, "catia_e5_face_loop_scan")? {
+    while ctx
+        .next_charged(&mut steps, "catia_e5_face_loop_scan")?
+        .is_some()
+    {
         let Some(loop_id) = wire::tokens::object_ref(record.payload, &mut position, false) else {
             return Ok(None);
         };
@@ -2170,7 +2179,10 @@ fn parse_loop(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<Raw
     let mut pcurves = Vec::new();
     let mut edges = Vec::new();
     let mut steps = 0..member_count / 2;
-    while let Some(_) = ctx.next_charged(&mut steps, "catia_e5_loop_member_scan")? {
+    while ctx
+        .next_charged(&mut steps, "catia_e5_loop_member_scan")?
+        .is_some()
+    {
         let Some(pcurve) = wire::tokens::object_ref(record.payload, &mut position, false) else {
             return Ok(None);
         };
