@@ -172,10 +172,6 @@ impl SubdCage {
                 })
             })
         })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(vertices.len()),
-            "edit SubD vertices",
-        )?;
         if let Err(error) = edit(&mut vertices) {
             return Ok(Err(error));
         }
@@ -191,7 +187,6 @@ impl SubdCage {
         for (index, edge) in self.edges.iter().enumerate() {
             admission.work(1, "validate SubD edge rows")?;
             for vertex in edge.vertices {
-                admission.work(1, "validate SubD edge vertices")?;
                 if cadmpeg_core::decode::index_from_u32(vertex) >= self.vertices.len() {
                     return Ok(Err(admission.message(format_args!(
                         "edges[{index}].vertices contains an out-of-range index"
@@ -221,7 +216,6 @@ impl SubdCage {
                 };
                 if closed {
                     if let Some(previous) = previous {
-                        admission.work(1, "validate SubD directed ring")?;
                         closed = previous == endpoints[0];
                     }
                 }
@@ -232,7 +226,6 @@ impl SubdCage {
             }
             if closed {
                 if let (Some(first), Some(previous)) = (first, previous) {
-                    admission.work(1, "validate SubD directed ring")?;
                     closed = previous == first;
                 }
             }
@@ -253,8 +246,8 @@ impl SubdCage {
                 ("vertex_pairs", &symmetry.vertex_pairs, self.vertices.len()),
             ] {
                 for pair in pairs {
+                    admission.work(1, "validate SubD symmetry indices")?;
                     for index in pair {
-                        admission.work(1, "validate SubD symmetry indices")?;
                         if cadmpeg_core::decode::index_from_u32(*index) >= count {
                             return Ok(Err(admission.message(format_args!(
                                 "symmetries.{field} contains an out-of-range index"
@@ -291,7 +284,6 @@ impl SubdCage {
                     continue;
                 };
                 if let Some(edge) = edge {
-                    admission.work(1, "validate SubD grip edge")?;
                     let Some(edge) = self.edges.get(cadmpeg_core::decode::index_from_u32(*edge))
                     else {
                         return Ok(Err(admission.message(format_args!(
@@ -300,7 +292,6 @@ impl SubdCage {
                     };
                     let mut incident = false;
                     for owner in edge.vertices {
-                        admission.work(1, "validate SubD grip edge owner")?;
                         if cadmpeg_core::decode::index_from_u32(owner) == index {
                             incident = true;
                             break;
@@ -313,7 +304,6 @@ impl SubdCage {
                     }
                 }
                 if let Some(face) = sector_face {
-                    admission.work(1, "validate SubD grip face")?;
                     let Some(face) = self.faces.get(cadmpeg_core::decode::index_from_u32(*face))
                     else {
                         return Ok(Err(admission.message(format_args!(
@@ -326,7 +316,6 @@ impl SubdCage {
                         for owner in
                             self.edges[cadmpeg_core::decode::index_from_u32(use_.edge)].vertices
                         {
-                            admission.work(1, "validate SubD grip face owner")?;
                             if cadmpeg_core::decode::index_from_u32(owner) == index {
                                 incident = true;
                                 break;
@@ -1010,7 +999,6 @@ impl TryFrom<SubdEdgeWire> for SubdEdge {
                 })),
             },
             wire.sector_coefficients,
-            |_, _| Ok::<(), SubdError>(()),
             |message| Ok(SubdError::Admission(message.into())),
         )?
     }
@@ -1027,7 +1015,7 @@ impl SubdEdge {
         sector_coefficients: [FiniteReal; 2],
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "SubD edge endpoints")?;
+        ctx.charge_work(0, "SubD edge endpoints")?;
         if vertices[0] == vertices[1] {
             return Ok(Err(SubdError::Admission(ctx.copy_retained_text(
                 "vertices must name distinct endpoints",
@@ -1052,6 +1040,7 @@ impl SubdEdge {
         sector_coefficients: [f64; 2],
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
+        ctx.charge_work(0, "SubD edge controls")?;
         Self::admit_raw_controls(
             vertices,
             sharpness,
@@ -1067,7 +1056,6 @@ impl SubdEdge {
                 },
             },
             sector_coefficients,
-            |count, operation| ctx.charge_work(count, operation),
             |message| {
                 Ok(SubdError::Admission(ctx.copy_retained_text(
                     message,
@@ -1086,13 +1074,13 @@ impl SubdEdge {
         sector_coefficients: [f64; 2],
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, SubdError>, cadmpeg_core::CodecError> {
+        ctx.charge_work(0, "SubD edge controls")?;
         Self::admit_raw_controls(
             vertices,
             sharpness,
             tag,
             || Ok(Ok(knot_interval)),
             sector_coefficients,
-            |count, operation| ctx.charge_work(count, operation),
             |message| {
                 Ok(SubdError::Admission(ctx.copy_retained_text(
                     message,
@@ -1108,14 +1096,11 @@ impl SubdEdge {
         tag: SubdEdgeTag,
         interval: impl FnOnce() -> Result<Result<Option<PositiveReal>, SubdError>, E>,
         sector_coefficients: [f64; 2],
-        mut work: impl FnMut(u64, &'static str) -> Result<(), E>,
         mut error: impl FnMut(&'static str) -> Result<SubdError, E>,
     ) -> Result<Result<Self, SubdError>, E> {
-        work(1, "SubD edge endpoints")?;
         if vertices[0] == vertices[1] {
             return Ok(Err(error("vertices must name distinct endpoints")?));
         }
-        work(2, "SubD edge sharpness")?;
         let [start, end] = sharpness.map(NonNegativeReal::new);
         let (Some(start), Some(end)) = (start, end) else {
             return Ok(Err(error("sharpness must be finite and non-negative")?));
@@ -1124,7 +1109,6 @@ impl SubdEdge {
             Ok(value) => value,
             Err(error) => return Ok(Err(error)),
         };
-        work(2, "SubD edge sector coefficients")?;
         let [first, second] = sector_coefficients.map(FiniteReal::new);
         let (Some(first), Some(second)) = (first, second) else {
             return Ok(Err(error("sector_coefficients must be finite")?));
