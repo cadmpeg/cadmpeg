@@ -215,32 +215,18 @@ impl std::fmt::Display for Carrier {
 ///
 /// Identity comes from this shared schema-token map so hosts cannot disagree
 /// about the identity of the same declaration.
-fn schema_row(ctx: &DecodeContext<'_>, schema: &str) -> Result<DialectId, CodecError> {
-    Ok(
-        if ctx.eq_ignore_ascii_case(
-            schema,
-            "SCH_SW_33103_11000",
-            "Parasolid schema row comparison",
-        )? {
-            PARASOLID_SCH_SW_33103
-        } else if ctx.eq_ignore_ascii_case(
-            schema,
-            "SCH_SW_32001_11000",
-            "Parasolid schema row comparison",
-        )? {
-            PARASOLID_SCH_SW_32001
-        } else if let Some((_, suffix)) =
-            ctx.rsplit_once(schema, "_", "Parasolid schema format suffix")?
-        {
-            if ctx.eq_ignore_ascii_case(suffix, "13006", "Parasolid schema suffix comparison")? {
-                PARASOLID_FORMAT_13006
-            } else {
-                PARASOLID_UNKNOWN
-            }
-        } else {
-            PARASOLID_UNKNOWN
-        },
-    )
+fn schema_row(schema: &str) -> DialectId {
+    // Each comparison has a fixed literal extent. Only the final six bytes
+    // can select the format row; no source-wide suffix search is needed.
+    if schema.eq_ignore_ascii_case("SCH_SW_33103_11000") {
+        PARASOLID_SCH_SW_33103
+    } else if schema.eq_ignore_ascii_case("SCH_SW_32001_11000") {
+        PARASOLID_SCH_SW_32001
+    } else if schema.ends_with("_13006") {
+        PARASOLID_FORMAT_13006
+    } else {
+        PARASOLID_UNKNOWN
+    }
 }
 
 /// Classify one schema-bearing Parasolid stream and record its host carrier.
@@ -257,7 +243,7 @@ pub fn classify_layer(
     instance: LayerInstance,
     verified: &[DialectId],
 ) -> Result<ClassifiedLayer, CodecError> {
-    let id = schema_row(ctx, schema.value())?;
+    let id = schema_row(schema.value());
     let mut declared = BTreeMap::new();
     let schema_key = cadmpeg_core::nonblank_const!("schema");
     ctx.insert_btree_map(
@@ -746,6 +732,55 @@ mod tests {
             assert_eq!(matched.matched().declared()[DECLARED_CARRIER], "stream@12");
             assert_eq!(matched.matched().instance(), None);
         }
+    }
+
+    #[test]
+    fn schema_row_uses_only_fixed_name_and_suffix_grammar() {
+        for (schema, expected) in [
+            ("SCH_sw_33103_11000", PARASOLID_SCH_SW_33103),
+            ("SCH_Sw_32001_11000", PARASOLID_SCH_SW_32001),
+            ("SCH_X_13006", PARASOLID_FORMAT_13006),
+            ("SCH_13006_1", super::PARASOLID_UNKNOWN),
+            ("SCH_X_113006", super::PARASOLID_UNKNOWN),
+            ("SCH_X_13006_", super::PARASOLID_UNKNOWN),
+            ("13006", super::PARASOLID_UNKNOWN),
+        ] {
+            assert_eq!(super::schema_row(schema), expected);
+        }
+    }
+
+    #[test]
+    fn schema_row_classification_does_not_scan_unrelated_prefix_bytes() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let work = |schema: &str, expected: DialectId| {
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::service();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("input");
+            let layer = classify_layer(&ctx, token(schema), carrier("stream@12"), LayerInstance::Sole, &[])
+                .expect("classification");
+            assert_eq!(layer.matched().dialect(), &expected);
+            assert_eq!(layer.matched().declared()[DECLARED_SCHEMA], schema);
+            assert_eq!(layer.matched().declared()[DECLARED_CARRIER], "stream@12");
+            assert_eq!(layer.matched().instance(), None);
+            let error = ctx.charge_work(policy.limits.max_work_units + 1, "probe classification work")
+                .expect_err("probe always exceeds the allowance");
+            let CodecError::ResourceLimit(limit) = error else { panic!("work refusal"); };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            let original = classify_layer(&ctx, token(schema), carrier("stream@12"), LayerInstance::Sole, &[])
+                .expect_err("classification must preserve original refusal");
+            assert!(matches!(original, CodecError::ResourceLimit(original) if original == limit));
+            limit.used
+        };
+        let baseline = work("SCH_TEST", super::PARASOLID_UNKNOWN);
+        for suffix in ["_13006", "_13006_1", ""] {
+            let schema = format!("SCH_{}{suffix}", "X".repeat(1 << 20));
+            let expected = if suffix == "_13006" { PARASOLID_FORMAT_13006 } else { super::PARASOLID_UNKNOWN };
+            assert_eq!(work(&schema, expected), baseline);
+        }
+        assert_eq!(work("SCH_sw_33103_11000", PARASOLID_SCH_SW_33103), baseline);
     }
 
     #[test]
