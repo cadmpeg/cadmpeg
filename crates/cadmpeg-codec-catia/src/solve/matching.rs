@@ -4,7 +4,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 
 pub(super) fn domains_have_distinct_matching<'a>(
     ctx: &DecodeContext<'_>,
@@ -48,146 +48,187 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
     budget: Option<&WorkBudget<'_>>,
     edge_constraint: Option<MatchingEdgeConstraint>,
 ) -> Result<Option<Vec<usize>>, CodecError> {
-    let mut admitted_domains = Vec::new();
-    for domain in domains {
-        ctx.push_vec(&mut admitted_domains, domain, "catia_match_domains")?;
-    }
-    let domains = admitted_domains;
-    if domains.len() > point_count {
-        return Ok(None);
-    }
-    let mut owner = ctx.alloc_filled(point_count, None, "catia_match_owners")?;
-    let mut matched = ctx.alloc_filled(domains.len(), false, "catia_match_flags")?;
-    let mut matched_count = 0usize;
-    let mut required_domain = None;
-    if let Some(MatchingEdgeConstraint::Require(domain, point)) = edge_constraint {
-        if domain >= domains.len() || point >= point_count || !domains[domain].contains(&point) {
+    let mut storage = ctx.reserve_scoped(0, "catia_match_storage")?;
+    let Some(assignment) = storage.with_storage(|| -> Result<_, CodecError> {
+        let admitted_domains = ctx.collect_vec(domains, "catia_match_domains")?;
+        let domains = admitted_domains;
+        if domains.len() > point_count {
             return Ok(None);
         }
-        owner[point] = Some(domain);
-        matched[domain] = true;
-        matched_count = 1;
-        required_domain = Some(domain);
-    }
-    while matched_count < domains.len() {
-        ctx.charge_work(1, "catia_matching_iteration")?;
-        let mut distance = ctx.alloc_filled(domains.len(), None, "catia_match_distance")?;
-        let mut queue = VecDeque::new();
-        for root in 0..domains.len() {
-            if !matched[root] {
-                distance[root] = Some(0);
-                ctx.push_back(&mut queue, root, "catia_match_queue")?;
+        let mut owner = ctx.alloc_filled(point_count, None, "catia_match_owners")?;
+        let mut matched = ctx.alloc_filled(domains.len(), false, "catia_match_flags")?;
+        let mut matched_count = 0usize;
+        let mut required_domain = None;
+        if let Some(MatchingEdgeConstraint::Require(domain, point)) = edge_constraint {
+            if domain >= domains.len()
+                || point >= point_count
+                || !ctx.contains(domains[domain], &point, "catia_match_required_point")?
+            {
+                return Ok(None);
             }
+            owner[point] = Some(domain);
+            matched[domain] = true;
+            matched_count = 1;
+            required_domain = Some(domain);
         }
-        let mut shortest = None;
-        while let Some(root) = queue.pop_front() {
-            ctx.charge_work(1, "catia_matching_iteration")?;
-            let Some(root_distance) = distance[root] else {
-                continue;
-            };
-            if shortest.is_some_and(|bound| root_distance >= bound) {
-                continue;
-            }
-            for &point in domains[root] {
-                charge_matching_work(ctx, budget)?;
-                if edge_constraint == Some(MatchingEdgeConstraint::Exclude(root, point)) {
-                    continue;
-                }
-                if point >= point_count {
-                    continue;
-                }
-                if let Some(next) = owner[point] {
-                    if Some(next) != required_domain && distance[next].is_none() {
-                        distance[next] = Some(root_distance + 1);
-                        ctx.push_back(&mut queue, next, "catia_match_queue")?;
-                    }
-                } else {
-                    shortest = Some(root_distance);
-                }
-            }
-        }
-        let Some(shortest) = shortest else {
-            return Ok(None);
-        };
-        let mut cursor = ctx.alloc_filled(domains.len(), 0usize, "catia_match_cursor")?;
-        let mut incoming = ctx.alloc_filled(domains.len(), None, "catia_match_incoming")?;
-        let mut augmented = 0usize;
-        for start in 0..domains.len() {
-            if matched[start] || distance[start] != Some(0) {
-                continue;
-            }
-            let mut roots = Vec::new();
-            ctx.push_vec(&mut roots, start, "catia_match_augmenting_roots")?;
-            let mut free_point = None;
-            while let Some(&root) = roots.last() {
+        while matched_count < domains.len() {
+            let mut phase_storage = ctx.reserve_scoped(0, "catia_matching_phase_storage")?;
+            let viable = phase_storage.with_storage(|| -> Result<_, CodecError> {
                 ctx.charge_work(1, "catia_matching_iteration")?;
-                let mut advanced = false;
-                let root_distance = distance[root];
-                while cursor[root] < domains[root].len() {
-                    charge_matching_work(ctx, budget)?;
-                    let point = domains[root][cursor[root]];
-                    cursor[root] += 1;
-                    if edge_constraint == Some(MatchingEdgeConstraint::Exclude(root, point)) {
+                let mut distance = ctx.alloc_filled(domains.len(), None, "catia_match_distance")?;
+                let mut queue = VecDeque::new();
+                for root in ctx.admit_iter(0..domains.len(), "catia_match_root_scan")? {
+                    if !matched[root] {
+                        distance[root] = Some(0);
+                        ctx.push_back(&mut queue, root, "catia_match_queue")?;
+                    }
+                }
+                let mut shortest = None;
+                while let Some(root) = queue.pop_front() {
+                    ctx.charge_work(1, "catia_matching_iteration")?;
+                    let Some(root_distance) = distance[root] else {
                         continue;
-                    }
-                    if point >= point_count {
-                        continue;
-                    }
-                    match owner[point] {
-                        None if root_distance == Some(shortest) => {
-                            free_point = Some(point);
-                            advanced = true;
-                            break;
-                        }
-                        Some(next)
-                            if Some(next) != required_domain
-                                && root_distance
-                                    .is_some_and(|value| distance[next] == Some(value + 1)) =>
-                        {
-                            incoming[next] = Some(point);
-                            ctx.push_vec(&mut roots, next, "catia_match_augmenting_roots")?;
-                            advanced = true;
-                            break;
-                        }
-                        _ => {}
-                    }
-                }
-                if free_point.is_some() {
-                    break;
-                }
-                if !advanced {
-                    distance[root] = None;
-                    roots.pop();
-                }
-            }
-            let Some(mut point) = free_point else {
-                continue;
-            };
-            for (index, &root) in roots.iter().enumerate().rev() {
-                owner[point] = Some(root);
-                if index != 0 {
-                    let Some(previous) = incoming[root] else {
-                        return Ok(None);
                     };
-                    point = previous;
+                    if shortest.is_some_and(|bound| root_distance >= bound) {
+                        continue;
+                    }
+                    for &point in domains[root] {
+                        charge_matching_work(ctx, budget)?;
+                        if edge_constraint == Some(MatchingEdgeConstraint::Exclude(root, point)) {
+                            continue;
+                        }
+                        if point >= point_count {
+                            continue;
+                        }
+                        if let Some(next) = owner[point] {
+                            if Some(next) != required_domain && distance[next].is_none() {
+                                distance[next] = Some(root_distance + 1);
+                                ctx.push_back(&mut queue, next, "catia_match_queue")?;
+                            }
+                        } else {
+                            shortest = Some(root_distance);
+                        }
+                    }
                 }
+                let Some(shortest) = shortest else {
+                    return Ok(false);
+                };
+                let mut cursor = ctx.alloc_filled(domains.len(), 0usize, "catia_match_cursor")?;
+                let mut incoming = ctx.alloc_filled(domains.len(), None, "catia_match_incoming")?;
+                let mut augmented = 0usize;
+                {
+                    let mut visits = 0..domains.len();
+                    while let Some(start) =
+                        ctx.next_charged(&mut visits, "catia_match_start_scan")?
+                    {
+                        if matched[start] || distance[start] != Some(0) {
+                            continue;
+                        }
+                        let mut root_storage =
+                            ctx.reserve_scoped(0, "catia_match_augmenting_storage")?;
+                        let mut roots = Vec::new();
+                        ctx.push_scoped_vec(
+                            &mut root_storage,
+                            &mut roots,
+                            start,
+                            "catia_match_augmenting_roots",
+                        )?;
+                        let mut free_point = None;
+                        while let Some(&root) = roots.last() {
+                            ctx.charge_work(1, "catia_matching_iteration")?;
+                            let mut advanced = false;
+                            let root_distance = distance[root];
+                            while cursor[root] < domains[root].len() {
+                                charge_matching_work(ctx, budget)?;
+                                let point = domains[root][cursor[root]];
+                                cursor[root] += 1;
+                                if edge_constraint
+                                    == Some(MatchingEdgeConstraint::Exclude(root, point))
+                                {
+                                    continue;
+                                }
+                                if point >= point_count {
+                                    continue;
+                                }
+                                match owner[point] {
+                                    None if root_distance == Some(shortest) => {
+                                        free_point = Some(point);
+                                        advanced = true;
+                                        break;
+                                    }
+                                    Some(next)
+                                        if Some(next) != required_domain
+                                            && root_distance.is_some_and(|value| {
+                                                distance[next] == Some(value + 1)
+                                            }) =>
+                                    {
+                                        incoming[next] = Some(point);
+                                        ctx.push_scoped_vec(
+                                            &mut root_storage,
+                                            &mut roots,
+                                            next,
+                                            "catia_match_augmenting_roots",
+                                        )?;
+                                        advanced = true;
+                                        break;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            if free_point.is_some() {
+                                break;
+                            }
+                            if !advanced {
+                                distance[root] = None;
+                                roots.pop();
+                            }
+                        }
+                        let Some(mut point) = free_point else {
+                            continue;
+                        };
+                        let mut augmenting = roots.iter().enumerate().rev();
+                        while let Some((index, &root)) =
+                            ctx.next_charged(&mut augmenting, "catia_match_augmentation")?
+                        {
+                            owner[point] = Some(root);
+                            if index != 0 {
+                                let Some(previous) = incoming[root] else {
+                                    return Ok(false);
+                                };
+                                point = previous;
+                            }
+                        }
+                        matched[start] = true;
+                        matched_count += 1;
+                        augmented += 1;
+                    }
+                }
+                if augmented == 0 {
+                    return Ok(false);
+                }
+                Ok(true)
+            })?;
+            if !viable {
+                return Ok(None);
             }
-            matched[start] = true;
-            matched_count += 1;
-            augmented += 1;
         }
-        if augmented == 0 {
-            return Ok(None);
+        let mut assignment = ctx.alloc_filled(domains.len(), None, "catia_match_assignment")?;
+        for (point, domain) in ctx
+            .admit_iter(owner, "catia_match_owner_projection")?
+            .enumerate()
+        {
+            if let Some(domain) = domain {
+                assignment[domain] = Some(point);
+            }
         }
-    }
-    let mut assignment = ctx.alloc_filled(domains.len(), None, "catia_match_assignment")?;
-    for (point, domain) in owner.into_iter().enumerate() {
-        if let Some(domain) = domain {
-            assignment[domain] = Some(point);
-        }
-    }
+        Ok(Some(assignment))
+    })?
+    else {
+        return Ok(None);
+    };
     let mut completed = Vec::new();
-    for point in assignment {
+    let mut result_iter = assignment.into_iter();
+    while let Some(point) = ctx.next_charged(&mut result_iter, "catia_match_completed")? {
         let Some(point) = point else {
             return Ok(None);
         };
@@ -203,82 +244,104 @@ pub(super) fn repair_distinct_domain_matching_with_budget<'a>(
     matching: &[usize],
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<Option<Vec<usize>>, CodecError> {
-    let mut admitted_domains = Vec::new();
-    for domain in domains {
-        ctx.push_vec(&mut admitted_domains, domain, "catia_match_repair_domains")?;
-    }
-    let domains = admitted_domains;
-    if domains.len() != matching.len() || domains.len() > point_count {
-        return Ok(None);
-    }
-    let mut owner = ctx.alloc_filled(point_count, None, "catia_match_repair_owners")?;
-    let mut unmatched = Vec::new();
-    let mut repaired = Vec::new();
-    for (domain, &point) in matching.iter().enumerate() {
-        if point < point_count && domains[domain].contains(&point) && owner[point].is_none() {
-            owner[point] = Some(domain);
-            ctx.push_vec(&mut repaired, Some(point), "catia_match_repaired")?;
-        } else {
-            ctx.push_vec(&mut repaired, None, "catia_match_repaired")?;
-            ctx.push_vec(&mut unmatched, domain, "catia_match_unmatched")?;
-        }
-    }
-    for start in unmatched {
-        let mut seen_domains =
-            ctx.alloc_filled(domains.len(), false, "catia_match_repair_seen_domains")?;
-        let mut seen_points =
-            ctx.alloc_filled(point_count, false, "catia_match_repair_seen_points")?;
-        let mut incoming_point =
-            ctx.alloc_filled(domains.len(), None, "catia_match_repair_incoming")?;
-        let mut via_domain = ctx.alloc_filled(point_count, None, "catia_match_repair_via")?;
-        let mut queue = VecDeque::new();
-        ctx.push_back(&mut queue, start, "catia_match_repair_queue")?;
-        seen_domains[start] = true;
-        let mut free_point = None;
-        while let Some(domain) = queue.pop_front() {
-            ctx.charge_work(1, "catia_matching_iteration")?;
-            for &point in domains[domain] {
-                charge_matching_work(ctx, budget)?;
-                if point >= point_count || seen_points[point] {
-                    continue;
-                }
-                seen_points[point] = true;
-                via_domain[point] = Some(domain);
-                let Some(next) = owner[point] else {
-                    free_point = Some(point);
-                    break;
-                };
-                if !seen_domains[next] {
-                    seen_domains[next] = true;
-                    incoming_point[next] = Some(point);
-                    ctx.push_back(&mut queue, next, "catia_match_repair_queue")?;
-                }
-            }
-            if free_point.is_some() {
-                break;
-            }
-        }
-        let Some(mut point) = free_point else {
+    let mut storage = ctx.reserve_scoped(0, "catia_match_repair_storage")?;
+    let Some(repaired) = storage.with_storage(|| -> Result<_, CodecError> {
+        let admitted_domains = ctx.collect_vec(domains, "catia_match_repair_domains")?;
+        let domains = admitted_domains;
+        if domains.len() != matching.len() || domains.len() > point_count {
             return Ok(None);
-        };
-        loop {
-            ctx.charge_work(1, "catia_matching_iteration")?;
-            let Some(domain) = via_domain[point] else {
-                return Ok(None);
-            };
-            owner[point] = Some(domain);
-            repaired[domain] = Some(point);
-            if domain == start {
-                break;
-            }
-            let Some(previous) = incoming_point[domain] else {
-                return Ok(None);
-            };
-            point = previous;
         }
-    }
+        let mut owner = ctx.alloc_filled(point_count, None, "catia_match_repair_owners")?;
+        let mut unmatched = Vec::new();
+        let mut repaired = Vec::new();
+        for (domain, &point) in ctx
+            .admit_iter(matching, "catia_match_repair_existing")?
+            .enumerate()
+        {
+            if point < point_count
+                && ctx.contains(domains[domain], &point, "catia_match_repair_point")?
+                && owner[point].is_none()
+            {
+                owner[point] = Some(domain);
+                ctx.push_vec(&mut repaired, Some(point), "catia_match_repaired")?;
+            } else {
+                ctx.push_vec(&mut repaired, None, "catia_match_repaired")?;
+                ctx.push_vec(&mut unmatched, domain, "catia_match_unmatched")?;
+            }
+        }
+        let mut unmatched_iter = unmatched.into_iter();
+        while let Some(start) =
+            ctx.next_charged(&mut unmatched_iter, "catia_match_repair_unmatched")?
+        {
+            let mut phase_storage = ctx.reserve_scoped(0, "catia_matching_phase_storage")?;
+            let viable = phase_storage.with_storage(|| -> Result<_, CodecError> {
+                let mut seen_domains =
+                    ctx.alloc_filled(domains.len(), false, "catia_match_repair_seen_domains")?;
+                let mut seen_points =
+                    ctx.alloc_filled(point_count, false, "catia_match_repair_seen_points")?;
+                let mut incoming_point =
+                    ctx.alloc_filled(domains.len(), None, "catia_match_repair_incoming")?;
+                let mut via_domain =
+                    ctx.alloc_filled(point_count, None, "catia_match_repair_via")?;
+                let mut queue = VecDeque::new();
+                ctx.push_back(&mut queue, start, "catia_match_repair_queue")?;
+                seen_domains[start] = true;
+                let mut free_point = None;
+                while let Some(domain) = queue.pop_front() {
+                    ctx.charge_work(1, "catia_matching_iteration")?;
+                    for &point in domains[domain] {
+                        charge_matching_work(ctx, budget)?;
+                        if point >= point_count || seen_points[point] {
+                            continue;
+                        }
+                        seen_points[point] = true;
+                        via_domain[point] = Some(domain);
+                        let Some(next) = owner[point] else {
+                            free_point = Some(point);
+                            break;
+                        };
+                        if !seen_domains[next] {
+                            seen_domains[next] = true;
+                            incoming_point[next] = Some(point);
+                            ctx.push_back(&mut queue, next, "catia_match_repair_queue")?;
+                        }
+                    }
+                    if free_point.is_some() {
+                        break;
+                    }
+                }
+                let Some(mut point) = free_point else {
+                    return Ok(false);
+                };
+                loop {
+                    ctx.charge_work(1, "catia_matching_iteration")?;
+                    let Some(domain) = via_domain[point] else {
+                        return Ok(false);
+                    };
+                    owner[point] = Some(domain);
+                    repaired[domain] = Some(point);
+                    if domain == start {
+                        break;
+                    }
+                    let Some(previous) = incoming_point[domain] else {
+                        return Ok(false);
+                    };
+                    point = previous;
+                }
+                Ok(true)
+            })?;
+            if !viable {
+                return Ok(None);
+            }
+        }
+        Ok(Some(repaired))
+    })?
+    else {
+        return Ok(None);
+    };
     let mut completed = Vec::new();
-    for point in repaired {
+    let mut result_iter = repaired.into_iter();
+    while let Some(point) = ctx.next_charged(&mut result_iter, "catia_match_repair_completed")? {
         let Some(point) = point else {
             return Ok(None);
         };
@@ -294,132 +357,157 @@ pub(crate) fn retain_distinct_matching_supports(
     matching: &[usize],
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<Option<bool>, CodecError> {
-    if domains.len() != matching.len()
-        || domains.len() > point_count
-        || matching.iter().any(|point| *point >= point_count)
-    {
-        return Ok(None);
-    }
-    let Some(node_count) = domains.len().checked_add(point_count) else {
-        return Ok(None);
-    };
-    let mut graph =
-        ctx.collect_indexed_vec(node_count, "catia_match_support_graph", |_| Ok(Vec::new()))?;
-    let mut reverse =
-        ctx.collect_indexed_vec(
+    let mut storage = ctx.reserve_scoped(0, "catia_match_support_storage")?;
+    storage.with_storage(|| -> Result<_, CodecError> {
+        if domains.len() != matching.len()
+            || domains.len() > point_count
+            || ctx.any_by(
+                matching,
+                |point| Ok(*point >= point_count),
+                "catia_match_support_bounds",
+            )?
+        {
+            return Ok(None);
+        }
+        let Some(node_count) = domains.len().checked_add(point_count) else {
+            return Ok(None);
+        };
+        let mut graph =
+            ctx.collect_indexed_vec(node_count, "catia_match_support_graph", |_| Ok(Vec::new()))?;
+        let mut reverse = ctx.collect_indexed_vec(
             node_count,
             "catia_match_support_reverse",
             |_| Ok(Vec::new()),
         )?;
-    let mut matched_points = ctx.alloc_filled(point_count, false, "catia_match_support_points")?;
-    for (domain, values) in domains.iter().enumerate() {
-        if !values.contains(&matching[domain]) || matched_points[matching[domain]] {
-            return Ok(None);
-        }
-        matched_points[matching[domain]] = true;
-        for &point in values {
-            if point >= point_count {
+        let mut matched_points =
+            ctx.alloc_filled(point_count, false, "catia_match_support_points")?;
+        let mut domain_iter = domains.iter().enumerate();
+        while let Some((domain, values)) =
+            ctx.next_charged(&mut domain_iter, "catia_match_support_domains")?
+        {
+            if !ctx.contains(values, &matching[domain], "catia_match_support_matching")?
+                || matched_points[matching[domain]]
+            {
                 return Ok(None);
             }
-            charge_matching_work(ctx, budget)?;
-            let point_node = domains.len() + point;
-            let (from, to) = if point == matching[domain] {
-                (point_node, domain)
-            } else {
-                (domain, point_node)
-            };
-            ctx.push_vec(&mut graph[from], to, "catia_match_support_arcs")?;
-            ctx.push_vec(&mut reverse[to], from, "catia_match_support_reverse_arcs")?;
-        }
-    }
-
-    let mut visited = ctx.alloc_filled(node_count, false, "catia_match_support_visit")?;
-    let mut finish_order = Vec::new();
-    for start in 0..node_count {
-        if visited[start] {
-            continue;
-        }
-        visited[start] = true;
-        let mut stack = Vec::new();
-        ctx.push_vec(&mut stack, (start, 0usize), "catia_match_support_stack")?;
-        while let Some((node, edge_index)) = stack.pop() {
-            ctx.charge_work(1, "catia_matching_iteration")?;
-            if let Some(&next) = graph[node].get(edge_index) {
-                ctx.push_vec(
-                    &mut stack,
-                    (node, edge_index + 1),
-                    "catia_match_support_stack",
-                )?;
+            matched_points[matching[domain]] = true;
+            for &point in values {
                 charge_matching_work(ctx, budget)?;
-                if !visited[next] {
-                    visited[next] = true;
-                    ctx.push_vec(&mut stack, (next, 0), "catia_match_support_stack")?;
+                if point >= point_count {
+                    return Ok(None);
                 }
-            } else {
-                ctx.push_vec(&mut finish_order, node, "catia_match_support_finish_order")?;
+                let point_node = domains.len() + point;
+                let (from, to) = if point == matching[domain] {
+                    (point_node, domain)
+                } else {
+                    (domain, point_node)
+                };
+                ctx.push_vec(&mut graph[from], to, "catia_match_support_arcs")?;
+                ctx.push_vec(&mut reverse[to], from, "catia_match_support_reverse_arcs")?;
             }
         }
-    }
 
-    let mut component = ctx.alloc_filled(node_count, None, "catia_match_support_components")?;
-    let mut component_count = 0usize;
-    for &start in finish_order.iter().rev() {
-        if component[start].is_some() {
-            continue;
-        }
-        component[start] = Some(component_count);
-        let mut stack = Vec::new();
-        ctx.push_vec(&mut stack, start, "catia_match_support_component_stack")?;
-        while let Some(node) = stack.pop() {
-            ctx.charge_work(1, "catia_matching_iteration")?;
-            for &next in &reverse[node] {
-                charge_matching_work(ctx, budget)?;
-                if component[next].is_none() {
-                    component[next] = Some(component_count);
-                    ctx.push_vec(&mut stack, next, "catia_match_support_component_stack")?;
+        let mut visited = ctx.alloc_filled(node_count, false, "catia_match_support_visit")?;
+        let mut finish_order = Vec::new();
+        for start in ctx.admit_iter(0..node_count, "catia_match_support_roots")? {
+            if visited[start] {
+                continue;
+            }
+            visited[start] = true;
+            let mut stack = Vec::new();
+            ctx.push_vec(&mut stack, (start, 0usize), "catia_match_support_stack")?;
+            while let Some((node, edge_index)) = stack.pop() {
+                ctx.charge_work(1, "catia_matching_iteration")?;
+                if let Some(&next) = graph[node].get(edge_index) {
+                    ctx.push_vec(
+                        &mut stack,
+                        (node, edge_index + 1),
+                        "catia_match_support_stack",
+                    )?;
+                    charge_matching_work(ctx, budget)?;
+                    if !visited[next] {
+                        visited[next] = true;
+                        ctx.push_vec(&mut stack, (next, 0), "catia_match_support_stack")?;
+                    }
+                } else {
+                    ctx.push_vec(&mut finish_order, node, "catia_match_support_finish_order")?;
                 }
             }
         }
-        component_count += 1;
-    }
 
-    let mut reaches_free = ctx.alloc_filled(node_count, false, "catia_match_support_free")?;
-    let mut queue = VecDeque::new();
-    for (point, matched) in matched_points.into_iter().enumerate() {
-        if !matched {
-            let node = domains.len() + point;
-            reaches_free[node] = true;
-            ctx.push_back(&mut queue, node, "catia_match_support_free_queue")?;
+        let mut component = ctx.alloc_filled(node_count, None, "catia_match_support_components")?;
+        let mut component_count = 0usize;
+        for &start in ctx
+            .admit_iter(&finish_order, "catia_match_support_component_roots")?
+            .rev()
+        {
+            if component[start].is_some() {
+                continue;
+            }
+            component[start] = Some(component_count);
+            let mut stack = Vec::new();
+            ctx.push_vec(&mut stack, start, "catia_match_support_component_stack")?;
+            while let Some(node) = stack.pop() {
+                ctx.charge_work(1, "catia_matching_iteration")?;
+                for &next in &reverse[node] {
+                    charge_matching_work(ctx, budget)?;
+                    if component[next].is_none() {
+                        component[next] = Some(component_count);
+                        ctx.push_vec(&mut stack, next, "catia_match_support_component_stack")?;
+                    }
+                }
+            }
+            component_count += 1;
         }
-    }
-    while let Some(node) = queue.pop_front() {
-        ctx.charge_work(1, "catia_matching_iteration")?;
-        for &previous in &reverse[node] {
-            charge_matching_work(ctx, budget)?;
-            if !reaches_free[previous] {
-                reaches_free[previous] = true;
-                ctx.push_back(&mut queue, previous, "catia_match_support_free_queue")?;
+
+        let mut reaches_free = ctx.alloc_filled(node_count, false, "catia_match_support_free")?;
+        let mut queue = VecDeque::new();
+        for (point, matched) in ctx
+            .admit_iter(matched_points, "catia_match_support_free_points")?
+            .enumerate()
+        {
+            if !matched {
+                let node = domains.len() + point;
+                reaches_free[node] = true;
+                ctx.push_back(&mut queue, node, "catia_match_support_free_queue")?;
             }
         }
-    }
+        while let Some(node) = queue.pop_front() {
+            ctx.charge_work(1, "catia_matching_iteration")?;
+            for &previous in &reverse[node] {
+                charge_matching_work(ctx, budget)?;
+                if !reaches_free[previous] {
+                    reaches_free[previous] = true;
+                    ctx.push_back(&mut queue, previous, "catia_match_support_free_queue")?;
+                }
+            }
+        }
 
-    let domain_count = domains.len();
-    let mut changed = false;
-    for (domain, values) in domains.iter_mut().enumerate() {
-        let before = values.len();
-        values.retain(|point| {
-            *point == matching[domain]
-                || component[domain] == component[domain_count + *point]
-                || reaches_free[domain_count + *point]
-        });
-        changed |= values.len() != before;
-    }
-    Ok(Some(changed))
+        let domain_count = domains.len();
+        let mut changed = false;
+        for (domain, values) in ctx
+            .admit_iter(&mut *domains, "catia_match_support_retained_domains")?
+            .enumerate()
+        {
+            let before = values.len();
+            ctx.retain_vec(
+                values,
+                |point| {
+                    Ok(*point == matching[domain]
+                        || component[domain] == component[domain_count + *point]
+                        || reaches_free[domain_count + *point])
+                },
+                "catia_match_support_retained_points",
+            )?;
+            changed |= values.len() != before;
+        }
+        Ok(Some(changed))
+    })
 }
 
 pub(crate) fn unique_coordinate_bijection(
     ctx: &DecodeContext<'_>,
-    domains: &[HashSet<usize>],
+    domains: &[BTreeSet<usize>],
     points: &[[f64; 3]],
 ) -> Result<Option<Vec<usize>>, CodecError> {
     fn matching(
@@ -429,248 +517,307 @@ pub(crate) fn unique_coordinate_bijection(
         slot_classes: &[usize],
         forced: Option<(usize, usize)>,
     ) -> Result<Option<Vec<usize>>, CodecError> {
-        let mut owner = ctx.alloc_filled(slot_classes.len(), None, "catia_bijection_owners")?;
-        let mut order = Vec::new();
-        ctx.reserve_vec(&mut order, domains.len(), "catia_bijection_order")?;
-        for (vertex, domain) in domains.iter().enumerate() {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(domain.len()),
-                "catia_bijection_order_keys",
-            )?;
-            let count = if let Some((_, class)) =
-                forced.filter(|(forced_vertex, _)| *forced_vertex == vertex)
+        let mut storage = ctx.reserve_scoped(0, "catia_bijection_search_storage")?;
+        let Some(assignment) = storage.with_storage(|| -> Result<_, CodecError> {
+            let mut owner = ctx.alloc_filled(slot_classes.len(), None, "catia_bijection_owners")?;
+            let mut order = Vec::new();
+            ctx.reserve_vec(&mut order, domains.len(), "catia_bijection_order")?;
+            for (vertex, domain) in ctx
+                .admit_iter(domains, "catia_bijection_order")?
+                .enumerate()
             {
-                slots_by_class[class].len()
-            } else {
-                domain
-                    .iter()
-                    .try_fold(0usize, |count, class| {
-                        count.checked_add(slots_by_class[*class].len())
-                    })
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("catia_bijection_order_keys", u64::MAX - 1, u64::MAX)
-                    })?
-            };
-            order.push((count, vertex));
-        }
-        ctx.sort_unstable_by(
-            &mut order,
-            |value| value,
-            Ord::cmp,
-            "catia_bijection_order_sort",
-        )?;
-        let mut seen_vertices =
-            ctx.alloc_filled(domains.len(), 0usize, "catia_bijection_seen_vertices")?;
-        let mut seen_slots =
-            ctx.alloc_filled(slot_classes.len(), 0usize, "catia_bijection_seen_slots")?;
-        let mut incoming_slot =
-            ctx.alloc_filled(domains.len(), None, "catia_bijection_incoming")?;
-        let mut via_vertex = ctx.alloc_filled(slot_classes.len(), None, "catia_bijection_via")?;
-        for (generation, (_, start)) in order.into_iter().enumerate() {
-            let generation = generation + 1;
-            let mut queue = VecDeque::new();
-            ctx.push_back(&mut queue, start, "catia_bijection_queue")?;
-            seen_vertices[start] = generation;
-            incoming_slot[start] = None;
-            let mut free_slot = None;
-            while let Some(vertex) = queue.pop_front() {
-                ctx.charge_work(1, "catia_matching_iteration")?;
-                let mut slots = Vec::new();
-                if let Some((_, class)) =
+                let count = if let Some((_, class)) =
                     forced.filter(|(forced_vertex, _)| *forced_vertex == vertex)
                 {
-                    for &slot in &slots_by_class[class] {
-                        ctx.charge_work(1, "catia_bijection_slot_projection")?;
-                        ctx.push_vec(&mut slots, slot, "catia_bijection_visit_slots")?;
-                    }
+                    slots_by_class[class].len()
                 } else {
-                    for &class in &domains[vertex] {
-                        for &slot in &slots_by_class[class] {
-                            ctx.charge_work(1, "catia_bijection_slot_projection")?;
-                            ctx.push_vec(&mut slots, slot, "catia_bijection_visit_slots")?;
+                    ctx.fold(
+                        domain,
+                        0usize,
+                        |count, class| {
+                            count
+                                .checked_add(slots_by_class[*class].len())
+                                .ok_or_else(|| {
+                                    ctx.refuse_codec_limit(
+                                        "catia_bijection_order_keys",
+                                        u64::MAX - 1,
+                                        u64::MAX,
+                                    )
+                                })
+                        },
+                        "catia_bijection_order_keys",
+                    )?
+                };
+                order.push((count, vertex));
+            }
+            ctx.sort_unstable_by(
+                &mut order,
+                |value| value,
+                Ord::cmp,
+                "catia_bijection_order_sort",
+            )?;
+            let mut seen_vertices =
+                ctx.alloc_filled(domains.len(), 0usize, "catia_bijection_seen_vertices")?;
+            let mut seen_slots =
+                ctx.alloc_filled(slot_classes.len(), 0usize, "catia_bijection_seen_slots")?;
+            let mut incoming_slot =
+                ctx.alloc_filled(domains.len(), None, "catia_bijection_incoming")?;
+            let mut via_vertex =
+                ctx.alloc_filled(slot_classes.len(), None, "catia_bijection_via")?;
+            for (generation, (_, start)) in
+                ctx.admit_iter(order, "catia_bijection_order")?.enumerate()
+            {
+                let generation = generation + 1;
+                let mut queue_storage = ctx.reserve_scoped(0, "catia_bijection_queue_storage")?;
+                let mut queue = VecDeque::new();
+                queue_storage
+                    .with_storage(|| ctx.push_back(&mut queue, start, "catia_bijection_queue"))?;
+                seen_vertices[start] = generation;
+                incoming_slot[start] = None;
+                let mut free_slot = None;
+                while let Some(vertex) = queue.pop_front() {
+                    ctx.charge_work(1, "catia_matching_iteration")?;
+                    let mut visit_storage =
+                        ctx.reserve_scoped(0, "catia_bijection_visit_storage")?;
+                    let mut slots = Vec::new();
+                    if let Some((_, class)) =
+                        forced.filter(|(forced_vertex, _)| *forced_vertex == vertex)
+                    {
+                        for &slot in ctx
+                            .admit_iter(&slots_by_class[class], "catia_bijection_slot_projection")?
+                        {
+                            ctx.push_scoped_vec(
+                                &mut visit_storage,
+                                &mut slots,
+                                slot,
+                                "catia_bijection_visit_slots",
+                            )?;
+                        }
+                    } else {
+                        for &class in
+                            ctx.admit_iter(&domains[vertex], "catia_bijection_slot_classes")?
+                        {
+                            for &slot in ctx.admit_iter(
+                                &slots_by_class[class],
+                                "catia_bijection_slot_projection",
+                            )? {
+                                ctx.push_scoped_vec(
+                                    &mut visit_storage,
+                                    &mut slots,
+                                    slot,
+                                    "catia_bijection_visit_slots",
+                                )?;
+                            }
                         }
                     }
-                }
-                for slot in slots {
-                    ctx.charge_work(1, "catia_bijection_match_visit")?;
-                    if seen_slots[slot] == generation {
-                        continue;
+                    let mut slot_visits = slots.into_iter();
+                    while let Some(slot) =
+                        ctx.next_charged(&mut slot_visits, "catia_bijection_match_visit")?
+                    {
+                        if seen_slots[slot] == generation {
+                            continue;
+                        }
+                        seen_slots[slot] = generation;
+                        via_vertex[slot] = Some(vertex);
+                        let Some(next) = owner[slot] else {
+                            free_slot = Some(slot);
+                            break;
+                        };
+                        if seen_vertices[next] != generation {
+                            seen_vertices[next] = generation;
+                            incoming_slot[next] = Some(slot);
+                            queue_storage.with_storage(|| {
+                                ctx.push_back(&mut queue, next, "catia_bijection_queue")
+                            })?;
+                        }
                     }
-                    seen_slots[slot] = generation;
-                    via_vertex[slot] = Some(vertex);
-                    let Some(next) = owner[slot] else {
-                        free_slot = Some(slot);
+                    if free_slot.is_some() {
                         break;
-                    };
-                    if seen_vertices[next] != generation {
-                        seen_vertices[next] = generation;
-                        incoming_slot[next] = Some(slot);
-                        ctx.push_back(&mut queue, next, "catia_bijection_queue")?;
                     }
                 }
-                if free_slot.is_some() {
-                    break;
-                }
-            }
-            let Some(mut slot) = free_slot else {
-                return Ok(None);
-            };
-            loop {
-                ctx.charge_work(1, "catia_bijection_augmentation")?;
-                let Some(vertex) = via_vertex[slot] else {
+                let Some(mut slot) = free_slot else {
                     return Ok(None);
                 };
-                owner[slot] = Some(vertex);
-                let Some(previous) = incoming_slot[vertex] else {
-                    break;
-                };
-                slot = previous;
+                loop {
+                    ctx.charge_work(1, "catia_bijection_augmentation")?;
+                    let Some(vertex) = via_vertex[slot] else {
+                        return Ok(None);
+                    };
+                    owner[slot] = Some(vertex);
+                    let Some(previous) = incoming_slot[vertex] else {
+                        break;
+                    };
+                    slot = previous;
+                }
             }
-        }
-        let mut assignment = ctx.alloc_filled(domains.len(), None, "catia_bijection_assignment")?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(owner.len()),
-            "catia_bijection_match_assignment",
-        )?;
-        for (slot, vertex) in owner.into_iter().enumerate() {
-            let Some(vertex) = vertex else {
-                return Ok(None);
-            };
-            assignment[vertex] = Some(slot_classes[slot]);
-        }
+            let mut assignment =
+                ctx.alloc_filled(domains.len(), None, "catia_bijection_assignment")?;
+            let mut owners = owner.into_iter().enumerate();
+            while let Some((slot, vertex)) =
+                ctx.next_charged(&mut owners, "catia_bijection_match_assignment")?
+            {
+                let Some(vertex) = vertex else {
+                    return Ok(None);
+                };
+                assignment[vertex] = Some(slot_classes[slot]);
+            }
+            Ok(Some(assignment))
+        })?
+        else {
+            return Ok(None);
+        };
         let mut completed = Vec::new();
-        for class in assignment {
-            let Some(class) = class else {
-                return Ok(None);
-            };
-            ctx.push_vec(&mut completed, class, "catia_bijection_completed")?;
+        {
+            let mut visits = (assignment).into_iter();
+            while let Some(class) = ctx.next_charged(&mut visits, "catia_bijection_completed")? {
+                let Some(class) = class else {
+                    return Ok(None);
+                };
+                ctx.push_vec(&mut completed, class, "catia_bijection_completed")?;
+            }
         }
         Ok(Some(completed))
     }
 
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(domains.len()),
-        "catia_bijection_domain_validation",
-    )?;
-    for domain in domains {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(domain.len()),
-            "catia_bijection_domain_validation",
-        )?;
-    }
-    if domains.len() != points.len()
-        || domains
-            .iter()
-            .any(|domain| domain.is_empty() || domain.iter().any(|point| *point >= points.len()))
-    {
-        return Ok(None);
-    }
-    let mut representatives = Vec::<usize>::new();
-    let mut point_classes = Vec::new();
-    for (point, position) in points.iter().enumerate() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(representatives.len()),
-            "catia_bijection_coordinate_comparison",
-        )?;
-        let class = if let Some(class) = representatives
-            .iter()
-            .position(|representative| points[*representative] == *position)
-        {
-            class
-        } else {
-            let class = representatives.len();
-            ctx.push_vec(
-                &mut representatives,
-                point,
-                "catia_bijection_representatives",
-            )?;
-            class
-        };
-        ctx.push_vec(&mut point_classes, class, "catia_bijection_point_classes")?;
-    }
-    let mut class_domains = Vec::new();
-    for domain in domains {
-        let mut classes = Vec::new();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(domain.len()),
-            "catia_bijection_class_projection",
-        )?;
-        for &point in domain {
-            ctx.push_vec(
-                &mut classes,
-                point_classes[point],
-                "catia_bijection_domain_classes",
-            )?;
-        }
-        ctx.sort_unstable_by(
-            &mut classes,
-            |value| value,
-            Ord::cmp,
-            "catia_bijection_domain_classes_sort",
-        )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(classes.len()),
-            "catia_bijection_class_deduplication",
-        )?;
-        classes.dedup();
-        ctx.push_vec(&mut class_domains, classes, "catia_bijection_class_domains")?;
-    }
-    let mut capacities =
-        ctx.alloc_filled(representatives.len(), 0usize, "catia_bijection_capacities")?;
-    for class in &point_classes {
-        capacities[*class] += 1;
-    }
-    let mut slot_classes = Vec::new();
-    let mut slots_by_class = ctx.collect_indexed_vec(
-        capacities.len(),
-        "catia_bijection_slots",
-        |_| Ok(Vec::new()),
-    )?;
-    for (class, capacity) in capacities.into_iter().enumerate() {
-        for _ in 0..capacity {
-            let slot = slot_classes.len();
-            ctx.push_vec(&mut slot_classes, class, "catia_bijection_slot_classes")?;
-            ctx.push_vec(
-                &mut slots_by_class[class],
-                slot,
-                "catia_bijection_class_slots",
-            )?;
-        }
-    }
-    let Some(classes) = matching(ctx, &class_domains, &slots_by_class, &slot_classes, None)? else {
-        return Ok(None);
-    };
-    for (vertex, domain) in class_domains.iter().enumerate() {
-        for &class in domain {
-            ctx.charge_work(1, "catia_bijection_alternate_class")?;
-            if class != classes[vertex]
-                && matching(
-                    ctx,
-                    &class_domains,
-                    &slots_by_class,
-                    &slot_classes,
-                    Some((vertex, class)),
+    let mut storage = ctx.reserve_scoped(0, "catia_bijection_storage")?;
+    let Some((available, classes, mut used)) =
+        storage.with_storage(|| -> Result<_, CodecError> {
+            if domains.len() != points.len()
+                || ctx.any_by(
+                    domains,
+                    |domain| {
+                        Ok(domain.is_empty()
+                            || ctx.any_by(
+                                domain,
+                                |point| Ok(*point >= points.len()),
+                                "catia_bijection_domain_validation",
+                            )?)
+                    },
+                    "catia_bijection_domain_validation",
                 )?
-                .is_some()
             {
                 return Ok(None);
             }
-        }
-    }
-    let mut available =
-        ctx.collect_indexed_vec(representatives.len(), "catia_bijection_available", |_| {
-            Ok(Vec::new())
-        })?;
-    for (point, class) in point_classes.into_iter().enumerate() {
-        ctx.push_vec(
-            &mut available[class],
-            point,
-            "catia_bijection_available_points",
-        )?;
-    }
-    let mut used = ctx.alloc_filled(available.len(), 0usize, "catia_bijection_used")?;
+            let mut coordinate_classes = HashMap::<[u64; 3], usize>::new();
+            let mut class_count = 0;
+            let mut point_classes = Vec::new();
+            for position in ctx.admit_iter(points, "catia_bijection_coordinate_comparison")? {
+                let key = position.map(|value| if value == 0.0 { 0 } else { value.to_bits() });
+                let class = if position.iter().any(|value| value.is_nan()) {
+                    let class = class_count;
+                    class_count += 1;
+                    class
+                } else if let Some(class) = ctx.get_hash_map(
+                    &coordinate_classes,
+                    &key,
+                    "catia_bijection_coordinate_comparison",
+                )? {
+                    *class
+                } else {
+                    let class = class_count;
+                    class_count += 1;
+                    ctx.insert_hash_map(
+                        &mut coordinate_classes,
+                        key,
+                        class,
+                        "catia_bijection_coordinate_index",
+                    )?;
+                    class
+                };
+                ctx.push_vec(&mut point_classes, class, "catia_bijection_point_classes")?;
+            }
+            let mut class_domains = Vec::new();
+            for domain in ctx.admit_iter(domains, "catia_bijection_class_projection")? {
+                let mut classes = Vec::new();
+                for &point in ctx.admit_iter(domain, "catia_bijection_class_projection")? {
+                    ctx.push_vec(
+                        &mut classes,
+                        point_classes[point],
+                        "catia_bijection_domain_classes",
+                    )?;
+                }
+                ctx.sort_unstable_by(
+                    &mut classes,
+                    |value| value,
+                    Ord::cmp,
+                    "catia_bijection_domain_classes_sort",
+                )?;
+                ctx.dedup_vec(&mut classes, "catia_bijection_class_deduplication")?;
+                ctx.push_vec(&mut class_domains, classes, "catia_bijection_class_domains")?;
+            }
+            let mut capacities =
+                ctx.alloc_filled(class_count, 0usize, "catia_bijection_capacities")?;
+            for class in ctx.admit_iter(&point_classes, "catia_bijection_capacities")? {
+                capacities[*class] += 1;
+            }
+            let mut slot_classes = Vec::new();
+            let mut slots_by_class =
+                ctx.collect_indexed_vec(capacities.len(), "catia_bijection_slots", |_| {
+                    Ok(Vec::new())
+                })?;
+            for (class, capacity) in ctx
+                .admit_iter(capacities, "catia_bijection_slots")?
+                .enumerate()
+            {
+                for _ in ctx.admit_iter(0..capacity, "catia_bijection_slot_classes")? {
+                    let slot = slot_classes.len();
+                    ctx.push_vec(&mut slot_classes, class, "catia_bijection_slot_classes")?;
+                    ctx.push_vec(
+                        &mut slots_by_class[class],
+                        slot,
+                        "catia_bijection_class_slots",
+                    )?;
+                }
+            }
+            let Some(classes) =
+                matching(ctx, &class_domains, &slots_by_class, &slot_classes, None)?
+            else {
+                return Ok(None);
+            };
+            let mut alternate_domains = class_domains.iter().enumerate();
+            while let Some((vertex, domain)) =
+                ctx.next_charged(&mut alternate_domains, "catia_bijection_alternate_class")?
+            {
+                let mut alternatives = domain.iter();
+                while let Some(&class) =
+                    ctx.next_charged(&mut alternatives, "catia_bijection_alternate_class")?
+                {
+                    if class != classes[vertex]
+                        && matching(
+                            ctx,
+                            &class_domains,
+                            &slots_by_class,
+                            &slot_classes,
+                            Some((vertex, class)),
+                        )?
+                        .is_some()
+                    {
+                        return Ok(None);
+                    }
+                }
+            }
+            let mut available =
+                ctx.collect_indexed_vec(class_count, "catia_bijection_available", |_| {
+                    Ok(Vec::new())
+                })?;
+            for (point, class) in ctx
+                .admit_iter(point_classes, "catia_bijection_available_points")?
+                .enumerate()
+            {
+                ctx.push_vec(
+                    &mut available[class],
+                    point,
+                    "catia_bijection_available_points",
+                )?;
+            }
+            let used = ctx.alloc_filled(available.len(), 0usize, "catia_bijection_used")?;
+            Ok(Some((available, classes, used)))
+        })?
+    else {
+        return Ok(None);
+    };
     let mut points = Vec::new();
-    for class in classes {
+    for class in ctx.admit_iter(classes, "catia_bijection_points")? {
         let point = available[class][used[class]];
         used[class] += 1;
         ctx.push_vec(&mut points, point, "catia_bijection_points")?;
@@ -680,7 +827,7 @@ pub(crate) fn unique_coordinate_bijection(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeSet, HashSet};
+    use std::collections::BTreeSet;
 
     #[test]
     fn matching_visit_charges_the_attached_session_once() {
@@ -711,39 +858,48 @@ mod tests {
     }
 
     #[test]
+    fn coordinate_classes_preserve_signed_zero_and_nan_equality() {
+        let domains = [BTreeSet::from([0, 1]), BTreeSet::from([0, 1])];
+        crate::test_support::with_service_context(|ctx| {
+            assert_eq!(
+                super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3], [-0.0; 3]])?,
+                Some(vec![0, 1])
+            );
+            assert_eq!(
+                super::unique_coordinate_bijection(ctx, &domains, &[[f64::NAN; 3]; 2])?,
+                None
+            );
+            Ok::<_, CodecError>(())
+        })
+        .expect("service budget");
+    }
+
+    #[test]
     fn coordinate_bijection_refuses_unadmitted_sort_key_scan() {
-        let domains = [HashSet::from([0_usize])];
-        // Validation, projection, two sort-measuring visits, dedup and four factory visits precede keys.
-        let before_keys =
-            9 + 48 * u64::try_from(std::mem::size_of::<usize>()).expect("index bytes");
-        crate::test_support::with_work_limit(before_keys, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+        let domains = [BTreeSet::from([0_usize])];
+        let CodecError::ResourceLimit(limit) =
+            crate::test_support::with_work_refusal("catia_bijection_order_keys", |ctx| {
                 super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3]])
-                    .expect_err("keys require work")
-            else {
-                panic!("resource refusal")
-            };
-            assert_eq!(limit.operation, "catia_bijection_order_keys");
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        });
+            })
+            .expect_err("operation requires work")
+        else {
+            panic!("resource refusal");
+        };
+        assert_eq!(limit.operation, "catia_bijection_order_keys");
     }
 
     #[test]
     fn coordinate_bijection_refuses_unadmitted_matching_visits() {
-        let domains = [HashSet::from([0_usize])];
-        // Domain/order sorts, four initialized matching vectors and the first queue step precede slot projection.
-        let index_bytes = u64::try_from(std::mem::size_of::<usize>()).expect("index bytes");
-        let before_visits = 9 + 48 * index_bytes + 7 + 96 * index_bytes + 1;
-        crate::test_support::with_work_limit(before_visits, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+        let domains = [BTreeSet::from([0_usize])];
+        let CodecError::ResourceLimit(limit) =
+            crate::test_support::with_work_refusal("catia_bijection_slot_projection", |ctx| {
                 super::unique_coordinate_bijection(ctx, &domains, &[[0.0; 3]])
-                    .expect_err("matching visit must be admitted")
-            else {
-                panic!("resource refusal required")
-            };
-            assert_eq!(limit.operation, "catia_bijection_slot_projection");
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        });
+            })
+            .expect_err("operation requires work")
+        else {
+            panic!("resource refusal");
+        };
+        assert_eq!(limit.operation, "catia_bijection_slot_projection");
     }
 
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -874,7 +1030,7 @@ mod tests {
 
     #[test]
     fn coordinate_bijection_charges_each_class_array() {
-        let domains = [HashSet::from([0]), HashSet::from([1])];
+        let domains = [BTreeSet::from([0]), BTreeSet::from([1])];
         let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
         let operations = allocation_refusals(96, |ctx| {
             assert_eq!(
@@ -886,7 +1042,7 @@ mod tests {
         assert_eq!(
             operations,
             BTreeSet::from([
-                "catia_bijection_representatives",
+                "catia_bijection_coordinate_index",
                 "catia_bijection_point_classes",
                 "catia_bijection_domain_classes",
                 "catia_bijection_class_domains",
@@ -1007,7 +1163,7 @@ mod tests {
 
     #[test]
     fn coordinate_bijection_queue_refuses_before_ambiguous_result() {
-        let domains = [HashSet::from([0, 1]), HashSet::from([0, 1])];
+        let domains = [BTreeSet::from([0, 1]), BTreeSet::from([0, 1])];
         let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
@@ -1017,15 +1173,19 @@ mod tests {
             .expect("service resource budget")
             .is_none());
 
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 30;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("matching fixture fits the input limit");
-        let result = unique_coordinate_bijection(&ctx, &domains, &points);
-        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "catia_bijection_queue"));
+        let CodecError::ResourceLimit(limit) = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "catia_bijection_queue",
+            |cap| {
+                crate::test_support::with_collection_limit(cap, |ctx| {
+                    unique_coordinate_bijection(ctx, &domains, &points)
+                })
+            },
+        ) else {
+            panic!("collection refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "catia_bijection_queue");
     }
 
     #[test]
@@ -1173,5 +1333,45 @@ mod tests {
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "catia_match_owners"));
+    }
+    #[test]
+    fn distinct_matching_retains_only_assignments() {
+        let domains = [vec![0], vec![1], vec![2]];
+        let bytes = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
+        crate::test_support::with_retained_limit(bytes, |ctx| {
+            assert_eq!(
+                super::distinct_domain_matching_with_budget(
+                    ctx,
+                    domains.iter().map(Vec::as_slice),
+                    3,
+                    None,
+                    None
+                )
+                .expect("search scratch"),
+                Some(vec![0, 1, 2])
+            );
+        });
+        crate::test_support::with_retained_limit(bytes, |ctx| {
+            assert_eq!(
+                super::repair_distinct_domain_matching_with_budget(
+                    ctx,
+                    domains.iter().map(Vec::as_slice),
+                    3,
+                    &[2, 0, 1],
+                    None
+                )
+                .expect("repair scratch"),
+                Some(vec![0, 1, 2])
+            );
+        });
+        let mut domains = domains;
+        crate::test_support::with_retained_limit(0, |ctx| {
+            assert_eq!(
+                super::retain_distinct_matching_supports(ctx, &mut domains, 3, &[0, 1, 2], None)
+                    .expect("support scratch"),
+                Some(false)
+            );
+        });
+        assert_eq!(domains, [vec![0], vec![1], vec![2]]);
     }
 }

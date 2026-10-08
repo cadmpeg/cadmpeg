@@ -134,10 +134,10 @@ fn standard_extrusion_support_refuses_before_surface_storage() {
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         standard_extrusion_support_id(
-            ctx,
             &mut AnnotationBuilder::new(),
             &mut surfaces,
             &mut supports,
+            &mut ctx.reserve_scoped(0, "test support map").expect("scope"),
             7,
             geometry.clone(),
             &mut admission,
@@ -150,10 +150,10 @@ fn standard_extrusion_support_refuses_before_surface_storage() {
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         standard_extrusion_support_id(
-            ctx,
             &mut AnnotationBuilder::new(),
             &mut surfaces,
             &mut supports,
+            &mut ctx.reserve_scoped(0, "test support map").expect("scope"),
             7,
             geometry,
             &mut admission,
@@ -752,7 +752,7 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
 #[test]
 fn line_pair_constraint_rejects_pairs_beyond_edge_roles() {
     let constraint = crate::test_support::with_service_context(|ctx| {
-        super::super::super::StandardLinePairConstraint::new(ctx, &[], &[], &[])
+        super::super::super::edge_geometry::StandardLinePairConstraint::new(ctx, &[], &[], &[])
     })
     .expect("empty constraint fits service budget");
     assert!(constraint.edge_pairs(&[None]).is_none());
@@ -766,7 +766,7 @@ fn line_pair_constraint_refuses_collection_growth_before_face_edges() {
         None,
     )];
     let point_refusal = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::super::StandardLinePairConstraint::new(ctx, &points, &[], &[])
+        super::super::super::edge_geometry::StandardLinePairConstraint::new(ctx, &points, &[], &[])
     });
     assert!(
         matches!(point_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -780,34 +780,51 @@ fn line_pair_constraint_refuses_collection_growth_before_face_edges() {
     }];
     let options = [vec![[0, 1], [1, 2]]];
     let role_refusal = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::super::StandardLinePairConstraint::new(ctx, &[], &supports, &options)
+        super::super::super::edge_geometry::StandardLinePairConstraint::new(
+            ctx,
+            &[],
+            &supports,
+            &options,
+        )
     });
     assert!(
         matches!(role_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_standard_line_constraint_roles")
     );
     let face_refusal = crate::test_support::with_collection_limit(1, |ctx| {
-        super::super::super::StandardLinePairConstraint::new(ctx, &[], &supports, &options)
+        super::super::super::edge_geometry::StandardLinePairConstraint::new(
+            ctx,
+            &[],
+            &supports,
+            &options,
+        )
     });
     assert!(
         matches!(face_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_standard_line_constraint_faces")
     );
     let refused = crate::test_support::with_collection_limit(2, |ctx| {
-        super::super::super::StandardLinePairConstraint::new(ctx, &[], &supports, &options)
+        super::super::super::edge_geometry::StandardLinePairConstraint::new(
+            ctx,
+            &[],
+            &supports,
+            &options,
+        )
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_standard_line_constraint_face_edges")
     );
     crate::test_support::with_service_context(|ctx| {
-        assert!(super::super::super::StandardLinePairConstraint::new(
-            ctx,
-            &[],
-            &supports,
-            &options
-        )
-        .is_ok());
+        assert!(
+            super::super::super::edge_geometry::StandardLinePairConstraint::new(
+                ctx,
+                &[],
+                &supports,
+                &options
+            )
+            .is_ok()
+        );
     });
 }
 
@@ -825,14 +842,20 @@ fn circle_pair_constraint_refuses_nested_range_growth() {
     }];
     let options = [vec![[0, 1], [1, 2]]];
     let face_refusal = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::super::StandardCirclePairConstraint::new(ctx, &supports, &options).map(|_| ())
+        super::super::super::edge_geometry::StandardCirclePairConstraint::new(
+            ctx, &supports, &options,
+        )
+        .map(|_| ())
     });
     assert!(
         matches!(face_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_standard_circle_constraint_faces")
     );
     let refused = crate::test_support::with_collection_limit(1, |ctx| {
-        super::super::super::StandardCirclePairConstraint::new(ctx, &supports, &options).map(|_| ())
+        super::super::super::edge_geometry::StandardCirclePairConstraint::new(
+            ctx, &supports, &options,
+        )
+        .map(|_| ())
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -840,8 +863,10 @@ fn circle_pair_constraint_refuses_nested_range_growth() {
     );
     crate::test_support::with_service_context(|ctx| {
         assert!(
-            super::super::super::StandardCirclePairConstraint::new(ctx, &supports, &options)
-                .is_ok()
+            super::super::super::edge_geometry::StandardCirclePairConstraint::new(
+                ctx, &supports, &options
+            )
+            .is_ok()
         );
     });
 }
