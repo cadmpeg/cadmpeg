@@ -297,11 +297,6 @@ pub(super) fn validate_dimension_locus_pairs<'a>(
     let sketch_geometry_indices = &ctx.sketch_geometry_indices;
     let mut locus_pair_indices = HashSet::new();
     let mut locus_pair_companions = HashSet::new();
-    let governing = design::decode::dimension_frames::GoverningCompanions::build(
-        ctx.decode,
-        &native.design_parameter_owners,
-        &native.design_parameters,
-    )?;
     for pair in ctx.decode.admit_iter(
         &*native.design_dimension_locus_pairs,
         "scan F3D design dimension locus pairs",
@@ -373,7 +368,7 @@ pub(super) fn validate_dimension_locus_pairs<'a>(
             None => false,
         };
         let governs_following_dimension =
-            governing.governing(ctx.decode, &pair.id, pair.paired_byte_offset())?
+            ctx.governing_companions()?.governing(ctx.decode, &pair.id, pair.paired_byte_offset())?
                 == Some(pair.governing_companion_record_index);
         let valid = companion_contains_frame
             && dimension_companion
@@ -1027,11 +1022,6 @@ pub(super) fn validate_dimension_null_locus_pairs<'a>(
     let sketch_geometry_indices = &ctx.sketch_geometry_indices;
     let mut null_locus_pair_indices = HashSet::new();
     let mut null_locus_pair_companions = HashSet::new();
-    let governing = design::decode::dimension_frames::GoverningCompanions::build(
-        ctx.decode,
-        &native.design_parameter_owners,
-        &native.design_parameters,
-    )?;
     for pair in ctx.decode.admit_iter(
         &*native.design_dimension_null_locus_pairs,
         "scan F3D design dimension null locus pairs",
@@ -1103,7 +1093,7 @@ pub(super) fn validate_dimension_null_locus_pairs<'a>(
             None => false,
         };
         let governs_following_dimension =
-            governing.governing(ctx.decode, &pair.id, pair.paired_byte_offset())?
+            ctx.governing_companions()?.governing(ctx.decode, &pair.id, pair.paired_byte_offset())?
                 == Some(pair.governing_companion_record_index);
         let companion_has_typed_frame = ctx.decode.contains_hash_set(
             locus_pair_companions,

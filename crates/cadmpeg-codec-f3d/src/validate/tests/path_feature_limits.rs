@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn path_error(max_items: u64, max_retained_bytes: u64) -> cadmpeg_core::CodecError {
+fn path_result(max_items: u64, max_retained_bytes: u64) -> Result<(), cadmpeg_core::CodecError> {
     crate::test_support::with_decode_context(|service_ctx| {
         use crate::records::feature::{
             extrude::DesignExtrudeOperation, path_features::DesignPipeConstruction,
@@ -32,21 +32,24 @@ fn path_error(max_items: u64, max_retained_bytes: u64) -> cadmpeg_core::CodecErr
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
-        super::super::validate_path_feature_operand_roles(&ctx, &mut Vec::new()).unwrap_err()
+        super::super::validate_path_feature_operand_roles(&ctx, &mut Vec::new())
     })
 }
 
 #[test]
-fn path_feature_operand_group_refuses_collection_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
+fn path_feature_operand_groups_skip_redundant_collection() {
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "collect F3D path-feature operand groups",
-        |cap| Err::<(), cadmpeg_core::CodecError>(path_error(cap, u64::MAX)),
+        "collect F3D path-feature operand groups", None,
     );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D path-feature operand groups")
-    );
+    path_result(u64::MAX, u64::MAX).unwrap();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |decode| {
+        assert!(matches!(decode.collect_vec([0_u32], "collect F3D path-feature operand groups"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "collect F3D path-feature operand groups"));
+    });
 }
 
 #[test]
@@ -127,7 +130,7 @@ fn path_feature_invalid_finding_refuses_collection_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "collect F3D native validation findings",
-        |cap| Err::<(), cadmpeg_core::CodecError>(path_error(cap, u64::MAX)),
+        |cap| path_result(cap, u64::MAX),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -140,7 +143,7 @@ fn path_feature_invalid_entity_refuses_retained_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "retain F3D validation entity",
-        |cap| Err::<(), cadmpeg_core::CodecError>(path_error(u64::MAX, cap)),
+        |cap| path_result(u64::MAX, cap),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

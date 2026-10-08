@@ -368,3 +368,47 @@ fn design_segment_uses_the_parsed_stream_and_admits_its_reverse_search() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == "resolve F3D validation design segment"));
 }
+
+#[test]
+fn empty_dimension_families_skip_governing_companion_index() {
+    crate::test_support::with_decode_policy(&unlimited_work(), |decode| {
+        let ir = cadmpeg_ir::CadIr::empty();
+        let native = crate::native::F3dNative {
+            design_parameters: vec![parameter()], ..Default::default()
+        };
+        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "index F3D governing dimension parameters", None,
+        );
+        let mut findings = Vec::new();
+        let (companions, _storage) = super::super::dimensions::validate_dimension_locus_pairs(&ctx, &mut findings).unwrap();
+        super::super::dimensions::validate_dimension_null_locus_pairs(&ctx, &mut findings, &companions, &Default::default()).unwrap();
+        assert!(findings.is_empty());
+        assert!(ctx.governing_companions.get().is_none());
+        assert!(decode.resource_refusal().is_none());
+        assert!(matches!(ctx.governing_companions(), Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "index F3D governing dimension parameters"));
+        assert!(ctx.governing_companions.get().is_none());
+    });
+}
+
+#[test]
+fn governing_companion_index_reuses_its_live_storage() {
+    crate::test_support::with_decode_policy(&unlimited_work(), |decode| {
+        let ir = cadmpeg_ir::CadIr::empty();
+        let native = crate::native::F3dNative {
+            design_parameters: vec![parameter()], ..Default::default()
+        };
+        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let first = ctx.governing_companions().unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "index F3D governing dimension parameters", None,
+        );
+        assert!(std::ptr::eq(first, ctx.governing_companions().unwrap()));
+        assert!(decode.resource_refusal().is_none());
+        assert!(matches!(crate::design::decode::dimension_frames::GoverningCompanions::build(
+            decode, &native.design_parameter_owners, &native.design_parameters
+        ), Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "index F3D governing dimension parameters"));
+    });
+}

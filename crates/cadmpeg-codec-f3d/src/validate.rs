@@ -243,6 +243,8 @@ struct Ctx<'a, 'd> {
     states_by_id: OnceCell<StateIndex<'a>>,
     /// ASM history bound to each parameter scope with a history state.
     scope_histories: HashMap<String, String>,
+    /// Governing dimension companions and their storage, built on first use.
+    governing_companions: OnceCell<design::decode::dimension_frames::GoverningCompanions<'a, 'a>>,
     /// Storage of the grouped and record lookup indexes.
     _index_storage: cadmpeg_core::decode::ScopedReservation<'a>,
     /// Neutral features grouped by native reference on first use.
@@ -439,6 +441,23 @@ impl<'a, 'd> Ctx<'a, 'd> {
             }
         };
         Ok(states)
+    }
+
+    /// Share the first-parameter and unique-owner rule between dimension families.
+    fn governing_companions(
+        &self,
+    ) -> Result<&design::decode::dimension_frames::GoverningCompanions<'a, 'a>, CodecError> {
+        match self.governing_companions.get() {
+            Some(index) => Ok(index),
+            None => {
+                let index = design::decode::dimension_frames::GoverningCompanions::build(
+                    self.decode,
+                    &self.native.design_parameter_owners,
+                    &self.native.design_parameters,
+                )?;
+                Ok(self.governing_companions.get_or_init(|| index))
+            }
+        }
     }
 
     /// Every parameter at `(stream, record_index)`, in arena order.
@@ -735,6 +754,7 @@ impl<'a, 'd> Ctx<'a, 'd> {
             states_by_id: OnceCell::new(),
             _index_storage: storage,
             neutral_features: OnceCell::new(),
+            governing_companions: OnceCell::new(),
         })
     }
 }
@@ -3748,32 +3768,17 @@ fn validate_path_feature_operand_roles(
         .filter(|scope| scope.has_path_construction())
     {
         let native_stream = design_stream(ctx.decode, &scope.id)?;
-        let mut group_storage = ctx
-            .decode
-            .reserve_scoped(0, "collect F3D path-feature operand groups")?;
-        let mut groups = Vec::new();
-        for group in ctx.decode.admit_iter(
-            ctx.decode
-                .get_hash_map(
-                    &ctx.operand_groups_by_scope,
-                    &(native_stream, scope.record_index),
-                    "find F3D path-feature scope operand groups",
-                )?
-                .map_or(&[][..], Vec::as_slice),
-            "scan F3D path-feature operand groups",
-        )? {
-            group_storage.with_storage(|| {
-                ctx.decode.push_vec(
-                    &mut groups,
-                    *group,
-                    "collect F3D path-feature operand groups",
-                )
-            })?;
-        }
+        let groups = ctx.decode
+            .get_hash_map(
+                &ctx.operand_groups_by_scope,
+                &(native_stream, scope.record_index),
+                "find F3D path-feature scope operand groups",
+            )?
+            .map_or(&[][..], Vec::as_slice);
         let role_count = |role| {
             Ok::<_, CodecError>(
                 ctx.decode
-                    .admit_iter(&groups, "count F3D path operand roles")?
+                    .admit_iter(groups, "count F3D path operand roles")?
                     .filter(|group| group.role() == role)
                     .count(),
             )
@@ -3865,7 +3870,7 @@ fn validate_path_feature_operand_roles(
                         let profile_groups = || {
                             Ok::<_, CodecError>(
                                 ctx.decode
-                                    .admit_iter(&groups, "scan F3D Sweep profile groups")?
+                                    .admit_iter(groups, "scan F3D Sweep profile groups")?
                                     .filter(|group| group.role() == DesignOperandRole::PROFILE),
                             )
                         };
