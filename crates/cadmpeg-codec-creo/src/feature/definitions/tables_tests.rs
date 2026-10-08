@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::feature::definitions::decode_variable_scalar;
+use crate::feature::definitions::decode_variable_scalar as decode_variable_scalar_checked;
 use crate::feature::definitions::definitions;
 use crate::feature::definitions::definitions_in_ranges;
 use crate::feature::definitions::depdb_definitions;
@@ -1115,7 +1115,11 @@ fn reconciled_points_refuses_before_point_id_node() {
             v: Some(3.0),
         }],
     );
-    assert!(matches!(with_dimension_limits(&[0], 0, u64::MAX,
+    let cap = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems, Some("creo reconciled point ID nodes"),
+        |limit| with_dimension_limits(&[0], limit, u64::MAX, |ctx| table.reconciled_points(ctx)),
+    );
+    assert!(matches!(with_dimension_limits(&[0], cap, u64::MAX,
         |ctx| table.reconciled_points(ctx)),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
@@ -1906,3 +1910,8 @@ fn with_trim_limits<T>(
 }
 
 mod trim_tables;
+
+fn decode_variable_scalar(payload: &[u8], offset: usize, end: usize, cache: &scalar::ScalarCache) -> (ScalarLane, usize) {
+    crate::decode::with_test_decode_ctx(|ctx| decode_variable_scalar_checked(ctx, payload, offset, end, cache))
+        .expect("scalar lane admission")
+}

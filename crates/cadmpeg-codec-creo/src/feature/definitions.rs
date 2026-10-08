@@ -15,6 +15,8 @@ use super::operations::{FeatureOperation, FeatureRecipeKind};
 use super::rows::{FeatureGeometryTable, FeatureRevolutionExtent};
 use super::segment_rows::{SegmentRow, SegmentRows};
 
+mod points;
+
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-9;
 
 /// The byte before `offset`. There is no preceding byte at the start of the
@@ -434,52 +436,7 @@ impl FeatureVariableTable {
             .collect()
     }
 
-    /// Reconcile repeated and complementary section-point rows by identity.
-    pub(crate) fn reconciled_points(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<ReconciledPoints<[Option<f64>; 2]>, CodecError> {
-        let mut point_ids = BTreeSet::new();
-        for row in self
-            .rows
-            .iter()
-            .filter(|row| matches!(row.variable_type, VariableType::U | VariableType::V))
-        {
-            ctx.insert_btree_set(&mut point_ids, row.key, "creo reconciled point ID nodes")?;
-        }
-        let mut points = BTreeMap::new();
-        let mut ambiguous = BTreeSet::new();
-        for point_id in point_ids {
-            let mut point = [None; 2];
-            let mut conflict = false;
-            for coordinate in 0..2 {
-                let variable_type = [VariableType::U, VariableType::V][coordinate];
-                let values = || {
-                    self.rows
-                        .iter()
-                        .filter(|row| row.key == point_id && row.variable_type == variable_type)
-                        .filter_map(|row| row.value.value())
-                };
-                let Some(first) = values().next() else {
-                    continue;
-                };
-                let scale = values().map(f64::abs).fold(1.0, f64::max);
-                if values()
-                    .all(|candidate| (candidate - first).abs() <= EPS_PARAMETER_AGREEMENT * scale)
-                {
-                    point[coordinate] = Some(first);
-                } else {
-                    conflict = true;
-                }
-            }
-            if conflict {
-                ctx.insert_btree_set(&mut ambiguous, point_id, "creo ambiguous point nodes")?;
-            } else {
-                ctx.insert_btree_map(&mut points, point_id, point, "creo reconciled point nodes")?;
-            }
-        }
-        Ok(ReconciledPoints { points, ambiguous })
-    }
+
 }
 
 /// One positional solver-equation row from `eqtn_arr`.
@@ -1942,7 +1899,7 @@ impl HasOffset for FeatureRelationTriple {
 
 impl<T: HasOffset> SolverSubtable<T> {
     /// Rebases the table header and row offsets.
-    pub(crate) fn shift_offsets(&mut self, delta: usize) {
+    pub(crate) fn shift_offsets(&mut self, ctx: &DecodeContext<'_>, delta: usize) -> Result<(), CodecError> {
         let rows = match self {
             Self::Declared { header, rows } => {
                 header.offset += delta;
@@ -1950,9 +1907,10 @@ impl<T: HasOffset> SolverSubtable<T> {
             }
             Self::Unframed(rows) => &mut rows.0,
         };
-        for row in rows {
+        for row in ctx.admit_iter(rows, "creo solver offset traversal")? {
             *row.offset_mut() += delta;
         }
+        Ok(())
     }
 }
 
@@ -2638,27 +2596,28 @@ fn variable_row_trailing_fields(payload: &[u8], mut cursor: usize, end: usize) -
     (cursor == end).then_some(fields)
 }
 
-fn unresolved_variable_guess_end(payload: &[u8], offset: usize, end: usize) -> Option<usize> {
-    let delimiter = payload
-        .get(offset + 1..end)?
-        .iter()
-        .position(|&byte| byte == 0xe2)
-        .map(|relative| offset + 1 + relative)?;
-    let mut suffixes = (offset + 1..delimiter).filter(|&trailing_start| {
-        variable_row_trailing_fields(payload, trailing_start, delimiter).is_some()
-    });
-    let suffix = suffixes.next()?;
-    suffixes.next().is_none().then_some(suffix)
+fn unresolved_variable_guess_end(
+    ctx: &DecodeContext<'_>, payload: &[u8], offset: usize, end: usize,
+) -> Result<Option<usize>, CodecError> {
+    let Some(bytes) = payload.get(offset + 1..end) else { return Ok(None); };
+    let Some(relative) = ctx.position_by(bytes, |byte| Ok(*byte == 0xe2), "creo variable guess delimiter")? else { return Ok(None); };
+    let delimiter = offset + 1 + relative;
+    // Three compact fields consume at most six bytes.
+    let mut suffixes = (delimiter.saturating_sub(6).max(offset + 1)..delimiter)
+        .filter(|start| variable_row_trailing_fields(payload, *start, delimiter).is_some());
+    let Some(first) = suffixes.next() else { return Ok(None); };
+    Ok(suffixes.next().is_none().then_some(first))
 }
 
 fn decode_variable_scalar(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     offset: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> (ScalarLane, usize) {
+) -> Result<(ScalarLane, usize), CodecError> {
     let Some(&prefix) = payload.get(offset).filter(|_| offset < end) else {
-        return (ScalarLane::Undefined, offset);
+        return Ok((ScalarLane::Undefined, offset));
     };
     if matches!(prefix, 0x90 | 0xd7) && offset + 7 <= end {
         let mut raw = [0; 8];
@@ -2669,35 +2628,35 @@ fn decode_variable_scalar(
         });
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
         // endian-exception: reconstructed-scalar
-        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
+        return Ok((ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7));
     }
     if prefix == 0xd5 && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0xbf;
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
         // endian-exception: reconstructed-scalar
-        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
+        return Ok((ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7));
     }
     if prefix == 0x4f && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
         // endian-exception: reconstructed-scalar
-        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
+        return Ok((ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7));
     }
     if matches!(prefix, 0x19 | 0x28 | 0x32 | 0x37 | 0x41) && offset + 8 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
         // endian-exception: reconstructed-scalar
-        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 8);
+        return Ok((ScalarLane::Value(f64::from_be_bytes(raw)), offset + 8));
     }
     if prefix == 0x31 && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x40;
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
         // endian-exception: reconstructed-scalar
-        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
+        return Ok((ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7));
     }
     let variable_dict = match prefix {
         0x51 => Some([0x3f, 0xc6]),
@@ -2722,36 +2681,37 @@ fn decode_variable_scalar(
         raw[..2].copy_from_slice(&head);
         raw[2..].copy_from_slice(tail);
         // endian-exception: reconstructed-scalar
-        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
+        return Ok((ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7));
     }
     if prefix == 0x18
         && payload
             .get(offset + 1)
             .is_some_and(|next| matches!(next, 0x18 | 0xe0 | 0xe2 | 0xe3 | 0x10 | 0xe4 | 0xe6))
     {
-        return (ScalarLane::Value(0.0), offset + 1);
+        return Ok((ScalarLane::Value(0.0), offset + 1));
     }
-    if prefix == 0x18 && unresolved_variable_guess_end(payload, offset + 1, end).is_some() {
-        return (ScalarLane::Value(0.0), offset + 1);
+    if prefix == 0x18 && unresolved_variable_guess_end(ctx, payload, offset + 1, end)?.is_some() {
+        return Ok((ScalarLane::Value(0.0), offset + 1));
     }
     if prefix == 0xed && offset + 9 <= end {
-        return (ScalarLane::DimensionDriven, offset + 9);
+        return Ok((ScalarLane::DimensionDriven, offset + 9));
     }
-    decode_parameter_scalar(payload, offset, end, cache)
+    Ok(decode_parameter_scalar(payload, offset, end, cache)
         .map_or((ScalarLane::Undefined, offset + 1), |(value, next)| {
             (ScalarLane::Value(value), next)
-        })
+        }))
 }
 
 fn decode_section_coordinate_scalar(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     offset: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> (ScalarLane, usize) {
+) -> Result<(ScalarLane, usize), CodecError> {
     match payload.get(offset) {
-        Some(0x00 | 0x34) if offset + 3 <= end => return (ScalarLane::Undefined, offset + 3),
-        Some(0x01) if offset + 4 <= end => return (ScalarLane::Undefined, offset + 4),
+        Some(0x00 | 0x34) if offset + 3 <= end => return Ok((ScalarLane::Undefined, offset + 3)),
+        Some(0x01) if offset + 4 <= end => return Ok((ScalarLane::Undefined, offset + 4)),
         _ => {}
     }
     if payload.get(offset) == Some(&0x2d) && offset + 8 <= end {
@@ -2759,17 +2719,18 @@ fn decode_section_coordinate_scalar(
         raw[0] = 0x40;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
         // endian-exception: reconstructed-scalar
-        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 8);
+        return Ok((ScalarLane::Value(f64::from_be_bytes(raw)), offset + 8));
     }
-    decode_variable_scalar(payload, offset, end, cache)
+    decode_variable_scalar(ctx, payload, offset, end, cache)
 }
 
 fn decode_variable_guess(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     offset: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> (ScalarLane, usize) {
+) -> Result<(ScalarLane, usize), CodecError> {
     if payload.get(offset) == Some(&0x18) {
         let mut trailing = offset + 1;
         let complete_suffix = (0..3).all(|_| {
@@ -2789,16 +2750,16 @@ fn decode_variable_guess(
                     .get(trailing)
                     .is_some_and(|byte| matches!(byte, 0xe0..=0xe3 | 0xf1..=0xf3)))
         {
-            return (ScalarLane::Value(0.0), offset + 1);
+            return Ok((ScalarLane::Value(0.0), offset + 1));
         }
     }
-    let decoded = decode_section_coordinate_scalar(payload, offset, end, cache);
+    let decoded = decode_section_coordinate_scalar(ctx, payload, offset, end, cache)?;
     if decoded.0 == ScalarLane::Undefined {
-        if let Some(next) = unresolved_variable_guess_end(payload, offset, end) {
-            return (ScalarLane::Undefined, next);
+        if let Some(next) = unresolved_variable_guess_end(ctx, payload, offset, end)? {
+            return Ok((ScalarLane::Undefined, next));
         }
     }
-    decoded
+    Ok(decoded)
 }
 
 fn variable_table(
@@ -2870,7 +2831,7 @@ fn variable_table(
         };
         let value_label = value_offset + b"value\0".len();
         let (value, value_end) =
-            decode_section_coordinate_scalar(payload, value_label, close, cache);
+            decode_section_coordinate_scalar(ctx, payload, value_label, close, cache)?;
         let Some(guess_offset) = ctx.find_bytes_in(
             payload,
             b"guess\0",
@@ -2883,7 +2844,7 @@ fn variable_table(
         };
         let guess_label = guess_offset + b"guess\0".len();
         let (guess, guess_end) =
-            decode_section_coordinate_scalar(payload, guess_label, close, cache);
+            decode_section_coordinate_scalar(ctx, payload, guess_label, close, cache)?;
         let known = named_compact_int(ctx, payload, b"known\0", cursor, close)?;
         let homogeneity = named_compact_int(ctx, payload, b"homogeneity\0", cursor, close)?;
         let uvar_id = named_compact_int(ctx, payload, b"uvar_id\0", cursor, close)?;
@@ -2946,11 +2907,11 @@ fn variable_table(
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
         let value_start = cursor;
-        let (value, next) = decode_section_coordinate_scalar(payload, cursor, end, cache);
+        let (value, next) = decode_section_coordinate_scalar(ctx, payload, cursor, end, cache)?;
         cursor = next;
         let value_end = cursor;
         let guess_start = cursor;
-        let (guess, next) = decode_variable_guess(payload, cursor, end, cache);
+        let (guess, next) = decode_variable_guess(ctx, payload, cursor, end, cache)?;
         cursor = next;
         let guess_end = cursor;
         let mut trailing = [None; 3];
@@ -3048,11 +3009,11 @@ fn positional_variable_table(
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
         let value_start = cursor;
-        let (value, next) = decode_section_coordinate_scalar(payload, cursor, end, cache);
+        let (value, next) = decode_section_coordinate_scalar(ctx, payload, cursor, end, cache)?;
         cursor = next;
         let value_end = cursor;
         let guess_start = cursor;
-        let (guess, next) = decode_variable_guess(payload, cursor, end, cache);
+        let (guess, next) = decode_variable_guess(ctx, payload, cursor, end, cache)?;
         cursor = next;
         let guess_end = cursor;
         let mut trailing = [None; 3];
@@ -6146,7 +6107,7 @@ fn labeled_dimension(
         return Ok(None);
     };
     let value_start = value_label + b"value\0".len();
-    let (value, after_value) = decode_variable_scalar(payload, value_start, end, cache);
+    let (value, after_value) = decode_variable_scalar(ctx, payload, value_start, end, cache)?;
     let Some(value_bytes) = payload.get(value_start..after_value) else {
         return Ok(None);
     };
@@ -6177,7 +6138,7 @@ fn labeled_dimension(
     };
     let auxiliary_start = auxiliary_label + b"aux_value\0".len();
     let (auxiliary_value, after_auxiliary) =
-        decode_variable_scalar(payload, auxiliary_start, end, cache);
+        decode_variable_scalar(ctx, payload, auxiliary_start, end, cache)?;
     let Some(auxiliary_bytes) = payload.get(auxiliary_start..after_auxiliary) else {
         return Ok(None);
     };
@@ -6227,7 +6188,7 @@ fn positional_dimension(
         Some(0x01) if cursor + 4 <= end => (ScalarLane::Undefined, cursor + 4),
         Some(0x0e) => (ScalarLane::Value(-0.5), cursor + 1),
         Some(0x18) => (ScalarLane::Value(0.0), cursor + 1),
-        _ => decode_variable_scalar(payload, cursor, end, cache),
+        _ => decode_variable_scalar(ctx, payload, cursor, end, cache)?,
     };
     let Some(value_bytes) = payload.get(value_start..cursor) else {
         return Ok(None);
@@ -6241,7 +6202,7 @@ fn positional_dimension(
     let (auxiliary_value, cursor) = if payload.get(auxiliary_start) == Some(&0x18) {
         (Some(0.0), auxiliary_start + 1)
     } else {
-        let (value, next) = decode_variable_scalar(payload, auxiliary_start, end, cache);
+        let (value, next) = decode_variable_scalar(ctx, payload, auxiliary_start, end, cache)?;
         (value.value(), next)
     };
     let Some(auxiliary_bytes) = payload.get(auxiliary_start..cursor) else {
