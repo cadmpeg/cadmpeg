@@ -40,47 +40,77 @@ pub(crate) struct ElementMapRecord {
 #[serde(try_from = "Vec<ElementMapNodeWire>")]
 pub(crate) struct ElementMapNodes(Vec<ElementMapNode>);
 
-impl TryFrom<Vec<ElementMapNode>> for ElementMapNodes {
-    type Error = String;
-
-    fn try_from(nodes: Vec<ElementMapNode>) -> Result<Self, Self::Error> {
+impl ElementMapNodes {
+    pub(crate) fn from_nodes<E>(
+        nodes: Vec<ElementMapNode>,
+        mut admit: impl FnMut(usize, &'static str) -> Result<(), E>,
+        mut diagnostic: impl FnMut(std::fmt::Arguments<'_>) -> Result<String, E>,
+    ) -> Result<Result<Self, String>, E> {
         if nodes.is_empty() {
-            return Err("maps must contain a root node".to_owned());
+            return Ok(Err(diagnostic(format_args!(
+                "maps must contain a root node"
+            ))?));
         }
         for (position, node) in nodes.iter().enumerate() {
+            admit(1, "FreeCAD element-map validation nodes")?;
             let node_index = position + 1;
             for group in &node.groups {
+                admit(1, "FreeCAD element-map validation groups")?;
                 for (child_index, descriptor) in group.children.iter().enumerate() {
-                    let location = || {
-                        format!(
-                            "element-map node {node_index} group {} child {child_index}",
-                            group.indexed_name
-                        )
-                    };
-                    let mut fields = descriptor.split_ascii_whitespace();
-                    let words: [Option<&str>; 7] = std::array::from_fn(|_| fields.next());
+                    admit(1, "FreeCAD element-map validation children")?;
+                    let group_name = group.indexed_name.as_str();
+                    let mut field_offset = 0;
+                    let mut words = [None; 7];
+                    for word in &mut words {
+                        *word = descriptor_word(descriptor, &mut field_offset, &mut admit)?;
+                    }
                     let [Some(index), Some(offset), Some(count), Some(tag), Some(map), Some(_), Some(string_ids)] =
                         words
                     else {
-                        return Err(format!(
-                            "{} descriptor must contain seven fields",
-                            location()
-                        ));
+                        return Ok(Err(diagnostic(format_args!(
+                            "element-map node {node_index} group {group_name} child {child_index} descriptor must contain seven fields"
+                        ))?));
                     };
-                    if fields.next().is_some() {
-                        return Err(format!(
-                            "{} descriptor must contain seven fields",
-                            location()
-                        ));
+                    if descriptor_word(descriptor, &mut field_offset, &mut admit)?.is_some() {
+                        return Ok(Err(diagnostic(format_args!(
+                            "element-map node {node_index} group {group_name} child {child_index} descriptor must contain seven fields"
+                        ))?));
                     }
-                    let mut string_ids = string_ids.split('.');
-                    if string_ids.next() != Some("0")
-                        || string_ids.any(|id| id.parse::<i64>().is_err())
-                    {
-                        return Err(format!(
-                            "{} has an invalid child string-id list",
-                            location()
-                        ));
+                    let mut ids = string_ids.as_bytes().iter().enumerate();
+                    let mut id_start = 0;
+                    let mut first_id = true;
+                    let mut valid_ids = true;
+                    loop {
+                        admit(1, "FreeCAD element-map child string-id scan")?;
+                        let next = ids.next();
+                        let (end, done) = match next {
+                            Some((index, b'.')) => (index, false),
+                            Some(_) => continue,
+                            None => (string_ids.len(), true),
+                        };
+                        let id = &string_ids[id_start..end];
+                        if first_id {
+                            if id != "0" {
+                                valid_ids = false;
+                                break;
+                            }
+                            first_id = false;
+                        } else {
+                            admit(id.len(), "FreeCAD element-map child string-id number")?;
+                            if id.parse::<i64>().is_err() {
+                                valid_ids = false;
+                                break;
+                            }
+                        }
+                        id_start = end + 1;
+                        if done {
+                            break;
+                        }
+                    }
+                    if !valid_ids {
+                        return Ok(Err(diagnostic(format_args!(
+                            "element-map node {node_index} group {group_name} child {child_index} has an invalid child string-id list"
+                        ))?));
                     }
                     for (name, word) in [
                         ("index", index),
@@ -89,32 +119,76 @@ impl TryFrom<Vec<ElementMapNode>> for ElementMapNodes {
                         ("tag", tag),
                         ("mapIndex", map),
                     ] {
-                        let value = word
-                            .parse::<i64>()
-                            .map_err(|_| format!("{} has an invalid {name}", location()))?;
+                        admit(word.len(), "FreeCAD element-map child number")?;
+                        let value = match word.parse::<i64>() {
+                            Ok(value) => value,
+                            Err(_) => {
+                                return Ok(Err(diagnostic(format_args!(
+                                    "element-map node {node_index} group {group_name} child {child_index} has an invalid {name}"
+                                ))?));
+                            }
+                        };
                         if name != "tag" && i32::try_from(value).is_err() {
-                            return Err(format!(
-                                "{} {name} exceeds signed 32-bit range",
-                                location()
-                            ));
+                            return Ok(Err(diagnostic(format_args!(
+                                "element-map node {node_index} group {group_name} child {child_index} {name} exceeds signed 32-bit range"
+                            ))?));
                         }
                         if matches!(name, "index" | "offset") && value < 0 {
-                            return Err(format!("{} has a negative {name}", location()));
+                            return Ok(Err(diagnostic(format_args!(
+                                "element-map node {node_index} group {group_name} child {child_index} has a negative {name}"
+                            ))?));
                         }
                         if name == "mapIndex"
                             && usize::try_from(value).map_or(true, |index| index >= node_index)
                         {
-                            return Err(format!(
-                                "{} mapIndex {value} does not name a prior map",
-                                location()
-                            ));
+                            return Ok(Err(diagnostic(format_args!(
+                                "element-map node {node_index} group {group_name} child {child_index} mapIndex {value} does not name a prior map"
+                            ))?));
                         }
                     }
                 }
             }
         }
-        Ok(Self(nodes))
+        Ok(Ok(Self(nodes)))
     }
+}
+
+impl TryFrom<Vec<ElementMapNode>> for ElementMapNodes {
+    type Error = String;
+    fn try_from(nodes: Vec<ElementMapNode>) -> Result<Self, Self::Error> {
+        match Self::from_nodes(
+            nodes,
+            |_, _| Ok::<(), std::convert::Infallible>(()),
+            |message| Ok(message.to_string()),
+        ) {
+            Ok(result) => result,
+            Err(error) => match error {},
+        }
+    }
+}
+
+fn descriptor_word<'a, E>(
+    text: &'a str,
+    offset: &mut usize,
+    admit: &mut impl FnMut(usize, &'static str) -> Result<(), E>,
+) -> Result<Option<&'a str>, E> {
+    let bytes = text.as_bytes();
+    while *offset < bytes.len() {
+        admit(1, "FreeCAD element-map child descriptor scan")?;
+        if !bytes[*offset].is_ascii_whitespace() {
+            break;
+        }
+        *offset += 1;
+    }
+    let start = *offset;
+    while *offset < bytes.len() {
+        admit(1, "FreeCAD element-map child descriptor scan")?;
+        if bytes[*offset].is_ascii_whitespace() {
+            break;
+        }
+        *offset += 1;
+    }
+    Ok((start != *offset).then_some(&text[start..*offset]))
 }
 
 impl TryFrom<Vec<ElementMapNodeWire>> for ElementMapNodes {
@@ -173,7 +247,7 @@ impl ElementMapNodes {
         groups: BTreeMap<String, Vec<Vec<ElementMappedName>>>,
     ) -> Result<Self, CodecError> {
         let mut root_groups = ctx.collection_vec(groups.len(), "FreeCAD legacy root map groups")?;
-        for (indexed_name, names) in groups {
+        for (indexed_name, names) in ctx.admit_iter(groups, "FreeCAD legacy root map group scan")? {
             root_groups.push(ElementMapGroup {
                 indexed_name,
                 children: Vec::new(),
@@ -194,30 +268,64 @@ impl ElementMapNodes {
     }
 
     /// Add a topology binding without exposing child-map descriptors for mutation.
-    pub(crate) fn bind_root_topology(
+    pub(crate) fn bind_root_topology<'a>(
         &mut self,
         ctx: &DecodeContext<'_>,
-        indexed_name: &str,
-        source_index: usize,
-        id: &str,
+        bindings: impl IntoIterator<Item = (&'a str, usize, &'a str)>,
     ) -> Result<(), CodecError> {
-        let index = self.0.len() - 1;
-        for group in &mut self.0[index].groups {
-            if group.indexed_name != indexed_name {
-                continue;
-            }
-            let Some(names) = group.names.get_mut(source_index) else {
+        let root = self.0.len() - 1;
+        let mut groups = BTreeMap::new();
+        let mut group_storage = ctx.reserve_scoped(0, "FreeCAD element topology group index")?;
+        for group in ctx.admit_iter(
+            &mut self.0[root].groups,
+            "FreeCAD element topology group scan",
+        )? {
+            group_storage.with_storage(|| {
+                ctx.push_btree_group(
+                    &mut groups,
+                    group.indexed_name.as_str(),
+                    &mut group.names,
+                    "FreeCAD element topology group index",
+                    "FreeCAD element topology group members",
+                )
+            })?;
+        }
+        let mut bindings = bindings.into_iter();
+        while let Some((indexed_name, source_index, id)) =
+            ctx.next_charged(&mut bindings, "FreeCAD element topology binding scan")?
+        {
+            let Some(matches) = ctx.get_mut_btree_map(
+                &mut groups,
+                indexed_name,
+                "FreeCAD element topology group lookup",
+            )?
+            else {
                 continue;
             };
-            for name in names {
-                if !name.topology_ids.iter().any(|existing| existing == id) {
-                    ctx.reserve_vec(
-                        &mut name.topology_ids,
-                        1,
-                        "FreeCAD element topology bindings",
-                    )?;
-                    name.topology_ids
-                        .push(ctx.copy_retained_text(id, "FreeCAD element topology identity")?);
+            for names in ctx.admit_iter(matches, "FreeCAD element topology matching groups")? {
+                let Some(names) = names.get_mut(source_index) else {
+                    continue;
+                };
+                for name in ctx.admit_iter(names, "FreeCAD element topology name scan")? {
+                    if !ctx.any_by(
+                        &name.topology_ids,
+                        |existing| {
+                            ctx.equal(
+                                existing.as_str(),
+                                id,
+                                "FreeCAD element topology identity comparison",
+                            )
+                        },
+                        "FreeCAD element topology identity search",
+                    )? {
+                        ctx.reserve_vec(
+                            &mut name.topology_ids,
+                            1,
+                            "FreeCAD element topology bindings",
+                        )?;
+                        name.topology_ids
+                            .push(ctx.copy_retained_text(id, "FreeCAD element topology identity")?);
+                    }
                 }
             }
         }

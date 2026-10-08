@@ -262,13 +262,13 @@ fn topology_binding_preserves_empty_indexed_name_slots() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within input policy");
     nodes
-        .bind_root_topology(&ctx, "Edge", 1, "edge-first-placement")
+        .bind_root_topology(&ctx, [("Edge", 1, "edge-first-placement")])
         .expect("first topology binding");
     nodes
-        .bind_root_topology(&ctx, "Edge", 2, "unmapped-edge")
+        .bind_root_topology(&ctx, [("Edge", 2, "unmapped-edge")])
         .expect("unmapped topology binding");
     nodes
-        .bind_root_topology(&ctx, "Edge", 1, "edge-second-placement")
+        .bind_root_topology(&ctx, [("Edge", 1, "edge-second-placement")])
         .expect("second topology binding");
     let group = &nodes.root().groups[0];
 
@@ -293,19 +293,110 @@ fn topology_binding_refuses_on_collection_limit() {
             }],
         ],
     };
-    let mut nodes = ElementMapNodes::try_from(vec![ElementMapNode {
+    let nodes = ElementMapNodes::try_from(vec![ElementMapNode {
         map_id: 0,
         groups: vec![group],
     }])
     .expect("valid name group");
+    crate::test_support::assert_collection_refusal_at(
+        &[],
+        "FreeCAD element topology bindings",
+        |ctx| {
+            let mut input = nodes.clone();
+            input.bind_root_topology(ctx, [("Edge", 1, "edge-one")])
+        },
+    );
+}
+
+#[test]
+fn child_descriptor_validation_charges_decode_admission() {
+    let nodes = vec![ElementMapNode {
+        map_id: 0,
+        groups: vec![ElementMapGroup {
+            indexed_name: "Edge".into(),
+            children: vec!["1 0 1 0 0 stable 0.12".into()],
+            names: Vec::new(),
+        }],
+    }];
+    ElementMapNodes::try_from(nodes.clone())
+        .expect("the context-free validator accepts the descriptor");
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD element-map child string-id number",
+        |ctx| {
+            ElementMapNodes::from_nodes(
+                nodes.clone(),
+                |count, operation| {
+                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)
+                },
+                |message| ctx.format_retained(message, "FreeCAD element-map validation diagnostic"),
+            )?
+            .map_err(cadmpeg_core::CodecError::Malformed)
+        },
+    );
+}
+
+#[test]
+fn child_descriptor_diagnostic_keeps_text_and_charges_storage() {
+    let nodes = vec![ElementMapNode {
+        map_id: 0,
+        groups: vec![ElementMapGroup {
+            indexed_name: "Edge".into(),
+            children: vec!["bad".into()],
+            names: Vec::new(),
+        }],
+    }];
+    assert_eq!(
+        ElementMapNodes::try_from(nodes.clone()).unwrap_err(),
+        "element-map node 1 group Edge child 0 descriptor must contain seven fields",
+    );
+    crate::test_support::assert_retained_refusal_at(
+        &[],
+        "FreeCAD element-map validation diagnostic",
+        |ctx| {
+            ElementMapNodes::from_nodes(
+                nodes.clone(),
+                |count, operation| {
+                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)
+                },
+                |message| ctx.format_retained(message, "FreeCAD element-map validation diagnostic"),
+            )?
+            .map_err(cadmpeg_core::CodecError::Malformed)
+        },
+    );
+}
+
+#[test]
+fn topology_binding_group_index_is_scoped_and_dedup_keeps_no_new_identity() {
+    let nodes = ElementMapNodes::try_from(vec![ElementMapNode {
+        map_id: 0,
+        groups: vec![ElementMapGroup {
+            indexed_name: "Edge".into(),
+            children: Vec::new(),
+            names: vec![
+                Vec::new(),
+                vec![ElementMappedName {
+                    encoded: ";stable.0".into(),
+                    resolved: Some("stable".into()),
+                    string_ids: Vec::new(),
+                    topology_ids: vec!["edge-one".into()],
+                }],
+            ],
+        }],
+    }])
+    .unwrap();
+    crate::test_support::materialized_refusal_at("FreeCAD element topology group index", |ctx| {
+        let mut input = nodes.clone();
+        input.bind_root_topology(ctx, [("Edge", 1, "edge-one")])
+    });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within input policy");
-    assert!(
-        matches!(nodes.bind_root_topology(&ctx, "Edge", 1, "edge-one"),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD element topology bindings")
-    );
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut input = nodes.clone();
+    input
+        .bind_root_topology(&ctx, [("Edge", 1, "edge-one")])
+        .unwrap();
+    assert_eq!(input, nodes);
 }

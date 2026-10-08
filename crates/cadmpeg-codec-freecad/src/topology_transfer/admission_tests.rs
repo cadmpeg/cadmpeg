@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::tests::{
-    assert_codec_collection_refusal, assert_codec_retained_refusal, triangulated_face_archive,
+    assert_codec_collection_refusal, assert_codec_retained_refusal, assert_codec_work_refusal,
+    triangulated_face_archive,
 };
 use super::{
-    connected_components, copy_shape_for_transfer, pcurve_geometry, pcurve_loss,
-    source_topology_indices, transform_curve, transform_surface, Builder, PcurveGeometryError,
+    connected_components, pcurve_geometry, pcurve_loss, source_topology_indices, transform_curve,
+    transform_surface, Builder, PcurveGeometryError,
 };
 use crate::brep::{
     NurbsCurve2d, ShapePayload, ShapePayloadRecord, Tables, TextCurve2d, TextEdgeRepresentation,
@@ -134,16 +135,12 @@ fn face_ring_diagnostic_refuses_at_matching_retained_limit() {
 
 #[test]
 fn connected_component_comparison_refuses_at_work_limit() {
-    let connected = std::collections::HashSet::from(["edge".to_owned()]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    // Two assignment flags precede the two-step connectivity comparison.
-    policy.limits.max_work_units = 2 + 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(
-        matches!(connected_components(&ctx, &[connected.clone(), connected]),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD connected-component comparison")
+    let connected = std::collections::BTreeSet::from(["edge".to_owned()]);
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD connected-component comparison",
+        |ctx| connected_components(ctx, &[connected.clone(), connected.clone()]),
     );
 }
 
@@ -163,10 +160,6 @@ fn source_topology_scan_refuses_at_work_limit() {
         orientation: crate::brep::TextOrientation::Forward,
         location: 0.into(),
     }];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let tables = Tables {
         locations: &[],
         curve2ds: &[],
@@ -178,9 +171,12 @@ fn source_topology_scan_refuses_at_work_limit() {
         triangulations: &[],
         roots: &roots,
     };
-    assert!(matches!(source_topology_indices(&ctx, tables),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD source topology scan"));
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD source topology scan",
+        |ctx| source_topology_indices(ctx, tables),
+    );
 }
 
 #[test]
@@ -236,14 +232,9 @@ fn placed_nurbs_curve_basis_refuses_at_collection_limit() {
     let geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
         cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(nurbs),
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 5;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(
-        matches!(transform_curve(&ctx, &geometry, placed_transform()),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD NURBS curve copy")
-    );
+    crate::test_support::assert_collection_refusal_at(&[], "FreeCAD NURBS curve copy", |ctx| {
+        transform_curve(ctx, &geometry, placed_transform())
+    });
 }
 
 #[test]
@@ -268,14 +259,9 @@ fn placed_nurbs_surface_basis_refuses_at_collection_limit() {
     let geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(nurbs),
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 13;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(
-        matches!(transform_surface(&ctx, &geometry, placed_transform()),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD NURBS surface copy")
-    );
+    crate::test_support::assert_collection_refusal_at(&[], "FreeCAD NURBS surface copy", |ctx| {
+        transform_surface(ctx, &geometry, placed_transform())
+    });
 }
 
 #[test]
@@ -315,29 +301,25 @@ fn pcurve_nurbs(rational: bool) -> TextCurve2d {
     })
 }
 
-fn assert_pcurve_collection_refusal(curve: &TextCurve2d, limit: u64, operation: &str) {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(matches!(pcurve_geometry(&ctx, curve),
-        Err(PcurveGeometryError::Resource(CodecError::ResourceLimit(refusal)))
-            if refusal.operation == operation));
+fn assert_pcurve_collection_refusal(curve: &TextCurve2d, operation: &str) {
+    crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
+        pcurve_geometry(ctx, curve).map_err(CodecError::from)
+    });
 }
 
 #[test]
 fn pcurve_polynomial_poles_refuse_at_collection_limit() {
-    assert_pcurve_collection_refusal(&pcurve_nurbs(false), 1, "FreeCAD pcurve polynomial poles");
+    assert_pcurve_collection_refusal(&pcurve_nurbs(false), "FreeCAD pcurve polynomial poles");
 }
 
 #[test]
 fn pcurve_rational_poles_refuse_at_collection_limit() {
-    assert_pcurve_collection_refusal(&pcurve_nurbs(true), 1, "FreeCAD pcurve rational poles");
+    assert_pcurve_collection_refusal(&pcurve_nurbs(true), "FreeCAD pcurve rational poles");
 }
 
 #[test]
 fn pcurve_knots_refuse_at_collection_limit() {
-    assert_pcurve_collection_refusal(&pcurve_nurbs(false), 5, "FreeCAD pcurve knots");
+    assert_pcurve_collection_refusal(&pcurve_nurbs(false), "FreeCAD pcurve knots");
 }
 
 #[test]
@@ -441,11 +423,70 @@ fn polygonal_surface_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn triangulated_surface_emitted_identity_refuses_at_retained_limit() {
-    assert_codec_retained_refusal(
-        &triangulated_face_archive(),
+fn triangulated_surface_emitted_identity_refuses_at_materialized_limit() {
+    let input = triangulated_face_archive();
+    let mut options = cadmpeg_ir::DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = u64::MAX;
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "FreeCAD emitted surface identity",
+        None,
     );
+    {
+        use cadmpeg_ir::Codec;
+        crate::FcstdCodec
+            .decode(&mut std::io::Cursor::new(&input), &options)
+            .expect("the archive retains no emitted-set identity");
+    }
+    drop(probe);
+    let triangulations = [serde_json::from_value(serde_json::json!({
+        "deflection": 0.02,
+        "nodes": [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 1.0, "y": 0.0, "z": 0.0}, {"x": 0.0, "y": 1.0, "z": 0.0}],
+        "triangles": [[1, 2, 3]], "uv_nodes": null, "normals": null
+    })).unwrap()];
+    let shapes: TextTShapes = serde_json::from_value(serde_json::json!([{
+        "index": 1, "kind": "face",
+        "geometry": {"kind": "face", "natural_restriction": false, "tolerance": 0.0, "surface": 0, "location": 0, "triangulation": 1},
+        "flags": [false, false, false, false, false, false, false], "children": []
+    }])).unwrap();
+    let payload = ShapePayloadRecord {
+        id: "fcstd:native:entry#MeshShape:Shape:Shape.brp".into(),
+        property: "Shape".into(),
+        entry: "Shape.brp".into(),
+        payload: ShapePayload::Empty,
+    };
+    crate::test_support::materialized_refusal_at("FreeCAD emitted surface identity", |ctx| {
+        let tables = Tables {
+            locations: &[],
+            curve2ds: &[],
+            curves: &[],
+            surfaces: &[],
+            polygons3d: &[],
+            polygons_on_triangulations: &[],
+            tshapes: &shapes,
+            triangulations: &triangulations,
+            roots: &[],
+        };
+        let mut builder = Builder::new(
+            ctx,
+            &payload,
+            tables,
+            cadmpeg_core::text::NonBlankString::try_from("MeshShape".to_owned()).unwrap(),
+            super::GeometryIndexes::new(ctx, &CadIr::empty())?,
+        )?;
+        builder.append_face(
+            &mut CadIr::empty(),
+            &cadmpeg_ir::ids::ShellId::mint("fcstd:model:shell#MeshShape:Shape:Shape.brp:6")
+                .unwrap(),
+            &crate::brep::TextShapeUse {
+                shape: 1,
+                orientation: crate::brep::TextOrientation::Forward,
+                location: 0.into(),
+            },
+            Transform::identity(),
+            false,
+        )
+    });
 }
 
 #[test]
@@ -462,8 +503,8 @@ fn emitted_triangulations_refuse_at_collection_limit() {
 }
 
 #[test]
-fn tessellation_key_refuses_at_retained_limit() {
-    assert_codec_retained_refusal(&triangulated_face_archive(), "FreeCAD tessellation key");
+fn tessellation_key_refuses_at_work_limit() {
+    assert_codec_work_refusal(&triangulated_face_archive(), "FreeCAD tessellation key");
 }
 
 #[test]
@@ -509,16 +550,16 @@ fn face_connectivity_vertex_keys_refuse_at_collection_limit() {
 }
 
 #[test]
-fn face_connectivity_edge_identity_refuses_at_retained_limit() {
-    assert_codec_retained_refusal(
+fn face_connectivity_edge_identity_refuses_at_work_limit() {
+    assert_codec_work_refusal(
         &triangulated_face_archive(),
         "FreeCAD face connectivity edge identity",
     );
 }
 
 #[test]
-fn face_connectivity_vertex_identity_refuses_at_retained_limit() {
-    assert_codec_retained_refusal(
+fn face_connectivity_vertex_identity_refuses_at_work_limit() {
+    assert_codec_work_refusal(
         &triangulated_face_archive(),
         "FreeCAD face connectivity vertex identity",
     );
@@ -550,33 +591,68 @@ fn indexed_polygon_parameters_refuse_at_collection_limit() {
     );
 }
 
-#[test]
-fn region_shape_copy_refuses_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD region shape copy");
+fn assert_archive_shape_copy_absent(operation: &'static str) {
+    use cadmpeg_ir::Codec;
+    let input = triangulated_face_archive();
+    let mut options = cadmpeg_ir::DecodeOptions::default();
+    options.policy.limits.max_collection_items = u64::MAX;
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        None,
+    );
+    crate::FcstdCodec
+        .decode(&mut std::io::Cursor::new(&input), &options)
+        .expect("native shapes are borrowed without allocating transfer copies");
+}
+
+fn assert_native_shape_borrowed(shape: TextTShape) {
+    let payload = ShapePayloadRecord {
+        id: "fcstd:native:entry#Payload".to_owned(),
+        property: "Property".to_owned(),
+        entry: "Entry".to_owned(),
+        payload: ShapePayload::Empty,
+    };
+    let shapes = TextTShapes::from(vec![shape]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let builder = empty_builder(&ctx, &payload, &shapes).unwrap();
+    let borrowed = builder.shape(1).unwrap();
+    assert!(std::ptr::eq(borrowed, &shapes[0]));
+    assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]
-fn shell_shape_copy_refuses_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD shell shape copy");
+fn region_shape_transfer_keeps_native_shape_storage() {
+    assert_archive_shape_copy_absent("FreeCAD region shape copy");
 }
 
 #[test]
-fn face_shape_copy_refuses_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD face shape copy");
+fn shell_shape_transfer_keeps_native_shape_storage() {
+    assert_archive_shape_copy_absent("FreeCAD shell shape copy");
 }
 
 #[test]
-fn wire_shape_copy_refuses_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD wire shape copy");
+fn face_shape_transfer_keeps_native_shape_storage() {
+    assert_archive_shape_copy_absent("FreeCAD face shape copy");
 }
 
 #[test]
-fn edge_shape_copy_refuses_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD edge shape copy");
+fn wire_shape_transfer_keeps_native_shape_storage() {
+    assert_archive_shape_copy_absent("FreeCAD wire shape copy");
 }
 
 #[test]
-fn edge_representation_continuity_refuses_at_retained_limit() {
+fn edge_shape_transfer_keeps_native_shape_storage() {
+    assert_archive_shape_copy_absent("FreeCAD edge shape copy");
+}
+
+#[test]
+fn edge_representation_continuity_is_borrowed_without_storage() {
     let shape = TextTShape {
         geometry: TextTShapeGeometry::Edge {
             tolerance: FiniteReal::ONE,
@@ -592,18 +668,11 @@ fn edge_representation_continuity_refuses_at_retained_limit() {
         flags: [false; 7],
         children: Vec::new(),
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        copy_shape_for_transfer(&ctx, &shape, "FreeCAD edge shape copy"),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD edge shape copy"
-    ));
+    assert_native_shape_borrowed(shape);
 }
 
 #[test]
-fn pcurve_pair_continuity_refuses_at_retained_limit() {
+fn pcurve_pair_continuity_is_borrowed_without_storage() {
     let shape = TextTShape {
         geometry: TextTShapeGeometry::Edge {
             tolerance: FiniteReal::ONE,
@@ -622,14 +691,7 @@ fn pcurve_pair_continuity_refuses_at_retained_limit() {
         flags: [false; 7],
         children: Vec::new(),
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        copy_shape_for_transfer(&ctx, &shape, "FreeCAD edge shape copy"),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD edge shape copy"
-    ));
+    assert_native_shape_borrowed(shape);
 }
 
 #[test]
@@ -638,6 +700,30 @@ fn topology_occurrence_identity_refuses_at_retained_limit() {
         &triangulated_face_archive(),
         "FreeCAD topology occurrence identity",
     );
+}
+
+macro_rules! triangulated_scratch_refusal {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let input = triangulated_face_archive();
+            let mut options = cadmpeg_ir::DecodeOptions::default();
+            options.policy.limits.max_retained_bytes = u64::MAX;
+            let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                $operation,
+                None,
+            );
+            {
+                use cadmpeg_ir::Codec;
+                crate::FcstdCodec
+                    .decode(&mut std::io::Cursor::new(&input), &options)
+                    .expect("scratch identities are not retained");
+            }
+            drop(probe);
+            assert_codec_work_refusal(&input, $operation);
+        }
+    };
 }
 
 macro_rules! triangulated_identity_refusal {
@@ -649,17 +735,50 @@ macro_rules! triangulated_identity_refusal {
     };
 }
 
-triangulated_identity_refusal!(
-    body_identity_refuses_at_retained_limit,
-    "FreeCAD body identity"
-);
+fn assert_scoped_model_identity_refusal(kind: &str, operation: &'static str) {
+    let input = triangulated_face_archive();
+    let mut options = cadmpeg_ir::DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = u64::MAX;
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        operation,
+        None,
+    );
+    {
+        use cadmpeg_ir::Codec;
+        crate::FcstdCodec
+            .decode(&mut std::io::Cursor::new(&input), &options)
+            .expect("the archive keeps no primary scratch identity");
+    }
+    drop(probe);
+    assert_empty_builder_materialized_refusal(operation, |builder| {
+        builder
+            .ctx
+            .with_scoped_storage(operation, || {
+                crate::native::model_id_charged_at(
+                    builder.ctx,
+                    kind,
+                    &builder.payload.id,
+                    "1",
+                    operation,
+                )
+            })
+            .map(|_| ())
+    });
+}
+
+#[test]
+fn body_identity_refuses_at_materialized_limit() {
+    assert_scoped_model_identity_refusal("body", "FreeCAD body identity");
+}
+
+#[test]
+fn shell_identity_refuses_at_materialized_limit() {
+    assert_scoped_model_identity_refusal("shell", "FreeCAD shell identity");
+}
 triangulated_identity_refusal!(
     region_identity_refuses_at_retained_limit,
     "FreeCAD region identity"
-);
-triangulated_identity_refusal!(
-    shell_identity_refuses_at_retained_limit,
-    "FreeCAD shell identity"
 );
 triangulated_identity_refusal!(
     face_identity_refuses_at_retained_limit,
@@ -669,24 +788,21 @@ triangulated_identity_refusal!(
     triangulation_surface_identity_refuses_at_retained_limit,
     "FreeCAD triangulation surface identity"
 );
-triangulated_identity_refusal!(
-    triangulation_surface_key_refuses_at_retained_limit,
+triangulated_scratch_refusal!(
+    triangulation_surface_key_refuses_at_work_limit,
     "FreeCAD triangulation surface key"
 );
 triangulated_identity_refusal!(
     face_loop_identity_refuses_at_retained_limit,
     "FreeCAD face loop identity"
 );
-triangulated_identity_refusal!(
-    face_loop_key_refuses_at_retained_limit,
-    "FreeCAD face loop key"
-);
+triangulated_scratch_refusal!(face_loop_key_refuses_at_work_limit, "FreeCAD face loop key");
 triangulated_identity_refusal!(
     face_coedge_identity_refuses_at_retained_limit,
     "FreeCAD face coedge identity"
 );
-triangulated_identity_refusal!(
-    face_coedge_key_refuses_at_retained_limit,
+triangulated_scratch_refusal!(
+    face_coedge_key_refuses_at_work_limit,
     "FreeCAD face coedge key"
 );
 triangulated_identity_refusal!(
@@ -701,16 +817,16 @@ triangulated_identity_refusal!(
     vertex_identity_refuses_at_retained_limit,
     "FreeCAD vertex identity"
 );
-triangulated_identity_refusal!(
-    cached_edge_identity_refuses_at_retained_limit,
+triangulated_scratch_refusal!(
+    cached_edge_identity_refuses_at_work_limit,
     "FreeCAD cached edge identity"
 );
-triangulated_identity_refusal!(
-    cached_vertex_identity_refuses_at_retained_limit,
+triangulated_scratch_refusal!(
+    cached_vertex_identity_refuses_at_work_limit,
     "FreeCAD cached vertex identity"
 );
-triangulated_identity_refusal!(
-    current_body_identity_copy_refuses_at_retained_limit,
+triangulated_scratch_refusal!(
+    current_body_identity_copy_refuses_at_work_limit,
     "FreeCAD current body identity"
 );
 triangulated_identity_refusal!(
@@ -808,6 +924,7 @@ fn empty_builder<'a, 'c, 'r>(
             roots: &[],
         },
         cadmpeg_core::text::NonBlankString::try_from("Object".to_owned()).unwrap(),
+        super::GeometryIndexes::new(ctx, &CadIr::empty())?,
     )
 }
 
@@ -828,6 +945,23 @@ fn assert_empty_builder_refusal(
     });
 }
 
+fn assert_empty_builder_materialized_refusal(
+    operation: &str,
+    call: impl Fn(&mut Builder<'_, '_, '_>) -> Result<(), CodecError>,
+) {
+    let payload = ShapePayloadRecord {
+        id: "fcstd:native:entry#Payload".to_owned(),
+        property: "Property".to_owned(),
+        entry: "Shape.brp".to_owned(),
+        payload: ShapePayload::Empty,
+    };
+    let tshapes = TextTShapes::default();
+    crate::test_support::materialized_refusal_at(operation, |ctx| {
+        let mut builder = empty_builder(ctx, &payload, &tshapes)?;
+        call(&mut builder)
+    });
+}
+
 fn assert_empty_builder_collection_refusal(
     operation: &str,
     call: impl Fn(&mut Builder<'_, '_, '_>) -> Result<(), CodecError>,
@@ -839,13 +973,10 @@ fn assert_empty_builder_collection_refusal(
         payload: ShapePayload::Empty,
     };
     let tshapes = TextTShapes::default();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut builder = empty_builder(&ctx, &payload, &tshapes).unwrap();
-    assert!(matches!(call(&mut builder),
-        Err(CodecError::ResourceLimit(limit)) if limit.operation == operation));
+    crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
+        let mut builder = empty_builder(ctx, &payload, &tshapes)?;
+        call(&mut builder)
+    });
 }
 
 fn placed_transform() -> Transform {
@@ -858,8 +989,8 @@ fn placed_transform() -> Transform {
 }
 
 #[test]
-fn pcurve_key_refuses_at_retained_limit() {
-    assert_empty_builder_refusal("FreeCAD pcurve key", |builder| {
+fn pcurve_key_refuses_at_materialized_limit() {
+    assert_empty_builder_materialized_refusal("FreeCAD pcurve key", |builder| {
         builder.pcurve_id(1, 0, false).map(|_| ())
     });
 }
@@ -872,16 +1003,16 @@ fn pcurve_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn topology_root_label_refuses_at_retained_limit() {
-    assert_empty_builder_refusal("FreeCAD topology root label", |builder| {
+fn topology_root_label_refuses_at_materialized_limit() {
+    assert_empty_builder_materialized_refusal("FreeCAD topology root label", |builder| {
         builder.root_discriminator = Some(2);
         builder.topology_label(1, Transform::identity()).map(|_| ())
     });
 }
 
 #[test]
-fn shell_component_key_refuses_at_retained_limit() {
-    assert_empty_builder_refusal("FreeCAD shell component key", |builder| {
+fn shell_component_key_refuses_at_materialized_limit() {
+    assert_empty_builder_materialized_refusal("FreeCAD shell component key", |builder| {
         builder.shell_component_id("1", 1).map(|_| ())
     });
 }
@@ -894,8 +1025,8 @@ fn shell_component_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn base_curve_key_refuses_at_retained_limit() {
-    assert_empty_builder_refusal("FreeCAD base curve key", |builder| {
+fn base_curve_key_refuses_at_materialized_limit() {
+    assert_empty_builder_materialized_refusal("FreeCAD base curve key", |builder| {
         builder
             .located_curve(&mut CadIr::empty(), 1, Transform::identity())
             .map(|_| ())
@@ -912,8 +1043,8 @@ fn base_curve_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn located_curve_key_refuses_at_retained_limit() {
-    assert_empty_builder_refusal("FreeCAD located curve key", |builder| {
+fn located_curve_key_refuses_at_materialized_limit() {
+    assert_empty_builder_materialized_refusal("FreeCAD located curve key", |builder| {
         builder
             .located_curve(&mut CadIr::empty(), 1, placed_transform())
             .map(|_| ())
@@ -930,8 +1061,8 @@ fn located_curve_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn emitted_curve_identity_refuses_at_retained_limit() {
-    assert_empty_builder_refusal("FreeCAD emitted curve identity", |builder| {
+fn emitted_curve_identity_refuses_at_materialized_limit() {
+    assert_empty_builder_materialized_refusal("FreeCAD emitted curve identity", |builder| {
         builder
             .located_curve(&mut CadIr::empty(), 1, placed_transform())
             .map(|_| ())
@@ -948,8 +1079,8 @@ fn emitted_curves_refuse_at_collection_limit() {
 }
 
 #[test]
-fn base_surface_key_refuses_at_retained_limit() {
-    assert_empty_builder_refusal("FreeCAD base surface key", |builder| {
+fn base_surface_key_refuses_at_materialized_limit() {
+    assert_empty_builder_materialized_refusal("FreeCAD base surface key", |builder| {
         builder
             .located_surface(&mut CadIr::empty(), 1, Transform::identity())
             .map(|_| ())
@@ -966,8 +1097,8 @@ fn base_surface_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn located_surface_key_refuses_at_retained_limit() {
-    assert_empty_builder_refusal("FreeCAD located surface key", |builder| {
+fn located_surface_key_refuses_at_materialized_limit() {
+    assert_empty_builder_materialized_refusal("FreeCAD located surface key", |builder| {
         builder
             .located_surface(&mut CadIr::empty(), 1, placed_transform())
             .map(|_| ())
@@ -984,8 +1115,8 @@ fn located_surface_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn emitted_surface_identity_refuses_at_retained_limit() {
-    assert_empty_builder_refusal("FreeCAD emitted surface identity", |builder| {
+fn emitted_surface_identity_refuses_at_materialized_limit() {
+    assert_empty_builder_materialized_refusal("FreeCAD emitted surface identity", |builder| {
         builder
             .located_surface(&mut CadIr::empty(), 1, placed_transform())
             .map(|_| ())
@@ -1002,8 +1133,7 @@ fn emitted_surfaces_refuse_at_collection_limit() {
 }
 
 fn assert_standalone_polygon_refusal(
-    retained_limit: Option<u64>,
-    collection_limit: Option<u64>,
+    dimension: cadmpeg_core::decode::ResourceDimension,
     operation: &str,
 ) {
     let payload = ShapePayloadRecord {
@@ -1021,88 +1151,66 @@ fn assert_standalone_polygon_refusal(
         ],
         parameters: Some(vec![FiniteReal::ZERO, FiniteReal::ONE]),
     }];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    if let Some(limit) = retained_limit {
-        policy.limits.max_retained_bytes = limit;
-    }
-    if let Some(limit) = collection_limit {
-        policy.limits.max_collection_items = limit;
-    }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut builder = Builder::new(
-        &ctx,
-        &payload,
-        Tables {
-            locations: &[],
-            curve2ds: &[],
-            curves: &[],
-            surfaces: &[],
-            polygons3d: &polygons,
-            polygons_on_triangulations: &[],
-            tshapes: &tshapes,
-            triangulations: &[],
-            roots: &[],
-        },
-        cadmpeg_core::text::NonBlankString::try_from("Object".to_owned()).unwrap(),
-    )
-    .unwrap();
-    let edge = EdgeId::mint("fcstd:model:edge#Payload:1").unwrap();
-    let result = builder.polygon_curve(
-        &mut CadIr::empty(),
-        &edge,
-        0,
-        &TextEdgeRepresentation::Polygon3d {
-            polygon: 1,
-            location: 0,
-        },
-        Transform::identity(),
-    );
-    assert!(
-        matches!(result, Err(CodecError::ResourceLimit(ref limit)) if limit.operation == operation),
-        "expected {operation} refusal, got {result:?}"
-    );
+    crate::test_support::refusal_at(dimension, &[], operation, |ctx| {
+        let mut builder = Builder::new(
+            ctx,
+            &payload,
+            Tables {
+                locations: &[],
+                curve2ds: &[],
+                curves: &[],
+                surfaces: &[],
+                polygons3d: &polygons,
+                polygons_on_triangulations: &[],
+                tshapes: &tshapes,
+                triangulations: &[],
+                roots: &[],
+            },
+            cadmpeg_core::text::NonBlankString::try_from("Object".to_owned()).unwrap(),
+            super::GeometryIndexes::new(ctx, &CadIr::empty())?,
+        )?;
+        let edge = EdgeId::mint("fcstd:model:edge#Payload:1").unwrap();
+        builder.polygon_curve(
+            &mut CadIr::empty(),
+            &edge,
+            0,
+            &TextEdgeRepresentation::Polygon3d {
+                polygon: 1,
+                location: 0,
+            },
+            Transform::identity(),
+        )
+    });
 }
 
 #[test]
 fn standalone_polygon_nodes_refuse_at_collection_limit() {
-    assert_standalone_polygon_refusal(None, Some(1), "FreeCAD standalone polygon nodes");
+    assert_standalone_polygon_refusal(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FreeCAD standalone polygon nodes",
+    );
 }
 
 #[test]
 fn standalone_polygon_parameters_refuse_at_collection_limit() {
-    assert_standalone_polygon_refusal(None, Some(3), "FreeCAD standalone polygon parameters");
+    assert_standalone_polygon_refusal(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FreeCAD standalone polygon parameters",
+    );
 }
 
 #[test]
 fn polygon_curve_identity_refuses_at_retained_limit() {
-    const ID: &str = "fcstd:model:edge#Payload:1:polygon:1";
     assert_standalone_polygon_refusal(
-        Some(
-            cadmpeg_core::decode::u64_from_index(
-                ID.len()
-                    + 2 * std::mem::size_of::<FinitePoint3>()
-                    + 2 * std::mem::size_of::<FiniteReal>(),
-            ) - 1,
-        ),
-        None,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "FreeCAD polygon curve identity",
     );
 }
 
 #[test]
 fn polygon_curve_record_identity_refuses_at_retained_limit() {
-    const ID: &str = "fcstd:model:edge#Payload:1:polygon:1";
     assert_standalone_polygon_refusal(
-        Some(
-            cadmpeg_core::decode::u64_from_index(
-                2 * ID.len()
-                    + 2 * std::mem::size_of::<FinitePoint3>()
-                    + 2 * std::mem::size_of::<FiniteReal>()
-                    + 4 * std::mem::size_of::<cadmpeg_ir::geometry::Curve>(),
-            ) - 1,
-        ),
-        None,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "FreeCAD polygon curve record identity",
     );
 }
@@ -1136,5 +1244,153 @@ fn polygon_curve_id_spelling_is_preserved() {
     assert_eq!(
         builder.polygon_curve_id(&edge, 0, true).unwrap().as_str(),
         "fcstd:model:edge#Payload:1:polygon:1:secondary"
+    );
+}
+
+#[test]
+fn geometry_position_indexes_charge_work_and_scoped_storage() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let mut ir = CadIr::empty();
+    let id = cadmpeg_ir::ids::CurveId::mint("fcstd:model:curve#Index:1").unwrap();
+    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        id: id.clone(),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedCurveGeometry::Polyline(
+                cadmpeg_ir::geometry::sampled::PolylineCurve::from_scaled_deflection(
+                    cadmpeg_ir::geometry::sampled::PolylineSamples::Unparameterized {
+                        points: vec![
+                            FinitePoint3::ZERO,
+                            FinitePoint3::from_coordinates(
+                                FiniteReal::ONE,
+                                FiniteReal::ZERO,
+                                FiniteReal::ZERO,
+                            ),
+                        ]
+                        .try_into()
+                        .unwrap(),
+                    },
+                    NonNegativeReal::ZERO,
+                    cadmpeg_ir::scalar::PositiveReal::ONE,
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .unwrap()
+                .unwrap(),
+            ),
+        ),
+        source_object: None,
+    });
+    crate::test_support::refusal_at(
+        ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD curve position lookup",
+        |ctx| {
+            let indexes = super::GeometryIndexes::new(ctx, &ir)?;
+            ctx.get_btree_map(&indexes.curves, &id, "FreeCAD curve position lookup")
+                .map(|_| ())
+        },
+    );
+    crate::test_support::materialized_refusal_at("FreeCAD curve position key", |ctx| {
+        super::GeometryIndexes::new(ctx, &ir).map(|_| ())
+    });
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut indexes = super::GeometryIndexes::new(ctx, &ir).unwrap();
+        assert_eq!(indexes.curves.get(&id), Some(&0));
+        indexes.index_curve(ctx, &id, 9).unwrap();
+        assert_eq!(indexes.curves.get(&id), Some(&0));
+        let next = cadmpeg_ir::ids::CurveId::mint("fcstd:model:curve#Index:2").unwrap();
+        indexes.index_curve(ctx, &next, 1).unwrap();
+        assert_eq!(indexes.curves.get(&next), Some(&1));
+    });
+}
+
+#[test]
+fn occurrence_lookup_keys_refuse_as_scoped_storage() {
+    crate::test_support::materialized_refusal_at("FreeCAD occurrence key", |ctx| {
+        ctx.with_scoped_storage("FreeCAD occurrence lookup scratch", || {
+            super::OccurrenceKey::new(ctx, 7, Transform::identity())
+        })
+        .map(|_| ())
+    });
+    crate::test_support::materialized_refusal_at("FreeCAD source occurrence key", |ctx| {
+        ctx.with_scoped_storage("FreeCAD source occurrence scratch", || {
+            super::SourceOccurrenceKey::new(ctx, 7, Transform::identity())
+        })
+        .map(|_| ())
+    });
+}
+
+#[test]
+fn procedural_indexes_keep_presence_and_reject_ambiguous_owners() {
+    use cadmpeg_ir::geometry::{
+        ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
+
+    let construction = ProceduralSurfaceId::mint("fcstd:model:surface#Index:construction").unwrap();
+    let first = SurfaceId::mint("fcstd:model:surface#Index:1").unwrap();
+    let second = SurfaceId::mint("fcstd:model:surface#Index:2").unwrap();
+    let mut ir = CadIr::empty();
+    for id in [first.clone(), second] {
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Procedural {
+                construction: construction.clone(),
+                cache: None,
+            },
+            source_object: None,
+        });
+    }
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        construction.clone(),
+        ProceduralSurfaceDefinition::Replica {
+            source: first.clone(),
+            transform: Transform::identity(),
+        },
+        None,
+    ));
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut indexes = super::GeometryIndexes::new(ctx, &ir).unwrap();
+        assert!(indexes.procedural_surfaces.contains(&construction));
+        assert_eq!(indexes.construction_owners.get(&construction), Some(&None));
+        assert_eq!(ir.model.procedural_surface_owner(&construction), None);
+        indexes.index_surface(ctx, &first, 9).unwrap();
+        assert_eq!(indexes.surfaces.get(&first), Some(&0));
+
+        ir.model.surfaces.pop();
+        let indexes = super::GeometryIndexes::new(ctx, &ir).unwrap();
+        assert_eq!(
+            indexes.construction_owners.get(&construction),
+            Some(&Some(0))
+        );
+        assert_eq!(
+            ir.model.procedural_surface_owner(&construction),
+            Some(&first)
+        );
+    });
+}
+
+#[test]
+fn edge_endpoint_search_stops_before_unused_children() {
+    let children = vec![
+        crate::brep::TextShapeUse {
+            shape: 1,
+            orientation: crate::brep::TextOrientation::Forward,
+            location: 0.into()
+        };
+        128
+    ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::edge_endpoint_uses(&ctx, 9, &children),
+        Err(CodecError::Malformed(_))
+    ));
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD edge endpoint search",
+        |ctx| super::edge_endpoint_uses(ctx, 9, &children),
     );
 }
