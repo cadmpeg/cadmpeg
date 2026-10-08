@@ -193,7 +193,7 @@ fn native_graph_projection_refuses_caller_limits() {
             ctx,
             &mut ctx.reserve_scoped(0, "test graph")?,
             &parsed,
-            Vec::new(),
+            &[],
             None,
             None,
         )
@@ -205,7 +205,7 @@ fn native_graph_projection_refuses_caller_limits() {
             ctx,
             &mut ctx.reserve_scoped(0, "test graph")?,
             &parsed,
-            Vec::new(),
+            &[],
             None,
             None,
         )
@@ -217,7 +217,7 @@ fn native_graph_projection_refuses_caller_limits() {
             ctx,
             &mut ctx.reserve_scoped(0, "test graph")?,
             &parsed,
-            Vec::new(),
+            &[],
             None,
             None,
         )
@@ -240,7 +240,7 @@ fn native_graph_record_link_updates_preserve_work_refusal() {
             ctx,
             &mut ctx.reserve_scoped(0, "test graph")?,
             &parsed,
-            Vec::new(),
+            &[],
             None,
             None,
         )
@@ -255,7 +255,7 @@ fn native_graph_record_link_updates_preserve_work_refusal() {
             ctx,
             &mut ctx.reserve_scoped(0, "test graph")?,
             &parsed,
-            Vec::new(),
+            &[],
             None,
             None,
         );

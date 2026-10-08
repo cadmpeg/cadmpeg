@@ -8859,10 +8859,16 @@ mod consolidated_cone_face_limit_tests {
     fn native_cone_face_output_and_id_refuse_limits() {
         let bytes = crate::test_support::test_b2::b2_cone_face_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(17, |ctx| {
-            consolidated_cone_faces(ctx, &bytes, &records, &[])
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+        let limited = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "catia_native_cone_faces",
+            |cap| {
+                crate::test_support::with_collection_limit(cap, |ctx| {
+                    consolidated_cone_faces(ctx, &bytes, &records, &[])
+                })
+            },
+        );
+        assert!(matches!(limited, CodecError::ResourceLimit(error)
             if error.operation == "catia_native_cone_faces"));
         let limited =
             crate::test_support::with_retained_refusal(&[], "catia_native_cone_face_id", |ctx| {
@@ -8870,6 +8876,41 @@ mod consolidated_cone_face_limit_tests {
             });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_cone_face_id"));
+    }
+
+    #[test]
+    fn native_cone_face_program_is_retained_and_parser_storage_is_released() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let bytes = crate::test_support::test_b2::b2_cone_face_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let refused = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "catia_native_cone_face_program",
+            |cap| {
+                crate::test_support::with_retained_limit(cap, |ctx| {
+                    consolidated_cone_faces(ctx, &bytes, &records, &[])
+                })
+            },
+        );
+        assert!(matches!(refused, CodecError::ResourceLimit(error)
+            if error.operation == "catia_native_cone_face_program"));
+        let faces =
+            crate::test_support::with_materialized_limit(4096, |ctx| -> Result<_, CodecError> {
+                let faces = consolidated_cone_faces(ctx, &bytes, &records, &[])?;
+                let storage = ctx.reserve_scoped(4096, "test released cone parser")?;
+                drop(storage);
+                Ok(faces)
+            })
+            .expect("face parser and indexes release temporary storage");
+        assert_eq!(faces.len(), 1);
+        assert_eq!(
+            faces[0].program,
+            [
+                0x85, 0x05, 0x08, 0x7f, 0x05, 0x08, 0x14, 0x03, 0xe5, 0xdd, 0x05, 0x01, 0x01, 0x05,
+                0x03, 0x11,
+            ]
+        );
     }
 
     #[test]
@@ -8881,26 +8922,26 @@ mod consolidated_cone_face_limit_tests {
         })
         .expect("service decode");
         assert_eq!(points.len(), 4);
-        let mut refused = std::collections::BTreeSet::new();
-        for limit in 0..64 {
-            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-                consolidated_cone_faces(ctx, &bytes, &records, &points)
-            });
-            match limited {
-                Err(CodecError::ResourceLimit(error)) => {
-                    refused.insert(error.operation);
-                }
-                Ok(_) => break,
-                Err(error) => panic!("unexpected cone-face error: {error}"),
-            }
-        }
         for operation in [
             "catia_native_cone_face_point_index",
             "catia_native_cone_face_class18_ends",
             "catia_native_cone_face_positions",
             "catia_native_cone_face_parameter_points",
         ] {
-            assert!(refused.contains(operation), "no refusal at {operation}");
+            let refused = cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                operation,
+                |cap| {
+                    crate::test_support::with_collection_limit(cap, |ctx| {
+                        consolidated_cone_faces(ctx, &bytes, &records, &points)
+                    })
+                },
+            );
+            assert!(
+                matches!(refused, CodecError::ResourceLimit(error)
+                if error.operation == operation),
+                "no refusal at {operation}"
+            );
         }
         let limited = crate::test_support::with_retained_refusal(
             &[],
@@ -8952,10 +8993,13 @@ fn consolidated_cone_faces(
             })?;
         }
     }
-    let faces = crate::families::b2::records::b2_cone_faces(ctx, bytes)?;
+    let (faces, _face_storage) = ctx
+        .with_scoped_storage("catia_native_cone_face_parser_scratch", || {
+            crate::families::b2::records::b2_cone_faces(ctx, bytes)
+        })?;
     ctx.try_collect_vec(
         faces
-            .into_iter()
+            .iter()
             .enumerate()
             .map(|(index, face)| -> Result<_, CodecError> {
                 const LOOKUP: &str = "catia_native_cone_face_lookups";
@@ -9005,7 +9049,7 @@ fn consolidated_cone_faces(
                     )?,
                     byte_offset,
                     byte_len,
-                    program: face.program,
+                    program: ctx.copy_slice(&face.program, "catia_native_cone_face_program")?,
                     angular_scale: face.angular_scale,
                     half_angle: face.half_angle,
                     parameter_points: bound_points,
@@ -9805,6 +9849,7 @@ impl CatiaNative {
             ),
             "catia_native_finjpl_segments",
         )?;
+        drop(_finjpl_storage);
         let (mut parsed_catalogs, _catalog_storage) = ctx
             .with_scoped_storage("catia_native_catalog_scratch", || {
                 catalog::parse(ctx, bytes)
@@ -9813,18 +9858,17 @@ impl CatiaNative {
             .with_scoped_storage("catia_native_entity_run_scratch", || {
                 entity_table::parse_runs(ctx, bytes)
             })?;
-        // Run, catalog and graph indexes are dropped before decode returns.
-        let mut scratch = ctx.reserve_scoped(0, "catia_native_decode_indexes")?;
-        let paired_object_graph_roots = scratch.with_storage(|| {
-            ctx.collect_hash_map(
-                ctx.admit_iter(&entity_runs, "catia_native_paired_graph_root_source_visits")?
-                    .filter_map(|run| {
-                        let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
-                        (bytes.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
-                    }),
-                "catia_native_paired_graph_roots",
-            )
-        })?;
+        let (paired_object_graph_roots, paired_root_storage) =
+            ctx.with_scoped_storage("catia_native_paired_root_scratch", || {
+                ctx.collect_hash_map(
+                    ctx.admit_iter(&entity_runs, "catia_native_paired_graph_root_source_visits")?
+                        .filter_map(|run| {
+                            let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
+                            (bytes.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
+                        }),
+                    "catia_native_paired_graph_roots",
+                )
+            })?;
         let (parsed_aliases, _alias_storage) = ctx
             .with_scoped_storage("catia_native_alias_scratch", || {
                 object_graph::surface_aliases(ctx, bytes)
@@ -9835,10 +9879,13 @@ impl CatiaNative {
                 .map(|row| CatiaAliasRow::from_source(ctx, row)),
             "catia_native_alias_rows",
         )?;
+        drop(_alias_storage);
         let (mut parsed_object_graphs, _graph_storage) = ctx
             .with_scoped_storage("catia_native_parsed_graph_scratch", || {
                 object_graph::parse_all_with_paired_roots(ctx, bytes, &paired_object_graph_roots)
             })?;
+        drop(paired_object_graph_roots);
+        drop(paired_root_storage);
         let (mut parsed_value_blocks, _value_storage) = ctx
             .with_scoped_storage("catia_native_value_scratch", || {
                 value_block::parse(ctx, bytes)
@@ -9855,10 +9902,13 @@ impl CatiaNative {
                 .map(|catalog| CatiaCatalog::from_source(ctx, catalog)),
             "catia_native_catalogs",
         )?;
+        drop(_catalog_storage);
         // The first catalog at each offset.
+        let mut catalog_index_storage =
+            ctx.reserve_scoped(0, "catia_native_catalog_index_scratch")?;
         let mut catalogs_by_offset = HashMap::new();
         for catalog in ctx.admit_iter(&catalogs, "catia_native_catalog_index_visits")? {
-            scratch.with_storage(|| {
+            catalog_index_storage.with_storage(|| {
                 ctx.entry_hash_map(
                     &mut catalogs_by_offset,
                     catalog.byte_offset,
@@ -9874,20 +9924,23 @@ impl CatiaNative {
                 .get_hash_map(&catalogs_by_offset, &offset, "catia_native_catalog_lookup")?
                 .copied())
         };
-        let mut entity_runs = scratch.with_storage(|| {
-            ctx.collect_hash_map(
-                ctx.admit_iter(entity_runs, "catia_native_entity_run_visits")?
-                    .filter_map(|run| {
-                        let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
-                        (bytes.get(end) == Some(&0xde)).then_some(((end + 1, run.len()), run))
-                    }),
-                "catia_native_entity_runs",
-            )
-        })?;
+        let (mut entity_run_index, entity_index_storage) =
+            ctx.with_scoped_storage("catia_native_entity_index_scratch", || {
+                ctx.collect_hash_map(
+                    ctx.admit_iter(&entity_runs, "catia_native_entity_run_visits")?
+                        .filter_map(|run| {
+                            let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
+                            (bytes.get(end) == Some(&0xde))
+                                .then_some(((end + 1, run.len()), run.as_slice()))
+                        }),
+                    "catia_native_entity_runs",
+                )
+            })?;
         let mut entity_records = Vec::new();
         let mut object_graphs = Vec::new();
         let mut design_objects = Vec::new();
         // The entity records of graph `i` are `entity_records[graph_entities[i]]`.
+        let mut graph_range_storage = ctx.reserve_scoped(0, "catia_native_graph_range_scratch")?;
         let mut graph_entities = Vec::new();
         for graph in ctx.admit_iter(
             &parsed_object_graphs,
@@ -9895,7 +9948,7 @@ impl CatiaNative {
         )? {
             let entities = ctx
                 .remove_hash_map(
-                    &mut entity_runs,
+                    &mut entity_run_index,
                     &(graph.pos, graph.records.len()),
                     "catia_native_entity_runs",
                 )?
@@ -10012,7 +10065,7 @@ impl CatiaNative {
                 &mut entities,
                 "catia_native_entity_records",
             )?;
-            scratch.with_storage(|| {
+            graph_range_storage.with_storage(|| {
                 ctx.push_vec(
                     &mut graph_entities,
                     start..entity_records.len(),
@@ -10021,7 +10074,12 @@ impl CatiaNative {
             })?;
             ctx.push_vec(&mut object_graphs, graph, "catia_native_object_graphs")?;
         }
+        drop(entity_run_index);
+        drop(entity_index_storage);
         drop(entity_runs);
+        drop(_entity_storage);
+        drop(parsed_object_graphs);
+        drop(_graph_storage);
         let mut index_storage = ctx.reserve_scoped(0, "catia_native_semantic_indices")?;
         let entity_classes_by_graph_identity =
             entity_class_index(ctx, &mut index_storage, &object_graphs)?;
@@ -10129,6 +10187,8 @@ impl CatiaNative {
             entity.object_production = production;
         }
         drop(index_storage);
+        drop(graph_entities);
+        drop(graph_range_storage);
         let reference_signature_cohorts = derive_reference_signature_cohorts(ctx, &entity_records)?;
         filter_nested_alias_rows(
             ctx,
@@ -10176,12 +10236,13 @@ impl CatiaNative {
         let mut value_blocks = Vec::new();
         if !parsed_value_blocks.is_empty() {
             // The first graph ending at each offset.
+            let mut graph_end_storage = ctx.reserve_scoped(0, "catia_native_graph_end_scratch")?;
             let mut graphs_by_end = HashMap::new();
             for graph in ctx.admit_iter(&object_graphs, "catia_native_graph_end_index_visits")? {
                 let Some(end) = graph.byte_offset.checked_add(graph.byte_len) else {
                     continue;
                 };
-                scratch.with_storage(|| {
+                graph_end_storage.with_storage(|| {
                     ctx.entry_hash_map(&mut graphs_by_end, end, "catia_native_graph_end_index")
                         .map(|entry| {
                             entry.or_insert(graph);
@@ -10207,7 +10268,12 @@ impl CatiaNative {
                 let value = CatiaValueBlock::from_parts(ctx, &block, catalog, object_graph)?;
                 ctx.push_vec(&mut value_blocks, value, "catia_native_value_blocks")?;
             }
+        } else {
+            drop(parsed_value_blocks);
         }
+        drop(_value_storage);
+        drop(catalogs_by_offset);
+        drop(catalog_index_storage);
         let preview_images = preview_views(ctx, &finjpl_segments)?;
         let external_references = external_reference_views(ctx, &finjpl_segments)?;
         let mut legacy_entity_runs = legacy_entity_runs(ctx, bytes)?;
@@ -10225,6 +10291,11 @@ impl CatiaNative {
                 .map(|container| CatiaOuterContainerBinding::from_source(ctx, container))
                 .transpose()?;
         }
+        drop(outer_container_index);
+        drop(outer_container_declarations);
+        drop(_container_storage);
+        drop(outer_directory);
+        drop(_directory_storage);
         let consolidated_circles =
             projection::consolidated_circles(ctx, bytes, consolidated_records)?;
         let consolidated_class61_records =
@@ -10303,8 +10374,13 @@ impl CatiaNative {
             })?;
         let zero_entity_endpoint_locus_candidates =
             zero_entity_endpoint_locus_candidates(ctx, &parsed_zero_entity_endpoint_loci)?;
+        drop(parsed_zero_entity_endpoint_loci);
+        drop(_endpoint_locus_storage);
+        drop(parsed_zero_entity_endpoint_pairs);
+        drop(_endpoint_pair_storage);
         let zero_entity_support_runs =
             zero_entity_support_runs(ctx, parsed_zero_entity_support_runs, &zero_entity_records)?;
+        drop(_support_run_storage);
         let zero_entity_vertex_incidences =
             zero_entity_vertex_incidences(ctx, bytes, zero_entity_range, &zero_entity_records)?;
         let consolidated_edge_nodes =
