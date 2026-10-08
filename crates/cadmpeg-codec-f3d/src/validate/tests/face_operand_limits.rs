@@ -196,6 +196,7 @@ fn face_result(
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
         policy.limits.max_collection_items = max_items;
         policy.limits.max_retained_bytes = max_retained;
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -462,4 +463,20 @@ fn face_recipe_marker_skips_comparison_admission() {
         None,
     );
     assert!(face_result(Case::NodeOffsets, u64::MAX, u64::MAX).is_ok());
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |decode| {
+        let error = decode
+            .equal(
+                &[-1_i32, -1, 2][..],
+                &[-1_i32, -1, 2][..],
+                "compare F3D face recipe node marker",
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "compare F3D face recipe node marker")
+        );
+    });
 }

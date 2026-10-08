@@ -146,7 +146,7 @@ fn vertex_recipe_valid_at(recipe_offset: u64) -> bool {
         draft.recipe_program_offset = recipe_offset.saturating_add(18);
         draft.next_byte_offset = draft.recipe_program_offset.saturating_add(4);
         let vertex = DesignVertexRecipe::try_new(draft).unwrap();
-        let stream = super::super::design_stream(&vertex.recipe_id);
+        let stream = super::super::design_stream(decode, &vertex.recipe_id).unwrap();
         let scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:scope#10",
             DesignFeatureKind::WorkPoint,

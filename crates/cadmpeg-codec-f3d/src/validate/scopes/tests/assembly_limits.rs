@@ -23,7 +23,9 @@ fn assembly_target_header_lookup_preserves_work_refusal() {
 
 #[test]
 fn bounded_class_tag_matches_skip_comparison_admission() {
-    crate::test_support::with_decode_context(|decode| {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |decode| {
         let header = crate::records::decal::DesignRecordHeader {
             id: "f3d:test:design-record-header#1".into(),
             record_index: 1,
@@ -50,6 +52,18 @@ fn bounded_class_tag_matches_skip_comparison_admission() {
         )
         .unwrap());
         assert!(decode.resource_refusal().is_none());
+        let error = decode
+            .equal(
+                "positive control",
+                "positive control",
+                "compare F3D assembly target class tag",
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "compare F3D assembly target class tag")
+        );
     });
 }
 
@@ -91,4 +105,62 @@ fn axial_guid_offset_overflow_skips_work_admission() {
         u64::MAX
     )
     .unwrap());
+}
+
+#[test]
+fn joint_origin_builds_only_the_assembly_index_it_reads() {
+    use crate::records::feature::scope::{
+        DesignJointOriginReference, DesignJointOriginTransform, DesignParameterScope,
+        DesignScopePayload,
+    };
+    for referenced in [false, true] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        crate::test_support::with_decode_policy(&policy, |decode| {
+            let ir = cadmpeg_ir::CadIr::empty();
+            let origin = DesignJointOriginTransform {
+                joint_origin_transform:
+                    crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+                joint_origin_transform_offset: 60,
+                reference: referenced.then_some(DesignJointOriginReference {
+                    joint_origin_reference: 2,
+                    joint_origin_reference_offset: 46,
+                }),
+            };
+            let native = crate::native::F3dNative {
+                design_parameter_scopes: vec![DesignParameterScope::empty(
+                    "f3d:test:scope#1",
+                    DesignScopePayload::JointOrigin(Some(origin)),
+                    1,
+                )],
+                ..Default::default()
+            };
+            let ctx = crate::validate::Ctx::new(&ir, &native, decode).unwrap();
+            let operation = if referenced {
+                "group F3D assembly scopes by frame"
+            } else {
+                "group F3D assembly scopes by offset"
+            };
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                operation,
+                None,
+            );
+            let mut findings = Vec::new();
+            super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+            assert!(decode.resource_refusal().is_none());
+            let mut storage = decode
+                .reserve_scoped(0, "hold test assembly index")
+                .unwrap();
+            let error = if referenced {
+                super::super::assembly_scopes_by_frame(&ctx, &mut storage).unwrap_err()
+            } else {
+                super::super::assembly_scopes_by_offset(&ctx, &mut storage).unwrap_err()
+            };
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == operation)
+            );
+        });
+    }
 }
