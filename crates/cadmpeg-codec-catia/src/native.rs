@@ -4642,18 +4642,6 @@ impl GraphRecordIndex {
     }
 }
 
-fn same_design_class(
-    ctx: &DecodeContext<'_>,
-    left: &CatiaDesignClass,
-    right: &CatiaDesignClass,
-    operation: &'static str,
-) -> Result<bool, CodecError> {
-    Ok(
-        ctx.equal_bytes(left.entry.as_bytes(), right.entry.as_bytes(), operation)?
-            && ctx.equal_bytes(left.name.as_bytes(), right.name.as_bytes(), operation)?,
-    )
-}
-
 /// Design objects of all graphs. Each graph's entities are the contiguous run
 /// of entity records naming it, in record order.
 #[cfg(test)]
@@ -4674,9 +4662,13 @@ fn design_objects(
             .count();
         let mut storage = ctx.reserve_scoped(0, "catia_design_test_index")?;
         let index = GraphRecordIndex::new(ctx, &mut storage, &graph.records)?;
-        let mut graph_objects =
-            graph_design_objects(ctx, graph, &entity_records[start..start + count], &index)?;
-        ctx.append_vec(&mut objects, &mut graph_objects, "catia_design_objects")?;
+        graph_design_objects(
+            ctx,
+            graph,
+            &entity_records[start..start + count],
+            &index,
+            &mut objects,
+        )?;
     }
     Ok(objects)
 }
@@ -4688,7 +4680,8 @@ fn graph_design_objects(
     graph: &CatiaObjectGraph,
     entities: &[CatiaEntityRecord],
     record_index: &GraphRecordIndex,
-) -> Result<Vec<CatiaDesignObject>, CodecError> {
+    objects: &mut Vec<CatiaDesignObject>,
+) -> Result<(), CodecError> {
     // Owner groups, their positions and the per-object class sets are dropped
     // once the objects are built.
     let mut scratch = ctx.reserve_scoped(0, "catia_design_owner_scratch")?;
@@ -4723,7 +4716,6 @@ fn graph_design_objects(
             ctx.push_vec(&mut fields[index].1, record, "catia_design_owner_fields")
         })?;
     }
-    let mut objects = Vec::new();
     for (ordinal, (owner_entity_id, records)) in ctx
         .admit_iter(&fields, "catia_design_owner_group_visits")?
         .enumerate()
@@ -4875,9 +4867,9 @@ fn graph_design_objects(
             relations,
             parallel_reference_table,
         };
-        ctx.push_vec(&mut objects, object, "catia_design_objects")?;
+        ctx.push_vec(objects, object, "catia_design_objects")?;
     }
-    Ok(objects)
+    Ok(())
 }
 
 fn design_parallel_reference_table(
@@ -4890,8 +4882,13 @@ fn design_parallel_reference_table(
     if records.len() < 2 {
         return Ok(None);
     }
+    let mut column_storage = ctx.reserve_scoped(0, "catia_design_column_scratch")?;
     let mut columns = Vec::new();
-    for record in ctx.admit_iter(records, "catia_native_parallel_reference_record_visits")? {
+    let mut record_rows = records.iter();
+    while let Some(record) = ctx.next_charged(
+        &mut record_rows,
+        "catia_native_parallel_reference_record_visits",
+    )? {
         let [PayloadField::List {
             declared_count,
             items,
@@ -4915,23 +4912,21 @@ fn design_parallel_reference_table(
         {
             return Ok(None);
         }
-        let column = (
-            CatiaDesignReferenceColumn {
-                field: ctx.copy_retained_text(&record.id, "catia_design_column_field")?,
-                field_class: design_class(ctx, record)?,
-                list_payload_offset: u64_from_index(*list_offset),
-            },
-            items.as_slice(),
-        );
-        ctx.push_vec(&mut columns, column, "catia_design_columns")?;
+        column_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut columns,
+                (*record, *list_offset, items.as_slice()),
+                "catia_design_columns",
+            )
+        })?;
     }
-    let Some((_, first_items)) = columns.first() else {
+    let Some((_, _, first_items)) = columns.first() else {
         return Ok(None);
     };
     let row_count = first_items.len();
     if ctx.any_by(
         &columns,
-        |(_, references)| Ok(references.len() != row_count),
+        |(_, _, references)| Ok(references.len() != row_count),
         "catia_native_parallel_reference_column_checks",
     )? {
         return Ok(None);
@@ -4942,7 +4937,7 @@ fn design_parallel_reference_table(
         .enumerate()
     {
         let mut cells = Vec::new();
-        for (_, references) in
+        for (_, _, references) in
             ctx.admit_iter(&columns, "catia_native_parallel_reference_row_cells")?
         {
             let ListItem::Reference {
@@ -4979,17 +4974,32 @@ fn design_parallel_reference_table(
             let mut fields = std::collections::BTreeSet::new();
             let matches = ctx.all_by(
                 columns.iter().zip(&cells),
-                |((column, _), cell)| {
-                    let (Some(column_class), Some(field), Some(cell_class), Some(object)) = (
-                        column.field_class.as_ref(),
+                |((column, _, _), cell)| {
+                    let (
+                        Some(column_entry),
+                        Some(column_name),
+                        Some(field),
+                        Some(cell_class),
+                        Some(object),
+                    ) = (
+                        column.class_entry(),
+                        column.class_name(),
                         cell.field(),
                         cell.field_class(),
                         cell.design_object(),
-                    ) else {
+                    )
+                    else {
                         return Ok(false);
                     };
-                    Ok(same_design_class(ctx, cell_class, column_class, MATCH)?
-                        && ctx.equal_bytes(object.as_bytes(), member.as_bytes(), MATCH)?
+                    Ok(ctx.equal_bytes(
+                        cell_class.entry.as_bytes(),
+                        column_entry.as_bytes(),
+                        MATCH,
+                    )? && ctx.equal_bytes(
+                        cell_class.name.as_bytes(),
+                        column_name.as_bytes(),
+                        MATCH,
+                    )? && ctx.equal_bytes(object.as_bytes(), member.as_bytes(), MATCH)?
                         && fields_storage.with_storage(|| {
                             ctx.insert_btree_set(
                                 &mut fields,
@@ -5011,8 +5021,16 @@ fn design_parallel_reference_table(
         };
         ctx.push_vec(&mut rows, reference_row, "catia_design_reference_rows")?;
     }
-    let columns = ctx.collect_vec(
-        columns.into_iter().map(|(column, _)| column),
+    let columns = ctx.try_collect_vec(
+        columns
+            .into_iter()
+            .map(|(record, offset, _)| -> Result<_, CodecError> {
+                Ok(CatiaDesignReferenceColumn {
+                    field: ctx.copy_retained_text(&record.id, "catia_design_column_field")?,
+                    field_class: design_class(ctx, record)?,
+                    list_payload_offset: u64_from_index(offset),
+                })
+            }),
         "catia_design_table_columns",
     )?;
     CatiaDesignParallelReferenceTable::new(ctx, columns, rows)
@@ -5642,12 +5660,9 @@ fn relation_type_signature_charged(
     };
     if !input_clause.is_empty() {
         let mut clause_start = 0;
-        for (offset, byte) in ctx
-            .admit_iter(
-                input_clause.as_bytes(),
-                "catia_native_signature_clause_visits",
-            )?
-            .enumerate()
+        let mut clause_bytes = input_clause.as_bytes().iter().enumerate();
+        while let Some((offset, byte)) =
+            ctx.next_charged(&mut clause_bytes, "catia_native_signature_clause_visits")?
         {
             if *byte == b',' {
                 let Some(input) = parse_clause(&input_clause[clause_start..offset])? else {
@@ -7323,6 +7338,28 @@ fn relation_parameter_dependencies(
     )
 }
 
+/// Borrows the canonical parameter prefix before an optional ordinal suffix.
+pub(crate) fn relation_symbol_parameter<'a>(
+    ctx: &DecodeContext<'_>,
+    symbol: &'a str,
+) -> Result<Option<&'a str>, CodecError> {
+    let Some(rest) = symbol.strip_prefix('#') else {
+        return Ok(None);
+    };
+    let mut bytes = rest.bytes().enumerate();
+    while let Some((offset, byte)) =
+        ctx.next_charged(&mut bytes, "catia_native_symbol_parameter_scan")?
+    {
+        if byte == b'_' {
+            return Ok((offset > 0).then_some(&symbol[..offset + 2]));
+        }
+        if !byte.is_ascii_digit() {
+            return Ok(None);
+        }
+    }
+    Ok(None)
+}
+
 pub(crate) fn dependency_matches_input(
     ctx: &DecodeContext<'_>,
     dependency: &CatiaRelationParameterDependency,
@@ -7332,7 +7369,7 @@ pub(crate) fn dependency_matches_input(
     let Some(suffix) = ctx.strip_prefix(
         dependency.symbol.as_str(),
         input.parameter.as_str(),
-        OPERATION,
+        "catia_native_input_prefix_checks",
     )?
     else {
         return Ok(false);
@@ -7340,7 +7377,7 @@ pub(crate) fn dependency_matches_input(
     let suffix = ctx.trim_start_matches(
         suffix,
         |character| Ok(character.is_ascii_whitespace()),
-        OPERATION,
+        "catia_native_input_suffix_whitespace",
     )?;
     if suffix.is_empty() {
         return Ok(true);
@@ -7365,45 +7402,53 @@ fn resolved_relation_program_inputs(
     dependencies: &[CatiaRelationParameterDependency],
 ) -> Result<Option<Vec<CatiaRelationProgramInput>>, CodecError> {
     const OPERATION: &str = "catia_native_input_matching";
-    // The input each dependency names, as (input, dependency) positions.
+    let (input_index, _index_storage) = ctx.unique_index(
+        signature
+            .inputs
+            .iter()
+            .enumerate()
+            .map(|(index, input)| (input.parameter.as_str(), index)),
+        "catia_native_input_signature_index",
+    )?;
     let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
-    let mut matches = scratch
-        .with_storage(|| ctx.collection_vec::<(usize, usize)>(dependencies.len(), OPERATION))?;
-    for (dependency_index, dependency) in ctx
-        .admit_iter(dependencies, "catia_native_input_dependency_checks")?
-        .enumerate()
+    let mut matches = Vec::<(usize, usize)>::new();
+    let mut dependency_rows = dependencies.iter().enumerate();
+    while let Some((dependency_index, dependency)) =
+        ctx.next_charged(&mut dependency_rows, "catia_native_input_dependency_checks")?
     {
-        let mut inputs = signature.inputs.iter().enumerate();
-        let Some((input_index, _)) = ctx.find_by(
-            &mut inputs,
-            |(_, input)| dependency_matches_input(ctx, dependency, input),
+        let Some(parameter) = relation_symbol_parameter(ctx, &dependency.symbol)? else {
+            return Ok(None);
+        };
+        let Some(&Some(index)) = ctx.get_hash_map(
+            &input_index,
+            parameter,
             "catia_native_input_signature_checks",
         )?
         else {
             return Ok(None);
         };
-        if ctx.any_by(
-            inputs,
-            |(_, input)| dependency_matches_input(ctx, dependency, input),
-            "catia_native_input_signature_checks",
-        )? {
+        if !dependency_matches_input(ctx, dependency, &signature.inputs[index])? {
             return Ok(None);
         }
-        matches.push((input_index, dependency_index));
+        scratch
+            .with_storage(|| ctx.push_vec(&mut matches, (index, dependency_index), OPERATION))?;
     }
     ctx.sort_unstable_by_key(&mut matches, |pair| *pair, Ord::cmp, OPERATION)?;
     let mut entity_ids = HashSet::new();
+    let mut output_storage = ctx.reserve_scoped(0, "catia_native_program_input_scratch")?;
     let mut inputs = Vec::new();
-    let mut matched = matches.iter().peekable();
-    for (input_index, input) in ctx
-        .admit_iter(&signature.inputs, "catia_native_input_signature_visits")?
-        .enumerate()
+    let mut match_position = 0;
+    let mut input_rows = signature.inputs.iter().enumerate();
+    while let Some((input_index, input)) =
+        ctx.next_charged(&mut input_rows, "catia_native_input_signature_visits")?
     {
         let mut selected = None::<&CatiaEntityReference>;
+        let group_end =
+            ctx.partition_point(&matches, |pair| Ok(pair.0 <= input_index), OPERATION)?;
+        let mut group = matches[match_position..group_end].iter();
         while let Some(&(_, dependency_index)) =
-            matched.next_if(|(matched_input, _)| *matched_input == input_index)
+            ctx.next_charged(&mut group, "catia_native_input_candidate_dependencies")?
         {
-            ctx.charge_work(1, "catia_native_input_candidate_dependencies")?;
             let [candidate] = dependencies[dependency_index].candidates.as_slice() else {
                 return Ok(None);
             };
@@ -7418,6 +7463,7 @@ fn resolved_relation_program_inputs(
                 None => selected = Some(candidate),
             }
         }
+        match_position = group_end;
         let Some(entity) = selected else {
             return Ok(None);
         };
@@ -7430,13 +7476,18 @@ fn resolved_relation_program_inputs(
         })? {
             return Ok(None);
         }
-        let input = CatiaRelationProgramInput {
-            parameter: ctx.copy_retained_text(&input.parameter, "catia_native_input_parameter")?,
-            value_type: ctx.copy_retained_text(&input.input_type, "catia_native_input_type")?,
-            entity: entity.copy_charged(ctx)?,
-        };
-        ctx.push_vec(&mut inputs, input, "catia_native_program_inputs")?;
+        let input = output_storage.with_storage(|| -> Result<_, CodecError> {
+            Ok(CatiaRelationProgramInput {
+                parameter: ctx
+                    .copy_retained_text(&input.parameter, "catia_native_input_parameter")?,
+                value_type: ctx.copy_retained_text(&input.input_type, "catia_native_input_type")?,
+                entity: entity.copy_charged(ctx)?,
+            })
+        })?;
+        output_storage
+            .with_storage(|| ctx.push_vec(&mut inputs, input, "catia_native_program_inputs"))?;
     }
+    output_storage.commit()?;
     Ok(Some(inputs))
 }
 
@@ -8932,8 +8983,17 @@ impl<'run, 'ctx> LegacyEvaluatedValueNames<'run, 'ctx> {
             {
                 continue;
             }
-            ctx.charge_work(u64_from_index(field.value.len()), OPERATION)?;
-            if !legacy_entity::valid_identifier(&field.value) {
+            let mut characters = field.value.chars();
+            let valid_first = ctx
+                .next_charged(&mut characters, OPERATION)?
+                .is_some_and(|character| character == '_' || character.is_alphabetic());
+            if !valid_first
+                || !ctx.all_by(
+                    characters,
+                    |character| Ok(character == '_' || character.is_alphanumeric()),
+                    OPERATION,
+                )?
+            {
                 continue;
             }
             name_storage.with_storage(|| -> Result<(), CodecError> {
@@ -9254,13 +9314,15 @@ fn consolidated_cone_faces(
             .map(|(index, face)| -> Result<_, CodecError> {
                 const LOOKUP: &str = "catia_native_cone_face_lookups";
                 // The class-18 records chained after the face; each link moves forward.
+                let mut face_scratch =
+                    ctx.reserve_scoped(0, "catia_native_cone_face_local_scratch")?;
                 let mut positions = Vec::new();
                 let mut next = face.end;
                 while let Some(&end) = ctx.get_hash_map(&class18_ends, &next, LOOKUP)? {
                     if end <= next {
                         break;
                     }
-                    scratch.with_storage(|| {
+                    face_scratch.with_storage(|| {
                         ctx.push_vec(
                             &mut positions,
                             u64_from_index(next),
@@ -9270,14 +9332,15 @@ fn consolidated_cone_faces(
                     next = end;
                 }
                 let mut point_names = Vec::new();
-                for position in
-                    ctx.admit_iter(&positions, "catia_native_cone_face_position_visits")?
+                let mut position_rows = positions.iter();
+                while let Some(position) =
+                    ctx.next_charged(&mut position_rows, "catia_native_cone_face_position_visits")?
                 {
                     let Some(id) = ctx.get_hash_map(&point_ids, position, LOOKUP)? else {
                         point_names.clear();
                         break;
                     };
-                    scratch.with_storage(|| {
+                    face_scratch.with_storage(|| {
                         ctx.push_vec(&mut point_names, *id, "catia_native_cone_face_point_names")
                     })?;
                 }
@@ -10689,8 +10752,7 @@ impl CatiaNative {
                 )?;
             }
             drop(incidences);
-            let mut objects = graph_design_objects(ctx, &graph, &entities, &record_index)?;
-            ctx.append_vec(&mut design_objects, &mut objects, "catia_design_objects")?;
+            graph_design_objects(ctx, &graph, &entities, &record_index, &mut design_objects)?;
             let start = entity_records.len();
             ctx.append_vec(
                 &mut entity_records,

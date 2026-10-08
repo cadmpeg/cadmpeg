@@ -1348,7 +1348,8 @@ pub(crate) fn native_object_graph(
             suffix: None,
             suffix_schema_selection: None,
         };
-        ctx.push_vec(&mut entities, row, "catia_native_graph_entities")?;
+        index_storage
+            .with_storage(|| ctx.push_vec(&mut entities, row, "catia_native_graph_entities"))?;
     }
     Ok((
         CatiaObjectGraph {
