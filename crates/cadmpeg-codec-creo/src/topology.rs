@@ -186,19 +186,18 @@ impl FaceComponent {
         face_ids: Vec<u32>,
         curve_ids: Vec<u32>,
     ) -> Result<Option<Self>, CodecError> {
-        let work = cadmpeg_core::decode::u64_from_index(face_ids.len())
-            .checked_mul(2)
-            .and_then(|work| {
-                work.checked_add(cadmpeg_core::decode::u64_from_index(curve_ids.len()))
-            })
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo face component validation work", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(work, "creo face component validation work")?;
         if face_ids.is_empty()
-            || face_ids.contains(&0)
-            || face_ids.windows(2).any(|pair| pair[0] >= pair[1])
-            || curve_ids.windows(2).any(|pair| pair[0] >= pair[1])
+            || face_ids[0] == 0
+            || ctx.any_by(
+                face_ids.windows(2),
+                |pair| Ok(pair[0] >= pair[1]),
+                "creo face component validation work",
+            )?
+            || ctx.any_by(
+                curve_ids.windows(2),
+                |pair| Ok(pair[0] >= pair[1]),
+                "creo face component validation work",
+            )?
         {
             return Ok(None);
         }
