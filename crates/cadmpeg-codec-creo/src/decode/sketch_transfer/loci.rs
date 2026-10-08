@@ -1371,7 +1371,8 @@ pub(in super::super) fn visit_section_skamps<B>(
     if !feature_skamp_table_complete(relation) {
         return Ok(ControlFlow::Continue(()));
     }
-    for skamp in ctx.admit_iter(relation.skamps(), "creo relation skamp rows")? {
+    let mut skamps = relation.skamps().iter();
+    while let Some(skamp) = ctx.next_charged(&mut skamps, "creo relation skamp rows")? {
         if active_only && !section_skamp_active(skamp.status) {
             continue;
         }
@@ -1392,7 +1393,8 @@ pub(in super::super) fn visit_all_section_skamps<B>(
     let Some(relation) = definition.relations.as_ref() else {
         return Ok(ControlFlow::Continue(()));
     };
-    for skamp in ctx.admit_iter(relation.skamps(), "creo relation skamp rows")? {
+    let mut skamps = relation.skamps().iter();
+    while let Some(skamp) = ctx.next_charged(&mut skamps, "creo relation skamp rows")? {
         if let ControlFlow::Break(value) = visit(skamp)? {
             return Ok(ControlFlow::Break(value));
         }
