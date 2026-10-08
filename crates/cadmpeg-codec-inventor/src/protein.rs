@@ -107,7 +107,10 @@ fn parse_stream<'a>(
         .child(source.start() + protein_header::LEN, source.end())
         .ok_or_else(|| CodecError::Malformed("Inventor Protein payload range is invalid".into()))?;
     let archive = ArchiveSnapshot::new(ctx, payload)?;
-    for entry in ctx.admit_iter(archive.entries(), "validate Inventor Protein entry names")? {
+    let mut entries = archive.entries().iter();
+    while let Some(entry) =
+        ctx.next_charged(&mut entries, "validate Inventor Protein entry names")?
+    {
         validate_entry_name(ctx, &entry.name)?;
     }
     Ok(ParsedProtein::Package {
@@ -227,6 +230,7 @@ mod tests {
     use std::io::Write as _;
 
     use cadmpeg_container::compound::CompoundSnapshot;
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     use cadmpeg_protein::{
         CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
@@ -265,6 +269,45 @@ mod tests {
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.used == 5 && limit.additional == 1
         ));
+    }
+
+    #[test]
+    fn protein_name_validation_admits_only_the_next_archive_entry() {
+        let entries = [
+            ("Schemas/First.xml", &b"first"[..]),
+            ("Schemas/Second.xml", &b"second"[..]),
+        ];
+        for count in [1, 2] {
+            let zip = zip_entries(&entries[..count]);
+            let mut bytes = u32::try_from(zip.len())
+                .expect("fixture length")
+                .to_le_bytes()
+                .to_vec();
+            bytes.extend_from_slice(&zip);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = u64::MAX;
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+            let probe = RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                "validate Inventor Protein entry names",
+                Some(1),
+            );
+            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = parse_stream(&ctx, root)
+            else {
+                drop(probe);
+                panic!("the first archive-name step must be charged before validation");
+            };
+            drop(probe);
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "validate Inventor Protein entry names");
+            assert_eq!(limit.additional, 1);
+            assert!(matches!(
+                ctx.finish_session(),
+                Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit
+            ));
+        }
     }
 
     #[test]
@@ -726,17 +769,48 @@ mod tests {
         let instance_crc_work = 2 * cadmpeg_core::decode::u64_from_index(instance.len());
         // Validation and selection admit each entry. Both the filtered stream
         // collection and the fallible record collection charge two yields + end.
-        let archive_entry_work =
+        let original_archive_entry_work =
             2 * cadmpeg_core::decode::u64_from_index(archive_entry_count) + 2 * (2 + 1);
+        // The validation scan now charges its end probe before returning.
+        let archive_entry_work = original_archive_entry_work + 1;
         // Counts the outer ZIP snapshot/name checks, one catalog load and both frame/decode paths, instance CRCs/lookups/name copies, and archive traversals/collections.
-        policy.limits.max_work_units = inventory_work
+        let common_work = inventory_work
             + archive_snapshot_work
             + schema_and_instance_decode_work
             + instance_crc_work
             + cadmpeg_core::decode::u64_from_index(instance_entry_name_bytes)
             + archive_name_validation_work
-            + instance_open_lookup_work
-            + archive_entry_work;
+            + instance_open_lookup_work;
+        let original_work = common_work + original_archive_entry_work;
+        let mut original_policy = DecodePolicy::service();
+        original_policy.limits.max_work_units = original_work;
+        let original_arena = DecodeArena::new();
+        let (original_ctx, original_root) =
+            DecodeContext::from_root_bytes(&bytes, &original_arena, &original_policy)
+                .expect("package fits the service input limit");
+        let ParsedProtein::Package {
+            archive: original_archive,
+            payload: original_payload,
+            ..
+        } = parse_stream(&original_ctx, original_root).expect("package parses")
+        else {
+            panic!("package state");
+        };
+        let Err(cadmpeg_core::CodecError::ResourceLimit(original_limit)) =
+            decode_instances_from(&original_ctx, &original_archive, original_payload)
+        else {
+            panic!("the former exact budget must refuse at the new end probe");
+        };
+        assert_eq!(original_limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(original_limit.operation, "admit Inventor Protein instance records");
+        assert_eq!(original_limit.used, original_work);
+        assert_eq!(original_limit.additional, 1);
+        assert!(matches!(
+            original_ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == original_limit
+        ));
+
+        policy.limits.max_work_units = common_work + archive_entry_work;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("package fits the service input limit");
         let ParsedProtein::Package {

@@ -229,10 +229,10 @@ pub(crate) fn validate_native(
     validate_ufrx(ctx, ir, &data, &mut findings)?;
     validate_assembly(ctx, ir, &data, &mut findings)?;
     validate_presentation(ctx, ir, &data, &mut findings)?;
-    for issue in ctx.admit_iter(
-        &data.structural_issues,
-        "validate Inventor structural issues",
-    )? {
+    let mut structural_issues = data.structural_issues.iter();
+    while let Some(issue) =
+        ctx.next_charged(&mut structural_issues, "validate Inventor structural issues")?
+    {
         push_finding(
             ctx,
             &mut findings,
@@ -241,7 +241,10 @@ pub(crate) fn validate_native(
             Some(ctx.copy_retained_text(&issue.id, "retain Inventor structural issue id")?),
         )?;
     }
-    for issue in ctx.admit_iter(&data.property_issues, "validate Inventor property issues")? {
+    let mut property_issues = data.property_issues.iter();
+    while let Some(issue) =
+        ctx.next_charged(&mut property_issues, "validate Inventor property issues")?
+    {
         push_finding(
             ctx,
             &mut findings,
@@ -318,7 +321,10 @@ fn validate_design(
         },
         "Inventor PmDc unit",
     )?;
-    for parameter in ctx.admit_iter(&data.pm_dc_parameters, "validate Inventor PmDc parameters")? {
+    let mut parameter_steps = data.pm_dc_parameters.iter();
+    while let Some(parameter) =
+        ctx.next_charged(&mut parameter_steps, "validate Inventor PmDc parameters")?
+    {
         let key = (
             parameter.identity.segment_token.as_str(),
             parameter.identity.record_ordinal,
@@ -360,10 +366,10 @@ fn validate_design(
             )?;
         }
     }
-    for expression in ctx.admit_iter(
-        &data.pm_dc_expressions,
-        "validate Inventor PmDc expressions",
-    )? {
+    let mut expression_steps = data.pm_dc_expressions.iter();
+    while let Some(expression) =
+        ctx.next_charged(&mut expression_steps, "validate Inventor PmDc expressions")?
+    {
         let key = (
             expression.identity.segment_token.as_str(),
             expression.identity.record_ordinal,
@@ -399,7 +405,10 @@ fn validate_design(
             )?;
         }
     }
-    for unit in ctx.admit_iter(&data.pm_dc_units, "validate Inventor PmDc units")? {
+    let mut unit_steps = data.pm_dc_units.iter();
+    while let Some(unit) =
+        ctx.next_charged(&mut unit_steps, "validate Inventor PmDc units")?
+    {
         let key = (
             unit.identity.segment_token.as_str(),
             unit.identity.record_ordinal,
@@ -448,10 +457,10 @@ fn validate_design(
     }
     let (mut native_parameter_ids, mut native_parameter_ids_storage) =
         ctx.temporary_set(0, "index Inventor PmDc parameter identities")?;
-    for record in ctx.admit_iter(
-        &data.pm_dc_parameters,
-        "index Inventor PmDc parameter identities",
-    )? {
+    let mut identity_records = data.pm_dc_parameters.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut identity_records, "index Inventor PmDc parameter identities")?
+    {
         native_parameter_ids_storage.with_storage(|| {
             let id = ctx.format_retained(
                 format_args!(
@@ -467,7 +476,10 @@ fn validate_design(
             )
         })?;
     }
-    for parameter in ctx.admit_iter(&ir.model.parameters, "validate Inventor neutral parameters")? {
+    let mut neutral_parameters = ir.model.parameters.iter();
+    while let Some(parameter) =
+        ctx.next_charged(&mut neutral_parameters, "validate Inventor neutral parameters")?
+    {
         let resolves = match parameter.native_ref.as_ref() {
             Some(reference) => ctx.contains_hash_set(
                 &native_parameter_ids,
@@ -491,10 +503,10 @@ fn validate_design(
             )?;
         }
     }
-    for issue in ctx.admit_iter(
-        &data.design_record_issues,
-        "validate Inventor design record issues",
-    )? {
+    let mut design_issues = data.design_record_issues.iter();
+    while let Some(issue) =
+        ctx.next_charged(&mut design_issues, "validate Inventor design record issues")?
+    {
         push_finding(
             ctx,
             findings,
@@ -607,7 +619,10 @@ fn validate_sketches(
         },
         "Inventor PmDc direction",
     )?;
-    for sketch in ctx.admit_iter(&data.pm_dc_sketches, "validate Inventor PmDc sketches")? {
+    let mut sketch_steps = data.pm_dc_sketches.iter();
+    while let Some(sketch) =
+        ctx.next_charged(&mut sketch_steps, "validate Inventor PmDc sketches")?
+    {
         let token = sketch.identity.segment_token.as_str();
         // Each reference source is checked where it lies, stopping at the
         // first reference that does not resolve.
@@ -642,10 +657,10 @@ fn validate_sketches(
             )?;
         }
     }
-    for entity in ctx.admit_iter(
-        &data.pm_dc_sketch_entities,
-        "validate Inventor PmDc sketch entities",
-    )? {
+    let mut entity_steps = data.pm_dc_sketch_entities.iter();
+    while let Some(entity) =
+        ctx.next_charged(&mut entity_steps, "validate Inventor PmDc sketch entities")?
+    {
         let token = entity.identity.segment_token.as_str();
         let header_matches = record_is_exact(
             token,
@@ -717,7 +732,10 @@ fn validate_sketches(
             )?;
         }
     }
-    for transform in ctx.admit_iter(&data.pm_dc_transforms, "validate Inventor PmDc transforms")? {
+    let mut transform_steps = data.pm_dc_transforms.iter();
+    while let Some(transform) =
+        ctx.next_charged(&mut transform_steps, "validate Inventor PmDc transforms")?
+    {
         if !record_is_exact(
             transform.identity.segment_token.as_str(),
             transform.identity.record_ordinal,
@@ -738,10 +756,10 @@ fn validate_sketches(
             )?;
         }
     }
-    for constraint in ctx.admit_iter(
-        &data.pm_dc_sketch_constraints,
-        "validate Inventor PmDc sketch constraints",
-    )? {
+    let mut constraint_steps = data.pm_dc_sketch_constraints.iter();
+    while let Some(constraint) =
+        ctx.next_charged(&mut constraint_steps, "validate Inventor PmDc sketch constraints")?
+    {
         let header = &constraint.header;
         let token = constraint.identity.segment_token.as_str();
         let references_match = record_is_exact(
@@ -818,7 +836,10 @@ fn validate_sketches(
             )?;
         }
     }
-    for direction in ctx.admit_iter(&data.pm_dc_directions, "validate Inventor PmDc directions")? {
+    let mut direction_steps = data.pm_dc_directions.iter();
+    while let Some(direction) =
+        ctx.next_charged(&mut direction_steps, "validate Inventor PmDc directions")?
+    {
         if !record_is_exact(
             direction.identity.segment_token.as_str(),
             direction.identity.record_ordinal,
@@ -841,7 +862,10 @@ fn validate_sketches(
     }
     let (mut native_sketches, mut native_sketches_storage) =
         ctx.temporary_set(0, "index Inventor PmDc sketches")?;
-    for record in ctx.admit_iter(&data.pm_dc_sketches, "index Inventor PmDc sketches")? {
+    let mut sketch_index = data.pm_dc_sketches.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut sketch_index, "index Inventor PmDc sketches")?
+    {
         native_sketches_storage.with_storage(|| {
             ctx.insert_hash_set(
                 &mut native_sketches,
@@ -852,10 +876,10 @@ fn validate_sketches(
     }
     let (mut native_entities, mut native_entities_storage) =
         ctx.temporary_set(0, "index Inventor PmDc sketch entities")?;
-    for record in ctx.admit_iter(
-        &data.pm_dc_sketch_entities,
-        "index Inventor PmDc sketch entities",
-    )? {
+    let mut entity_index = data.pm_dc_sketch_entities.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut entity_index, "index Inventor PmDc sketch entities")?
+    {
         native_entities_storage.with_storage(|| {
             ctx.insert_hash_set(
                 &mut native_entities,
@@ -866,10 +890,10 @@ fn validate_sketches(
     }
     let (mut native_constraints, mut native_constraints_storage) =
         ctx.temporary_set(0, "index Inventor PmDc sketch constraints")?;
-    for record in ctx.admit_iter(
-        &data.pm_dc_sketch_constraints,
-        "index Inventor PmDc sketch constraints",
-    )? {
+    let mut constraint_index = data.pm_dc_sketch_constraints.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut constraint_index, "index Inventor PmDc sketch constraints")?
+    {
         native_constraints_storage.with_storage(|| {
             ctx.insert_hash_set(
                 &mut native_constraints,
@@ -878,7 +902,10 @@ fn validate_sketches(
             )
         })?;
     }
-    for sketch in ctx.admit_iter(&ir.model.sketches, "validate Inventor neutral sketches")? {
+    let mut neutral_sketches = ir.model.sketches.iter();
+    while let Some(sketch) =
+        ctx.next_charged(&mut neutral_sketches, "validate Inventor neutral sketches")?
+    {
         let resolves = match sketch.native_ref.as_deref() {
             Some(reference) => ctx.contains_hash_set(
                 &native_sketches,
@@ -902,10 +929,10 @@ fn validate_sketches(
             )?;
         }
     }
-    for entity in ctx.admit_iter(
-        &ir.model.sketch_entities,
-        "validate Inventor neutral sketch entities",
-    )? {
+    let mut neutral_entities = ir.model.sketch_entities.iter();
+    while let Some(entity) =
+        ctx.next_charged(&mut neutral_entities, "validate Inventor neutral sketch entities")?
+    {
         let native_resolves = match entity.native_ref.as_deref() {
             Some(reference) => ctx.contains_hash_set(
                 &native_entities,
@@ -940,10 +967,10 @@ fn validate_sketches(
             )?;
         }
     }
-    for constraint in ctx.admit_iter(
-        &ir.model.sketch_constraints,
-        "validate Inventor neutral sketch constraints",
-    )? {
+    let mut neutral_constraints = ir.model.sketch_constraints.iter();
+    while let Some(constraint) =
+        ctx.next_charged(&mut neutral_constraints, "validate Inventor neutral sketch constraints")?
+    {
         let resolves = match constraint.native_ref.as_deref() {
             Some(reference) => ctx.contains_hash_set(
                 &native_constraints,
@@ -967,10 +994,10 @@ fn validate_sketches(
             )?;
         }
     }
-    for issue in ctx.admit_iter(
-        &data.sketch_record_issues,
-        "validate Inventor sketch record issues",
-    )? {
+    let mut sketch_issues = data.sketch_record_issues.iter();
+    while let Some(issue) =
+        ctx.next_charged(&mut sketch_issues, "validate Inventor sketch record issues")?
+    {
         push_finding(
             ctx,
             findings,
@@ -1071,7 +1098,10 @@ fn validate_features(
         },
         "Inventor PmDc feature label",
     )?;
-    for feature in ctx.admit_iter(&data.pm_dc_features, "validate Inventor PmDc features")? {
+    let mut feature_steps = data.pm_dc_features.iter();
+    while let Some(feature) =
+        ctx.next_charged(&mut feature_steps, "validate Inventor PmDc features")?
+    {
         let key = (
             feature.identity.segment_token.as_str(),
             feature.identity.record_ordinal,
@@ -1104,10 +1134,10 @@ fn validate_features(
             )?;
         }
     }
-    for feature in ctx.admit_iter(
-        &data.pm_dc_pattern_features,
-        "validate Inventor PmDc pattern features",
-    )? {
+    let mut pattern_steps = data.pm_dc_pattern_features.iter();
+    while let Some(feature) =
+        ctx.next_charged(&mut pattern_steps, "validate Inventor PmDc pattern features")?
+    {
         let key = (
             feature.identity.segment_token.as_str(),
             feature.identity.record_ordinal,
@@ -1152,10 +1182,10 @@ fn validate_features(
             )?;
         }
     }
-    for property in ctx.admit_iter(
-        &data.pm_dc_feature_properties,
-        "validate Inventor PmDc feature properties",
-    )? {
+    let mut property_steps = data.pm_dc_feature_properties.iter();
+    while let Some(property) =
+        ctx.next_charged(&mut property_steps, "validate Inventor PmDc feature properties")?
+    {
         let token = property.identity.segment_token.as_str();
         let key = (token, property.identity.record_ordinal);
         let record_matches =
@@ -1212,10 +1242,10 @@ fn validate_features(
             )?;
         }
     }
-    for link in ctx.admit_iter(
-        &data.pm_dc_entity_style_links,
-        "validate Inventor entity-style links",
-    )? {
+    let mut style_link_steps = data.pm_dc_entity_style_links.iter();
+    while let Some(link) =
+        ctx.next_charged(&mut style_link_steps, "validate Inventor entity-style links")?
+    {
         let key = (
             link.identity.segment_token.as_str(),
             link.identity.record_ordinal,
@@ -1250,10 +1280,10 @@ fn validate_features(
             )?;
         }
     }
-    for label in ctx.admit_iter(
-        &data.pm_dc_feature_labels,
-        "validate Inventor PmDc feature labels",
-    )? {
+    let mut label_steps = data.pm_dc_feature_labels.iter();
+    while let Some(label) =
+        ctx.next_charged(&mut label_steps, "validate Inventor PmDc feature labels")?
+    {
         let token = label.identity.segment_token.as_str();
         let key = (token, label.identity.record_ordinal);
         let record_matches =
@@ -1289,10 +1319,10 @@ fn validate_features(
             )?;
         }
     }
-    for terminator in ctx.admit_iter(
-        &data.pm_dc_feature_terminators,
-        "validate Inventor PmDc feature terminators",
-    )? {
+    let mut terminator_steps = data.pm_dc_feature_terminators.iter();
+    while let Some(terminator) =
+        ctx.next_charged(&mut terminator_steps, "validate Inventor PmDc feature terminators")?
+    {
         let key = (
             terminator.identity.segment_token.as_str(),
             terminator.identity.record_ordinal,
@@ -1326,10 +1356,10 @@ fn validate_features(
     let mut raw_features = HashMap::new();
     let mut raw_features_storage =
         ctx.reserve_scoped(0, "index Inventor PmDc features by identity")?;
-    for feature in ctx.admit_iter(
-        &data.pm_dc_features,
-        "index Inventor PmDc features by identity",
-    )? {
+    let mut feature_index = data.pm_dc_features.iter();
+    while let Some(feature) =
+        ctx.next_charged(&mut feature_index, "index Inventor PmDc features by identity")?
+    {
         raw_features_storage.with_storage(|| {
             ctx.insert_hash_map(
                 &mut raw_features,
@@ -1341,7 +1371,10 @@ fn validate_features(
     }
     let mut labels = HashMap::new();
     let mut labels_storage = ctx.reserve_scoped(0, "index Inventor PmDc labels")?;
-    for label in ctx.admit_iter(&data.pm_dc_feature_labels, "index Inventor PmDc labels")? {
+    let mut label_index = data.pm_dc_feature_labels.iter();
+    while let Some(label) =
+        ctx.next_charged(&mut label_index, "index Inventor PmDc labels")?
+    {
         if let Some(ordinal) = label.header.owner.index().checked_sub(1) {
             labels_storage.with_storage(|| {
                 ctx.insert_hash_map(
@@ -1359,10 +1392,10 @@ fn validate_features(
     let mut properties_by_record = HashMap::new();
     let mut properties_by_record_storage =
         ctx.reserve_scoped(0, "index Inventor PmDc feature properties by record")?;
-    for property in ctx.admit_iter(
-        &data.pm_dc_feature_properties,
-        "index Inventor PmDc feature properties",
-    )? {
+    let mut property_index = data.pm_dc_feature_properties.iter();
+    while let Some(property) =
+        ctx.next_charged(&mut property_index, "index Inventor PmDc feature properties")?
+    {
         properties_storage.with_storage(|| {
             ctx.insert_hash_map(
                 &mut properties,
@@ -1385,10 +1418,10 @@ fn validate_features(
     }
     let mut results = HashMap::new();
     let mut results_storage = ctx.reserve_scoped(0, "index Inventor feature results")?;
-    for result in ctx.admit_iter(
-        &ir.model.feature_result_topologies,
-        "index Inventor feature results",
-    )? {
+    let mut feature_results = ir.model.feature_result_topologies.iter();
+    while let Some(result) =
+        ctx.next_charged(&mut feature_results, "index Inventor feature results")?
+    {
         results_storage.with_storage(|| {
             ctx.insert_hash_map(
                 &mut results,
@@ -1398,7 +1431,10 @@ fn validate_features(
             )
         })?;
     }
-    for feature in ctx.admit_iter(&ir.model.features, "validate Inventor neutral features")? {
+    let mut neutral_features = ir.model.features.iter();
+    while let Some(feature) =
+        ctx.next_charged(&mut neutral_features, "validate Inventor neutral features")?
+    {
         let raw_feature = match feature.native_ref.as_deref() {
             Some(native) => ctx
                 .get_hash_map(
@@ -1509,10 +1545,10 @@ fn validate_features(
             )?;
         }
     }
-    for result in ctx.admit_iter(
-        &ir.model.feature_result_topologies,
-        "validate Inventor feature result topologies",
-    )? {
+    let mut result_topologies = ir.model.feature_result_topologies.iter();
+    while let Some(result) =
+        ctx.next_charged(&mut result_topologies, "validate Inventor feature result topologies")?
+    {
         let collection = match result.native_ref.as_deref() {
             Some(native) => ctx
                 .get_hash_map(
@@ -1622,10 +1658,10 @@ fn validate_features(
             )?;
         }
     }
-    for issue in ctx.admit_iter(
-        &data.feature_record_issues,
-        "validate Inventor feature record issues",
-    )? {
+    let mut feature_issues = data.feature_record_issues.iter();
+    while let Some(issue) =
+        ctx.next_charged(&mut feature_issues, "validate Inventor feature record issues")?
+    {
         push_finding(
             ctx,
             findings,
@@ -1723,7 +1759,10 @@ fn validate_presentation(
 
     let (mut face_keys, mut face_keys_storage) =
         ctx.temporary_set(0, "check ASM face Design keys")?;
-    for record in ctx.admit_iter(&data.face_native_keys, "check ASM face Design keys")? {
+    let mut face_key_steps = data.face_native_keys.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut face_key_steps, "check ASM face Design keys")?
+    {
         if let Some(key) = record.asm_face_key {
             let inserted = face_keys_storage.with_storage(|| {
                 ctx.insert_hash_set(&mut face_keys, key, "check ASM face Design keys")
@@ -1746,7 +1785,10 @@ fn validate_presentation(
                 "index Inventor neutral face ids",
             )
         })?;
-    for record in ctx.admit_iter(&data.face_native_keys, "validate ASM face-native keys")? {
+    let mut face_records = data.face_native_keys.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut face_records, "validate ASM face-native keys")?
+    {
         if !ctx.contains_hash_set(
             &neutral_faces,
             record.face.as_str(),
@@ -1792,10 +1834,10 @@ fn validate_presentation(
                 "collect Inventor rendering-style keys",
             )
         })?;
-    for record in ctx.admit_iter(
-        &data.pm_app_default_styles,
-        "validate Inventor default styles",
-    )? {
+    let mut default_styles = data.pm_app_default_styles.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut default_styles, "validate Inventor default styles")?
+    {
         let key = (record.segment_token.as_str(), record.record_ordinal);
         let record_matches = match ctx.get_hash_map(
             &raw_records,
@@ -1835,10 +1877,10 @@ fn validate_presentation(
             }
         }
     }
-    for record in ctx.admit_iter(
-        &data.pm_app_rendering_styles,
-        "validate Inventor rendering styles",
-    )? {
+    let mut rendering_styles = data.pm_app_rendering_styles.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut rendering_styles, "validate Inventor rendering styles")?
+    {
         let key = (record.segment_token.as_str(), record.record_ordinal);
         let record_matches = match ctx.get_hash_map(
             &raw_records,
@@ -1860,10 +1902,10 @@ fn validate_presentation(
             )?;
         }
     }
-    for record in ctx.admit_iter(
-        &data.pm_graphics_faces,
-        "validate Inventor PmGraphics faces",
-    )? {
+    let mut graphics_faces = data.pm_graphics_faces.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut graphics_faces, "validate Inventor PmGraphics faces")?
+    {
         let token = record.segment_token.as_str();
         let key = (token, record.record_ordinal);
         let record_matches =
@@ -1880,36 +1922,40 @@ fn validate_presentation(
                 Some(ctx.copy_retained_text(&record.id, "retain Inventor PmGraphics face id")?),
             )?;
         }
-        for reference in [record.surface.index(), record.parent.index()]
-            .into_iter()
-            .chain(
-                ctx.admit_iter(
-                    record.edge_references.references(),
-                    "visit Inventor PmGraphics edge references",
-                )?
-                .map(|reference| reference.index()),
-            )
         {
-            if reference != 0 {
-                let resolves = ctx.contains_key_hash_map(
-                    &raw_records,
-                    &(token, reference - 1),
-                    "resolve Inventor PmGraphics face reference",
-                )?;
-                if !resolves {
-                    push_finding(
-                        ctx,
-                        findings,
-                        Check::NativeLinks,
-                        format_args!(
-                            "Inventor PmGraphics face reference {reference} does not resolve"
-                        ),
-                        Some(ctx.copy_retained_text(
-                            &record.id,
-                            "retain Inventor PmGraphics face id",
-                        )?),
+            let mut validate_reference = |reference| -> Result<(), CodecError> {
+                if reference != 0 {
+                    let resolves = ctx.contains_key_hash_map(
+                        &raw_records,
+                        &(token, reference - 1),
+                        "resolve Inventor PmGraphics face reference",
                     )?;
+                    if !resolves {
+                        push_finding(
+                            ctx,
+                            findings,
+                            Check::NativeLinks,
+                            format_args!(
+                                "Inventor PmGraphics face reference {reference} does not resolve"
+                            ),
+                            Some(ctx.copy_retained_text(
+                                &record.id,
+                                "retain Inventor PmGraphics face id",
+                            )?),
+                        )?;
+                    }
                 }
+                Ok(())
+            };
+            for reference in [record.surface.index(), record.parent.index()] {
+                validate_reference(reference)?;
+            }
+            let mut edge_references = record.edge_references.references().iter();
+            while let Some(reference) = ctx.next_charged(
+                &mut edge_references,
+                "visit Inventor PmGraphics edge references",
+            )? {
+                validate_reference(reference.index())?;
             }
         }
         if record.styles.index() != 0 {
@@ -1927,10 +1973,10 @@ fn validate_presentation(
             }
         }
     }
-    for record in ctx.admit_iter(
-        &data.pm_graphics_style_collections,
-        "validate Inventor PmGraphics style collections",
-    )? {
+    let mut style_collections = data.pm_graphics_style_collections.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut style_collections, "validate Inventor PmGraphics style collections")?
+    {
         let key = (record.segment_token(), record.record_ordinal());
         let record_matches = match ctx.get_hash_map(
             &raw_records,
@@ -1954,10 +2000,10 @@ fn validate_presentation(
                 )?),
             )?;
         }
-        for reference in ctx.admit_iter(
-            record.style_references.references(),
-            "validate Inventor PmGraphics style references",
-        )? {
+        let mut style_references = record.style_references.references().iter();
+        while let Some(reference) =
+            ctx.next_charged(&mut style_references, "validate Inventor PmGraphics style references")?
+        {
             let resolves = reference.index() != 0
                 && ctx.contains_key_hash_map(
                     &raw_records,
@@ -1981,10 +2027,10 @@ fn validate_presentation(
             }
         }
     }
-    for record in ctx.admit_iter(
-        &data.pm_graphics_primary_color_styles,
-        "validate Inventor primary-color styles",
-    )? {
+    let mut primary_color_styles = data.pm_graphics_primary_color_styles.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut primary_color_styles, "validate Inventor primary-color styles")?
+    {
         let key = (record.segment_token.as_str(), record.record_ordinal);
         let record_matches = match ctx.get_hash_map(
             &raw_records,
@@ -2006,10 +2052,10 @@ fn validate_presentation(
             )?;
         }
     }
-    for issue in ctx.admit_iter(
-        &data.presentation_record_issues,
-        "validate Inventor presentation record issues",
-    )? {
+    let mut presentation_issues = data.presentation_record_issues.iter();
+    while let Some(issue) =
+        ctx.next_charged(&mut presentation_issues, "validate Inventor presentation record issues")?
+    {
         push_finding(
             ctx,
             findings,
@@ -2253,7 +2299,7 @@ impl NativeData {
                 namespace,
                 "assembly_placements",
                 "convert Inventor assembly placements",
-                AssemblyPlacementRecordWire::into_record,
+                |wire, _ctx| wire.into_record(),
             )?,
             assembly_record_issues: read_contextual_arena::<crate::record_issue::RecordIssueWire, _>(
                 ctx,
@@ -2268,7 +2314,7 @@ impl NativeData {
                 namespace,
                 "pm_app_rendering_styles",
                 "convert Inventor PmApp rendering styles",
-                PmAppRenderingStyleRecordWire::into_record,
+                |wire, _ctx| wire.into_record(),
             )?,
             pm_graphics_faces: read_contextual_arena::<PmGraphicsFaceRecordWire, _>(
                 ctx,
@@ -2355,7 +2401,7 @@ impl NativeData {
                 namespace,
                 "pm_dc_transforms",
                 "convert Inventor PmDc transforms",
-                crate::sketch::PmDcTransformPayloadWire::into_payload,
+                |wire, _ctx| wire.into_payload(),
             )?,
             pm_dc_directions: read_contextual_located_arena::<crate::sketch::PmDcDirectionPayload>(
                 ctx,
@@ -2459,25 +2505,33 @@ fn validate_databases(
         })?;
     let mut states_storage = ctx.reserve_scoped(0, "index Inventor database state bands")?;
     let mut states = BTreeSet::new();
-    for band in ctx
-        .admit_iter(&data.databases, "index Inventor database bands")?
-        .map(|record| record.band)
-        .chain(
-            ctx.admit_iter(&data.database_issues, "index Inventor database issue bands")?
-                .map(|record| record.band),
-        )
     {
-        let inserted = states_storage.with_storage(|| {
-            ctx.insert_btree_set(&mut states, band, "index Inventor database state bands")
-        })?;
-        if !inserted {
-            push_finding(
-                ctx,
-                findings,
-                Check::NativeLinks,
-                format_args!("Inventor native data repeats a database state band"),
-                None,
-            )?;
+        let mut index_band = |band| -> Result<(), CodecError> {
+            let inserted = states_storage.with_storage(|| {
+                ctx.insert_btree_set(&mut states, band, "index Inventor database state bands")
+            })?;
+            if !inserted {
+                push_finding(
+                    ctx,
+                    findings,
+                    Check::NativeLinks,
+                    format_args!("Inventor native data repeats a database state band"),
+                    None,
+                )?;
+            }
+            Ok(())
+        };
+        let mut database_steps = data.databases.iter();
+        while let Some(record) =
+            ctx.next_charged(&mut database_steps, "index Inventor database bands")?
+        {
+            index_band(record.band)?;
+        }
+        let mut issue_steps = data.database_issues.iter();
+        while let Some(issue) =
+            ctx.next_charged(&mut issue_steps, "index Inventor database issue bands")?
+        {
+            index_band(issue.band)?;
         }
     }
     if !equal_btree_sets(
@@ -2494,7 +2548,10 @@ fn validate_databases(
             None,
         )?;
     }
-    for issue in ctx.admit_iter(&data.database_issues, "validate Inventor database issues")? {
+    let mut database_issues = data.database_issues.iter();
+    while let Some(issue) =
+        ctx.next_charged(&mut database_issues, "validate Inventor database issues")?
+    {
         push_finding(
             ctx,
             findings,
@@ -2567,7 +2624,10 @@ fn validate_segments(
                 "collect Inventor segment registry ids",
             )
         })?;
-    for meta in ctx.admit_iter(&data.metadata, "validate Inventor segment metadata")? {
+    let mut metadata_records = data.metadata.iter();
+    while let Some(meta) =
+        ctx.next_charged(&mut metadata_records, "validate Inventor segment metadata")?
+    {
         if !ctx.contains_hash_set(
             &registry_ids,
             meta.segment_id.as_str(),
@@ -2613,9 +2673,11 @@ fn validate_segments(
     let (metadata_by_token, _metadata_by_token_storage) =
         ctx.with_scoped_storage("collect Inventor segment metadata index", || {
             let mut metadata_by_token = BTreeMap::new();
-            for record in
-                ctx.admit_iter(&data.metadata, "index Inventor segment metadata by token")?
-            {
+            let mut metadata_steps = data.metadata.iter();
+            while let Some(record) = ctx.next_charged(
+                &mut metadata_steps,
+                "index Inventor segment metadata by token",
+            )? {
                 ctx.insert_btree_map(
                     &mut metadata_by_token,
                     record.token.as_str(),
@@ -2642,7 +2704,10 @@ fn validate_segments(
     let mut sections_by_token = HashMap::<&str, BTreeSet<u8>>::new();
     let mut sections_by_token_storage =
         ctx.reserve_scoped(0, "index Inventor metadata sections")?;
-    for record in ctx.admit_iter(&data.meta_sections, "index Inventor metadata sections")? {
+    let mut metadata_sections = data.meta_sections.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut metadata_sections, "index Inventor metadata sections")?
+    {
         let token = record.token.as_str();
         sections_by_token_storage.with_storage(|| {
             if let Some(sections) = ctx.get_mut_hash_map(
@@ -2674,7 +2739,10 @@ fn validate_segments(
     }
     let mut types_by_token = HashMap::<&str, HashSet<u8>>::new();
     let mut types_by_token_storage = ctx.reserve_scoped(0, "index Inventor metadata types")?;
-    for record in ctx.admit_iter(&data.meta_types, "index Inventor metadata types")? {
+    let mut metadata_types = data.meta_types.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut metadata_types, "index Inventor metadata types")?
+    {
         let token = record.token.as_str();
         types_by_token_storage.with_storage(|| {
             if let Some(types) = ctx.get_mut_hash_map(
@@ -2729,7 +2797,10 @@ fn validate_segments(
         })?;
     let mut record_counts = HashMap::<&str, u64>::new();
     let mut record_counts_storage = ctx.reserve_scoped(0, "count Inventor RSe records")?;
-    for record in ctx.admit_iter(&data.records, "validate Inventor RSe record metadata")? {
+    let mut rse_records = data.records.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut rse_records, "validate Inventor RSe record metadata")?
+    {
         record_counts_storage.with_storage(|| {
             increment_hash_count(
                 ctx,
@@ -2763,7 +2834,10 @@ fn validate_segments(
         |record| Ok((record.token.as_str(), record.ordinal)),
         "segment record ordinal",
     )?;
-    for bulk in ctx.admit_iter(&data.bulk, "validate Inventor bulk segment summaries")? {
+    let mut bulk_records = data.bulk.iter();
+    while let Some(bulk) =
+        ctx.next_charged(&mut bulk_records, "validate Inventor bulk segment summaries")?
+    {
         match &bulk.records {
             crate::native::SegmentBulkFrame::Framed { record_count, .. } => {
                 let count = ctx
@@ -2806,7 +2880,10 @@ fn validate_segments(
                 "collect Inventor expanded bulk lengths",
             )
         })?;
-    for record in ctx.admit_iter(&data.records, "validate Inventor RSe payload ranges")? {
+    let mut payload_ranges = data.records.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut payload_ranges, "validate Inventor RSe payload ranges")?
+    {
         let end = record.payload_offset.checked_add(record.payload_len());
         let expanded_len = ctx
             .get_hash_map(
@@ -2826,7 +2903,10 @@ fn validate_segments(
             )?;
         }
     }
-    for record in ctx.admit_iter(&data.unpaired, "validate Inventor unpaired segments")? {
+    let mut unpaired_records = data.unpaired.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut unpaired_records, "validate Inventor unpaired segments")?
+    {
         if ctx.contains_btree_set(
             &pair_tokens,
             record.token.as_str(),
@@ -2860,25 +2940,33 @@ where
     let (issues, issue_token) = issues;
     let mut states_storage = ctx.reserve_scoped(0, "index Inventor uniqueness keys")?;
     let mut states = BTreeSet::new();
-    for token in ctx
-        .admit_iter(parsed, "validate Inventor uniqueness source")?
-        .map(parsed_token)
-        .chain(
-            ctx.admit_iter(issues, "validate Inventor uniqueness source")?
-                .map(issue_token),
-        )
     {
-        let inserted = states_storage.with_storage(|| {
-            ctx.insert_btree_set(&mut states, token, "index Inventor uniqueness keys")
-        })?;
-        if !inserted {
-            push_finding(
-                ctx,
-                findings,
-                Check::NativeLinks,
-                format_args!("Inventor native data repeats a segment {member} state"),
-                None,
-            )?;
+        let mut index_token = |token| -> Result<(), CodecError> {
+            let inserted = states_storage.with_storage(|| {
+                ctx.insert_btree_set(&mut states, token, "index Inventor uniqueness keys")
+            })?;
+            if !inserted {
+                push_finding(
+                    ctx,
+                    findings,
+                    Check::NativeLinks,
+                    format_args!("Inventor native data repeats a segment {member} state"),
+                    None,
+                )?;
+            }
+            Ok(())
+        };
+        let mut parsed_steps = parsed.iter();
+        while let Some(record) =
+            ctx.next_charged(&mut parsed_steps, "validate Inventor uniqueness source")?
+        {
+            index_token(parsed_token(record))?;
+        }
+        let mut issue_steps = issues.iter();
+        while let Some(issue) =
+            ctx.next_charged(&mut issue_steps, "validate Inventor uniqueness source")?
+        {
+            index_token(issue_token(issue))?;
         }
     }
     if !equal_btree_sets(ctx, &states, pairs, "compare Inventor segment states")? {
@@ -2910,7 +2998,10 @@ fn validate_properties(
     let mut properties_by_section = HashMap::<(&str, u32), u64>::new();
     let mut properties_by_section_storage =
         ctx.reserve_scoped(0, "count Inventor properties by section")?;
-    for section in ctx.admit_iter(&data.property_sections, "count Inventor property sections")? {
+    let mut property_sections = data.property_sections.iter();
+    while let Some(section) =
+        ctx.next_charged(&mut property_sections, "count Inventor property sections")?
+    {
         sections_by_set_storage.with_storage(|| {
             increment_hash_count(
                 ctx,
@@ -2920,7 +3011,10 @@ fn validate_properties(
             )
         })?;
     }
-    for property in ctx.admit_iter(&data.properties, "count Inventor properties by section")? {
+    let mut properties = data.properties.iter();
+    while let Some(property) =
+        ctx.next_charged(&mut properties, "count Inventor properties by section")?
+    {
         properties_by_section_storage.with_storage(|| {
             increment_hash_count(
                 ctx,
@@ -2930,7 +3024,10 @@ fn validate_properties(
             )
         })?;
     }
-    for set in ctx.admit_iter(&data.property_sets, "validate Inventor property sets")? {
+    let mut property_sets = data.property_sets.iter();
+    while let Some(set) =
+        ctx.next_charged(&mut property_sets, "validate Inventor property sets")?
+    {
         let section_count = ctx
             .get_hash_map(
                 &sections_by_set,
@@ -2958,10 +3055,10 @@ fn validate_properties(
                 "collect Inventor property-set paths",
             )
         })?;
-    for section in ctx.admit_iter(
-        &data.property_sections,
-        "validate Inventor property sections",
-    )? {
+    let mut section_references = data.property_sections.iter();
+    while let Some(section) =
+        ctx.next_charged(&mut section_references, "validate Inventor property sections")?
+    {
         let set_exists = ctx.contains_hash_set(
             &set_paths,
             section.set_path.as_str(),
@@ -3035,7 +3132,10 @@ fn validate_protein_assets(
                 "collect Inventor Protein entry names",
             )
         })?;
-    for asset in ctx.admit_iter(&data.protein_assets, "validate Inventor Protein assets")? {
+    let mut protein_assets = data.protein_assets.iter();
+    while let Some(asset) =
+        ctx.next_charged(&mut protein_assets, "validate Inventor Protein assets")?
+    {
         if !ctx.contains_hash_set(
             &entry_names,
             asset.entry_name.as_str(),
@@ -3091,10 +3191,10 @@ fn validate_protein_rejections(
                 "collect accepted Inventor Protein positions",
             )
         })?;
-    for rejection in ctx.admit_iter(
-        &data.protein_rejections,
-        "validate Inventor Protein rejections",
-    )? {
+    let mut protein_rejections = data.protein_rejections.iter();
+    while let Some(rejection) =
+        ctx.next_charged(&mut protein_rejections, "validate Inventor Protein rejections")?
+    {
         let entry_missing = !ctx.contains_hash_set(
             &entry_names,
             rejection.entry_name.as_str(),
@@ -3126,10 +3226,10 @@ fn validate_protein_record_coverage(
 ) -> Result<(), CodecError> {
     let mut positions = BTreeMap::<&str, (BTreeSet<u64>, u64)>::new();
     let mut positions_storage = ctx.reserve_scoped(0, "index Inventor Protein position groups")?;
-    for asset in ctx.admit_iter(
-        &data.protein_assets,
-        "group Inventor Protein asset positions",
-    )? {
+    let mut asset_positions = data.protein_assets.iter();
+    while let Some(asset) =
+        ctx.next_charged(&mut asset_positions, "group Inventor Protein asset positions")?
+    {
         positions_storage.with_storage(|| {
             match ctx.get_mut_btree_map(
                 &mut positions,
@@ -3162,10 +3262,10 @@ fn validate_protein_record_coverage(
             Ok::<(), CodecError>(())
         })?;
     }
-    for rejection in ctx.admit_iter(
-        &data.protein_rejections,
-        "group Inventor Protein rejection positions",
-    )? {
+    let mut rejection_positions = data.protein_rejections.iter();
+    while let Some(rejection) =
+        ctx.next_charged(&mut rejection_positions, "group Inventor Protein rejection positions")?
+    {
         positions_storage.with_storage(|| {
             match ctx.get_mut_btree_map(
                 &mut positions,
@@ -3342,10 +3442,10 @@ fn validate_ufrx(
     let mut actual_counts_storage =
         ctx.reserve_scoped(0, "count Inventor UFRxDoc file references")?;
     let assembly_document = is_assembly_document(ctx, ir)?;
-    for occurrence in ctx.admit_iter(
-        data.ufrx.occurrences(),
-        "validate Inventor UFRxDoc occurrences",
-    )? {
+    let mut occurrences = data.ufrx.occurrences().iter();
+    while let Some(occurrence) =
+        ctx.next_charged(&mut occurrences, "validate Inventor UFRxDoc occurrences")?
+    {
         actual_counts_storage.with_storage(|| {
             increment_hash_count(
                 ctx,
@@ -3381,10 +3481,10 @@ fn validate_ufrx(
             )?;
         }
     }
-    for reference in ctx.admit_iter(
-        data.ufrx.external_references(),
-        "validate Inventor UFRxDoc external reference counts",
-    )? {
+    let mut external_references = data.ufrx.external_references().iter();
+    while let Some(reference) =
+        ctx.next_charged(&mut external_references, "validate Inventor UFRxDoc external reference counts")?
+    {
         if ctx
             .get_hash_map(
                 &actual_counts,
@@ -3441,10 +3541,10 @@ fn validate_assembly(
                 "collect Inventor assembly occurrence ids",
             )
         })?;
-    for placement in ctx.admit_iter(
-        &data.assembly_placements,
-        "validate Inventor assembly placements",
-    )? {
+    let mut placements = data.assembly_placements.iter();
+    while let Some(placement) =
+        ctx.next_charged(&mut placements, "validate Inventor assembly placements")?
+    {
         if !ctx.contains_hash_set(
             &occurrence_ids,
             &placement.occurrence_id,
@@ -3463,10 +3563,10 @@ fn validate_assembly(
     }
     if is_assembly_document(ctx, ir)? && !data.ufrx.external_references().is_empty() {
         let mut declared = 0_u64;
-        for reference in ctx.admit_iter(
-            data.ufrx.external_references(),
-            "sum Inventor external reference occurrence counts",
-        )? {
+        let mut reference_counts = data.ufrx.external_references().iter();
+        while let Some(reference) =
+            ctx.next_charged(&mut reference_counts, "sum Inventor external reference occurrence counts")?
+        {
             declared = declared
                 .checked_add(u64::from(reference.occurrence_count))
                 .ok_or_else(|| {
@@ -3490,10 +3590,10 @@ fn validate_assembly(
             )?;
         }
     }
-    for issue in ctx.admit_iter(
-        &data.assembly_record_issues,
-        "validate Inventor assembly record issues",
-    )? {
+    let mut assembly_issues = data.assembly_record_issues.iter();
+    while let Some(issue) =
+        ctx.next_charged(&mut assembly_issues, "validate Inventor assembly record issues")?
+    {
         push_finding(
             ctx,
             findings,
@@ -3587,7 +3687,10 @@ where
     F: FnMut(&'values T) -> Result<K, CodecError>,
     L: fmt::Display,
 {
-    for value in ctx.admit_iter(values, "validate Inventor uniqueness source")? {
+    let mut values = values.iter();
+    while let Some(value) =
+        ctx.next_charged(&mut values, "validate Inventor uniqueness source")?
+    {
         let inserted = storage.with_storage(|| {
             ctx.insert_hash_set(seen, key(value)?, "index Inventor uniqueness keys")
         })?;

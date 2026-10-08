@@ -584,7 +584,11 @@ pub(crate) fn reference_list(
 ) -> Result<PmDcReferenceList, CodecError> {
     let (count, metadata) = list_preamble(cursor, marker, field)?;
     let mut references = ctx.vector_storage(count, "admit Inventor PmDc references")?;
-    for _ in ctx.admit_iter(&(0..count), "visit Inventor PmDc list entries")? {
+    let mut entry_steps = 0..count;
+    while ctx
+        .next_charged(&mut entry_steps, "visit Inventor PmDc list entries")?
+        .is_some()
+    {
         ctx.push_vec(
             &mut references,
             cursor.reference("reference-list entry")?,
@@ -639,7 +643,11 @@ pub(crate) fn u32_list(
 ) -> Result<PmDcU32List, CodecError> {
     let (count, metadata) = list_preamble(cursor, marker, field)?;
     let mut values = ctx.vector_storage(count, "admit Inventor PmDc integers")?;
-    for _ in ctx.admit_iter(&(0..count), "visit Inventor PmDc list entries")? {
+    let mut entry_steps = 0..count;
+    while ctx
+        .next_charged(&mut entry_steps, "visit Inventor PmDc list entries")?
+        .is_some()
+    {
         ctx.push_vec(
             &mut values,
             cursor.u32("integer-list value")?,
@@ -925,6 +933,84 @@ mod tests {
         assert!(
             matches!(super::u32_list(&ctx, &mut Cursor::new(root), 2, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
         );
+    }
+
+    #[test]
+    fn pmdc_counted_lists_refuse_only_the_next_item_step() {
+        for count in [1_u32, 512] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&2_u16.to_le_bytes());
+            bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
+            bytes.extend_from_slice(&count.to_le_bytes());
+            bytes.extend_from_slice(&[0; 8]);
+            bytes.resize(bytes.len() + usize::try_from(count).expect("fixture count") * 4, 0);
+            for integers in [false, true] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = 0;
+                let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("PmDc counted-list context");
+                let result = if integers {
+                    super::u32_list(&ctx, &mut Cursor::new(view), 2, "test").map(|_| ())
+                } else {
+                    reference_list(&ctx, &mut Cursor::new(view), 2, "test").map(|_| ())
+                };
+                let error = result.expect_err("first list step refuses");
+                assert!(matches!(&error, CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.operation == "visit Inventor PmDc list entries"
+                        && limit.used == 0
+                        && limit.additional == 1));
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+                    if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
+            }
+        }
+    }
+
+    #[test]
+    fn pmdc_counted_lists_admit_each_item_and_the_end_probe() {
+        for count in [0_u32, 1, 512] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&2_u16.to_le_bytes());
+            bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
+            bytes.extend_from_slice(&count.to_le_bytes());
+            if count != 0 {
+                bytes.extend_from_slice(&[0; 8]);
+            }
+            bytes.resize(bytes.len() + usize::try_from(count).expect("fixture count") * 4, 0);
+            for integers in [false, true] {
+                for end_probe in [0_u64, 1] {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_materialized_bytes = 0;
+                    policy.limits.max_work_units = u64::from(count) + end_probe;
+                    let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                        .expect("PmDc counted-list context");
+                    let mut cursor = Cursor::new(view);
+                    let result = if integers {
+                        super::u32_list(&ctx, &mut cursor, 2, "test")
+                            .map(|list| list.values().len())
+                    } else {
+                        reference_list(&ctx, &mut cursor, 2, "test")
+                            .map(|list| list.references().len())
+                    };
+                    if end_probe == 0 {
+                        let error = result.expect_err("list end probe refuses");
+                        assert!(matches!(&error, CodecError::ResourceLimit(limit)
+                            if limit.dimension == ResourceDimension::WorkUnits
+                                && limit.operation == "visit Inventor PmDc list entries"
+                                && limit.used == u64::from(count)
+                                && limit.additional == 1));
+                        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+                            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
+                    } else {
+                        assert_eq!(result.expect("items and end probe fit"), usize::try_from(count).expect("fixture count"));
+                        cursor.finish("test list").expect("all list bytes consumed");
+                        ctx.finish_session().expect("list work fits exactly");
+                    }
+                }
+            }
+        }
     }
 
     #[test]

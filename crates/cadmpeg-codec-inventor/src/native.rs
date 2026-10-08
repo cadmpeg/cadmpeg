@@ -508,12 +508,8 @@ impl AssemblyPlacementRecordWire {
 }
 
 impl AssemblyPlacementRecordWire {
-    pub(crate) fn into_record(
-        self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<AssemblyPlacementRecord, CodecError> {
+    pub(crate) fn into_record(self) -> Result<AssemblyPlacementRecord, CodecError> {
         let transform = crate::compact_matrix::CompactMatrix::try_from_rows(
-            ctx,
             self.transform_encoding[0],
             self.transform_encoding[1],
             self.transform,
@@ -663,10 +659,7 @@ pub(crate) struct PmAppRenderingStyleRecordWire {
 }
 
 impl PmAppRenderingStyleRecordWire {
-    pub(crate) fn into_record(
-        self,
-        _ctx: &DecodeContext<'_>,
-    ) -> Result<PmAppRenderingStyleRecord, CodecError> {
+    pub(crate) fn into_record(self) -> Result<PmAppRenderingStyleRecord, CodecError> {
         let extension = match (
             self.style_state,
             self.style_label,
@@ -1756,14 +1749,14 @@ mod tests {
     fn rendering_style(value: serde_json::Value) -> Result<PmAppRenderingStyleRecord, String> {
         let wire = serde_json::from_value::<PmAppRenderingStyleRecordWire>(value)
             .map_err(|error| error.to_string())?;
-        wire.into_record(&super::test_ctx())
+        wire.into_record()
             .map_err(|error| error.to_string())
     }
 
     fn assembly_placement(value: serde_json::Value) -> Result<AssemblyPlacementRecord, String> {
         let wire = serde_json::from_value::<AssemblyPlacementRecordWire>(value)
             .map_err(|error| error.to_string())?;
-        wire.into_record(&super::test_ctx())
+        wire.into_record()
             .map_err(|error| error.to_string())
     }
 
@@ -1785,9 +1778,10 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         assert!(
-            matches!(wire.into_record(&ctx), Err(CodecError::Malformed(detail))
+            matches!(wire.into_record(), Err(CodecError::Malformed(detail))
             if detail == "suffix_len must not be zero")
         );
+        ctx.finish_session().expect("fixed placement error uses no budget");
     }
 
     #[test]
@@ -1806,7 +1800,6 @@ mod tests {
             state: 0,
             transform_prefix: false,
             transform: crate::compact_matrix::CompactMatrix::try_new(
-                &super::test_ctx(),
                 0,
                 0,
                 |_| Ok(cadmpeg_ir::scalar::FiniteReal::ZERO),
