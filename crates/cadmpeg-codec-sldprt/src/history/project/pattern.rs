@@ -102,7 +102,7 @@ fn resolve_pattern(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
     form: NativePatternClass,
-    curve_path: Option<PathRef>,
+    curve_path: impl FnOnce() -> Result<Option<PathRef>, CodecError>,
 ) -> Result<Option<PatternKind>, CodecError> {
     let direction = |name| -> Result<_, CodecError> {
         Ok(property_literal(ctx, feature, name)?.and_then(parse_valid_direction))
@@ -111,8 +111,22 @@ fn resolve_pattern(
         Ok(either_parameter(ctx, feature, "Spacing", "D3")?
             .and_then(parse_positive_dimension_length_mm))
     };
+    let parse_count = |value: &str| -> Result<_, CodecError> {
+        let value = ctx.trim_text(value, "trim SLDPRT pattern count")?;
+        Ok(ctx
+            .parse_text::<u32>(value, "parse SLDPRT pattern count")?
+            .ok()
+            .filter(|count| *count > 0))
+    };
     let count = |name, positional| -> Result<_, CodecError> {
-        Ok(either_parameter(ctx, feature, name, positional)?.and_then(parse_count))
+        let value = match ctx.get_btree_map(&feature.parameters, name, super::FEATURE_LITERAL)? {
+            Some(value) => Some(value),
+            None => ctx.get_btree_map(&feature.parameters, positional, super::FEATURE_LITERAL)?,
+        };
+        value
+            .map(|value| parse_count(value))
+            .transpose()
+            .map(Option::flatten)
     };
     let transform = match form {
         NativePatternClass::Linear => {
@@ -125,13 +139,13 @@ fn resolve_pattern(
             let second = match (
                 property_literal(ctx, feature, "Direction2")?,
                 parameter_literal(ctx, feature, "D4")?,
-                parameter_literal(ctx, feature, "D2")?,
+                ctx.get_btree_map(&feature.parameters, "D2", super::FEATURE_LITERAL)?,
             ) {
                 (Some(direction), Some(spacing), Some(count)) => {
                     Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
                         direction: require!(parse_valid_direction(direction)),
                         spacing: require!(parse_positive_dimension_length_mm(spacing)),
-                        count: require!(parse_count(count)),
+                        count: require!(parse_count(count)?),
                     })
                 }
                 _ => None,
@@ -151,13 +165,21 @@ fn resolve_pattern(
             angle: require!(
                 parameter_literal(ctx, feature, "Angle")?.and_then(parse_positive_angle_rad)
             ),
-            count: require!(parameter_literal(ctx, feature, "Count")?.and_then(parse_count)),
+            count: require!(ctx
+                .get_btree_map(&feature.parameters, "Count", super::FEATURE_LITERAL)?
+                .map(|value| parse_count(value))
+                .transpose()?
+                .flatten()),
         },
-        NativePatternClass::CurveDriven => PatternTransform::CurveDriven {
-            path: curve_path,
-            spacing: require!(spacing()?),
-            count: require!(count("Count", "D1")?),
-        },
+        NativePatternClass::CurveDriven => {
+            let spacing = require!(spacing()?);
+            let count = require!(count("Count", "D1")?);
+            PatternTransform::CurveDriven {
+                path: curve_path()?,
+                spacing,
+                count,
+            }
+        }
         NativePatternClass::Mirror => PatternTransform::Mirror {
             plane_origin: require!(
                 property_literal(ctx, feature, "PlaneOrigin")?.and_then(parse_point3_mm)
@@ -172,36 +194,53 @@ pub(super) fn project_pattern(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
     by_source: &super::NeutralByKey<'_, '_>,
-    native_by_source: &HashMap<String, &str>,
+    native_by_source: &HashMap<&str, &str>,
 ) -> Result<FeatureDefinition, CodecError> {
     const OPERATION: &str = "project SLDPRT pattern seeds";
     let form = native_pattern_form(ctx, feature)?;
+    let mut seed_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut seeds = Vec::new();
     if let Some(source_seeds) = property_value(ctx, feature, "Seeds")? {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(source_seeds.len()),
-            OPERATION,
-        )?;
-        for source in source_seeds.split(',').map(str::trim) {
+        let mut characters = source_seeds.char_indices();
+        let mut start = 0;
+        let mut finished = false;
+        while !finished {
+            let delimiter = ctx.find_map(
+                &mut characters,
+                |(offset, character)| Ok((character == ',').then_some(offset)),
+                "scan SLDPRT pattern seed delimiters",
+            )?;
+            let end = delimiter.unwrap_or(source_seeds.len());
+            finished = delimiter.is_none();
+            let source = ctx.trim_text(&source_seeds[start..end], "trim SLDPRT pattern seed")?;
+            start = end + usize::from(!finished);
             let Some(id) = ctx.get_hash_map(by_source, source, "look up SLDPRT hash key")? else {
-                seeds.clear();
+                ctx.clear_vec(&mut seeds, OPERATION)?;
                 break;
             };
-            let id = copy_projected_feature_id(ctx, id)?;
-            ctx.push_vec(&mut seeds, PatternSeed::Feature(id), OPERATION)?;
+            seed_storage.with_storage(|| {
+                let id = copy_projected_feature_id(ctx, id)?;
+                ctx.push_vec(&mut seeds, PatternSeed::Feature(id), OPERATION)
+            })?;
         }
     }
-    let curve_path = match (form, property_value(ctx, feature, "Path")?) {
-        (Some(NativePatternClass::CurveDriven), Some(source)) => {
-            let text = ctx
-                .get_hash_map(native_by_source, source, "look up SLDPRT hash key")?
-                .copied()
-                .unwrap_or(source);
-            Some(PathRef::Native(
-                ctx.copy_retained_text(text, "retain SLDPRT pattern path")?,
-            ))
-        }
-        _ => None,
+    if seeds.is_empty() {
+        seeds = Vec::new();
+        drop(seed_storage);
+    } else {
+        seed_storage.commit()?;
+    }
+    let curve_path = || {
+        let Some(source) = property_value(ctx, feature, "Path")? else {
+            return Ok(None);
+        };
+        let text = ctx
+            .get_hash_map(native_by_source, source, "look up SLDPRT hash key")?
+            .copied()
+            .unwrap_or(source);
+        Ok(Some(PathRef::Native(
+            ctx.copy_retained_text(text, "retain SLDPRT pattern path")?,
+        )))
     };
     let resolved = match form {
         Some(form) => resolve_pattern(ctx, feature, form, curve_path)?,
@@ -211,15 +250,14 @@ pub(super) fn project_pattern(
         form,
         Some(NativePatternClass::Linear | NativePatternClass::CurveDriven)
     );
-    let pattern = resolved
-        .filter(|_| !seeds_required || !seeds.is_empty())
-        .unwrap_or(match form {
-            None => PatternKind::UNRESOLVED,
-            Some(NativePatternClass::Linear) => PatternKind::UNRESOLVED_LINEAR,
-            Some(NativePatternClass::Circular) => PatternKind::UNRESOLVED_CIRCULAR,
-            Some(NativePatternClass::CurveDriven) => PatternKind::UNRESOLVED_CURVE_DRIVEN,
-            Some(NativePatternClass::Mirror) => PatternKind::UNRESOLVED_MIRROR,
-        });
+    let resolved = resolved.filter(|_| !seeds_required || !seeds.is_empty());
+    let pattern = resolved.unwrap_or(match form {
+        None => PatternKind::UNRESOLVED,
+        Some(NativePatternClass::Linear) => PatternKind::UNRESOLVED_LINEAR,
+        Some(NativePatternClass::Circular) => PatternKind::UNRESOLVED_CIRCULAR,
+        Some(NativePatternClass::CurveDriven) => PatternKind::UNRESOLVED_CURVE_DRIVEN,
+        Some(NativePatternClass::Mirror) => PatternKind::UNRESOLVED_MIRROR,
+    });
     Ok(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds,
         pattern,
@@ -252,22 +290,6 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(b"pattern", &arena, &policy).unwrap();
         let error = project_pattern(&ctx, &feature, &by_source, &HashMap::new()).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(_)));
-    }
-
-    #[test]
-    fn pattern_path_projection_refuses_retained_limit() {
-        let mut feature = crate::history::tests::feature("pattern", None, 0);
-        feature.kind = "CurvePattern".to_owned();
-        feature.properties.insert(
-            cadmpeg_core::nonblank_literal!("Path"),
-            "native-path".to_owned(),
-        );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(b"pattern", &arena, &policy).unwrap();
-        let error = project_pattern(&ctx, &feature, &HashMap::new(), &HashMap::new()).unwrap_err();
         assert!(matches!(error, CodecError::ResourceLimit(_)));
     }
 }

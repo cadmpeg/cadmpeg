@@ -80,12 +80,13 @@ fn definition_of(feature: &Feature) -> FeatureDefinition {
     let ctx = cadmpeg_test_support::service_decode_context();
     let features = std::slice::from_ref(feature);
     let index = HistoryIndex::new(&ctx, features).unwrap();
+    let sources = super::solid::SourceFeatures::new(&ctx, &[]).unwrap();
     project_definition(
         &ctx,
         feature,
         &HashMap::new(),
         &HashMap::new(),
-        &BTreeMap::new(),
+        &sources,
         &records_by_id(features),
         &index,
     )
@@ -195,7 +196,7 @@ fn blind_extrusion_uses_its_sole_dimension_as_depth() {
     )
     .unwrap());
     assert!(matches!(
-        project_extrude(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new(), &BTreeMap::new()).unwrap(),
+        project_extrude(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new(), &super::solid::SourceFeatures::new(&cadmpeg_test_support::service_decode_context(), &[]).unwrap()).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -221,7 +222,7 @@ fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
         .insert(cadmpeg_core::nonblank_literal!("m"), "6.4".into());
 
     assert!(matches!(
-        project_extrude(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new(), &BTreeMap::new()).unwrap(),
+        project_extrude(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new(), &super::solid::SourceFeatures::new(&cadmpeg_test_support::service_decode_context(), &[]).unwrap()).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
