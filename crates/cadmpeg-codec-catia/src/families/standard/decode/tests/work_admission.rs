@@ -663,3 +663,183 @@ fn indexed_line_validation_matches_pair_predicate() {
         }
     }
 }
+
+#[test]
+fn limit_binding_bounds_remove_separated_point_and_support_products() {
+    use super::super::standard_limit_curve_bindings;
+    use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::nurbs::{
+        NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+    };
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::{PointId, SurfaceId};
+    use cadmpeg_ir::topology::Point;
+    use std::collections::HashMap;
+
+    let mut ir = CadIr::empty();
+    let mut curves = Vec::new();
+    let mut supports = Vec::new();
+    let mut bindings = Vec::new();
+    let mut surface_indices = HashMap::new();
+    for item in 0..1024_u32 {
+        let y = f64::from(item) * 10.0;
+        for x in [0.0, 5.0] {
+            let id = PointId::mint(format!("catia:test:point#{}", ir.model.points.len()))
+                .expect("identity");
+            ir.model.points.push(Point::new(
+                id,
+                crate::test_support::test_b5::point([x, y, 0.0]),
+                None,
+            ));
+        }
+        curves.push(
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                5,
+                vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                (0..6).map(|x| Point3::new(f64::from(x), y, 0.0)).collect(),
+                None,
+                false,
+            )
+            .expect("fixture admission")
+            .expect("degree-five curve"),
+        );
+        let id = SurfaceId::mint(format!("catia:test:surface#{item}")).expect("identity");
+        let geometry = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, y, 100.0), Point3::new(0.0, y + 1.0, 100.0)],
+                    vec![Point3::new(5.0, y, 100.0), Point3::new(5.0, y + 1.0, 100.0)],
+                ],
+                None,
+            ),
+            false,
+        )
+        .expect("fixture admission")
+        .expect("finite patch");
+        let face = supports.len();
+        surface_indices.insert(id.clone(), ir.model.surfaces.len());
+        bindings.push((id.clone(), false, face));
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
+            source_object: None,
+        });
+        supports.push(StandardCurveSupport {
+            pos: face,
+            tag: item,
+            faces: [face, face],
+            geometry: StandardCurveGeometry::Bspline,
+        });
+    }
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        standard_limit_curve_bindings(ctx, &ir, &bindings, &surface_indices, &supports, &curves)
+    };
+    let cadmpeg_core::CodecError::ResourceLimit(limit) =
+        crate::test_support::with_work_refusal("catia_limit_curve_support_queries", run)
+            .expect_err("first support query")
+    else {
+        panic!("resource refusal")
+    };
+    // The measured prefix includes every exact point match. The remaining
+    // queries fit 500,000 units; the old support product alone visits 1,048,576 rows.
+    let rows = crate::test_support::with_work_limit(limit.used + 500_000, run)
+        .expect("bounded support queries");
+    assert_eq!(rows, vec![Vec::new(); 1024]);
+
+    // Each point is separated from every curve control hull. Admit the measured
+    // index construction prefix, then 500,000 query units. The old point
+    // product visits 2,097,152 rows before its exact parameter checks.
+    for point in &mut ir.model.points {
+        let position = point.position().get();
+        point.set_position(crate::test_support::test_b5::point([
+            position.x, position.y, 10.0,
+        ]));
+    }
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        standard_limit_curve_bindings(ctx, &ir, &bindings, &surface_indices, &supports, &curves)
+    };
+    let cadmpeg_core::CodecError::ResourceLimit(limit) =
+        crate::test_support::with_work_refusal("catia_limit_curve_point_queries", run)
+            .expect_err("first point query")
+    else {
+        panic!("resource refusal")
+    };
+    let rows = crate::test_support::with_work_limit(limit.used + 500_000, run)
+        .expect("bounded point queries");
+    assert_eq!(rows, vec![Vec::new(); 1024]);
+}
+
+#[test]
+fn limit_curve_candidate_selection_stops_after_a_third_supported_point() {
+    use super::super::standard_limit_curve_bindings;
+    use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::{PointId, SurfaceId};
+    use cadmpeg_ir::topology::Point;
+    use std::collections::HashMap;
+    let mut ir = CadIr::empty();
+    for item in 0..1027_u32 {
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("catia:test:point#{item}")).expect("identity"),
+            crate::test_support::test_b5::point([f64::from(item % 3), 0.0, 0.0]),
+            None,
+        ));
+    }
+    let id = SurfaceId::mint("catia:test:surface#plane").expect("identity");
+    ir.model.surfaces.push(Surface {
+        id: id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("plane"),
+        )),
+        source_object: None,
+    });
+    let curves = [NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        5,
+        vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        (0..6)
+            .map(|x| Point3::new(f64::from(x), 0.0, 0.0))
+            .collect(),
+        None,
+        false,
+    )
+    .expect("fixture admission")
+    .expect("curve")];
+    let bindings = [(id.clone(), false, 0)];
+    let indices = HashMap::from([(id, 0)]);
+    let supports = [StandardCurveSupport {
+        pos: 0,
+        tag: 1,
+        faces: [0, 0],
+        geometry: StandardCurveGeometry::Bspline,
+    }];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        standard_limit_curve_bindings(ctx, &ir, &bindings, &indices, &supports, &curves)
+    };
+    let cadmpeg_core::CodecError::ResourceLimit(limit) =
+        crate::test_support::with_work_refusal("catia_limit_curve_candidates", run)
+            .expect_err("first candidate")
+    else {
+        panic!("resource refusal")
+    };
+    // Three candidate visits each perform two surface lookups. Each lookup
+    // prices both the identity scan and comparison; 512 covers those fixed
+    // keys and control steps and remains below the old 1,027-row bulk charge.
+    assert_eq!(
+        crate::test_support::with_work_limit(limit.used + 512, run)
+            .expect("three visited candidates"),
+        vec![Vec::new()]
+    );
+}

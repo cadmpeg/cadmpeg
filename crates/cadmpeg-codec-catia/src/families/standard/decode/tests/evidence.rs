@@ -1566,7 +1566,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         "catia_limit_curve_point_rows",
         "catia_limit_curve_point_parameters",
         "catia_limit_curve_edge_rows",
-        "catia_limit_curve_candidates",
+        "catia_limit_curve_point_queries",
         "catia_limit_curve_geometry_copy",
         "catia_limit_curve_edge_bindings",
     ] {

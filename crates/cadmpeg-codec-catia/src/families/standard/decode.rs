@@ -5658,88 +5658,92 @@ fn standard_limit_curve_point_parameter(
     point: Point3,
     tolerance: f64,
 ) -> Result<Option<f64>, CodecError> {
-    let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } = curve.pole_rows() else {
-        return Ok(None);
-    };
-    let span_count = points.len() / 6;
-    if span_count == 0
-        || span_count * 6 != points.len()
-        || curve.knots().len() != (span_count + 1) * 6
-        || curve.degree() != 5
-    {
-        return Ok(None);
-    }
-    let Some(domain) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve) else {
-        return Ok(None);
-    };
-    let [parameter_start, parameter_end] = domain.endpoints();
-    let parameter_span = parameter_end - parameter_start;
-    const SPAN_WIDTH: std::num::NonZeroUsize = match std::num::NonZeroUsize::new(6) {
-        Some(width) => width,
-        None => std::num::NonZeroUsize::MIN,
-    };
-    let span_control = |control_points: &[FinitePoint3]| -> BezierSpan {
-        std::array::from_fn(|index| control_points[index].get())
-    };
-    let mut control_polygon_length = 0.0;
-    for control_points in ctx
-        .admit_iter(points, "catia_limit_curve_control_spans")?
-        .chunks(SPAN_WIDTH)
-    {
-        let control = span_control(control_points);
-        control_polygon_length += (0..5)
-            .map(|index| control[index].distance(control[index + 1]))
-            .sum::<f64>();
-    }
-    let (parameter_tolerance, parameter_resolution) = if parameter_span.is_finite() {
-        let parameter_tolerance = (4.0 * tolerance * parameter_span
-            / control_polygon_length.max(tolerance))
-        .max(EPS_PARAM_TOLERANCE_SPAN * parameter_span);
-        (
-            parameter_tolerance,
-            0.05 * parameter_tolerance.min(EPS_PARAM_RESOLUTION_SPAN * parameter_span),
-        )
-    } else {
-        let half_span = parameter_end * 0.5 - parameter_start * 0.5;
-        let tolerance_fraction =
-            (4.0 * tolerance / control_polygon_length.max(tolerance)).max(EPS_PARAM_TOLERANCE_SPAN);
-        (
-            2.0 * (half_span * tolerance_fraction),
-            2.0 * (half_span * (0.05 * tolerance_fraction.min(EPS_PARAM_RESOLUTION_SPAN))),
-        )
-    };
-    let mut parameters = Vec::new();
-    for (span, control_points) in ctx
-        .admit_iter(points, "catia_limit_curve_spans")?
-        .chunks(SPAN_WIDTH)
-        .enumerate()
-    {
-        let control = span_control(control_points);
-        collect_bezier_point_parameters(
-            ctx,
-            control,
-            [curve.knots()[span * 6], curve.knots()[(span + 1) * 6]],
-            point,
-            tolerance,
-            parameter_resolution,
+    let mut storage = ctx.reserve_scoped(0, "catia_limit_curve_parameter_scratch")?;
+    storage.with_storage(|| -> Result<_, CodecError> {
+        let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } = curve.pole_rows()
+        else {
+            return Ok(None);
+        };
+        let span_count = points.len() / 6;
+        if span_count == 0
+            || span_count * 6 != points.len()
+            || curve.knots().len() != (span_count + 1) * 6
+            || curve.degree() != 5
+        {
+            return Ok(None);
+        }
+        let Some(domain) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve) else {
+            return Ok(None);
+        };
+        let [parameter_start, parameter_end] = domain.endpoints();
+        let parameter_span = parameter_end - parameter_start;
+        const SPAN_WIDTH: std::num::NonZeroUsize = match std::num::NonZeroUsize::new(6) {
+            Some(width) => width,
+            None => std::num::NonZeroUsize::MIN,
+        };
+        let span_control = |control_points: &[FinitePoint3]| -> BezierSpan {
+            std::array::from_fn(|index| control_points[index].get())
+        };
+        let mut control_polygon_length = 0.0;
+        for control_points in ctx
+            .admit_iter(points, "catia_limit_curve_control_spans")?
+            .chunks(SPAN_WIDTH)
+        {
+            let control = span_control(control_points);
+            control_polygon_length += (0..5)
+                .map(|index| control[index].distance(control[index + 1]))
+                .sum::<f64>();
+        }
+        let (parameter_tolerance, parameter_resolution) = if parameter_span.is_finite() {
+            let parameter_tolerance = (4.0 * tolerance * parameter_span
+                / control_polygon_length.max(tolerance))
+            .max(EPS_PARAM_TOLERANCE_SPAN * parameter_span);
+            (
+                parameter_tolerance,
+                0.05 * parameter_tolerance.min(EPS_PARAM_RESOLUTION_SPAN * parameter_span),
+            )
+        } else {
+            let half_span = parameter_end * 0.5 - parameter_start * 0.5;
+            let tolerance_fraction = (4.0 * tolerance / control_polygon_length.max(tolerance))
+                .max(EPS_PARAM_TOLERANCE_SPAN);
+            (
+                2.0 * (half_span * tolerance_fraction),
+                2.0 * (half_span * (0.05 * tolerance_fraction.min(EPS_PARAM_RESOLUTION_SPAN))),
+            )
+        };
+        let mut parameters = Vec::new();
+        for (span, control_points) in ctx
+            .admit_iter(points, "catia_limit_curve_spans")?
+            .chunks(SPAN_WIDTH)
+            .enumerate()
+        {
+            let control = span_control(control_points);
+            collect_bezier_point_parameters(
+                ctx,
+                control,
+                [curve.knots()[span * 6], curve.knots()[(span + 1) * 6]],
+                point,
+                tolerance,
+                parameter_resolution,
+                &mut parameters,
+            )?;
+        }
+        ctx.stable_sort_by(
             &mut parameters,
+            |value| &value.1,
+            f64::total_cmp,
+            "catia_limit_curve_point_parameters_sort",
         )?;
-    }
-    ctx.stable_sort_by(
-        &mut parameters,
-        |value| &value.1,
-        f64::total_cmp,
-        "catia_limit_curve_point_parameters_sort",
-    )?;
-    let Some(&(parameter, _)) = parameters.first() else {
-        return Ok(None);
-    };
-    let ambiguous = ctx.any_by(
-        parameters.get(1..).unwrap_or_default(),
-        |&(other, _)| Ok((other - parameter).abs() > parameter_tolerance),
-        "catia_limit_curve_parameter_candidates",
-    )?;
-    Ok((!ambiguous).then_some(parameter))
+        let Some(&(parameter, _)) = parameters.first() else {
+            return Ok(None);
+        };
+        let ambiguous = ctx.any_by(
+            parameters.get(1..).unwrap_or_default(),
+            |&(other, _)| Ok((other - parameter).abs() > parameter_tolerance),
+            "catia_limit_curve_parameter_candidates",
+        )?;
+        Ok((!ambiguous).then_some(parameter))
+    })
 }
 
 fn standard_limit_curve_bindings(
@@ -5752,33 +5756,142 @@ fn standard_limit_curve_bindings(
 ) -> Result<Vec<Vec<StandardLimitCurveBinding>>, CodecError> {
     const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
 
-    let mut curve_points = Vec::new();
-    ctx.reserve_vec(
-        &mut curve_points,
-        curves.len(),
-        "catia_limit_curve_point_rows",
-    )?;
-    for curve in ctx.admit_iter(curves, "catia_limit_curve_curves")? {
-        let mut row = Vec::new();
-        for (point, value) in ctx
-            .admit_iter(&ir.model.points, "catia_standard_iteration")?
-            .enumerate()
-        {
-            if let Some(parameter) = standard_limit_curve_point_parameter(
-                ctx,
-                curve,
-                value.position().get(),
-                VERTEX_MATCH_TOLERANCE,
-            )? {
+    if curves.is_empty() || supports.is_empty() {
+        return ctx.collect_indexed_vec(supports.len(), "catia_limit_curve_edge_rows", |_| {
+            Ok(Vec::new())
+        });
+    }
+    let mut storage = ctx.reserve_scoped(0, "catia_limit_curve_binding_scratch")?;
+    let (curve_points, support_index) = storage.with_storage(|| -> Result<_, CodecError> {
+        let point_index = {
+            let mut entry_storage = ctx.reserve_scoped(0, "catia_limit_curve_point_index")?;
+            let mut point_entries = entry_storage.with_storage(|| -> Result<_, CodecError> {
+                let mut entries = Vec::new();
+                for (item, point) in ctx
+                    .admit_iter(&ir.model.points, "catia_limit_curve_point_index")?
+                    .enumerate()
+                {
+                    ctx.push_vec(
+                        &mut entries,
+                        BoundsEntry {
+                            bounds: point_bounds(point.position().get(), 0.0),
+                            item,
+                        },
+                        "catia_limit_curve_point_index",
+                    )?;
+                }
+                Ok(entries)
+            })?;
+            BoundsIndex::new(ctx, &mut point_entries, "catia_limit_curve_point_index")?
+        };
+        let mut entry_storage = ctx.reserve_scoped(0, "catia_limit_curve_support_index")?;
+        let mut support_entries = entry_storage.with_storage(|| -> Result<_, CodecError> {
+            let mut entries = Vec::new();
+            let mut surface_bounds = HashMap::new();
+            for (item, support) in ctx
+                .admit_iter(supports, "catia_limit_curve_support_index")?
+                .enumerate()
+            {
+                if !matches!(
+                    support.geometry,
+                    crate::families::standard::records::StandardCurveGeometry::Bspline
+                ) {
+                    continue;
+                }
+                let mut bounds = [[f64::NEG_INFINITY, f64::INFINITY]; 3];
+                for face in support.faces {
+                    let Some(surface) = face_surface(ctx, ir, bindings, surface_indices, face)?
+                    else {
+                        continue;
+                    };
+                    if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) =
+                        &surface.geometry
+                    {
+                        let control = if let Some(bounds) = ctx.get_hash_map(
+                            &surface_bounds,
+                            surface.id.as_str(),
+                            "catia_limit_curve_surface_bounds",
+                        )? {
+                            *bounds
+                        } else {
+                            let bounds = nurbs_surface_control_bounds(ctx, nurbs)?;
+                            ctx.insert_hash_map(
+                                &mut surface_bounds,
+                                surface.id.as_str(),
+                                bounds,
+                                "catia_limit_curve_surface_bounds",
+                            )?;
+                            bounds
+                        };
+                        if let Some(control) = control {
+                            let scale = control
+                                .map(|[low, high]| low.abs().max(high.abs()))
+                                .into_iter()
+                                .fold(1.0_f64, f64::max);
+                            let margin =
+                                NURBS_SURFACE_MEMBERSHIP_TOLERANCE + 64.0 * f64::EPSILON * scale;
+                            bounds = control.map(|[low, high]| [low - margin, high + margin]);
+                            break;
+                        }
+                    }
+                }
                 ctx.push_vec(
-                    &mut row,
-                    (point, parameter),
-                    "catia_limit_curve_point_parameters",
+                    &mut entries,
+                    BoundsEntry { bounds, item },
+                    "catia_limit_curve_support_index",
                 )?;
             }
+            Ok(entries)
+        })?;
+        let support_index =
+            BoundsIndex::new(ctx, &mut support_entries, "catia_limit_curve_support_index")?;
+        let mut curve_points = Vec::new();
+        ctx.reserve_vec(
+            &mut curve_points,
+            curves.len(),
+            "catia_limit_curve_point_rows",
+        )?;
+        for curve in ctx.admit_iter(curves, "catia_limit_curve_curves")? {
+            let mut row = Vec::new();
+            if let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } =
+                curve.pole_rows()
+            {
+                let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
+                for point in ctx.admit_iter(points, "catia_limit_curve_control_bounds")? {
+                    for (axis, value) in [point.x, point.y, point.z].into_iter().enumerate() {
+                        bounds[axis][0] = bounds[axis][0].min(value);
+                        bounds[axis][1] = bounds[axis][1].max(value);
+                    }
+                }
+                let scale = bounds
+                    .map(|[low, high]| low.abs().max(high.abs()))
+                    .into_iter()
+                    .fold(1.0_f64, f64::max);
+                let margin = VERTEX_MATCH_TOLERANCE + 64.0 * f64::EPSILON * scale;
+                let bounds = bounds.map(|[low, high]| [low - margin, high + margin]);
+                let mut query_storage = ctx.reserve_scoped(0, "catia_limit_curve_point_queries")?;
+                let candidates = query_storage.with_storage(|| {
+                    point_index.matching_items(ctx, bounds, "catia_limit_curve_point_queries")
+                })?;
+                for point in ctx.admit_iter(candidates, "catia_limit_curve_point_candidates")? {
+                    if let Some(parameter) = standard_limit_curve_point_parameter(
+                        ctx,
+                        curve,
+                        ir.model.points[point].position().get(),
+                        VERTEX_MATCH_TOLERANCE,
+                    )? {
+                        ctx.push_vec(
+                            &mut row,
+                            (point, parameter),
+                            "catia_limit_curve_point_parameters",
+                        )?;
+                    }
+                }
+            }
+            curve_points.push(row);
         }
-        curve_points.push(row);
-    }
+        Ok((curve_points, support_index))
+    })?;
     let mut edge_curves =
         ctx.collect_indexed_vec(supports.len(), "catia_limit_curve_edge_rows", |_| {
             Ok(Vec::<StandardLimitCurveBinding>::new())
@@ -5787,97 +5900,116 @@ fn standard_limit_curve_bindings(
         .admit_iter(&curve_points, "catia_standard_iteration")?
         .enumerate()
     {
-        for (edge, support) in ctx
-            .admit_iter(supports, "catia_standard_iteration")?
-            .enumerate()
-        {
-            if !matches!(
-                support.geometry,
-                crate::families::standard::records::StandardCurveGeometry::Bspline
-            ) {
-                continue;
+        if points.is_empty() {
+            continue;
+        }
+        let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
+        for &(point, _) in ctx.admit_iter(points, "catia_limit_curve_bound_points")? {
+            let point = ir.model.points[point].position().get();
+            for (axis, value) in [point.x, point.y, point.z].into_iter().enumerate() {
+                bounds[axis][0] = bounds[axis][0].min(value);
+                bounds[axis][1] = bounds[axis][1].max(value);
             }
-            let mut candidates = Vec::new();
-            for (point, parameter) in ctx.admit_iter(points, "catia_standard_iteration")?.copied() {
-                let res = {
-                    let position = ir.model.points[point].position().get();
-                    let mut all_faces = true;
-                    for face in support.faces {
-                        let Some(surface) = face_surface(ctx, ir, bindings, surface_indices, face)?
-                        else {
-                            all_faces = false;
-                            break;
-                        };
-                        if !matches!(
-                            surface.geometry,
-                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-                        ) && !point_on_surface(ctx, position, &surface.geometry)?
-                        {
-                            all_faces = false;
-                            break;
+        }
+        let mut query_storage = ctx.reserve_scoped(0, "catia_limit_curve_support_queries")?;
+        let edges = query_storage.with_storage(|| {
+            support_index.matching_items(ctx, bounds, "catia_limit_curve_support_queries")
+        })?;
+        for edge in ctx.admit_iter(edges, "catia_standard_iteration")? {
+            let support = &supports[edge];
+            let mut candidate_storage =
+                ctx.reserve_scoped(0, "catia_limit_curve_candidate_scratch")?;
+            let binding = candidate_storage.with_storage(|| -> Result<_, CodecError> {
+                let mut candidates = [None; 2];
+                let mut count = 0;
+                let mut point_rows = points.iter().copied();
+                while let Some((point, parameter)) =
+                    ctx.next_charged(&mut point_rows, "catia_limit_curve_candidates")?
+                {
+                    let res = {
+                        let position = ir.model.points[point].position().get();
+                        let mut all_faces = true;
+                        for face in support.faces {
+                            let Some(surface) =
+                                face_surface(ctx, ir, bindings, surface_indices, face)?
+                            else {
+                                all_faces = false;
+                                break;
+                            };
+                            if !matches!(
+                                surface.geometry,
+                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                            ) && !point_on_surface(ctx, position, &surface.geometry)?
+                            {
+                                all_faces = false;
+                                break;
+                            }
                         }
+                        all_faces
+                    };
+                    if res {
+                        if count == candidates.len() {
+                            return Ok(None);
+                        }
+                        candidates[count] = Some((point, parameter));
+                        count += 1;
                     }
-                    all_faces
+                }
+                let [Some((start, start_parameter)), Some((end, end_parameter))] = candidates
+                else {
+                    return Ok(None);
                 };
-                if res {
-                    ctx.push_vec(
-                        &mut candidates,
-                        (point, parameter),
-                        "catia_limit_curve_candidates",
-                    )?;
-                }
-            }
-            let Ok([(start, start_parameter), (end, end_parameter)]) =
-                <[(usize, f64); 2]>::try_from(candidates)
-            else {
-                continue;
-            };
-            let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                curves[curve].try_clone_for_decode(ctx, "catia_limit_curve_geometry_copy")?,
-            ));
-            let midpoint = match cadmpeg_ir::eval::decode::outer_refusal(
-                cadmpeg_ir::eval::decode::curve_point(
-                    ctx,
-                    &geometry,
-                    0.5 * (start_parameter + end_parameter),
-                ),
-            )? {
-                Ok(point) => point,
-                Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
-                    return Err(limit.into());
-                }
-                Err(
-                    cadmpeg_ir::eval::EvaluationFailure::NoValue
-                    | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_),
-                ) => continue,
-            };
-            let mut checked_surface = false;
-            let mut agrees = true;
-            for face in support.faces {
-                let Some(surface) = face_surface(ctx, ir, bindings, surface_indices, face)? else {
-                    agrees = false;
-                    break;
+                let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    curves[curve].try_clone_for_decode(ctx, "catia_limit_curve_geometry_copy")?,
+                ));
+                let midpoint = match cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_point(
+                        ctx,
+                        &geometry,
+                        0.5 * (start_parameter + end_parameter),
+                    ),
+                )? {
+                    Ok(point) => point,
+                    Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
+                        return Err(limit.into());
+                    }
+                    Err(
+                        cadmpeg_ir::eval::EvaluationFailure::NoValue
+                        | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_),
+                    ) => return Ok(None),
                 };
-                if matches!(
-                    surface.geometry,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-                ) {
-                    continue;
+                let mut checked_surface = false;
+                let mut agrees = true;
+                for face in support.faces {
+                    let Some(surface) = face_surface(ctx, ir, bindings, surface_indices, face)?
+                    else {
+                        agrees = false;
+                        break;
+                    };
+                    if matches!(
+                        surface.geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                    ) {
+                        continue;
+                    }
+                    checked_surface = true;
+                    if !point_on_surface(ctx, midpoint.get(), &surface.geometry)? {
+                        agrees = false;
+                        break;
+                    }
                 }
-                checked_surface = true;
-                if !point_on_surface(ctx, midpoint.get(), &surface.geometry)? {
-                    agrees = false;
-                    break;
-                }
-            }
-            if checked_surface && agrees {
-                ctx.push_vec(
-                    &mut edge_curves[edge],
-                    StandardLimitCurveBinding {
+                Ok(
+                    (checked_surface && agrees).then_some(StandardLimitCurveBinding {
                         curve,
                         points: [start, end],
                         parameter_range: [start_parameter, end_parameter],
-                    },
+                    }),
+                )
+            })?;
+            if let Some(binding) = binding {
+                ctx.push_vec(
+                    &mut edge_curves[edge],
+                    binding,
                     "catia_limit_curve_edge_bindings",
                 )?;
             }
@@ -9930,6 +10062,28 @@ impl<'ctx> BoundsIndex<'ctx> {
             nodes,
             _storage: storage,
         })
+    }
+
+    /// Return overlapping leaf ordinals in source order.
+    fn matching_items(
+        &self,
+        ctx: &DecodeContext<'_>,
+        bounds: [[f64; 2]; 3],
+        operation: &'static str,
+    ) -> Result<Vec<usize>, CodecError> {
+        let mut items = Vec::new();
+        let mut nodes = self.overlapping(bounds);
+        while let Some(node) = ctx.next_charged(&mut nodes, operation)? {
+            if let Some(item) = node.item.filter(|_| bounds_overlap(node.bounds, bounds)) {
+                ctx.push_vec(&mut items, item, operation)?;
+            }
+        }
+        if items.len() > 2 {
+            ctx.sort_unstable_by(&mut items, |value| value, Ord::cmp, operation)?;
+        } else if items.len() == 2 && items[0] > items[1] {
+            items.swap(0, 1);
+        }
+        Ok(items)
     }
 
     /// Each advance does constant work; the caller admits each visited node.
