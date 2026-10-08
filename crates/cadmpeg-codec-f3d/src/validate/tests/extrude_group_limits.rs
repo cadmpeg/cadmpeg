@@ -100,7 +100,11 @@ fn group_error(
 
 #[test]
 fn extrude_group_slot_refuses_collection_limit() {
-    let error = group_error(true, false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D Extrude selection group slots",
+        |cap| Err::<(), cadmpeg_core::CodecError>(group_error(true, false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Extrude selection group slots")
@@ -109,7 +113,11 @@ fn extrude_group_slot_refuses_collection_limit() {
 
 #[test]
 fn extrude_group_invalid_finding_refuses_collection_limit() {
-    let error = group_error(false, false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(group_error(false, false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -118,7 +126,11 @@ fn extrude_group_invalid_finding_refuses_collection_limit() {
 
 #[test]
 fn extrude_group_invalid_entity_refuses_retained_limit() {
-    let error = group_error(false, false, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(group_error(false, false, u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -127,7 +139,11 @@ fn extrude_group_invalid_entity_refuses_retained_limit() {
 
 #[test]
 fn extrude_group_duplicate_slot_finding_refuses_collection_limit() {
-    let error = group_error(true, true, 1, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(group_error(true, true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -164,7 +180,11 @@ fn group_members_error(max_items: u64, max_retained: u64) -> cadmpeg_core::Codec
 
 #[test]
 fn extrude_group_missing_member_finding_refuses_collection_limit() {
-    let error = group_members_error(0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(group_members_error(cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -173,7 +193,11 @@ fn extrude_group_missing_member_finding_refuses_collection_limit() {
 
 #[test]
 fn extrude_group_missing_member_entity_refuses_retained_limit() {
-    let error = group_members_error(u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(group_members_error(u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -182,25 +206,30 @@ fn extrude_group_missing_member_entity_refuses_retained_limit() {
 
 #[test]
 fn extrude_group_member_scan_preserves_work_refusal() {
-    crate::test_support::with_decode_context(|service_ctx| {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let native = native(true, false);
-        let group = &native.design_extrude_selection_groups[0];
-        let stream = super::super::design_stream(&group.id);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // One group visit, two stream/u32 lookups, one scope reference, and both class tags.
-        policy.limits.max_work_units = 1 + 2 * (u64::try_from(stream.len()).unwrap() + 4) + 1 + 6;
-        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-        ctx.decode = &decode;
-        let error =
-            super::super::validate_extrude_selection_groups(&ctx, &mut Vec::new()).unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = &error else {
-            panic!("expected resource refusal: {error}");
-        };
-        assert_eq!(decode.resource_refusal().as_ref(), Some(limit));
-        assert_eq!(limit.operation, "validate F3D Extrude group member records");
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "validate F3D Extrude group member records",
+        |cap| {
+            crate::test_support::with_decode_context(|service_ctx| {
+                use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+                let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+                let native = native(true, false);
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+                ctx.decode = &decode;
+                let result = super::super::validate_extrude_selection_groups(&ctx, &mut Vec::new());
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                    assert_eq!(decode.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            })
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "validate F3D Extrude group member records")
+    );
 }

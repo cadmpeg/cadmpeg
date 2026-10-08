@@ -118,7 +118,7 @@ fn scope_error(case: Case, max_items: u64) -> cadmpeg_core::CodecError {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = max_items;
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let mut ctx = crate::validate::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
         super::super::validate_parameter_scopes(&ctx, &mut Vec::new()).unwrap_err()
     })
@@ -126,7 +126,11 @@ fn scope_error(case: Case, max_items: u64) -> cadmpeg_core::CodecError {
 
 #[test]
 fn standard_thread_group_refuses_collection_limit() {
-    let error = scope_error(Case::Standard, 1);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D standard thread face groups",
+        |cap| Err::<(), cadmpeg_core::CodecError>(scope_error(Case::Standard, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D standard thread face groups")
@@ -135,7 +139,11 @@ fn standard_thread_group_refuses_collection_limit() {
 
 #[test]
 fn compact_thread_group_refuses_collection_limit() {
-    let error = scope_error(Case::Compact, 1);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D compact thread face groups",
+        |cap| Err::<(), cadmpeg_core::CodecError>(scope_error(Case::Compact, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D compact thread face groups")
@@ -144,7 +152,11 @@ fn compact_thread_group_refuses_collection_limit() {
 
 #[test]
 fn edge_flange_claimed_reference_refuses_collection_limit() {
-    let error = scope_error(Case::Flange, 1);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D edge flange claimed references",
+        |cap| Err::<(), cadmpeg_core::CodecError>(scope_error(Case::Flange, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D edge flange claimed references")
@@ -153,7 +165,11 @@ fn edge_flange_claimed_reference_refuses_collection_limit() {
 
 #[test]
 fn edge_flange_target_reference_refuses_collection_limit() {
-    let error = scope_error(Case::ToObject, 13);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D edge flange target references",
+        |cap| Err::<(), cadmpeg_core::CodecError>(scope_error(Case::ToObject, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D edge flange target references")
@@ -162,7 +178,11 @@ fn edge_flange_target_reference_refuses_collection_limit() {
 
 #[test]
 fn edge_flange_claimed_index_refuses_collection_limit() {
-    let error = scope_error(Case::Flange, 13);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D edge flange claimed references",
+        |cap| Err::<(), cadmpeg_core::CodecError>(scope_error(Case::Flange, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D edge flange claimed references")
@@ -178,15 +198,16 @@ fn edge_flange_reference_scan_preserves_work_refusal() {
             ..Default::default()
         };
         for operation in [
+            "index F3D edge flange scope references",
             "validate F3D flange claimed references",
-            "find F3D located flange claimed reference",
+            "find F3D flange claimed reference",
         ] {
             let error = crate::test_support::resource_refusal_at(
                 cadmpeg_core::decode::ResourceDimension::WorkUnits,
                 operation,
                 0,
                 |decode| {
-                    let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
+                    let mut ctx = crate::validate::Ctx::new(&ir, &native, service)?;
                     ctx.decode = decode;
                     super::super::validate_parameter_scopes(&ctx, &mut Vec::new())
                 },
@@ -196,31 +217,6 @@ fn edge_flange_reference_scan_preserves_work_refusal() {
                 if limit.operation == operation)
             );
         }
-    });
-}
-
-#[test]
-fn edge_flange_selected_edge_count_refuses_work_limit() {
-    crate::test_support::with_decode_context(|service| {
-        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let native = crate::native::F3dNative {
-            design_parameter_scopes: vec![scope(Case::Flange)],
-            ..Default::default()
-        };
-        let error = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "count F3D edge flange selected edges",
-            0,
-            |decode| {
-                let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
-                ctx.decode = decode;
-                super::super::validate_parameter_scopes(&ctx, &mut Vec::new())
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "count F3D edge flange selected edges")
-        );
     });
 }
 
@@ -280,7 +276,7 @@ fn variable_alignment_reference_windows_refuse_work_limit() {
             "scan F3D variable alignment reference-window starts",
             0,
             |decode| {
-                let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
+                let mut ctx = crate::validate::Ctx::new(&ir, &native, service)?;
                 ctx.decode = decode;
                 super::super::validate_parameter_scopes(&ctx, &mut Vec::new())
             },

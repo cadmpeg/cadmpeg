@@ -80,7 +80,11 @@ fn resolution_error(
 
 #[test]
 fn face_group_entity_selection_index_refuses_collection_limit() {
-    let error = resolution_error(true, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D face group entity selections",
+        |cap| Err::<(), cadmpeg_core::CodecError>(resolution_error(true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D face group entity selections")
@@ -89,7 +93,11 @@ fn face_group_entity_selection_index_refuses_collection_limit() {
 
 #[test]
 fn face_group_unresolved_id_refuses_retained_limit() {
-    let error = resolution_error(false, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D face group member identity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(resolution_error(false, u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D face group member identity")
@@ -98,7 +106,11 @@ fn face_group_unresolved_id_refuses_retained_limit() {
 
 #[test]
 fn face_group_unresolved_finding_refuses_collection_limit() {
-    let error = resolution_error(false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(resolution_error(false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -187,7 +199,11 @@ fn operand_error(valid: bool, max_items: u64, max_retained: u64) -> cadmpeg_core
 
 #[test]
 fn entity_selection_slot_refuses_collection_limit() {
-    let error = operand_error(true, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D entity selection slots",
+        |cap| Err::<(), cadmpeg_core::CodecError>(operand_error(true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D entity selection slots")
@@ -196,7 +212,11 @@ fn entity_selection_slot_refuses_collection_limit() {
 
 #[test]
 fn entity_selection_invalid_finding_refuses_collection_limit() {
-    let error = operand_error(false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(operand_error(false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -205,7 +225,11 @@ fn entity_selection_invalid_finding_refuses_collection_limit() {
 
 #[test]
 fn entity_selection_invalid_entity_refuses_retained_limit() {
-    let error = operand_error(false, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(operand_error(false, u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")

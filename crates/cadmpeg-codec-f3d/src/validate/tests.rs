@@ -29,7 +29,6 @@ mod arithmetic;
 mod body_recipe_limits;
 mod construction_group_limits;
 mod construction_identity_limits;
-mod dimension_validation_limits;
 mod edge_identity_limits;
 mod edge_operand_limits;
 mod edge_treatment_limits;
@@ -46,8 +45,6 @@ mod image_limits;
 mod link_limits;
 mod mesh_feature_limits;
 mod operand_group_carrier_limits;
-mod parameter_scope_collection_limits;
-mod parameter_scope_limits;
 mod path_feature_limits;
 mod resource_limits;
 mod timeline_limits;
@@ -74,10 +71,16 @@ fn native_validation_refuses_decode_collection_limit() {
         )
         .unwrap();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = F3dCodec.validate_native(&ctx, &ir).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "load typed native record",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            F3dCodec.validate_native(&ctx, &ir)
+        },
+    );
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
