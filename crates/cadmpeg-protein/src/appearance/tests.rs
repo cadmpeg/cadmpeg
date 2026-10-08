@@ -64,9 +64,13 @@ fn distance_tags_convert_to_millimetres() {
 fn a_non_length_distance_tag_yields_no_value() {
     let record = distance_record(0x0002_1008, 1.0);
     assert_eq!(
-        distance_for_test(&record),
-        Err(super::DistanceError::UnknownUnit(0x0002_1008))
+        record.properties["test_Depth"].value(),
+        Some(&crate::property::PropertyValue::Distance {
+            unit: 0x0002_1008,
+            value: cadmpeg_ir::scalar::FiniteReal::ONE,
+        })
     );
+    assert_eq!(distance_for_test(&record), Err(super::DistanceError::UnknownUnit));
 }
 
 #[test]

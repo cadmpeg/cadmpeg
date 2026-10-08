@@ -167,7 +167,7 @@ pub fn texture_asset(
         match distance_property(property) {
             Ok(Some(value)) => distances[index] = value,
             Ok(None) => {}
-            Err(DistanceError::UnknownUnit(_)) => unknown_count += 1,
+            Err(DistanceError::UnknownUnit) => unknown_count += 1,
             Err(DistanceError::NonFinite) => {
                 return Err(CodecError::Malformed(ctx.format_retained(
                     format_args!(
@@ -280,7 +280,7 @@ fn boolean_property(property: Option<&PropertyValue>) -> Option<bool> {
 
 #[derive(Debug, PartialEq)]
 enum DistanceError {
-    UnknownUnit(u32),
+    UnknownUnit,
     NonFinite,
 }
 
@@ -292,7 +292,7 @@ fn distance_property(property: Option<&PropertyValue>) -> Result<Option<Length>,
         0x2016 => 25.4,
         0x200e => 1.0,
         0x200d => 10.0,
-        unit => return Err(DistanceError::UnknownUnit(unit)),
+        _ => return Err(DistanceError::UnknownUnit),
     };
     Length::new(value.get() * factor)
         .map(Some)
