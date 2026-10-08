@@ -167,3 +167,49 @@ fn shell_connectivity_uses_shared_edges_without_endpoint_records() {
     super::check_shell_connectivity(&ctx, &ir, &mut findings).unwrap();
     assert!(findings.is_empty());
 }
+
+#[test]
+fn shell_connectivity_keeps_shared_vertex_storage_proportional_to_faces() {
+    const FACE_COUNT: usize = 64;
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let face = ir.model.faces[0].clone();
+    let loop_ = ir.model.loops[0].clone();
+    ir.model.faces.clear();
+    ir.model.loops.clear();
+    ir.model.coedges.clear();
+    ir.model.edges.clear();
+    for index in 0..FACE_COUNT {
+        let mut face = face.clone();
+        let mut loop_ = loop_.clone();
+        face.id = format!("test:model:face#{index}").try_into().unwrap();
+        loop_.id = format!("test:model:loop#{index}").try_into().unwrap();
+        loop_.face = face.id.clone();
+        loop_.boundary = crate::topology::LoopBoundary::Vertex {
+            vertex: "test:model:vertex#shared".try_into().unwrap(),
+            pcurves: Vec::new(),
+        };
+        face.loops = crate::topology::FaceLoops::classified(loop_.id.clone(), Vec::new());
+        ir.model.faces.push(face);
+        ir.model.loops.push(loop_);
+    }
+    let shell = &ir.model.shells[0];
+    ir.model.shells[0] = crate::topology::Shell::with_faces(
+        shell.id.clone(),
+        shell.region.clone(),
+        ir.model.faces.iter().map(|face| face.id.clone()).collect(),
+    ).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // One KiB per face covers the borrowed indexes, incidence slots,
+    // traversal sets, pending stack, and their vector growth overlap.
+    // A 64-face clique alone needs 64 * 63 * 24 bytes of neighbor slots.
+    let scratch_bound = cadmpeg_core::decode::u64_from_index(FACE_COUNT) * 1024;
+    policy.limits.max_materialized_bytes = scratch_bound;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut findings = Vec::new();
+    super::check_shell_connectivity(&ctx, &ir, &mut findings).unwrap();
+    assert!(findings.is_empty());
+    drop(ctx.reserve_scoped(scratch_bound, "shell incidence scopes released").unwrap());
+    ctx.finish_session().unwrap();
+}
