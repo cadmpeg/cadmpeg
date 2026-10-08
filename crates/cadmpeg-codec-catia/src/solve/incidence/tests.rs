@@ -588,7 +588,9 @@ fn incidence_implicit_frontier_witness_refuses_map_and_pair_growth() {
     let choices = vec![vec![[0, 1]], Vec::new()];
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
-    let coordinate_domains = crate::test_support::with_service_context(|ctx| {
+    catia_test_context!(initial_ctx);
+    let coordinate_domains = {
+        let ctx = &initial_ctx;
         let mut quotient =
             crate::solve::mesh_quotient::initial_mesh_quotient(ctx, &choices, 2, &[[0, 1], [0, 1]])
                 .expect("service budget")
@@ -597,7 +599,7 @@ fn incidence_implicit_frontier_witness_refuses_map_and_pair_growth() {
             .prepare_coordinate_root_domains(ctx, 2, &choices, None)
             .expect("service budget")
             .expect("coordinate domains")
-    });
+    };
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
         let search = crate::solve::incidence::IncidenceComponentSearch {

@@ -397,8 +397,14 @@ fn quotient_clones_share_unconstrained_point_domains() {
     let quotient = MeshQuotient::new(vec![all.clone(), all.clone(), all.clone(), all.clone()]);
 
     let clone = quotient.clone();
-    assert!(Arc::ptr_eq(&quotient.domains()[0], &clone.domains()[0]));
-    assert!(Arc::ptr_eq(&quotient.domains()[0], &quotient.domains()[3]));
+    assert!(std::rc::Rc::ptr_eq(
+        &quotient.domains()[0],
+        &clone.domains()[0]
+    ));
+    assert!(std::rc::Rc::ptr_eq(
+        &quotient.domains()[0],
+        &quotient.domains()[3]
+    ));
 }
 
 #[test]
@@ -475,11 +481,15 @@ fn coordinate_root_candidate_copy_and_changed_edge_refuse_before_growth() {
         quotient
             .clone()
             .prepare_coordinate_root_domains(ctx, 3, &candidates, None)
+            .map(|result| {
+                result.map(|selected| {
+                    assert_eq!(selected.edge_candidates()[0], [[0, 1]]);
+                })
+            })
     };
-    let selected = crate::test_support::with_service_context(run)
+    crate::test_support::with_service_context(run)
         .expect("service resource budget")
         .expect("coordinate root domains");
-    assert_eq!(selected.edge_candidates()[0], [[0, 1]]);
     let mut operations = std::collections::HashSet::new();
     for limit in 0..256 {
         match crate::test_support::with_collection_limit(limit, run) {
@@ -1848,7 +1858,10 @@ fn implicit_candidate_scan_charges_rejected_pairs_and_duplicate_queries() {
         let result = crate::test_support::with_work_refusal(operation, |ctx| {
             let mut values = MeshImplicitEdgeCandidates {
                 source: MeshImplicitEdgeCandidateSource::Cartesian {
-                    domains: Arc::new(vec![vec![0, 1], vec![0, 1]]),
+                    domains: std::rc::Rc::new(crate::solve::mesh_quotient::ScopedValue {
+                        value: vec![vec![0, 1], vec![0, 1]],
+                        storage: None,
+                    }),
                     left_root: 0,
                     right_root: 1,
                     left_index: 0,
