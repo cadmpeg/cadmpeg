@@ -83,6 +83,61 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
     Ok(())
 }
 
+fn run_design_with_feature(policy: &DecodePolicy) -> Result<(), CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let mut ir = model();
+    ir.model.features[0].name = Some("x".repeat(32 * 1024));
+    let base_features = ir.model.features.clone();
+    let histories = [crate::records::FeatureHistory {
+        id: "source".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![crate::history::tests::feature("local", None, 0)],
+    }];
+    super::super::project_configuration_design_states(
+        &ctx,
+        &mut ir,
+        &histories,
+        &[feature_input_lane("lane", Some("0"))],
+        &[],
+        None,
+    )?;
+    assert_eq!(ir.model.features, base_features);
+    assert_eq!(ir.model.configurations[0].feature_states.len(), 1);
+    Ok(())
+}
+
+fn run_design_with_projected_feature(policy: &DecodePolicy) -> Result<(), CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let mut ir = model();
+    let original_features = ir.model.features.clone();
+    let mut projected_feature = crate::history::tests::feature("local", None, 0);
+    projected_feature.name = "x".repeat(32 * 1024);
+    let histories = [crate::records::FeatureHistory {
+        id: "source".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![projected_feature],
+    }];
+    super::super::project_configuration_design_states(
+        &ctx,
+        &mut ir,
+        &histories,
+        &[feature_input_lane("lane", Some("0"))],
+        &[],
+        None,
+    )?;
+    assert_eq!(ir.model.features, original_features);
+    assert_eq!(ir.model.configurations[0].feature_states.len(), 1);
+    Ok(())
+}
+
 fn run_supplemental(policy: &DecodePolicy) -> Result<(), CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -138,7 +193,7 @@ fn configuration_feature_copy_design_refuses_collection_limit() {
     assert_projection_refusal(
         ResourceDimension::CollectionItems,
         "retain SLDPRT configuration features",
-        run_design,
+        run_design_with_feature,
     );
 }
 #[test]
@@ -146,7 +201,7 @@ fn configuration_feature_copy_design_refuses_work_limit() {
     assert_projection_refusal(
         ResourceDimension::WorkUnits,
         "retain SLDPRT configuration features",
-        run_design,
+        run_design_with_feature,
     );
 }
 #[test]
@@ -223,15 +278,60 @@ fn configuration_feature_copy_sketch_refuses_work_limit() {
 }
 
 #[test]
-fn configuration_design_base_features_use_scoped_storage() {
+fn configuration_design_skips_base_features_without_projected_features() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    run_design(&policy).unwrap();
+    run_design(&policy).expect("empty feature projection must not copy the base model");
+
+    policy.limits.max_materialized_bytes = u64::MAX;
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::MaterializedBytes,
+        "retain SLDPRT configuration features",
+        None,
+    );
+    run_design(&policy).expect("empty feature projection must not copy the base model");
+}
+
+#[test]
+fn configuration_design_base_features_use_scoped_storage() {
     assert_projection_refusal(
         ResourceDimension::MaterializedBytes,
         "retain SLDPRT configuration features",
-        run_design,
+        run_design_with_feature,
     );
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::MAX;
+    policy.limits.max_materialized_bytes = u64::MAX;
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
+        "retain SLDPRT configuration features",
+        None,
+    );
+    run_design_with_feature(&policy).expect("base feature copy is temporary");
+}
+
+#[test]
+fn configuration_design_projects_only_retained_feature_state() {
+    assert_projection_refusal(
+        ResourceDimension::MaterializedBytes,
+        "copy SLDPRT projected feature text",
+        run_design_with_projected_feature,
+    );
+    assert_projection_refusal(
+        ResourceDimension::RetainedBytes,
+        "retain SLDPRT configuration feature identity",
+        run_design_with_projected_feature,
+    );
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::MAX;
+    policy.limits.max_materialized_bytes = u64::MAX;
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
+        "copy SLDPRT projected feature text",
+        None,
+    );
+    run_design_with_projected_feature(&policy)
+        .expect("projected feature name is temporary and is not retained in state");
 }
 
 #[test]

@@ -658,13 +658,11 @@ fn hole_profile_construction<'f>(
         if source.is_empty() {
             continue;
         }
-        let parsed_source = if source == "-1" {
-            Some(crate::records::FeatureSource::Reserved)
-        } else {
-            ctx.parse_text::<u32>(source, "parse SLDPRT hole child source")?
-                .ok()
-                .and_then(crate::records::FeatureSource::from_value)
-        };
+        let parsed_source = crate::records::FeatureSource::parse_for_decode(
+            ctx,
+            source,
+            "parse SLDPRT hole child source",
+        )?;
         let by_source = match parsed_source {
             Some(source) => ctx
                 .get_btree_map(features_by_source, &source, "look up SLDPRT feature source")?

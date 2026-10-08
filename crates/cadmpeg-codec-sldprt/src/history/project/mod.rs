@@ -1093,9 +1093,10 @@ pub(super) fn bind_offset_plane_references(
             // The one zero-offset root every matching earlier plane reaches.
             let mut found: Option<(usize, f64)> = None;
             if !candidates_indexed {
-                const INDEX: &str = "index SLDPRT offset plane candidates";
+                const SCAN: &str = "scan SLDPRT offset plane candidates";
+                const INDEX: &str = "index SLDPRT offset plane candidate groups";
                 for (candidate_position, (candidate, fact)) in
-                    ctx.admit_iter(&*features, INDEX)?.zip(&facts).enumerate()
+                    ctx.admit_iter(&*features, SCAN)?.zip(&facts).enumerate()
                 {
                     if fact.base.is_some()
                         || matches!(
@@ -1169,7 +1170,18 @@ pub(super) fn bind_offset_plane_references(
                 continue;
             };
             let reference = copy_projected_feature_id(ctx, &features[root].id)?;
-            let dependency = copy_projected_feature_id(ctx, &reference)?;
+            let dependency = if ctx.contains(
+                features[position].dependencies.as_slice(),
+                &reference,
+                OPERATION,
+            )? {
+                None
+            } else {
+                Some(reference.try_clone_for_decode(
+                    ctx,
+                    "copy SLDPRT offset plane dependency",
+                )?)
+            };
             let mut bound = false;
             features[position].evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -1186,9 +1198,11 @@ pub(super) fn bind_offset_plane_references(
                 continue;
             }
             references[position] = Some(root);
-            features[position]
-                .dependencies
-                .insert(ctx, dependency, OPERATION)?;
+            if let Some(dependency) = dependency {
+                features[position]
+                    .dependencies
+                    .insert(ctx, dependency, OPERATION)?;
+            }
             changed = true;
         }
         if !changed {
@@ -1453,6 +1467,35 @@ fn unique_source_bindings(
     Ok(sources)
 }
 
+fn visit_dependency_references(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+    mut visit: impl FnMut(&str) -> Result<bool, CodecError>,
+) -> Result<(), CodecError> {
+    let mut characters = value.char_indices();
+    let mut start = 0;
+    let mut finished = false;
+    while !finished {
+        let delimiter = ctx.find_map(
+            &mut characters,
+            |(offset, character)| {
+                Ok((character == ',' || character == ';' || character.is_whitespace())
+                    .then_some((offset, character.len_utf8())))
+            },
+            operation,
+        )?;
+        let (end, width) = delimiter.unwrap_or((value.len(), 0));
+        finished = delimiter.is_none();
+        let reference = &value[start..end];
+        start = end + width;
+        if !reference.is_empty() && !visit(reference)? {
+            break;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn incomplete_history_reference_features(
     ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
@@ -1512,35 +1555,13 @@ pub(crate) fn incomplete_history_reference_features(
                 let Some(value) = ctx.get_btree_map(&feature.properties, *name, OPERATION)? else {
                     continue;
                 };
-                let mut characters = value.char_indices();
-                let mut start = 0;
-                let mut finished = false;
-                while !finished {
-                    let delimiter = ctx.find_map(
-                        &mut characters,
-                        |(offset, character)| {
-                            Ok(
-                                (character == ',' || character == ';' || character.is_whitespace())
-                                    .then_some((offset, character.len_utf8())),
-                            )
-                        },
-                        OPERATION,
-                    )?;
-                    let (end, width) = delimiter.unwrap_or((value.len(), 0));
-                    finished = delimiter.is_none();
-                    let reference = &value[start..end];
-                    start = end + width;
-                    if reference.is_empty() {
-                        continue;
-                    }
+                visit_dependency_references(ctx, value, OPERATION, |reference| {
                     // A reference resolves to one other record holding its source.
-                    let parsed_source = if reference == "-1" {
-                        Some(FeatureSource::Reserved)
-                    } else {
-                        ctx.parse_text::<u32>(reference, "parse SLDPRT feature dependency source")?
-                            .ok()
-                            .and_then(FeatureSource::from_value)
-                    };
+                    let parsed_source = FeatureSource::parse_for_decode(
+                        ctx,
+                        reference,
+                        "parse SLDPRT feature dependency source",
+                    )?;
                     let resolved = match parsed_source {
                         Some(reference) => {
                             matches!(source_binding(&reference)?, Some(Some(bound)) if bound != position)
@@ -1549,9 +1570,9 @@ pub(crate) fn incomplete_history_reference_features(
                     };
                     if !resolved {
                         unresolved_dependency = true;
-                        break;
                     }
-                }
+                    Ok(resolved)
+                })?;
                 if unresolved_dependency {
                     break;
                 }
@@ -1676,34 +1697,14 @@ fn project_feature_dependencies(
         let Some(value) = ctx.get_btree_map(&feature.properties, *property, OPERATION)? else {
             continue;
         };
-        let mut characters = value.char_indices();
-        let mut start = 0;
-        let mut finished = false;
-        while !finished {
-            let delimiter = ctx.find_map(
-                &mut characters,
-                |(offset, character)| {
-                    Ok(
-                        (character == ',' || character == ';' || character.is_whitespace())
-                            .then_some((offset, character.len_utf8())),
-                    )
-                },
-                OPERATION,
-            )?;
-            let (end, width) = delimiter.unwrap_or((value.len(), 0));
-            finished = delimiter.is_none();
-            let reference = &value[start..end];
-            start = end + width;
-            if reference.is_empty() {
-                continue;
-            }
+        visit_dependency_references(ctx, value, OPERATION, |reference| {
             let Some(&dependency) = ctx.get_hash_map(by_source, reference, OPERATION)? else {
-                continue;
+                return Ok(true);
             };
             if ctx.equal(dependency, owner, OPERATION)?
                 || ctx.contains_hash_set(&seen, dependency, OPERATION)?
             {
-                continue;
+                return Ok(true);
             }
             storage.with_storage(|| ctx.insert_hash_set(&mut seen, dependency, OPERATION))?;
             ctx.push_vec(
@@ -1711,7 +1712,8 @@ fn project_feature_dependencies(
                 copy_projected_feature_id(ctx, dependency)?,
                 OPERATION,
             )?;
-        }
+            Ok(true)
+        })?;
     }
     Ok(cadmpeg_ir::features::DistinctMembers::try_from(
         dependencies,
