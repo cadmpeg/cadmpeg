@@ -93,7 +93,7 @@ pub(in super::super) fn knit_class_100_operand_entity_ids(
             .admit_iter(&table.entries, "creo knit table entries")?
             .enumerate()
         {
-            if seen.contains(&entry.entity_id) {
+            if ctx.contains_btree_set(&seen, &entry.entity_id, "creo knit consumer identity lookup")? {
                 return Ok(None);
             }
             ctx.insert_btree_set(
@@ -156,7 +156,7 @@ fn knit_operand_entity_ids(
         let mut copied = Vec::new();
         let mut seen = BTreeSet::new();
         for &id in ids {
-            if seen.contains(&id) {
+            if ctx.contains_btree_set(&seen, &id, "creo knit quilt identity lookup")? {
                 return Ok(None);
             }
             local_storage.with_storage(|| {
@@ -233,7 +233,7 @@ pub(in super::super) fn knit_operand_surface_ids(
         else {
             return Ok(None);
         };
-        if surface.feature_id != producer || seen.contains(&surface_id) {
+        if surface.feature_id != producer || ctx.contains_btree_set(&seen, &surface_id, "creo knit surface identity lookup")? {
             return Ok(None);
         }
         ctx.insert_btree_set(&mut seen, surface_id, "creo knit surface identity nodes")?;
@@ -416,8 +416,8 @@ pub(in super::super) fn feature_surface_transitions(
                     != 1
                 || crate::surface::unique_surface_row(surface_rows, output.entity_id)
                     .is_none_or(|row| row.feature_id != feature_id)
-                || output_ids.contains(&output.entity_id)
-                || intermediate_ids.contains(&intermediate_id)
+                || ctx.contains_btree_set(&output_ids, &output.entity_id, "creo transition output identity lookup")?
+                || ctx.contains_btree_set(&intermediate_ids, &intermediate_id, "creo transition intermediate identity lookup")?
             {
                 return Ok(None);
             }
@@ -456,7 +456,7 @@ pub(in super::super) fn feature_surface_transitions(
             };
             if crate::surface::unique_surface_row(surface_rows, source_id)
                 .is_none_or(|row| row.feature_id == feature_id)
-                || source_ids.contains(&source_id)
+                || ctx.contains_btree_set(&source_ids, &source_id, "creo transition source identity lookup")?
             {
                 return Ok(None);
             }
@@ -471,7 +471,7 @@ pub(in super::super) fn feature_surface_transitions(
             transitions.push((source_id, output.entity_id));
         }
     }
-    Ok(output_ids.is_disjoint(&source_ids).then_some(transitions))
+    Ok((!ctx.any_by(&output_ids, |id| ctx.contains_btree_set(&source_ids, id, "creo transition identity separation lookup"), "creo transition identity separation")?).then_some(transitions))
 }
 
 pub(in super::super) fn surface_transition_dependencies(
@@ -505,7 +505,7 @@ pub(in super::super) fn thicken_plane_offset(
     for &(source_id, output_id) in
         ctx.admit_iter(transitions, "creo thicken surface transitions")?
     {
-        let (Some(source), Some(output)) = (planes.get(&source_id), planes.get(&output_id)) else {
+        let (Some(source), Some(output)) = (ctx.get_btree_map(planes, &source_id, "creo thicken source plane lookup")?, ctx.get_btree_map(planes, &output_id, "creo thicken output plane lookup")?) else {
             continue;
         };
         let Some(offset) = (|| {
@@ -591,7 +591,7 @@ pub(in super::super) fn feature_result_surface_ids(
             let Some(row) = crate::surface::unique_surface_row(rows, surface_id) else {
                 return Ok(None);
             };
-            if row.feature_id != feature_id || seen.contains(&surface_id) {
+            if row.feature_id != feature_id || ctx.contains_btree_set(&seen, &surface_id, "creo knit surface identity lookup")? {
                 return Ok(None);
             }
             local_storage.with_storage(|| {
@@ -618,7 +618,7 @@ pub(super) fn feature_result_surface_ids_by_feature(
     let mut by_feature = BTreeMap::new();
     for table in ctx.admit_iter(tables, "creo feature result entity tables")? {
         let feature_id = table.feature_id;
-        if unique_features.contains(&feature_id) {
+        if ctx.contains_btree_set(&unique_features, &feature_id, "creo feature result feature identity lookup")? {
             continue;
         }
         local_storage.with_storage(|| {
@@ -740,7 +740,7 @@ pub(in super::super) fn generated_surface_face_refs(
         )? {
             return Ok(None);
         }
-        let Some(ids) = result_surface_ids.get(&row.feature_id) else {
+        let Some(ids) = ctx.get_btree_map(result_surface_ids, &row.feature_id, "creo generated surface result roster lookup")? else {
             return Ok(None);
         };
         if !ctx.contains(ids, surface_id, "creo generated surface result ID lookup")? {

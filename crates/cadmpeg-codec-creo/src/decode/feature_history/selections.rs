@@ -109,7 +109,7 @@ pub(in super::super) fn feature_edge_selection(
             .map_err(|_| CodecError::Malformed("constructed Creo edge ID is invalid".into()))?;
         ctx.reserve_vec(&mut edges, 1, "creo selected edge identities")?;
         edges.push(edge);
-        if seen.contains(id) {
+        if ctx.contains_btree_set(&seen, id, "creo selected edge identity lookup")? {
             unique = false;
         } else {
             ctx.insert_btree_set(&mut seen, *id, "creo selected edge identity nodes")?;
@@ -193,7 +193,7 @@ pub(in super::super) fn generated_curve_edge_refs(
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut unique_curve_ids = BTreeSet::new();
     for &curve_id in ctx.admit_iter(curve_ids, "creo selected curve IDs")? {
-        if unique_curve_ids.contains(&curve_id) {
+        if ctx.contains_btree_set(&unique_curve_ids, &curve_id, "creo selected curve identity lookup")? {
             return Ok(None);
         }
         local_storage.with_storage(|| {
@@ -215,7 +215,7 @@ pub(in super::super) fn generated_curve_edge_refs(
     }
     let mut unique_rows = BTreeMap::new();
     for row in ctx.admit_iter(rows, "creo curve topology rows")? {
-        if counts.get(&row.id) == Some(&1) {
+        if ctx.get_btree_map(&counts, &row.id, "creo curve row count lookup")? == Some(&1) {
             local_storage.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut unique_rows,
@@ -228,7 +228,7 @@ pub(in super::super) fn generated_curve_edge_refs(
     }
     let mut generated = Vec::new();
     for &curve_id in ctx.admit_iter(curve_ids, "creo selected curve IDs")? {
-        let Some(row) = unique_rows.get(&curve_id) else {
+        let Some(row) = ctx.get_btree_map(&unique_rows, &curve_id, "creo unique curve row lookup")? else {
             return Ok(None);
         };
         let feature_text = ctx.format_retained(
@@ -248,7 +248,7 @@ pub(in super::super) fn generated_curve_edge_refs(
         )? {
             return Ok(None);
         }
-        let Some(ids) = result_edge_ids.get(&row.feature_id) else {
+        let Some(ids) = ctx.get_btree_map(result_edge_ids, &row.feature_id, "creo generated curve result roster lookup")? else {
             return Ok(None);
         };
         if !ctx.contains(ids, &curve_id, "creo generated curve result ID lookup")? {
@@ -292,7 +292,7 @@ pub(in super::super) fn feature_result_edge_ids(
         .admit_iter(rows, "creo curve topology rows")?
         .filter(|row| row.feature_id == feature_id)
     {
-        if counts.get(&row.id) != Some(&1) {
+        if ctx.get_btree_map(&counts, &row.id, "creo curve row count lookup")? != Some(&1) {
             return Ok(None);
         }
         ctx.reserve_vec(&mut edge_ids, 1, "creo feature result edge IDs")?;

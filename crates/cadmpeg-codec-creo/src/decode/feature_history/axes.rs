@@ -569,14 +569,9 @@ pub(in super::super) fn geometry_generator_features(
         if row.feature_id == 0 {
             continue;
         }
-        map_storage.with_storage(|| {
-            ctx.admit_btree_entry(
-                &generators,
-                &row.feature_id,
-                "creo generator feature map nodes",
-            )
-        })?;
-        let generator = match generators.entry(row.feature_id) {
+        let generator = match map_storage.with_storage(|| {
+            ctx.entry_btree_map(&mut generators, row.feature_id, "creo generator feature map nodes")
+        })? {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(GeometryGeneratorFeature {
@@ -595,14 +590,9 @@ pub(in super::super) fn geometry_generator_features(
         if row.feature_id == 0 {
             continue;
         }
-        map_storage.with_storage(|| {
-            ctx.admit_btree_entry(
-                &generators,
-                &row.feature_id,
-                "creo generator feature map nodes",
-            )
-        })?;
-        let generator = match generators.entry(row.feature_id) {
+        let generator = match map_storage.with_storage(|| {
+            ctx.entry_btree_map(&mut generators, row.feature_id, "creo generator feature map nodes")
+        })? {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(GeometryGeneratorFeature {
@@ -619,9 +609,9 @@ pub(in super::super) fn geometry_generator_features(
     }
     let mut output = Vec::new();
     for generator in generators.into_values() {
-        if operation_feature_ids.contains(&generator.feature_id)
-            || row_feature_ids.contains(&generator.feature_id)
-            || datum_feature_ids.contains(&generator.feature_id)
+        if ctx.contains_btree_set(&operation_feature_ids, &generator.feature_id, "creo generator exclusion lookup")?
+            || ctx.contains_btree_set(&row_feature_ids, &generator.feature_id, "creo generator exclusion lookup")?
+            || ctx.contains_btree_set(&datum_feature_ids, &generator.feature_id, "creo generator exclusion lookup")?
         {
             continue;
         }
@@ -672,7 +662,7 @@ pub(in super::super) fn model_feature_ids(
                 .map(|generator| generator.feature_id),
         )
     {
-        if numeric_ids.contains(&feature_id) {
+        if ctx.contains_btree_set(&numeric_ids, &feature_id, "creo numeric feature identity lookup")? {
             continue;
         }
         numeric_storage.with_storage(|| {

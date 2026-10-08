@@ -65,7 +65,7 @@ fn feature_output_bodies_with_history(
     history: &mut FeatureOutputHistory<'_>,
 ) -> Result<Vec<BodyId>, CodecError> {
     let _depth = ctx.enter_nested("creo feature output history")?;
-    if history.visiting.contains(&feature_id) {
+    if ctx.contains_btree_set(&history.visiting, &feature_id, "creo feature output visiting lookup")? {
         return Ok(Vec::new());
     }
     history.storage.with_storage(|| {
@@ -176,7 +176,7 @@ fn feature_output_bodies_with_history(
             outputs.push(body);
         }
     }
-    history.visiting.remove(&feature_id);
+    ctx.remove_btree_set(&mut history.visiting, &feature_id, "creo feature output visiting removal")?;
     Ok(outputs)
 }
 
@@ -655,7 +655,7 @@ fn insert_feature_parameter(
         format_args!("{base}"),
         "creo feature parameter key candidate",
     )?;
-    let (key, key_reservation) = if parameters.contains_key(&base) {
+    let (key, key_reservation) = if ctx.contains_key_btree_map(parameters, &base, "creo feature parameter key lookup")? {
         let mut occurrence = 2usize;
         loop {
             ctx.charge_work(1, "creo feature parameter collision candidate")?;
@@ -663,7 +663,7 @@ fn insert_feature_parameter(
                 format_args!("{base}#{occurrence}"),
                 "creo feature parameter key candidate",
             )?;
-            if !parameters.contains_key(&candidate.0) {
+            if !ctx.contains_key_btree_map(parameters, &candidate.0, "creo feature parameter key lookup")? {
                 drop(base);
                 drop(base_reservation);
                 break candidate;
@@ -703,7 +703,7 @@ fn replace_feature_parameter(
     let value = text_storage.with_storage(|| {
         ctx.format_retained(format_args!("{value}"), "creo feature parameter value")
     })?;
-    if let Some(existing) = parameters.get_mut(key) {
+    if let Some(existing) = ctx.get_mut_btree_map(parameters, key, "creo feature parameter replacement lookup")? {
         *existing = value;
     } else {
         let key = text_storage

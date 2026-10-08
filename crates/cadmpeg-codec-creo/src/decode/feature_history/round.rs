@@ -1493,7 +1493,7 @@ pub(in super::super) fn chamfer_constant_distance(
             }
             _ => continue,
         };
-        if !is_support_plane || support_plane_ids.contains(id) {
+        if !is_support_plane || ctx.contains_btree_set(&support_plane_ids, id, "creo chamfer support plane identity lookup")? {
             continue;
         }
         ctx.insert_btree_set(
