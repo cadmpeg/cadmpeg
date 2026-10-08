@@ -107,7 +107,8 @@ pub(crate) fn apply_feature_name_changes(
             &arena,
             &DecodePolicy::service(),
         )?;
-        let aliases = expression_identifier_tokens(&ctx, &parameter.expression)?
+        let (tokens, token_storage) = expression_identifier_tokens(&ctx, &parameter.expression)?;
+        let aliases = tokens
             .unwrap_or_default()
             .into_iter()
             .filter_map(|token| {
@@ -121,6 +122,7 @@ pub(crate) fn apply_feature_name_changes(
                     })
             })
             .collect::<HashMap<_, _>>();
+        drop(token_storage);
         if let Some(rewritten) =
             rewrite_parameter_expression(&ctx, &parameter.expression, &aliases)?
         {

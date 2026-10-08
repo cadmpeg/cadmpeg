@@ -429,14 +429,15 @@ pub(in crate::history) fn rewrite_parameter_expression(
     expression: &str,
     aliases: &HashMap<String, String>,
 ) -> Result<Option<String>, CodecError> {
-    let Some(tokens) = expression_identifier_tokens(ctx, expression)? else {
+    let (tokens, _token_storage) = expression_identifier_tokens(ctx, expression)?;
+    let Some(tokens) = tokens else {
         return Ok(None);
     };
     let mut rewritten = String::with_capacity(expression.len());
     let mut tail = expression;
     let mut replaced = false;
     for token in tokens {
-        if token.is_syntax() {
+        if token.is_syntax(ctx)? {
             continue;
         }
         let Some(replacement) = aliases.get(token.value()) else {
