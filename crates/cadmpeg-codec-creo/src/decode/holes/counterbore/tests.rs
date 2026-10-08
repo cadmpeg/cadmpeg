@@ -16,6 +16,11 @@ fn service_boundary_circle(
     cylinder_ids: &[u32],
     radius: f64,
 ) -> Option<(u32, Point3, [f64; 3])> {
+    let cylinder_ids = match cylinder_ids {
+        [first] => [Some(*first), None],
+        [first, second] => [Some(*first), Some(*second)],
+        _ => return None,
+    };
     crate::decode::with_test_decode_ctx(|ctx| {
         super::counterbore_source_boundary_circles(
             ctx,
@@ -939,7 +944,7 @@ fn boundary_queries_share_curve_index() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.curves.push(boundary_circle());
     let sources = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let query = (&[2][..], 1.0);
+    let query = ([Some(2), None], 1.0);
     let one = crate::test_support::last_refusal_at(
         &[],
         ResourceDimension::WorkUnits,
