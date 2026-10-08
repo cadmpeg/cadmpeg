@@ -1528,7 +1528,12 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             components.push(Vec::new());
             return Ok(components);
         }
-        let mut connectivity = ctx.collection_vec(face_uses.len(), "FreeCAD face connectivity")?;
+        let (values, storage) =
+            ctx.temporary_vec(face_uses.len(), "FreeCAD face connectivity")?;
+        let mut connectivity = ScopedVec {
+            values,
+            _storage: storage,
+        };
         let mut face_uses = face_uses.iter();
         while face_uses.len() != 0 {
             let Some(&face_use) = ctx.next_charged(
@@ -1591,7 +1596,7 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                         format_args!("edge:{}", edge_key.data.0),
                         "FreeCAD face connectivity edge identity",
                     )?;
-                    let key = ScopedData {
+                    let mut key = ScopedData {
                         data: key,
                         _storage: key_storage,
                     };
@@ -1600,12 +1605,14 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                         &key.data,
                         "FreeCAD face connectivity edge lookup",
                     )? {
-                        let key = key._storage.commit_value(key.data)?;
-                        ctx.insert_btree_set(
-                            &mut keys,
-                            key,
-                            "FreeCAD face connectivity edge keys",
-                        )?;
+                        connectivity._storage.absorb(&mut key._storage)?;
+                        connectivity._storage.with_storage(|| {
+                            ctx.insert_btree_set(
+                                &mut keys,
+                                key.data,
+                                "FreeCAD face connectivity edge keys",
+                            )
+                        })?;
                     }
                     let edge = self.shape(edge_use.shape)?;
                     let mut edge_children = edge.children.iter();
@@ -1644,7 +1651,7 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                             format_args!("vertex:{}", vertex_key.data.0),
                             "FreeCAD face connectivity vertex identity",
                         )?;
-                        let key = ScopedData {
+                        let mut key = ScopedData {
                             data: key,
                             _storage: key_storage,
                         };
@@ -1653,20 +1660,22 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                             &key.data,
                             "FreeCAD face connectivity vertex lookup",
                         )? {
-                            let key = key._storage.commit_value(key.data)?;
-                            ctx.insert_btree_set(
-                                &mut keys,
-                                key,
-                                "FreeCAD face connectivity vertex keys",
-                            )?;
+                            connectivity._storage.absorb(&mut key._storage)?;
+                            connectivity._storage.with_storage(|| {
+                                ctx.insert_btree_set(
+                                    &mut keys,
+                                    key.data,
+                                    "FreeCAD face connectivity vertex keys",
+                                )
+                            })?;
                         }
                     }
                 }
             }
-            connectivity.push(keys);
+            connectivity.values.push(keys);
         }
 
-        connected_components(ctx, &connectivity)
+        connected_components(ctx, &connectivity.values)
     }
 
     fn append_face(
