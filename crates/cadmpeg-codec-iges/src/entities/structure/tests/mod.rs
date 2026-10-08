@@ -58,6 +58,7 @@ mod bounded_planes;
 mod definitions;
 mod dialect;
 mod network;
+mod scratch_lifetimes;
 
 #[test]
 fn signal_string_geometry_accepts_composite_constituents_and_copious_forms() {

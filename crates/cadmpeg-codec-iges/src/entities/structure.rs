@@ -12,7 +12,7 @@ use crate::parameter::{
     connect_node_layout, signal_string_layout, text_node_layout, ParameterRecord, TokenValue,
     TrailingPointerAnalysis,
 };
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::eval::finite_or_refusal;
@@ -720,6 +720,151 @@ fn attribute_value_valid(
         (6, Some(TokenValue::Integer(value))) => matches!(*value, 0..=1),
         _ => false,
     })
+}
+
+struct AttributeShape<'ctx> {
+    descriptors: Vec<(i64, usize)>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+fn attribute_definition_valid_and_shape<'ctx>(
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    global_table: GlobalTable,
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<(bool, AttributeShape<'ctx>), CodecError> {
+    let name_valid = matches!(
+        record.value(1),
+        Some(TokenValue::String(_) | TokenValue::Omitted)
+    );
+    let list_type_valid = record
+        .integer(2)
+        .is_some_and(|value| attribute_list_type_meaning(value, global_table).is_some());
+    let attribute_count = record.count(3).filter(|count| *count > 0);
+    let mut cursor = 4;
+    let mut attributes_valid = attribute_count.is_some();
+    let mut attribute_types = BTreeSet::new();
+    let mut attribute_type_storage = ctx.reserve_scoped(0, "iges attribute type nodes")?;
+    let mut descriptors = Vec::new();
+    let mut shape_storage = ctx.reserve_scoped(0, "iges attribute shape descriptors")?;
+    for _ in ctx.admit_iter(
+        0..attribute_count.unwrap_or_default(),
+        "iges structure list traversal",
+    )? {
+        let attribute_type_valid = match record.integer(cursor) {
+            Some(value) if (0..=9999).contains(&value) => attribute_type_storage
+                .with_storage(|| {
+                    ctx.insert_btree_set(&mut attribute_types, value, "iges attribute type nodes")
+                })?,
+            _ => false,
+        };
+        let data_type = record
+            .integer(cursor + 1)
+            .filter(|value| matches!(value, 0..=6));
+        let value_count = match record.value(cursor + 2) {
+            None | Some(TokenValue::Omitted) => record.integer_or(cursor + 2, 1).map(|_| 1),
+            Some(TokenValue::Integer(value)) => {
+                usize::try_from(*value).ok().and_then(|count| {
+                    (entry.form == 0
+                        || cursor
+                            .checked_add(3)
+                            .and_then(|start| record.parameter_end().checked_sub(start))
+                            .is_some_and(|available| count <= available))
+                    .then_some(count)
+                })
+            }
+            Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
+        };
+        cursor += 3;
+        attributes_valid &=
+            attribute_type_valid && data_type.is_some() && value_count.is_some();
+        if let Some(descriptor) = data_type
+            .zip(value_count)
+            .filter(|(_, count)| entry.form == 0 && *count > 0)
+        {
+            ctx.push_scoped_vec(
+                &mut shape_storage,
+                &mut descriptors,
+                descriptor,
+                "iges attribute shape descriptors",
+            )?;
+        }
+        if entry.form != 0 {
+            for _ in ctx.admit_iter(
+                0..value_count.unwrap_or_default(),
+                "iges structure list traversal",
+            )? {
+                let value_valid = match data_type {
+                    Some(data_type) => {
+                        attribute_value_valid(record, cursor, data_type, entries, ctx)?
+                    }
+                    None => false,
+                };
+                attributes_valid &= value_valid;
+                cursor += 1;
+                if entry.form == 2 {
+                    let display_valid = match record.integer_or(cursor, 0) {
+                        Some(0) => true,
+                        Some(value) => match u32::try_from(value).ok() {
+                            Some(sequence) => ctx
+                                .get_btree_map(
+                                    entries,
+                                    &sequence,
+                                    "iges attribute display directory lookup",
+                                )?
+                                .is_some_and(|target| target.entity_type == 312),
+                            None => false,
+                        },
+                        None => false,
+                    };
+                    attributes_valid &= display_valid;
+                    cursor += 1;
+                }
+            }
+        }
+    }
+    Ok((
+        name_valid && list_type_valid && attributes_valid,
+        AttributeShape {
+            descriptors,
+            _storage: shape_storage,
+        },
+    ))
+}
+
+fn unit_values_valid(
+    record: &ParameterRecord,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let count = record.count(1).filter(|count| *count > 0);
+    let mut types = BTreeSet::<&[u8]>::new();
+    let mut type_storage = ctx.reserve_scoped(0, "iges unit type nodes")?;
+    let mut units_valid = count.is_some_and(|count| record.parameter_end() == 2 + count * 3);
+    if let Some(count) = count.filter(|_| units_valid) {
+        let mut input = 0..count;
+        while let Some(offset) = ctx.next_charged(&mut input, "iges structure list traversal")? {
+            let start = 2 + offset * 3;
+            let valid = if let Some((unit_type, value)) =
+                record.string(start).zip(record.string(start + 1))
+            {
+                unit_value_valid(unit_type, value)
+                    && type_storage.with_storage(|| {
+                        ctx.insert_btree_set(&mut types, unit_type, "iges unit type nodes")
+                    })?
+                    && record
+                        .number(start + 2)
+                        .is_some_and(|scale| scale.is_finite() && scale > 0.0)
+            } else {
+                false
+            };
+            if !valid {
+                units_valid = false;
+                break;
+            }
+        }
+    }
+    Ok(units_valid)
 }
 
 fn unit_value_valid(unit_type: &[u8], value: &[u8]) -> bool {
@@ -2338,6 +2483,7 @@ struct LegacyPlaneSource<'a> {
 fn legacy_single_parent_face<'ir, 'ctx>(
     proof_context: (&ModelIndex<'ir>, &mut PlaneBoundaryProofs<'ir, '_>),
     source: LegacyPlaneSource<'_>,
+    parent: (u32, &DirectoryEntry),
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
@@ -2353,9 +2499,7 @@ fn legacy_single_parent_face<'ir, 'ctx>(
 > {
     let (index, proofs) = proof_context;
     let LegacyPlaneSource { entry, record } = source;
-    let Some((parent_sequence, parent_entry)) = existing_pointer(record, 3, entries, ctx)? else {
-        return Ok(None);
-    };
+    let (parent_sequence, parent_entry) = parent;
     if parent_entry.entity_type != 108 || parent_entry.form != 1 {
         return Ok(None);
     }
@@ -2364,33 +2508,26 @@ fn legacy_single_parent_face<'ir, 'ctx>(
     };
     let (mut children, mut child_storage) =
         ctx.temporary_vec(child_count, "iges legacy plane child pointers")?;
+    let mut children_are_type_108 = true;
+    let mut children_have_negative_physical_status = true;
     let mut input = 0..child_count;
     while let Some(offset) = ctx.next_charged(&mut input, "iges structure list traversal")? {
-        let Some((child, _)) = existing_pointer(record, 4 + offset, entries, ctx)? else {
+        let Some((child_sequence, child_entry)) =
+            existing_pointer(record, 4 + offset, entries, ctx)?
+        else {
             return Err("legacy single-parent plane hole has an invalid child pointer".into());
         };
-        children.push(child);
+        children_are_type_108 &= child_entry.entity_type == 108;
+        if child_entry.entity_type == 108 {
+            children_have_negative_physical_status &=
+                child_entry.form == -1 && child_entry.status.is_physically_dependent();
+        }
+        children.push(child_sequence);
     }
-    if ctx.any_by(
-        children.iter(),
-        |sequence| {
-            Ok(ctx
-                .get_btree_map(entries, sequence, "iges legacy plane child lookup")?
-                .is_some_and(|child| child.entity_type != 108))
-        },
-        "iges structure list validation",
-    )? {
+    if !children_are_type_108 {
         return Ok(None);
     }
-    if ctx.any_by(
-        children.iter(),
-        |sequence| {
-            Ok(ctx
-                .get_btree_map(entries, sequence, "iges legacy plane child lookup")?
-                .is_none_or(|child| child.form != -1 || !child.status.is_physically_dependent()))
-        },
-        "iges structure list validation",
-    )? {
+    if !children_have_negative_physical_status {
         return Err(
             "legacy single-parent plane hole requires negative, physically dependent Type 108 children"
                 .into(),
@@ -2928,7 +3065,9 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut placement_rejections = BTreeMap::new();
     let mut assemblies = BTreeMap::new();
-    let mut attribute_shapes = BTreeMap::<u32, Vec<(i64, usize)>>::new();
+    let mut attribute_shape_storage =
+        ctx.reserve_scoped(0, "iges attribute shape index nodes")?;
+    let mut attribute_shapes = BTreeMap::new();
     let mut legacy_face_candidates = Vec::<(&DirectoryEntry, ModelDraft)>::new();
     let mut legacy_plane_sequences = BTreeSet::new();
     let mut flows = BTreeMap::new();
@@ -3410,98 +3549,21 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let name_valid = matches!(
-            record.value(1),
-            Some(TokenValue::String(_) | TokenValue::Omitted)
-        );
-        let list_type_valid = record.integer(2).is_some_and(|value| {
-            attribute_list_type_meaning(value, global.global_table()).is_some()
-        });
-        let attribute_count = record.count(3).filter(|count| *count > 0);
-        let mut cursor = 4;
-        let mut attributes_valid = attribute_count.is_some();
-        let mut attribute_types = BTreeSet::new();
-        let mut shape = Vec::new();
-        for _ in ctx.admit_iter(
-            0..attribute_count.unwrap_or_default(),
-            "iges structure list traversal",
-        )? {
-            let attribute_type_valid = match record.integer(cursor) {
-                Some(value) if (0..=9999).contains(&value) => scratch.with_storage(|| {
-                    ctx.insert_btree_set(&mut attribute_types, value, "iges attribute type nodes")
-                })?,
-                _ => false,
-            };
-            let data_type = record
-                .integer(cursor + 1)
-                .filter(|value| matches!(value, 0..=6));
-            let value_count = match record.value(cursor + 2) {
-                None | Some(TokenValue::Omitted) => record.integer_or(cursor + 2, 1).map(|_| 1),
-                Some(TokenValue::Integer(value)) => {
-                    usize::try_from(*value).ok().and_then(|count| {
-                        (entry.form == 0
-                            || cursor
-                                .checked_add(3)
-                                .and_then(|start| record.parameter_end().checked_sub(start))
-                                .is_some_and(|available| count <= available))
-                        .then_some(count)
-                    })
-                }
-                Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
-            };
-            cursor += 3;
-            attributes_valid &=
-                attribute_type_valid && data_type.is_some() && value_count.is_some();
-            if let Some(descriptor) = data_type
-                .zip(value_count)
-                .filter(|(_, count)| entry.form == 0 && *count > 0)
-            {
-                scratch.with_storage(|| {
-                    ctx.push_vec(&mut shape, descriptor, "iges attribute shape descriptors")
-                })?;
-            }
-            if entry.form != 0 {
-                for _ in ctx.admit_iter(
-                    0..value_count.unwrap_or_default(),
-                    "iges structure list traversal",
-                )? {
-                    let value_valid = match data_type {
-                        Some(data_type) => {
-                            attribute_value_valid(record, cursor, data_type, entries, ctx)?
-                        }
-                        None => false,
-                    };
-                    attributes_valid &= value_valid;
-                    cursor += 1;
-                    if entry.form == 2 {
-                        let display_valid = match record.integer_or(cursor, 0) {
-                            Some(0) => true,
-                            Some(value) => match u32::try_from(value).ok() {
-                                Some(sequence) => ctx
-                                    .get_btree_map(
-                                        entries,
-                                        &sequence,
-                                        "iges attribute display directory lookup",
-                                    )?
-                                    .is_some_and(|target| target.entity_type == 312),
-                                None => false,
-                            },
-                            None => false,
-                        };
-                        attributes_valid &= display_valid;
-                        cursor += 1;
-                    }
-                }
-            }
-        }
-        if name_valid && list_type_valid && attributes_valid {
+        let (definition_valid, shape) = attribute_definition_valid_and_shape(
+            entry,
+            record,
+            entries,
+            global.global_table(),
+            ctx,
+        )?;
+        if definition_valid {
             ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
             )?;
             if entry.form == 0 {
-                scratch.with_storage(|| {
+                attribute_shape_storage.with_storage(|| {
                     ctx.insert_btree_map(
                         &mut attribute_shapes,
                         entry.sequence,
@@ -3511,6 +3573,7 @@ pub(super) fn project(
                 })?;
             }
         } else {
+            drop(shape);
             super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "attribute-table definition header, value type, value, or display link is invalid"))?;
         }
     }
@@ -3549,7 +3612,7 @@ pub(super) fn project(
         let value_start = if entry.form == 0 { 1 } else { 2 };
         let mut values_per_row = shape.map(|_| 0_usize);
         if let Some(shape) = shape {
-            let mut descriptors = shape.iter();
+            let mut descriptors = shape.descriptors.iter();
             while let Some((_, count)) =
                 ctx.next_charged(&mut descriptors, "iges attribute row width")?
             {
@@ -3574,7 +3637,7 @@ pub(super) fn project(
             "iges structure list traversal",
         )? {
             for (data_type, count) in ctx.admit_iter(
-                shape.map_or(&[][..], Vec::as_slice),
+                shape.map_or(&[][..], |shape| shape.descriptors.as_slice()),
                 "iges attribute shape traversal",
             )? {
                 for _ in ctx.admit_iter(0..*count, "iges structure list traversal")? {
@@ -3601,6 +3664,8 @@ pub(super) fn project(
             )?;
         }
     }
+    drop(attribute_shapes);
+    drop(attribute_shape_storage);
 
     for entry in ctx
         .admit_iter(directory, "iges structure directory traversal")?
@@ -3615,34 +3680,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let count = record.count(1).filter(|count| *count > 0);
-        let mut types = BTreeSet::<&[u8]>::new();
-        let mut units_valid = count.is_some_and(|count| record.parameter_end() == 2 + count * 3);
-        if let Some(count) = count.filter(|_| units_valid) {
-            let mut input = 0..count;
-            while let Some(offset) =
-                ctx.next_charged(&mut input, "iges structure list traversal")?
-            {
-                let start = 2 + offset * 3;
-                let valid = if let Some((unit_type, value)) =
-                    record.string(start).zip(record.string(start + 1))
-                {
-                    unit_value_valid(unit_type, value)
-                        && scratch.with_storage(|| {
-                            ctx.insert_btree_set(&mut types, unit_type, "iges unit type nodes")
-                        })?
-                        && record
-                            .number(start + 2)
-                            .is_some_and(|scale| scale.is_finite() && scale > 0.0)
-                } else {
-                    false
-                };
-                if !valid {
-                    units_valid = false;
-                    break;
-                }
-            }
-        }
+        let units_valid = unit_values_valid(record, ctx)?;
         let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition);
         if units_valid && directory_valid {
@@ -3821,10 +3859,13 @@ pub(super) fn project(
                 entry.sequence,
                 "iges structure decoded sequences",
             )?;
-            if entry.form == 9
-                && existing_pointer(record, 3, entries, ctx)?
-                    .is_some_and(|(_, parent)| parent.entity_type == 108 && parent.form == 1)
-            {
+            let legacy_parent = if entry.form == 9 {
+                existing_pointer(record, 3, entries, ctx)?
+                    .filter(|(_, parent)| parent.entity_type == 108 && parent.form == 1)
+            } else {
+                None
+            };
+            if let Some(parent) = legacy_parent {
                 let index = match &mut plane_index {
                     Some(index) => index,
                     slot @ None => {
@@ -3834,6 +3875,7 @@ pub(super) fn project(
                 match legacy_single_parent_face(
                     (index, &mut plane_proofs),
                     LegacyPlaneSource { entry, record },
+                    parent,
                     entries,
                     records,
                     global,
