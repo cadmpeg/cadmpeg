@@ -5,6 +5,7 @@ pub(crate) mod booleans_patterns;
 pub(crate) mod construction;
 mod history;
 pub(crate) mod holes_extrude;
+mod parameter_admission;
 pub(crate) mod primitives;
 mod resource_admission;
 pub(crate) mod sketches;
@@ -422,8 +423,8 @@ fn draft_face_identities_refuse_at_retained_limits() {
             super::draft_definition(
                 ctx,
                 &[&faces, &neutral, &angle],
-                &[],
-                &std::collections::HashMap::new(),
+                &std::collections::BTreeMap::new(),
+                &std::collections::BTreeMap::new(),
             )
         });
     }
@@ -727,12 +728,16 @@ fn singular_reference_link_keeps_one_selector_and_rejects_two() {
         }
     };
     let one = property(vec!["Edge1".into()]);
-    assert!(matches!(
-        super::singular_reference_link(&one),
-        Some((_, Some("Edge1")))
-    ));
-    let two = property(vec!["Edge1 Edge2".into()]);
-    assert!(super::singular_reference_link(&two).is_none());
+    crate::test_support::with_service_context(&[], |ctx| {
+        assert!(matches!(
+            super::singular_reference_link(ctx, &one).expect("link admission"),
+            Some((_, Some("Edge1")))
+        ));
+        let two = property(vec!["Edge1 Edge2".into()]);
+        assert!(super::singular_reference_link(ctx, &two)
+            .expect("link admission")
+            .is_none());
+    });
 }
 
 #[test]
@@ -876,17 +881,17 @@ fn design_grouped_and_native_constraints_refuse_at_matching_limits() {
     let text = property("<Constrain Type=\"21\" MetaData=\"{&quot;text&quot;:&quot;label&quot;,&quot;font&quot;:&quot;mono&quot;}\" ElementIds=\"0\" ElementPositions=\"0\"/>");
     for operation in ["fcstd constraint text", "fcstd constraint font"] {
         crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
-            super::parse_constraints(ctx, &object, &[&text], &sketch, &entities)
+            parse_constraints(ctx, &object, &[&text], &sketch, &entities)
         });
     }
     crate::test_support::assert_collection_refusal_at(
         &[],
         "fcstd constraint locus copies",
-        |ctx| super::parse_constraints(ctx, &object, &[&text], &sketch, &entities),
+        |ctx| parse_constraints(ctx, &object, &[&text], &sketch, &entities),
     );
     let error = crate::test_support::materialized_refusal_at(
         "fcstd constraint text metadata parse",
-        |ctx| super::parse_constraints(ctx, &object, &[&text], &sketch, &entities),
+        |ctx| parse_constraints(ctx, &object, &[&text], &sketch, &entities),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -896,13 +901,13 @@ fn design_grouped_and_native_constraints_refuse_at_matching_limits() {
     crate::test_support::assert_collection_refusal_at(
         &[],
         "fcstd native constraint entities",
-        |ctx| super::parse_constraints(ctx, &object, &[&native], &sketch, &entities),
+        |ctx| parse_constraints(ctx, &object, &[&native], &sketch, &entities),
     );
     let alignment = property("<Constrain Type=\"15\" InternalAlignmentType=\"1\" First=\"0\" FirstPos=\"0\" Second=\"0\" SecondPos=\"1\"/>");
     crate::test_support::assert_retained_refusal_at(
         &[],
         "fcstd constraint entity identity",
-        |ctx| super::parse_constraints(ctx, &object, &[&alignment], &sketch, &entities),
+        |ctx| parse_constraints(ctx, &object, &[&alignment], &sketch, &entities),
     );
 }
 
@@ -1071,18 +1076,18 @@ fn design_constraint_parameter_admissions_refuse_at_matching_limits() {
     };
     let sketch = cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#one")
         .expect("valid sketch identity");
-    for operation in [
-        "fcstd constraint expression path",
-        "fcstd constraint parameter name",
-    ] {
-        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
-            super::parse_constraints(ctx, &object, &[&property], &sketch, &[])
+    let operation = "fcstd constraint parameter name";
+    crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+        parse_constraints(ctx, &object, &[&property], &sketch, &[])
+    });
+    let _error =
+        crate::test_support::materialized_refusal_at("fcstd constraint expression path", |ctx| {
+            parse_constraints(ctx, &object, &[&property], &sketch, &[])
         });
-    }
     crate::test_support::assert_collection_refusal_at(
         &[],
         "fcstd constraint parameter properties",
-        |ctx| super::parse_constraints(ctx, &object, &[&property], &sketch, &[]),
+        |ctx| parse_constraints(ctx, &object, &[&property], &sketch, &[]),
     );
 }
 
@@ -1121,7 +1126,7 @@ fn design_native_operand_position_refuses_at_retained_limit() {
     crate::test_support::assert_retained_refusal_at(
         &[],
         "fcstd native operand position kind",
-        |ctx| super::parse_constraints(ctx, &object, &[&property], &sketch, &[]),
+        |ctx| parse_constraints(ctx, &object, &[&property], &sketch, &[]),
     );
 }
 
@@ -1305,7 +1310,7 @@ fn design_vector_list_refuses_at_collection_limit() {
 }
 
 #[test]
-fn design_body_output_prefix_refuses_at_retained_limit() {
+fn design_body_output_prefix_refuses_at_materialized_limit() {
     let object = crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
             "fcstd:native:object#Body".into(),
@@ -1339,22 +1344,27 @@ fn design_body_output_prefix_refuses_at_retained_limit() {
         entry: "shape.brp".into(),
         payload: crate::brep::ShapePayload::Empty,
     };
-    crate::test_support::assert_retained_refusal_at(
-        &[],
-        "fcstd design body output prefix",
-        |ctx| {
-            let mut ir = cadmpeg_ir::document::CadIr::empty();
-            super::transfer(
-                ctx,
-                &mut ir,
-                std::slice::from_ref(&object),
-                std::slice::from_ref(&property),
-                std::slice::from_ref(&payload),
-                &[],
-                None,
-            )
-        },
-    );
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let cycles = super::transfer(
+            ctx,
+            &mut ir,
+            std::slice::from_ref(&object),
+            std::slice::from_ref(&property),
+            std::slice::from_ref(&payload),
+            &[],
+            None,
+        )
+        .expect("body transfer");
+        assert!(cycles.is_empty());
+        assert_eq!(ir.model.features.len(), 1);
+        let prefix = super::BodyOutputPrefix::new(ctx, &payload).expect("body output prefix");
+        assert_eq!(prefix.text, "fcstd:model:body#Body:Shape:");
+    });
+    let _error =
+        crate::test_support::materialized_refusal_at("fcstd design body output prefix", |ctx| {
+            super::BodyOutputPrefix::new(ctx, &payload).map(drop)
+        });
 }
 
 #[test]
@@ -1420,7 +1430,7 @@ fn design_ordered_objects_refuse_at_caller_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(matches!(super::feature_ordinals(
-        &ctx, &[object], &std::collections::HashMap::default(), &std::collections::HashMap::default(),
+        &ctx, &[object], &std::collections::BTreeMap::default(), &std::collections::HashMap::default(),
     ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "fcstd design ordered objects"));
 }
@@ -1630,212 +1640,6 @@ fn design_composed_identities_refuse_at_retained_limit() {
 }
 
 #[test]
-fn design_parameter_object_name_index_refuses_at_collection_limit() {
-    let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new(
-            "fcstd:native:object#Feature".into(),
-            "Feature".into(),
-        )
-        .expect("object identity"),
-        type_name: "Part::Feature".into(),
-        persistent_id: None,
-        view_type: None,
-        attributes: std::collections::BTreeMap::default(),
-        dependencies: Vec::new(),
-        dependency_allow_partial: None,
-        order: 0,
-        data: None,
-    };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    assert!(matches!(super::bind_parameter_dependencies(
-        &ctx, &mut Vec::new(), &[object], &std::collections::BTreeSet::default(),
-    ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "fcstd parameter dependency object names"));
-}
-
-#[test]
-fn design_parameter_candidates_refuse_at_collection_limit() {
-    let parameter = cadmpeg_ir::features::DesignParameter {
-        id: cadmpeg_ir::features::ParameterId::mint("fcstd:design:parameter#Feature:Length")
-            .expect("valid parameter identity"),
-        owner: None,
-        ordinal: 0,
-        name: "Length".into(),
-        expression: "1".into(),
-        display: None,
-        value: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-        properties: std::collections::BTreeMap::default(),
-        pmi: None,
-        native_ref: None,
-    };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    assert!(matches!(super::bind_parameter_dependencies(
-        &ctx, &mut vec![parameter.clone()], &[], &std::collections::BTreeSet::default(),
-    ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "fcstd parameter dependency candidates"));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    let result = super::order_parameters_by_dependencies(&ctx, &mut vec![parameter]);
-    assert!(
-        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(ref limit))
-        if limit.operation == "fcstd known parameter identities"),
-        "{result:?}"
-    );
-}
-
-#[test]
-fn design_qualified_parameter_name_refuses_at_retained_limit() {
-    let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new(
-            "fcstd:native:object#Feature".into(),
-            "Feature".into(),
-        )
-        .expect("object identity"),
-        type_name: "Part::Feature".into(),
-        persistent_id: None,
-        view_type: None,
-        attributes: std::collections::BTreeMap::default(),
-        dependencies: Vec::new(),
-        dependency_allow_partial: None,
-        order: 0,
-        data: None,
-    };
-    let parameter = cadmpeg_ir::features::DesignParameter {
-        id: cadmpeg_ir::features::ParameterId::mint("fcstd:design:parameter#Feature:Length")
-            .expect("valid parameter identity"),
-        owner: Some(
-            cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Feature")
-                .expect("valid feature identity"),
-        ),
-        ordinal: 0,
-        name: "Length".into(),
-        expression: "1".into(),
-        display: None,
-        value: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-        properties: std::collections::BTreeMap::default(),
-        pmi: None,
-        native_ref: None,
-    };
-    crate::test_support::assert_retained_refusal_at(&[], "fcstd qualified candidate name", |ctx| {
-        super::bind_parameter_dependencies(
-            ctx,
-            &mut vec![parameter.clone()],
-            std::slice::from_ref(&object),
-            &std::collections::BTreeSet::default(),
-        )
-    });
-}
-
-fn parameter_dependency_fixture(
-    cycle: bool,
-) -> (
-    crate::native::ObjectRecord,
-    Vec<cadmpeg_ir::features::DesignParameter>,
-) {
-    let object = crate::native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new(
-            "fcstd:native:object#Feature".into(),
-            "Feature".into(),
-        )
-        .expect("object identity"),
-        type_name: "Part::Feature".into(),
-        persistent_id: None,
-        view_type: None,
-        attributes: std::collections::BTreeMap::default(),
-        dependencies: Vec::new(),
-        dependency_allow_partial: None,
-        order: 0,
-        data: None,
-    };
-    let parameters = [
-        ("Length", "Width"),
-        ("Width", if cycle { "Length" } else { "1" }),
-    ]
-    .into_iter()
-    .enumerate()
-    .map(
-        |(ordinal, (name, expression))| cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint(format!(
-                "fcstd:design:parameter#Feature:{name}"
-            ))
-            .expect("valid parameter identity"),
-            owner: Some(
-                cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Feature")
-                    .expect("valid feature identity"),
-            ),
-            ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
-            name: name.into(),
-            expression: expression.into(),
-            display: None,
-            value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            properties: std::collections::BTreeMap::default(),
-            pmi: None,
-            native_ref: None,
-        },
-    )
-    .collect();
-    (object, parameters)
-}
-
-#[test]
-fn design_parameter_dependency_stages_refuse_at_collection_limits() {
-    let (object, parameters) = parameter_dependency_fixture(false);
-    for operation in [
-        "fcstd parameter dependency candidates",
-        "fcstd parameter candidate names",
-        "fcstd local candidate keys",
-        "fcstd local candidate identities",
-        "fcstd qualified candidate keys",
-        "fcstd qualified candidate identities",
-        "fcstd unique local candidates",
-        "fcstd unique qualified candidates",
-        "fcstd parameter dependencies",
-        "fcstd parameter dependency members",
-        "validate distinct decoded members",
-        "fcstd ordinal owner groups",
-        "fcstd owner ordinals",
-        "fcstd known parameter identities",
-        "fcstd emitted parameter identities",
-        "fcstd reordered parameters",
-        "fcstd next ordinal owners",
-    ] {
-        crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
-            super::bind_parameter_dependencies(
-                ctx,
-                &mut parameters.clone(),
-                std::slice::from_ref(&object),
-                &std::collections::BTreeSet::default(),
-            )
-        });
-    }
-}
-
-#[test]
-fn design_parameter_cycle_owners_refuse_at_collection_limit() {
-    let (object, parameters) = parameter_dependency_fixture(true);
-    crate::test_support::assert_collection_refusal_at(&[], "fcstd parameter cycle owners", |ctx| {
-        super::bind_parameter_dependencies(
-            ctx,
-            &mut parameters.clone(),
-            std::slice::from_ref(&object),
-            &std::collections::BTreeSet::default(),
-        )
-    });
-}
-
-#[test]
 fn design_sketch_carrier_diagnostic_refuses_at_retained_limit() {
     let xml = roxmltree::Document::parse("<Wrong/>").expect("valid XML");
     crate::test_support::assert_retained_refusal_at(&[], "fcstd design diagnostic", |ctx| {
@@ -1858,6 +1662,7 @@ fn design_counted_record_diagnostic_refuses_at_retained_limit() {
     let xml = roxmltree::Document::parse("<Property/>").expect("valid XML");
     crate::test_support::assert_retained_refusal_at(&[], "fcstd design diagnostic", |ctx| {
         super::direct_counted_records(ctx, &xml, "GeometryList", "Geometry", "geometry-property")
+            .map(|(records, _storage)| records)
     });
 }
 
@@ -1951,4 +1756,40 @@ fn extrusion_definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDef
         .expect("extrusion feature")
         .evaluation
         .definition()
+}
+
+fn parse_constraints(
+    ctx: &super::DecodeContext<'_>,
+    object: &super::ObjectRecord,
+    properties: &[&super::PropertyRecord],
+    sketch: &super::SketchId,
+    entities: &[super::SketchEntity],
+) -> Result<(Vec<super::SketchConstraint>, Vec<super::DesignParameter>), super::CodecError> {
+    let source = super::constraint_xml(ctx, properties)?;
+    super::parse_constraints(
+        ctx,
+        object,
+        properties,
+        sketch,
+        entities,
+        source
+            .as_ref()
+            .map(|(property, tree)| (*property, tree.document())),
+    )
+}
+
+#[test]
+fn body_output_prefix_admits_identity_search_before_copy() {
+    let payload = crate::brep::ShapePayloadRecord {
+        id: "fcstd:native:shape-payload#Body:Shape".into(),
+        property: "fcstd:native:property#Body:Shape".into(),
+        entry: "shape.brp".into(),
+        payload: crate::brep::ShapePayload::Empty,
+    };
+    let _error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "fcstd design body output identity key",
+        |ctx| super::BodyOutputPrefix::new(ctx, &payload).map(drop),
+    );
 }
