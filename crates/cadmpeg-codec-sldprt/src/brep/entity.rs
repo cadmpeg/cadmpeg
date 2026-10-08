@@ -27,8 +27,8 @@ pub(super) struct FaceColorVersion {
     pub(super) stream_order: usize,
 }
 
-#[derive(Debug, Clone, Default)]
-pub(crate) struct Facts {
+#[derive(Debug, Default)]
+pub(crate) struct Facts<'ctx> {
     /// Number of framed top-level model entity records in the stream.
     pub(super) entity_count: usize,
     /// Face-color links whose current framed records conflict.
@@ -37,9 +37,83 @@ pub(crate) struct Facts {
     pub(super) face_color_versions: Vec<FaceColorVersion>,
     pub(super) face_colors: Vec<FaceColor>,
     /// Per-face producing-feature identities carried by Parasolid attributes.
-    pub(super) face_atoms: Vec<super::attrib::RawFaceAtom>,
+    pub(super) face_atoms: Vec<super::attrib::RawFaceAtom<'ctx>>,
     /// Body-to-history ordinals carried by Parasolid attributes.
     pub(super) body_modifiers: Vec<super::attrib::BodyModifier>,
+}
+
+/// Facts scanned from one stream, with the temporary storage for their vector
+/// shells held until they are merged or consumed.
+pub(crate) struct FactsSource<'ctx> {
+    facts: Facts<'ctx>,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx> FactsSource<'ctx> {
+    pub(crate) fn empty(
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            facts: Facts::default(),
+            storage: ctx.reserve_scoped(0, "hold Parasolid entity facts")?,
+        })
+    }
+
+    pub(crate) fn append(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        mut source: Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let Self {
+            facts: target,
+            storage,
+        } = self;
+        storage.with_storage(|| {
+            ctx.append_vec(
+                &mut target.face_colors,
+                &mut source.facts.face_colors,
+                "merge Parasolid face colors",
+            )?;
+            ctx.append_vec(
+                &mut target.face_color_versions,
+                &mut source.facts.face_color_versions,
+                "merge Parasolid face color versions",
+            )?;
+            ctx.append_vec(
+                &mut target.face_atoms,
+                &mut source.facts.face_atoms,
+                "merge Parasolid face atoms",
+            )?;
+            ctx.append_vec(
+                &mut target.body_modifiers,
+                &mut source.facts.body_modifiers,
+                "merge Parasolid body modifiers",
+            )?;
+            target.entity_count += source.facts.entity_count;
+            target.unresolved_face_colors += source.facts.unresolved_face_colors;
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })?;
+        drop(source);
+        Ok(())
+    }
+
+    pub(crate) fn into_parts(self) -> (Facts<'ctx>, ScopedReservation<'ctx>) {
+        (self.facts, self.storage)
+    }
+}
+
+impl<'ctx> std::ops::Deref for FactsSource<'ctx> {
+    type Target = Facts<'ctx>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.facts
+    }
+}
+
+impl<'ctx> std::ops::DerefMut for FactsSource<'ctx> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.facts
+    }
 }
 
 /// The u16 references of one entity record, read in place from the stream.
@@ -490,11 +564,22 @@ fn linked_colors<'ctx>(
 
 /// Scan non-topology entity metadata without interpreting attribute chains as
 /// body membership. Typed Parasolid BODY/SHELL/REGION nodes own that relation.
-pub(crate) fn scan_metadata(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn scan_metadata<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     body: &[u8],
     prefixed: bool,
-) -> Result<Facts, cadmpeg_core::CodecError> {
+) -> Result<FactsSource<'ctx>, cadmpeg_core::CodecError> {
+    let (facts, storage) = ctx.with_scoped_storage("hold Parasolid entity facts", || {
+        scan_metadata_inner(ctx, body, prefixed)
+    })?;
+    Ok(FactsSource { facts, storage })
+}
+
+fn scan_metadata_inner<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    body: &[u8],
+    prefixed: bool,
+) -> Result<Facts<'ctx>, cadmpeg_core::CodecError> {
     let (entities, _entity_storage) = scan_entities(ctx, body, prefixed)?;
     let dictionary = super::attrib::dictionary(ctx, body)?;
     let mut request_storage = ctx.reserve_scoped(0, "hold Parasolid color requests")?;
@@ -1015,6 +1100,99 @@ mod tests {
     }
 
     #[test]
+    fn merged_facts_release_source_slots_and_keep_identity_fields_charged() {
+        use super::super::attrib::RawFaceAtom;
+        use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+
+        // One atom identity with two trailing u32 fields, using the stream-local
+        // dictionary, payload-list, and attribute-instance records.
+        let mut body = attribute_definition("ATOM_ID_2001", 16);
+        body.extend([0x00, 0x52]);
+        body.extend(7_u32.to_be_bytes());
+        body.extend(300_u16.to_be_bytes());
+        for value in [49_u32, 266, 1_704_609_508, 0, 2, 10, 8] {
+            body.extend(value.to_be_bytes());
+        }
+        body.extend([0x00, 0x51]);
+        body.extend(4_u32.to_be_bytes());
+        body.extend(301_u16.to_be_bytes());
+        body.extend(0_u16.to_be_bytes());
+        body.extend(302_u16.to_be_bytes());
+        body.extend(16_u16.to_be_bytes());
+        body.extend(333_u16.to_be_bytes());
+        body.extend(300_u16.to_be_bytes());
+
+        // `push_vec` uses core LinearGrowth::Amortized. Its minimum is four
+        // slots for element sizes 2..=1024 bytes. `copy_slice` uses
+        // collection_vec's exact size, so each identity owns two u32 fields.
+        assert!((2..=1024).contains(&std::mem::size_of::<RawFaceAtom<'_>>()));
+        let slots = 4_usize
+            .checked_mul(std::mem::size_of::<RawFaceAtom<'_>>())
+            .expect("four atom slots");
+        let tail_bytes = 2_usize
+            .checked_mul(2)
+            .and_then(|count| count.checked_mul(std::mem::size_of::<u32>()))
+            .expect("two identities with two trailing fields each");
+        let expected_live = slots
+            .checked_mul(2)
+            .and_then(|bytes| bytes.checked_add(tail_bytes))
+            .and_then(|bytes| u64::try_from(bytes).ok())
+            .expect("target facts, probe vector, and two identity tails");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = u64::MAX;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut target = scan_metadata(&ctx, &body, false).expect("primary metadata");
+        let source = scan_metadata(&ctx, &body, false).expect("source metadata");
+        target.append(&ctx, source).expect("append source facts");
+        assert_eq!(target.face_atoms.len(), 2);
+        assert!(target.face_colors.is_empty());
+        assert!(target.face_color_versions.is_empty());
+        assert!(target.body_modifiers.is_empty());
+        for atom in &target.face_atoms {
+            assert_eq!(
+                atom.identity
+                    .as_ref()
+                    .expect("face identity")
+                    .trailing_fields,
+                [10, 8]
+            );
+        }
+
+        let mut probe = Vec::<RawFaceAtom<'_>>::new();
+        let mut probe_storage = ctx
+            .reserve_scoped(0, "probe released Parasolid fact slots")
+            .expect("probe storage");
+        probe_storage
+            .with_storage(|| {
+                ctx.reserve_capacity(
+                    &mut probe,
+                    1,
+                    "probe released Parasolid fact slots",
+                )
+            })
+            .expect("one source vector shell was released");
+
+        let _refusal_probe = RefusalProbe::arm(
+            ResourceDimension::MaterializedBytes,
+            "probe retained Parasolid fact identities",
+            Some(1),
+        );
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            ctx.reserve_scoped(1, "probe retained Parasolid fact identities")
+        else {
+            panic!("the target, probe slots, and identity tails set the live boundary");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(limit.used, expected_live);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        drop((probe, probe_storage, target));
+    }
+
+    #[test]
     fn parasolid_entity_metadata_refuses_work_limit() {
         let bytes = bare_entity_slots(700, 1, 16, 1, &[0; 6]);
         for operation in [
@@ -1022,7 +1200,7 @@ mod tests {
             "resolve Parasolid face colors",
         ] {
             crate::test_support::work_refusal_at(operation, |ctx| {
-                scan_metadata(ctx, &bytes, false)
+                scan_metadata(ctx, &bytes, false).map(|facts| facts.entity_count)
             });
         }
     }
@@ -1109,7 +1287,9 @@ mod tests {
     fn face_color_refusal(operation: &'static str) {
         let mut bytes = bare_entity(700, 1, 16, &[0, 0, 0, 0, 0, 900]);
         bytes.extend(color(900, [0.25, 0.5, 0.75], false));
-        collection_refusal(operation, &bytes, |ctx| scan_metadata(ctx, &bytes, false));
+        collection_refusal(operation, &bytes, |ctx| {
+            scan_metadata(ctx, &bytes, false).map(|facts| facts.face_colors.len())
+        });
     }
 
     #[test]

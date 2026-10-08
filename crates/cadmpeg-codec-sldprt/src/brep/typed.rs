@@ -28,7 +28,7 @@ const BODY_HEADER_REF_MAX: usize = 32;
 const BODY_POST_TOPOLOGY_REF_MAX: usize = 4;
 
 /// A typed BODY node.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(super) struct BodyNode {
     /// Stream-local transmit index.
     pub(super) attr: u16,
@@ -159,7 +159,7 @@ pub(super) struct FaceNode {
 }
 
 /// All typed ownership nodes recovered from one stream.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct Facts {
     pub(super) bodies: Vec<BodyNode>,
     pub(super) shells: Vec<ShellNode>,
@@ -223,29 +223,23 @@ struct PendingHierarchy<'a, 'ctx> {
 }
 
 impl Facts {
-    pub(super) fn try_clone(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        Ok(Self {
-            bodies: ctx.try_collect_vec(
-                self.bodies.iter().map(|body| body.try_clone(ctx)),
-                "copy typed Parasolid bodies",
-            )?,
-            shells: ctx.copy_slice(&self.shells, "copy typed Parasolid shells")?,
-            regions: ctx.copy_slice(&self.regions, "copy typed Parasolid regions")?,
-            faces: ctx.copy_slice(&self.faces, "copy typed Parasolid faces")?,
-        })
-    }
-
     /// Add only identities absent from the partition view.  A delta stream is
     /// subordinate to the partition for the same transmit index.
     pub(super) fn merge_missing(
         &mut self,
         ctx: &DecodeContext<'_>,
-        other: Self,
+        other: &Self,
     ) -> Result<(), CodecError> {
-        merge_nodes(ctx, &mut self.bodies, other.bodies, |node| node.attr)?;
-        merge_nodes(ctx, &mut self.shells, other.shells, |node| node.attr)?;
-        merge_nodes(ctx, &mut self.regions, other.regions, |node| node.attr)?;
-        merge_nodes(ctx, &mut self.faces, other.faces, |node| node.attr)?;
+        merge_nodes(
+            ctx,
+            &mut self.bodies,
+            &other.bodies,
+            |node| node.attr,
+            |node| node.try_clone(ctx),
+        )?;
+        merge_nodes(ctx, &mut self.shells, &other.shells, |node| node.attr, |node| Ok(*node))?;
+        merge_nodes(ctx, &mut self.regions, &other.regions, |node| node.attr, |node| Ok(*node))?;
+        merge_nodes(ctx, &mut self.faces, &other.faces, |node| node.attr, |node| Ok(*node))?;
         Ok(())
     }
 
@@ -1028,7 +1022,7 @@ fn region_chain_from_head<'a, 'ctx>(
 }
 
 /// One validated typed body hierarchy.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(in crate::brep) struct Hierarchy {
     pub(super) body: BodyNode,
     pub(super) regions: Vec<RegionNode>,
@@ -1037,26 +1031,28 @@ pub(in crate::brep) struct Hierarchy {
     pub(super) faces: Vec<(u16, u16)>,
 }
 
-fn merge_nodes<T, F>(
+fn merge_nodes<T, F, C>(
     ctx: &DecodeContext<'_>,
     target: &mut Vec<T>,
-    source: Vec<T>,
+    source: &[T],
     key: F,
+    copy: C,
 ) -> Result<(), CodecError>
 where
     F: Fn(&T) -> u16,
+    C: Fn(&T) -> Result<T, CodecError>,
 {
+    const OPERATION: &str = "merge typed Parasolid records";
     let mut storage = ctx.reserve_scoped(0, "index typed Parasolid merge identities")?;
     let mut present = BTreeSet::new();
     for node in ctx.admit_iter(&target[..], "index typed Parasolid merge identities")? {
-        let attr = key(node);
         storage.with_storage(|| {
-            ctx.insert_btree_set(&mut present, attr, "index typed Parasolid merge identities")
+            ctx.insert_btree_set(&mut present, key(node), "index typed Parasolid merge identities")
         })?;
     }
-    for node in ctx.admit_iter(source, "merge typed Parasolid records")? {
-        if !ctx.contains_btree_set(&present, &key(&node), "merge typed Parasolid records")? {
-            ctx.push_vec(target, node, "merge typed Parasolid records")?;
+    for node in ctx.admit_iter(source, OPERATION)? {
+        if !ctx.contains_btree_set(&present, &key(node), OPERATION)? {
+            ctx.push_vec(target, copy(node)?, OPERATION)?;
         }
     }
     Ok(())
@@ -1455,6 +1451,83 @@ mod tests {
         )
         .expect("test context");
         f(&ctx)
+    }
+
+    #[test]
+    fn duplicate_body_merge_does_not_clone_losing_ownership_refs() {
+        use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = u64::MAX;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        )
+        .expect("test context");
+        let body = |ownership_refs| BodyNode {
+            attr: 3,
+            node_id: 7,
+            topology_refs: [1; 7],
+            ownership_refs,
+            kind: BodyKind::Solid,
+            offset: 1,
+            end: 2,
+        };
+        let mut target = Facts {
+            bodies: vec![body(Vec::new())],
+            ..Facts::default()
+        };
+        let source = Facts {
+            bodies: vec![body(vec![11, 12])],
+            ..Facts::default()
+        };
+        let mut storage = ctx
+            .reserve_scoped(0, "hold typed merge regression")
+            .expect("merge storage");
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::MaterializedBytes,
+            "copy typed Parasolid body ownership references",
+            Some(2 * std::mem::size_of::<u32>() as u64),
+        );
+        storage
+            .with_storage(|| target.merge_missing(&ctx, &source))
+            .expect("duplicate body identity skips its owned fields");
+        assert_eq!(target.bodies.len(), 1);
+        assert!(target.bodies[0].ownership_refs.is_empty());
+        assert_eq!(source.bodies[0].ownership_refs, [11, 12]);
+        assert_eq!(ctx.resource_refusal(), None);
+        drop((target, source, storage));
+        ctx.finish_session().expect("merge scratch released");
+
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = u64::MAX;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        )
+        .expect("control context");
+        let source = Facts {
+            bodies: vec![body(vec![11, 12])],
+            ..Facts::default()
+        };
+        let mut target = Facts::default();
+        let mut storage = ctx
+            .reserve_scoped(0, "hold typed merge regression control")
+            .expect("merge storage");
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::MaterializedBytes,
+            "copy typed Parasolid body ownership references",
+            Some(2 * std::mem::size_of::<u32>() as u64),
+        );
+        let Err(CodecError::ResourceLimit(limit)) =
+            storage.with_storage(|| target.merge_missing(&ctx, &source))
+        else {
+            panic!("an accepted body must copy its stream-local ownership refs");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(limit.additional, 2 * std::mem::size_of::<u32>() as u64);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 
     fn test_hierarchies(facts: &Facts, attrs: &BTreeSet<u16>) -> Option<Vec<super::Hierarchy>> {

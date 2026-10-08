@@ -50,11 +50,42 @@ const ATOM_GUARD: usize = 3;
 const ATOM_LOCAL: usize = 4;
 
 /// One face's producing-feature identity.
-#[derive(Debug, Clone)]
-pub(super) struct RawFaceAtom {
+#[derive(Debug)]
+pub(super) struct RawFaceAtom<'ctx> {
     /// Attribute id of the face bridge record owning the attribute.
     pub(super) face_attr: u16,
-    pub(super) identity: Option<super::PersistentFaceIdentity>,
+    pub(super) identity: Option<RawFaceIdentity<'ctx>>,
+}
+
+/// A raw identity whose copied path fields remain charged until output copying.
+#[derive(Debug)]
+pub(super) struct RawFaceIdentity<'ctx> {
+    value: super::PersistentFaceIdentity,
+    _storage: ScopedReservation<'ctx>,
+}
+
+impl RawFaceIdentity<'_> {
+    pub(super) fn copy_to_retained(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<super::PersistentFaceIdentity, cadmpeg_core::CodecError> {
+        Ok(super::PersistentFaceIdentity {
+            feature_source_id: self.value.feature_source_id,
+            local_id: self.value.local_id,
+            trailing_fields: ctx.copy_slice(
+                &self.value.trailing_fields,
+                "retain Parasolid face identity fields",
+            )?,
+        })
+    }
+}
+
+impl std::ops::Deref for RawFaceIdentity<'_> {
+    type Target = super::PersistentFaceIdentity;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
 }
 
 /// A persistent identity bound to an emitted face.
@@ -148,8 +179,8 @@ impl Dictionary<'_> {
 
 /// Producing-feature identities and body modifiers carried by one stream body.
 #[derive(Debug, Default)]
-pub(super) struct Bindings {
-    pub(super) face_atoms: Vec<RawFaceAtom>,
+pub(super) struct Bindings<'ctx> {
+    pub(super) face_atoms: Vec<RawFaceAtom<'ctx>>,
     pub(super) body_modifiers: Vec<BodyModifier>,
 }
 
@@ -430,11 +461,11 @@ fn atom_identity(values: &[u32]) -> Option<AtomIdentity<'_>> {
 
 /// Decode the `ATOM_ID_2001` face bindings and the body last-modifier
 /// bindings carried by one stream body.
-pub(super) fn bindings(
-    ctx: &DecodeContext<'_>,
+pub(super) fn bindings<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     buf: &[u8],
     dictionary: &Dictionary<'_>,
-) -> Result<Bindings, cadmpeg_core::CodecError> {
+) -> Result<Bindings<'ctx>, cadmpeg_core::CodecError> {
     if !ctx.any_by(
         dictionary.families.values(),
         |family| Ok(family.is_some_and(Family::has_bindings)),
@@ -548,11 +579,17 @@ pub(super) fn bindings(
         };
         let identity = match identity {
             Some((feature_source_id, local_id, trailing_fields)) => {
-                Some(super::PersistentFaceIdentity {
-                    feature_source_id,
-                    local_id,
-                    trailing_fields: ctx
-                        .copy_slice(trailing_fields, "copy Parasolid face identity fields")?,
+                let (trailing_fields, storage) = ctx.with_scoped_storage(
+                    "hold Parasolid face identity fields",
+                    || ctx.copy_slice(trailing_fields, "copy Parasolid face identity fields"),
+                )?;
+                Some(RawFaceIdentity {
+                    value: super::PersistentFaceIdentity {
+                        feature_source_id,
+                        local_id,
+                        trailing_fields,
+                    },
+                    _storage: storage,
                 })
             }
             None => None,
@@ -678,16 +715,49 @@ mod tests {
         out
     }
 
-    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Bindings, cadmpeg_core::CodecError> {
+    fn scan<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        bytes: &[u8],
+    ) -> Result<Bindings<'ctx>, cadmpeg_core::CodecError> {
         let dictionary = dictionary(ctx, bytes)?;
         bindings(ctx, bytes, &dictionary)
     }
 
-    fn scan_service(bytes: &[u8]) -> Bindings {
+    #[derive(Debug)]
+    struct BindingSnapshot {
+        face_atoms: Vec<FaceAtomSnapshot>,
+        body_modifiers: Vec<super::BodyModifier>,
+    }
+
+    #[derive(Debug)]
+    struct FaceAtomSnapshot {
+        face_attr: u16,
+        identity: Option<super::super::PersistentFaceIdentity>,
+    }
+
+    fn scan_service(bytes: &[u8]) -> BindingSnapshot {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
-        scan(&ctx, bytes).expect("attribute scan")
+        let bindings = scan(&ctx, bytes).expect("attribute scan");
+        let face_atoms = bindings
+            .face_atoms
+            .iter()
+            .map(|atom| FaceAtomSnapshot {
+                face_attr: atom.face_attr,
+                identity: atom.identity.as_ref().map(|identity| {
+                    super::super::PersistentFaceIdentity {
+                        feature_source_id: identity.feature_source_id,
+                        local_id: identity.local_id,
+                        trailing_fields: identity.trailing_fields.clone(),
+                    }
+                }),
+            })
+            .collect();
+        BindingSnapshot {
+            face_atoms,
+            body_modifiers: bindings.body_modifiers,
+        }
     }
 
     fn declared(bytes: &[u8], node: u16) -> Declaration {
@@ -714,7 +784,7 @@ mod tests {
             if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
             }
-            result
+            result.map(drop)
         });
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     }
