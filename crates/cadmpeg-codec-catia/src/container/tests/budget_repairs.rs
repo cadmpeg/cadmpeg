@@ -72,3 +72,56 @@ fn conflicting_save_versions_charge_only_visited_segments() {
         .is_none());
     }
 }
+
+#[test]
+fn rejected_directory_extent_candidate_releases_storage() {
+    let count_offset = 16 + 0x50;
+    let start = count_offset + 4;
+    let mut bytes = vec![0; start + 20];
+    bytes[..DIR_MAGIC.len()].copy_from_slice(DIR_MAGIC);
+    bytes[count_offset..start].copy_from_slice(&1u32.to_be_bytes());
+    bytes[start + 4..start + 8].copy_from_slice(&1u32.to_be_bytes());
+    bytes[start + 8..start + 12].copy_from_slice(&1u32.to_be_bytes());
+    assert!(crate::test_support::with_retained_limit(0, |ctx| {
+        parse_directory_region(ctx, &bytes, 0, 0, bytes.len())
+    })
+    .expect("the extent is scratch until its header agrees")
+    .is_none());
+}
+
+#[test]
+fn missing_brep_surface_descriptor_does_not_retain_main_stream() {
+    let directory = InnerDir {
+        inner: 0,
+        descriptors: vec![test_descriptor("MainDataStream", 0, 16)],
+    };
+    assert!(crate::test_support::with_retained_limit(0, |ctx| {
+        brep_stream(ctx, &[0; 16], &directory)
+    })
+    .expect("both descriptors precede reconstruction")
+    .is_none());
+}
+
+#[test]
+fn duplicate_save_versions_retain_only_the_selected_date() {
+    let segment = summary_preview_segment();
+    let mut data = segment.clone();
+    data.extend_from_slice(&segment);
+    let segments = crate::test_support::with_service_context(|ctx| {
+        finjpl_segments(ctx, &BodyExtent::whole(&data))
+    })
+    .expect("segments");
+    let expected = crate::test_support::with_service_context(|ctx| {
+        last_save_version_in_segments(ctx, &segment, &segments[..1])
+    })
+    .expect("version")
+    .expect("summary date");
+    let retained = u64::try_from(expected.build_date.len()).expect("small date");
+    assert_eq!(
+        crate::test_support::with_retained_limit(retained, |ctx| {
+            last_save_version_in_segments(ctx, &data, &segments)
+        })
+        .expect("only one date is retained"),
+        Some(expected)
+    );
+}

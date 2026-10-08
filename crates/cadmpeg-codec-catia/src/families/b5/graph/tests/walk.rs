@@ -284,7 +284,7 @@ fn a8_class21_jet_decodes_a_piecewise_quintic_pcurve() {
     );
 }
 
-fn a8_class21_large_test_payload(knot_count: usize) -> Vec<u8> {
+pub(super) fn a8_class21_large_test_payload(knot_count: usize) -> Vec<u8> {
     let mut payload = vec![0x81, 0x83, 0x01, 0x15, 0x01, 0x01, 0x08, 0x01, 0x20, 0x01];
     for index in 0..knot_count {
         payload.extend_from_slice(

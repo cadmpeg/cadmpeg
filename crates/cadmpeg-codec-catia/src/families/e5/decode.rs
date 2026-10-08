@@ -128,9 +128,9 @@ pub(in crate::families) fn try_decode_e5(
                 let mut points = geometry_storage.with_storage(|| {
                     ctx.vector_storage(derived.len(), "catia_e5_derived_points")
                 })?;
-                for point in ctx
-                    .admit_iter(&derived, "catia_e5_derived_vertex_scan")?
-                    .copied()
+                let mut steps = derived.iter().copied();
+                while let Some(point) =
+                    ctx.next_charged(&mut steps, "catia_e5_derived_vertex_scan")?
                 {
                     // A derived vertex that is not finite states no point,
                     // so the decode refuses it where the vertex list is admitted.
@@ -286,9 +286,9 @@ pub(in crate::families) fn try_decode_e5(
             source_object: None,
         });
     }
-    for (index, jet) in ctx
-        .admit_iter(&rolling_ball_jets, "catia_e5_emitted_rolling_ball_jet_scan")?
-        .enumerate()
+    let mut steps = rolling_ball_jets.iter().enumerate();
+    while let Some((index, jet)) =
+        ctx.next_charged(&mut steps, "catia_e5_emitted_rolling_ball_jet_scan")?
     {
         let surface_index = surfaces.len() + index;
         let surface_id = crate::resource::compose_index_id(
@@ -485,9 +485,12 @@ fn derive_e5_vertices(
         )?;
     }
     let mut candidates = HashMap::<u32, Vec<Point3>>::new();
-    for face in ctx.admit_iter(&topology.faces, "catia_e5_derived_face_scan")? {
-        for loop_ in ctx.admit_iter(&face.loops, "catia_e5_derived_loop_scan")? {
-            for member in ctx.admit_iter(&loop_.members, "catia_e5_derived_member_scan")? {
+    let mut steps = topology.faces.iter();
+    while let Some(face) = ctx.next_charged(&mut steps, "catia_e5_derived_face_scan")? {
+        let mut steps = face.loops.iter();
+        while let Some(loop_) = ctx.next_charged(&mut steps, "catia_e5_derived_loop_scan")? {
+            let mut steps = loop_.members.iter();
+            while let Some(member) = ctx.next_charged(&mut steps, "catia_e5_derived_member_scan")? {
                 let pcurve_ref = member.pcurve;
                 let edge_ref = member.edge_use;
                 let (Some(edge), Some(pcurve)) = (
@@ -545,7 +548,8 @@ fn derive_e5_vertices(
         }
     }
     let mut points = ctx.vector_storage(topology.vertex_refs.len(), "catia_e5_derived_vertices")?;
-    for vertex in ctx.admit_iter(&topology.vertex_refs, "catia_e5_derived_vertex_ref_scan")? {
+    let mut steps = topology.vertex_refs.iter();
+    while let Some(vertex) = ctx.next_charged(&mut steps, "catia_e5_derived_vertex_ref_scan")? {
         let Some(values) =
             ctx.get_hash_map(&candidates, vertex, "catia_e5_derived_candidate_keys")?
         else {
@@ -644,9 +648,7 @@ fn append_e5_planes(
                         consistent = false;
                         continue;
                     };
-                    for pcurve_ref in
-                        ctx.admit_iter(support.pcurves(), "catia_e5_plane_support_pcurve_scan")?
-                    {
+                    for pcurve_ref in support.pcurves() {
                         let Some(crate::families::e5::graph::E5Pcurve::Line {
                             surface,
                             direction,
@@ -756,9 +758,14 @@ fn solve_e5_plane_frame(
         return Ok(None);
     }
     let mut segments = Vec::new();
-    for face in ctx.admit_iter(faces, "catia_e5_plane_frame_face_scan")? {
-        for loop_ in ctx.admit_iter(&face.loops, "catia_e5_plane_frame_loop_scan")? {
-            for member in ctx.admit_iter(&loop_.members, "catia_e5_plane_frame_member_scan")? {
+    let mut steps = faces.iter();
+    while let Some(face) = ctx.next_charged(&mut steps, "catia_e5_plane_frame_face_scan")? {
+        let mut steps = face.loops.iter();
+        while let Some(loop_) = ctx.next_charged(&mut steps, "catia_e5_plane_frame_loop_scan")? {
+            let mut steps = loop_.members.iter();
+            while let Some(member) =
+                ctx.next_charged(&mut steps, "catia_e5_plane_frame_member_scan")?
+            {
                 let (Some(edge), Some(pcurve)) = (
                     ctx.get_btree_map(
                         &topology.edges,
@@ -792,9 +799,9 @@ fn solve_e5_plane_frame(
 
     let anchors = 'find_anchors: {
         let mut basis = None;
-        for (index, (uv, _)) in ctx
-            .admit_iter(&segments, "catia_e5_plane_anchor_segment_scan")?
-            .enumerate()
+        let mut steps = segments.iter().enumerate();
+        while let Some((index, (uv, _))) =
+            ctx.next_charged(&mut steps, "catia_e5_plane_anchor_segment_scan")?
         {
             for endpoint in uv {
                 if let Some((basis_index, basis_uv)) = basis {
@@ -838,10 +845,7 @@ fn solve_e5_plane_frame(
         for mask in 0usize..(1usize << anchors.len()) {
             let mut orientations =
                 ctx.alloc_filled(segments.len(), false, "catia_e5_plane_orientations")?;
-            for (bit, &index) in ctx
-                .admit_iter(anchors, "catia_e5_plane_anchor_index_scan")?
-                .enumerate()
-            {
+            for (bit, &index) in anchors.iter().enumerate() {
                 orientations[index] = mask & (1 << bit) != 0;
             }
             let mut seed_pairs = Vec::new();
@@ -849,7 +853,7 @@ fn solve_e5_plane_frame(
                 return Ok(None);
             };
             ctx.reserve_vec(&mut seed_pairs, seed_count, "catia_e5_plane_seed_pairs")?;
-            for &index in ctx.admit_iter(anchors, "catia_e5_plane_anchor_pair_scan")? {
+            for &index in anchors {
                 seed_pairs.extend(endpoint_pairs(&segments[index], orientations[index]));
             }
             let Some((seed_u, seed_v, _)) = fit_e5_plane_axes(ctx, origin, &seed_pairs)? else {
@@ -1404,7 +1408,10 @@ impl<'a> E5LoopPlan<'a> {
         }
         let mut seen = ctx.alloc_filled(source.members.len(), false, "catia_e5_loop_plan_seen")?;
         let mut members = ctx.vector_storage(oriented.len(), "catia_e5_loop_plan_members")?;
-        for orientation in ctx.admit_iter(oriented, "catia_e5_loop_plan_orientation_scan")? {
+        let mut steps = oriented.into_iter();
+        while let Some(orientation) =
+            ctx.next_charged(&mut steps, "catia_e5_loop_plan_orientation_scan")?
+        {
             let index = orientation.serialized_index;
             let (Some(member), Some(seen)) = (source.members.get(index), seen.get_mut(index))
             else {
@@ -1648,9 +1655,11 @@ fn plan_e5_boundary<'a>(
     let (bound_parameters, _bound_storage) =
         crate::families::e5::graph::index_bound_parameters(ctx, &topology.bounds)?;
     let mut faces = Vec::new();
-    for face in ctx.admit_iter(&topology.faces, "catia_e5_boundary_face_plan_scan")? {
+    let mut steps = topology.faces.iter();
+    while let Some(face) = ctx.next_charged(&mut steps, "catia_e5_boundary_face_plan_scan")? {
         let mut loops = Vec::new();
-        for source in ctx.admit_iter(&face.loops, "catia_e5_boundary_loop_plan_scan")? {
+        let mut steps = face.loops.iter();
+        while let Some(source) = ctx.next_charged(&mut steps, "catia_e5_boundary_loop_plan_scan")? {
             let Some(loop_plan) = scratch.with_storage(|| E5LoopPlan::admit(ctx, source))? else {
                 return Ok(None);
             };
@@ -1672,7 +1681,8 @@ fn plan_e5_boundary<'a>(
     let mut surface_curves = BTreeMap::<u32, (SurfaceId, PcurveGeometry, [f64; 2])>::new();
     let mut occurrence_intersection_sides =
         BTreeMap::<u32, Vec<E5OccurrenceIntersectionSide>>::new();
-    for face in ctx.admit_iter(&topology.faces, "catia_e5_boundary_face_member_scan")? {
+    let mut steps = topology.faces.iter();
+    while let Some(face) = ctx.next_charged(&mut steps, "catia_e5_boundary_face_member_scan")? {
         let Some((face_surface_id, decoded_surface)) = ctx.get_hash_map(
             surface_for_ref,
             &face.surface,
@@ -1681,10 +1691,13 @@ fn plan_e5_boundary<'a>(
         else {
             return Ok(None);
         };
-        for loop_ in ctx.admit_iter(&face.loops, "catia_e5_boundary_loop_member_scan")? {
-            for (member_index, member) in ctx
-                .admit_iter(&loop_.members, "catia_e5_boundary_member_scan")?
-                .enumerate()
+        let mut steps = face.loops.iter();
+        while let Some(loop_) =
+            ctx.next_charged(&mut steps, "catia_e5_boundary_loop_member_scan")?
+        {
+            let mut steps = loop_.members.iter().enumerate();
+            while let Some((member_index, member)) =
+                ctx.next_charged(&mut steps, "catia_e5_boundary_member_scan")?
             {
                 let pcurve_ref = member.pcurve;
                 let edge_ref = member.edge_use;
@@ -1876,7 +1889,10 @@ fn plan_e5_boundary<'a>(
         }
     }
     let mut intersection_sides = BTreeMap::<u32, BTreeMap<u32, E5IntersectionSidePlan>>::new();
-    for (&edge_ref, edge) in ctx.admit_iter(&topology.edges, "catia_e5_intersection_edge_scan")? {
+    let mut steps = topology.edges.iter();
+    while let Some((&edge_ref, edge)) =
+        ctx.next_charged(&mut steps, "catia_e5_intersection_edge_scan")?
+    {
         let Some(support) = ctx.get_btree_map(
             &topology.curve_supports,
             &edge.support,
@@ -2021,8 +2037,9 @@ fn plan_e5_boundary<'a>(
     }
 
     let mut intersections = BTreeMap::<u32, IntcurveSupportContext>::new();
-    for (&edge_ref, sides) in
-        ctx.admit_iter(&intersection_sides, "catia_e5_intersection_side_edge_scan")?
+    let mut steps = intersection_sides.iter();
+    while let Some((&edge_ref, sides)) =
+        ctx.next_charged(&mut steps, "catia_e5_intersection_side_edge_scan")?
     {
         let Some(edge) = ctx.get_btree_map(
             &topology.edges,
@@ -2109,10 +2126,10 @@ fn plan_e5_boundary<'a>(
             )
         })?;
     }
-    for (&edge_ref, sides) in ctx.admit_iter(
-        &occurrence_intersection_sides,
-        "catia_e5_occurrence_intersection_scan",
-    )? {
+    let mut steps = occurrence_intersection_sides.iter();
+    while let Some((&edge_ref, sides)) =
+        ctx.next_charged(&mut steps, "catia_e5_occurrence_intersection_scan")?
+    {
         if ctx.contains_key_btree_map(&intersections, &edge_ref, "catia_e5_intersection_plan")? {
             continue;
         }
@@ -2230,22 +2247,19 @@ fn push_occurrence_intersection_side(
             return Ok(());
         }
         // Each stored side compares its identity and its pcurve lanes.
-        let repeated = ctx.any_by(
-            sides,
-            |existing| {
-                Ok(ctx.equal(
-                    &existing.surface,
-                    surface,
-                    "catia_e5_occurrence_side_surface",
-                )? && equal_e5_pcurve_geometry(ctx, &existing.pcurve, pcurve)?
-                    && existing.pcurve_range == pcurve_range)
-            },
-            "catia_e5_occurrence_side_duplicate_scan",
-        )?;
-        if repeated {
-            return Ok(());
+        for existing in sides {
+            if ctx.equal(
+                &existing.surface,
+                surface,
+                "catia_e5_occurrence_side_surface",
+            )? && equal_e5_pcurve_geometry(ctx, &existing.pcurve, pcurve)?
+                && existing.pcurve_range == pcurve_range
+            {
+                return Ok(());
+            }
         }
     }
+
     let side = E5OccurrenceIntersectionSide {
         surface: surface.try_clone_for_decode(ctx, "catia_e5_occurrence_surface_id")?,
         pcurve: pcurve.try_clone_for_decode(ctx, "catia_e5_occurrence_pcurve")?,
@@ -2872,7 +2886,8 @@ fn emit_e5_faces_loops_coedges(
     // The coedge occurrence groups are scratch for the radial-next fixup.
     let mut scratch = ctx.reserve_scoped(0, "catia_e5_radial_occurrences")?;
     let mut coedges_by_edge = BTreeMap::<u32, Vec<usize>>::new();
-    for face_plan in ctx.admit_iter(&boundary.faces, "catia_e5_emitted_face_plan_scan")? {
+    let mut steps = boundary.faces.iter();
+    while let Some(face_plan) = ctx.next_charged(&mut steps, "catia_e5_emitted_face_plan_scan")? {
         let face = face_plan.source;
         let face_id = crate::resource::compose_u32_id(
             ctx,
@@ -2942,7 +2957,10 @@ fn emit_e5_faces_loops_coedges(
             tolerance: None,
         });
 
-        for loop_plan in ctx.admit_iter(&face_plan.loops, "catia_e5_emitted_loop_plan_scan")? {
+        let mut steps = face_plan.loops.iter();
+        while let Some(loop_plan) =
+            ctx.next_charged(&mut steps, "catia_e5_emitted_loop_plan_scan")?
+        {
             let loop_ = loop_plan.source;
             let loop_id = crate::resource::compose_u32_id(
                 ctx,
@@ -2954,7 +2972,10 @@ fn emit_e5_faces_loops_coedges(
             let members = &loop_plan.members;
             let mut coedge_ids = Vec::new();
             let mut vertex_uses = Vec::new();
-            for member in ctx.admit_iter(members, "catia_e5_emitted_loop_member_scan")? {
+            let mut steps = members.iter();
+            while let Some(member) =
+                ctx.next_charged(&mut steps, "catia_e5_emitted_loop_member_scan")?
+            {
                 ctx.push_vec(
                     &mut coedge_ids,
                     member
@@ -3013,7 +3034,10 @@ fn emit_e5_faces_loops_coedges(
                 face: face_id.try_clone_for_decode(ctx, "catia_e5_loop_face_id")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
-            for member in ctx.admit_iter(members, "catia_e5_emitted_coedge_member_scan")? {
+            let mut steps = members.iter();
+            while let Some(member) =
+                ctx.next_charged(&mut steps, "catia_e5_emitted_coedge_member_scan")?
+            {
                 let index = member.orientation.serialized_index;
                 let edge_ref = member.source.edge_use;
                 let pcurve_ref = member.source.pcurve;
@@ -3289,7 +3313,8 @@ fn e5_pcurve_on_surface(
             let scaled =
                 |values: [FiniteReal; 2]| [values[0].get() * scale[0], values[1].get() * scale[1]];
             let finite = |values: [f64; 2]| values[0].is_finite() && values[1].is_finite();
-            for site in ctx.admit_iter(sites, "catia_e5_jet_site_scan")? {
+            let mut steps = sites.iter();
+            while let Some(site) = ctx.next_charged(&mut steps, "catia_e5_jet_site_scan")? {
                 let point = scaled(site.point);
                 let first = scaled(site.first_derivatives);
                 let second = scaled(site.second_derivatives);
@@ -4107,11 +4132,12 @@ fn e5_ownership_plan(
         return Ok(None);
     }
     let mut body_by_face = HashMap::new();
-    for (body, (_, faces)) in ctx
-        .admit_iter(body_faces, "catia_e5_body_face_group_scan")?
-        .enumerate()
+    let mut steps = body_faces.iter().enumerate();
+    while let Some((body, (_, faces))) =
+        ctx.next_charged(&mut steps, "catia_e5_body_face_group_scan")?
     {
-        for face in ctx.admit_iter(faces, "catia_e5_body_face_scan")? {
+        let mut steps = faces.iter();
+        while let Some(face) = ctx.next_charged(&mut steps, "catia_e5_body_face_scan")? {
             if ctx
                 .insert_hash_map(&mut body_by_face, *face, body, "catia_e5_body_faces")?
                 .is_some()
@@ -4130,7 +4156,8 @@ fn e5_ownership_plan(
     })?;
     // Every topology edge must be used by the faces of exactly one body.
     let mut edge_bodies = HashMap::<u32, usize>::new();
-    for face in ctx.admit_iter(&topology.faces, "catia_e5_body_connectivity_face_scan")? {
+    let mut steps = topology.faces.iter();
+    while let Some(face) = ctx.next_charged(&mut steps, "catia_e5_body_connectivity_face_scan")? {
         let Some(&body) =
             ctx.get_hash_map(&body_by_face, &face.record_id, "catia_e5_body_faces")?
         else {
@@ -4141,9 +4168,13 @@ fn e5_ownership_plan(
             face,
             "catia_e5_body_topology_faces",
         )?;
-        for loop_ in ctx.admit_iter(&face.loops, "catia_e5_body_connectivity_loop_scan")? {
-            for member in
-                ctx.admit_iter(&loop_.members, "catia_e5_body_connectivity_member_scan")?
+        let mut steps = face.loops.iter();
+        while let Some(loop_) =
+            ctx.next_charged(&mut steps, "catia_e5_body_connectivity_loop_scan")?
+        {
+            let mut steps = loop_.members.iter();
+            while let Some(member) =
+                ctx.next_charged(&mut steps, "catia_e5_body_connectivity_member_scan")?
             {
                 let edge = member.edge_use;
                 if !ctx.contains_key_btree_map(
@@ -4174,9 +4205,9 @@ fn e5_ownership_plan(
         return Ok(None);
     }
     let mut plans = Vec::new();
-    for ((record_id, faces), (topology_faces, body_uses)) in ctx
-        .admit_iter(body_faces, "catia_e5_body_component_source_scan")?
-        .zip(body_topology_faces.iter().zip(&uses))
+    let mut groups = body_faces.iter().zip(body_topology_faces.iter().zip(&uses));
+    while let Some(((record_id, faces), (topology_faces, body_uses))) =
+        ctx.next_charged(&mut groups, "catia_e5_body_component_source_scan")?
     {
         let mut face_indices = HashMap::new();
         for (index, &face) in ctx
@@ -4187,7 +4218,10 @@ fn e5_ownership_plan(
         }
         let mut parents = UnionFind::charged(ctx, faces.len(), "catia_e5_face_union")?;
         let mut first_face_by_edge = HashMap::<u32, usize>::new();
-        for face in ctx.admit_iter(topology_faces, "catia_e5_body_component_topology_face_scan")? {
+        let mut steps = topology_faces.iter();
+        while let Some(face) =
+            ctx.next_charged(&mut steps, "catia_e5_body_component_topology_face_scan")?
+        {
             let Some(&face_index) =
                 ctx.get_hash_map(&face_indices, &face.record_id, "catia_e5_face_indices")?
             else {
