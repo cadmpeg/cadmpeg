@@ -22,6 +22,8 @@ use std::{ops::ControlFlow, rc::Rc};
 use cadmpeg_core::decode::work_units;
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
+/// Both orientations of an edge's candidate pairs, ascending, so the
+/// neighbors of one point form one contiguous run.
 fn edge_point_supports(
     ctx: &DecodeContext<'_>,
     candidates: &[[usize; 2]],
