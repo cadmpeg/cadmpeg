@@ -858,7 +858,10 @@ fn root_value<'a>(
     let mut selected_order = None;
     let mut order = 0;
     let mut descendants = property_node.descendants();
-    while let Some(node) = ctx.next_charged(&mut descendants, "fcstd drawing XML descendants")? {
+    while descendants.len() != 0 {
+        let Some(node) = ctx.next_charged(&mut descendants, "fcstd drawing XML descendants")? else {
+            break;
+        };
         if !node.is_element() {
             continue;
         }

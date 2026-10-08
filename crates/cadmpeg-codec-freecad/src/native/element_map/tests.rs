@@ -464,3 +464,5 @@ fn legacy_root_node_allocation_releases_the_consumed_group_tree() {
     assert_eq!(ctx.resource_refusal(), None);
     drop(nodes);
 }
+
+mod exhaustion;

@@ -87,8 +87,12 @@ impl ElementMapNodes {
                     let mut first_id = true;
                     let mut valid_ids = true;
                     loop {
-                        admit(1, "FreeCAD element-map child string-id scan")?;
-                        let next = ids.next();
+                        let next = if ids.len() == 0 {
+                            None
+                        } else {
+                            admit(1, "FreeCAD element-map child string-id scan")?;
+                            ids.next()
+                        };
                         let (end, done) = match next {
                             Some((index, b'.')) => (index, false),
                             Some(_) => continue,
@@ -282,9 +286,13 @@ impl ElementMapNodes {
         let mut group_storage = ctx.reserve_scoped(0, "FreeCAD element topology group index")?;
         let mut groups = BTreeMap::new();
         let mut source_groups = self.0[root].groups.iter_mut();
-        while let Some(group) =
-            ctx.next_charged(&mut source_groups, "FreeCAD element topology group scan")?
-        {
+        while source_groups.len() != 0 {
+            let Some(group) = ctx.next_charged(
+                &mut source_groups,
+                "FreeCAD element topology group scan",
+            )? else {
+                break;
+            };
             group_storage.with_storage(|| {
                 ctx.push_btree_group(
                     &mut groups,
@@ -296,9 +304,13 @@ impl ElementMapNodes {
             })?;
         }
         let mut bindings = bindings.into_iter();
-        while let Some((indexed_name, source_index, id)) =
-            ctx.next_charged(&mut bindings, "FreeCAD element topology binding scan")?
-        {
+        while bindings.size_hint().1 != Some(0) {
+            let Some((indexed_name, source_index, id)) = ctx.next_charged(
+                &mut bindings,
+                "FreeCAD element topology binding scan",
+            )? else {
+                break;
+            };
             let Some(matches) = ctx.get_mut_btree_map(
                 &mut groups,
                 indexed_name,
@@ -308,16 +320,24 @@ impl ElementMapNodes {
                 continue;
             };
             let mut matching_groups = matches.iter_mut();
-            while let Some(names) =
-                ctx.next_charged(&mut matching_groups, "FreeCAD element topology matching groups")?
-            {
+            while matching_groups.len() != 0 {
+                let Some(names) = ctx.next_charged(
+                    &mut matching_groups,
+                    "FreeCAD element topology matching groups",
+                )? else {
+                    break;
+                };
                 let Some(names) = names.get_mut(source_index) else {
                     continue;
                 };
                 let mut name_iter = names.iter_mut();
-                while let Some(name) =
-                    ctx.next_charged(&mut name_iter, "FreeCAD element topology name scan")?
-                {
+                while name_iter.len() != 0 {
+                    let Some(name) = ctx.next_charged(
+                        &mut name_iter,
+                        "FreeCAD element topology name scan",
+                    )? else {
+                        break;
+                    };
                     if !ctx.any_by(
                         &name.topology_ids,
                         |existing| {
