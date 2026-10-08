@@ -17,11 +17,9 @@ Use repeatable `--crate NAME` arguments to restrict reported findings to named c
   arm. The rule discovers evaluator names from production return signatures,
   resolves function paths and imports, and tracks bound results. Common method
   names require a receiver type or constructor that identifies the evaluator.
-- Slice sort calls in functions with a borrowed `DecodeContext` use
-  `ctx.stable_sort_by` or `ctx.sort_unstable_by`. This includes typed context
-  locals and context fields accessed through `self`. The two core sort
-  implementations and test code are exempt. Functions without a context stay
-  outside this rule.
+- Raw slice sorts in decode source require both a fixed array bound and a
+  closed primitive comparison. Other sorts use the owning admission operation,
+  such as `ctx.stable_sort_by` or `ctx.sort_unstable_by`.
 - Loss notes use the owning loss code's `note` method.
 - Formatted malformed errors use structured codec errors.
 - Tolerances from `1e-6` through `1e-12` use named constants or statics.
@@ -195,6 +193,57 @@ libraries; a findings pass checks the selected libraries against the joined
 scope. Its target directory is
 `target/decode-policy`. Decode package artifacts are removed before a run
 so Cargo cannot omit findings for unchanged source.
+
+The lexical sort finder and compiler checks have separate duties. The finder
+retains rejection of raw sorts whose extent or comparison is not established
+by its closed source grammar. The compiler resolves types, symbols and decode
+reachability. Runtime admission operations check work, storage and refusal
+before execution. A fixed receiver bound alone does not prove fixed key or
+callback work. The receiver proof does not replace comparison proof.
+
+The `uncharged_decode_sort` finder covers functions with a `DecodeContext`
+parameter, typed local or accessed context field. It also covers production
+source in codec, container, assembly, parasolid and protein crates, and the
+IR native, math, validation, evaluation, document, hash and codec modules.
+Writer paths without a context remain outside its lexical scope. Nested
+functions have separate context scopes; closures retain the enclosing scope.
+Core sort implementations in `decode/context.rs` and `decode/sort.rs`, and
+test-only source, retain their existing exemptions. This path scope is a
+finder; the compiler call graph determines actual decode reachability.
+
+The closed grammar accepts these forms without an input-sized sort charge:
+
+- Fixed array types in parameters, locals and named record fields. Array
+  lengths may be constants or const parameters. Element types may be
+  primitives, references to primitives, or nested primitive tuples and arrays.
+- Local array literals and repeats with established element types. Visible
+  typed bindings, numeric and Boolean literals, tuple expressions, declared record fields
+  and array indices can establish those types. A type annotation establishes
+  the output type of an initializer; it does not exempt work in that initializer.
+- Direct array ranges, including input-selected prefixes, suffixes and
+  inclusive ranges, plus parentheses and borrows of those arrays. A range
+  selects elements within the fixed array; it cannot enlarge the bound.
+- Default comparison of primitive composites, `f32::total_cmp` or
+  `f64::total_cmp` for matching float arrays, and closed projection closures.
+  Key closures return only established primitive composites. Comparison
+  closures use only `cmp` or `total_cmp` on established matching primitive
+  projections. Their expressions may contain tuple/array construction,
+  parentheses, references, reference dereferences and declared field/index
+  projections. Index bounds are single integer literals or identifiers. These
+  expressions contain no arbitrary calls or loops and do not return captured
+  keys. Reference dereferences cannot invoke a custom `Deref`.
+
+Named records can supply declared primitive key fields. Default ordering of
+named records remains a finding even when all fields are primitive; a custom
+`Ord` can perform input-sized work. Variable text keys, dynamic collections,
+opaque comparator parameters and unknown callback bodies remain findings.
+The grammar does not infer type aliases, function results, pattern-extracted
+bindings or general `array.map` results. Use an explicit fixed array type
+where the type is known. Record field evidence requires one declaration in the
+same source file and no matching alias, import or generic parameter. The finder
+does not resolve record imports. Primitive-name declarations or imports disable
+matching unqualified primitive type evidence. Glob imports disable named type
+evidence in their source file. Unknown syntax remains a finding.
 
 The compiler resolves expressions, receiver types, associated trait calls,
 record fields and closure owners. The allocation and work rules inspect

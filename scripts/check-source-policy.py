@@ -2281,6 +2281,243 @@ DECODE_RECEIVER_BINDING = re.compile(
 )
 
 
+class FixedSortSyntax:
+    """A closed source grammar for fixed array sorts, not Rust type inference.
+
+    Unknown syntax fails closed. The compiler remains responsible for resolved
+    identities, reachability and operations outside this grammar.
+    """
+
+    SCALARS = {"bool", "char", "u8", "u16", "u32", "u64", "u128", "usize",
+               "i8", "i16", "i32", "i64", "i128", "isize", "f32", "f64"}
+    IDENTIFIER = re.compile(r"[A-Za-z_]\w*\Z")
+    NUMBER = re.compile(
+        r"-?(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|"
+        r"[0-9][0-9_]*(?:\.[0-9_]*)?(?:[eE][+-]?[0-9_]+)?)"
+        r"(?:_?(?:u8|u16|u32|u64|u128|usize|i8|i16|i32|i64|i128|isize|f32|f64))?\Z"
+    )
+
+    def __init__(self, code: str, records: dict[str, dict[str, str]], shadowed: set[str]):
+        self.code = code
+        self.records = records
+        self.shadowed = shadowed
+
+    @staticmethod
+    def split(text: str, separator: str) -> list[str]:
+        """Split only at top-level delimiters; nested types/expressions stay whole."""
+        tokens, pairs, _ = evaluation_tokens(text)
+        pieces = []
+        start = index = 0
+        while index < len(tokens):
+            word = tokens[index][0]
+            if word in "([{":
+                if index not in pairs:
+                    return []
+                index = pairs[index] + 1
+                continue
+            if word == separator:
+                pieces.append(text[start:tokens[index].start()].strip())
+                start = tokens[index].end()
+            index += 1
+        pieces.append(text[start:].strip())
+        return pieces
+
+    def type_shape(self, text: str):
+        text = text.strip()
+        borrowed = re.match(r"^&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\b\s*)?", text)
+        if borrowed:
+            child = self.type_shape(text[borrowed.end():])
+            return ("ref", child) if child else None
+        text = re.sub(r"\s+", "", text)
+        if text in self.SCALARS and text not in self.shadowed:
+            return (text,)
+        for prefix in ("::core::primitive::", "core::primitive::", "::std::primitive::", "std::primitive::"):
+            if text.startswith(prefix) and text[len(prefix):] in self.SCALARS:
+                # Root/module identity is verified by the compiler, not spelling.
+                if prefix.strip(":").split("::")[0] not in self.shadowed:
+                    return (text[len(prefix):],)
+        if text.startswith("[") and text.endswith("]"):
+            parts = self.split(text[1:-1], ";")
+            if len(parts) == 2 and parts[1] and (element := self.type_shape(parts[0])):
+                return ("array", element)
+        if text.startswith("(") and text.endswith(")"):
+            parts = self.split(text[1:-1], ",")
+            children = [self.type_shape(part) for part in parts if part]
+            if children and all(children):
+                return ("tuple", *children)
+        if text in self.records:
+            return ("record", text)
+        return None
+
+    @staticmethod
+    def peel_refs(shape):
+        while shape and shape[0] == "ref":
+            shape = shape[1]
+        return shape
+
+    @staticmethod
+    def standard_order(shape) -> bool:
+        shape = FixedSortSyntax.peel_refs(shape)
+        if shape is None or shape[0] == "record":
+            return False
+        if shape[0] in {"array", "tuple"}:
+            return all(FixedSortSyntax.standard_order(child) for child in shape[1:])
+        return shape[0] in FixedSortSyntax.SCALARS
+
+    def expression_shape(self, text: str, bindings: dict):
+        text = text.strip()
+        if text in bindings:
+            return bindings[text]
+        if self.NUMBER.fullmatch(text):
+            suffix = re.search(r"(u8|u16|u32|u64|u128|usize|i8|i16|i32|i64|i128|isize|f32|f64)$", text)
+            decimal = not text.lstrip("-").startswith(("0x", "0X", "0b", "0B", "0o", "0O"))
+            floating = decimal and any(c in text for c in ".eE")
+            return (suffix[0] if suffix else "f64" if floating else "i32",)
+        if text in {"true", "false"}:
+            return ("bool",)
+        tokens, pairs, _ = evaluation_tokens(text)
+        if not tokens:
+            return None
+        words = [token[0] for token in tokens]
+        # Parentheses, borrows and dereferences do not change the element cost.
+        if words[0] in {"(", "{"} and pairs.get(0) == len(words) - 1:
+            inside = text[tokens[0].end():tokens[-1].start()]
+            parts = self.split(inside, ",") if words[0] == "(" else [inside]
+            if len(parts) == 1:
+                return self.expression_shape(parts[0], bindings)
+            children = [self.expression_shape(part, bindings) for part in parts if part]
+            return ("tuple", *children) if children and all(children) else None
+        if words[0] in {"&", "*"}:
+            start = 2 if words[:2] == ["&", "mut"] else 1
+            inner = self.expression_shape(text[tokens[start].start():], bindings) if start < len(tokens) else None
+            if words[0] == "&":
+                return ("ref", inner) if inner else None
+            return inner[1] if inner and inner[0] == "ref" else None
+        if words[0] == "[" and pairs.get(0) == len(words) - 1:
+            inside = text[tokens[0].end():tokens[-1].start()]
+            repeat = self.split(inside, ";")
+            parts = [repeat[0]] if len(repeat) == 2 and repeat[1] else self.split(inside, ",")
+            children = [self.expression_shape(part, bindings) for part in parts if part]
+            return ("array", children[0]) if children and all(child == children[0] for child in children) else None
+        if len(words) >= 3 and words[-2] == ".":
+            base = self.peel_refs(self.expression_shape(text[:tokens[-2].start()], bindings))
+            if base and base[0] == "record":
+                return self.type_shape(self.records[base[1]].get(words[-1], ""))
+        # Numeric tuple fields are tokenized one digit at a time.
+        field = re.fullmatch(r"(.+)\.\s*([0-9]+)", text, re.DOTALL)
+        if field:
+            base = self.peel_refs(self.expression_shape(field[1], bindings))
+            index = int(field[2]) + 1
+            return base[index] if base and base[0] == "tuple" and index < len(base) else None
+        if words[-1] == "]" and (opening := pairs.get(len(words) - 1)) not in {None, 0}:
+            base = self.peel_refs(self.expression_shape(text[:tokens[opening].start()], bindings))
+            if base and base[0] == "array":
+                index_text = text[tokens[opening].end():tokens[-1].start()].strip()
+                bound = r"(?:[A-Za-z_]\w*|[0-9][0-9_]*)"
+                if not re.fullmatch(rf"(?:{bound})?(?:\s*\.\.=?(?:\s*{bound})?)?", index_text):
+                    return None
+                index = words[opening + 1:-1]
+                # Bounds can select fewer elements; they cannot enlarge an array.
+                if ".." in index:
+                    return base
+                if index and all(word.isdigit() or self.IDENTIFIER.fullmatch(word) for word in index):
+                    return base[1]
+        return None
+
+    def bindings_before(self, tokens, pairs, parents, function, call: int) -> dict:
+        """Read visible parameters and locals; unknown/shadowing bindings erase facts."""
+        index, body, _, owner = function
+        opening = index + 2
+        while opening < body and tokens[opening][0] != "(":
+            opening += 1
+        parameters = self.code[tokens[opening].end():tokens[pairs[opening]].start()]
+        bindings = {"self": ("record", owner)} if owner in self.records else {}
+        for parameter in self.split(parameters, ","):
+            name, sep, type_text = parameter.partition(":")
+            name = name.strip().removeprefix("mut ").strip()
+            if sep and self.IDENTIFIER.fullmatch(name):
+                bindings[name] = self.type_shape(type_text)
+        ancestors = set()
+        parent = parents.get(call)
+        while parent is not None:
+            ancestors.add(parent)
+            parent = parents.get(parent)
+        cursor = body + 1
+        while cursor < call:
+            if tokens[cursor][0] != "let" or parents.get(cursor) not in ancestors:
+                cursor += 1
+                continue
+            start = cursor + 1
+            stop = start
+            while stop < call and tokens[stop][0] != ";":
+                stop = pairs[stop] + 1 if tokens[stop][0] in "([{" and stop in pairs else stop + 1
+            declaration = self.code[tokens[start].start():tokens[stop].start()] if stop < call else ""
+            # A declaration's initializer must see the previous binding.
+            pattern, sep, value = declaration.partition("=")
+            name, colon, type_text = pattern.partition(":")
+            name = name.strip().removeprefix("mut ").strip()
+            if self.IDENTIFIER.fullmatch(name):
+                bindings[name] = self.type_shape(type_text) if colon else self.expression_shape(value, bindings) if sep else None
+            else:
+                for name in re.findall(r"[A-Za-z_]\w*", pattern):
+                    bindings[name] = None
+            cursor = stop + 1
+        return bindings
+
+    def accepts(self, tokens, pairs, parents, function, call: int) -> bool:
+        words = [token[0] for token in tokens]
+        end = call - 2
+        start = end
+        # Recover only a closed receiver grammar. Calls and macros stay unknown.
+        if words[start] in {"]", ")"} and start in pairs:
+            start = pairs[start]
+            if words[start] == "[" and start and (self.IDENTIFIER.fullmatch(words[start - 1]) or words[start - 1] == "]"):
+                start -= 1
+        while start >= 2 and words[start - 1] == ".":
+            start -= 2
+        receiver = self.code[tokens[start].start():tokens[end].end()]
+        # A closure parameter can shadow a visible binding without a `let`.
+        prefix = self.code[tokens[function[1]].end():tokens[call].start()]
+        root = re.match(r"[A-Za-z_]\w*", receiver)
+        if root:
+            for closure in re.finditer(r"(?=\|([^|]*)\|)", prefix):
+                for parameter in self.split(closure[1], ","):
+                    name = parameter.partition(":")[0].strip().removeprefix("mut ").strip()
+                    if name == root[0]:
+                        return False
+        bindings = self.bindings_before(tokens, pairs, parents, function, call)
+        shape = self.peel_refs(self.expression_shape(receiver, bindings))
+        if not shape or shape[0] != "array":
+            return False
+        method = words[call]
+        if method in {"sort", "sort_unstable"}:
+            return self.standard_order(shape[1])
+        opening = evaluation_call_open(words, call)
+        if opening not in pairs:
+            return False
+        callback = self.code[tokens[opening].end():tokens[pairs[opening]].start()].strip().rstrip(",").strip()
+        if callback in {"f32::total_cmp", "f64::total_cmp"}:
+            scalar = callback.split("::")[0]
+            return method in {"sort_by", "sort_unstable_by"} and shape[1] == (scalar,) and scalar not in self.shadowed
+        closure = re.fullmatch(r"\|\s*([A-Za-z_]\w*)(?:\s*,\s*([A-Za-z_]\w*))?\s*\|\s*(.+)", callback, re.DOTALL)
+        if not closure:
+            return False
+        first, second, expression = closure.groups()
+        callback_bindings = {first: ("ref", shape[1])}
+        if second:
+            callback_bindings[second] = ("ref", shape[1])
+        if method in {"sort_by_key", "sort_unstable_by_key", "sort_by_cached_key"}:
+            return second is None and self.standard_order(self.expression_shape(expression, callback_bindings))
+        if second is None or first == second:
+            return False
+        comparison = re.fullmatch(r"(.+)\.\s*(cmp|total_cmp)\s*\((.+)\)", expression, re.DOTALL)
+        if not comparison:
+            return False
+        left = self.peel_refs(self.expression_shape(comparison[1], callback_bindings))
+        right = self.peel_refs(self.expression_shape(comparison[3], callback_bindings))
+        return left == right and self.standard_order(left) and (comparison[2] != "total_cmp" or left[0] in {"f32", "f64"})
+
+
 def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
     """Reject slice sorts in functions borrowing a decode context and in decode crate code.
 
@@ -2289,6 +2526,10 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
     """
     parsed = {}
     context_fields: dict[tuple[str, str], set[str]] = {}
+    record_candidates: dict[tuple[Path, str], list[dict[str, str]]] = {}
+    record_shadowed: dict[Path, set[str]] = {}
+    glob_imports: set[Path] = set()
+    shadowed: dict[str, set[str]] = {}
     for path, source in sources.items():
         if not is_production_rs(path):
             continue
@@ -2297,6 +2538,21 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
         words = [token[0] for token in tokens]
         crate = Path(relative_path(path)).parts[1]
         parsed[path] = code, tokens, pairs, parents, words, crate
+        # Primitive-looking user types must not supply an implicit custom Ord.
+        names = set(re.findall(r"\b(?:struct|enum|type|trait|mod)\s+([A-Za-z_]\w*)", code))
+        imports = evaluation_imports(tokens, pairs)
+        names.update(imports)
+        aliases = set(re.findall(r"\b(?:type|trait)\s+([A-Za-z_]\w*)", code)) | set(imports)
+        if "*" in imports:
+            glob_imports.add(path)
+        for match in re.finditer(r"\bextern\s+crate\s+([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?", code):
+            names.add(match[2] or match[1])
+        for match in re.finditer(r"\b(?:fn|struct|enum|impl)\b[^;{}]*<([^>{}]*)>", code):
+            parameters = set(re.findall(r"[A-Za-z_]\w*", match[1]))
+            names.update(parameters)
+            aliases.update(parameters)
+        record_shadowed[path] = aliases
+        shadowed.setdefault(crate, set()).update(names & (FixedSortSyntax.SCALARS | {"core", "std"}))
         for index, word in enumerate(words):
             if word != "struct" or index + 1 >= len(words):
                 continue
@@ -2308,11 +2564,25 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
             fields = DECODE_CONTEXT_BINDING.findall(
                 code[tokens[opening].end():tokens[pairs[opening]].start()])
             context_fields.setdefault((crate, words[index + 1]), set()).update(fields)
+            field_text = code[tokens[opening].end():tokens[pairs[opening]].start()]
+            record = {}
+            for field in FixedSortSyntax.split(field_text, ","):
+                match = re.fullmatch(r"\s*(?:pub(?:\([^)]*\))?\s+)?([A-Za-z_]\w*)\s*:\s*(.+)", field, re.DOTALL)
+                if match:
+                    record[match[1]] = match[2]
+            record_candidates.setdefault((path, words[index + 1]), []).append(record)
 
     findings = []
     for path, (code, tokens, pairs, parents, words, crate) in parsed.items():
         if relative_path(path) in DECODE_SORT_EXEMPT_FILES:
             continue
+        records = {name: candidates[0] for (record_path, name), candidates in record_candidates.items()
+                   if record_path == path and len(candidates) == 1 and name not in record_shadowed[path]}
+        uncertain = shadowed.get(crate, set())
+        if path in glob_imports:
+            uncertain = uncertain | FixedSortSyntax.SCALARS | {"core", "std"}
+            records = {}
+        fixed = FixedSortSyntax(code, records, uncertain)
         decode_scope = (bool(DECODE_SORT_CRATE.fullmatch(crate)) or bool(IR_DECODE_SORT_PATH.fullmatch(relative_path(path)))) and not ENCODE_SORT_PATH.fullmatch(relative_path(path))
         functions = []
         for index, _, _, owner in evaluation_signatures(tokens, pairs, parents):
@@ -2360,7 +2630,8 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
             enclosing = [scope for scope in functions if scope[1] < index < scope[2]]
             if not enclosing:
                 continue
-            bindings, receivers, has_context = contexts[max(enclosing, key=lambda scope: scope[0])[0]]
+            function = max(enclosing, key=lambda scope: scope[0])
+            bindings, receivers, has_context = contexts[function[0]]
             if not has_context and not decode_scope:
                 continue
             # The context operation shares the slice method's unstable name.
@@ -2368,10 +2639,12 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
             field_owner = words[index - 4] if index >= 4 and words[index - 3] == "." else ""
             if receiver in bindings or receiver in receivers.get(field_owner, set()):
                 continue
+            if fixed.accepts(tokens, pairs, parents, function, index):
+                continue
             findings.append(Finding(
                 "uncharged_decode_sort", relative_path(path),
                 code.count("\n", 0, tokens[index].start()) + 1,
-                f"Slice .{word} in decode code must use ctx.stable_sort_by or ctx.sort_unstable_by to admit comparison work and scratch"
+                f"Slice .{word} in decode code needs a proven fixed array and closed scalar comparison, or ctx.stable_sort_by or ctx.sort_unstable_by to admit comparison work and scratch"
                 + ("." if has_context else "; pass the decode context to this function."),
             ))
     return findings

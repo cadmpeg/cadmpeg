@@ -1083,6 +1083,290 @@ class AuthoringPaths(TempSourceCase):
 
 
 class DecodeSorts(TempSourceCase):
+    def check_sort_source(self, source: str, rejected: list[str]) -> None:
+        self.write("crates/cadmpeg-codec-demo/src/lib.rs", source)
+        findings = self.findings("uncharged_decode_sort")
+        lines = source.splitlines()
+        self.assertEqual([lines[item.line - 1].strip() for item in findings], rejected)
+
+    def test_borrowed_text_keys_on_full_array_and_prefix_are_rejected(self) -> None:
+        self.check_sort_source("""
+use cadmpeg_core::decode::DecodeContext;
+pub fn order_text_keys(_ctx: &DecodeContext<'_>, values: &mut [u64; 8], left: &str, right: &str, end: usize) {
+    values.sort_unstable_by_key(|value| if *value == 0 { left } else { right });
+    values[..end].sort_unstable_by_key(|value| if *value == 0 { left } else { right });
+}
+""", [
+            "values.sort_unstable_by_key(|value| if *value == 0 { left } else { right });",
+            "values[..end].sort_unstable_by_key(|value| if *value == 0 { left } else { right });",
+        ])
+
+    def test_custom_ord_on_scalar_record_array_and_prefix_is_rejected(self) -> None:
+        self.check_sort_source("""
+use cadmpeg_core::decode::DecodeContext;
+use std::cmp::Ordering;
+#[derive(Eq, PartialEq)]
+pub struct CountedOrder { count: usize }
+impl Ord for CountedOrder {
+    fn cmp(&self, other: &Self) -> Ordering {
+        for step in 0..self.count { std::hint::black_box(step); }
+        self.count.cmp(&other.count)
+    }
+}
+impl PartialOrd for CountedOrder {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+}
+pub fn order_records(_ctx: &DecodeContext<'_>, values: &mut [CountedOrder; 4], end: usize) {
+    values.sort_unstable();
+    values[..end].sort_unstable();
+}
+""", ["values.sort_unstable();", "values[..end].sort_unstable();"])
+
+    def test_opaque_comparator_on_full_array_and_prefix_is_rejected(self) -> None:
+        for comparator in ("fn(&u64, &u64) -> std::cmp::Ordering",
+                           "impl FnMut(&u64, &u64) -> std::cmp::Ordering"):
+            with self.subTest(comparator=comparator):
+                self.check_sort_source(f"""
+fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8], end: usize, compare: {comparator}) {{
+    values.sort_unstable_by(compare);
+    values[..end].sort_unstable_by(compare);
+}}
+""", ["values.sort_unstable_by(compare);", "values[..end].sort_unstable_by(compare);"])
+
+    def test_primitive_and_nested_composite_array_default_sorts_are_free(self) -> None:
+        for element in ("u64", "(u64, usize)", "[u64; 2]", "([u64; 2], (usize, bool))"):
+            for method in ("sort", "sort_unstable"):
+                with self.subTest(element=element, method=method):
+                    self.check_sort_source(f"""
+fn order(_ctx: &DecodeContext<'_>, values: &mut [{element}; 8], end: usize) {{
+    values.{method}();
+    values[..end].{method}();
+}}
+""", [])
+
+    def test_fixed_array_range_and_borrow_forms_are_free(self) -> None:
+        for receiver in ("values[..]", "values[..end]", "values[start..]", "values[start..end]",
+                         "values[..=end]", "values[start..=end]", "(values)", "(&mut values[..end])"):
+            with self.subTest(receiver=receiver):
+                self.check_sort_source(f"""
+fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8], start: usize, end: usize) {{
+    {receiver}.sort_unstable();
+}}
+""", [])
+
+    def test_named_const_and_const_generic_array_lengths_are_static(self) -> None:
+        self.check_sort_source("""
+const CAPACITY: usize = 8;
+fn order<const N: usize>(_ctx: &DecodeContext<'_>, values: &mut [u64; N]) {
+    let mut local: [u64; CAPACITY] = [0; CAPACITY];
+    local.sort_unstable();
+    values.sort_unstable();
+}
+""", [])
+
+    def test_typed_and_literal_local_arrays_are_free(self) -> None:
+        self.check_sort_source("""
+fn order(_ctx: &DecodeContext<'_>, end: usize) {
+    let mut values = [3u64, 1u64, 2u64];
+    values.sort_unstable();
+    let mut pairs = [(3u64, 1usize), (1u64, 2usize)];
+    pairs[..end].sort_unstable();
+    let mut repeated = [[0u64; 2]; 4];
+    repeated.sort();
+    let mut typed: [u64; 8] = make_values();
+    typed[..end].sort_unstable();
+}
+""", [])
+
+    def test_float_function_item_and_closed_scalar_comparisons_are_free(self) -> None:
+        self.check_sort_source("""
+fn order(_ctx: &DecodeContext<'_>, floats: &mut [f64; 8], integers: &mut [u64; 8], end: usize) {
+    floats.sort_by(f64::total_cmp);
+    floats[..end].sort_unstable_by(|left, right| left.total_cmp(right));
+    integers.sort_by(|left, right| left.cmp(right));
+    integers[..end].sort_unstable_by(|left, right| (*left).cmp(&(*right)));
+}
+""", [])
+
+    def test_all_closed_scalar_key_methods_are_free(self) -> None:
+        for method in ("sort_by_key", "sort_unstable_by_key", "sort_by_cached_key"):
+            with self.subTest(method=method):
+                self.check_sort_source(f"""
+struct Edge {{ slot: u8, endpoints: [usize; 2] }}
+fn order(_ctx: &DecodeContext<'_>, values: &mut [Edge; 4], end: usize) {{
+    values.{method}(|value| value.slot);
+    values[..end].{method}(|value| (value.slot, value.endpoints));
+}}
+""", [])
+
+    def test_closed_scalar_field_comparator_is_free(self) -> None:
+        self.check_sort_source("""
+struct Edge { slot: u8, name: String }
+fn order(_ctx: &DecodeContext<'_>, values: &mut [Edge; 4]) {
+    values.sort_unstable_by(|left, right| left.slot.cmp(&right.slot));
+}
+""", [])
+
+    def test_catia_array_annotations_keep_scalar_projection_sorts_free(self) -> None:
+        self.check_sort_source("""
+pub(crate) struct Edge { pub(crate) slot: u8, pub(crate) endpoints: [usize; 2] }
+fn order(_ctx: &DecodeContext<'_>, first: Edge, second: Edge, third: Edge, fourth: Edge) {
+    let mut edges: [Edge; 4] = [first, second, third, fourth];
+    edges.sort_unstable_by_key(|edge| edge.slot);
+    let mut keys: [[usize; 2]; 4] = edges.map(|edge| {
+        let [start, end] = edge.endpoints;
+        if start < end { [start, end] } else { [end, start] }
+    });
+    keys.sort_unstable();
+    let mut vertices = [edges[0].endpoints[0], edges[0].endpoints[1], edges[1].endpoints[0], edges[1].endpoints[1]];
+    vertices.sort_unstable();
+}
+""", [])
+
+    def test_typed_array_field_and_local_borrow_are_free(self) -> None:
+        self.check_sort_source("""
+struct Reader<'a> { ctx: &'a DecodeContext<'a>, roots: [f64; 8] }
+impl Reader<'_> {
+    fn read(&mut self, end: usize) {
+        self.ctx;
+        self.roots[..end].sort_unstable_by(f64::total_cmp);
+    }
+}
+fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8], end: usize) {
+    let alias = &mut values[..end];
+    alias.sort_unstable();
+}
+""", [])
+
+    def test_dynamic_vector_and_slice_prefixes_remain_rejected(self) -> None:
+        for type_text in ("Vec<u64>", "[u64]"):
+            with self.subTest(type_text=type_text):
+                self.check_sort_source(f"""
+fn order(_ctx: &DecodeContext<'_>, values: &mut {type_text}, end: usize) {{
+    values[..4].sort_unstable();
+    values[..end].sort_unstable();
+}}
+""", ["values[..4].sort_unstable();", "values[..end].sort_unstable();"])
+
+    def test_dynamic_element_and_projected_field_work_remain_rejected(self) -> None:
+        self.check_sort_source("""
+struct Edge { name: String, names: [&'static str; 2] }
+fn order(_ctx: &DecodeContext<'_>, values: &mut [Edge; 4], text: &mut [String; 4]) {
+    values.sort_unstable_by_key(|value| value.name.as_str());
+    values.sort_unstable_by_key(|value| value.names);
+    values.sort_unstable_by(|left, right| left.name.cmp(&right.name));
+    text.sort_unstable();
+}
+""", [
+            "values.sort_unstable_by_key(|value| value.name.as_str());",
+            "values.sort_unstable_by_key(|value| value.names);",
+            "values.sort_unstable_by(|left, right| left.name.cmp(&right.name));",
+            "text.sort_unstable();",
+        ])
+
+    def test_callback_with_hidden_loop_or_capture_remains_rejected(self) -> None:
+        self.check_sort_source("""
+fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8], text: &str) {
+    values.sort_unstable_by(|left, right| { for step in 0..*left { std::hint::black_box(step); } left.cmp(right) });
+    values.sort_unstable_by_key(|value| { text.len(); *value });
+    values.sort_unstable_by_key(|value| text);
+}
+""", [
+            "values.sort_unstable_by(|left, right| { for step in 0..*left { std::hint::black_box(step); } left.cmp(right) });",
+            "values.sort_unstable_by_key(|value| { text.len(); *value });",
+            "values.sort_unstable_by_key(|value| text);",
+        ])
+
+    def test_unknown_alias_map_and_callback_bindings_remain_rejected(self) -> None:
+        self.check_sort_source("""
+type Slots = [u64; 8];
+fn order(_ctx: &DecodeContext<'_>, values: &mut Slots) {
+    values.sort_unstable();
+    let mut mapped = [0u64; 8].map(|value| value);
+    mapped.sort_unstable();
+    let compare = f64::total_cmp;
+    let mut floats = [0.0; 8];
+    floats.sort_unstable_by(compare);
+}
+""", ["values.sort_unstable();", "mapped.sort_unstable();", "floats.sort_unstable_by(compare);"])
+
+    def test_local_and_closure_shadowing_do_not_reuse_array_facts(self) -> None:
+        self.check_sort_source("""
+fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8], dynamic: Vec<u64>) {
+    { let mut values = dynamic; values.sort_unstable(); }
+    values.sort_unstable();
+    let apply = |values: &mut Vec<u64>| values.sort_unstable();
+}
+""", ["{ let mut values = dynamic; values.sort_unstable(); }",
+        "let apply = |values: &mut Vec<u64>| values.sort_unstable();"])
+
+    def test_primitive_name_shadowing_does_not_allow_custom_ord(self) -> None:
+        self.check_sort_source("""
+struct u64 { count: usize }
+fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8]) {
+    values.sort_unstable();
+}
+""", ["values.sort_unstable();"])
+
+    def test_ambiguous_record_field_types_remain_rejected(self) -> None:
+        self.check_sort_source("""
+mod other { struct Edge { slot: String } }
+struct Edge { slot: u8 }
+fn order(_ctx: &DecodeContext<'_>, values: &mut [Edge; 4]) {
+    values.sort_unstable_by_key(|value| value.slot);
+}
+""", ["values.sort_unstable_by_key(|value| value.slot);"])
+
+    def test_imported_record_and_primitive_aliases_do_not_supply_proofs(self) -> None:
+        self.write("crates/cadmpeg-codec-demo/src/other.rs", "struct Edge { slot: u8 }")
+        self.check_sort_source("""
+use dependency::DynamicEdge as Edge;
+use dependency::CountedOrder as u64;
+fn order(_ctx: &DecodeContext<'_>, values: &mut [Edge; 4], integers: &mut [u64; 8]) {
+    values.sort_unstable_by_key(|value| value.slot);
+    integers.sort_unstable();
+}
+""", ["values.sort_unstable_by_key(|value| value.slot);", "integers.sort_unstable();"])
+
+    def test_glob_import_cannot_establish_unqualified_primitive_types(self) -> None:
+        self.check_sort_source("""
+use dependency::*;
+fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8]) {
+    values.sort_unstable();
+    let mut literals = [0u64; 8];
+    literals.sort_unstable();
+}
+""", ["values.sort_unstable();"])
+
+    def test_callback_index_with_opaque_work_is_rejected(self) -> None:
+        self.check_sort_source("""
+fn order(_ctx: &DecodeContext<'_>, values: &mut [[u64; 8]; 4], end: impl Fn() -> usize) {
+    values.sort_unstable_by_key(|value| &value[..end()]);
+}
+""", ["values.sort_unstable_by_key(|value| &value[..end()]);"])
+
+    def test_custom_deref_cannot_supply_a_scalar_projection_proof(self) -> None:
+        self.check_sort_source("""
+struct Edge { slot: u8 }
+impl std::ops::Deref for Edge {
+    type Target = Dynamic;
+    fn deref(&self) -> &Dynamic { lookup(self.slot) }
+}
+fn order(_ctx: &DecodeContext<'_>, values: &mut [Edge; 4]) {
+    values.sort_unstable_by_key(|value| (**value).slot);
+    values.sort_unstable_by_key(|value| (*value).slot);
+}
+""", ["values.sort_unstable_by_key(|value| (**value).slot);"])
+
+    def test_type_name_starting_with_mut_is_not_a_mutable_reference(self) -> None:
+        self.check_sort_source("""
+struct ant { slot: u8 }
+struct mutant { slot: &'static str }
+fn order(_ctx: &DecodeContext<'_>, values: &mut [&mutant; 4]) {
+    values.sort_unstable_by_key(|value| value.slot);
+}
+""", ["values.sort_unstable_by_key(|value| value.slot);"])
+
     def test_each_slice_sort_with_context_parameter_is_rejected(self) -> None:
         for method in sorted(policy.SLICE_SORT_METHODS):
             with self.subTest(method=method):
