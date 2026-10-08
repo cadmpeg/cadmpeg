@@ -44,7 +44,7 @@ fn curve_marker_index_preserves_reverse_links_and_feature_separation() {
         .iter()
         .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
-    let (index, _storage) = CurveMarkers::new(&ctx, &roster).unwrap();
+    let index = CurveMarkers::new(&ctx, &roster).unwrap();
     let geometry =
         MarkerGeometryIndex::new(&ctx, &roster, MarkerPrefixIndex::new(&ctx, &[]).unwrap())
             .unwrap();
@@ -68,7 +68,7 @@ fn curve_marker_offset_index_keeps_first_occurrence_at_repeated_offsets() {
     let earlier = point("earlier", 1, None);
     let foreign = point("foreign", 3, Some("other"));
     let roster = [&duplicate, &earlier, &foreign, &first];
-    let (index, _storage) = CurveMarkers::new(&ctx, &roster).unwrap();
+    let index = CurveMarkers::new(&ctx, &roster).unwrap();
     assert!(std::ptr::eq(
         index.next_after(&ctx, &curve).unwrap().unwrap(),
         &raw const duplicate
@@ -87,11 +87,13 @@ fn curve_marker_index_storage_is_scoped_and_refuses_before_growth() {
     policy.limits.max_materialized_bytes = 16 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let built = CurveMarkers::new(&ctx, &roster).unwrap();
+    built.feature_markers(&ctx, &marker).unwrap();
     drop(built);
     ctx.reserve_scoped(policy.limits.max_materialized_bytes, "released curve index")
         .unwrap();
-    crate::test_support::work_refusal_at("index SLDPRT curve markers", |ctx| {
-        CurveMarkers::new(ctx, &roster).map(|_| ())
+    crate::test_support::work_refusal_at("index SLDPRT curve feature markers", |ctx| {
+        let index = CurveMarkers::new(ctx, &roster)?;
+        index.feature_markers(ctx, &marker).map(|_| ())
     });
 }
 
@@ -127,7 +129,7 @@ fn curve_object_index_preserves_zero_identity_and_duplicate_ambiguity() {
             .iter()
             .map(|marker| (marker.id(), *marker))
             .collect::<HashMap<_, _>>();
-        let (index, _storage) = CurveMarkers::new(&ctx, &roster).unwrap();
+        let index = CurveMarkers::new(&ctx, &roster).unwrap();
         let geometry = MarkerGeometryIndex::new(
             &ctx,
             &roster,
@@ -146,6 +148,10 @@ fn curve_object_index_preserves_zero_identity_and_duplicate_ambiguity() {
                 indexed.iter().map(|marker| marker.id()).collect::<Vec<_>>(),
                 ["implicit", "explicit"]
             );
+            assert!(index.by_object.get().is_some());
+            assert!(index.by_feature.get().is_none());
+            assert!(index.by_offset.get().is_none());
+            assert!(index.linked_from.get().is_none());
         }
     }
 }

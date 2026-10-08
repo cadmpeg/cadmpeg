@@ -530,7 +530,10 @@ fn terminal_legacy_indexed_curve_retains_its_sibling_line_kind() {
         &[&terminal],
     )
     .unwrap());
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let roster = [&sibling, &terminal];
     let cache = std::cell::OnceCell::new();
     assert!(!super::legacy_terminal_indexed_profile_line_cached(&ctx, &payload, &sibling, &roster, &cache).unwrap());
