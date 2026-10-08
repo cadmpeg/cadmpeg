@@ -2980,7 +2980,11 @@ mod tests {
         )
     }
 
-    pub(super) fn test_feature(ordinal: u32, slot_count: usize, slots: &[(usize, u32)]) -> PmDcFeature {
+    pub(super) fn test_feature(
+        ordinal: u32,
+        slot_count: usize,
+        slots: &[(usize, u32)],
+    ) -> PmDcFeature {
         let mut references = vec![reference(0); slot_count];
         for (slot, record_ordinal) in slots {
             references[*slot] = reference(record_ordinal + 1);
@@ -4436,7 +4440,9 @@ mod tests {
 #[cfg(test)]
 mod token_tests {
     use super::tests::{pattern_feature_bytes, segment, test_feature, test_label, test_type_id};
-    use super::{parse_pattern_feature, PmDcPatternFamily, EXTRUSION_CLASS_ID, MIRROR_FEATURE_TYPE};
+    use super::{
+        parse_pattern_feature, PmDcPatternFamily, EXTRUSION_CLASS_ID, MIRROR_FEATURE_TYPE,
+    };
     use crate::record_identity::Located;
     use crate::test_support::test_fixtures::parse;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

@@ -340,9 +340,12 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
     let token_len = "segment".len();
     let mut policy = DecodePolicy::service();
     // Retain wire ID, token and digest, four initial slots, then issue token and message.
-    let retained_needed = id_len + token_len + 64
+    let retained_needed = id_len
+        + token_len
+        + 64
         + 4 * std::mem::size_of::<crate::record_issue::RecordIssue>()
-        + token_len + issue.len();
+        + token_len
+        + issue.len();
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
@@ -371,6 +374,7 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "admit Inventor rendering conversion issue"
     ));
+    inventory.issues = Vec::new();
     policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed).expect("full issue budget fits");
@@ -379,7 +383,10 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
         .expect("admitted rendering issue");
     assert!(projection.rendering_styles.is_empty());
     assert_eq!(inventory.issues.len(), 1);
-    assert_eq!(inventory.issues[0].family, crate::record_issue::RecordIssueFamily::Presentation);
+    assert_eq!(
+        inventory.issues[0].family,
+        crate::record_issue::RecordIssueFamily::Presentation
+    );
     assert_eq!(inventory.issues[0].segment_token, token);
     assert_eq!(inventory.issues[0].record_ordinal, 1);
     assert_eq!(inventory.issues[0].detail, issue);

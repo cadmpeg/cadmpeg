@@ -1097,17 +1097,19 @@ fn protein_conversion_issue_refuses_before_failure_text_creation() {
     let issue_detail = "entry_name must end with InstanceProperties.bin";
     // Retain four initial vector slots, then the issue ID, scope and message.
     let retained_needed = 4 * std::mem::size_of::<StructuralIssueRecord>()
-        + issue_id.len() + scope.len() + issue_detail.len();
+        + issue_id.len()
+        + scope.len()
+        + issue_detail.len();
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let fixture = serde_json::json!({
+        "id": "asset", "entry_name": "bad.bin", "ordinal": 3,
+        "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
+            "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
+    });
     let wire: crate::native::protein::ProteinAssetRecordWire =
-        serde_json::from_value(serde_json::json!({
-            "id": "asset", "entry_name": "bad.bin", "ordinal": 3,
-            "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
-                "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
-        }))
-        .expect("Protein asset wire fixture");
+        serde_json::from_value(fixture.clone()).expect("Protein asset wire fixture");
     let mut issues = Vec::new();
     assert!(matches!(
         crate::decode::admit_ufrx_record(
@@ -1121,16 +1123,12 @@ fn protein_conversion_issue_refuses_before_failure_text_creation() {
                 && limit.operation == "retain Inventor structural issue detail"
     ));
     assert!(issues.is_empty());
+    issues = Vec::new();
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed).expect("full issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
     let wire: crate::native::protein::ProteinAssetRecordWire =
-        serde_json::from_value(serde_json::json!({
-            "id": "asset", "entry_name": "bad.bin", "ordinal": 3,
-            "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
-                "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
-        }))
-        .expect("Protein asset wire fixture");
+        serde_json::from_value(fixture).expect("Protein asset wire fixture");
     assert!(crate::decode::admit_ufrx_record(
         &ctx,
         wire.into_record(&ctx),
@@ -1161,17 +1159,15 @@ fn ufrx_model_state_conversion_issue_refuses_before_failure_text_creation() {
     };
     let id = "inventor:ufrx:model-state#0";
     let issue_detail = "suffix_len must be 77";
-    let retained_before_issue = id
-        .len()
-        .checked_add(state.name.len())
-        .and_then(|bytes| bytes.checked_add(64))
-        .expect("preceding retained bytes fit");
+    let retained_before_issue = id.len() + state.name.len() + 64;
     let issue_scope = "ufrx-model-state-0";
     let issue_id = "inventor:rse:structural-issue#ufrx-model-state-0";
     // Retain wire text, four initial vector slots, then issue ID, scope and message.
     let retained_needed = retained_before_issue
         + 4 * std::mem::size_of::<StructuralIssueRecord>()
-        + issue_id.len() + issue_scope.len() + issue_detail.len();
+        + issue_id.len()
+        + issue_scope.len()
+        + issue_detail.len();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed - 1).expect("retained byte cap fits u64");
@@ -1184,6 +1180,7 @@ fn ufrx_model_state_conversion_issue_refuses_before_failure_text_creation() {
                 && limit.operation == "retain Inventor structural issue detail"
     ));
     assert!(issues.is_empty());
+    issues = Vec::new();
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed).expect("full issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
@@ -1261,17 +1258,15 @@ fn ufrx_external_conversion_issue_refuses_before_failure_text_creation() {
     };
     let id = "inventor:ufrx:external-reference#0";
     let issue_detail = "path or a nonzero document_id is required";
-    let retained_before_issue = id
-        .len()
-        .checked_add(32)
-        .and_then(|bytes| bytes.checked_add(32))
-        .expect("preceding retained bytes fit");
+    let retained_before_issue = id.len() + 32 + 32;
     let issue_scope = "ufrx-external-reference-0";
     let issue_id = "inventor:rse:structural-issue#ufrx-external-reference-0";
     // Retain wire text, four initial vector slots, then issue ID, scope and message.
     let retained_needed = retained_before_issue
         + 4 * std::mem::size_of::<StructuralIssueRecord>()
-        + issue_id.len() + issue_scope.len() + issue_detail.len();
+        + issue_id.len()
+        + issue_scope.len()
+        + issue_detail.len();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed - 1).expect("retained byte cap fits u64");
@@ -1284,6 +1279,7 @@ fn ufrx_external_conversion_issue_refuses_before_failure_text_creation() {
                 && limit.operation == "retain Inventor structural issue detail"
     ));
     assert!(issues.is_empty());
+    issues = Vec::new();
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed).expect("full issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
@@ -1777,7 +1773,8 @@ fn placement_conversion_issue_refuses_before_failure_text_creation() {
     // Retain four initial vector slots, then the issue segment token and message.
     let token_len = wire.segment_token.len();
     let retained_needed = 4 * std::mem::size_of::<crate::record_issue::RecordIssue>()
-        + token_len + issue_detail.len();
+        + token_len
+        + issue_detail.len();
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
@@ -1789,6 +1786,7 @@ fn placement_conversion_issue_refuses_before_failure_text_creation() {
                 && limit.operation == "retain Inventor placement issue detail"
     ));
     assert!(issues.is_empty());
+    issues = Vec::new();
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed).expect("full issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
@@ -1817,11 +1815,13 @@ fn uppercase_placement_digest_refuses_before_failure_text_creation() {
         serde_json::from_value(fixture.clone()).expect("placement wire");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    let issue_detail = "suffix_sha256: sha256 digest must contain exactly 64 lowercase hexadecimal characters";
+    let issue_detail =
+        "suffix_sha256: sha256 digest must contain exactly 64 lowercase hexadecimal characters";
     // Retain four initial vector slots, then the issue segment token and message.
     let token_len = wire.segment_token.len();
     let retained_needed = 4 * std::mem::size_of::<crate::record_issue::RecordIssue>()
-        + token_len + issue_detail.len();
+        + token_len
+        + issue_detail.len();
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
@@ -1833,6 +1833,7 @@ fn uppercase_placement_digest_refuses_before_failure_text_creation() {
                 && limit.operation == "retain Inventor placement issue detail"
     ));
     assert!(issues.is_empty());
+    issues = Vec::new();
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed).expect("full issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
