@@ -290,8 +290,7 @@ fn schema_oid_diagnostic_text_refuses_retained_limit() {
             &exchange.schema_identifiers,
             exchange.header()[2].offset,
             &ctx,
-        ).expect("diagnostic traversal fits work budget")
-        .next(),
+        ).next(),
         Some(Err(CodecError::ResourceLimit(refusal)))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_schema_oid_diagnostic_text"

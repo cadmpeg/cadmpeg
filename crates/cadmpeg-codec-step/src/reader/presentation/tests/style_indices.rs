@@ -75,6 +75,32 @@ fn hidden_style_index_preserves_ancestor_cycle_and_missing_record() {
 }
 
 #[test]
+fn hidden_style_index_preserves_recursion_depth_refusal() {
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("style graph");
+    let hidden = BTreeSet::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 1;
+    crate::test_support::with_policy_context(SOURCE, &policy, |_, ctx| {
+        let mut cache = BTreeMap::new();
+        let mut storage = ctx
+            .reserve_scoped(0, "hidden style fixture")
+            .expect("scope");
+        let error = style_is_hidden(3, &hidden, &exchange, &mut cache, &mut storage, ctx)
+            .expect_err("second style exceeds the depth limit");
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("style walk must refuse its depth limit");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(refusal.operation, "step_presentation_hidden_style_walk");
+        assert_eq!(refusal.used, 1);
+        assert_eq!(refusal.additional, 1);
+        assert_eq!(ctx.resource_refusal(), Some(refusal));
+    });
+}
+
+#[test]
 fn style_depth_index_preserves_keyed_lookup_refusal() {
     let (exchange, _) =
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
@@ -149,4 +175,80 @@ fn truncated_style_depth_does_not_cache_unvisited_suffixes() {
             (false, Some(1))
         );
     });
+}
+
+#[test]
+fn style_depth_path_cache_visits_prefix_before_work_refusal() {
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("style graph");
+    // This three-style path needs at most three visited-set and three cache
+    // insertions. The largest node pass is 320 work units, and each insertion
+    // admits at most three passes, for at most 5,760 units. The remaining
+    // budget covers keyed lookups and path steps. Advance one unit at a time
+    // and accept only the refusal after the first cache insertion.
+    let found_prefix_refusal = (0..=8_192).any(|work_limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+        let mut cache = BTreeMap::new();
+        let mut storage = ctx.reserve_scoped(0, "style fixture").expect("scope");
+        let result = style_application_order(
+            3,
+            &exchange,
+            64,
+            &mut cache,
+            &mut storage,
+            &ctx,
+        );
+        let Err(CodecError::ResourceLimit(refusal)) = result else {
+            return false;
+        };
+        assert_eq!(ctx.resource_refusal().as_ref(), Some(&refusal));
+        if refusal.operation != "STEP style depth path result traversal" {
+            return false;
+        }
+        if refusal.dimension != ResourceDimension::WorkUnits
+            || cache != BTreeMap::from([(1, Some(0))])
+        {
+            return false;
+        }
+        true
+    });
+    assert!(found_prefix_refusal, "no partial style-depth cache boundary");
+}
+
+#[test]
+fn hidden_style_path_cache_visits_prefix_before_work_refusal() {
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("style graph");
+    let hidden = BTreeSet::new();
+    // The same three-entry bound applies: six insertions need at most 5,760
+    // work units at three 320-unit node passes each. The remaining budget
+    // covers keyed lookups and path steps before the prefix refusal.
+    let found_prefix_refusal = (0..=8_192).any(|work_limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+        let mut cache = BTreeMap::new();
+        let mut storage = ctx.reserve_scoped(0, "hidden style fixture").expect("scope");
+        let result = style_is_hidden(3, &hidden, &exchange, &mut cache, &mut storage, &ctx);
+        let Err(CodecError::ResourceLimit(refusal)) = result else {
+            return false;
+        };
+        assert_eq!(ctx.resource_refusal().as_ref(), Some(&refusal));
+        if refusal.operation != "STEP hidden style path result traversal" {
+            return false;
+        }
+        if refusal.dimension != ResourceDimension::WorkUnits
+            || cache != BTreeMap::from([(3, false)])
+        {
+            return false;
+        }
+        true
+    });
+    assert!(found_prefix_refusal, "no partial hidden-style cache boundary");
 }

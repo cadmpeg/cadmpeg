@@ -314,43 +314,53 @@ fn oriented_edge_definitions_refuse_collection_limit() {
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid oriented edge reference");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    assert!(matches!(
-        super::super::oriented_defs(&exchange, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_oriented_edge_definitions"
-    ));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "step_oriented_edge_definitions",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits");
+            let result = super::super::oriented_defs(&exchange, &ctx);
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result.map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_oriented_edge_definitions"));
 }
 
-fn edge_definition_refusal(
-    collection_limit: u64,
-    retained_limit: u64,
-    depth_limit: u64,
-) -> CodecError {
+fn edge_definition_refusal(operation: &'static str) -> CodecError {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DUMMY();#2=DUMMY();#3=EDGE('',#1,#2);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid edge reference");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    policy.limits.max_recursion_depth = depth_limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    super::super::edge_defs(&exchange, &ctx)
-        .err()
-        .expect("edge definitions exceed limit")
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("source fits collection policy");
+            let result = super::super::edge_defs(&exchange, &ctx);
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result.map(|_| ())
+        },
+    )
 }
 
 #[test]
 fn edge_definition_active_set_refuses_collection_limit() {
-    assert!(matches!(edge_definition_refusal(0, u64::MAX, u64::MAX),
+    assert!(matches!(edge_definition_refusal("step_edge_definition_active"),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_edge_definition_active"));
@@ -358,7 +368,7 @@ fn edge_definition_active_set_refuses_collection_limit() {
 
 #[test]
 fn edge_definition_cache_refuses_collection_limit() {
-    assert!(matches!(edge_definition_refusal(1, u64::MAX, u64::MAX),
+    assert!(matches!(edge_definition_refusal("step_edge_definition_cache"),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_edge_definition_cache"));
@@ -366,7 +376,7 @@ fn edge_definition_cache_refuses_collection_limit() {
 
 #[test]
 fn edge_definitions_refuse_collection_limit() {
-    assert!(matches!(edge_definition_refusal(2, u64::MAX, u64::MAX),
+    assert!(matches!(edge_definition_refusal("step_edge_definitions"),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_edge_definitions"));
@@ -389,24 +399,32 @@ fn edge_definition_recursion_refuses_depth_limit() {
                 && refusal.operation == "step_edge_definition_recursion"));
 }
 
-fn shell_definition_refusal(collection_limit: u64) -> CodecError {
+fn shell_definition_refusal(operation: &'static str) -> CodecError {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=OPEN_SHELL('',());ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid shell reference");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    super::super::shell_defs(&exchange, &ctx)
-        .err()
-        .expect("shell definitions exceed limit")
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("source fits collection policy");
+            let result = super::super::shell_defs(&exchange, &ctx);
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result.map(|_| ())
+        },
+    )
 }
 
 #[test]
 fn shell_definition_active_set_refuses_collection_limit() {
-    assert!(matches!(shell_definition_refusal(0),
+    assert!(matches!(shell_definition_refusal("step_shell_definition_active"),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_shell_definition_active"));
@@ -414,7 +432,7 @@ fn shell_definition_active_set_refuses_collection_limit() {
 
 #[test]
 fn shell_definition_cache_refuses_collection_limit() {
-    assert!(matches!(shell_definition_refusal(1),
+    assert!(matches!(shell_definition_refusal("step_shell_definition_cache"),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_shell_definition_cache"));
@@ -422,7 +440,7 @@ fn shell_definition_cache_refuses_collection_limit() {
 
 #[test]
 fn shell_definitions_refuse_collection_limit() {
-    assert!(matches!(shell_definition_refusal(2),
+    assert!(matches!(shell_definition_refusal("step_shell_definitions"),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_shell_definitions"));

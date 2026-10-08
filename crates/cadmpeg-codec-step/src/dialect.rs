@@ -383,7 +383,7 @@ pub(crate) fn refuse_alternate_encoding(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<(), CodecError> {
-    let encoding = if crate::codec::is_part26_hdf5(bytes) {
+    let encoding = if crate::codec::is_part26_hdf5(ctx, bytes)? {
         AlternateEncoding::Part26Hdf5
     } else if crate::codec::is_part28_xml(ctx, bytes)? {
         AlternateEncoding::Part28Xml

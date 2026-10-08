@@ -884,12 +884,13 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         if self.input.get(self.at) != Some(&b'>') {
             return Err(self.error(start, "unterminated resource token")?);
         }
-        let (mut value, _temporary) =
+        let (_temporary, mut value) =
             self.budget
                 .with_scoped_storage("step_uri_lexeme_temp", || {
                     self.budget
                         .alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
-                })?;
+                })
+                .map(|(value, reservation)| (reservation, value))?;
         let mut written = 0usize;
         for &byte in self
             .budget
@@ -947,22 +948,30 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         storage: LiteralStorage,
         convert: impl Fn(u8) -> char,
     ) -> Result<(String, Option<ScopedReservation<'_>>), LexError> {
-        let chars = self
-            .budget
-            .admit_iter(&self.input[start..end], "STEP normalized traversal")
-            .map_err(CodecError::from)?
-            .filter(|byte| !byte.is_ascii_control())
-            .map(|byte| convert(*byte));
+        let source = &self.input[start..end];
+        let length = self.budget.fold(source, 0_usize, |length, byte| {
+            let bytes = if byte.is_ascii_control() { 0 } else { convert(*byte).len_utf8() };
+            length.checked_add(bytes).ok_or_else(|| {
+                self.budget.refuse_codec_limit("STEP normalized text length", u64::MAX, u64::MAX)
+            })
+        }, "STEP normalized measurement")?;
+        let collect = |operation| -> Result<String, CodecError> {
+            let mut text = self.budget.retained_string(length, operation)?;
+            let mut bytes = source.iter();
+            while let Some(byte) = self.budget.next_charged(&mut bytes, "STEP normalized traversal")? {
+                if !byte.is_ascii_control() {
+                    self.budget.push_retained_char(&mut text, convert(*byte), operation)?;
+                }
+            }
+            Ok(text)
+        };
         match storage {
-            LiteralStorage::Retained => Ok((
-                self.budget
-                    .collect_text(chars, "step_lex_normalized_retained")?,
-                None,
-            )),
+            LiteralStorage::Retained => Ok((collect("step_lex_normalized_retained")?, None)),
             LiteralStorage::Transient => {
-                let (text, storage) = self
-                    .budget
-                    .collect_scoped_text(chars, "step_lex_normalized_temp")?;
+                let (text, storage) = self.budget.with_scoped_storage(
+                    "step_lex_normalized_temp",
+                    || collect("step_lex_normalized_temp"),
+                )?;
                 Ok((text, Some(storage)))
             }
         }

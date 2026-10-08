@@ -258,15 +258,17 @@ fn byte_accounting_claims_controls_inside_print_directives() {
 
 #[test]
 fn byte_accounting_propagates_binary_lexeme_resource_refusal() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(\"0A1F2\");ENDSEC;END-ISO-10303-21;";
+    // 1024 payload digits pack to 512 bytes, above header scratch while byte classes stay live.
+    let payload = "A1F2".repeat(256);
+    let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(\"0{payload}\");ENDSEC;END-ISO-10303-21;");
     let (exchange, _) =
-        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("test exchange parses");
     // Admit preceding lexer and container operations before this exact named gate.
     let limit = crate::test_support::resource_refusal_at(
-        source,
+        source.as_bytes(),
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "step_binary_lexeme_temp",
+        "step_binary_packed_temp",
         |source, ctx| {
             ctx.with_scoped_storage("temporary byte accounting", || {
                 byte_accounting(source, &exchange, &HashSet::new(), ctx)
@@ -276,7 +278,7 @@ fn byte_accounting_propagates_binary_lexeme_resource_refusal() {
     );
     let error = cadmpeg_core::CodecError::ResourceLimit(limit);
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes && limit.operation == "step_binary_lexeme_temp")
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes && limit.operation == "step_binary_packed_temp")
     );
 }
 

@@ -106,10 +106,10 @@ fn resolve_uri<'a>(
         return Ok(ReferenceTarget::External);
     }
     let (uri, fragment) = ctx
-        .split_once(uri, "#", "STEP ZIP URI fragment split")?
-        .map_or((uri, None), |(uri, fragment)| (uri, Some(fragment)));
+        .position_by(uri.as_bytes(), |byte| Ok(*byte == b'#'), "STEP ZIP URI fragment split")?
+        .map_or((uri, None), |separator| (&uri[..separator], Some(&uri[separator + 1..])));
     if fragment
-        .map(|fragment| ctx.contains_text(fragment, "#", "STEP ZIP fragment separator containment"))
+        .map(|fragment| ctx.any_by(fragment.as_bytes(), |byte| Ok(*byte == b'#'), "STEP ZIP fragment separator containment"))
         .transpose()?
         .unwrap_or(false)
     {
@@ -119,8 +119,8 @@ fn resolve_uri<'a>(
         )?));
     }
     let (path, query) = ctx
-        .split_once(uri, "?", "STEP ZIP URI query split")?
-        .map_or((uri, None), |(path, query)| (path, Some(query)));
+        .position_by(uri.as_bytes(), |byte| Ok(*byte == b'?'), "STEP ZIP URI query split")?
+        .map_or((uri, None), |separator| (&uri[..separator], Some(&uri[separator + 1..])));
     if path.starts_with('/') {
         return Err(CodecError::Malformed(ctx.format_retained(
             format_args!("STEP ZIP URI escapes the archive root: {uri:?}"),
@@ -129,16 +129,17 @@ fn resolve_uri<'a>(
     }
     let mut components = Vec::new();
     let mut component_bytes = ctx.reserve_scoped(0, "step_zip_uri_components_temp")?;
-    if let Some((directory, _)) =
-        ctx.rsplit_once(base_member, "/", "STEP ZIP base member reverse split")?
+    if let Some(separator) =
+        ctx.rposition_by(base_member.as_bytes(), |byte| Ok(*byte == b'/'), "STEP ZIP base member reverse split")?
     {
+        let directory = &base_member[..separator];
         let mut start = 0;
-        for end in ctx
-            .admit_iter(directory.as_bytes(), "STEP ZIP base directory traversal")?
-            .enumerate()
-            .filter_map(|(index, byte)| (*byte == b'/').then_some(index))
-            .chain(std::iter::once(directory.len()))
-        {
+        while start <= directory.len() {
+            let end = ctx.position_by(
+                &directory.as_bytes()[start..],
+                |byte| Ok(*byte == b'/'),
+                "STEP ZIP base directory traversal",
+            )?.map_or(directory.len(), |relative| start + relative);
             let component = &directory[start..end];
             start = end + 1;
             ctx.push_scoped_vec(
@@ -199,20 +200,18 @@ fn resolve_uri<'a>(
             "STEP ZIP error text",
         )?));
     }
-    let member_len = ctx
-        .admit_iter(&components[..], "STEP resolve uri traversal")?
-        .try_fold(0_usize, |total, component| {
-            total.checked_add(component.len())
+    let component_len = ctx.fold(&components, 0_usize, |total, component| {
+        total.checked_add(component.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit("step_zip_uri_member", 0, 1)
         })
-        .and_then(|total| total.checked_add(components.len() - 1))
+    }, "STEP resolve uri traversal")?;
+    let member_len = component_len.checked_add(components.len() - 1)
         .ok_or_else(|| ctx.refuse_codec_limit("step_zip_uri_member", 0, 1))?;
     let mut member = String::new();
 
     ctx.reserve_scoped_string(member_bytes, &mut member, member_len, "step_zip_uri_member")?;
-    for (index, component) in ctx
-        .admit_iter(&components[..], "STEP resolve uri traversal")?
-        .enumerate()
-    {
+    let mut visited_items = (components[..]).iter().enumerate();
+    while let Some((index, component)) = ctx.next_charged(&mut visited_items, "STEP resolve uri traversal")? {
         if index != 0 {
             member_bytes.with_storage(|| {
                 ctx.push_retained_char(&mut member, '/', "STEP ZIP member separator character")
@@ -247,7 +246,8 @@ pub(crate) fn root_reference_notes(
     )? {
         let name = reference.name;
         if !indexed && reference.uri.starts_with('#') && reference.uri.len() > 1 {
-            for anchor in ctx.admit_iter(exchange.anchors(), "STEP ZIP anchor index traversal")? {
+            let mut visited_items = (exchange.anchors()).iter();
+            while let Some(anchor) = ctx.next_charged(&mut visited_items, "STEP ZIP anchor index traversal")? {
                 if let crate::parse::Value::Resource(target) = &anchor.value {
                     binding_storage.with_storage(|| {
                         ctx.insert_btree_map(
