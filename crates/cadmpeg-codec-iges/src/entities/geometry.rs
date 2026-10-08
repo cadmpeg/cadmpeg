@@ -1116,12 +1116,16 @@ impl ProjectionOutcome<'_> {
         losses: &mut Vec<LossNote>,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
+        let source_decoded_storage;
+        let loss_slots_storage;
         let Self {
             decoded: source_decoded,
-            decoded_storage: source_decoded_storage,
+            decoded_storage: result_decoded_storage,
             losses: source_losses,
-            loss_slots_storage,
+            loss_slots_storage: result_loss_slots_storage,
         } = self;
+        source_decoded_storage = result_decoded_storage;
+        loss_slots_storage = result_loss_slots_storage;
         for sequence in ctx.admit_iter(source_decoded, "iges merged decoded traversal")? {
             decoded_storage.with_storage(|| {
                 ctx.insert_btree_set(decoded, sequence, "iges merged decoded sequences")
@@ -1873,7 +1877,9 @@ pub(crate) fn project_geometry<'ctx>(
     let mut decoded = BTreeSet::new();
     let mut boundary_storage = ctx.reserve_scoped(0, "iges boundary derivation storage")?;
     let mut boundary_vertex_derivations = Vec::new();
-    let (consumed, consumed_storage) = consumed_support_sequences(directory, &records, ctx)?;
+    let consumed_storage;
+    let (consumed, result_consumed_storage) = consumed_support_sequences(directory, &records, ctx)?;
+    consumed_storage = result_consumed_storage;
     let mut location_storage = ctx.reserve_scoped(0, "iges analytic location storage")?;
     let mut analytic_surface_locations = BTreeSet::new();
     for entry in ctx
@@ -3173,7 +3179,8 @@ pub(crate) fn project_geometry<'ctx>(
     }
     // The stanza sequence keeps source order in losses, wire edges, and free
     // vertices. Each projection admits its model entities before creation.
-    let (outcome, membership_storage) = super::conics::project(
+    let membership_storage;
+    let (outcome, result_membership_storage) = super::conics::project(
         ir,
         directory,
         (&entries, &records),
@@ -3181,6 +3188,7 @@ pub(crate) fn project_geometry<'ctx>(
         ctx,
         &mut sequences,
     )?;
+    membership_storage = result_membership_storage;
     outcome.merge_into(
         &mut decoded,
         &mut decoded_storage,
@@ -3215,7 +3223,8 @@ pub(crate) fn project_geometry<'ctx>(
         ctx,
     )?;
 
-    let (outcome, membership_storage) = super::composite::project(
+    let membership_storage;
+    let (outcome, result_membership_storage) = super::composite::project(
         ir,
         directory,
         (&entries, &records),
@@ -3223,6 +3232,7 @@ pub(crate) fn project_geometry<'ctx>(
         ctx,
         &mut sequences,
     )?;
+    membership_storage = result_membership_storage;
     outcome.merge_into(
         &mut decoded,
         &mut decoded_storage,
@@ -3243,7 +3253,8 @@ pub(crate) fn project_geometry<'ctx>(
     // A valid V5 Type 130 constituent is deferred until its exact offset
     // carrier has been projected above. The second composite pass consumes
     // that carrier while retaining each entity's ordered child list.
-    let (outcome, membership_storage) = super::composite::project_type_130_children(
+    let membership_storage;
+    let (outcome, result_membership_storage) = super::composite::project_type_130_children(
         ir,
         directory,
         (&entries, &records),
@@ -3251,6 +3262,7 @@ pub(crate) fn project_geometry<'ctx>(
         ctx,
         &mut sequences,
     )?;
+    membership_storage = result_membership_storage;
     outcome.merge_into(
         &mut decoded,
         &mut decoded_storage,

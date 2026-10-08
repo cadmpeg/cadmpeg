@@ -195,8 +195,10 @@ fn cluster_boundary_positions(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<BoundaryVertexCluster>, BoundaryVertexCreationError> {
     let tolerance = tolerance.get();
-    let (mut parents, _parent_storage) =
+    let _parent_storage;
+    let (mut parents, result_parent_storage) =
         ctx.temporary_vec(positions.len(), "iges boundary cluster parents")?;
+    _parent_storage = result_parent_storage;
     parents.extend(ctx.admit_iter(0..positions.len(), "iges boundary cluster initialization")?);
     let mut size_storage = ctx.reserve_scoped(0, "iges boundary cluster sizes")?;
     let mut sizes = size_storage.with_storage(|| {
@@ -233,8 +235,8 @@ fn cluster_boundary_positions(
             }
         }
     }
-    let mut members_by_root = BTreeMap::<usize, Vec<usize>>::new();
     let mut root_storage = ctx.reserve_scoped(0, "iges boundary cluster roots")?;
+    let mut members_by_root = BTreeMap::<usize, Vec<usize>>::new();
     for index in ctx.admit_iter(
         0..positions.len(),
         "iges boundary cluster membership traversal",
@@ -314,8 +316,10 @@ fn create_boundary_vertices<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<BoundaryVertices<'ctx>, BoundaryVertexCreationError> {
     let (source_entity, boundary) = source;
-    let (mut positions, _position_storage) =
+    let _position_storage;
+    let (mut positions, result_position_storage) =
         ctx.temporary_vec(source_endpoints.len(), "iges boundary endpoint positions")?;
+    _position_storage = result_position_storage;
     positions.extend(
         ctx.admit_iter(source_endpoints, "iges boundary endpoint position copy")?
             .map(|endpoint| endpoint.position),
@@ -1072,7 +1076,8 @@ fn linear_model_nurbs_points(
     {
         return Ok(None);
     }
-    let Some((parameters, _parameter_storage)) = linear_nurbs_parameters(
+    let _parameter_storage;
+    let Some((parameters, result_parameter_storage)) = linear_nurbs_parameters(
         nurbs.degree(),
         nurbs.knots(),
         nurbs.pole_count(),
@@ -1083,6 +1088,7 @@ fn linear_model_nurbs_points(
     else {
         return Ok(None);
     };
+    _parameter_storage = result_parameter_storage;
     let mut points = Vec::new();
     let mut parameters = parameters.into_iter();
     while let Some(parameter) =
@@ -1125,7 +1131,8 @@ fn linear_pcurve_points(
     {
         return Ok(None);
     }
-    let Some((parameters, _parameter_storage)) = linear_nurbs_parameters(
+    let _parameter_storage;
+    let Some((parameters, result_parameter_storage)) = linear_nurbs_parameters(
         nurbs.degree(),
         nurbs.knots(),
         nurbs.pole_rows().count(),
@@ -1136,6 +1143,7 @@ fn linear_pcurve_points(
     else {
         return Ok(None);
     };
+    _parameter_storage = result_parameter_storage;
     let mut points = Vec::new();
     let mut parameters = parameters.into_iter();
     while let Some(parameter) =
@@ -1590,7 +1598,7 @@ fn insert_homogeneous_pcurve_knot(
 fn homogeneous_pcurve_spans(
     degree: usize,
     knots: &[f64],
-    mut controls: Vec<[f64; 4]>,
+    controls: Vec<[f64; 4]>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<HomogeneousPcurveSpan>>, CodecError> {
     let Some(expected_knots) = controls
@@ -1627,8 +1635,11 @@ fn homogeneous_pcurve_spans(
     if domain[0] >= domain[1] {
         return Ok(None);
     }
-    let (mut copied_knots, mut knot_storage) =
+    let mut knot_storage;
+    let (mut copied_knots, result_knot_storage) =
         ctx.copy_temporary_slice(knots, "iges pcurve knot copy")?;
+    knot_storage = result_knot_storage;
+    let mut controls = controls;
     let mut previous = knots[0];
     let mut multiplicity = 0;
     let mut inserted = 0;
@@ -1704,8 +1715,10 @@ fn split_homogeneous_pcurve(
     if controls.is_empty() || !parameter.is_finite() || !(0.0..=1.0).contains(&parameter) {
         return Ok(None);
     }
-    let (mut current, _working_storage) =
+    let _working_storage;
+    let (mut current, result_working_storage) =
         ctx.copy_temporary_slice(controls, "iges pcurve split first controls")?;
+    _working_storage = result_working_storage;
     let mut left = ctx.collection_vec(controls.len(), "iges pcurve split left controls")?;
     let mut right = ctx.collection_vec(controls.len(), "iges pcurve split right controls")?;
     left.push(current[0]);
@@ -1796,10 +1809,12 @@ fn pcurve_within_declared_intervals(
         if !range[0].is_finite() || !range[1].is_finite() || range[0] >= range[1] {
             return Ok(false);
         }
-        let (mut controls, control_storage) = ctx.temporary_vec(
+        let control_storage;
+        let (mut controls, result_control_storage) = ctx.temporary_vec(
             nurbs.pole_rows().count(),
             "iges pcurve homogeneous controls",
         )?;
+        control_storage = result_control_storage;
         let mut indices = 0..nurbs.pole_rows().count();
         while let Some(index) =
             ctx.next_charged(&mut indices, "iges homogeneous control traversal")?
@@ -2255,8 +2270,8 @@ pub(super) fn project<'ctx>(
             group.push(edge);
         }
     }
-    let mut staged = Vec::new();
     let mut staged_storage = ctx.reserve_scoped(0, "iges trimming staged candidates")?;
+    let mut staged = Vec::new();
     for entry in ctx
         .admit_iter(directory, "iges trimming directory traversal")?
         .filter(|entry| entry.entity_type == 142 && entry.form == 0)
@@ -3216,10 +3231,11 @@ pub(super) fn project<'ctx>(
                 valid = false;
                 break;
             };
+            let _vertex_storage;
             let BoundaryVertices {
                 ids: vertex_ids,
                 derivations,
-                _storage: _vertex_storage,
+                _storage: result_vertex_storage,
             } = match create_boundary_vertices(
                 &mut candidate,
                 &stem,
@@ -3256,6 +3272,7 @@ pub(super) fn project<'ctx>(
                 }
                 Err(BoundaryVertexCreationError::Resource(error)) => return Err(error),
             };
+            _vertex_storage = result_vertex_storage;
             derivation_storage.with_storage(|| {
                 ctx.extend_vec(
                     &mut candidate_boundary_vertex_derivations,

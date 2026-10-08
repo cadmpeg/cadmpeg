@@ -501,8 +501,8 @@ pub(super) fn project<'ctx>(
         let groups = match &mut profile_edges {
             Some(groups) => groups,
             slot @ None => slot.insert({
-                let mut groups = BTreeMap::new();
                 let mut storage = ctx.reserve_scoped(0, "iges solid profile edge groups")?;
+                let mut groups = BTreeMap::new();
                 let mut edges = ir.model.edges.iter();
                 while let Some(edge) =
                     ctx.next_charged(&mut edges, "iges solid profile edge indexing")?
@@ -604,7 +604,9 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
-        let (mut terms, terms_storage) = ctx.temporary_vec(count, "iges Boolean postfix terms")?;
+        let terms_storage;
+        let (mut terms, result_terms_storage) = ctx.temporary_vec(count, "iges Boolean postfix terms")?;
+        terms_storage = result_terms_storage;
         let mut terms_valid = true;
         let mut indices = 0..count;
         while let Some(index) = ctx.next_charged(&mut indices, "iges Boolean postfix parsing")? {

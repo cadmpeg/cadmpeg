@@ -372,8 +372,10 @@ fn interval_certified_linear_bezier(
         }
         return Ok(true);
     }
-    let (mut intervals, _interval_storage) =
+    let _interval_storage;
+    let (mut intervals, result_interval_storage) =
         ctx.temporary_vec(control_count, "iges ruled linear interval controls")?;
+    _interval_storage = result_interval_storage;
     let mut controls = 0..control_count;
     while let Some(control) = ctx.next_charged(&mut controls, "iges ruled linear intervals")? {
         let mut coordinates = [DeclaredInterval::around(0.0, 0.0); 3];
@@ -687,8 +689,10 @@ fn split_homogeneous_bezier_span(
     let Some(degree) = span.controls.len().checked_sub(1) else {
         return Ok(None);
     };
-    let (mut current, _level_storage) =
+    let _level_storage;
+    let (mut current, result_level_storage) =
         ctx.copy_temporary_slice(&span.controls, "iges span split first controls")?;
+    _level_storage = result_level_storage;
     let mut left = ctx.collection_vec(degree + 1, "iges span split left controls")?;
     let mut right = ctx.collection_vec(degree + 1, "iges span split right controls")?;
     left.push(current[0]);
@@ -1042,9 +1046,11 @@ fn ruled_surface_carrier(
         }
     }
     let lanes = ruled_surface_span_lanes(first, second, ctx)?;
-    let Some(((degree, u_knots, control_points, weights), _lane_storage)) = lanes else {
+    let _lane_storage;
+    let Some(((degree, u_knots, control_points, weights), result_lane_storage)) = lanes else {
         return Ok(None);
     };
+    _lane_storage = result_lane_storage;
     let mut row_storage = ctx.reserve_scoped(0, "iges ruled span row scratch")?;
     let pole_rows = if weights.is_some() {
         row_storage.with_storage(|| {
@@ -1150,8 +1156,10 @@ fn ruled_surface_span_lanes<'ctx>(
         return Ok(None);
     };
     admit_surface_pole_count(ctx, pole_count)?;
-    let (mut homogeneous, _homogeneous_storage) =
+    let _homogeneous_storage;
+    let (mut homogeneous, result_homogeneous_storage) =
         ctx.temporary_vec(pole_count, "iges ruled homogeneous controls")?;
+    _homogeneous_storage = result_homogeneous_storage;
     let Some(knot_count) = u_count
         .checked_add(degree)
         .and_then(|count| count.checked_add(1))
@@ -1386,8 +1394,10 @@ fn angular_basis<'ctx>(
     let segment_angle = sweep / segment_count_real;
     let mut knots = ctx.collection_vec(segment_count * 2 + 4, "iges revolution angular knots")?;
     knots.extend([start; 3]);
-    let (mut controls, controls_storage) =
+    let controls_storage;
+    let (mut controls, result_controls_storage) =
         ctx.temporary_vec(segment_count * 2 + 1, "iges revolution angular controls")?;
+    controls_storage = result_controls_storage;
     controls.push((start, 1.0));
     for segment in ctx.admit_iter(0..segment_count, "iges revolution angular spans")? {
         let Some(segment_real) = cadmpeg_core::convert::f64_from_index(segment) else {
@@ -1517,7 +1527,8 @@ impl OffsetLookups {
                 )?;
             }
         }
-        let (owners, _owner_storage) = ctx.unique_index(
+        let _owner_storage;
+        let (owners, result_owner_storage) = ctx.unique_index(
             ctx.admit_iter(&ir.model.surfaces, "iges offset owner traversal")?
                 .filter_map(|surface| {
                     surface
@@ -1527,6 +1538,7 @@ impl OffsetLookups {
                 }),
             "iges offset unique owners",
         )?;
+        _owner_storage = result_owner_storage;
         let mut procedural = BTreeMap::new();
         for (position, surface) in ctx
             .admit_iter(
@@ -3019,10 +3031,11 @@ pub(super) fn project<'ctx>(
             .map(|geometry| source_parameter_interval(geometry, cached_interval, ctx))
             .transpose()?
             .unwrap_or(cached_interval);
+        let _angular_storage;
         let Some(AngularBasis {
             knots: v_knots,
             controls: angular_controls,
-            _controls_storage: _angular_storage,
+            _controls_storage: result_angular_storage,
         }) = angular_basis(start_angle, end_angle, ctx)?
         else {
             super::push_entity_loss_with_scoped_slots(
@@ -3034,6 +3047,7 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
+        _angular_storage = result_angular_storage;
         let generatrix_count = generatrix.pole_count();
         let Ok(_) = u32::try_from(generatrix_count) else {
             super::push_entity_loss_with_scoped_slots(

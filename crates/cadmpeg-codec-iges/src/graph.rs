@@ -339,9 +339,11 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             )?;
             edges.push(edge);
         } else {
-            let (mut edges, edge_storage) = self
+            let edge_storage;
+            let (mut edges, result_edge_storage) = self
                 .ctx
                 .temporary_vec(1, "iges parameter resolver edges")?;
+            edge_storage = result_edge_storage;
             edges.push(edge);
             self.group_storage.borrow_mut().with_storage(|| {
                 self.ctx.insert_btree_map(
@@ -473,10 +475,13 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
     ) -> Result<ScopedReservation<'ctx>, CodecError> {
         let mut storage = self.storage.into_inner();
         let mut sources = self.edges.into_inner().into_iter();
-        while let Some((source, (mut edges, edge_storage))) = self.ctx.next_charged(
+        while let Some((source, result)) = self.ctx.next_charged(
             &mut sources,
             "iges parameter resolver graph sources",
         )? {
+            let edge_storage;
+            let (mut edges, result_edge_storage) = result;
+            edge_storage = result_edge_storage;
             match self.ctx.get_mut_btree_map(
                 graph,
                 &source,
@@ -762,10 +767,12 @@ pub(crate) fn build<'ctx>(
                 "iges directory reference graph",
             )?;
         }
-        let (cyclic, _cycle_storage) = ctx
+        let _cycle_storage;
+        let (cyclic, result_cycle_storage) = ctx
             .with_scoped_storage("IGES cyclic transform nodes", || {
                 cyclic_transform_nodes(&graph, ctx)
             })?;
+        _cycle_storage = result_cycle_storage;
         let mut sources = cyclic.into_iter();
         while let Some(source) = ctx.next_charged(&mut sources, "iges cyclic transform sources")? {
             let edge = match ctx.get_mut_btree_map(

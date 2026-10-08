@@ -455,10 +455,10 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    let mut transform_tables = None;
     let mut transform_storage = ctx.reserve_scoped(0, "iges offsets transform lookup")?;
-    let mut index = OffsetSourceIndex::default();
+    let mut transform_tables = None;
     let mut index_storage = ctx.reserve_scoped(0, "iges offsets source lookup")?;
+    let mut index = OffsetSourceIndex::default();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
@@ -1002,8 +1002,10 @@ pub(super) fn project(
                     )?;
                     continue;
                 };
-                let (mut controls, _control_storage) =
+                let _control_storage;
+                let (mut controls, result_control_storage) =
                     ctx.temporary_vec(2, "iges linear-offset controls")?;
+                _control_storage = result_control_storage;
                 controls.extend([
                     source_start.translated(offset_direction, evaluate_distance(start)),
                     source_end.translated(offset_direction, evaluate_distance(end)),
@@ -1210,8 +1212,10 @@ pub(super) fn project(
                     CurveOffsetLawBasis::Parameter => independent,
                 };
                 let offset_direction = normal_direction.cross(direction);
-                let (mut controls, _control_storage) = ctx
+                let _control_storage;
+                let (mut controls, result_control_storage) = ctx
                     .temporary_vec(function_nurbs.pole_count(), "iges function-offset controls")?;
+                _control_storage = result_control_storage;
                 let mut indices = 0..function_nurbs.pole_count();
                 while let Some(index) =
                     ctx.next_charged(&mut indices, "iges function-offset control traversal")?

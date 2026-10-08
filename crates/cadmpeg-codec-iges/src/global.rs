@@ -744,7 +744,9 @@ fn global_bytes<'ctx>(
         .len()
         .checked_mul(72)
         .ok_or_else(|| CodecError::NotImplemented("IGES Global stream exceeds usize".into()))?;
-    let (mut bytes, storage) = ctx.scoped_vector_storage(length, "iges_global_stream")?;
+    let storage;
+    let (mut bytes, result_storage) = ctx.scoped_vector_storage(length, "iges_global_stream")?;
+    storage = result_storage;
 
     for card in ctx.admit_iter(cards, "iges_global_stream")? {
         bytes.extend_from_slice(&card.line.payload[..72]);
@@ -829,7 +831,9 @@ pub(crate) fn parse<'ctx>(
     ),
     CodecError,
 > {
-    let (bytes, _stream_storage) = global_bytes(scan, ctx)?;
+    let _stream_storage;
+    let (bytes, result_stream_storage) = global_bytes(scan, ctx)?;
+    _stream_storage = result_stream_storage;
     let raw = parse_raw(&bytes, ctx)?;
     resolve(&raw, ctx)
 }
@@ -978,8 +982,10 @@ fn parse_real_text(text: &str, ctx: &DecodeContext<'_>) -> Result<Option<FiniteR
             .ok()
             .and_then(FiniteReal::new));
     }
-    let (mut normalized, _reservation) =
+    let _reservation;
+    let (mut normalized, result_reservation) =
         ctx.scoped_vector_storage(text.len(), "iges global numeric text")?;
+    _reservation = result_reservation;
     for byte in ctx
         .admit_iter(text.as_bytes(), "iges global exponent normalization")?
         .copied()
@@ -1148,11 +1154,13 @@ impl Resolution<'_, '_, '_> {
     }
 
     fn charge_recovered_real(&mut self, index: usize, value: f64) -> Result<(), CodecError> {
-        let (source, _source_storage) = self
+        let _source_storage;
+        let (source, result_source_storage) = self
             .ctx
             .with_scoped_storage("IGES recovered Global declaration", || {
                 self.declaration_text(index)
             })?;
+        _source_storage = result_source_storage;
         let note = recovered_real_loss_note(self.ctx, index, &source, value)?;
         self.push_loss(note)?;
         Ok(())
