@@ -5,23 +5,23 @@ use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_entity_selection_frame;
+use crate::design::decode::record_streams::record_stream;
 use crate::design::decode::scopes::shared_frames::exact_indexed_header_at;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
     cached_owned_record_offsets, indexed_record_header_at, next_indexed_record_offset,
-    IndexedRecordOffsets,
+    IndexedRecordHeader, IndexedRecordOffsets,
 };
 use crate::design::decode::text::design_record_id_charged;
-use crate::ids::native_stream;
 use crate::records::feature::{
     scope::DesignParameterScope,
     surface_ops::{
         DesignSurfaceTrimCellEntry, DesignSurfaceTrimChainRecord, DesignSurfaceTrimOperation,
     },
 };
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Decode the exact auxiliary BRep-cell carrier of a `SurfaceTrim` scope.
 ///
@@ -36,186 +36,247 @@ fn exact_surface_trim_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignSurfaceTrimOperation>, CodecError> {
-    let parsed_prefix = (|| {
-        if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
-            || scope.reference_members().len() != 4
-        {
-            return None;
-        }
-        let selection_record_index = *scope.reference_members().values().nth(3)?;
-        let (selection_byte_offset, _) = records.frames(selection_record_index).next()?;
-        let selection_class_tag =
-            exact_indexed_header_at(bytes, selection_byte_offset, selection_record_index)?;
-        let selection = match parse_entity_selection_frame(
-            ctx,
-            bytes,
-            selection_record_index,
-            u64::try_from(selection_byte_offset).ok()?,
-            &selection_class_tag,
-        )? {
-            Ok(selection) => selection,
-            Err(error) => return Some(Err(error)),
-        };
-
-        let mut chain_start = usize::try_from(selection.next_byte_offset).ok()?;
-        let mut next_chain_record = || {
-            let parsed = indexed_record_header_at(bytes, chain_start)?;
-            let frame_end = next_indexed_record_offset(bytes, chain_start.checked_add(11)?)?;
-            let frame_length = u64::try_from(frame_end.checked_sub(chain_start)?).ok()?;
-            let record = DesignSurfaceTrimChainRecord {
-                record_index: parsed.record_index,
-                byte_offset: u64::try_from(chain_start).ok()?,
-                class_tag: parsed.class_tag,
-                frame_length,
-            };
-            chain_start = frame_end;
-            Some(record)
-        };
-        let chain_records = [next_chain_record()?, next_chain_record()?];
-
-        let cell_table_byte_offset = chain_start;
-        let cell_table = indexed_record_header_at(bytes, cell_table_byte_offset)?;
-        let cell_table_record_index = cell_table.record_index;
-        let cell_table_class_tag = cell_table.class_tag;
-        if !matches!(cell_table_class_tag.as_str(), "287" | "325") {
-            return None;
-        }
-        let (primary, paired) = records
-            .frames(cell_table_record_index)
-            .find(|(primary, _)| *primary == cell_table_byte_offset)?;
-        let cell_table_paired_class_tag =
-            exact_indexed_header_at(bytes, paired, cell_table_record_index)?;
-        if bytes.get(cell_table_byte_offset + 11..cell_table_byte_offset + 21)? != [0; 10] {
-            return None;
-        }
-        let cell_count_offset = cell_table_byte_offset.checked_add(21)?;
-        let cell_count = View::u32_le_at(bytes, cell_count_offset)?;
-        let cell_count_usize = usize::try_from(cell_count).ok()?;
-        let entries_start = cell_count_offset.checked_add(4)?;
-        let entries_bytes = cell_count_usize.checked_mul(19)?;
-        let trailing_value_offset = entries_start.checked_add(entries_bytes)?;
-        let trailing_zero_offset = trailing_value_offset.checked_add(4)?;
-        let expected_paired = trailing_zero_offset.checked_add(4)?;
-        if paired != expected_paired || View::u32_le_at(bytes, trailing_zero_offset) != Some(0) {
-            return None;
-        }
-        let trailing_value = View::u32_le_at(bytes, trailing_value_offset)?;
-        if trailing_value == 0 {
-            return None;
-        }
-        let total_cells = u64::from(trailing_value);
-        Some(Ok((
-            selection_record_index,
-            selection_byte_offset,
-            selection,
-            chain_records,
-            cell_table_record_index,
-            cell_table_class_tag,
-            cell_table_paired_class_tag,
-            cell_count_offset,
-            cell_count_usize,
-            entries_start,
-            trailing_value_offset,
-            trailing_zero_offset,
-            trailing_value,
-            total_cells,
-            primary,
-            paired,
-        )))
-    })();
-    let Some(parsed_prefix) = parsed_prefix else {
+    if !matches!(
+        scope.payload(),
+        crate::records::feature::scope::DesignScopePayload::SurfaceTrim
+    ) {
+        return Ok(None);
+    }
+    let Some([_, _, _, &selection_record_index]) = scope.reference_members().values_array::<4>()
+    else {
         return Ok(None);
     };
-    let (
+    let Some((selection_byte_offset, _)) = records.first_frame(selection_record_index) else {
+        return Ok(None);
+    };
+    let Some(selection_class_tag) =
+        exact_indexed_header_at(bytes, selection_byte_offset, selection_record_index)
+    else {
+        return Ok(None);
+    };
+    let Some(selection_byte_offset_u64) = u64::try_from(selection_byte_offset).ok() else {
+        return Ok(None);
+    };
+    let Ok(selection_class_tag) = std::str::from_utf8(selection_class_tag) else {
+        return Ok(None);
+    };
+    let Some(selection) = parse_entity_selection_frame(
+        ctx,
+        bytes,
         selection_record_index,
-        selection_byte_offset,
-        selection,
-        chain_records,
-        cell_table_record_index,
-        cell_table_class_tag,
-        cell_table_paired_class_tag,
+        selection_byte_offset_u64,
+        selection_class_tag,
+    )?
+    else {
+        return Ok(None);
+    };
+
+    let Some(mut chain_start) = usize::try_from(selection.next_byte_offset).ok() else {
+        return Ok(None);
+    };
+    let mut chain_headers = [None; 2];
+    for slot in &mut chain_headers {
+        let Some(header) = indexed_record_header_at(bytes, chain_start) else {
+            return Ok(None);
+        };
+        let Some(frame_end) = next_indexed_record_offset(ctx, bytes, chain_start + 11)? else {
+            return Ok(None);
+        };
+        *slot = Some((header, frame_end));
+        chain_start = frame_end;
+    }
+    let [Some(first_chain), Some(second_chain)] = chain_headers else {
+        return Ok(None);
+    };
+
+    let cell_table_byte_offset = chain_start;
+    let Some(cell_table) = indexed_record_header_at(bytes, cell_table_byte_offset) else {
+        return Ok(None);
+    };
+    if !matches!(cell_table.class_tag, b"287" | b"325") {
+        return Ok(None);
+    }
+    let cell_table_record_index = cell_table.record_index;
+    let Some(paired) = records.frame_at(ctx, cell_table_record_index, cell_table_byte_offset)?
+    else {
+        return Ok(None);
+    };
+    let Some(cell_table_paired_class_tag) =
+        exact_indexed_header_at(bytes, paired, cell_table_record_index)
+    else {
+        return Ok(None);
+    };
+    let Some(prefix) = surface_trim_cell_table_prefix(bytes, cell_table_byte_offset, paired) else {
+        return Ok(None);
+    };
+
+    // Every entry is read before the uniqueness tests; any failed test leaves
+    // the scope without a carrier, so the order of the tests does not matter.
+    let mut scratch = ctx.reserve_scoped(0, "f3d surface-trim cell keys")?;
+    // The entries become retained only when the carrier is complete.
+    let mut entries_storage = ctx.reserve_scoped(0, "f3d surface-trim cell entries")?;
+    let mut cell_entries = Vec::new();
+    let mut cell_record_indices = Vec::new();
+    let mut cell_ordinals = Vec::new();
+    for ordinal in 0..prefix.cell_count {
+        ctx.charge_work(1, "scan F3D surface-trim cell entries")?;
+        // `cell_count * 19` fits: the prefix bounded the entry table by `paired`.
+        let entry_start = prefix.entries_start + ordinal * 19;
+        let Some(cell_record_index) = marked_record_reference(bytes, entry_start) else {
+            return Ok(None);
+        };
+        let Some(ordinal_value) = View::u64_le_at(bytes, entry_start + 11) else {
+            return Ok(None);
+        };
+        if ordinal_value == 0
+            || ordinal_value > u64::from(prefix.trailing_value)
+            || records.offsets(cell_record_index).is_empty()
+        {
+            return Ok(None);
+        }
+        ctx.push_scoped_vec(
+            &mut scratch,
+            &mut cell_record_indices,
+            cell_record_index,
+            "f3d surface-trim cell record indices",
+        )?;
+        ctx.push_scoped_vec(
+            &mut scratch,
+            &mut cell_ordinals,
+            ordinal_value,
+            "f3d surface-trim cell ordinals",
+        )?;
+        ctx.push_scoped_vec(
+            &mut entries_storage,
+            &mut cell_entries,
+            DesignSurfaceTrimCellEntry {
+                record_index: cell_record_index,
+                record_reference_offset: u64_from_index(entry_start + 1),
+                ordinal: ordinal_value,
+                ordinal_offset: u64_from_index(entry_start + 11),
+            },
+            "f3d surface-trim cell entries",
+        )?;
+    }
+    if has_repeat(
+        ctx,
+        &mut cell_record_indices,
+        "find repeated F3D surface-trim cell record",
+    )? || has_repeat(
+        ctx,
+        &mut cell_ordinals,
+        "find repeated F3D surface-trim cell ordinal",
+    )? {
+        return Ok(None);
+    }
+    // The class tags join the entries' storage, which becomes retained only
+    // when the carrier is complete.
+    let operation = entries_storage.with_storage(|| {
+        let chain_records = [
+            surface_trim_chain_record(ctx, first_chain)?,
+            surface_trim_chain_record(ctx, second_chain)?,
+        ];
+        let wire = crate::records::feature::surface_ops::DesignSurfaceTrimOperationWire {
+            id: String::new(),
+            scope_record_index: scope.record_index,
+            selection_record_index,
+            selection_byte_offset: selection_byte_offset_u64,
+            selection_next_record_index: selection.next_record_index,
+            selection_next_byte_offset: selection.next_byte_offset,
+            chain_records,
+            cell_table_record_index,
+            cell_table_byte_offset: u64_from_index(cell_table_byte_offset),
+            cell_table_class_tag: cell_table
+                .retain_class_tag(ctx, "copy F3D surface-trim cell table class tag")?,
+            cell_table_frame_length: u64_from_index(paired - cell_table_byte_offset),
+            cell_table_paired_class_tag: crate::design::decode::text::retain_class_tag(
+                ctx,
+                *cell_table_paired_class_tag,
+                "copy F3D surface-trim paired class tag",
+            )?,
+            cell_table_paired_byte_offset: u64_from_index(paired),
+            cell_count_offset: u64_from_index(prefix.cell_count_offset),
+            cell_entries,
+            trailing_value: prefix.trailing_value,
+            trailing_value_offset: u64_from_index(prefix.trailing_value_offset),
+            trailing_zero_offset: u64_from_index(prefix.trailing_zero_offset),
+        };
+        Ok::<_, CodecError>(DesignSurfaceTrimOperation::try_from(wire))
+    })?;
+    let Ok(operation) = operation else {
+        return Ok(None);
+    };
+    entries_storage.commit()?;
+    Ok(Some(operation))
+}
+
+/// Whether `values` holds a value twice. The values are sorted in place and
+/// the search stops at the first repeat.
+fn has_repeat<T: Copy + Ord + cadmpeg_core::decode::cost::DecodeCost>(
+    ctx: &DecodeContext<'_>,
+    values: &mut [T],
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    ctx.sort_unstable_by_key(values, |value| *value, Ord::cmp, operation)?;
+    let mut previous = None;
+    ctx.any_by(
+        values,
+        |value| Ok(previous.replace(*value) == Some(*value)),
+        operation,
+    )
+}
+
+/// Fixed fields of a `SurfaceTrim` cell table that opens at `start` and whose
+/// paired header is at `paired`.
+struct SurfaceTrimCellTablePrefix {
+    cell_count: usize,
+    cell_count_offset: usize,
+    entries_start: usize,
+    trailing_value: u32,
+    trailing_value_offset: usize,
+    trailing_zero_offset: usize,
+}
+
+fn surface_trim_cell_table_prefix(
+    bytes: &[u8],
+    start: usize,
+    paired: usize,
+) -> Option<SurfaceTrimCellTablePrefix> {
+    if bytes.get(start.checked_add(11)?..)?.first_chunk::<10>()? != &[0; 10] {
+        return None;
+    }
+    let cell_count_offset = start.checked_add(21)?;
+    let cell_count = usize::try_from(View::u32_le_at(bytes, cell_count_offset)?).ok()?;
+    let entries_start = cell_count_offset.checked_add(4)?;
+    let trailing_value_offset = entries_start.checked_add(cell_count.checked_mul(19)?)?;
+    let trailing_zero_offset = trailing_value_offset.checked_add(4)?;
+    if paired != trailing_zero_offset.checked_add(4)?
+        || View::u32_le_at(bytes, trailing_zero_offset) != Some(0)
+    {
+        return None;
+    }
+    let trailing_value = View::u32_le_at(bytes, trailing_value_offset)?;
+    (trailing_value != 0).then_some(SurfaceTrimCellTablePrefix {
+        cell_count,
         cell_count_offset,
-        cell_count_usize,
         entries_start,
+        trailing_value,
         trailing_value_offset,
         trailing_zero_offset,
-        trailing_value,
-        total_cells,
-        primary,
-        paired,
-    ) = parsed_prefix?;
+    })
+}
 
-    let mut cell_entries = Vec::new();
-    ctx.reserve_vec(
-        &mut cell_entries,
-        cell_count_usize,
-        "f3d surface-trim cell entries",
-    )?;
-
-    let mut cell_record_indices = HashSet::new();
-    ctx.reserve_set(
-        &mut cell_record_indices,
-        cell_count_usize,
-        "f3d surface-trim cell record indices",
-    )?;
-
-    let mut cell_ordinals = HashSet::new();
-    ctx.reserve_set(
-        &mut cell_ordinals,
-        cell_count_usize,
-        "f3d surface-trim cell ordinals",
-    )?;
-    let parsed = (|| {
-        for ordinal in 0..cell_count_usize {
-            let entry_start = entries_start.checked_add(ordinal.checked_mul(19)?)?;
-            let cell_record_index = marked_record_reference(bytes, entry_start)?;
-            if !cell_record_indices.insert(cell_record_index) {
-                return None;
-            }
-            if records.offsets(cell_record_index).is_empty() {
-                return None;
-            }
-            let cell_record_reference_offset = u64::try_from(entry_start.checked_add(1)?).ok()?;
-            let ordinal_offset = u64::try_from(entry_start.checked_add(11)?).ok()?;
-            let ordinal_value = View::u64_le_at(bytes, entry_start.checked_add(11)?)?;
-            if ordinal_value == 0
-                || ordinal_value > total_cells
-                || !cell_ordinals.insert(ordinal_value)
-            {
-                return None;
-            }
-            cell_entries.push(DesignSurfaceTrimCellEntry {
-                record_index: cell_record_index,
-                record_reference_offset: cell_record_reference_offset,
-                ordinal: ordinal_value,
-                ordinal_offset,
-            });
-        }
-        DesignSurfaceTrimOperation::try_from(
-            crate::records::feature::surface_ops::DesignSurfaceTrimOperationWire {
-                id: String::new(),
-                scope_record_index: scope.record_index,
-                selection_record_index,
-                selection_byte_offset: u64::try_from(selection_byte_offset).ok()?,
-                selection_next_record_index: selection.next_record_index,
-                selection_next_byte_offset: selection.next_byte_offset,
-                chain_records,
-                cell_table_record_index,
-                cell_table_byte_offset: u64::try_from(primary).ok()?,
-                cell_table_class_tag,
-                cell_table_frame_length: u64::try_from(paired.checked_sub(primary)?).ok()?,
-                cell_table_paired_class_tag: cell_table_paired_class_tag.try_into().ok()?,
-                cell_table_paired_byte_offset: u64::try_from(paired).ok()?,
-                cell_count_offset: u64::try_from(cell_count_offset).ok()?,
-                cell_entries,
-                trailing_value,
-                trailing_value_offset: u64::try_from(trailing_value_offset).ok()?,
-                trailing_zero_offset: u64::try_from(trailing_zero_offset).ok()?,
-            },
-        )
-        .ok()
-    })();
-    Ok(parsed)
+fn surface_trim_chain_record(
+    ctx: &DecodeContext<'_>,
+    (header, frame_end): (IndexedRecordHeader<'_>, usize),
+) -> Result<DesignSurfaceTrimChainRecord, CodecError> {
+    Ok(DesignSurfaceTrimChainRecord {
+        record_index: header.record_index,
+        byte_offset: u64_from_index(header.offset),
+        class_tag: header.retain_class_tag(ctx, "copy F3D surface-trim chain class tag")?,
+        // The frame ends at the next header, after this one.
+        frame_length: u64_from_index(frame_end - header.offset),
+    })
 }
 
 /// Decode every exact `SurfaceTrim` BRep-cell carrier into its own native arena.
@@ -224,12 +285,19 @@ pub(crate) fn decode_surface_trim_operations(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignSurfaceTrimOperation>, CodecError> {
+    let mut index_storage = ctx.reserve_scoped(0, "f3d surface-trim stream indexes")?;
     let mut record_offsets = HashMap::<String, IndexedRecordOffsets>::new();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| {
-        scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
-    }) {
-        let Some(stream) = native_stream(&scope.id) else {
+    for scope in ctx
+        .admit_iter(scopes, "scan F3D SurfaceTrim scopes")?
+        .filter(|scope| {
+            matches!(
+                scope.payload(),
+                crate::records::feature::scope::DesignScopePayload::SurfaceTrim
+            )
+        })
+    {
+        let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
@@ -237,7 +305,9 @@ pub(crate) fn decode_surface_trim_operations(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_owned_record_offsets(ctx, &mut record_offsets, stream, bytes)?;
+        let records = index_storage.with_storage(|| {
+            cached_owned_record_offsets(ctx, &mut record_offsets, stream, bytes)
+        })?;
         let Some(mut operation) = exact_surface_trim_operation(ctx, bytes, records, scope)? else {
             continue;
         };
@@ -248,9 +318,7 @@ pub(crate) fn decode_surface_trim_operations(
             scope.byte_offset(),
             "f3d surface-trim operation identifier",
         )?;
-
-        ctx.reserve_vec(&mut out, 1, "f3d surface-trim operations")?;
-        out.push(operation);
+        ctx.push_vec(&mut out, operation, "f3d surface-trim operations")?;
     }
     ctx.stable_sort_by(
         &mut out[..],

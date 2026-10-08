@@ -65,6 +65,57 @@ fn assembly_path_occurrences_refuse_collection_limit() {
     assert_eq!(path.occurrence_guids().len(), 1);
 }
 
+#[test]
+fn assembly_path_identity_guid_push_refuses_each_collection_item() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(b"329");
+    bytes.extend_from_slice(&65_u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    let append_guid = |bytes: &mut Vec<u8>| {
+        bytes.extend_from_slice(&36_u32.to_le_bytes());
+        for unit in GUID.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+    };
+    append_guid(&mut bytes);
+    for _ in 0..2 {
+        append_guid(&mut bytes);
+    }
+    bytes.extend_from_slice(&2_u64.to_le_bytes());
+    for _ in 0..2 {
+        append_guid(&mut bytes);
+    }
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    let end = bytes.len();
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(b"396");
+    bytes.extend_from_slice(&67_u32.to_le_bytes());
+    let path = crate::test_support::with_decode_context(|ctx| {
+        exact_assembly_operand_path(ctx, &bytes, 0, 65, end, path_link())
+            .expect("valid assembly path with identity GUIDs")
+    })
+    .expect("assembly path");
+    assert_eq!(path.identity_guids().len(), 4);
+
+    for skip in 0..4 {
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            "collect F3D assembly path identity GUIDs",
+            skip,
+            |ctx| exact_assembly_operand_path(ctx, &bytes, 0, 65, end, path_link()).map(|_| ()),
+        );
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "collect F3D assembly path identity GUIDs"
+                    && limit.additional == 1
+        ));
+    }
+}
+
 fn write_reference(bytes: &mut [u8], at: usize, index: u32) {
     bytes[at] = 1;
     bytes[at + 1..at + 5].copy_from_slice(&index.to_le_bytes());
