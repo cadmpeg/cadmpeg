@@ -125,7 +125,7 @@ pub(in super::super) fn generated_surface_id_for_feature(
         if table.feature_id != feature_id {
             continue;
         }
-        for entry in ctx.admit_iter(&table.entries, "creo generated surface feature entries")? {
+        for entry in ctx.admit_iter(table.entries.as_slice(), "creo generated surface feature entries")? {
             if entry.source_entity_id() != Some(source_entity_id)
                 || !table.contains_surface_id(entry.entity_id)
             {
@@ -168,7 +168,7 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
         return Ok(false);
     }
     for candidate in ctx
-        .admit_iter(&table.entries, "creo generated profile candidate entries")?
+        .admit_iter(table.entries.as_slice(), "creo generated profile candidate entries")?
         .skip(2)
     {
         if !table.contains_surface_id(candidate.entity_id) {
@@ -229,7 +229,7 @@ pub(in super::super) fn section_entity_is_generated_profile(
             continue;
         }
         let Some(entry) = exactly_one(
-            ctx.admit_iter(&table.entries, "creo generated profile rowless entries")?
+            ctx.admit_iter(table.entries.as_slice(), "creo generated profile rowless entries")?
                 .filter(|entry| entry.source_entity_id() == Some(source_entity_id)),
         ) else {
             continue;
@@ -314,7 +314,7 @@ fn generated_profile_table_shape(
         return Ok(false);
     }
     for (index, entry) in ctx
-        .admit_iter(&table.entries, "creo generated profile unique entry IDs")?
+        .admit_iter(table.entries.as_slice(), "creo generated profile unique entry IDs")?
         .enumerate()
     {
         if ctx.any_by(

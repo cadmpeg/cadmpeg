@@ -339,22 +339,6 @@ pub(crate) struct FeatureOperation<R: RecipeForm = RecipeResolution> {
     pub(crate) state_offset: usize,
 }
 
-impl FeatureOperationState {
-    /// Project one selected source state onto the current-state operation.
-    fn project(self) -> FeatureOperation {
-        FeatureOperation {
-            feature_id: self.feature_id,
-            kind: self.kind,
-            name: self.name,
-            recipe: self.recipe.into(),
-            display_state_conflict: self.display_state_conflict,
-            depdb: self.depdb,
-            offset: self.offset,
-            state_offset: self.state_offset,
-        }
-    }
-}
-
 impl<R: RecipeForm> FeatureOperation<R> {
     pub(crate) fn display_name_stored(&self) -> bool {
         self.name.display_name_stored()
@@ -537,12 +521,85 @@ struct RecipeSummary {
     count: usize,
 }
 
+#[derive(Clone, Copy)]
+enum ParsedKind<'a> {
+    Stored(&'a str),
+    Recipe(FeatureRecipe),
+    Native,
+}
+
+#[derive(Clone, Copy)]
+struct ParsedName<'a> {
+    bytes: &'a [u8],
+    keyword: IdKeyword,
+    prefix: Option<u8>,
+}
+
+struct ParsedOperation<'a, R: RecipeForm = RecipeState> {
+    feature_id: u32,
+    kind: ParsedKind<'a>,
+    name: Option<ParsedName<'a>>,
+    recipe: R,
+    display_state_conflict: bool,
+    depdb: Option<DepdbPrefix>,
+    offset: usize,
+    state_offset: usize,
+}
+
+impl<'a> ParsedOperation<'a> {
+    fn project(self) -> ParsedOperation<'a, RecipeResolution> {
+        ParsedOperation {
+            feature_id: self.feature_id, kind: self.kind, name: self.name,
+            recipe: self.recipe.into(), display_state_conflict: self.display_state_conflict,
+            depdb: self.depdb, offset: self.offset, state_offset: self.state_offset,
+        }
+    }
+}
+
+impl<R: RecipeForm> ParsedOperation<'_, R> {
+    fn display_name_stored(&self) -> bool { self.name.is_some() }
+    fn root_schema_class(&self) -> Option<SchemaClass> { self.depdb.map(|prefix| prefix.schema) }
+    fn parent_feature_id(&self) -> Option<u32> { self.depdb.map(|prefix| prefix.parent) }
+
+    fn materialize(self, ctx: &DecodeContext<'_>) -> Result<FeatureOperation<R>, CodecError> {
+        let kind = match self.kind {
+            ParsedKind::Stored(text) => OperationKind::Stored(ctx.copy_retained_text(text, "creo operation family name")?),
+            ParsedKind::Recipe(recipe) => OperationKind::from_recipe(recipe),
+            ParsedKind::Native => OperationKind::Native,
+        };
+        let name = match self.name {
+            Some(name) => OperationName::Stored {
+                bytes: ctx.copy_retained(name.bytes, "creo operation stored name bytes")?,
+                keyword: name.keyword, prefix: name.prefix,
+            },
+            None => OperationName::Derived,
+        };
+        Ok(FeatureOperation {
+            feature_id: self.feature_id, kind, name, recipe: self.recipe,
+            display_state_conflict: self.display_state_conflict, depdb: self.depdb,
+            offset: self.offset, state_offset: self.state_offset,
+        })
+    }
+}
+
+/// Decode source states and materialize each stored name in source order.
+pub(crate) fn operation_states(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Vec<FeatureOperationState>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "creo parsed operation state storage")?;
+    let states = storage.with_storage(|| parse_operation_states(ctx, payload))?;
+    let mut result = Vec::new();
+    for state in ctx.admit_iter(states, "creo operation state materialization")? {
+        let state = state.materialize(ctx)?;
+        ctx.push_vec(&mut result, state, "creo materialized operation states")?;
+    }
+    Ok(result)
+}
+
 /// Decode every NUL-terminated `<Kind> id <N>` operation state and bounded
 /// procedural-recipe record from one feature-state namespace, in byte order.
-pub(crate) fn operation_states(
+fn parse_operation_states<'a>(
     ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<Vec<FeatureOperationState>, CodecError> {
+    payload: &'a [u8],
+) -> Result<Vec<ParsedOperation<'a>>, CodecError> {
     const SEPARATORS: &[&[u8]] = &[b" id ", b" ID "];
     let family_byte = |byte: u8| {
         byte.is_ascii_alphanumeric()
@@ -576,20 +633,18 @@ pub(crate) fn operation_states(
         let mut offset = ctx.rposition_by(&payload[..separator],
             |byte| Ok(!family_byte(*byte)), "creo operation family start")?
             .map_or(0, |position| position + 1);
-        while offset < separator
-            && ctx
-                .validate_utf8(&payload[offset..separator], "creo UTF-8 validation")?
-                .is_err()
-        {
-            offset += 1;
-        }
+        let stored_family = loop {
+            match ctx.validate_utf8(&payload[offset..separator], "creo UTF-8 validation")? {
+                Ok(text) => break text,
+                Err(_) => offset += 1,
+            }
+        };
         let state_offset = offset;
-        let stored_family = &payload[offset..separator];
         let family = stored_family;
-        if family.is_empty() || family.first() == Some(&b' ') || family.last() == Some(&b' ') {
+        if family.is_empty() || family.starts_with(' ') || family.ends_with(' ') {
             continue;
         }
-        let (stored_name_prefix, family) = match family {
+        let (stored_name_prefix, family) = match family.as_bytes() {
             [prefix @ (b'o' | b'x' | b'y' | b'z'), first, ..] if first.is_ascii_uppercase() => {
                 offset += 1;
                 (Some(*prefix), &family[1..])
@@ -627,21 +682,16 @@ pub(crate) fn operation_states(
         }
         *binding_storage.with_storage(|| ctx.entry_hash_map(
             &mut display_counts, feature_id, "creo operation display counts"))?.or_insert(0) += 1;
-        let kind = ctx.copy_retained_lossy_utf8(family, "creo operation family name")?;
-        let name_bytes = ctx.copy_retained(
-            &payload[state_offset..separator + separator_bytes.len() + end],
-            "creo operation stored name bytes",
-        )?;
         ctx.reserve_vec(&mut result, 1, "creo feature operation states")?;
-        result.push(FeatureOperation {
+        result.push(ParsedOperation {
             feature_id,
-            kind: OperationKind::Stored(kind),
-            name: OperationName::Stored {
-                bytes: name_bytes,
+            kind: ParsedKind::Stored(family),
+            name: Some(ParsedName {
+                bytes: &payload[state_offset..separator + separator_bytes.len() + end],
                 keyword: IdKeyword::from_bytes(&separator_bytes[1..separator_bytes.len() - 1])
                     .unwrap_or(IdKeyword::Id),
                 prefix: stored_name_prefix,
-            },
+            }),
             recipe,
             display_state_conflict: false,
             depdb: bound_recipe.map(|binding| DepdbPrefix {
@@ -656,10 +706,10 @@ pub(crate) fn operation_states(
         if summaries.get(&feature_id).is_some_and(|summary| summary.count == 1)
             && displayed_bindings.contains_key(&feature_id) { continue; }
         ctx.reserve_vec(&mut result, 1, "creo feature operation states")?;
-        result.push(FeatureOperation {
+        result.push(ParsedOperation {
             feature_id,
-            kind: OperationKind::from_recipe(binding.recipe),
-            name: OperationName::Derived,
+            kind: ParsedKind::Recipe(binding.recipe),
+            name: None,
             recipe: if summaries.get(&feature_id).is_some_and(|summary| !summary.agreed) {
                 RecipeState::Conflicting {
                     candidate: Some(binding.recipe),
@@ -694,8 +744,9 @@ pub(crate) fn operations(
     payload: &[u8],
 ) -> Result<Vec<FeatureOperation>, CodecError> {
     let mut grouping_storage = ctx.reserve_scoped(0, "creo operation grouping storage")?;
-    let mut by_feature = BTreeMap::<u32, Vec<FeatureOperationState>>::new();
-    for operation in ctx.admit_iter(operation_states(ctx, payload)?, "creo operation grouping")? {
+    let mut by_feature = BTreeMap::<u32, Vec<ParsedOperation<'_>>>::new();
+    let parsed = grouping_storage.with_storage(|| parse_operation_states(ctx, payload))?;
+    for operation in ctx.admit_iter(parsed, "creo operation grouping")? {
         match grouping_storage.with_storage(|| ctx.entry_btree_map(
             &mut by_feature, operation.feature_id, "creo operation feature nodes"))? {
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -726,8 +777,10 @@ pub(crate) fn operations(
                 && matches!(state.recipe, RecipeState::Conflicting { candidate: Some(_) });
             if !state.display_name_stored() { continue; }
             if let Some(first) = first_display {
-                same_kind = same_kind && ctx.equal(&state.kind, &states[first].kind,
-                    "creo feature operation kind comparison")?;
+                same_kind = same_kind && match (state.kind, states[first].kind) {
+                    (ParsedKind::Stored(a), ParsedKind::Stored(b)) => ctx.equal(a, b, "creo feature operation kind comparison")?,
+                    _ => false,
+                };
                 if agreed_recipe != Some(state.recipe.resolved()) { agreed_recipe = None; }
                 if recipe != Some(RecipeResolution::from(state.recipe)) { recipe = None; }
                 if schema != Some(state.root_schema_class()) { schema = None; }
@@ -753,9 +806,9 @@ pub(crate) fn operations(
                     projection.display_state_conflict = true;
                     if !same_kind {
                         projection.kind = agreed_recipe.flatten()
-                            .map_or(OperationKind::Native, OperationKind::from_recipe);
+                            .map_or(ParsedKind::Native, ParsedKind::Recipe);
                     }
-                    projection.name = OperationName::Derived;
+                    projection.name = None;
                     projection.recipe = recipe.unwrap_or(RecipeResolution::Conflicting);
                     projection.depdb = match (schema.flatten(), parent.flatten()) {
                         (Some(schema), Some(parent)) => Some(DepdbPrefix { schema, parent }),
@@ -770,10 +823,10 @@ pub(crate) fn operations(
             if binding_conflict {
                 projection.recipe = RecipeResolution::Conflicting;
                 projection.depdb = None;
-                if !projection.display_name_stored() { projection.kind = OperationKind::Native; }
+                if !projection.display_name_stored() { projection.kind = ParsedKind::Native; }
             }
             ctx.reserve_vec(&mut current, 1, "creo current operation projections")?;
-            current.push(projection);
+            current.push(projection.materialize(ctx)?);
         }
     }
     ctx.stable_sort_by(
@@ -806,8 +859,8 @@ mod tests {
                 .expect("root input is admitted");
             reference_names(&ctx, data)
         };
-        assert_eq!(run(1).expect("one entry admitted").len(), 1);
-        let error = run(0).expect_err("entry needs one Vec item");
+        assert_eq!(run(u64::MAX).expect("one entry admitted").len(), 1);
+        let error = run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo reference name entries"), run)).expect_err("entry needs one Vec item");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo reference name entries"));
@@ -824,11 +877,8 @@ mod tests {
                 .expect("root input is admitted");
             reference_names(&ctx, data)
         };
-        let slots = cadmpeg_core::decode::u64_from_index(
-            4 * std::mem::size_of::<super::FeatureReferenceName>(),
-        );
-        assert_eq!(run(slots + 4).expect("four name bytes admitted").len(), 1);
-        let error = run(slots + 3).expect_err("fourth retained byte exceeds limit");
+        assert_eq!(run(u64::MAX).expect("four name bytes admitted").len(), 1);
+        let error = run(crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo reference name bytes"), run)).expect_err("fourth retained byte exceeds limit");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "creo reference name bytes"));

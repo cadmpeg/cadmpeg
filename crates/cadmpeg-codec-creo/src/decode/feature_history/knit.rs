@@ -90,7 +90,7 @@ pub(in super::super) fn knit_class_100_operand_entity_ids(
             continue;
         }
         for (entry_index, entry) in ctx
-            .admit_iter(&table.entries, "creo knit table entries")?
+            .admit_iter(table.entries.as_slice(), "creo knit table entries")?
             .enumerate()
         {
             if seen.contains(&entry.entity_id) {
@@ -111,7 +111,7 @@ pub(in super::super) fn knit_class_100_operand_entity_ids(
                     continue;
                 }
                 for (source_entry_index, source_entry) in ctx
-                    .admit_iter(&source_table.entries, "creo knit source table entries")?
+                    .admit_iter(source_table.entries.as_slice(), "creo knit source table entries")?
                     .enumerate()
                 {
                     let source_position = (
@@ -194,7 +194,7 @@ pub(in super::super) fn knit_operand_surface_ids(
     for quilt_id in ctx.admit_iter(quilt_ids, "creo knit quilt IDs")? {
         let mut producer = None;
         for table in ctx.admit_iter(&scan.features.entity_tables, "creo knit entity tables")? {
-            for entry in ctx.admit_iter(&table.entries, "creo knit table entries")? {
+            for entry in ctx.admit_iter(table.entries.as_slice(), "creo knit table entries")? {
                 if entry.class_id() == 200
                     && entry.entity_id == *quilt_id
                     && entry.offset < consumer_offset
@@ -217,7 +217,7 @@ pub(in super::super) fn knit_operand_surface_ids(
             {
                 continue;
             }
-            for entry in ctx.admit_iter(&table.entries, "creo knit table entries")? {
+            for entry in ctx.admit_iter(table.entries.as_slice(), "creo knit table entries")? {
                 if entry.entity_id == *quilt_id && entry.offset < consumer_offset {
                     if surface_id.is_some() {
                         return Ok(None);
@@ -311,7 +311,7 @@ pub(in super::super) fn draft_neutral_plane_selection(
         .filter(|table| table.feature_id == feature_id)
     {
         for entry in ctx
-            .admit_iter(&table.entries, "creo draft table entries")?
+            .admit_iter(table.entries.as_slice(), "creo draft table entries")?
             .filter(|entry| entry.class_id() == 209)
         {
             if match_entry.replace((table, entry)).is_some() {
@@ -323,7 +323,7 @@ pub(in super::super) fn draft_neutral_plane_selection(
         return Ok(FaceSelection::Unresolved);
     };
     if ctx
-        .admit_iter(&table.entries, "creo draft table surface entries")?
+        .admit_iter(table.entries.as_slice(), "creo draft table surface entries")?
         .filter(|entry| table.contains_surface_id(entry.entity_id))
         .map(|entry| entry.entity_id)
         .filter(|surface_id| *surface_id == entry.entity_id)
@@ -355,7 +355,7 @@ pub(in super::super) fn feature_surface_transitions(
     let mut outputs = 0usize;
     for table in ctx.admit_iter(tables, "creo transition entity tables")? {
         if table.feature_id == feature_id {
-            for entry in ctx.admit_iter(&table.entries, "creo transition table entries")? {
+            for entry in ctx.admit_iter(table.entries.as_slice(), "creo transition table entries")? {
                 if entry.class_id() == 210 {
                     outputs = outputs.checked_add(1).ok_or_else(|| {
                         ctx.refuse_codec_limit(
@@ -374,7 +374,7 @@ pub(in super::super) fn feature_surface_transitions(
     let mut predecessors = 0usize;
     for table in ctx.admit_iter(tables, "creo predecessor entity tables")? {
         if table.feature_id == feature_id {
-            for entry in ctx.admit_iter(&table.entries, "creo predecessor table entries")? {
+            for entry in ctx.admit_iter(table.entries.as_slice(), "creo predecessor table entries")? {
                 if entry.class_id() == 214 && entry.related_entity_id().is_some() {
                     predecessors = predecessors.checked_add(1).ok_or_else(|| {
                         ctx.refuse_codec_limit(
@@ -400,7 +400,7 @@ pub(in super::super) fn feature_surface_transitions(
             continue;
         }
         for output in ctx
-            .admit_iter(&output_table.entries, "creo transition output entries")?
+            .admit_iter(output_table.entries.as_slice(), "creo transition output entries")?
             .filter(|entry| entry.class_id() == 210)
         {
             let Some(intermediate_id) = output.related_entity_id() else {
@@ -408,7 +408,7 @@ pub(in super::super) fn feature_surface_transitions(
             };
             if output.related_entity_state() != Some(0)
                 || ctx
-                    .admit_iter(&output_table.entries, "creo transition surface entries")?
+                    .admit_iter(output_table.entries.as_slice(), "creo transition surface entries")?
                     .filter(|entry| output_table.contains_surface_id(entry.entity_id))
                     .map(|entry| entry.entity_id)
                     .filter(|surface_id| *surface_id == output.entity_id)
@@ -436,7 +436,7 @@ pub(in super::super) fn feature_surface_transitions(
                 )
             })?;
             let mut matches = ctx
-                .admit_iter(&output_table.entries, "creo transition predecessor entries")?
+                .admit_iter(output_table.entries.as_slice(), "creo transition predecessor entries")?
                 .filter(|predecessor| {
                     predecessor.class_id() == 214
                         && predecessor.entity_id == intermediate_id
@@ -584,7 +584,7 @@ pub(in super::super) fn feature_result_surface_ids(
         .filter(|table| table.feature_id == feature_id)
     {
         for surface_id in ctx
-            .admit_iter(&table.entries, "creo feature result surface entries")?
+            .admit_iter(table.entries.as_slice(), "creo feature result surface entries")?
             .filter(|entry| table.contains_surface_id(entry.entity_id))
             .map(|entry| entry.entity_id)
         {

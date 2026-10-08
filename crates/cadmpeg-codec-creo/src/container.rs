@@ -2573,9 +2573,9 @@ fn feature_entity_tables(
         |bytes| feature::entity::entity_tables(ctx, bytes, &feature_ids_set, &surface_ids),
         |table, base| {
             table.offset += base;
-            for entry in &mut table.entries {
-                entry.offset += base;
-                entry.end_offset += base;
+            for (offset, end_offset) in table.entries.offsets_mut() {
+                *offset += base;
+                *end_offset += base;
             }
         },
         |table| table.offset,
@@ -3600,7 +3600,7 @@ pub(crate) fn scan_bytes<'a>(
     let feature_entity_tables = feature_entity_tables(ctx, &sections, &feature_ids, &surface_rows)?;
     let feature_definitions = feature_definitions(ctx, &sections)?;
     let feature_definitions =
-        feature::definitions::bind_definition_owners(feature_definitions, &feature_geometry_tables);
+        feature::definitions::bind_definition_owners(ctx, feature_definitions, &feature_geometry_tables)?;
     let mut feature_definitions = feature::definitions::bind_trimmed_definition_owners(
         ctx,
         feature_definitions,

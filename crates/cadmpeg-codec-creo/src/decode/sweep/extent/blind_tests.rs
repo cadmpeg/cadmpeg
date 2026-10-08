@@ -190,8 +190,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
         ))
     );
 
-    scan.features.entity_tables[0].entries[2].payload =
-        crate::feature::entity::EntryPayload::Source { entity: None };
+    scan.features.entity_tables[0].entries.edit(2, |entry| entry.payload = crate::feature::entity::EntryPayload::Source { entity: None });
     assert!(service_generated_cap_plane_extent(
         &scan,
         &ir,

@@ -371,17 +371,17 @@ pub(crate) struct FeatureRevolutionExtent {
     pub(crate) offset: usize,
 }
 
-const CHOICE_LABELS: &[&[u8]] = &[
-    b"blend_choice",
-    b"depth_choice",
-    b"angle_choice",
-    b"pat_choice",
-    b"round_choice",
-    b"subsec_choice",
-    b"sweep_choice",
-    b"dome_choice",
-    b"draft_choice",
-    b"misc_choice",
+const CHOICE_LABELS: &[&str] = &[
+    "blend_choice",
+    "depth_choice",
+    "angle_choice",
+    "pat_choice",
+    "round_choice",
+    "subsec_choice",
+    "sweep_choice",
+    "dome_choice",
+    "draft_choice",
+    "misc_choice",
 ];
 
 pub(super) fn row_spans(
@@ -392,15 +392,14 @@ pub(super) fn row_spans(
     // The raw section header is present when the caller passes the complete
     // section extent instead of the payload after `#<name>\n`.
     let section_header_end = if payload.first() == Some(&b'#') {
-        payload
-            .iter()
-            .position(|byte| *byte == b'\n')
+        ctx.position_by(payload, |byte| Ok(*byte == b'\n'), "creo feature section header")?
             .map(|newline| newline + 1)
     } else {
         None
     };
+    let mut storage = ctx.reserve_scoped(0, "creo feature row boundary scratch")?;
     let mut starts = Vec::new();
-    for offset in 0..payload.len() {
+    for offset in ctx.admit_iter(0..payload.len(), "creo feature row boundary scan")? {
         let Ok((id, after)) = psb::reference_id(payload, offset) else {
             continue;
         };
@@ -415,47 +414,41 @@ pub(super) fn row_spans(
             || section_header_end == Some(offset)
             || (offset > 0 && payload[offset - 1] == psb::token::COMPOUND_CLOSE);
         if starts_at_row_boundary
-            && feature_ids.contains(&id)
+            && ctx.contains_btree_set(feature_ids, &id, "creo feature row known ID")?
             && payload.get(after..after + 2).is_some()
             && row_root_schema_class(payload, offset, prefix_end).is_some()
         {
-            ctx.reserve_vec(&mut starts, 1, "creo feature row starts")?;
+            storage.with_storage(|| ctx.reserve_vec(&mut starts, 1, "creo feature row starts"))?;
             starts.push((offset, id));
         }
     }
-    ctx.sort_unstable_by(
-        &mut starts,
-        |value| value,
-        Ord::cmp,
-        "creo feature row starts sort",
-    )?;
     // One stream can expose the same feature identifier under conflicting
     // schema classes, but one identifier/class pair is one row.
     let mut seen_ids = BTreeSet::new();
     let mut seen_schema_classes = BTreeSet::new();
     let mut retained_starts = Vec::new();
-    for (index, &(start, id)) in starts.iter().enumerate() {
+    for (index, &(start, id)) in ctx.admit_iter(&starts, "creo feature row start traversal")?.enumerate() {
         let candidate_end = starts
             .get(index + 1)
             .map_or(payload.len(), |&(next, _)| next);
-        let first_for_id = ctx.insert_btree_set(&mut seen_ids, id, "creo feature row seen ids")?;
+        let first_for_id = storage.with_storage(|| ctx.insert_btree_set(&mut seen_ids, id, "creo feature row seen ids"))?;
         let has_new_schema_class =
             if let Some(schema_class) = row_root_schema_class(payload, start, candidate_end) {
-                ctx.insert_btree_set(
+                storage.with_storage(|| ctx.insert_btree_set(
                     &mut seen_schema_classes,
                     (id, schema_class),
                     "creo feature row schema classes",
-                )?
+                ))?
             } else {
                 false
             };
         if first_for_id || has_new_schema_class {
-            ctx.reserve_vec(&mut retained_starts, 1, "creo feature retained starts")?;
+            storage.with_storage(|| ctx.reserve_vec(&mut retained_starts, 1, "creo feature retained starts"))?;
             retained_starts.push((start, id));
         }
     }
     let mut spans = Vec::new();
-    for (index, &(start, id)) in retained_starts.iter().enumerate() {
+    for (index, &(start, id)) in ctx.admit_iter(&retained_starts, "creo retained feature row traversal")?.enumerate() {
         let end = retained_starts
             .get(index + 1)
             .map_or(payload.len(), |&(next, _)| next);
@@ -490,7 +483,9 @@ pub(crate) fn rows(
     stream_offset: usize,
 ) -> Result<Vec<FeatureRow>, CodecError> {
     let mut decoded = Vec::new();
-    for (start, end, feature_id) in row_spans(ctx, payload, feature_ids)? {
+    let mut span_storage = ctx.reserve_scoped(0, "creo feature row spans scratch")?;
+    let spans = span_storage.with_storage(|| row_spans(ctx, payload, feature_ids))?;
+    for (start, end, feature_id) in ctx.admit_iter(spans, "creo feature row span traversal")? {
         let Ok((_, body_start)) = psb::reference_id(payload, start) else {
             continue;
         };
@@ -524,11 +519,11 @@ pub(crate) fn round_replay_scalars(
     const CR_FLAGS_ANCHOR: &[u8] = &[0xf2, 0xf7, 0x80, 0xa0];
     const MISC_CHOICE_ANCHOR: &[u8] = &[0xf3, 0xf7, 0x80, 0x97, 0xe2];
     let mut result = Vec::new();
-    for row in rows
-        .iter()
+    for row in ctx.admit_iter(rows, "creo round replay row traversal")?
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
     {
-        for (record_start, bytes) in row.body.windows(CR_FLAGS_ANCHOR.len()).enumerate() {
+        for record_start in ctx.admit_iter(0..row.body.len().saturating_sub(CR_FLAGS_ANCHOR.len() - 1), "creo round replay anchor traversal")? {
+            let bytes = &row.body[record_start..record_start + CR_FLAGS_ANCHOR.len()];
             if bytes != CR_FLAGS_ANCHOR {
                 continue;
             }
@@ -542,17 +537,12 @@ pub(crate) fn round_replay_scalars(
             else {
                 continue;
             };
-            let Some(separator) = row.body[record_start + CR_FLAGS_ANCHOR.len()..record_end]
-                .windows(2)
-                .position(|bytes| bytes == [0x01, 0xf6])
-                .map(|offset| record_start + CR_FLAGS_ANCHOR.len() + offset + 2)
-            else {
-                continue;
-            };
-            let Some(scalar_offset) = round_replay_short_scalar(&row.body, separator, record_end)
-            else {
-                continue;
-            };
+            let Some(relative) = ctx.position_by(
+                row.body[record_start + CR_FLAGS_ANCHOR.len()..record_end].windows(2),
+                |bytes| Ok(bytes == [0x01, 0xf6]), "creo round replay separator",
+            )? else { continue; };
+            let separator = record_start + CR_FLAGS_ANCHOR.len() + relative + 2;
+            let Some(scalar_offset) = round_replay_short_scalar(ctx, &row.body, separator, record_end)? else { continue; };
             let Some((value, scalar_end)) = scalar::decode(&row.body, scalar_offset) else {
                 continue;
             };
@@ -580,24 +570,26 @@ pub(crate) fn round_replay_scalars(
     Ok(result)
 }
 
-fn round_replay_short_scalar(body: &[u8], start: usize, end: usize) -> Option<usize> {
+fn round_replay_short_scalar(ctx: &DecodeContext<'_>, body: &[u8], start: usize, end: usize) -> Result<Option<usize>, CodecError> {
     let mut offset = start;
+    let mut steps = std::iter::repeat(());
     while offset < end {
-        if body.get(offset) == Some(&0x29)
-            && scalar::decode(body, offset).is_some_and(|(value, scalar_end)| {
-                scalar_end == offset + 3 && scalar_end <= end && value.is_finite()
-            })
-        {
-            return Some(offset);
-        }
-        offset = round_replay_token_end(body, offset, end)?;
+        ctx.next_charged(&mut steps, "creo round replay scalar traversal")?;
+        if body.get(offset) == Some(&0x29) && scalar::decode(body, offset).is_some_and(|(value, after)| after == offset + 3 && after <= end && value.is_finite()) { return Ok(Some(offset)); }
+        let next = if body.get(offset) == Some(&psb::token::NAMED_RECORD) {
+            let Some(rest) = body.get(offset + 2..end) else { return Ok(None); };
+            ctx.position_by(rest, |byte| Ok(*byte == 0), "creo round replay name terminator")?.map(|relative| offset + relative + 3)
+        } else { round_replay_fixed_token_end(body, offset, end) };
+        let Some(next) = next else { return Ok(None); };
+        offset = next;
     }
-    None
+    Ok(None)
 }
 
-fn round_replay_token_end(body: &[u8], offset: usize, end: usize) -> Option<usize> {
+fn round_replay_fixed_token_end(body: &[u8], offset: usize, end: usize) -> Option<usize> {
     let head = *body.get(offset)?;
     let next = match head {
+        0xe0 => return None,
         0x19 | 0x28 | 0x32 | 0x37 | 0x41 => offset.checked_add(8)?,
         0x31 | 0x4f | 0x90 | 0xd5 | 0xd7 => offset.checked_add(7)?,
         // The token is the head byte and one compact integer, so it ends where the
@@ -618,12 +610,12 @@ pub(crate) fn choices(
     rows: &[FeatureRow],
 ) -> Result<Vec<FeatureChoice>, CodecError> {
     let mut result = Vec::new();
-    for row in rows {
+    for row in ctx.admit_iter(rows, "creo feature row traversal")? {
         let mut hits = Vec::new();
         for &label in CHOICE_LABELS {
             let mut from = 0;
             while let Some(label_offset) =
-                ctx.find_bytes_from(&row.body, label, from, "find Creo feature row")?
+                ctx.find_bytes_from(&row.body, label.as_bytes(), from, "find Creo feature row")?
             {
                 let label_end = label_offset + label.len();
                 if row.body.get(label_end) != Some(&0) {
@@ -648,23 +640,17 @@ pub(crate) fn choices(
             Ord::cmp,
             "creo choices hits ordering",
         )?;
-        for (index, &(header, label_at, label, type_byte)) in hits.iter().enumerate() {
+        for (index, &(header, label_at, label, type_byte)) in ctx.admit_iter(&hits, "creo choice hit traversal")?.enumerate() {
             let value = label_at + label.len() + 1;
-            let end = hits.get(index + 1).map_or_else(
-                || {
-                    let post_choice = b"assoc_type\0";
-                    row.body[value..]
-                        .windows(post_choice.len() + 2)
-                        .position(|window| {
-                            window[0] == psb::token::NAMED_RECORD && window[2..] == post_choice[..]
-                        })
-                        .map_or(row.body.len(), |relative| value + relative)
-                },
-                |hit| hit.0,
-            );
-            let label = ctx
-                .validate_utf8(label, "creo UTF-8 validation")?
-                .map_err(|_| CodecError::malformed("creo static choice label"))?;
+            let end = if let Some(hit) = hits.get(index + 1) {
+                hit.0
+            } else {
+                let post_choice = b"assoc_type\0";
+                ctx.position_by(row.body[value..].windows(post_choice.len() + 2),
+                    |window| Ok(window[0] == psb::token::NAMED_RECORD && window[2..] == post_choice[..]),
+                    "creo choice association boundary")?.map_or(row.body.len(), |relative| value + relative)
+            };
+
             let label = ctx.copy_retained_text(label, "creo feature choice label")?;
             let payload =
                 ctx.copy_retained(&row.body[value..end], "creo feature choice payload")?;
@@ -768,31 +754,23 @@ pub(crate) fn choice_fields(
     choices: &[FeatureChoice],
 ) -> Result<Vec<FeatureChoiceField>, CodecError> {
     let mut fields = Vec::new();
-    for choice in choices {
+    for choice in ctx.admit_iter(choices, "creo choice field traversal")? {
+        let mut storage = ctx.reserve_scoped(0, "creo choice header scratch")?;
         let mut headers = Vec::new();
         let Some(last) = choice.payload.len().checked_sub(2) else {
             continue;
         };
-        for offset in 0..last {
+        for offset in ctx.admit_iter(0..last, "creo choice field byte traversal")? {
             if choice.payload[offset] != psb::token::NAMED_RECORD {
                 continue;
             }
-            let Some(nul) = choice.payload[offset + 2..]
-                .iter()
-                .position(|&byte| byte == 0)
-                .map(|relative| offset + 2 + relative)
-            else {
-                continue;
-            };
-            if choice.payload[offset + 2..nul]
-                .iter()
-                .all(u8::is_ascii_graphic)
-            {
-                ctx.reserve_vec(&mut headers, 1, "creo choice field headers")?;
+            let Some(nul) = ctx.position_by(&choice.payload[offset + 2..], |byte| Ok(*byte == 0), "creo choice field terminator")?.map(|relative| offset + 2 + relative) else { continue; };
+            if ctx.all_by(&choice.payload[offset + 2..nul], |byte| Ok(byte.is_ascii_graphic()), "creo choice field name bytes")? {
+                storage.with_storage(|| ctx.reserve_vec(&mut headers, 1, "creo choice field headers"))?;
                 headers.push((offset, nul + 1));
             }
         }
-        for (index, &(header, value_start)) in headers.iter().enumerate() {
+        for (index, &(header, value_start)) in ctx.admit_iter(&headers, "creo choice header traversal")?.enumerate() {
             let end = headers
                 .get(index + 1)
                 .map_or(choice.payload.len(), |hit| hit.0);
@@ -842,8 +820,9 @@ pub(crate) fn geometry_tables(
         (b"dtm_id_tab", FeatureGeometryTableKind::DatumIds(None)),
     ];
     let mut tables = Vec::new();
+    let mut storage = ctx.reserve_scoped(0, "creo geometry table scratch")?;
     let mut datum_class_by_stream = BTreeMap::<usize, u32>::new();
-    for row in rows {
+    for row in ctx.admit_iter(rows, "creo feature row traversal")? {
         for (label, kind) in FIELDS {
             let mut from = 0;
             while let Some(offset) =
@@ -868,19 +847,16 @@ pub(crate) fn geometry_tables(
                     offset: row.body_offset + offset,
                 });
                 if matches!(kind, FeatureGeometryTableKind::DatumIds(_)) {
-                    ctx.insert_btree_map(
-                        &mut datum_class_by_stream,
-                        row.stream_offset,
-                        entity_class,
-                        "creo datum class by stream",
-                    )?;
+                    storage.with_storage(|| ctx.insert_btree_map(
+                        &mut datum_class_by_stream, row.stream_offset, entity_class, "creo datum class by stream",
+                    ))?;
                 }
             }
         }
-        let Some(&entity_class) = datum_class_by_stream.get(&row.stream_offset) else {
+        let Some(&entity_class) = ctx.get_btree_map(&datum_class_by_stream, &row.stream_offset, "creo datum class lookup")? else {
             continue;
         };
-        for cursor in 0..row.body.len() {
+        for cursor in ctx.admit_iter(0..row.body.len(), "creo positional geometry byte traversal")? {
             let Some(decoded) =
                 positional_datum_geometry_table_at(ctx, &row.body, cursor, entity_class)
             else {
@@ -1026,7 +1002,7 @@ pub(crate) fn affected_ids(
         (b"qlts_affected", AffectedIdKind::Quilts),
     ];
     let mut result = Vec::new();
-    for row in rows {
+    for row in ctx.admit_iter(rows, "creo feature row traversal")? {
         for &(label, kind) in FIELDS {
             let mut from = 0;
             while let Some(label_offset) =
@@ -1092,12 +1068,8 @@ fn skip_replay_field_label(run: &[u8], cursor: usize, expected: &[u8]) -> Option
     if run.get(cursor) != Some(&psb::token::NAMED_RECORD) {
         return Some(cursor);
     }
-    let name_end = run
-        .get(cursor + 2..)?
-        .iter()
-        .position(|byte| *byte == 0)
-        .map(|relative| cursor + 2 + relative)?;
-    (run.get(cursor + 2..name_end) == Some(expected)).then_some(name_end + 1)
+    let name_end = cursor.checked_add(2)?.checked_add(expected.len())?;
+    (run.get(cursor + 2..name_end) == Some(expected) && run.get(name_end) == Some(&0)).then_some(name_end + 1)
 }
 
 fn replay_extent(
@@ -1370,23 +1342,25 @@ pub(crate) fn replay_affected_ids(
     const ANCHOR_LEN: usize = ANCHOR_PREFIX.len() + 1 + ANCHOR_SUFFIX.len();
     const TERMINATOR: &[u8] = &[0xf5, 0x96, 0x92];
     let mut result = Vec::new();
+    let mut storage = ctx.reserve_scoped(0, "creo replay extent scratch")?;
     let mut extents = BTreeMap::<(usize, SchemaClass), [Option<u32>; 2]>::new();
-    for row in rows {
+    for row in ctx.admit_iter(rows, "creo feature row traversal")? {
         let Some(schema_class @ (SchemaClass::Round | SchemaClass::Chamfer)) =
             row.root_schema_class
         else {
             continue;
         };
-        let anchor = row.body.windows(ANCHOR_LEN).rposition(|window| {
-            window.starts_with(ANCHOR_PREFIX)
+        let anchor = ctx.find_map((0..row.body.len().saturating_sub(ANCHOR_LEN - 1)).rev(), |offset| {
+            let window = &row.body[offset..offset + ANCHOR_LEN];
+            Ok((window.starts_with(ANCHOR_PREFIX)
                 && matches!(window[ANCHOR_PREFIX.len()], 0xc8 | 0xd8)
-                && window.ends_with(ANCHOR_SUFFIX)
-        });
-        let state = match ctx.entry_btree_map(
+                && window.ends_with(ANCHOR_SUFFIX)).then_some(offset))
+        }, "creo replay anchor search")?;
+        let state = match storage.with_storage(|| ctx.entry_btree_map(
             &mut extents,
             (row.stream_offset, schema_class),
             "creo replay extent states",
-        )? {
+        ))? {
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert([None; 2]),
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         };
@@ -1442,18 +1416,16 @@ pub(crate) fn replay_affected_ids(
     Ok(result)
 }
 
-pub(crate) fn agreed_feature_affected_ids(
-    records: &[FeatureAffectedIds],
-    feature_id: u32,
-    kind: AffectedIdKind,
-) -> Option<&[u32]> {
-    let mut matches = records
-        .iter()
-        .filter(|record| record.feature_id == feature_id && record.kind == kind);
-    let ids = matches.next()?.ids.as_slice();
-    matches
-        .all(|record| record.ids.as_slice() == ids)
-        .then_some(ids)
+pub(crate) fn agreed_feature_affected_ids<'a>(
+    ctx: &DecodeContext<'_>, records: &'a [FeatureAffectedIds], feature_id: u32, kind: AffectedIdKind,
+) -> Result<Option<&'a [u32]>, CodecError> {
+    let Some(first) = ctx.position_by(records, |record| Ok(record.feature_id == feature_id && record.kind == kind), "creo affected ID agreement first")? else { return Ok(None); };
+    let ids = records[first].ids.as_slice();
+    let agrees = ctx.all_by(&records[first + 1..], |record| {
+        if record.feature_id != feature_id || record.kind != kind { return Ok(true); }
+        ctx.equal(record.ids.as_slice(), ids, "creo affected ID agreement values")
+    }, "creo affected ID agreement remainder")?;
+    Ok(agrees.then_some(ids))
 }
 
 fn surface_merge_replay_suffix(bytes: &[u8]) -> bool {
@@ -1545,22 +1517,18 @@ pub(crate) fn surface_merge_replay_affected_ids(
     named: &[FeatureAffectedIds],
 ) -> Result<Vec<FeatureSurfaceMergeAffectedIds>, CodecError> {
     let mut result = Vec::new();
+    let mut storage = ctx.reserve_scoped(0, "creo surface merge extent scratch")?;
     let mut extents = BTreeMap::<usize, [Option<u32>; 3]>::new();
-    for row in rows {
+    for row in ctx.admit_iter(rows, "creo feature row traversal")? {
         if row.root_schema_class != Some(SchemaClass::SurfaceMerge) {
             continue;
         }
-        let state = ctx
-            .entry_btree_map(
-                &mut extents,
-                row.stream_offset,
-                "creo surface merge extent states",
-            )?
-            .or_insert([None; 3]);
+        let state = storage.with_storage(|| ctx.entry_btree_map(
+            &mut extents, row.stream_offset, "creo surface merge extent states"))?.or_insert([None; 3]);
         let named_arrays = [
-            agreed_feature_affected_ids(named, row.feature_id, AffectedIdKind::Geometry),
-            agreed_feature_affected_ids(named, row.feature_id, AffectedIdKind::Edges),
-            agreed_feature_affected_ids(named, row.feature_id, AffectedIdKind::Quilts),
+            agreed_feature_affected_ids(ctx, named, row.feature_id, AffectedIdKind::Geometry)?,
+            agreed_feature_affected_ids(ctx, named, row.feature_id, AffectedIdKind::Edges)?,
+            agreed_feature_affected_ids(ctx, named, row.feature_id, AffectedIdKind::Quilts)?,
         ];
         if let [Some(geometry), Some(edges), Some(quilts)] = named_arrays {
             let (Ok(geometry_count), Ok(edge_count), Ok(quilt_count)) = (
@@ -1608,7 +1576,7 @@ pub(crate) fn loop_restore_directions(
         (b"direction2", LoopRestoreDirectionLane::Secondary),
     ];
     let mut result = Vec::new();
-    for row in rows {
+    for row in ctx.admit_iter(rows, "creo feature row traversal")? {
         for &(label, lane) in FIELDS {
             let mut from = 0;
             while let Some(label_offset) =
@@ -1833,7 +1801,7 @@ pub(crate) fn revolution_extents(
         0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00, 0x00, 0x00,
     ];
     let mut result = Vec::new();
-    for row in rows {
+    for row in ctx.admit_iter(rows, "creo feature row traversal")? {
         if !matches!(
             row.root_schema_class,
             Some(SchemaClass::Cut | SchemaClass::Protrusion)

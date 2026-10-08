@@ -151,7 +151,7 @@ pub(in super::super) fn feature_output_surface_dependencies(
         if table.feature_id != feature_id || table.table_class_id != 67 {
             continue;
         }
-        for entry in ctx.admit_iter(&table.entries, "creo output surface ownership entries")? {
+        for entry in ctx.admit_iter(table.entries.as_slice(), "creo output surface ownership entries")? {
             if entry.source_entity_id() != Some(feature_id) {
                 continue;
             }
@@ -169,7 +169,7 @@ pub(in super::super) fn feature_output_surface_dependencies(
         if table.feature_id != feature_id || table.table_class_id != 100 {
             continue;
         }
-        for entry in ctx.admit_iter(&table.entries, "creo output surface dependency entries")? {
+        for entry in ctx.admit_iter(table.entries.as_slice(), "creo output surface dependency entries")? {
             if !owned_entities.contains(&entry.entity_id) {
                 continue;
             }
@@ -196,7 +196,7 @@ pub(in super::super) fn feature_entity_dependencies(
         if table.feature_id != feature_id || table.table_class_id != 100 {
             continue;
         }
-        for entry in ctx.admit_iter(&table.entries, "creo feature entity dependency entries")? {
+        for entry in ctx.admit_iter(table.entries.as_slice(), "creo feature entity dependency entries")? {
             let Some(producer) = unique_feature_entity_producer(ctx, tables, entry.entity_id)?
             else {
                 continue;
@@ -243,7 +243,7 @@ fn unique_preceding_feature_entity_producer(
 ) -> Result<Option<u32>, CodecError> {
     let mut producer = None;
     for table in ctx.admit_iter(tables, "creo preceding feature producer tables")? {
-        for entry in ctx.admit_iter(&table.entries, "creo preceding feature producer entries")? {
+        for entry in ctx.admit_iter(table.entries.as_slice(), "creo preceding feature producer entries")? {
             if entry.class_id() == 200
                 && entry.entity_id == entity_id
                 && entry.offset < consumer_offset
@@ -277,11 +277,11 @@ pub(in super::super) fn surface_merge_quilt_ids<'a>(
     replay: &'a [crate::feature::rows::FeatureSurfaceMergeAffectedIds],
     feature_id: u32,
 ) -> Result<Option<&'a [u32]>, CodecError> {
-    if let Some(ids) = agreed_feature_affected_ids(
+    if let Some(ids) = agreed_feature_affected_ids(ctx,
         affected_ids,
         feature_id,
         crate::feature::rows::AffectedIdKind::Quilts,
-    ) {
+    )? {
         return Ok((!ids.is_empty()).then_some(ids));
     }
     if has_feature_affected_ids(
@@ -305,11 +305,11 @@ pub(super) fn surface_merge_quilt_state_offset(
     feature_id: u32,
     quilt_ids: &[u32],
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(ids) = agreed_feature_affected_ids(
+    if let Some(ids) = agreed_feature_affected_ids(ctx,
         affected_ids,
         feature_id,
         crate::feature::rows::AffectedIdKind::Quilts,
-    ) {
+    )? {
         if !ctx.equal(ids, quilt_ids, "creo surface merge quilt ID equality")? {
             return Ok(None);
         }
@@ -437,7 +437,7 @@ fn agreed_feature_parent_ids(
             continue;
         }
         *emitted = true;
-        if let Some(agreed) = agreed_feature_affected_ids(records, feature_id, record.kind) {
+        if let Some(agreed) = agreed_feature_affected_ids(ctx, records, feature_id, record.kind)? {
             ctx.reserve_vec(&mut ids, agreed.len(), "creo agreed feature parent IDs")?;
             ids.extend_from_slice(agreed);
         }

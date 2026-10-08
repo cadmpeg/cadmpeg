@@ -337,7 +337,7 @@ fn paired_hole_replay_surfaces_by_source(
     if !(source_zero_count <= 1
         && framed_class_200_count
             == ctx
-                .admit_iter(&table.entries, "creo paired-hole class count")?
+                .admit_iter(table.entries.as_slice(), "creo paired-hole class count")?
                 .filter(|entry| entry.class_id() == 200)
                 .count())
     {

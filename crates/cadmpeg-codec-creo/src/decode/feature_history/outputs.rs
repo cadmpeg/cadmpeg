@@ -159,7 +159,7 @@ fn feature_output_bodies_with_history(
         .filter(|table| table.feature_id == feature_id)
     {
         for entry in ctx
-            .admit_iter(&table.entries, "creo generated entity entries")?
+            .admit_iter(table.entries.as_slice(), "creo generated entity entries")?
             .filter(|entry| table.contains_surface_id(entry.entity_id))
         {
             add_surface_outputs(entry.entity_id)?;
@@ -900,7 +900,7 @@ pub(in super::super) fn feature_parameters<'ctx>(
         )?
         .filter(|table| table.feature_id == feature_id)
     {
-        for entry in ctx.admit_iter(&table.entries, "creo feature parameter entity entries")? {
+        for entry in ctx.admit_iter(table.entries.as_slice(), "creo feature parameter entity entries")? {
             let Some(source_entity_id) = entry.source_entity_id() else {
                 continue;
             };
