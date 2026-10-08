@@ -9969,7 +9969,14 @@ fn resolve_standard_mesh_endpoint_candidates<'storage>(
             if total_work > MAX_SELECTION_WORK {
                 return Ok(ControlFlow::Break(MeshCandidateFailure::Exhausted(())));
             }
-            let face_equations = possible_face_equations(ctx, &assignments)?;
+            let (value, storage) = ctx
+                .with_scoped_storage("catia_standard_face_equation_storage", || {
+                    possible_face_equations(ctx, &assignments)
+                })?;
+            let face_equations = ScopedValue {
+                value,
+                storage: Some(storage),
+            };
             let mut face_choices = Vec::new();
             if !possible_face_choices_with_limit(
                 ctx,
@@ -10044,6 +10051,13 @@ fn resolve_standard_mesh_endpoint_candidates<'storage>(
         ControlFlow::Break(refusal) => return Ok(MeshSolve::Failed(refusal)),
         ControlFlow::Continue(prepared) => prepared,
     };
+    #[cfg(not(test))]
+    drop(face_equations);
+    #[cfg(test)]
+    let ScopedValue {
+        value: face_equations,
+        storage: _equation_storage,
+    } = face_equations;
     let relation = resolve_endpoint_configuration_relation_streaming(
         ctx,
         crate::solve::mesh_quotient::ResolveEndpointConfigurationRelationStreamingInputs {
