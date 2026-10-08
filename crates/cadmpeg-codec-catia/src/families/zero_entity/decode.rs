@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
@@ -24,7 +24,7 @@ use crate::assemble::{
     annotate, link_payload_carriers, neutral_model_is_admissible, preserve_raw_payload,
 };
 use crate::container::{self, ContainerScan};
-use crate::families::{FamilyEntityAdmission, FamilyOutput};
+use crate::families::{FamilyEntityAdmission, FamilyOutput, ModelCurvePositions};
 use crate::loss::CatiaLossCode;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -141,108 +141,6 @@ fn closed_wire_loop_members<'a, 'ctx>(
         "catia_zero_wire_closure_visits",
     )?;
     Ok(closed.then_some((members, scratch)))
-}
-
-/// Positions of the model curves and procedural constructions, keyed by
-/// identity, so each wire member finds its source carrier by one lookup.
-pub(super) struct ModelCurvePositions<'ctx> {
-    curves: BTreeMap<CurveId, usize>,
-    procedurals: BTreeMap<ProceduralCurveId, usize>,
-    storage: ScopedReservation<'ctx>,
-}
-
-impl<'ctx> ModelCurvePositions<'ctx> {
-    pub(super) fn new(
-        ctx: &'ctx DecodeContext<'_>,
-        ir: &CadIr,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let mut positions = Self {
-            curves: BTreeMap::new(),
-            procedurals: BTreeMap::new(),
-            storage: ctx.reserve_scoped(0, "catia_zero_wire_curve_positions")?,
-        };
-        for (position, curve) in ctx
-            .admit_iter(&ir.model.curves, "catia_zero_wire_curve_positions")?
-            .enumerate()
-        {
-            positions.add_curve(ctx, &curve.id, position)?;
-        }
-        for (position, procedural) in ctx
-            .admit_iter(
-                &ir.model.procedural_curves,
-                "catia_zero_wire_procedural_positions",
-            )?
-            .enumerate()
-        {
-            positions.add_procedural(ctx, &procedural.id, position)?;
-        }
-        Ok(positions)
-    }
-
-    /// Records the first position of a curve identity.
-    fn add_curve(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        id: &CurveId,
-        position: usize,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        let curves = &mut self.curves;
-        self.storage.with_storage(|| {
-            if ctx.contains_key_btree_map(curves, id, "catia_zero_wire_curve_positions")? {
-                return Ok(());
-            }
-            let key = id.try_clone_for_decode(ctx, "catia_zero_wire_curve_positions")?;
-            ctx.insert_btree_map(curves, key, position, "catia_zero_wire_curve_positions")?;
-            Ok(())
-        })
-    }
-
-    /// Records the first position of a procedural construction identity.
-    fn add_procedural(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        id: &ProceduralCurveId,
-        position: usize,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        let procedurals = &mut self.procedurals;
-        self.storage.with_storage(|| {
-            if ctx.contains_key_btree_map(
-                procedurals,
-                id,
-                "catia_zero_wire_procedural_positions",
-            )? {
-                return Ok(());
-            }
-            let key = id.try_clone_for_decode(ctx, "catia_zero_wire_procedural_positions")?;
-            ctx.insert_btree_map(
-                procedurals,
-                key,
-                position,
-                "catia_zero_wire_procedural_positions",
-            )?;
-            Ok(())
-        })
-    }
-
-    pub(super) fn curve(
-        &self,
-        ctx: &DecodeContext<'_>,
-        id: &CurveId,
-    ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-        Ok(ctx
-            .get_btree_map(&self.curves, id, "catia_zero_wire_curve_lookup")?
-            .copied())
-    }
-
-    fn procedural(
-        &self,
-        ctx: &DecodeContext<'_>,
-        id: &ProceduralCurveId,
-    ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-        Ok(ctx
-            .get_btree_map(&self.procedurals, id, "catia_zero_wire_procedural_lookup")?
-            .copied())
-    }
 }
 
 fn append_oriented_wire_curve(

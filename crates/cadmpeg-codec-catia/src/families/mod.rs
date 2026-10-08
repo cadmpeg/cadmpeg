@@ -65,6 +65,162 @@ impl<'a, 'b> FamilyEntityAdmission<'a, 'b> {
     }
 }
 
+/// Positions of the model curves and procedural constructions, keyed by
+/// identity, so each wire member finds its source carrier by one lookup.
+pub(crate) struct ModelCurvePositions<'ctx> {
+    curves: std::collections::BTreeMap<cadmpeg_ir::ids::CurveId, usize>,
+    procedurals: std::collections::BTreeMap<cadmpeg_ir::ids::ProceduralCurveId, usize>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx> ModelCurvePositions<'ctx> {
+    pub(crate) fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        ir: &CadIr,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut positions = Self {
+            curves: std::collections::BTreeMap::new(),
+            procedurals: std::collections::BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "catia_zero_wire_curve_positions")?,
+        };
+        for (position, curve) in ctx
+            .admit_iter(&ir.model.curves, "catia_zero_wire_curve_positions")?
+            .enumerate()
+        {
+            positions.add_curve(ctx, &curve.id, position)?;
+        }
+        for (position, procedural) in ctx
+            .admit_iter(
+                &ir.model.procedural_curves,
+                "catia_zero_wire_procedural_positions",
+            )?
+            .enumerate()
+        {
+            positions.add_procedural(ctx, &procedural.id, position)?;
+        }
+        Ok(positions)
+    }
+
+    /// Records the first position of a curve identity.
+    pub(crate) fn add_curve(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        id: &cadmpeg_ir::ids::CurveId,
+        position: usize,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let curves = &mut self.curves;
+        self.storage.with_storage(|| {
+            if ctx.contains_key_btree_map(curves, id, "catia_zero_wire_curve_positions")? {
+                return Ok(());
+            }
+            let key = id.try_clone_for_decode(ctx, "catia_zero_wire_curve_positions")?;
+            ctx.insert_btree_map(curves, key, position, "catia_zero_wire_curve_positions")?;
+            Ok(())
+        })
+    }
+
+    /// Records the first position of a procedural construction identity.
+    pub(crate) fn add_procedural(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        id: &cadmpeg_ir::ids::ProceduralCurveId,
+        position: usize,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let procedurals = &mut self.procedurals;
+        self.storage.with_storage(|| {
+            if ctx.contains_key_btree_map(
+                procedurals,
+                id,
+                "catia_zero_wire_procedural_positions",
+            )? {
+                return Ok(());
+            }
+            let key = id.try_clone_for_decode(ctx, "catia_zero_wire_procedural_positions")?;
+            ctx.insert_btree_map(
+                procedurals,
+                key,
+                position,
+                "catia_zero_wire_procedural_positions",
+            )?;
+            Ok(())
+        })
+    }
+
+    pub(crate) fn curve(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &cadmpeg_ir::ids::CurveId,
+    ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+        Ok(ctx
+            .get_btree_map(&self.curves, id, "catia_zero_wire_curve_lookup")?
+            .copied())
+    }
+
+    pub(crate) fn procedural(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &cadmpeg_ir::ids::ProceduralCurveId,
+    ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+        Ok(ctx
+            .get_btree_map(&self.procedurals, id, "catia_zero_wire_procedural_lookup")?
+            .copied())
+    }
+}
+
+/// Positions of the model surfaces, keyed by identity, so a binding finds a
+/// surface by one lookup instead of a scan of the arena.
+pub(crate) struct ModelSurfacePositions<'ctx> {
+    surfaces: std::collections::BTreeMap<cadmpeg_ir::ids::SurfaceId, usize>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx> ModelSurfacePositions<'ctx> {
+    pub(crate) fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        ir: &CadIr,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut positions = Self {
+            surfaces: std::collections::BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "catia_model_surface_positions")?,
+        };
+        for (position, surface) in ctx
+            .admit_iter(&ir.model.surfaces, "catia_model_surface_positions")?
+            .enumerate()
+        {
+            positions.add(ctx, &surface.id, position)?;
+        }
+        Ok(positions)
+    }
+
+    /// Records the first position of a surface identity.
+    pub(crate) fn add(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        id: &cadmpeg_ir::ids::SurfaceId,
+        position: usize,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let surfaces = &mut self.surfaces;
+        self.storage.with_storage(|| {
+            if ctx.contains_key_btree_map(surfaces, id, "catia_model_surface_positions")? {
+                return Ok(());
+            }
+            let key = id.try_clone_for_decode(ctx, "catia_model_surface_positions")?;
+            ctx.insert_btree_map(surfaces, key, position, "catia_model_surface_positions")?;
+            Ok(())
+        })
+    }
+
+    pub(crate) fn get(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &cadmpeg_ir::ids::SurfaceId,
+    ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+        Ok(ctx
+            .get_btree_map(&self.surfaces, id, "catia_model_surface_lookup")?
+            .copied())
+    }
+}
+
 /// One entry in the ordered decode route table.
 ///
 /// `applicable` gates the route on the identified container [`Variant`].
