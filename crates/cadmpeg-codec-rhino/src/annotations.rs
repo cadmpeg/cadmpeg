@@ -766,10 +766,11 @@ pub(crate) fn install<'ctx>(
     let mut annotations = Vec::new();
     let mut dots = Vec::new();
     let mut arrows = Vec::new();
-    for (source_order, object) in ctx
-        .admit_iter(&scan.objects[..], "Rhino install traversal")?
-        .enumerate()
-    {
+    let mut objects = scan.objects.iter().enumerate();
+    for _ in 0..objects.len() {
+        let (source_order, object) = ctx
+            .next_charged(&mut objects, "Rhino install traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino annotation source ended early"))?;
         let Some(object) = object.framed() else {
             continue;
         };
@@ -1206,6 +1207,49 @@ mod tests {
     use crate::wire::Uuid;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_test_support::{wire, EditableDecodeResult};
+
+    fn arrow_install_scan() -> crate::container::Scan<'static> {
+        let mut payload = vec![0x10];
+        for coordinate in [1.0_f64, 2.0, 3.0, -4.0, 5.0, -6.0] {
+            payload.extend(coordinate.to_le_bytes());
+        }
+        let object = object_record_with_payload(
+            ArchiveVersion::V5, 0x20, V2_ANNOTATION_ARROW.to_wire(), &payload,
+        );
+        scan_with_objects(&vec![object; 1024])
+    }
+
+    #[test]
+    fn annotation_install_first_arrow_refuses_before_unused_objects() {
+        let scan = arrow_install_scan();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        // One visited object reaches its native row; later objects are unused.
+        policy.limits.max_work_units = 1;
+        policy.limits.max_collection_items = 0;
+        let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, false);
+        let error = install(&ctx, &scan, &mut CadIr::empty()).map(drop).expect_err("first native arrow slot");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "Rhino native annotation arrows");
+        assert_eq!((limit.used, limit.additional), (0, 1));
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    }
+
+    #[test]
+    fn annotation_install_first_visit_preserves_original_refusal() {
+        let scan = arrow_install_scan();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, false);
+        let error = install(&ctx, &scan, &mut CadIr::empty()).map(drop).expect_err("first object visit");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "Rhino install traversal");
+        assert_eq!((limit.used, limit.additional), (0, 1));
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    }
 
     fn with_decode_context<R>(
         data: &[u8],
