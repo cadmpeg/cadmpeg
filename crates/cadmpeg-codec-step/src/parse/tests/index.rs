@@ -14,6 +14,7 @@ fn entity_index_is_not_part_of_exchange_equality() {
             indexed
                 .entities(ctx, "POINT")
                 .expect("indexed point traversal")
+                .map(|row| row.expect("indexed record lookup fits"))
                 .count(),
             1
         );
@@ -228,4 +229,36 @@ fn single_name_queries_do_not_reorder_the_indexed_records() {
     // Doubling the records permits twice the linear copy/visit work plus the
     // same name traversal. No reorder work is needed for one indexed list.
     assert!(matching_work(128) <= 2 * matching_work(64));
+}
+
+#[test]
+fn single_name_enumeration_needs_no_collection_or_materialized_storage() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#2=A();#1=A();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("valid indexed records");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    crate::test_support::with_policy_context(&[], &policy, |_, ctx| {
+        let ids = exchange.entities(ctx, "A").expect("borrowed index lookup")
+            .map(|row| row.expect("borrowed record lookup").0).collect::<Vec<_>>();
+        assert_eq!(ids, [1, 2]);
+    });
+}
+
+#[test]
+fn single_name_enumeration_admits_each_yield_before_lookup() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#2=A();#1=A();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("valid indexed records");
+    for operation in ["STEP indexed entity identifier traversal", "STEP indexed entity record lookup"] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                crate::test_support::with_policy_context(&[], &policy, |_, ctx| {
+                    exchange.entities(ctx, "A")?.collect::<Result<Vec<_>, _>>().map(|_| ())
+                })
+            });
+    }
 }

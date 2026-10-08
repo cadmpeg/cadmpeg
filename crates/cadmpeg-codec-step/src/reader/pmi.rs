@@ -89,7 +89,8 @@ pub(super) fn decode(
     let graph_limit = super::record_graph_limit(ctx);
     let characteristic_values =
         characteristic_values(exchange, geometry, &mut losses, graph_limit, ctx)?;
-    for (id, record) in exchange.entities(ctx, "DATUM")? {
+    for indexed_entity in exchange.entities(ctx, "DATUM")? {
+        let (id, record) = indexed_entity?;
         let identification = named_parameter(ctx, record, "DATUM", 0)?
             .map(|value| {
                 decode_text_charged(
@@ -198,7 +199,8 @@ pub(super) fn decode(
         ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
     }
 
-    for (id, record) in exchange.entities(ctx, "DATUM_SYSTEM")? {
+    for indexed_entity in exchange.entities(ctx, "DATUM_SYSTEM")? {
+        let (id, record) = indexed_entity?;
         let constituents = ctx
             .find_map(
                 record.parameters().iter().rev(),
@@ -428,7 +430,8 @@ pub(super) fn decode(
         ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
     }
 
-    for (id, record) in exchange.entities(ctx, "PLUS_MINUS_TOLERANCE")? {
+    for indexed_entity in exchange.entities(ctx, "PLUS_MINUS_TOLERANCE")? {
+        let (id, record) = indexed_entity?;
         let refs =
             collect_pmi_references(record.parameters(), ctx, "step_pmi_plus_minus_references")?;
         let dimension = ctx.find_map(
@@ -817,7 +820,8 @@ pub(super) fn decode(
         }
     }
 
-    for (id, record) in exchange.entities(ctx, "DRAUGHTING_MODEL_ITEM_ASSOCIATION")? {
+    for indexed_entity in exchange.entities(ctx, "DRAUGHTING_MODEL_ITEM_ASSOCIATION")? {
+        let (id, record) = indexed_entity?;
         let Some(definition) =
             named_parameter(ctx, record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 2)?
                 .and_then(ValueExt::reference)
@@ -1036,7 +1040,8 @@ fn mark_characteristic_representations(
     typed: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    for (id, record) in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
+    for indexed_entity in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
+        let (id, record) = indexed_entity?;
         let Some(_) = find_record_value(record, ctx, |value| {
             first_matching([value], ctx, |reference| {
                 Ok(annotations.get(reference).is_some())
@@ -1099,7 +1104,8 @@ fn resolve_feature_for_datum_target_relationships(
     typed: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    for (id, record) in exchange.entities(ctx, "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP")? {
+    for indexed_entity in exchange.entities(ctx, "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP")? {
+        let (id, record) = indexed_entity?;
         let Some((relating, related)) = relationship_endpoints(record, ctx)? else {
             continue;
         };
@@ -2330,7 +2336,8 @@ fn characteristic_values(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, PmiValue>, CodecError> {
     let mut result = BTreeMap::<u64, PmiValue>::new();
-    for (id, record) in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
+    for indexed_entity in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
+        let (id, record) = indexed_entity?;
         let mut measurements = measure_context(geometry, id, losses, graph_limit);
         let Some(characteristic) = find_record_value(record, ctx, |value| {
             first_matching([value], ctx, |id| {

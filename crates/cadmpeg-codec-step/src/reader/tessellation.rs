@@ -1214,7 +1214,8 @@ fn product_linked_representations<'a>(
 ) -> Result<(BTreeSet<u64>, ScopedReservation<'a>), CodecError> {
     let mut product_shape_definitions = BTreeSet::new();
     let mut definition_bytes = ctx.reserve_scoped(0, "step_tessellation_product_definitions")?;
-    for (id, record) in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
+    for indexed_entity in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
+        let (id, record) = indexed_entity?;
         if record.partial(ctx, "PRODUCT_DEFINITION_SHAPE")?.is_some() {
             ctx.insert_scoped_btree_value(
                 &mut definition_bytes,
@@ -1226,7 +1227,8 @@ fn product_linked_representations<'a>(
     }
     let mut linked = BTreeSet::new();
     let mut linked_bytes = ctx.reserve_scoped(0, "step_tessellation_product_representations")?;
-    for (_, record) in exchange.entities(ctx, "SHAPE_DEFINITION_REPRESENTATION")? {
+    for indexed_entity in exchange.entities(ctx, "SHAPE_DEFINITION_REPRESENTATION")? {
+        let (_, record) = indexed_entity?;
         let representation = record
             .partial(ctx, "SHAPE_DEFINITION_REPRESENTATION")?
             .and_then(|partial| {

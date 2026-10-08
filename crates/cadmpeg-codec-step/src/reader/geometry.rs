@@ -741,7 +741,8 @@ pub(super) fn decode(
             "step_geometry_ir_points",
         )?;
     }
-    for (id, record) in exchange.entities(ctx, "VECTOR")? {
+    for indexed_entity in exchange.entities(ctx, "VECTOR")? {
+        let (id, record) = indexed_entity?;
         if record.partial(ctx, "VECTOR")?.is_some() {
             let record_scale = unit_scales.length([id]).get();
             let value = named_parameter(ctx, record, "VECTOR", 1)?
@@ -828,7 +829,8 @@ pub(super) fn decode(
         }
     }
     let mut transformation_operators = BTreeMap::new();
-    for (id, record) in exchange.entities(ctx, "CARTESIAN_TRANSFORMATION_OPERATOR_3D")? {
+    for indexed_entity in exchange.entities(ctx, "CARTESIAN_TRANSFORMATION_OPERATOR_3D")? {
+        let (id, record) = indexed_entity?;
         if let Some(transform) =
             cartesian_transformation_operator(ctx, record, &points, &directions)?
         {
@@ -850,7 +852,8 @@ pub(super) fn decode(
         }
     }
     let mut transformation_operators2 = BTreeMap::new();
-    for (id, record) in exchange.entities(ctx, "CARTESIAN_TRANSFORMATION_OPERATOR_2D")? {
+    for indexed_entity in exchange.entities(ctx, "CARTESIAN_TRANSFORMATION_OPERATOR_2D")? {
+        let (id, record) = indexed_entity?;
         if let Some(transform) =
             cartesian_transformation_operator_2d(ctx, record, &points2, &directions2)?
         {
@@ -871,7 +874,8 @@ pub(super) fn decode(
             )?;
         }
     }
-    for (id, record) in exchange.entities(ctx, "AXIS2_PLACEMENT_2D")? {
+    for indexed_entity in exchange.entities(ctx, "AXIS2_PLACEMENT_2D")? {
+        let (id, record) = indexed_entity?;
         if record.partial(ctx, "AXIS2_PLACEMENT_2D")?.is_none() {
             continue;
         }
@@ -908,7 +912,8 @@ pub(super) fn decode(
     }
     let mut pcurve_geometries = BTreeMap::<u64, (PcurveGeometry, BTreeSet<u64>)>::new();
     let mut pcurve_geometry_records = BTreeSet::new();
-    for (_, record) in exchange.entities(ctx, "PCURVE")? {
+    for indexed_entity in exchange.entities(ctx, "PCURVE")? {
+        let (_, record) = indexed_entity?;
         if record.partial(ctx, "PCURVE")?.is_none() {
             continue;
         }
@@ -1129,7 +1134,8 @@ pub(super) fn decode(
             )?;
         }
     }
-    for (id, record) in exchange.entities(ctx, "B_SPLINE_CURVE_WITH_KNOTS")? {
+    for indexed_entity in exchange.entities(ctx, "B_SPLINE_CURVE_WITH_KNOTS")? {
+        let (id, record) = indexed_entity?;
         if record.partial(ctx, "B_SPLINE_CURVE_WITH_KNOTS")?.is_none()
             || record.simple_name() == Some("B_SPLINE_CURVE_WITH_KNOTS")
             || pcurve_geometry_records.contains(&id)
@@ -1616,7 +1622,8 @@ pub(super) fn decode(
             "step_deferred_curve_queue",
         )?;
     }
-    for (id, _) in exchange.entities(ctx, "CURVE_REPLICA")? {
+    for indexed_entity in exchange.entities(ctx, "CURVE_REPLICA")? {
+        let (id, _) = indexed_entity?;
         if !carrier_index.curves.contains_key(&id) {
             ctx.push_vec(
                 &mut losses,
@@ -1649,10 +1656,11 @@ pub(super) fn decode(
             )?;
         }
     }
-    for (id, _) in exchange
-        .entities(ctx, "TRIMMED_CURVE")?
-        .filter(|(id, _)| !pcurve_geometry_records.contains(id))
-    {
+    for indexed_entity in exchange.entities(ctx, "TRIMMED_CURVE")? {
+        let (id, _) = indexed_entity?;
+        if pcurve_geometry_records.contains(&id) {
+            continue;
+        }
         if !carrier_index.curves.contains_key(&id) {
             ctx.push_vec(
                 &mut losses,
@@ -1682,7 +1690,8 @@ pub(super) fn decode(
             )?;
         }
     }
-    for (id, _) in exchange.entities(ctx, "OFFSET_CURVE_3D")? {
+    for indexed_entity in exchange.entities(ctx, "OFFSET_CURVE_3D")? {
+        let (id, _) = indexed_entity?;
         if !carrier_index.curves.contains_key(&id) {
             ctx.push_vec(
                 &mut losses,
@@ -1990,7 +1999,8 @@ pub(super) fn decode(
             )?;
         }
     }
-    for (id, record) in exchange.entities(ctx, "B_SPLINE_SURFACE_WITH_KNOTS")? {
+    for indexed_entity in exchange.entities(ctx, "B_SPLINE_SURFACE_WITH_KNOTS")? {
+        let (id, record) = indexed_entity?;
         if record
             .partial(ctx, "B_SPLINE_SURFACE_WITH_KNOTS")?
             .is_none()
@@ -2495,7 +2505,8 @@ pub(super) fn decode(
             )?;
         }
     }
-    for (id, _) in exchange.entities(ctx, "SURFACE_REPLICA")? {
+    for indexed_entity in exchange.entities(ctx, "SURFACE_REPLICA")? {
+        let (id, _) = indexed_entity?;
         if !carrier_index.surfaces.contains_key(&id) {
             ctx.push_vec(
                 &mut losses,
@@ -2528,7 +2539,8 @@ pub(super) fn decode(
             )?;
         }
     }
-    for (id, _) in exchange.entities(ctx, "RECTANGULAR_TRIMMED_SURFACE")? {
+    for indexed_entity in exchange.entities(ctx, "RECTANGULAR_TRIMMED_SURFACE")? {
+        let (id, _) = indexed_entity?;
         if !carrier_index.surfaces.contains_key(&id) {
             ctx.push_vec(
                 &mut losses,
@@ -2539,7 +2551,8 @@ pub(super) fn decode(
             )?;
         }
     }
-    for (id, _) in exchange.entities(ctx, "CURVE_BOUNDED_SURFACE")? {
+    for indexed_entity in exchange.entities(ctx, "CURVE_BOUNDED_SURFACE")? {
+        let (id, _) = indexed_entity?;
         if !carrier_index.surfaces.contains_key(&id) {
             ctx.push_vec(
                 &mut losses,
@@ -2550,7 +2563,8 @@ pub(super) fn decode(
             )?;
         }
     }
-    for (id, _) in exchange.entities(ctx, "OFFSET_SURFACE")? {
+    for indexed_entity in exchange.entities(ctx, "OFFSET_SURFACE")? {
+        let (id, _) = indexed_entity?;
         if !carrier_index.surfaces.contains_key(&id) {
             ctx.push_vec(
                 &mut losses,
@@ -2562,10 +2576,8 @@ pub(super) fn decode(
         }
     }
 
-    for record in exchange
-        .entities(ctx, "EDGE_CURVE")?
-        .map(|(_, record)| record)
-    {
+    for indexed_entity in exchange.entities(ctx, "EDGE_CURVE")? {
+        let (_, record) = indexed_entity?;
         let Some(curve_step) = edge_curve_geometry_reference(ctx, record)?
             .map(|curve| curve_carrier_record(ctx, curve, exchange))
             .transpose()?
@@ -2715,7 +2727,8 @@ pub(super) fn decode(
             )?;
         }
     }
-    for (id, record) in exchange.entities(ctx, "PCURVE")? {
+    for indexed_entity in exchange.entities(ctx, "PCURVE")? {
+        let (id, record) = indexed_entity?;
         if record.partial(ctx, "PCURVE")?.is_none() {
             continue;
         }
@@ -2817,7 +2830,8 @@ pub(super) fn decode(
         })?;
     }
 
-    for (id, record) in exchange.entities(ctx, "DEGENERATE_TOROIDAL_SURFACE")? {
+    for indexed_entity in exchange.entities(ctx, "DEGENERATE_TOROIDAL_SURFACE")? {
+        let (id, record) = indexed_entity?;
         let Some(select_outer) = named_parameter(ctx, record, "DEGENERATE_TOROIDAL_SURFACE", 4)?
             .and_then(|value| logical_value(value).ok().flatten())
         else {
@@ -3283,7 +3297,8 @@ pub(super) fn associate_free_presentation_carriers(
             )?;
         }
     }
-    for (plane_id, plane) in exchange.entities(ctx, "ANNOTATION_PLANE")? {
+    for indexed_entity in exchange.entities(ctx, "ANNOTATION_PLANE")? {
+        let (plane_id, plane) = indexed_entity?;
         for partial in ctx.admit_iter(
             &(plane.partials)[..],
             "STEP associate free presentation carriers traversal",
@@ -3831,7 +3846,8 @@ pub(super) fn associate_topology_carriers(
     owned: &OwnedCarriers,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    for (edge_id, edge) in exchange.entities(ctx, "EDGE_CURVE")? {
+    for indexed_entity in exchange.entities(ctx, "EDGE_CURVE")? {
+        let (edge_id, edge) = indexed_entity?;
         let Some(curve_step) = edge_curve_geometry_reference(ctx, edge)?
             .map(|curve| curve_carrier_record(ctx, curve, exchange))
             .transpose()?
@@ -3866,7 +3882,8 @@ pub(super) fn associate_topology_carriers(
                 Some(super::step_source_association(ctx, face_id, None)?);
         }
     }
-    for (vertex_id, vertex) in exchange.entities(ctx, "VERTEX_POINT")? {
+    for indexed_entity in exchange.entities(ctx, "VERTEX_POINT")? {
+        let (vertex_id, vertex) = indexed_entity?;
         let Some(point_step) = vertex_point_reference(ctx, vertex)? else {
             continue;
         };
@@ -3896,7 +3913,8 @@ pub(super) fn associate_replica_bases(
     index: &CarrierIndex,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    for (replica_id, record) in exchange.entities(ctx, "CURVE_REPLICA")? {
+    for indexed_entity in exchange.entities(ctx, "CURVE_REPLICA")? {
+        let (replica_id, record) = indexed_entity?;
         let Some(parent_id) =
             named_parameter(ctx, record, "CURVE_REPLICA", 1)?.and_then(Value::reference)
         else {
@@ -3910,7 +3928,8 @@ pub(super) fn associate_replica_bases(
                 Some(super::step_source_association(ctx, replica_id, None)?);
         }
     }
-    for (replica_id, record) in exchange.entities(ctx, "SURFACE_REPLICA")? {
+    for indexed_entity in exchange.entities(ctx, "SURFACE_REPLICA")? {
+        let (replica_id, record) = indexed_entity?;
         let Some(parent_id) =
             named_parameter(ctx, record, "SURFACE_REPLICA", 1)?.and_then(Value::reference)
         else {
@@ -4001,7 +4020,8 @@ pub(super) fn associate_pcurve_supports(
         }
     }
 
-    for (pcurve_id, record) in exchange.entities(ctx, "PCURVE")? {
+    for indexed_entity in exchange.entities(ctx, "PCURVE")? {
+        let (pcurve_id, record) = indexed_entity?;
         let pcurve_identity = ids::data(kind!("pcurve"), pcurve_id);
         if !ctx.contains_btree_set(
             &owned_pcurves,
@@ -4081,7 +4101,8 @@ fn retained_surface_curve_ids(
 ) -> Result<BTreeSet<u64>, CodecError> {
     let mut retained = BTreeSet::new();
 
-    for (_, edge) in exchange.entities(ctx, "EDGE_CURVE")? {
+    for indexed_entity in exchange.entities(ctx, "EDGE_CURVE")? {
+        let (_, edge) = indexed_entity?;
         let Some(surface_curve) = edge_curve_geometry_reference(ctx, edge)? else {
             continue;
         };
@@ -4165,7 +4186,8 @@ fn retained_surface_curve_ids(
             }
         }
     }
-    for (_, plane) in exchange.entities(ctx, "ANNOTATION_PLANE")? {
+    for indexed_entity in exchange.entities(ctx, "ANNOTATION_PLANE")? {
+        let (_, plane) = indexed_entity?;
         for partial in ctx.admit_iter(
             &(plane.partials)[..],
             "STEP retained surface curve ids traversal",
@@ -4972,7 +4994,8 @@ fn linear_uncertainty(
 ) -> Result<LinearUncertainty, CodecError> {
     let mut candidates: Vec<PositiveLength> = Vec::new();
     let mut unresolved = 0;
-    for (_, context) in exchange.entities(ctx, "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")? {
+    for indexed_entity in exchange.entities(ctx, "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")? {
+        let (_, context) = indexed_entity?;
         let (context_candidates, context_unresolved) =
             context_length_uncertainties(context, exchange, ctx)?;
         unresolved += context_unresolved;

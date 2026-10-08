@@ -197,7 +197,8 @@ pub(super) fn decode(
     let mut definition_prototypes = BTreeMap::<u64, ProductDefinitionId>::new();
     let mut product_definition_ids_by_source = BTreeMap::<u64, Vec<ProductDefinitionId>>::new();
 
-    for (step_id, record) in exchange.entities(ctx, "PRODUCT")? {
+    for indexed_entity in exchange.entities(ctx, "PRODUCT")? {
+        let (step_id, record) = indexed_entity?;
         let Some(parameters) = record
             .partial(ctx, "PRODUCT")?
             .map(|partial| partial.parameters.as_slice())
@@ -419,7 +420,8 @@ pub(super) fn decode(
         ctx.insert_btree_set(&mut typed, step_id, "step_product_typed_claims")?;
     }
     let mut product_definition_ids_by_shape = BTreeMap::new();
-    for (shape_id, record) in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
+    for indexed_entity in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
+        let (shape_id, record) = indexed_entity?;
         let Some(prototype) = named_parameter(ctx, record, "PRODUCT_DEFINITION_SHAPE", 2)?
             .and_then(ValueExt::reference)
             .and_then(|definition| definition_prototypes.get(&definition))
@@ -448,7 +450,8 @@ pub(super) fn decode(
     }
 
     let mut usages = BTreeMap::new();
-    for (id, record) in exchange.entities(ctx, "NEXT_ASSEMBLY_USAGE_OCCURRENCE")? {
+    for indexed_entity in exchange.entities(ctx, "NEXT_ASSEMBLY_USAGE_OCCURRENCE")? {
+        let (id, record) = indexed_entity?;
         let name = named_parameter(ctx, record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 1)?
             .map(|value| {
                 decode_text_charged(
@@ -899,7 +902,8 @@ fn apply_body_placements(
         usages,
     } = sources;
     let mut pds = BTreeMap::new();
-    for (id, record) in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
+    for indexed_entity in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
+        let (id, record) = indexed_entity?;
         if let Some(definition) = named_parameter(ctx, record, "PRODUCT_DEFINITION_SHAPE", 2)?
             .and_then(ValueExt::reference)
         {
@@ -942,7 +946,8 @@ fn apply_body_placements(
     let mut representation_cache = BTreeMap::new();
     let mut placements_by_body = BTreeMap::<BodyId, Vec<(u64, Transform)>>::new();
     let drawing_owned_items = drawing_owned_items(exchange, ctx)?;
-    for (id, item) in exchange.entities(ctx, "MAPPED_ITEM")? {
+    for indexed_entity in exchange.entities(ctx, "MAPPED_ITEM")? {
+        let (id, item) = indexed_entity?;
         if item.partial(ctx, "MAPPED_ITEM")?.is_none() {
             continue;
         }
@@ -1131,7 +1136,8 @@ fn shape_bindings(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Vec<BodyId>>, CodecError> {
     let mut pds = BTreeMap::new();
-    for (id, record) in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
+    for indexed_entity in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
+        let (id, record) = indexed_entity?;
         if let Some(definition) = named_parameter(ctx, record, "PRODUCT_DEFINITION_SHAPE", 2)?
             .and_then(ValueExt::reference)
         {
@@ -1208,7 +1214,8 @@ fn definition_representations(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, BTreeSet<u64>>, CodecError> {
     let mut result = BTreeMap::<u64, BTreeSet<u64>>::new();
-    for (_, record) in exchange.entities(ctx, "SHAPE_DEFINITION_REPRESENTATION")? {
+    for indexed_entity in exchange.entities(ctx, "SHAPE_DEFINITION_REPRESENTATION")? {
+        let (_, record) = indexed_entity?;
         let Some(shape) = named_parameter(ctx, record, "SHAPE_DEFINITION_REPRESENTATION", 0)?
             .and_then(ValueExt::reference)
         else {
@@ -1281,7 +1288,8 @@ fn occurrence_placements(
     }
     let mut result = BTreeMap::new();
     let mut context_candidates = BTreeMap::<u64, Vec<u64>>::new();
-    for (record_id, record) in exchange.entities(ctx, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")? {
+    for indexed_entity in exchange.entities(ctx, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")? {
+        let (record_id, record) = indexed_entity?;
         match occurrence_placement(
             ctx,
             record,
@@ -1347,7 +1355,8 @@ fn occurrence_placements(
         }
     }
     let mut occurrence_representations = BTreeMap::<u64, Vec<(u64, u64)>>::new();
-    for (record_id, record) in exchange.entities(ctx, "SHAPE_DEFINITION_REPRESENTATION")? {
+    for indexed_entity in exchange.entities(ctx, "SHAPE_DEFINITION_REPRESENTATION")? {
+        let (record_id, record) = indexed_entity?;
         let Some(shape) = named_parameter(ctx, record, "SHAPE_DEFINITION_REPRESENTATION", 0)?
             .and_then(ValueExt::reference)
         else {

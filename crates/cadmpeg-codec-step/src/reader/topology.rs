@@ -499,7 +499,8 @@ pub(super) fn decode(
     let oriented = oriented_defs(exchange, ctx)?;
     let shells = shell_defs(exchange, ctx)?;
     let point_positions = carrier_index;
-    for (vertex_id, vertex) in exchange.entities(ctx, "VERTEX_POINT")? {
+    for indexed_entity in exchange.entities(ctx, "VERTEX_POINT")? {
+        let (vertex_id, vertex) = indexed_entity?;
         let Some(point_id) = named_reference(ctx, vertex, "VERTEX_POINT", 1, 0)? else {
             ctx.push_vec(
                 &mut losses,
@@ -619,7 +620,8 @@ pub(super) fn decode(
             }
         }
     }
-    for (model, record) in exchange.entities(ctx, "SHELL_BASED_WIREFRAME_MODEL")? {
+    for indexed_entity in exchange.entities(ctx, "SHELL_BASED_WIREFRAME_MODEL")? {
+        let (model, record) = indexed_entity?;
         let scope_root = ctx.any_by(
             named_reference_values(ctx, record, "SHELL_BASED_WIREFRAME_MODEL", 1)?
                 .unwrap_or_default(),
@@ -921,9 +923,10 @@ pub(super) fn decode(
     if let Some(note) = pcurve_admission_note(&admissions, ctx)? {
         ctx.push_vec(&mut result.losses, note, "step_topology_losses")?;
     }
-    for (id, record) in
+    for indexed_entity in
         exchange.entities(ctx, "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION")?
     {
+        let (id, record) = indexed_entity?;
         let omitted = geometric_set_omissions(record, exchange, carrier_index, ctx)?;
         if !omitted.is_empty() {
             let note = geometric_set_omission_message(
@@ -2215,7 +2218,8 @@ fn vertex_defs(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, VertexDef>, CodecError> {
     let mut vertices = BTreeMap::new();
-    for (id, record) in exchange.entities(ctx, "VERTEX_POINT")? {
+    for indexed_entity in exchange.entities(ctx, "VERTEX_POINT")? {
+        let (id, record) = indexed_entity?;
         let Some(point) = named_reference(ctx, record, "VERTEX_POINT", 1, 0)? else {
             continue;
         };
