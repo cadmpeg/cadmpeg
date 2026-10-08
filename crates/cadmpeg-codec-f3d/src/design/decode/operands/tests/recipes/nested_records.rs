@@ -335,7 +335,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     edge_operand.terminal_reference_edge_slots.clear();
     edge_operand.resolved_edge_slot = Some(17);
     assert_eq!(
-        crate::design::edge_resolve::resolved_edge_operand(&edge_operand),
+        crate::test_support::with_decode_context(|ctx| crate::design::edge_resolve::resolved_edge_operand(&edge_operand, ctx)).unwrap(),
         None
     );
     edge_operand.resolved_edge_slot = None;

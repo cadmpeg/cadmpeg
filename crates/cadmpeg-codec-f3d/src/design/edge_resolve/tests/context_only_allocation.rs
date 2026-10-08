@@ -12,7 +12,7 @@ fn context_only_edge_candidate_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::edge_resolve::context_only_edge_group_candidates(
-            [(Some(17), &[17][..])], &ctx),
+            [(Some(17), &[17][..])].into_iter().map(Ok), &ctx),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d context-only edge candidate"
     ));

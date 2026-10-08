@@ -248,3 +248,52 @@ fn work_point_historical_edge_operand_id_refuses_retained_limit() {
         operand.id.len(),
     );
 }
+
+#[test]
+fn work_point_without_recipe_state_skips_terminal_edge_proof() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_ir::features::{DatumPointConstruction, EdgeSelection};
+
+    let side = |scalars: [i32; 2]| {
+        serde_json::from_value(serde_json::json!({
+            "field_count": 3, "header_value": 0, "scalars": scalars,
+            "payload_prefix": [0], "payload_entry_count": 0, "entries": []
+        })).unwrap()
+    };
+    let mut operand = edge_operand(false);
+    operand.recipe_structure = Some(crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+        root: 2, sides: vec![side([2, 1]), side([1, 3])],
+    });
+    operand.terminal_reference_edge_slots = vec![vec![25], vec![25], vec![35]];
+    operand.terminal_boundary_edge_slots = vec![25];
+    let construction = construction(DesignWorkPointRuleForm::CircleCenter {
+        input: input(42, DesignWorkPointInputCarrier::EdgeRecipe { operand_id: operand.id.clone() }),
+    });
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    for operation in ["scan F3D terminal reference edges", "find F3D terminal shared reference edge"] {
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let scope = scope();
+            let project = |operand: &DesignEdgeOperand| {
+                super::super::project_work_point_construction(ctx, &scope, &construction, &[], std::slice::from_ref(operand), &HashMap::new())
+            };
+            operand.recipe_state_id = Some(4);
+            let Some(DatumPointConstruction::CircleCenter { edge: EdgeSelection::Historical { state, edges, native } }) = project(&operand).unwrap() else { panic!("historical circle center"); };
+            let feature = crate::ids::neutral_feature_id(&scope);
+            let prefix = crate::ids::history_input_prefix(&feature.key(), 4);
+            assert_eq!(state, crate::ids::feature_input_topology_id(&feature, 4));
+            assert_eq!(edges.as_slice(), &[crate::ids::history_input_edge_id(&prefix, 25)]);
+            assert_eq!(native.as_str(), operand.id);
+
+            let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+            operand.recipe_state_id = None;
+            assert!(matches!(project(&operand).unwrap(), Some(DatumPointConstruction::CircleCenter { edge: EdgeSelection::Native(native) }) if native == operand.id));
+            operand.recipe_state_id = Some(4);
+            let CodecError::ResourceLimit(original) = project(&operand).unwrap_err() else { panic!("terminal proof refusal"); };
+            assert_eq!(original.operation, operation);
+            operand.recipe_state_id = None;
+            let CodecError::ResourceLimit(sticky) = project(&operand).unwrap_err() else { panic!("sticky projection refusal"); };
+            assert_eq!(sticky, original);
+        });
+    }
+}

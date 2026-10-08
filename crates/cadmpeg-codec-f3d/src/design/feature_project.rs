@@ -2056,9 +2056,12 @@ fn project_work_point_construction(
         let Some(operand) = work_point_edge_operand(scope, input, edge_operands) else {
             return Ok(None);
         };
-        let Some((state_id, edge_slot)) = operand
-            .recipe_state_id
-            .zip(crate::design::edge_resolve::resolved_edge_operand(operand))
+        let resolved = match operand.recipe_state_id {
+            Some(state_id) => crate::design::edge_resolve::resolved_edge_operand(operand, ctx)?
+                .map(|edge_slot| (state_id, edge_slot)),
+            None => None,
+        };
+        let Some((state_id, edge_slot)) = resolved
         else {
             return Ok(Some(EdgeSelection::Native(ctx.copy_retained_text(
                 &operand.id,
