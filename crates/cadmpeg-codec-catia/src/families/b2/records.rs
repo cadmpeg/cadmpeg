@@ -1216,7 +1216,12 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
         return Ok(None);
     };
     let mut edges = [first, second, third, fourth];
-    edges.sort_unstable_by_key(|edge| edge.slot);
+    // Five compare/swap steps order the fixed four-edge boundary.
+    for (left, right) in [(0, 1), (2, 3), (0, 2), (1, 3), (1, 2)] {
+        if edges[left].slot > edges[right].slot {
+            edges.swap(left, right);
+        }
+    }
     if edges.windows(2).any(|pair| pair[0].slot == pair[1].slot)
         || edges
             .iter()
@@ -1225,7 +1230,7 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
         return Ok(None);
     }
 
-    let mut edge_keys = edges.map(|edge| {
+    let edge_keys = edges.map(|edge| {
         let [start, end] = edge.endpoint_records;
         if start < end {
             [start, end]
@@ -1233,8 +1238,8 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
             [end, start]
         }
     });
-    edge_keys.sort_unstable();
-    if edge_keys.windows(2).any(|pair| pair[0] == pair[1]) {
+    let [a, b, c, d] = edge_keys;
+    if a == b || a == c || a == d || b == c || b == d || c == d {
         return Ok(None);
     }
     let mut vertices = [
@@ -1247,7 +1252,18 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
         edges[3].endpoint_records[0],
         edges[3].endpoint_records[1],
     ];
-    vertices.sort_unstable();
+    // The endpoint lane has exactly eight entries.
+    for (left, right) in [
+        (0, 1), (2, 3), (4, 5), (6, 7),
+        (0, 2), (1, 3), (4, 6), (5, 7),
+        (1, 2), (5, 6), (0, 4), (3, 7),
+        (1, 5), (2, 6), (1, 4), (3, 6),
+        (2, 4), (3, 5), (3, 4),
+    ] {
+        if vertices[left] > vertices[right] {
+            vertices.swap(left, right);
+        }
+    }
     Ok((vertices[0] == vertices[1]
         && vertices[1] != vertices[2]
         && vertices[2] == vertices[3]
