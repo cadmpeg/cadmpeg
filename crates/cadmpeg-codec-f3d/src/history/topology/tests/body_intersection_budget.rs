@@ -19,7 +19,8 @@ fn intersection_error(max_items: u64) -> cadmpeg_core::CodecError {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bodies_intersecting(&ctx, &simple_topology(), &BTreeSet::from([1])).unwrap_err()
+    crate::history::topology::bodies_intersecting(&ctx, &simple_topology(), &BTreeSet::from([1]))
+        .unwrap_err()
 }
 
 #[test]
@@ -32,21 +33,60 @@ fn historical_relation_index_refuses_collection_limit() {
 }
 
 #[test]
-fn historical_body_closure_refuses_collection_limit() {
-    let error = intersection_error(1);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D historical body closure")
+fn affected_topology_bodies_refuse_collection_limit() {
+    let operation = "collect F3D affected topology bodies";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| {
+            crate::history::topology::bodies_intersecting(
+                ctx,
+                &simple_topology(),
+                &std::collections::BTreeSet::from([1]),
+            )
+            .map(|_| ())
+        },
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]
-fn affected_topology_bodies_refuse_collection_limit() {
-    let error = intersection_error(2);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D affected topology bodies")
+fn body_closure_owners_refuse_collection_limit() {
+    let operation = "index F3D body closure owners";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| crate::history::topology::body_closures(ctx, &wire_topology(true)).map(|_| ()),
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn body_closure_queries_match_direct_intersection() {
+    let topology = wire_topology(true);
+    for changed in [
+        std::collections::BTreeSet::from([9]),
+        std::collections::BTreeSet::from([29]),
+        std::collections::BTreeSet::from([99]),
+    ] {
+        let (direct, indexed) = crate::test_support::with_decode_context(|ctx| {
+            let direct =
+                crate::history::topology::bodies_intersecting(ctx, &topology, &changed).unwrap();
+            let closures = crate::history::topology::body_closures(ctx, &topology).unwrap();
+            let indexed =
+                crate::history::topology::closures_intersecting(ctx, &closures, &changed).unwrap();
+            (direct, indexed)
+        });
+        assert_eq!(direct, indexed);
+    }
 }
 
 fn index_error(
@@ -57,8 +97,12 @@ fn index_error(
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bodies_intersecting(&ctx, topology, &std::collections::BTreeSet::new())
-        .unwrap_err()
+    crate::history::topology::bodies_intersecting(
+        &ctx,
+        topology,
+        &std::collections::BTreeSet::new(),
+    )
+    .unwrap_err()
 }
 
 #[test]
@@ -163,47 +207,6 @@ fn wire_topology(free_vertex: bool) -> crate::history_records::AsmHistoricalTopo
     }
 }
 
-fn wire_error(max_items: u64, free_vertex: bool) -> cadmpeg_core::CodecError {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bodies_intersecting(
-        &ctx,
-        &wire_topology(free_vertex),
-        &std::collections::BTreeSet::from([1]),
-    )
-    .unwrap_err()
-}
-
-#[test]
-fn historical_shell_edges_refuse_collection_limit() {
-    let error = wire_error(11, false);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D historical shell edges")
-    );
-}
-
-#[test]
-fn historical_shell_vertices_refuse_collection_limit() {
-    let error = wire_error(12, true);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D historical shell vertices")
-    );
-}
-
-#[test]
-fn historical_edge_vertices_refuse_collection_limit() {
-    let error = wire_error(13, false);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D historical shell vertices")
-    );
-}
-
 #[test]
 fn historical_body_closure_disjointness_refuses_work() {
     let topology = wire_topology(false);
@@ -213,7 +216,7 @@ fn historical_body_closure_disjointness_refuses_work() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         operation,
         0,
-        |ctx| super::super::bodies_intersecting(ctx, &topology, &changed).map(|_| ()),
+        |ctx| crate::history::topology::bodies_intersecting(ctx, &topology, &changed).map(|_| ()),
     );
     assert!(matches!(
         error,
@@ -277,7 +280,7 @@ fn body_hierarchy_scan_error(operation: &'static str) -> cadmpeg_core::CodecErro
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         operation,
         0,
-        |ctx| super::super::bodies_intersecting(ctx, &topology, &changed).map(|_| ()),
+        |ctx| crate::history::topology::bodies_intersecting(ctx, &topology, &changed).map(|_| ()),
     )
 }
 
@@ -344,7 +347,14 @@ fn historical_shell_edge_scan_refuses_work() {
 #[test]
 fn historical_shell_vertex_scan_refuses_work() {
     let operation = "scan F3D historical shell vertices";
-    let error = body_hierarchy_scan_error(operation);
+    let topology = wire_topology(true);
+    let changed = std::collections::BTreeSet::from([99]);
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| crate::history::topology::bodies_intersecting(ctx, &topology, &changed).map(|_| ()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == operation)
@@ -368,12 +378,51 @@ fn historical_treatment_carrier_face_scan_refuses_work() {
         operation,
         0,
         |ctx| {
-            super::super::treatment_edge_candidates(ctx, None, &[], &result, &preceding, &[])
-                .map(|_| ())
+            crate::history::topology::treatment_edge_candidates::<true>(
+                ctx,
+                None,
+                &[],
+                &result,
+                &preceding,
+                &[],
+            )
+            .map(|_| ())
         },
     );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn incomplete_body_closure_releases_owner_prefix_storage() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let topology = crate::history_records::AsmHistoricalTopology {
+        bodies: vec![1],
+        ..Default::default()
+    };
+    let operation = "measure F3D incomplete closure storage";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::MaterializedBytes,
+        operation,
+        0,
+        |ctx| {
+            let closures = crate::history::topology::body_closures(ctx, &topology)?;
+            assert!(crate::history::topology::closures_intersecting(
+                ctx,
+                &closures,
+                &std::collections::BTreeSet::from([1]),
+            )?
+            .is_none());
+            let result = ctx.reserve_scoped(u64::MAX, operation).map(|_| ());
+            drop(closures);
+            result
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == 0
     ));
 }

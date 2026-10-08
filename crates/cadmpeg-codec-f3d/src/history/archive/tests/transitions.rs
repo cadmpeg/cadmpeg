@@ -3,7 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::history::historical_transition;
+use crate::history::archive::historical_transition;
 use crate::history_records::{AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology};
 
 #[test]
@@ -50,9 +50,7 @@ fn historical_transition_source_scans_refuse_work() {
     for operation in [
         "scan F3D current transition version keys",
         "scan F3D previous transition version keys",
-        "scan F3D inserted transition entities",
-        "scan F3D deleted transition entities",
-        "scan F3D shared transition entities",
+        "merge F3D transition entities",
     ] {
         let error = refuse(operation);
         assert!(matches!(
@@ -84,7 +82,7 @@ fn historical_transition_source_scans_refuse_work() {
         0,
         |ctx| {
             let mut states = vec![state(11, &[(1, 10)])];
-            super::super::bind_historical_transitions(ctx, &mut states)
+            crate::history::archive::bind_historical_transitions(ctx, &mut states)
         },
     );
     assert!(matches!(

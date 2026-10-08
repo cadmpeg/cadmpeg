@@ -301,3 +301,38 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             && native.as_slice() == [groups[0].id.clone()]
     ));
 }
+
+#[test]
+fn unresolved_profile_groups_need_no_retained_storage() {
+    let scope = crate::records::feature::scope::DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#42",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        42,
+    );
+    let group = serde_json::from_value(serde_json::json!({
+        "id": "f3d:Design/BulkStream.dat:group#100", "scope_record_index": 42,
+        "scope_reference_ordinal": 0, "record_index": 100, "byte_offset": 0,
+        "class_tag": "267", "members": [200], "member_offsets": [0],
+        "frame": {"member_count_offset": 0, "opaque_index": 1,
+            "opaque_index_offset": 18, "opaque_scalar": 0.0,
+            "opaque_scalar_offset": 22, "variant": false},
+        "role": 279_172_874_240_u64, "extrude_role": "profile", "role_offset": 0,
+        "paired_class_tag": "260", "paired_byte_offset": 0
+    }))
+    .unwrap();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    bind_profile_face_group_cardinality(
+        &ctx,
+        &mut [],
+        std::slice::from_ref(&scope),
+        std::slice::from_ref(&group),
+        &[],
+        &HashMap::new(),
+    )
+    .unwrap();
+    assert_eq!(ctx.resource_refusal(), None);
+}

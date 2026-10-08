@@ -12,7 +12,13 @@ fn feature() -> cadmpeg_ir::features::FeatureId {
 fn combine_historical_rows_preserve_exact_zip_output() {
     let feature = feature();
     let rows = crate::test_support::with_decode_context(|ctx| {
-        combine_historical_rows(ctx, &feature, 1, vec![2, 3], vec!["native".into()])
+        combine_historical_rows(
+            ctx,
+            &feature,
+            1,
+            vec![2, 3],
+            vec!["native".into()].into_iter().map(Ok),
+        )
     })
     .unwrap();
     assert_eq!(
@@ -34,7 +40,7 @@ fn combine_historical_rows_keep_blank_member_short_circuit() {
             &feature,
             1,
             vec![2, 3],
-            vec![String::new(), "native".into()],
+            vec![String::new(), "native".into()].into_iter().map(Ok),
         )
     })
     .unwrap();
@@ -49,7 +55,16 @@ fn combine_historical_rows_refuse_collection_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         operation,
         0,
-        |ctx| combine_historical_rows(ctx, &feature, 1, vec![2], vec!["native".into()]).map(|_| ()),
+        |ctx| {
+            combine_historical_rows(
+                ctx,
+                &feature,
+                1,
+                vec![2],
+                vec!["native".into()].into_iter().map(Ok),
+            )
+            .map(|_| ())
+        },
     );
     assert!(matches!(
         error,
@@ -65,10 +80,32 @@ fn combine_historical_rows_propagate_member_work_refusal() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         operation,
         0,
-        |ctx| combine_historical_rows(ctx, &feature, 1, vec![2], vec!["native".into()]).map(|_| ()),
+        |ctx| {
+            combine_historical_rows(
+                ctx,
+                &feature,
+                1,
+                vec![2],
+                vec!["native".into()].into_iter().map(Ok),
+            )
+            .map(|_| ())
+        },
     );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
+}
+
+#[test]
+fn rejected_combine_row_skips_native_identity_tail() {
+    let feature = feature();
+    let native = std::iter::once(Ok(String::new())).chain(std::iter::once_with(|| {
+        panic!("rejected row must not encode the next native identity")
+    }));
+    let rows = crate::test_support::with_decode_context(|ctx| {
+        combine_historical_rows(ctx, &feature, 1, vec![2, 3], native)
+    })
+    .unwrap();
+    assert_eq!(rows, None);
 }

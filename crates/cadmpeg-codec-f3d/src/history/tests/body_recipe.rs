@@ -2,8 +2,8 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::history::{
-    bind_direct_body_recipe_body_selection, unique_external_body_candidate,
-    FeatureBodySelectionInputs,
+    bind_direct_body_recipe_body_selection, external_bodies, unique_external_body_candidate,
+    BodySelectionIndex, FeatureBodySelectionInputs,
 };
 
 #[test]
@@ -98,16 +98,10 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     )
     .unwrap();
 
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let external = external_bodies(&ctx, &bodies, &regions, &shells).unwrap();
     assert_eq!(
-        unique_external_body_candidate(
-            &cadmpeg_test_support::service_decode_context(),
-            &operand,
-            None,
-            &bodies,
-            &regions,
-            &shells
-        )
-        .unwrap(),
+        unique_external_body_candidate(&ctx, &operand, None, &external).unwrap(),
         None
     );
 
@@ -130,10 +124,10 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     };
     let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
     bind_direct_body_recipe_body_selection(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &mut selection,
         &scope,
-        &inputs,
+        &BodySelectionIndex::new(&inputs),
     )
     .unwrap();
     assert_eq!(

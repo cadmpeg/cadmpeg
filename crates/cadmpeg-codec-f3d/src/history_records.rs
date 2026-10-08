@@ -15,6 +15,7 @@ pub(crate) struct AsmPreamble {
 }
 
 impl DecodeCost for AsmPreamble {
+    const FIXED_BYTES: Option<u64> = <[i64; 2] as DecodeCost>::FIXED_BYTES;
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -34,8 +35,7 @@ pub(crate) struct AsmHistory {
     pub(crate) id: String,
     pub(crate) byte_offset: u64,
     pub(crate) preamble: Option<AsmPreamble>,
-    /// True when historical topology binding was not attempted because its
-    /// state-by-record work estimate exceeded the decoder safety budget.
+    /// True when complete historical topology binding is marked as budget-limited.
     pub(crate) record_table_binding_budget_exceeded: bool,
     pub(crate) states: Vec<AsmDeltaState>,
 }
@@ -444,6 +444,7 @@ pub(crate) struct AsmEntityVersion {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for AsmEntityVersion {
+    const FIXED_BYTES: Option<u64> = <[i64; 2] as DecodeCost>::FIXED_BYTES;
     fn decode_cost(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -1477,6 +1478,49 @@ impl From<AsmEntityChange> for AsmEntityChangeSerde {
 #[cfg(test)]
 mod tests {
     use super::{AsmDeltaState, AsmHistoricalTopology, AsmTopologyCache};
+
+    #[test]
+    fn scalar_history_records_measure_slices_without_traversal() {
+        use cadmpeg_core::decode::{cost::DecodeCost, DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let preambles = [
+            super::AsmPreamble {
+                stream_size: 9,
+                history_entry_count: 2,
+            },
+            super::AsmPreamble {
+                stream_size: 37,
+                history_entry_count: 5,
+            },
+        ];
+        let versions = [
+            super::AsmEntityVersion {
+                entity_ref: 7,
+                record_ref: 11,
+            },
+            super::AsmEntityVersion {
+                entity_ref: 17,
+                record_ref: 19,
+            },
+        ];
+        assert_eq!(
+            preambles
+                .as_slice()
+                .decode_cost(&ctx, "measure scalar preambles")
+                .unwrap(),
+            32
+        );
+        assert_eq!(
+            versions
+                .as_slice()
+                .decode_cost(&ctx, "measure scalar versions")
+                .unwrap(),
+            32
+        );
+    }
 
     #[test]
     fn asm_history_decode_cost_counts_owned_children() {

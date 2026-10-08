@@ -57,7 +57,8 @@ fn select(
     policy.limits.max_collection_items = max_items;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::vertex_recipe_candidate(&ctx, &recipe, &topology)
+    let index = super::super::topology::boundary_vertex_index(&ctx, &topology)?;
+    super::super::vertex_recipe_candidate(&ctx, &recipe, &topology, &index)
 }
 
 fn bind_input_states(
@@ -119,7 +120,11 @@ fn bind_input_states(
 
 #[test]
 fn vertex_recipe_candidate_faces_refuse_collection_limit() {
-    let error = select(0).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D vertex recipe candidate faces",
+        select,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D vertex recipe candidate faces")
@@ -128,7 +133,11 @@ fn vertex_recipe_candidate_faces_refuse_collection_limit() {
 
 #[test]
 fn vertex_recipe_face_slots_refuse_collection_limit() {
-    let error = select(1).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D vertex recipe face slots",
+        select,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D vertex recipe face slots")
@@ -136,21 +145,12 @@ fn vertex_recipe_face_slots_refuse_collection_limit() {
 }
 
 #[test]
-fn vertex_recipe_scope_id_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "copy F3D vertex recipe scope identity",
-        |cap| bind_input_states(u64::MAX, cap),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D vertex recipe scope identity")
-    );
-}
-
-#[test]
 fn vertex_recipe_input_states_refuse_collection_limit() {
-    let error = bind_input_states(12, u64::MAX).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D vertex recipe input states",
+        |cap| bind_input_states(cap, u64::MAX),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D vertex recipe input states")

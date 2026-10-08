@@ -98,21 +98,3 @@ fn grouped_reference_topology_membership_refuses_work_limit() {
         cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
 }
-
-#[test]
-fn grouped_reference_changed_membership_refuses_work_limit() {
-    let operation = "check F3D grouped changed face membership";
-    assert!(matches!(
-        refusal(operation, HashSet::from([10])),
-        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
-    ));
-}
-
-#[test]
-fn grouped_reference_candidate_comparison_refuses_work_limit() {
-    let operation = "compare F3D grouped recipe candidate faces";
-    assert!(matches!(
-        refusal(operation, HashSet::from([10, 20])),
-        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
-    ));
-}

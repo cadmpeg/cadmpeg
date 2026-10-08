@@ -551,14 +551,12 @@ fn historical_loop_plane_refuses_collection_limit() {
         }],
         ..Default::default()
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = historical_loop_plane(&ctx, 5, &topology)
-        .err()
-        .expect("limit refusal");
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D loop mirror planes",
+        0,
+        |ctx| historical_loop_plane(ctx, 5, &topology),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D loop mirror planes")
@@ -772,5 +770,48 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
         ))
         .unwrap()
         .is_none()
+    );
+}
+
+#[test]
+fn mirror_plane_candidates_need_no_retained_storage() {
+    let (mut scope, group, operand, mut history) = mirror_selection_comparison_fixture();
+    let origin = cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0);
+    let normal = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
+    history.states[1].topology_cache =
+        crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology {
+            faces: vec![10],
+            face_surfaces: vec![AsmHistoricalCarrierBinding {
+                entity: 10,
+                carrier: 20,
+            }],
+            surface_planes: vec![crate::history_records::AsmHistoricalPlane {
+                surface: 20,
+                origin,
+                normal,
+            }],
+            ..Default::default()
+        });
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    bind_mirror_selection_planes(
+        &ctx,
+        std::slice::from_mut(&mut scope),
+        std::slice::from_ref(&group),
+        std::slice::from_ref(&operand),
+        &[],
+        &[],
+        std::slice::from_ref(&history),
+    )
+    .unwrap();
+    assert_eq!(
+        scope.mirror_construction().unwrap().plane,
+        crate::records::feature::patterns::DesignPlane::from_parts(
+            cadmpeg_ir::features::FinitePoint3::new(origin).unwrap(),
+            cadmpeg_ir::features::FiniteVector3::new(normal).unwrap()
+        )
     );
 }
