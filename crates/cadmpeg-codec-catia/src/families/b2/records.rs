@@ -1216,7 +1216,12 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
         return Ok(None);
     };
     let mut edges = [first, second, third, fourth];
-    edges.sort_unstable_by_key(|edge| edge.slot);
+    ctx.sort_unstable_by_key(
+        &mut edges,
+        |edge| edge.slot,
+        Ord::cmp,
+        "catia_b2_owner_boundary_edge_sort",
+    )?;
     if edges.windows(2).any(|pair| pair[0].slot == pair[1].slot)
         || edges
             .iter()
@@ -1233,7 +1238,12 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
             [end, start]
         }
     });
-    edge_keys.sort_unstable();
+    ctx.sort_unstable_by_key(
+        &mut edge_keys,
+        |edge| *edge,
+        Ord::cmp,
+        "catia_b2_owner_boundary_key_sort",
+    )?;
     if edge_keys.windows(2).any(|pair| pair[0] == pair[1]) {
         return Ok(None);
     }
@@ -1247,7 +1257,12 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
         edges[3].endpoint_records[0],
         edges[3].endpoint_records[1],
     ];
-    vertices.sort_unstable();
+    ctx.sort_unstable_by_key(
+        &mut vertices,
+        |vertex| *vertex,
+        Ord::cmp,
+        "catia_b2_owner_boundary_vertex_sort",
+    )?;
     Ok((vertices[0] == vertices[1]
         && vertices[1] != vertices[2]
         && vertices[2] == vertices[3]
