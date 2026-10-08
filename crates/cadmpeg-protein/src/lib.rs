@@ -440,6 +440,7 @@ where
                     admission.format_text(format_args!("Protein schema {name} has no UID"), "Protein malformed detail").map(CodecError::Malformed).unwrap_or_else(Into::into)
                 })?;
             let mut schema = Schema::default();
+            let mut base = None;
             let mut children = root.children();
             while let Some(node) = admission.next(&mut children, "Protein schema child scan")? {
                 if !node.is_element() {
@@ -449,9 +450,7 @@ where
                     if let Some(value) =
                         admission.xml_attribute(node, "val", "Protein schema base search")?
                     {
-                        schema.base = Some(admission.scoped(storage, || {
-                            Ok(admission.copy_text(value, "Protein schema base name")?)
-                        })?);
+                        base = Some(value);
                     }
                     continue;
                 }
@@ -480,6 +479,11 @@ where
                     ), "Protein malformed detail").map(CodecError::Malformed).unwrap_or_else(Into::into));
                 }
             }
+            schema.base = base
+                .map(|value| admission.scoped(storage, || {
+                    Ok(admission.copy_text(value, "Protein schema base name")?)
+                }))
+                .transpose()?;
             let replaced = admission.scoped(storage, || {
                 let key = admission.copy_text(uid, "Protein schema UID")?;
                 Ok(admission.insert_hash_map(schemas, key, schema, "Protein parsed schema")?)
@@ -1476,6 +1480,59 @@ mod tests {
         let schema = &schemas["Simple"];
         assert_eq!(schema.base.as_deref(), Some("Root"));
         assert!(schema.properties.contains_key("comment"));
+    }
+
+    #[test]
+    fn schema_base_selection_preserves_last_valued_declaration() {
+        for (bases, expected) in [
+            ("", None),
+            ("<Base val='First'/><Base/>", Some("First")),
+            ("<Base val='First'/><Base val='Final'/><Base/>", Some("Final")),
+            ("<Base val='First'/><Base val=''/>", Some("")),
+        ] {
+            let xml = format!("<Schema><UID val='Simple'/>{bases}</Schema>");
+            with_service_context(xml.as_bytes(), |ctx| {
+                let mut storage = scratch(ctx);
+                let mut schemas = HashMap::new();
+                super::parse_schema_document(ctx, &mut storage, "schema", xml.as_bytes(), &mut schemas)
+                    .expect("base selection");
+                assert_eq!(schemas["Simple"].base.as_deref(), expected);
+            });
+        }
+    }
+
+    #[test]
+    fn overwritten_schema_bases_do_not_keep_dead_catalog_storage() {
+        let single = "<Schema><UID val='Simple'/><Base val='Final'/></Schema>";
+        let replaced = format!("<Schema><UID val='Simple'/><Base val='{}'/><Base val='Final'/><Base/></Schema>", "discarded".repeat(4096));
+        let live_storage = |xml: &str, release: bool| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
+                .expect("XML input");
+            let mut storage = scratch(&ctx);
+            let mut schemas = HashMap::new();
+            super::parse_schema_document(&ctx, &mut storage, "schema", xml.as_bytes(), &mut schemas)
+                .expect("catalog owns only the selected base");
+            assert_eq!(schemas["Simple"].base.as_deref(), Some("Final"));
+            if release {
+                drop(schemas);
+                drop(storage);
+            }
+            // A refused reservation reports the live usage without admitting
+            // probe storage. XML backing has already left the parse boundary.
+            let error = ctx.reserve_scoped(policy.limits.max_materialized_bytes + 1, "probe catalog live storage")
+                .expect_err("probe exceeds the limit independently of live usage");
+            let CodecError::ResourceLimit(limit) = error else { panic!("storage refusal"); };
+            assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            limit.used
+        };
+        let baseline = live_storage(single, false);
+        assert!(baseline > 0, "the selected catalog backing remains live");
+        assert_eq!(live_storage(&replaced, false), baseline);
+        assert_eq!(live_storage(&replaced, true), 0);
     }
 
     #[test]
