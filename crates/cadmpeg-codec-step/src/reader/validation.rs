@@ -60,7 +60,8 @@ pub(super) fn decode(
         }
     }
     let mut properties = BTreeMap::new();
-    for (id, record) in exchange.entities(ctx, "PROPERTY_DEFINITION")? {
+    for indexed_entity in exchange.entities(ctx, "PROPERTY_DEFINITION")? {
+        let (id, record) = indexed_entity?;
         let Some(property) = record.partial(ctx, "PROPERTY_DEFINITION")? else {
             continue;
         };
@@ -119,7 +120,8 @@ pub(super) fn decode(
     let mut validation_representations = BTreeSet::new();
     let mut notes = Vec::new();
 
-    for (relation_id, relation) in exchange.entities(ctx, "PROPERTY_DEFINITION_REPRESENTATION")? {
+    for indexed_entity in exchange.entities(ctx, "PROPERTY_DEFINITION_REPRESENTATION")? {
+        let (relation_id, relation) = indexed_entity?;
         let Some(relation) = relation.partial(ctx, "PROPERTY_DEFINITION_REPRESENTATION")? else {
             continue;
         };

@@ -493,25 +493,23 @@ impl Exchange {
         &'a self,
         ctx: &'a DecodeContext<'_>,
         name: &str,
-    ) -> Result<impl Iterator<Item = (u64, &'a RawRecord)> + 'a, CodecError> {
+    ) -> Result<impl Iterator<Item = Result<(u64, &'a RawRecord), CodecError>> + 'a, CodecError> {
         let ids = ctx
             .get_btree_map(self.entity_ids(), name, "STEP entity name lookup")?
             .map_or(&[][..], Vec::as_slice);
-        let (mut records, mut storage) =
-            ctx.temporary_vec(ids.len(), "STEP indexed entity record storage")?;
-        for id in ctx.admit_iter(ids, "STEP indexed entity identifier traversal")? {
+        let mut ids = ids.iter();
+        Ok(std::iter::from_fn(move || {
+            if ids.len() == 0 {
+                return None;
+            }
+            Some((|| {
+            let id = ctx.next_charged(&mut ids, "STEP indexed entity identifier traversal")?
+                .ok_or_else(|| CodecError::malformed("entity name index ended before its bound"))?;
             let record = ctx
                 .get_btree_map(&self.records, id, "STEP indexed entity record lookup")?
                 .ok_or_else(|| CodecError::malformed("entity name index names no record"))?;
-            ctx.push_scoped_vec(
-                &mut storage,
-                &mut records,
-                (*id, record),
-                "STEP indexed entity record storage",
-            )?;
-        }
-        Ok(records.into_iter().inspect(move |_| {
-            let _live_storage = &storage;
+            Ok((*id, record))
+            })())
         }))
     }
 
