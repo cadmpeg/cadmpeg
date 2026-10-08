@@ -1879,3 +1879,30 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
 }
 
 mod incidence_loci;
+
+#[test]
+fn face_rejection_does_not_charge_unvisited_references() {
+    let surfaces = BTreeMap::from([(
+        1,
+        B5Surface::Unknown {
+            family: 0xb5,
+            class: 0x27,
+            payload: Vec::new(),
+        },
+    )]);
+    let mut record = B5FaceRecord {
+        object_id: 2,
+        references: vec![1, 3],
+        terminal_control: None,
+    };
+    // The first unsupported reference ends the scan under the same allowance
+    // regardless of the number of trailing references.
+    for suffix in [0, 10_000] {
+        record.references.resize(2 + suffix, 3);
+        assert!(crate::test_support::with_work_limit(100, |ctx| {
+            super::super::parse_face(ctx, &record, &BTreeMap::new(), &surfaces, &BTreeMap::new())
+        })
+        .expect("only the visited prefix is charged")
+        .is_none());
+    }
+}
