@@ -403,6 +403,37 @@ fn sketch_member_comparisons_refuse_before_first_and_later_visits_and_shifts() {
             result
         },
     );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "sketch member comparison complete",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(crate::sketches::distinct_sketch_members(
+                &ctx, &["z", "x", "x-a"], |id| *id, "sketch member comparison test",
+            )?);
+            ctx.charge_work(1, "sketch member comparison complete")
+        },
+    );
+    let CodecError::ResourceLimit(complete) = error else {
+        panic!("completion boundary");
+    };
+    for cap in 0..complete.used {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = crate::sketches::distinct_sketch_members(
+            &ctx, &["z", "x", "x-a"], |id| *id, "sketch member comparison test",
+        ) else {
+            panic!("every incomplete budget must refuse");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "sketch member comparison test");
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
     let ctx = cadmpeg_test_support::service_decode_context();
     assert!(crate::sketches::distinct_sketch_members(
         &ctx,
@@ -557,4 +588,41 @@ fn sketch_constructors_keep_original_refusals_without_retaining_temporary_slots(
         drop(reservation);
         ctx.finish_session().unwrap();
     }
+}
+
+
+#[test]
+fn sketch_use_predicate_refusal_preserves_all_profiles() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let usage = crate::sketches::SketchEntityUse {
+        entity: crate::sketches::SketchEntityId::mint("test:model:sketch-entity#long-identity").unwrap(),
+        reversed: false,
+    };
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "sketch use predicate comparison",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut profiles = crate::sketches::SketchProfiles::try_from(vec![vec![usage.clone()], vec![usage.clone()]]).unwrap();
+            let before = profiles.clone();
+            let mut visits = 0;
+            let result = profiles.retain_uses(&ctx, |candidate| {
+                visits += 1;
+                if visits == 1 {
+                    return Ok(false);
+                }
+                ctx.equal_bytes(candidate.entity.as_str().as_bytes(), usage.entity.as_str().as_bytes(), "sketch use predicate comparison")
+            });
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(visits, 2);
+                assert_eq!(profiles, before);
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+            }
+            result
+        },
+    );
 }

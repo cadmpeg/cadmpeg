@@ -2455,7 +2455,13 @@ pub(crate) fn project_marker_dimensioned_circles(
                         };
                         sketch
                             .profiles
-                            .retain_uses(ctx, |usage| usage.entity != removed)?;
+                            .retain_uses(ctx, |usage| {
+                                Ok(!ctx.equal_bytes(
+                                    usage.entity.as_str().as_bytes(),
+                                    removed.as_str().as_bytes(),
+                                    OPERATION,
+                                )?)
+                            })?;
                         for (index, (parameter, radius)) in
                             radial_dimensions.iter().copied().enumerate()
                         {
@@ -2708,7 +2714,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                 };
                 sketch
                     .profiles
-                    .retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
+                    .retain_uses(ctx, |usage| {
+                        Ok(!ctx.contains_hash_set(&removed, &usage.entity, OPERATION)?)
+                    })?;
                 for (index, geometry) in transformed.into_iter().enumerate() {
                     charge_marker_circle_format(ctx, lane_key.len())?;
                     let id_text = ctx.format_retained(format_args!("sldprt:model:sketch-entity#repeated-radial-circle:{lane_key}:{offset}:{index}"), OPERATION)?;
@@ -2908,7 +2916,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                     };
                     sketch
                         .profiles
-                        .retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
+                        .retain_uses(ctx, |usage| {
+                            Ok(!ctx.contains_hash_set(&removed, &usage.entity, OPERATION)?)
+                        })?;
                     for (record, geometry) in transformed {
                         charge_marker_circle_work(ctx, record.0.id.len(), 4)?;
                         let lane_key = record
