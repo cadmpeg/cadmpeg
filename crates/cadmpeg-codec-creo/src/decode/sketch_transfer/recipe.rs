@@ -239,6 +239,9 @@ fn feature_schema_class_with_operation(
     feature_id: u32,
     operation: Option<&crate::feature::operations::FeatureOperation>,
 ) -> Result<Option<SchemaClass>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     resolved_feature_schema_class_from_classes(
         operation,
         |visit_class| {
@@ -253,7 +256,10 @@ fn feature_schema_class_with_operation(
                     continue;
                 }
                 let mut rows = rows.iter();
-                while let Some(row) = ctx.next_charged(&mut rows, operation)? {
+                while rows.len() != 0 {
+                    let Some(row) = ctx.next_charged(&mut rows, operation)? else {
+                        break;
+                    };
                     if row.feature_id != feature_id {
                         continue;
                     }
@@ -268,11 +274,18 @@ fn feature_schema_class_with_operation(
             Ok(())
         },
         || {
-            ctx.any_by(
-                &scan.features.legacy_rounds,
-                |round| Ok(round.feature_id == feature_id),
-                "creo legacy round schema rows",
-            )
+            let mut rounds = scan.features.legacy_rounds.iter();
+            while rounds.len() != 0 {
+                let Some(round) = ctx.next_charged(
+                    &mut rounds, "creo legacy round schema rows",
+                )? else {
+                    break;
+                };
+                if round.feature_id == feature_id {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
         },
     )
 }
@@ -369,11 +382,21 @@ pub(in super::super) fn unique_feature_revolution_extent<'records>(
     feature_id: u32,
 ) -> Result<Option<&'records crate::feature::rows::FeatureRevolutionExtent>, cadmpeg_core::CodecError>
 {
-    ctx.find_by(
-        records,
-        |record| Ok(record.feature_id == feature_id),
-        "creo feature revolution extent rows",
-    )
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut records = records.iter();
+    while records.len() != 0 {
+        let Some(record) = ctx.next_charged(
+            &mut records, "creo feature revolution extent rows",
+        )? else {
+            break;
+        };
+        if record.feature_id == feature_id {
+            return Ok(Some(record));
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]
