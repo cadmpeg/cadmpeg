@@ -326,14 +326,14 @@ fn available_positional_cylinder_frames_refuse_collection_limit() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        super::unique_available_positional_cylinder_frame_records(&ctx, &ids, &parameters)
+        super::unique_available_positional_cylinder_frame_records(&ctx, &ids, &crate::surface::SurfaceParameters::from_rows(parameters.to_vec()))
     });
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = limit;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = super::unique_available_positional_cylinder_frame_records(&ctx, &ids, &parameters)
+    let error = super::unique_available_positional_cylinder_frame_records(&ctx, &ids, &crate::surface::SurfaceParameters::from_rows(parameters.to_vec()))
         .expect_err("frame item exceeds limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -811,7 +811,7 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
 }
 
 #[test]
-fn duplicate_parameter_search_does_not_visit_unrelated_tail() {
+fn duplicate_parameter_lookup_does_not_visit_unrelated_tail() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let frame = crate::surface::PositionalCylinderFrame::new(
         [0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], 0.75, Some(2.0),
@@ -827,7 +827,9 @@ fn duplicate_parameter_search_does_not_visit_unrelated_tail() {
     let mut unrelated = record;
     unrelated.surface_id = 2;
     long.extend(std::iter::repeat_n(unrelated, 128));
-    let work_limit = |parameters: &[crate::surface::SurfaceParameterRecord]| {
+    let short = crate::surface::SurfaceParameters::from_rows(short);
+    let long = crate::surface::SurfaceParameters::from_rows(long);
+    let work_limit = |parameters: &crate::surface::SurfaceParameters| {
         crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |limit| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -838,7 +840,7 @@ fn duplicate_parameter_search_does_not_visit_unrelated_tail() {
     };
     assert_eq!(work_limit(&short), work_limit(&long));
     let result = crate::test_support::assert_work_boundaries(
-        &["creo positional cylinder parameter scan", "creo positional cylinder ID lookup", "creo positional cylinder parameter index"],
+        &["creo positional cylinder frame ID scan"],
         |ctx| super::unique_available_positional_cylinder_frame_records(ctx, &ids, &long),
     );
     assert!(result.is_none());

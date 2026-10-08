@@ -147,7 +147,7 @@ fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
     let parameters = [parameter(1, Some(frame)), parameter(2, None)];
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
-            unique_available_positional_cylinder_frame_records(ctx, &surface_ids, &parameters)
+            unique_available_positional_cylinder_frame_records(ctx, &surface_ids, &crate::surface::SurfaceParameters::from_rows(parameters.to_vec()))
         })
         .expect("service resources"),
         Some(vec![(1, frame)])
@@ -155,7 +155,7 @@ fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
 
     let duplicates = [parameter(1, Some(frame)), parameter(1, Some(frame))];
     assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        unique_available_positional_cylinder_frame_records(ctx, &surface_ids, &duplicates)
+        unique_available_positional_cylinder_frame_records(ctx, &surface_ids, &crate::surface::SurfaceParameters::from_rows(duplicates.to_vec()))
     })
     .expect("service resources")
     .is_none());

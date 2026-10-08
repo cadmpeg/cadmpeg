@@ -89,11 +89,13 @@ fn unique_profile_sketch<'a>(
         "creo profile sketch lookup")
 }
 
+type ProfileEntityIndex<'ir> = std::collections::HashMap<&'ir str, Option<&'ir cadmpeg_ir::sketches::SketchEntity>>;
+
 fn profile_entity_index<'ir>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &'ir CadIr,
     sketch_id: &SketchId,
-) -> Result<std::collections::HashMap<&'ir str, Option<&'ir cadmpeg_ir::sketches::SketchEntity>>, cadmpeg_core::CodecError> {
+) -> Result<ProfileEntityIndex<'ir>, cadmpeg_core::CodecError> {
     let mut entities = std::collections::HashMap::new();
     for entity in ctx.admit_iter(&ir.model.sketch_entities, "creo profile entity index scan")? {
         if !ctx.equal(entity.sketch.as_str(), sketch_id.as_str(), "creo profile entity sketch comparison")? {
@@ -514,7 +516,8 @@ pub(in super::super) fn extrusion_profile_signed_area(
         let end = entity.end();
         let contribution = match geometry {
             ProfileGeometry::Nurbs { .. } => {
-                let Some(sketch) = geometry.to_sketch(ctx)? else {
+                let (sketch, _sketch_storage) = ctx.with_scoped_storage("creo profile area sketch scratch", || geometry.to_sketch(ctx))?;
+                let Some(sketch) = sketch else {
                     return Ok(None);
                 };
                 let Some(area) = nurbs_profile_signed_area_twice(ctx, &sketch, *reversed)? else {
@@ -1326,10 +1329,12 @@ fn profile_nurbs_polyline<'ctx>(
     segment: &ProfileEntity,
     tolerance: f64,
 ) -> Result<Option<ProfilePolyline<'ctx>>, cadmpeg_core::CodecError> {
-    let Some(sketch) = segment.geometry.to_sketch(ctx)? else {
+    let (sketch, _sketch_storage) = ctx.with_scoped_storage("creo profile sampling sketch scratch", || segment.geometry.to_sketch(ctx))?;
+    let Some(sketch) = sketch else {
         return Ok(None);
     };
-    let Some(nurbs) = oriented_sketch_nurbs_curve(ctx, &sketch, segment.reversed)? else {
+    let (nurbs, _nurbs_storage) = ctx.with_scoped_storage("creo profile sampling curve scratch", || oriented_sketch_nurbs_curve(ctx, &sketch, segment.reversed))?;
+    let Some(nurbs) = nurbs else {
         return Ok(None);
     };
     nurbs_profile_polyline(ctx, &nurbs, tolerance)
@@ -1340,7 +1345,8 @@ fn nurbs_profile_signed_area_twice(
     geometry: &SketchGeometry,
     reversed: bool,
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
-    let Some(nurbs) = oriented_sketch_nurbs_curve(ctx, geometry, reversed)? else {
+    let (nurbs, _nurbs_storage) = ctx.with_scoped_storage("creo profile area curve scratch", || oriented_sketch_nurbs_curve(ctx, geometry, reversed))?;
+    let Some(nurbs) = nurbs else {
         return Ok(None);
     };
     let Some(range) = nurbs_intrinsic_parameter_range(&nurbs) else {

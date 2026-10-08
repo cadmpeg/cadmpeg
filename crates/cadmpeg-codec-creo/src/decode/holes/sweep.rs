@@ -179,7 +179,7 @@ pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
     else {
         return Ok(None);
     };
-    let Some(parameter) = exactly_one_by(ctx, &scan.surfaces.parameters, |parameter| Ok(parameter.surface_id == cylinder_id), "creo compact hole parameter scan")? else { return Ok(None); };
+    let Some(parameter) = scan.surfaces.parameters.unique(cylinder_id) else { return Ok(None); };
     let Some(frame) = parameter.positional_cylinder_frame() else { return Ok(None); };
     let Some(length) = frame.length() else { return Ok(None); };
     let Some(row) = scan.surfaces.rows.unique(cylinder_id) else { return Ok(None); };
