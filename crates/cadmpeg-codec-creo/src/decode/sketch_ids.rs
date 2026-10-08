@@ -32,9 +32,16 @@ pub(super) fn feature_definition_has_sketch_design(
         return Ok(true);
     }
     let mut storage = ctx.reserve_scoped(0, "creo sketch design equation scratch")?;
-    Ok(storage.with_storage(|| crate::feature::definitions::equation_table(
-        ctx, &definition.body, 0, definition.body.len(),
-    ))?.is_some())
+    Ok(storage
+        .with_storage(|| {
+            crate::feature::definitions::equation_table(
+                ctx,
+                &definition.body,
+                0,
+                definition.body.len(),
+            )
+        })?
+        .is_some())
 }
 
 pub(super) fn sketch_table_headers(
@@ -49,6 +56,15 @@ pub(super) fn sketch_table_headers(
             row_count,
             offset,
         });
+        // Eleven optional header kinds bound insertion to ten adjacent swaps.
+        let mut position = headers.len() - 1;
+        for _ in 0..10 {
+            if position == 0 || headers[position - 1].offset <= headers[position].offset {
+                break;
+            }
+            headers.swap(position - 1, position);
+            position -= 1;
+        }
         Ok(())
     };
     if let Some(table) = &definition.variables {
@@ -62,9 +78,9 @@ pub(super) fn sketch_table_headers(
         )?;
     }
     let mut equation_storage = ctx.reserve_scoped(0, "creo sketch header equation scratch")?;
-    if let Some(table) = equation_storage.with_storage(|| crate::feature::definitions::equation_table(
-        ctx, &definition.body, 0, definition.body.len(),
-    ))? {
+    if let Some(table) = equation_storage.with_storage(|| {
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())
+    })? {
         push(
             CreoSketchTableKind::Equations {
                 declared_count: table.declared_count,
@@ -92,12 +108,15 @@ pub(super) fn sketch_table_headers(
             table.buckets.len(),
             "creo sketch trim entity headers",
         )?;
-        buckets.extend(ctx.admit_iter(&table.buckets, "creo sketch bucket header rows")?.map(|bucket| CreoSketchBucketHeader {
-            index: bucket.index,
-            declared_entry_count: bucket.declared_entry_count,
-            decoded_entry_count: bucket.decoded_entry_count,
-            offset: bucket.offset,
-        }));
+        buckets.extend(
+            ctx.admit_iter(&table.buckets, "creo sketch bucket header rows")?
+                .map(|bucket| CreoSketchBucketHeader {
+                    index: bucket.index,
+                    declared_entry_count: bucket.declared_entry_count,
+                    decoded_entry_count: bucket.decoded_entry_count,
+                    offset: bucket.offset,
+                }),
+        );
         push(
             CreoSketchTableKind::TrimEntities {
                 declared_count: table.declared_count,
@@ -116,12 +135,15 @@ pub(super) fn sketch_table_headers(
             table.buckets.len(),
             "creo sketch trim vertex headers",
         )?;
-        buckets.extend(ctx.admit_iter(&table.buckets, "creo sketch bucket header rows")?.map(|bucket| CreoSketchBucketHeader {
-            index: bucket.index,
-            declared_entry_count: bucket.declared_entry_count,
-            decoded_entry_count: bucket.decoded_entry_count,
-            offset: bucket.offset,
-        }));
+        buckets.extend(
+            ctx.admit_iter(&table.buckets, "creo sketch bucket header rows")?
+                .map(|bucket| CreoSketchBucketHeader {
+                    index: bucket.index,
+                    declared_entry_count: bucket.declared_entry_count,
+                    decoded_entry_count: bucket.decoded_entry_count,
+                    offset: bucket.offset,
+                }),
+        );
         push(
             CreoSketchTableKind::TrimVertices {
                 declared_count: table.declared_count,
@@ -190,8 +212,6 @@ pub(super) fn sketch_table_headers(
             table.offset,
         )?;
     }
-    // Each optional table contributes at most one of eleven header kinds.
-    headers.sort_by_key(|header| header.offset);
     Ok(headers)
 }
 
@@ -207,9 +227,13 @@ pub(super) fn feature_definition_record_id(
     scan: &ContainerScan,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<String, CodecError> {
-    if exactly_one_by(ctx, &scan.features.definitions,
+    if exactly_one_by(
+        ctx,
+        &scan.features.definitions,
         |candidate| Ok(candidate.identity.id() == definition.identity.id()),
-        "creo feature definition identity count")?.is_none()
+        "creo feature definition identity count",
+    )?
+    .is_none()
         || (definition.identity.schema_id().is_none()
             && definition.identity.owner_feature_id().is_none())
     {
@@ -236,9 +260,13 @@ pub(super) fn feature_sketch_record_id_in_scan(
     scan: &ContainerScan,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<String, CodecError> {
-    if exactly_one_by(ctx, &scan.features.definitions,
+    if exactly_one_by(
+        ctx,
+        &scan.features.definitions,
         |candidate| Ok(candidate.identity.id() == definition.identity.id()),
-        "creo native sketch identity uniqueness")?.is_none()
+        "creo native sketch identity uniqueness",
+    )?
+    .is_none()
         || (definition.identity.schema_id().is_none()
             && definition.identity.owner_feature_id().is_none())
     {
@@ -259,9 +287,13 @@ pub(super) fn model_sketch_id(
     scan: &ContainerScan,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<Option<SketchId>, CodecError> {
-    let ambiguous = exactly_one_by(ctx, &scan.features.definitions,
+    let ambiguous = exactly_one_by(
+        ctx,
+        &scan.features.definitions,
         |candidate| Ok(candidate.identity.id() == definition.identity.id()),
-        "creo model sketch identity uniqueness")?.is_none()
+        "creo model sketch identity uniqueness",
+    )?
+    .is_none()
         || (definition.identity.schema_id().is_none()
             && definition.identity.owner_feature_id().is_none());
     let text = if ambiguous {
@@ -440,9 +472,13 @@ pub(super) fn owning_feature_definition_ref(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Result<Option<String>, CodecError> {
-    let Some(definition) = exactly_one_by(ctx, &scan.features.definitions,
+    let Some(definition) = exactly_one_by(
+        ctx,
+        &scan.features.definitions,
         |definition| Ok(definition.identity.owner_feature_id() == Some(feature_id)),
-        "creo owning feature definition lookup")? else {
+        "creo owning feature definition lookup",
+    )?
+    else {
         return Ok(None);
     };
     feature_definition_record_id(ctx, scan, definition).map(Some)

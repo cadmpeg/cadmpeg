@@ -17,8 +17,16 @@ fn with_retained_limit<T>(limit: u64, run: impl FnOnce(&DecodeContext<'_>) -> T)
     run(&ctx)
 }
 
-fn retained_refusal_at<T>(operation: &'static str, run: impl Fn(&DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>) -> Result<T, cadmpeg_core::CodecError> {
-    Err(crate::test_support::last_refusal_at(&[], ResourceDimension::RetainedBytes, operation, run))
+fn retained_refusal_at<T>(
+    operation: &'static str,
+    run: impl Fn(&DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> Result<T, cadmpeg_core::CodecError> {
+    Err(crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        operation,
+        run,
+    ))
 }
 
 #[test]
@@ -157,12 +165,26 @@ fn sketch_constraint_identity_and_native_ref_refuse_retained_bytes() {
     let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
     let arena = DecodeArena::new();
     for (operation, error) in [
-        ("creo sketch constraint identity", retained_refusal_at("creo sketch constraint identity", |ctx| sketch_constraint_id_admitted(ctx, &sketch, "equation:offset:28")).expect_err("constraint ID exceeds retained cap")),
-        ("creo sketch native reference", retained_refusal_at("creo sketch native reference", |ctx| sketch_native_ref_admitted(ctx, &sketch)).expect_err("native ref exceeds retained cap")),
+        (
+            "creo sketch constraint identity",
+            retained_refusal_at("creo sketch constraint identity", |ctx| {
+                sketch_constraint_id_admitted(ctx, &sketch, "equation:offset:28")
+            })
+            .expect_err("constraint ID exceeds retained cap"),
+        ),
+        (
+            "creo sketch native reference",
+            retained_refusal_at("creo sketch native reference", |ctx| {
+                sketch_native_ref_admitted(ctx, &sketch)
+            })
+            .expect_err("native ref exceeds retained cap"),
+        ),
     ] {
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == operation));
+            && resource.operation == operation)
+        );
     }
     let service = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
@@ -184,9 +206,14 @@ fn section_owner_feature_identity_refuses_before_formatting() {
     let scan = crate::test_support::empty_container_scan();
     let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917").expect("sketch ID");
     let arena = DecodeArena::new();
-    let error = retained_refusal_at("creo section owner feature identity", |ctx| section_owner_feature_id(ctx, &scan, 917, &sketch)).expect_err("owner feature ID exceeds retained cap");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == "creo section owner feature identity"));
+    let error = retained_refusal_at("creo section owner feature identity", |ctx| {
+        section_owner_feature_id(ctx, &scan, 917, &sketch)
+    })
+    .expect_err("owner feature ID exceeds retained cap");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == "creo section owner feature identity")
+    );
     let service = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
     assert_eq!(
@@ -204,9 +231,22 @@ fn model_sketch_identity_refuses_before_formatting_and_uniqueness_scan() {
     let mut source = definition();
     source.offset = 9;
     scan.features.definitions.push(source);
-    for (dimension, operation) in [(ResourceDimension::WorkUnits, "creo model sketch identity uniqueness"), (ResourceDimension::RetainedBytes, "creo model sketch identity")] {
-        let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| model_sketch_id(ctx, &scan, &scan.features.definitions[0]));
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource) if resource.dimension == dimension && resource.operation == operation));
+    for (dimension, operation) in [
+        (
+            ResourceDimension::WorkUnits,
+            "creo model sketch identity uniqueness",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "creo model sketch identity",
+        ),
+    ] {
+        let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+            model_sketch_id(ctx, &scan, &scan.features.definitions[0])
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource) if resource.dimension == dimension && resource.operation == operation)
+        );
     }
     let id = crate::decode::with_test_decode_ctx(|ctx| {
         model_sketch_id(ctx, &scan, &scan.features.definitions[0])
@@ -222,9 +262,22 @@ fn native_sketch_identity_refuses_before_formatting_and_uniqueness_scan() {
     let mut source = definition();
     source.offset = 9;
     scan.features.definitions.push(source);
-    for (dimension, operation) in [(ResourceDimension::WorkUnits, "creo native sketch identity uniqueness"), (ResourceDimension::RetainedBytes, "creo native sketch identity")] {
-        let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| feature_sketch_record_id_in_scan(ctx, &scan, &scan.features.definitions[0]));
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource) if resource.dimension == dimension && resource.operation == operation));
+    for (dimension, operation) in [
+        (
+            ResourceDimension::WorkUnits,
+            "creo native sketch identity uniqueness",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "creo native sketch identity",
+        ),
+    ] {
+        let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+            feature_sketch_record_id_in_scan(ctx, &scan, &scan.features.definitions[0])
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource) if resource.dimension == dimension && resource.operation == operation)
+        );
     }
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
@@ -290,8 +343,16 @@ fn trim_vertices(buckets: Vec<FeatureTrimBucket>) -> FeatureTrimVertexTable {
     }
 }
 
-fn limited_headers(definition: &FeatureDefinition, operation: &'static str) -> cadmpeg_core::CodecError {
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| sketch_table_headers(ctx, definition))
+fn limited_headers(
+    definition: &FeatureDefinition,
+    operation: &'static str,
+) -> cadmpeg_core::CodecError {
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| sketch_table_headers(ctx, definition),
+    )
 }
 
 #[test]
@@ -351,4 +412,70 @@ fn sketch_headers_keep_source_offset_order_and_bucket_values() {
         assert_eq!(buckets[0].decoded_entry_count, Some(1));
         assert_eq!(buckets[0].offset, 17);
     }
+}
+
+#[test]
+fn sketch_headers_preserve_offset_and_tie_order() {
+    let mut definition = definition();
+    definition.variables = Some(crate::feature::definitions::FeatureVariableTable {
+        declared_count: 0,
+        entity_ref: None,
+        rows: Vec::new(),
+        offset: 12,
+    });
+    definition.trim_entities = Some(trim_entities(vec![bucket()]));
+    definition.trim_vertices = Some(trim_vertices(vec![bucket()]));
+    let headers = crate::decode::with_test_decode_ctx(|ctx| sketch_table_headers(ctx, &definition))
+        .expect("header ordering admission");
+    assert_eq!(
+        headers
+            .iter()
+            .map(|header| header.offset)
+            .collect::<Vec<_>>(),
+        vec![11, 12, 12]
+    );
+    assert!(matches!(
+        headers[0].kind,
+        CreoSketchTableKind::TrimEntities { .. }
+    ));
+    assert!(matches!(
+        headers[1].kind,
+        CreoSketchTableKind::Variables { .. }
+    ));
+    assert!(matches!(
+        headers[2].kind,
+        CreoSketchTableKind::TrimVertices { .. }
+    ));
+    definition.variables.as_mut().expect("variables").offset = 13;
+    definition
+        .trim_entities
+        .as_mut()
+        .expect("trim entities")
+        .offset = 12;
+    definition
+        .trim_vertices
+        .as_mut()
+        .expect("trim vertices")
+        .offset = 11;
+    let headers = crate::decode::with_test_decode_ctx(|ctx| sketch_table_headers(ctx, &definition))
+        .expect("reversed header ordering admission");
+    assert_eq!(
+        headers
+            .iter()
+            .map(|header| header.offset)
+            .collect::<Vec<_>>(),
+        vec![11, 12, 13]
+    );
+    assert!(matches!(
+        headers[0].kind,
+        CreoSketchTableKind::TrimVertices { .. }
+    ));
+    assert!(matches!(
+        headers[1].kind,
+        CreoSketchTableKind::TrimEntities { .. }
+    ));
+    assert!(matches!(
+        headers[2].kind,
+        CreoSketchTableKind::Variables { .. }
+    ));
 }
