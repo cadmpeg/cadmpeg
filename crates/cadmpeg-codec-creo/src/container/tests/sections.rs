@@ -87,23 +87,6 @@ fn scanned_section_refuses_before_output_vec_growth() {
 }
 
 #[test]
-fn scanned_section_name_refuses_before_retained_copy() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
-    let data = b"\n#Body\nabc";
-    let error = crate::test_support::last_refusal_at(
-        data,
-        ResourceDimension::RetainedBytes,
-        "creo scanned section names",
-        |ctx| super::super::scan_sections(ctx, data, 0),
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo scanned section names"));
-}
-
-#[test]
 fn scanned_section_succeeds_under_service_policy() {
     let data = b"\n#Body\nabc";
     let arena = cadmpeg_core::decode::DecodeArena::new();

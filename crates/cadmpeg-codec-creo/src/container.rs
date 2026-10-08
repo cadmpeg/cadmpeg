@@ -686,42 +686,34 @@ fn line_at(ctx: &DecodeContext<'_>, data: &[u8], start: usize) -> Result<String,
         .find_bytes_from(data, b"\n", start, "creo version line scan")?
         .unwrap_or(data.len());
     let bytes = &data[start..end];
-    let text_work = cadmpeg_core::decode::u64_from_index(bytes.len())
-        .checked_mul(8)
-        .ok_or_else(|| ctx.refuse_codec_limit("creo version text work", u64::MAX, u64::MAX))?;
-    ctx.charge_work(text_work, "creo version text work")?;
-    let mut line = ctx.copy_retained_lossy_utf8(bytes, "creo version line")?;
-    let leading = line.len() - line.trim_start().len();
-    let trimmed_len = ctx.trim_text(&line, "creo version line trim")?.len();
-    line.drain(..leading);
-    line.truncate(trimmed_len);
-    Ok(line)
+    if let Ok(line) = ctx.validate_utf8(bytes, "creo version UTF-8 validation")? {
+        let trimmed = ctx.trim_text(line, "creo version line trim")?;
+        return ctx.copy_retained_text(trimmed, "creo version line");
+    }
+    let mut text_storage = ctx.reserve_scoped(0, "creo version text storage")?;
+    let line = text_storage.with_storage(|| ctx.copy_retained_lossy_utf8(bytes, "creo version lossy scratch"))?;
+    let trimmed = ctx.trim_text(&line, "creo version line trim")?;
+    ctx.copy_retained_text(trimmed, "creo version line")
 }
 
 /// Normalize a decorated section name to its base ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)): strip a
 /// `ModelView#N` suffix and an `ND:0:<Name>:N` decoration.
 ///
-/// Returns the byte range of the normalized name within `raw`. The scans stop
-/// at the first `#` and within that prefix, so one pass over `raw` bounds them.
+/// Return the byte range of the normalized name within `raw`.
 fn normalized_name_range(
     ctx: &DecodeContext<'_>,
     raw: &str,
 ) -> Result<std::ops::Range<usize>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(raw.len()),
-        "creo section name normalization",
-    )?;
-    let base_end = raw.find('#').unwrap_or(raw.len());
+    let base_end = ctx.find_text(raw, "#", "creo section name normalization")?.unwrap_or(raw.len());
     let base = &raw[..base_end];
     let Some(rest) = base.strip_prefix("ND:") else {
         return Ok(0..base_end);
     };
-    let Some(first_colon) = rest.find(':') else {
+    let Some(first_colon) = ctx.find_text(rest, ":", "creo section name normalization")? else {
         return Ok(0..base_end);
     };
     let start = "ND:".len() + first_colon + 1;
-    let end = base[start..]
-        .find(':')
+    let end = ctx.find_text(&base[start..], ":", "creo section name normalization")?
         .map_or(base_end, |length| start + length);
     Ok(start..end)
 }
@@ -752,19 +744,16 @@ fn scan_sections<'a>(
     body_start: usize,
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     // Collect header hits as (offset_of_section_hash, raw_name).
+    let mut hit_storage = ctx.reserve_scoped(0, "creo section header hit storage")?;
     let mut hits: Vec<(usize, String)> = Vec::new();
     let mut i = body_start;
     if let Some(preceding_byte) = body_start.checked_sub(1) {
         i = preceding_byte;
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(data.len() - i),
-        "creo section framing scan",
-    )?;
-    while i + 1 < data.len() {
+    let mut positions = i..data.len().saturating_sub(1);
+    while let Some(i) = ctx.next_charged(&mut positions, "creo section framing scan")? {
         let toc_delimited = data[i] == 0xf1 && data[i + 1] == b'#';
         if !toc_delimited && (data[i] != b'\n' || data[i + 1] != b'#') {
-            i += 1;
             continue;
         }
         let hash_off = i + 1; // offset of the section-header '#'
@@ -775,21 +764,11 @@ fn scan_sections<'a>(
             break;
         };
         let name_bytes = &data[name_start..nl];
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(name_bytes.len())
-                .checked_mul(3)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo section name validation", u64::MAX, u64::MAX)
-                })?,
-            "creo section name validation",
-        )?;
-        i = nl; // continue scanning after this line regardless of acceptance
-                // A real section name is a printable run with at least one alphanumeric
-                // character; this rejects TOC/EOF padding lines made only of `#`.
-        if !name_bytes.iter().all(|&b| is_name_byte(b))
-            || name_bytes.len() < 2
-            || !name_bytes.iter().any(u8::is_ascii_alphanumeric)
-        {
+        positions = nl..data.len().saturating_sub(1);
+        // A name contains only defined ASCII name bytes and has an alphanumeric byte.
+        if name_bytes.len() < 2
+            || !ctx.all_by(name_bytes, |byte| Ok(is_name_byte(*byte)), "creo section name validation")?
+            || !ctx.any_by(name_bytes, |byte| Ok(byte.is_ascii_alphanumeric()), "creo section name validation")? {
             continue;
         }
         let name = ctx
@@ -810,25 +789,21 @@ fn scan_sections<'a>(
                     "creo section directory bounds error",
                 )?));
             };
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(directory.len()),
-                "creo TOC name lookup",
-            )?;
-            if !toc_lists_section(directory, name_bytes) {
+            if !toc_lists_section(ctx, directory, name_bytes)? {
                 continue;
             }
         }
         let raw = ctx.copy_retained_text(name, "creo section header names")?;
-        ctx.reserve_vec(&mut hits, 1, "creo section header hits")?;
+        hit_storage.with_storage(|| ctx.reserve_vec(&mut hits, 1, "creo section header hits"))?;
         hits.push((hash_off, raw));
     }
 
     let mut sections = Vec::new();
     ctx.reserve_vec(&mut sections, hits.len(), "creo scanned sections")?;
-    for (idx, (hdr_off, raw)) in hits.iter().enumerate() {
-        let end = hits.get(idx + 1).map_or(data.len(), |(next, _)| *next);
-        let name = ctx.copy_retained_text(raw, "creo scanned section names")?;
-        sections.extend(Section::scan(ctx, name, *hdr_off, end, None, data)?);
+    let mut headers = hits.into_iter().peekable();
+    while let Some((offset, name)) = ctx.next_charged(&mut headers, "creo section header traversal")? {
+        let end = headers.peek().map_or(data.len(), |(next, _)| *next);
+        sections.extend(Section::scan(ctx, name, offset, end, None, data)?);
     }
     Ok(sections)
 }
@@ -853,15 +828,16 @@ fn toc_sections<'a>(
         else {
             continue;
         };
-        let header = header.trim_end_matches('#');
-        let mut fields = header.split_whitespace();
-        let count = match fields.nth(2) {
+        let mut fields = ctx.trim_end_matches(header, |c| Ok(c == '#'), "creo TOC header padding")?;
+        legacy::text_field(ctx, &mut fields, false)?;
+        legacy::text_field(ctx, &mut fields, false)?;
+        let count = match legacy::text_field(ctx, &mut fields, false)? {
             Some(value) => ctx
                 .parse_text::<usize>(value, "creo scalar text parsing")?
                 .ok(),
             None => None,
         };
-        let row_width = match fields.next() {
+        let row_width = match legacy::text_field(ctx, &mut fields, false)? {
             Some(value) => ctx
                 .parse_text::<usize>(value, "creo scalar text parsing")?
                 .ok(),
@@ -874,7 +850,8 @@ fn toc_sections<'a>(
             continue;
         }
         let rows_start = line_end + 1;
-        for index in 0..count {
+        let mut indices = 0..count;
+        while let Some(index) = ctx.next_charged(&mut indices, "creo TOC row traversal")? {
             let Some(start) = index
                 .checked_mul(row_width)
                 .and_then(|relative| rows_start.checked_add(relative))
@@ -887,21 +864,9 @@ fn toc_sections<'a>(
             let Some(row) = data.get(start..end) else {
                 break;
             };
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(row.len())
-                    .checked_mul(8)
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("creo TOC row parsing", u64::MAX, u64::MAX)
-                    })?,
-                "creo TOC row parsing",
-            )?;
-            let Ok(row) = std::str::from_utf8(row) else {
-                continue;
-            };
-            let mut fields = row
-                .trim_end_matches(['#', '\n', '\r', ' '])
-                .split_whitespace();
-            let Some(name) = fields.next() else {
+            let Ok(row) = ctx.validate_utf8(row, "creo TOC row UTF-8")? else { continue; };
+            let mut fields = ctx.trim_end_matches(row, |c| Ok(matches!(c, '#' | '\n' | '\r' | ' ')), "creo TOC row padding")?;
+            let Some(name) = legacy::text_field(ctx, &mut fields, false)? else {
                 continue;
             };
             if name == "NEXT_TOC_ENTRY" {
@@ -909,21 +874,15 @@ fn toc_sections<'a>(
             }
             let (raw_name, offset_field, length_field, expanded_field) = if name == "ModelView" {
                 let (Some(id), Some(offset), Some(length), Some(expanded)) =
-                    (fields.next(), fields.next(), fields.next(), fields.next())
+                    (legacy::text_field(ctx, &mut fields, false)?, legacy::text_field(ctx, &mut fields, false)?, legacy::text_field(ctx, &mut fields, false)?, legacy::text_field(ctx, &mut fields, false)?)
                 else {
                     continue;
                 };
-                let Some(name_len) = "ModelView#".len().checked_add(id.len()) else {
-                    continue;
-                };
-                let mut raw_name = String::new();
-                ctx.try_reserve_retained_text(&mut raw_name, name_len, "creo TOC section names")?;
-                raw_name.push_str("ModelView#");
-                raw_name.push_str(id);
+                let raw_name = ctx.format_retained(format_args!("ModelView#{id}"), "creo TOC section names")?;
                 (raw_name, offset, length, expanded)
             } else {
                 let (Some(offset), Some(length), Some(expanded)) =
-                    (fields.next(), fields.next(), fields.next())
+                    (legacy::text_field(ctx, &mut fields, false)?, legacy::text_field(ctx, &mut fields, false)?, legacy::text_field(ctx, &mut fields, false)?)
                 else {
                     continue;
                 };
@@ -962,7 +921,7 @@ fn toc_sections<'a>(
             };
             if length < marker_len
                 || marker.first() != Some(&b'#')
-                || marker.get(1..1 + raw_name.len()) != Some(raw_name.as_bytes())
+                || !ctx.equal(&marker[1..1 + raw_name.len()], raw_name.as_bytes(), "creo TOC marker name equality")?
                 || marker.last() != Some(&b'\n')
             {
                 continue;
@@ -997,12 +956,6 @@ fn legacy_toc_sections<'a>(
     data: &'a [u8],
     banner_offset: usize,
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(data.len() - banner_offset)
-            .checked_mul(8)
-            .ok_or_else(|| ctx.refuse_codec_limit("creo legacy TOC framing", u64::MAX, u64::MAX))?,
-        "creo legacy TOC framing",
-    )?;
     let Some(toc_offset) = ctx
         .find_bytes_from(
             data,
@@ -1014,7 +967,7 @@ fn legacy_toc_sections<'a>(
     else {
         return Ok(Vec::new());
     };
-    let Some((toc_declaration, after_toc_declaration)) = legacy::line(data, toc_offset) else {
+    let Some((toc_declaration, after_toc_declaration)) = legacy::line(ctx, data, toc_offset)? else {
         return Ok(Vec::new());
     };
     let Some((toc_id, _, _)) =
@@ -1024,25 +977,25 @@ fn legacy_toc_sections<'a>(
     else {
         return Ok(Vec::new());
     };
-    let Some((toc_value, after_toc_value)) = legacy::line(data, after_toc_declaration) else {
+    let Some((toc_value, after_toc_value)) = legacy::line(ctx, data, after_toc_declaration)? else {
         return Ok(Vec::new());
     };
     let Ok(toc_value) = ctx.validate_utf8(toc_value, "creo UTF-8 validation")? else {
         return Ok(Vec::new());
     };
-    let mut toc_fields = toc_value.split_ascii_whitespace();
-    if toc_fields.next() != Some("0")
-        || match toc_fields.next() {
+    let mut toc_fields = toc_value;
+    if legacy::text_field(ctx, &mut toc_fields, true)? != Some("0")
+        || match legacy::text_field(ctx, &mut toc_fields, true)? {
             Some(id) => ctx.parse_text::<u32>(id, "creo scalar text parsing")?.ok(),
             None => None,
         } != Some(toc_id)
-        || toc_fields.next() != Some("->")
-        || toc_fields.next().is_some()
+        || legacy::text_field(ctx, &mut toc_fields, true)? != Some("->")
+        || legacy::text_field(ctx, &mut toc_fields, true)?.is_some()
     {
         return Ok(Vec::new());
     }
 
-    let Some((entry_declaration, after_entry_declaration)) = legacy::line(data, after_toc_value)
+    let Some((entry_declaration, after_entry_declaration)) = legacy::line(ctx, data, after_toc_value)?
     else {
         return Ok(Vec::new());
     };
@@ -1053,22 +1006,22 @@ fn legacy_toc_sections<'a>(
     else {
         return Ok(Vec::new());
     };
-    let Some((entry_array, mut next)) = legacy::line(data, after_entry_declaration) else {
+    let Some((entry_array, mut next)) = legacy::line(ctx, data, after_entry_declaration)? else {
         return Ok(Vec::new());
     };
     let Ok(entry_array) = ctx.validate_utf8(entry_array, "creo UTF-8 validation")? else {
         return Ok(Vec::new());
     };
-    let mut array_fields = entry_array.split_ascii_whitespace();
-    if array_fields.next() != Some("1")
-        || match array_fields.next() {
+    let mut array_fields = entry_array;
+    if legacy::text_field(ctx, &mut array_fields, true)? != Some("1")
+        || match legacy::text_field(ctx, &mut array_fields, true)? {
             Some(id) => ctx.parse_text::<u32>(id, "creo scalar text parsing")?.ok(),
             None => None,
         } != Some(entry_id)
     {
         return Ok(Vec::new());
     }
-    let Some(count_field) = array_fields.next() else {
+    let Some(count_field) = legacy::text_field(ctx, &mut array_fields, true)? else {
         return Ok(Vec::new());
     };
     let Some(count) = ctx
@@ -1080,7 +1033,7 @@ fn legacy_toc_sections<'a>(
     let Ok(count) = ctx.parse_text::<usize>(count, "creo scalar text parsing")? else {
         return Ok(Vec::new());
     };
-    if array_fields.next().is_some() {
+    if legacy::text_field(ctx, &mut array_fields, true)?.is_some() {
         return Ok(Vec::new());
     }
 
@@ -1092,63 +1045,38 @@ fn legacy_toc_sections<'a>(
     {
         return Ok(Vec::new());
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(count),
-        "creo legacy TOC entries",
-    )?;
     let mut sections = Vec::new();
-    for _ in 0..count {
-        let mut window_start = next;
-        while window_start < data.len() {
-            let remaining = data.len() - window_start;
-            let step = if remaining < 64 { remaining } else { 64 };
-            ctx.charge_work(
-                2 * cadmpeg_core::decode::u64_from_index(step),
-                "creo legacy TOC entry scan",
-            )?;
-            if data[window_start..window_start + step].contains(&b'\n') {
-                break;
-            }
-            window_start += step;
-        }
-        let Some((entry, after_entry)) = legacy::line(data, next) else {
+    let mut entries = 0..count;
+    while ctx.next_charged(&mut entries, "creo legacy TOC entries")?.is_some() {
+        let Some((entry, after_entry)) = legacy::line(ctx, data, next)? else {
             break;
         };
         next = after_entry;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entry.len())
-                .checked_mul(8)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo legacy TOC entry parsing", u64::MAX, u64::MAX)
-                })?,
-            "creo legacy TOC entry parsing",
-        )?;
-        let Ok(entry) = std::str::from_utf8(entry) else {
-            continue;
-        };
-        let entry = entry.trim_end_matches('#').trim_end();
-        let mut fields = entry.split_ascii_whitespace();
-        let [Some(kind), Some(id), Some(raw_name), Some(offset_field), Some(length_field), Some(zero), Some(revision), None] =
-            std::array::from_fn(|_| fields.next())
-        else {
-            continue;
-        };
+        let Ok(entry) = ctx.validate_utf8(entry, "creo legacy TOC entry UTF-8")? else { continue; };
+        let entry = ctx.trim_end_matches(entry, |c| Ok(c == '#'), "creo legacy TOC entry padding")?;
+        let mut fields = ctx.trim_end_text(entry, "creo legacy TOC entry whitespace")?;
+        let (Some(kind), Some(id), Some(raw_name), Some(offset_field), Some(length_field), Some(zero), Some(revision), None) = (
+            legacy::text_field(ctx, &mut fields, true)?, legacy::text_field(ctx, &mut fields, true)?,
+            legacy::text_field(ctx, &mut fields, true)?, legacy::text_field(ctx, &mut fields, true)?,
+            legacy::text_field(ctx, &mut fields, true)?, legacy::text_field(ctx, &mut fields, true)?,
+            legacy::text_field(ctx, &mut fields, true)?, legacy::text_field(ctx, &mut fields, true)?,
+        ) else { continue; };
         if kind != "2"
-            || id.parse::<u32>().ok() != Some(entry_id)
+            || ctx.parse_text::<u32>(id, "creo legacy TOC entry ID")?.ok() != Some(entry_id)
             || zero != "0"
-            || revision.parse::<u32>().is_err()
+            || ctx.parse_text::<u32>(revision, "creo legacy TOC entry revision")?.is_err()
         {
             continue;
         }
         if raw_name.len() < 2
-            || !raw_name.bytes().all(is_name_byte)
-            || !raw_name.bytes().any(|byte| byte.is_ascii_alphanumeric())
+            || !ctx.all_by(raw_name.bytes(), |byte| Ok(is_name_byte(byte)), "creo legacy TOC name validation")?
+            || !ctx.any_by(raw_name.bytes(), |byte| Ok(byte.is_ascii_alphanumeric()), "creo legacy TOC name validation")?
         {
             continue;
         }
         let (Ok(relative_offset), Ok(length)) = (
-            usize::from_str_radix(offset_field, 16),
-            usize::from_str_radix(length_field, 16),
+            ctx.parse_radix::<usize>(offset_field, 16, "creo legacy TOC offset parsing")?,
+            ctx.parse_radix::<usize>(length_field, 16, "creo legacy TOC length parsing")?,
         ) else {
             continue;
         };
@@ -1169,7 +1097,7 @@ fn legacy_toc_sections<'a>(
         };
         if length < marker_len
             || marker.first() != Some(&b'#')
-            || marker.get(1..1 + raw_name.len()) != Some(raw_name.as_bytes())
+            || !ctx.equal(&marker[1..1 + raw_name.len()], raw_name.as_bytes(), "creo TOC marker name equality")?
             || marker.last() != Some(&b'\n')
         {
             continue;
@@ -1275,10 +1203,10 @@ pub(crate) fn section_region<'a>(data: &'a [u8], section: &Section) -> Option<&'
     data.get(section.offset()..section.end())
 }
 
-fn toc_lists_section(toc: &[u8], name: &[u8]) -> bool {
-    toc.windows(name.len() + 2).any(|window| {
-        window[0] == b'\n' && &window[1..=name.len()] == name && window[1 + name.len()] == b' '
-    })
+fn toc_lists_section(ctx: &DecodeContext<'_>, toc: &[u8], name: &[u8]) -> Result<bool, CodecError> {
+    ctx.any_by(toc.windows(name.len() + 2), |window| {
+        Ok(window[0] == b'\n' && window[1 + name.len()] == b' ' && ctx.equal(&window[1..=name.len()], name, "creo TOC name equality")?)
+    }, "creo TOC name lookup")
 }
 
 /// Section-name bytes: printable ASCII minus space, plus the `ND:` decoration
@@ -1354,7 +1282,7 @@ fn legacy_ascii_framing(
         return Ok(None);
     };
     let schema = &body[LEGACY_OBJECT_START.len()..object_header_end];
-    if schema.is_empty() || !schema.iter().all(u8::is_ascii_digit) {
+    if schema.is_empty() || !ctx.all_by(schema, |byte| Ok(byte.is_ascii_digit()), "creo legacy schema digit validation")? {
         return Ok(None);
     }
     let schema = ctx

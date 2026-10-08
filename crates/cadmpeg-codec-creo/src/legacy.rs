@@ -938,87 +938,42 @@ impl Persistence {
     }
 }
 
-pub(crate) fn line(data: &[u8], start: usize) -> Option<(&[u8], usize)> {
-    let bytes = data.get(start..)?;
-    let relative_end = bytes.iter().position(|byte| *byte == b'\n');
+pub(crate) fn line<'a>(
+    ctx: &DecodeContext<'_>, data: &'a [u8], start: usize,
+) -> Result<Option<(&'a [u8], usize)>, CodecError> {
+    let Some(bytes) = data.get(start..) else { return Ok(None); };
+    let relative_end = ctx.position_by(bytes, |byte| Ok(*byte == b'\n'), "creo legacy line scan")?;
     let end = relative_end.map_or(data.len(), |end| start + end);
     let next = relative_end.map_or(end, |_| end + 1);
-    Some((
-        data[start..end]
-            .strip_suffix(b"\r")
-            .unwrap_or(&data[start..end]),
-        next,
-    ))
+    Ok(Some((data[start..end].strip_suffix(b"\r").unwrap_or(&data[start..end]), next)))
+}
+
+/// Parse the next borrowed persistence or TOC field.
+pub(crate) fn text_field<'a>(ctx: &DecodeContext<'_>, text: &mut &'a str, ascii: bool) -> Result<Option<&'a str>, CodecError> {
+    let whitespace = |c: char| if ascii { c.is_ascii_whitespace() } else { c.is_whitespace() };
+    let Some((start, first_width)) = ctx.find_map(text.char_indices(), |(offset, c)| Ok((!whitespace(c)).then_some((offset, c.len_utf8()))), "creo text field whitespace")? else {
+        *text = "";
+        return Ok(None);
+    };
+    let remaining = &text[start..];
+    let boundary = ctx.find_map(remaining[first_width..].char_indices(), |(offset, c)| Ok(whitespace(c).then_some((first_width + offset, c.len_utf8()))), "creo text field boundary")?;
+    let end = boundary.map_or(remaining.len(), |(end, _)| end);
+    *text = boundary.map_or("", |(end, width)| &remaining[end + width..]);
+    Ok(Some(&remaining[..end]))
 }
 
 pub(crate) fn parse_declaration<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    line: &'a [u8],
-) -> Result<Option<(u32, &'a str, LegacyTypeCode)>, cadmpeg_core::CodecError> {
-    let line = {
-        let Some(value) = ctx
-            .validate_utf8(line, "creo legacy declaration UTF-8 validation")?
-            .ok()
-        else {
-            return Ok(None);
-        };
-        value
-    };
-    let mut fields = line.split_ascii_whitespace();
-    let name = {
-        let Some(value) = ctx.strip_prefix(
-            {
-                let Some(value) = fields.next() else {
-                    return Ok(None);
-                };
-                value
-            },
-            "@",
-            "creo legacy declaration name prefix",
-        )?
-        else {
-            return Ok(None);
-        };
-        value
-    };
-    if name.is_empty() || !name.bytes().all(|byte| byte.is_ascii_graphic()) {
-        return Ok(None);
-    }
-    let id = {
-        let Some(value) = ctx
-            .parse_text(
-                {
-                    let Some(value) = fields.next() else {
-                        return Ok(None);
-                    };
-                    value
-                },
-                "creo scalar text parsing",
-            )?
-            .ok()
-        else {
-            return Ok(None);
-        };
-        value
-    };
-    let type_code = LegacyTypeCode::from({
-        let Some(value) = ctx
-            .parse_text::<u8>(
-                {
-                    let Some(value) = fields.next() else {
-                        return Ok(None);
-                    };
-                    value
-                },
-                "creo scalar text parsing",
-            )?
-            .ok()
-        else {
-            return Ok(None);
-        };
-        value
-    });
-    Ok(fields.next().is_none().then_some((id, name, type_code)))
+    ctx: &DecodeContext<'_>, line: &'a [u8],
+) -> Result<Option<(u32, &'a str, LegacyTypeCode)>, CodecError> {
+    let Some(line) = ctx.validate_utf8(line, "creo legacy declaration UTF-8 validation")?.ok() else { return Ok(None); };
+    let mut fields = line;
+    let Some(name) = text_field(ctx, &mut fields, true)?.and_then(|name| name.strip_prefix('@')) else { return Ok(None); };
+    if name.is_empty() || !ctx.all_by(name.bytes(), |byte| Ok(byte.is_ascii_graphic()), "creo legacy declaration name validation")? { return Ok(None); }
+    let Some(id_text) = text_field(ctx, &mut fields, true)? else { return Ok(None); };
+    let Some(id) = ctx.parse_text(id_text, "creo scalar text parsing")?.ok() else { return Ok(None); };
+    let Some(code_text) = text_field(ctx, &mut fields, true)? else { return Ok(None); };
+    let Some(code) = ctx.parse_text::<u8>(code_text, "creo scalar text parsing")?.ok() else { return Ok(None); };
+    Ok(text_field(ctx, &mut fields, true)?.is_none().then_some((id, name, LegacyTypeCode::from(code))))
 }
 
 pub(crate) fn starts_with_declaration(
@@ -1026,82 +981,47 @@ pub(crate) fn starts_with_declaration(
     data: &[u8],
     start: usize,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let Some((source, _)) = line(data, start) else {
+    let Some((source, _)) = line(ctx, data, start)? else {
         return Ok(false);
     };
     Ok(parse_declaration(ctx, source)?.is_some())
 }
 
-fn decimal(bytes: &[u8], mut offset: usize) -> Option<(u32, usize)> {
+fn decimal(ctx: &DecodeContext<'_>, bytes: &[u8], mut offset: usize) -> Result<Option<(u32, usize)>, CodecError> {
     let start = offset;
     let mut value = 0u32;
-    while let Some(digit) = bytes.get(offset).filter(|byte| byte.is_ascii_digit()) {
-        value = value
-            .checked_mul(10)?
-            .checked_add(u32::from(*digit - b'0'))?;
+    let mut digits = bytes.get(start..).unwrap_or_default().iter();
+    while let Some(digit) = ctx.next_charged(&mut digits, "creo legacy decimal digits")? {
+        if !digit.is_ascii_digit() { break; }
+        let Some(next) = value.checked_mul(10).and_then(|value| value.checked_add(u32::from(*digit - b'0'))) else { return Ok(None); };
+        value = next;
         offset += 1;
     }
-    (offset > start).then_some((value, offset))
+    Ok((offset > start).then_some((value, offset)))
 }
 
-fn compact_real(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Option<Real>, cadmpeg_core::CodecError> {
-    let (digits, repeat_last) = bytes
-        .strip_suffix(b"R")
-        .map_or((bytes, false), |digits| (digits, true));
-    if digits.is_empty()
-        || digits.len() > 16
-        || !digits
-            .iter()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_lowercase())
-    {
-        return Ok(None);
+fn compact_real(bytes: &[u8]) -> Option<Real> {
+    let (digits, repeat_last) = bytes.strip_suffix(b"R").map_or((bytes, false), |digits| (digits, true));
+    if digits.is_empty() || digits.len() > 16
+        || !digits.iter().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_lowercase()) {
+        return None;
     }
-    let digits = {
-        let Some(value) = ctx.validate_utf8(digits, "creo UTF-8 validation")?.ok() else {
-            return Ok(None);
-        };
-        value
-    };
-    let mut bits = {
-        let Some(value) = ctx
-            .parse_radix::<u64>(digits, 16, "creo compact real hexadecimal parsing")?
-            .ok()
-        else {
-            return Ok(None);
-        };
-        value
-    };
+    let digits = std::str::from_utf8(digits).ok()?;
+    let mut bits = u64::from_str_radix(digits, 16).ok()?;
     let fill = if repeat_last { bits & 0x0f } else { 0 };
-    for _ in digits.len()..16 {
-        bits = {
-            let Some(value) = bits.checked_shl(4) else {
-                return Ok(None);
-            };
-            value
-        } | fill;
-    }
-    Ok(f64::from_bits(bits).is_finite().then_some(Real(bits)))
+    for _ in digits.len()..16 { bits = (bits << 4) | fill; }
+    f64::from_bits(bits).is_finite().then_some(Real(bits))
 }
 
 fn signed_integer(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<i32>, cadmpeg_core::CodecError> {
-    let text = {
-        let Some(value) = ctx.validate_utf8(bytes, "creo UTF-8 validation")?.ok() else {
-            return Ok(None);
-        };
-        value
-    };
+    let Some(text) = ctx.validate_utf8(bytes, "creo UTF-8 validation")?.ok() else { return Ok(None); };
     if text.is_empty()
-        || !ctx
-            .strip_prefix(text, "-", "creo signed integer sign prefix")?
+        || !ctx.all_by(text.strip_prefix("-")
             .unwrap_or(text)
-            .bytes()
-            .all(|byte| byte.is_ascii_digit())
+            .bytes(), |byte| Ok(byte.is_ascii_digit()), "creo legacy integer digit validation")?
     {
         return Ok(None);
     }
@@ -1112,13 +1032,8 @@ fn unsigned_integer(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<u32>, cadmpeg_core::CodecError> {
-    let text = {
-        let Some(value) = ctx.validate_utf8(bytes, "creo UTF-8 validation")?.ok() else {
-            return Ok(None);
-        };
-        value
-    };
-    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+    let Some(text) = ctx.validate_utf8(bytes, "creo UTF-8 validation")?.ok() else { return Ok(None); };
+    if text.is_empty() || !ctx.all_by(text.bytes(), |byte| Ok(byte.is_ascii_digit()), "creo legacy integer digit validation")? {
         return Ok(None);
     }
     Ok(ctx.parse_text(text, "creo scalar text parsing")?.ok())
@@ -1131,7 +1046,7 @@ fn array_dimensions(
     let mut dimensions = Vec::new();
     let mut cursor = 0;
     while bytes.get(cursor) == Some(&b'[') {
-        let Some((dimension, after_dimension)) = decimal(bytes, cursor + 1) else {
+        let Some((dimension, after_dimension)) = decimal(ctx, bytes, cursor + 1)? else {
             return Ok(None);
         };
         if dimension == 0 || bytes.get(after_dimension) != Some(&b']') {
@@ -1145,78 +1060,44 @@ fn array_dimensions(
 }
 
 fn numeric_run<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    scalar: fn(
-        &cadmpeg_core::decode::DecodeContext<'_>,
-        &[u8],
-    ) -> Result<Option<T>, cadmpeg_core::CodecError>,
-) -> Result<Option<NumericRun<T>>, cadmpeg_core::CodecError> {
-    Ok(
-        if let Some(star) = bytes.iter().position(|byte| *byte == b'*') {
-            let (count, after_count) = {
-                let Some(value) = decimal(bytes, 0) else {
-                    return Ok(None);
-                };
-                value
-            };
-            if count == 0 || after_count != star {
-                return Ok(None);
-            }
-            Some(NumericRun {
-                count,
-                value: {
-                    let Some(value) = scalar(ctx, {
-                        let Some(value) = bytes.get(star + 1..) else {
-                            return Ok(None);
-                        };
-                        value
-                    })?
-                    else {
-                        return Ok(None);
-                    };
-                    value
-                },
-            })
-        } else {
-            Some(NumericRun {
-                count: 1,
-                value: {
-                    let Some(value) = scalar(ctx, bytes)? else {
-                        return Ok(None);
-                    };
-                    value
-                },
-            })
-        },
-    )
+    ctx: &DecodeContext<'_>, bytes: &[u8],
+    scalar: fn(&DecodeContext<'_>, &[u8]) -> Result<Option<T>, CodecError>,
+) -> Result<Option<NumericRun<T>>, CodecError> {
+    let (count, scalar_bytes) = if let Some(star) = ctx.position_by(bytes, |byte| Ok(*byte == b'*'), "creo legacy numeric repeat marker")? {
+        let Some((count, after_count)) = decimal(ctx, bytes, 0)? else { return Ok(None); };
+        if count == 0 || after_count != star { return Ok(None); }
+        (count, &bytes[star + 1..])
+    } else { (1, bytes) };
+    let Some(value) = scalar(ctx, scalar_bytes)? else { return Ok(None); };
+    Ok(Some(NumericRun { count, value }))
 }
 
 fn continuation_numeric_runs<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    scalar: fn(&cadmpeg_core::decode::DecodeContext<'_>, &[u8]) -> Result<Option<T>, CodecError>,
+    ctx: &DecodeContext<'_>, bytes: &[u8],
+    scalar: fn(&DecodeContext<'_>, &[u8]) -> Result<Option<T>, CodecError>,
 ) -> Result<Option<Vec<NumericRun<T>>>, CodecError> {
     let mut runs = Vec::new();
-    for row in bytes.split(|byte| *byte == b'\n') {
+    let mut remaining = bytes;
+    loop {
+        let newline = ctx.position_by(remaining, |byte| Ok(*byte == b'\n'), "creo legacy continuation lines")?;
+        let row = &remaining[..newline.unwrap_or(remaining.len())];
         let row = row.strip_suffix(b"\r").unwrap_or(row);
-        let Some(row) = row.strip_prefix(b"$") else {
-            return Ok(None);
-        };
-        let mut tokens = row.split(|byte| *byte == b',').peekable();
-        while let Some(token) = tokens.next() {
+        let Some(mut tokens) = row.strip_prefix(b"$") else { return Ok(None); };
+        loop {
+            let comma = ctx.position_by(tokens, |byte| Ok(*byte == b','), "creo legacy continuation tokens")?;
+            let token = &tokens[..comma.unwrap_or(tokens.len())];
             if token.is_empty() {
-                if tokens.peek().is_some() {
-                    return Ok(None);
-                }
-                continue;
+                if comma.is_some() { return Ok(None); }
+            } else {
+                let Some(run) = numeric_run(ctx, token, scalar)? else { return Ok(None); };
+                ctx.reserve_vec(&mut runs, 1, "creo legacy continuation numeric runs")?;
+                runs.push(run);
             }
-            let Some(run) = numeric_run(ctx, token, scalar)? else {
-                return Ok(None);
-            };
-            ctx.reserve_vec(&mut runs, 1, "creo legacy continuation numeric runs")?;
-            runs.push(run);
+            let Some(comma) = comma else { break; };
+            tokens = &tokens[comma + 1..];
         }
+        let Some(newline) = newline else { break; };
+        remaining = &remaining[newline + 1..];
     }
     Ok(Some(runs))
 }
@@ -1755,27 +1636,18 @@ where
     })
 }
 
-fn value(line: &[u8], line_offset: usize) -> Option<AttributeValue> {
-    let (depth, after_depth) = decimal(line, 0)?;
-    if line.get(after_depth) != Some(&b' ') {
-        return None;
-    }
-    let (attribute_id, after_attribute) = decimal(line, after_depth + 1)?;
-    let payload_start = if after_attribute == line.len() {
-        after_attribute
-    } else {
-        if line.get(after_attribute) != Some(&b' ') {
-            return None;
-        }
+fn value(ctx: &DecodeContext<'_>, line: &[u8], line_offset: usize) -> Result<Option<AttributeValue>, CodecError> {
+    let Some((depth, after_depth)) = decimal(ctx, line, 0)? else { return Ok(None); };
+    if line.get(after_depth) != Some(&b' ') { return Ok(None); }
+    let Some((attribute_id, after_attribute)) = decimal(ctx, line, after_depth + 1)? else { return Ok(None); };
+    let payload_start = if after_attribute == line.len() { after_attribute } else {
+        if line.get(after_attribute) != Some(&b' ') { return Ok(None); }
         after_attribute + 1
     };
-    Some(AttributeValue {
-        depth,
-        attribute_id,
-        offset: line_offset,
-        payload: line_offset + payload_start..line_offset + line.len(),
-        continuation: None,
-    })
+    Ok(Some(AttributeValue {
+        depth, attribute_id, offset: line_offset,
+        payload: line_offset + payload_start..line_offset + line.len(), continuation: None,
+    }))
 }
 
 fn scan_scope(
@@ -1803,7 +1675,7 @@ fn scan_scope(
 
     while next < range.end {
         let line_offset = next;
-        let Some((current, after_line)) = line(&data[..range.end], next) else {
+        let Some((current, after_line)) = line(ctx, &data[..range.end], next)? else {
             break;
         };
         next = after_line;
@@ -1865,7 +1737,7 @@ fn scan_scope(
             }
             continue;
         }
-        if let Some(value) = value(current, line_offset) {
+        if let Some(value) = value(ctx, current, line_offset)? {
             continuation_owner = Some(candidates.len());
             ctx.reserve_vec(&mut candidates, 1, "creo legacy scope value candidates")?;
             candidates.push(value);
@@ -1926,7 +1798,7 @@ pub(crate) fn scan(
         NullToken::RepresentsBytes,
         &parents,
     )?;
-    let real_values = numeric_records(ctx, data, &scopes, ValueKind::REAL, compact_real, &parents)?;
+    let real_values = numeric_records(ctx, data, &scopes, ValueKind::REAL, |_, bytes| Ok(compact_real(bytes)), &parents)?;
     let integer_values = numeric_records(
         ctx,
         data,
@@ -1944,7 +1816,7 @@ pub(crate) fn scan(
         &parents,
     )?;
     let type_6_values =
-        numeric_records(ctx, data, &scopes, ValueKind::TYPE6, compact_real, &parents)?;
+        numeric_records(ctx, data, &scopes, ValueKind::TYPE6, |_, bytes| Ok(compact_real(bytes)), &parents)?;
     let type_7_values = numeric_records(
         ctx,
         data,

@@ -69,7 +69,7 @@ fn double_xar_records<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Result<Vec<CreoDoubleXarTableRecord<'a>>, CodecError> {
     let mut records = Vec::new();
-    for table in &scan.primitives.double_xar_tables {
+    for table in ctx.admit_iter(&scan.primitives.double_xar_tables, "creo expanded record traversal")? {
         let id = ctx.format_retained(
             format_args!(
                 "creo:{}:double_xar#{}:{}",
@@ -88,7 +88,7 @@ fn primitive_scalar_array_records<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Result<Vec<CreoPrimitiveScalarArrayRecord<'a>>, CodecError> {
     let mut records = Vec::new();
-    for array in &scan.primitives.scalar_arrays {
+    for array in ctx.admit_iter(&scan.primitives.scalar_arrays, "creo expanded record traversal")? {
         let id = ctx.format_retained(
             format_args!(
                 "creo:solid_primdata:scalar_array#{}:{}",
@@ -166,29 +166,12 @@ fn visit_feature_surface_replays(
         &crate::surface::SurfaceRow,
     ) -> Result<(), CodecError>,
 ) -> Result<(), CodecError> {
-    for table in &scan.features.entity_tables {
+    for table in ctx.admit_iter(&scan.features.entity_tables, "creo expanded record traversal")? {
         let owner_feature_id = table.feature_id;
-        let visible_count = ctx
-            .admit_iter(&table.entries, "creo surface replay entry scan")?
-            .take_while(|entry| entry.class_id() == 254)
-            .count();
-        if visible_count == 0 {
-            continue;
-        }
+        let visible_count = ctx.position_by(&table.entries, |entry| Ok(entry.class_id() != 254), "creo surface replay entry scan")?.unwrap_or(table.entries.len());
+        if visible_count == 0 { continue; }
         let visible_entries = &table.entries[..visible_count];
-        let validation_work = cadmpeg_core::decode::u64_from_index(visible_count)
-            .checked_mul(cadmpeg_core::decode::u64_from_index(
-                scan.surfaces.rows.len(),
-            ))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo surface replay validation", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(validation_work, "creo surface replay validation")?;
-        if visible_entries.iter().any(|entry| {
-            crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id).is_none()
-        }) {
-            continue;
-        }
+        if ctx.any_by(visible_entries, |entry| Ok(scan.surfaces.rows.unique(entry.entity_id).is_none()), "creo surface replay validation")? { continue; }
         let replay_entries = &table.entries[visible_count..];
         let mut replay_ordinal = 0;
         let mut cursor = 0usize;
@@ -196,58 +179,28 @@ fn visit_feature_surface_replays(
             .checked_add(visible_count)
             .filter(|end| *end <= replay_entries.len())
         {
-            let query_work = cadmpeg_core::decode::u64_from_index(scan.surfaces.rows.len())
-                .checked_add(cadmpeg_core::decode::u64_from_index(
-                    scan.surfaces.nonvisible_rows.len(),
-                ))
-                .and_then(|rows| rows.checked_add(1))
-                .and_then(|rows| {
-                    rows.checked_mul(cadmpeg_core::decode::u64_from_index(visible_count))
-                })
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo surface replay candidate work", u64::MAX, u64::MAX)
-                })?;
-            ctx.charge_work(query_work, "creo surface replay candidate work")?;
             let candidate_entries = &replay_entries[cursor..end];
-            if candidate_entries
-                .iter()
-                .any(|entry| entry.class_id() != 214)
+            if ctx.any_by(candidate_entries, |entry| Ok(entry.class_id() != 214), "creo surface replay candidate work")?
             {
                 cursor += 1;
                 continue;
             }
-            if visible_entries
-                .iter()
-                .zip(candidate_entries)
-                .all(|(visible_entry, replay_entry)| {
-                    let visible = crate::surface::unique_surface_row(
-                        &scan.surfaces.rows,
-                        visible_entry.entity_id,
-                    );
-                    let replay = crate::surface::unique_surface_row(
-                        &scan.surfaces.nonvisible_rows,
-                        replay_entry.entity_id,
-                    );
-                    visible.zip(replay).is_some_and(|(visible, replay)| {
+            if ctx.all_by(visible_entries.iter().zip(candidate_entries), |(visible_entry, replay_entry)| {
+                    let visible = scan.surfaces.rows.unique(visible_entry.entity_id);
+                    let replay = scan.surfaces.nonvisible_rows.unique(replay_entry.entity_id);
+                    Ok(visible.zip(replay).is_some_and(|(visible, replay)| {
                         visible.feature_id == owner_feature_id
                             && replay.feature_id == owner_feature_id
                             && visible.kind == replay.kind
-                    })
-                })
+                    }))
+                }, "creo surface replay correspondence work")?
             {
-                ctx.charge_work(query_work, "creo surface replay emission lookups")?;
-                for (visible_entry, replay_entry) in visible_entries.iter().zip(candidate_entries) {
-                    let visible = crate::surface::unique_surface_row(
-                        &scan.surfaces.rows,
-                        visible_entry.entity_id,
-                    )
+                for (visible_entry, replay_entry) in ctx.admit_iter(visible_entries, "creo surface replay emission lookups")?.zip(candidate_entries) {
+                    let visible = scan.surfaces.rows.unique(visible_entry.entity_id)
                     .ok_or_else(|| {
                         CodecError::malformed("matched visible replay row disappeared")
                     })?;
-                    let replay = crate::surface::unique_surface_row(
-                        &scan.surfaces.nonvisible_rows,
-                        replay_entry.entity_id,
-                    )
+                    let replay = scan.surfaces.nonvisible_rows.unique(replay_entry.entity_id)
                     .ok_or_else(|| {
                         CodecError::malformed("matched nonvisible replay row disappeared")
                     })?;
@@ -299,7 +252,7 @@ pub(super) fn fc05_circle_records<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Result<Vec<CreoFc05CircleRecord<'a>>, CodecError> {
     let mut records = Vec::new();
-    for record in &scan.curves.fc05_circles {
+    for record in ctx.admit_iter(&scan.curves.fc05_circles, "creo expanded record traversal")? {
         let id = ctx.format_retained(
             format_args!("creo:curve:fc05_circle#{}", record.curve_id),
             "creo native FC05 circle IDs",
@@ -327,7 +280,7 @@ pub(super) fn fc05_cylinder_cap_pair_records<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Result<Vec<CreoFc05CylinderCapPairRecord<'a>>, CodecError> {
     let mut records = Vec::new();
-    for record in &scan.curves.fc05_cylinder_cap_pairs {
+    for record in ctx.admit_iter(&scan.curves.fc05_cylinder_cap_pairs, "creo expanded record traversal")? {
         let id = ctx.format_retained(
             format_args!("creo:surface:fc05_cylinder_cap_pair#{}", record.surface_id),
             "creo native FC05 cap pair IDs",
@@ -494,15 +447,10 @@ mod tests {
 
     #[test]
     fn native_surface_replay_candidate_refuses_work_limit() {
-        let error = with_replay_limits(u64::MAX, 1, 3, |ctx, scan| {
-            let count = feature_surface_replay_association_count(ctx, scan)?;
-            Ok(serde_json::json!(count))
-        })
-        .expect_err("one candidate comparison needs work admission");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::WorkUnits
-                && resource.operation == "creo surface replay candidate work")
+        let scan = replay_scan();
+        crate::test_support::assert_work_boundaries(
+            &["creo surface replay candidate work"],
+            |ctx| feature_surface_replay_association_count(ctx, &scan),
         );
     }
 
