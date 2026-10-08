@@ -1183,6 +1183,40 @@ fn nurbs_prefix_refuses_scoped_storage_before_materializing() {
 }
 
 #[test]
+fn nurbs_prefix_storage_refusal_precedes_unexecuted_reads() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let multiplicity = [0, 2];
+    let knot = [0; 8];
+    for (array, operation) in [
+        (super::ArrayValues::U16(&multiplicity), "NX NURBS multiplicity prefix"),
+        (super::ArrayValues::F64(&knot), "NX NURBS knot prefix"),
+    ] {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_work_units = 0;
+            },
+            |ctx| {
+                let result = match array {
+                    super::ArrayValues::U16(_) => array.u16_prefix(ctx, 1).map(|_| ()),
+                    super::ArrayValues::F64(_) => array.f64_prefix(ctx, 1).map(|_| ()),
+                };
+                let Err(CodecError::ResourceLimit(limit)) = result else {
+                    panic!("storage must refuse before any typed prefix read");
+                };
+                assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+                assert_eq!(limit.operation, operation);
+                assert_eq!(limit.used, 0);
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            },
+        );
+    }
+}
+
+#[test]
 fn nurbs_expanded_knots_refuse_retained_storage() {
     crate::test_support::with_decode_context_over(
         &[],
