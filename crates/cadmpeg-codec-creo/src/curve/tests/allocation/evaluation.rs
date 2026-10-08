@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use super::{assert_target_limit, parse, resource_error, ONE_COMMENT};
+use crate::curve::test_support::{expression_lines, with_expression_policy};
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
-use super::{ONE_COMMENT, parse, with_expression_policy, expression_lines, resource_error, assert_target_limit};
 
 #[test]
 fn solve_synchronization_refuses_each_retained_value() {
@@ -50,12 +51,21 @@ fn solve_synchronization_refuses_each_retained_value() {
         }];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some(operation), |cap| {
-            let mut trial = policy;
-            trial.limits.max_retained_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &trial).expect("root");
-            crate::curve::synchronize_solve_blocks(&ctx, &mut blocks.clone(), &[evaluated.clone()], &solutions)
-        });
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some(operation),
+            |cap| {
+                let mut trial = policy;
+                trial.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &trial).expect("root");
+                crate::curve::synchronize_solve_blocks(
+                    &ctx,
+                    &mut blocks.clone(),
+                    &[evaluated.clone()],
+                    &solutions,
+                )
+            },
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert!(
             matches!(crate::curve::synchronize_solve_blocks(&ctx, &mut blocks, &[evaluated.clone()], &solutions),
@@ -92,11 +102,15 @@ fn expression_helix_required_outputs_refuse_scan_work() {
             .is_none()
     );
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, Some("creo helix output scan work"), |cap| {
-        let mut trial = policy;
-        trial.limits.max_work_units = cap;
-        with_expression_policy(trial, |ctx| crate::curve::expression_helix(ctx, &record))
-    });
+    policy.limits.max_work_units = crate::test_support::allocation_limit_at(
+        ResourceDimension::WorkUnits,
+        Some("creo helix output scan work"),
+        |cap| {
+            let mut trial = policy;
+            trial.limits.max_work_units = cap;
+            with_expression_policy(trial, |ctx| crate::curve::expression_helix(ctx, &record))
+        },
+    );
     let error = with_expression_policy(policy, |ctx| crate::curve::expression_helix(ctx, &record))
         .expect_err("output scan needs work");
     assert!(
@@ -114,11 +128,17 @@ fn affine_equation_merge_propagates_coefficient_node_refusal() {
         coefficients: BTreeMap::from([("y".to_owned(), 1.0)]),
     };
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo affine combined coefficient nodes"), |cap| {
-        let mut trial = policy;
-        trial.limits.max_collection_items = cap;
-        with_expression_policy(trial, |ctx| left.clone().combine_admitted(right.clone(), true, ctx))
-    });
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo affine combined coefficient nodes"),
+        |cap| {
+            let mut trial = policy;
+            trial.limits.max_collection_items = cap;
+            with_expression_policy(trial, |ctx| {
+                left.clone().combine_admitted(right.clone(), true, ctx)
+            })
+        },
+    );
     let error = resource_error(with_expression_policy(policy, |ctx| {
         let result = left.combine_admitted(right, true, ctx);
         assert_eq!(
@@ -183,73 +203,123 @@ fn prohibited_construct_trim_refuses_before_comment_skip() {
             && limit.operation == "creo prohibited construct whitespace trim"));
 }
 
-
 #[test]
 fn unterminated_solve_program_needs_no_retained_storage() {
     let lines = expression_lines(&["SOLVE", "x=1"]);
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let program = with_expression_policy(policy, |ctx| crate::curve::tests::compile_solve_program(ctx, &lines)).expect("no native block is retained");
+    let program = with_expression_policy(policy, |ctx| {
+        crate::curve::test_support::compile_solve_program(ctx, &lines)
+    })
+    .expect("no native block is retained");
     assert!(program.unresolved_control);
     assert!(program.blocks.is_empty());
 }
 
 #[test]
 fn incomplete_expression_record_needs_no_retained_storage() {
-    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\xe0\x0aexpression\0\xf8\x02a=1\0b=2";
+    let payload =
+        b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\xe0\x0aexpression\0\xf8\x02a=1\0b=2";
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    assert!(parse(payload, policy).expect("incomplete lines are temporary").is_empty());
+    assert!(parse(payload, policy)
+        .expect("incomplete lines are temporary")
+        .is_empty());
 }
 
 #[test]
 fn duplicate_solve_unknowns_need_no_retained_storage() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    assert!(with_expression_policy(policy, |ctx| crate::curve::curve_expression_solve_unknowns(ctx, "x, X")).expect("rejected names are temporary").is_none());
+    assert!(
+        with_expression_policy(policy, |ctx| crate::curve::curve_expression_solve_unknowns(
+            ctx, "x, X"
+        ))
+        .expect("rejected names are temporary")
+        .is_none()
+    );
 }
 
 #[test]
 fn zero_affine_addend_needs_no_new_coefficient_node() {
-    let right = crate::curve::SimultaneousAffineValue { dimension: crate::curve::RelationDimension::default(), constant: 0.0, coefficients: BTreeMap::from([("x".to_owned(), 0.0)]) };
+    let right = crate::curve::SimultaneousAffineValue {
+        dimension: crate::curve::RelationDimension::default(),
+        constant: 0.0,
+        coefficients: BTreeMap::from([("x".to_owned(), 0.0)]),
+    };
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let result = with_expression_policy(policy, |ctx| crate::curve::SimultaneousAffineValue::constant(0.0, crate::curve::RelationDimension::default()).combine_admitted(right, false, ctx)).expect("zero addend reserves no node").expect("matching dimensions");
+    let result = with_expression_policy(policy, |ctx| {
+        crate::curve::SimultaneousAffineValue::constant(
+            0.0,
+            crate::curve::RelationDimension::default(),
+        )
+        .combine_admitted(right, false, ctx)
+    })
+    .expect("zero addend reserves no node")
+    .expect("matching dimensions");
     assert!(result.coefficients.is_empty());
 }
 
 #[test]
 fn zero_dimension_addend_needs_no_new_variable_node() {
-    let right = crate::curve::DimensionForm { constant: crate::curve::DimensionRational::default(), variables: BTreeMap::from([("x".to_owned(), crate::curve::DimensionRational::default())]) };
+    let right = crate::curve::DimensionForm {
+        constant: crate::curve::DimensionRational::default(),
+        variables: BTreeMap::from([("x".to_owned(), crate::curve::DimensionRational::default())]),
+    };
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let result = with_expression_policy(policy, |ctx| crate::curve::DimensionForm::default().combine_admitted(ctx, right, false)).expect("zero addend reserves no node").expect("valid rationals");
+    let result = with_expression_policy(policy, |ctx| {
+        crate::curve::DimensionForm::default().combine_admitted(ctx, right, false)
+    })
+    .expect("zero addend reserves no node")
+    .expect("valid rationals");
     assert!(result.variables.is_empty());
 }
 
 #[test]
 fn external_relation_string_comparison_refuses_work() {
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits, "creo external relation value comparison", |ctx| {
-        let mut symbols = crate::curve::ExternalRelationSymbols::default();
-        symbols.observe(ctx, "source".to_owned(), Some(crate::curve::CurveExpressionValue::String("same".to_owned())))?;
-        symbols.observe(ctx, "source".to_owned(), Some(crate::curve::CurveExpressionValue::String("same".to_owned())))?;
-        Ok(())
-    });
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "creo external relation value comparison"));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo external relation value comparison",
+        |ctx| {
+            let mut symbols = crate::curve::ExternalRelationSymbols::default();
+            symbols.observe(
+                ctx,
+                "source".to_owned(),
+                Some(crate::curve::CurveExpressionValue::String(
+                    "same".to_owned(),
+                )),
+            )?;
+            symbols.observe(
+                ctx,
+                "source".to_owned(),
+                Some(crate::curve::CurveExpressionValue::String(
+                    "same".to_owned(),
+                )),
+            )?;
+            Ok(())
+        },
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "creo external relation value comparison")
+    );
 }
 
 #[test]
 fn disabled_expression_values_use_temporary_storage() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\xe0\x0aexpression\0\xf8\x01message=itos(2)\0";
-    let records = crate::test_support::assert_refusal_order(ResourceDimension::RetainedBytes, &[], |limit| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let result = parse(payload, policy);
-        if let Err(CodecError::ResourceLimit(ref refusal)) = result {
-            assert_ne!(refusal.operation, "creo evaluated assignment string");
-        }
-        result
-    });
+    let records =
+        crate::test_support::assert_refusal_order(ResourceDimension::RetainedBytes, &[], |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let result = parse(payload, policy);
+            if let Err(CodecError::ResourceLimit(ref refusal)) = result {
+                assert_ne!(refusal.operation, "creo evaluated assignment string");
+            }
+            result
+        });
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].assignments.len(), 1);
     assert_eq!(records[0].assignments[0].value, None);

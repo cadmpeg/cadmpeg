@@ -1431,3 +1431,6 @@ pub(super) fn solve_affine_expression_block(
     }
     Ok(Some(values))
 }
+
+#[cfg(test)]
+mod tests;

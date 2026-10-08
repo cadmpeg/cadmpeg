@@ -21,6 +21,8 @@ const EPS_ANGLE_AGREEMENT: f64 = 1.0e-6;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
 mod solve;
+#[cfg(test)]
+mod test_support;
 use solve::{
     evaluate_affine_program, infer_solve_variable_dimensions, solve_affine_expression_block,
     solve_nonlinear_expression_block, MAX_NONLINEAR_SOLVE_VARIABLES,

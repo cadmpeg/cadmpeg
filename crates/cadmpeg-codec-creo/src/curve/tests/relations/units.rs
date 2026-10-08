@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{parse_relation_expression, EPS_RELATION_VALUE};
-use crate::curve::tests::evaluate_expression_program;
+use crate::curve::test_support::evaluate_expression_program;
 use crate::curve::{
     CurveExpressionLine, CurveExpressionQuantity, CurveExpressionValue, ExternalRelationSymbols,
     RelationEvaluationContext,

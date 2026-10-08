@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::expression_lines;
+use crate::curve::test_support::expression_lines;
 
 #[test]
 fn evaluated_relation_trim_refuses_work() {
@@ -9,11 +9,12 @@ fn evaluated_relation_trim_refuses_work() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo evaluated relation line trim",
         |ctx| {
-            crate::curve::tests::evaluate_program_details(
+            crate::curve::test_support::evaluate_program_details(
                 ctx,
                 &lines,
                 None,
-                &crate::curve::ExternalRelationSymbols::default())
+                &crate::curve::ExternalRelationSymbols::default(),
+            )
         },
     );
     assert!(
@@ -136,7 +137,7 @@ fn solve_right_trim_refuses_work() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo solve right operand trim",
-        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
+        |ctx| crate::curve::test_support::compile_solve_program(ctx, &lines),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -152,7 +153,7 @@ fn solve_left_trim_refuses_work() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo solve left operand trim",
-        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
+        |ctx| crate::curve::test_support::compile_solve_program(ctx, &lines),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -168,7 +169,7 @@ fn solve_source_trim_refuses_before_comment_skip() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo solve source line trim",
-        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
+        |ctx| crate::curve::test_support::compile_solve_program(ctx, &lines),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
