@@ -464,11 +464,60 @@ fn x62_prefixed_object_envelope_is_admitted_before_the_xml_tree() {
 #[test]
 fn xml_envelope_scan_skips_comments_cdata_and_quoted_brackets() {
     let bytes = br#"<Document SchemaVersion="4"><!-- <Objects><Object/> --><Note attr=">"> <![CDATA[<Object/>]]> </Note><Objects><Object/><Object/></Objects></Document>"#;
-    let (bound, objects) = super::xml_envelope_counts(bytes).expect("lexical XML count");
+    let (bound, objects) = crate::test_support::with_service_context(&[], |ctx| {
+        super::xml_envelope_counts(ctx, bytes).expect("lexical admission")
+    }).expect("lexical XML count");
     assert_eq!(objects, 2);
     let parsed = roxmltree::Document::parse(std::str::from_utf8(bytes).expect("UTF-8 XML"))
         .expect("XML document");
     assert!(bound >= cadmpeg_core::decode::u64_from_index(parsed.descendants().count()));
+}
+
+#[test]
+fn xml_envelope_scan_admits_each_visited_name_tail_and_markup_step() {
+    let cases = [
+        (
+            format!("<{}:Document/>", "Namespace".repeat(128)),
+            "FCStd Document.xml lexical tag name",
+        ),
+        (
+            format!("<Document attr=\"{}\"   />", ">quoted".repeat(128)),
+            "FCStd Document.xml lexical tag tail",
+        ),
+        (
+            format!("<Document><!--{}--></Document>", "text".repeat(128)),
+            "FCStd Document.xml lexical markup suffix",
+        ),
+        (
+            format!("<Document><![CDATA[{}]]></Document>", "text".repeat(128)),
+            "FCStd Document.xml lexical markup suffix",
+        ),
+    ];
+    for (xml, operation) in cases {
+        crate::test_support::refusal_at(
+            ResourceDimension::WorkUnits,
+            &[],
+            operation,
+            |ctx| super::xml_envelope_counts(ctx, xml.as_bytes()),
+        );
+        crate::test_support::with_service_context(&[], |ctx| {
+            assert!(super::xml_envelope_counts(ctx, xml.as_bytes())
+                .expect("admitted scan").is_some());
+        });
+    }
+}
+
+#[test]
+fn xml_envelope_scan_does_not_charge_an_unvisited_malformed_tail() {
+    // Dispatch and the empty-name terminator each visit one byte.
+    const WORK_TO_EMPTY_NAME: u64 = 2;
+    let bytes = format!("<>{}", "unvisited".repeat(8192));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = WORK_TO_EMPTY_NAME;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert_eq!(super::xml_envelope_counts(&ctx, bytes.as_bytes()).expect("early stop"), None);
+    assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]

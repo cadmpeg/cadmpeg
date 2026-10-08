@@ -1335,11 +1335,7 @@ fn append_operation_parameters(
                 if !owner_matches {
                     return Ok(false);
                 }
-                ctx.equal(
-                    &parameter.name,
-                    &property.name,
-                    "fcstd operation parameter duplicate name",
-                )
+                Ok(parameter.name == property.name)
             },
             "fcstd operation parameter duplicate search",
         )? {

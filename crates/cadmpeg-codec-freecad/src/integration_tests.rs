@@ -842,3 +842,67 @@ fn gui_entry_lookup_propagates_the_original_work_refusal() {
         assert_eq!(decoded.ir().model.bodies.len(), 0);
     }
 }
+
+#[test]
+fn negative_detection_does_not_charge_unvisited_input() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = vec![b'x'; 64 * 1024];
+    for prefix in [&bytes[..0], &bytes[..3], bytes.as_slice()] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 0;
+        let (ctx, root) = DecodeContext::from_root_bytes(prefix, &arena, &policy)
+            .expect("root admission");
+        assert_eq!(FcstdCodec.detect(&ctx, root).expect("fixed magic"), Confidence::No);
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+}
+
+#[test]
+fn positive_detection_admits_the_marker_search() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = b"PK\x03\x04Document.xml";
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "detect FreeCAD document marker",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_work_units = cap;
+            let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
+            let result = FcstdCodec.detect(&ctx, root).map(|confidence| {
+                assert_eq!(confidence, Confidence::Medium);
+            });
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+            }
+            result
+        },
+    );
+}
+
+#[test]
+fn negative_detection_preserves_a_fused_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, root) = DecodeContext::from_root_bytes(b"other", &arena, &policy)
+        .expect("root admission");
+    let CodecError::ResourceLimit(original) =
+        ctx.charge_work(1, "earlier detection").expect_err("work limit")
+    else {
+        panic!("resource refusal")
+    };
+    let CodecError::ResourceLimit(repeated) =
+        FcstdCodec.detect(&ctx, root).expect_err("sticky refusal")
+    else {
+        panic!("resource refusal")
+    };
+    assert_eq!(repeated, original);
+}

@@ -195,7 +195,7 @@ fn product_element_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn product_body_prefix_refuses_at_retained_limit() {
+fn product_projection_without_consumers_does_not_build_body_prefixes() {
     let property = native::PropertyRecord {
         id: "fcstd:native:property#Part:Shape".into(),
         owner: "fcstd:native:object#Part".into(),
@@ -213,21 +213,34 @@ fn product_body_prefix_refuses_at_retained_limit() {
         entry: "shape.brp".into(),
         payload: crate::brep::ShapePayload::Empty,
     };
-    let error = crate::test_support::materialized_refusal_at("FreeCAD model identity", |ctx| {
-        super::transfer_neutral(
-            ctx,
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty context");
+    let (definitions, occurrences) = super::transfer_neutral(
+            &ctx,
             &[],
             &[],
             &[],
             std::slice::from_ref(&property),
             std::slice::from_ref(&payload),
             &[],
-        )
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "FreeCAD model identity")
-    );
+        ).expect("no product consumer");
+    assert!(definitions.is_empty());
+    assert!(occurrences.is_empty());
+    let cadmpeg_core::CodecError::ResourceLimit(original) =
+        ctx.charge_work(1, "prior product refusal").expect_err("work refusal")
+    else {
+        panic!("resource refusal")
+    };
+    let error = super::transfer_neutral(
+        &ctx, &[], &[], &[], std::slice::from_ref(&property),
+        std::slice::from_ref(&payload), &[],
+    ).expect_err("fused empty projection");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == original));
 }
 
 #[test]
