@@ -53,11 +53,11 @@ fn native_variable_projection_refuses_copy_before_output_slot() {
             let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
             super::super::sketch_records(&trial_ctx, &scan).map(|_| ())
         });
-    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-        ResourceDimension::RetainedBytes, Some("creo native sketch variable value body"), |cap| {
+    policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+        ResourceDimension::MaterializedBytes, Some("creo native sketch variable value body"), |cap| {
             let trial_arena = DecodeArena::new();
             let mut trial_policy = DecodePolicy::service();
-            trial_policy.limits.max_retained_bytes = cap;
+            trial_policy.limits.max_materialized_bytes = cap;
             let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
             super::super::sketch_records(&trial_ctx, &scan).map(|_| ())
         });
@@ -70,6 +70,6 @@ fn native_variable_projection_refuses_copy_before_output_slot() {
         panic!("resource refusal")
     };
     assert_eq!(refusal.operation, "creo native sketch variable value body");
-    assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(ctx.resource_refusal(), Some(refusal));
 }

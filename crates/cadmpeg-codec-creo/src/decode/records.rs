@@ -3038,10 +3038,11 @@ pub(super) fn curve_expression_records<'a, 'ctx>(
 
 
 
-pub(super) fn sketch_records<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn sketch_records<'a, 'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoSketchRecord<'a>>, cadmpeg_core::CodecError> {
+) -> Result<(Vec<CreoSketchRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), cadmpeg_core::CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "creo native sketch projection storage")?;
     let mut identity_storage = ctx.reserve_scoped(0, "creo sketch definition identity storage")?;
     let mut identity_counts = HashMap::<u32, usize>::new();
     let mut identities_indexed = false;
@@ -3057,6 +3058,7 @@ pub(super) fn sketch_records<'a>(
     }
             identities_indexed = true;
         }
+        let (id, source_section, segments, circle_segments, point_segments, centered_line_segments, reference_line_segments, bounded_curve_segments, conic_segments, opaque_segments) = storage.with_storage(|| {
         let id = if identity_counts.get(&definition.identity.id()) != Some(&1)
             || (definition.identity.schema_id().is_none()
                 && definition.identity.owner_feature_id().is_none())
@@ -3187,40 +3189,19 @@ pub(super) fn sketch_records<'a>(
                 }
             }
         }
-        let record = CreoSketchRecord {
-            id,
-            definition_id: definition.identity.id(),
-            owner_feature_id: definition.identity.owner_feature_id(),
-            source_section,
-            offset: definition.offset,
-            section_3d: definition
-                .section_3d
-                .as_ref()
-                .map(|section| CreoSketchSection3d {
-                    sketch_plane_entity_id: section.sketch_plane_entity_id,
-                    sketch_plane_flip: section.sketch_plane_flip.map(binary_flag_value),
-                    reference_planes: &section.reference_planes,
-                    reference_plane_datum_geometry_id: section.reference_plane_datum_geometry_id,
-                    orientation: CreoSketchSectionOrientation {
-                        section_flip: section.orientation.section_flip.map(binary_flag_value),
-                        reference_type: section.orientation.reference_type,
-                        segment_id: section.orientation.segment_id,
-                        reference_flip: section.orientation.reference_flip.map(binary_flag_value),
-                    },
-                    dimension_ids: &section.dimension_ids,
-                    offset: section.offset,
-                }),
-            table_headers: sketch_table_headers(ctx, definition)?,
-            section_points: sketch_section_point_records(ctx, definition)?,
-            solved_external_ids: ctx.collect_vec(
+        Ok::<_, CodecError>((id, source_section, segments, circle_segments, point_segments, centered_line_segments, reference_line_segments, bounded_curve_segments, conic_segments, opaque_segments))
+        })?;
+        let table_headers = sketch_table_headers(ctx, definition)?;
+        let section_points = sketch_section_point_records(ctx, definition, &mut storage)?;
+        let solved_external_ids = storage.with_storage(|| ctx.collect_vec(
                 ctx.admit_iter(definition.trim_entities.as_ref().map_or(&[][..], |table| table.solved_external_ids.as_slice()), "creo native solved ID traversal")?.copied(),
                 "creo native sketch solved external IDs",
-            )?,
-            variables: {
+            ))?;
+        let variables = {
                 let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
                 let resolved_radii = resolved_section_radii(ctx, definition)?;
                 let resolved_scalars = resolved_section_scalar_values(ctx, definition)?;
-                ctx.try_collect_vec(
+                storage.with_storage(|| ctx.try_collect_vec(
                     (ctx.admit_iter(definition.variables.as_ref().map_or(&[][..], |table| table.rows.as_slice()), "creo native sketch row traversal")?).map(|row| {
                         Ok::<_, CodecError>(CreoSketchVariable {
                             variable_type: row.variable_type.code(),
@@ -3250,15 +3231,15 @@ pub(super) fn sketch_records<'a>(
                         })
                     }),
                     "creo native sketch variables",
-                )?
-            },
-            equations: {
+                ))?
+            };
+        let equations = {
                 let table = crate::feature::definitions::equation_table(
                     ctx, &definition.body, 0, definition.body.len(),
                 )?;
                 let rows = table.map_or_else(Vec::new, |table| table.rows);
                 let _rows = ctx.admit_iter(&rows, "creo native sketch equation traversal")?;
-                ctx.try_collect_vec(rows.into_iter()
+                storage.with_storage(|| ctx.try_collect_vec(rows.into_iter()
                 .map(|equation| {
                     Ok::<_, CodecError>(CreoSketchEquation {
                         equation_id: equation.equation_id,
@@ -3272,8 +3253,36 @@ pub(super) fn sketch_records<'a>(
                     })
                 }),
                 "creo native sketch equations",
-                )?
-            },
+                ))?
+            };
+        let record = storage.with_storage(|| Ok::<_, CodecError>(CreoSketchRecord {
+            id,
+            definition_id: definition.identity.id(),
+            owner_feature_id: definition.identity.owner_feature_id(),
+            source_section,
+            offset: definition.offset,
+            section_3d: definition
+                .section_3d
+                .as_ref()
+                .map(|section| CreoSketchSection3d {
+                    sketch_plane_entity_id: section.sketch_plane_entity_id,
+                    sketch_plane_flip: section.sketch_plane_flip.map(binary_flag_value),
+                    reference_planes: &section.reference_planes,
+                    reference_plane_datum_geometry_id: section.reference_plane_datum_geometry_id,
+                    orientation: CreoSketchSectionOrientation {
+                        section_flip: section.orientation.section_flip.map(binary_flag_value),
+                        reference_type: section.orientation.reference_type,
+                        segment_id: section.orientation.segment_id,
+                        reference_flip: section.orientation.reference_flip.map(binary_flag_value),
+                    },
+                    dimension_ids: &section.dimension_ids,
+                    offset: section.offset,
+                }),
+            table_headers,
+            section_points,
+            solved_external_ids,
+            variables,
+            equations,
             segments,
             circle_segments,
             point_segments,
@@ -3515,11 +3524,11 @@ pub(super) fn sketch_records<'a>(
                     }),
                 "creo native sketch relation triples",
             )?,
-        };
-        ctx.reserve_vec(&mut records, 1, "creo sketch records")?;
+        }))?;
+        storage.with_storage(|| ctx.reserve_vec(&mut records, 1, "creo sketch records"))?;
         records.push(record);
     }
-    Ok(records)
+    Ok((records, storage))
 }
 
 
@@ -3527,6 +3536,7 @@ pub(super) fn sketch_records<'a>(
 pub(super) fn sketch_section_point_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Vec<CreoSketchSectionPoint>, cadmpeg_core::CodecError> {
     let Some(variables) = &definition.variables else {
         return Ok(Vec::new());
@@ -3546,7 +3556,7 @@ pub(super) fn sketch_section_point_records(
     Ok::<(), CodecError>(())
     })?;
     let ids = ctx.admit_iter(&point_ids, "creo sketch point projection traversal")?;
-    ctx.try_collect_vec(
+    storage.with_storage(|| ctx.try_collect_vec(
         ids.copied().map(|point_id| {
             let [u, v] = ctx.get_btree_map(&points, &point_id, "creo sketch resolved point lookup")?.copied().unwrap_or([None; 2]);
             let state = if ctx.contains_btree_set(&ambiguous, &point_id, "creo sketch ambiguous point lookup")? {
@@ -3562,7 +3572,7 @@ pub(super) fn sketch_section_point_records(
             Ok::<_, CodecError>(CreoSketchSectionPoint { point_id, state })
         }),
         "creo sketch section point records",
-    )
+    ))
 }
 
 pub(super) fn feature_definition_records<'a, 'ctx>(

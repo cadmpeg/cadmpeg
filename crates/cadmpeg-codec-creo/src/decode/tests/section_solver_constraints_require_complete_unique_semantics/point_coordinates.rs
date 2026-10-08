@@ -289,7 +289,8 @@ fn section_solver_point_coordinates_merge_compatible_and_reject_conflicting_inci
         .contains_key(&2)
     );
     let conflicting_record = crate::decode::with_test_decode_ctx(|ctx| {
-        sketch_section_point_records(ctx, &conflicting_definition)
+        let mut storage = ctx.reserve_scoped(0, "test native point projection").expect("storage");
+        sketch_section_point_records(ctx, &conflicting_definition, &mut storage)
     })
     .expect("section point records admitted")
     .into_iter()

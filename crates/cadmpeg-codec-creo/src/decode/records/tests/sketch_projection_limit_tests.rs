@@ -45,15 +45,15 @@ use crate::decode::records::sketch_records;
     }
 
     #[test]
-    fn sketch_record_id_refuses_retained_limit() {
+    fn sketch_record_id_refuses_materialized_limit() {
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-      ResourceDimension::RetainedBytes, Some("creo sketch record id"), |cap| {
+        policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+      ResourceDimension::MaterializedBytes, Some("creo sketch record id"), |cap| {
           let trial_arena = DecodeArena::new();
           let mut trial_policy = DecodePolicy::service();
-          trial_policy.limits.max_retained_bytes = cap;
+          trial_policy.limits.max_materialized_bytes = cap;
           let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
           sketch_records(&trial_ctx, &scan).map(|_| ())
       });
@@ -61,26 +61,26 @@ use crate::decode::records::sketch_records;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = sketch_records(&ctx, &scan) else {
-            panic!("native sketch ID exceeds retained limit")
+            panic!("native sketch ID exceeds materialized limit")
         };
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
+            if resource.dimension == ResourceDimension::MaterializedBytes
                 && resource.operation == "creo sketch record id"),
             "{error:?}"
         );
     }
 
     #[test]
-    fn sketch_source_section_refuses_retained_limit() {
+    fn sketch_source_section_refuses_materialized_limit() {
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-      ResourceDimension::RetainedBytes, Some("creo sketch source section"), |cap| {
+        policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+      ResourceDimension::MaterializedBytes, Some("creo sketch source section"), |cap| {
           let trial_arena = DecodeArena::new();
           let mut trial_policy = DecodePolicy::service();
-          trial_policy.limits.max_retained_bytes = cap;
+          trial_policy.limits.max_materialized_bytes = cap;
           let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
           sketch_records(&trial_ctx, &scan).map(|_| ())
       });
@@ -88,11 +88,11 @@ use crate::decode::records::sketch_records;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = sketch_records(&ctx, &scan) else {
-            panic!("source section exceeds retained limit")
+            panic!("source section exceeds materialized limit")
         };
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
+            if resource.dimension == ResourceDimension::MaterializedBytes
                 && resource.operation == "creo sketch source section"),
             "{error:?}"
         );
@@ -181,7 +181,7 @@ use crate::decode::records::sketch_records;
         let policy = DecodePolicy::service();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let records = sketch_records(&ctx, &scan).expect("sketch projection is admitted");
+        let (records, _storage) = sketch_records(&ctx, &scan).expect("sketch projection is admitted");
         let value = serde_json::to_value(&records[0]).expect("record serializes");
         assert_eq!(
             value["section_3d"]["reference_plane_entity_ids"],
@@ -196,7 +196,7 @@ use crate::decode::records::sketch_records;
     }
 
     #[test]
-    fn sketch_variable_body_refuses_retained_limit() {
+    fn sketch_variable_body_refuses_materialized_limit() {
         let mut scan = scan();
         scan.features.definitions[0].section_3d = None;
         scan.features.definitions[0].variables = Some(FeatureVariableTable {
@@ -220,7 +220,7 @@ use crate::decode::records::sketch_records;
         let policy = DecodePolicy::service();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let records = sketch_records(&ctx, &scan).expect("service profile admits one variable");
+        let (records, _storage) = sketch_records(&ctx, &scan).expect("service profile admits one variable");
         let value = serde_json::to_value(&records[0]).expect("record serializes");
         assert_eq!(
             value["variables"][0]["value_body"],
@@ -229,27 +229,59 @@ use crate::decode::records::sketch_records;
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            ResourceDimension::RetainedBytes,
+        policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+            ResourceDimension::MaterializedBytes,
             Some("creo native sketch variable value body"),
             |cap| {
                 let trial_arena = DecodeArena::new();
                 let mut trial_policy = policy;
-                trial_policy.limits.max_retained_bytes = cap;
+                trial_policy.limits.max_materialized_bytes = cap;
                 let (trial_ctx, _) =
                     DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
-                sketch_records(&trial_ctx, &scan)
+                sketch_records(&trial_ctx, &scan).map(|_| ())
             },
         );
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = sketch_records(&ctx, &scan) else {
-            panic!("variable body exceeds retained limit")
+            panic!("variable body exceeds materialized limit")
         };
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
+            if resource.dimension == ResourceDimension::MaterializedBytes
                 && resource.operation == "creo native sketch variable value body"),
             "{error:?}"
         );
     }
+
+#[test]
+fn sketch_projection_storage_releases_after_serialization() {
+    let scan = scan();
+    let cap = crate::test_support::allocation_limit_at(
+        ResourceDimension::MaterializedBytes,
+        None,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            sketch_records(&ctx, &scan).map(|_| ())
+        },
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = cap;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let (records, storage) = sketch_records(&ctx, &scan).expect("scratch projection");
+    let value = serde_json::to_value(&records[0]).expect("record serializes");
+    assert_eq!(value["section_3d"]["dimension_ids"], serde_json::json!([4]));
+    assert!(ctx.reserve_scoped(cap, "live sketch projection").is_err());
+    drop((records, storage));
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let (records, storage) = sketch_records(&ctx, &scan).expect("scratch projection");
+    drop((records, storage));
+    ctx.reserve_scoped(cap, "released sketch projection").expect("all storage released");
+}

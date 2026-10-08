@@ -933,7 +933,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let sketches = sketch_records(ctx, scan)?;
+    let (sketches, _sketches_storage) = sketch_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
