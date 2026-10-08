@@ -181,7 +181,10 @@ fn generated_row_with_limits(
     })
 }
 
-fn generated_arc_with_limits(collection_limit: u64, retained_limit: u64) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+fn generated_arc_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     generated_row_with_limits(
         collection_limit,
         retained_limit,
@@ -191,7 +194,10 @@ fn generated_arc_with_limits(collection_limit: u64, retained_limit: u64) -> Resu
     )
 }
 
-fn generated_line_with_limits(collection_limit: u64, retained_limit: u64) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+fn generated_line_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     generated_row_with_limits(
         collection_limit,
         retained_limit,
@@ -219,7 +225,6 @@ Err(CodecError::ResourceLimit(limit))
     };
 }
 
-
 generated_arc_collection_limit_test!(
     saved_generated_row_start_refuses_before_vec_growth,
     "creo saved generated row starts"
@@ -228,10 +233,6 @@ generated_arc_collection_limit_test!(
     saved_generated_arc_refuses_before_entity_append,
     "creo saved generated entities"
 );
-
-
-
-
 
 fn with_saved_leaf_limits<T>(
     payload: &[u8],
@@ -253,8 +254,15 @@ const SAVED_CIRCULAR_LIMIT_INPUT: &[u8] = b"\xe0\x00entity(arc)\0\xe0\x01id\0\x0
 const SAVED_CONIC_LIMIT_INPUT: &[u8] = b"\xe0\x00entity(conic)\0\xe0\x01id\0\x02\xe0\x01type\0\x3a";
 const SAVED_DUMMY_LIMIT_INPUT: &[u8] = b"\xe0\x00entity(dummy_ent)\0\x07";
 
-fn saved_circular_with_limits(collection_limit: u64, retained_limit: u64) -> Result<Vec<FeatureSavedEntity>, CodecError> {
-    with_saved_leaf_limits(SAVED_CIRCULAR_LIMIT_INPUT, collection_limit, retained_limit, |ctx| {
+fn saved_circular_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+    with_saved_leaf_limits(
+        SAVED_CIRCULAR_LIMIT_INPUT,
+        collection_limit,
+        retained_limit,
+        |ctx| {
             parse_saved_circular_entities(
                 ctx,
                 SAVED_CIRCULAR_LIMIT_INPUT,
@@ -264,29 +272,17 @@ fn saved_circular_with_limits(collection_limit: u64, retained_limit: u64) -> Res
                 None,
                 None,
             )
-        })
+        },
+    )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 const SAVED_LINE_LIMIT_INPUT: &[u8] =
     b"\xe0\x00entity(line)\0\xf7\x2a\xeb\x01\x02\x03\x04\x05\x07\xe2\x0f\x0f\x0f\xe3";
 
-fn saved_line_with_limits(collection_limit: u64, retained_limit: u64) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+fn saved_line_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -333,8 +329,6 @@ saved_line_collection_limit_test!(
     "creo saved line block entities"
 );
 
-
-
 const SAVED_SPLINE_LIMIT_INPUT: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0\xe3\
     \xe0\x01id\0\x07\
     \xe0\x02i_pnts\0\xf9\x02\x03\
@@ -344,7 +338,10 @@ const SAVED_SPLINE_LIMIT_INPUT: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0\xe3\
     \xe0\x02params\0\xf8\x02\x0f\xe4\
     \xe0\x01tan_cond\0\x00";
 
-fn saved_spline_with_limits(collection_limit: u64, retained_limit: u64) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+fn saved_spline_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -412,8 +409,6 @@ saved_spline_retained_limit_test!(
     "creo saved spline parameter body"
 );
 
-
-
 fn variable_table(
     payload: &[u8],
     start: usize,
@@ -424,7 +419,10 @@ fn variable_table(
         .expect("variable table admitted")
 }
 
-fn variable_row_with_limits(collection_limit: u64, retained_limit: u64) -> Result<crate::feature::definitions::FeatureVariableTable, cadmpeg_core::CodecError> {
+fn variable_row_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<crate::feature::definitions::FeatureVariableTable, cadmpeg_core::CodecError> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let payload = b"var_arr\0\xf8\x01\xf7\x77\xfb\xe2\xf1\xf7\x77\xe2\
@@ -444,131 +442,98 @@ fn variable_row_with_limits(collection_limit: u64, retained_limit: u64) -> Resul
     .expect("complete variable table"))
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 mod variable_coordinates;
 
-
-
-fn parse_saved_line_entities(ctx: &DecodeContext<'_>, payload: &[u8], start: usize, end: usize, cache: &scalar::ScalarCache) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+fn parse_saved_line_entities(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let mut entities = Vec::new();
     append_saved_line_entities(ctx, payload, start, end, cache, &mut entities)?;
     Ok(entities)
 }
 
-fn parse_saved_positional_generated_entities(ctx: &DecodeContext<'_>, payload: &[u8], start: usize, end: usize, cache: &scalar::ScalarCache, order_table: Option<&FeatureOrderTable>, segments: Option<&FeatureSegmentTable>) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+fn parse_saved_positional_generated_entities(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+    order_table: Option<&FeatureOrderTable>,
+    segments: Option<&FeatureSegmentTable>,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let mut entities = Vec::new();
-    append_saved_positional_generated_entities(ctx, payload, start, end, cache, order_table, segments, &mut entities)?;
+    append_saved_positional_generated_entities(
+        ctx,
+        payload,
+        start,
+        end,
+        cache,
+        super::SavedEntityTopology::from_tables(order_table, segments),
+        &mut entities,
+    )?;
     Ok(entities)
 }
 
-fn parse_saved_circular_entities(ctx: &DecodeContext<'_>, payload: &[u8], start: usize, end: usize, cache: &scalar::ScalarCache, order_table: Option<&FeatureOrderTable>, segments: Option<&FeatureSegmentTable>) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+fn parse_saved_circular_entities(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+    order_table: Option<&FeatureOrderTable>,
+    segments: Option<&FeatureSegmentTable>,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let mut entities = Vec::new();
-    append_saved_circular_entities(ctx, payload, start, end, cache, order_table, segments, &mut entities)?;
+    append_saved_circular_entities(
+        ctx,
+        payload,
+        start,
+        end,
+        cache,
+        super::SavedEntityTopology::from_tables(order_table, segments),
+        &mut entities,
+    )?;
     Ok(entities)
 }
 
-fn parse_saved_conic_entities(ctx: &DecodeContext<'_>, payload: &[u8], start: usize, end: usize, cache: &scalar::ScalarCache) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+fn parse_saved_conic_entities(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let mut entities = Vec::new();
     append_saved_conic_entities(ctx, payload, start, end, cache, &mut entities)?;
     Ok(entities)
 }
 
-fn parse_saved_dummy_entities(ctx: &DecodeContext<'_>, payload: &[u8], start: usize, end: usize) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+fn parse_saved_dummy_entities(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let mut entities = Vec::new();
     crate::feature::definitions::saved_dummy_entities(ctx, payload, start, end, &mut entities)?;
     Ok(entities)
 }
 
-fn parse_saved_spline_entities(ctx: &DecodeContext<'_>, payload: &[u8], start: usize, end: usize, cache: &scalar::ScalarCache) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+fn parse_saved_spline_entities(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let mut entities = Vec::new();
     append_saved_spline_entities(ctx, payload, start, end, cache, &mut entities)?;
     Ok(entities)
 }
-
-
 
 mod curves;
 
