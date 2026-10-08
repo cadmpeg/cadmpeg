@@ -2557,13 +2557,13 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         let bytes = b"double_xar\0\xf8\x02\x10\xe0";
         assert_eq!(
-            double_xar_with_limits(bytes, 3, u64::MAX)
+            double_xar_with_limits(bytes, crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, |cap| double_xar_with_limits(bytes, cap, u64::MAX)), u64::MAX)
                 .expect("table admitted")
                 .len(),
             1
         );
         let error =
-            double_xar_with_limits(bytes, 1, u64::MAX).expect_err("second slot needs admission");
+            double_xar_with_limits(bytes, crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo double_xar slots"), |cap| double_xar_with_limits(bytes, cap, u64::MAX)), u64::MAX).expect_err("second slot needs admission");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -2575,7 +2575,7 @@ mod tests {
     fn double_xar_table_refuses_before_result_growth() {
         use cadmpeg_core::decode::ResourceDimension;
         let bytes = b"double_xar\0\xf8\x02\x10\xe0";
-        let error = double_xar_with_limits(bytes, 2, u64::MAX).expect_err("table needs admission");
+        let error = double_xar_with_limits(bytes, crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo double_xar tables"), |cap| double_xar_with_limits(bytes, cap, u64::MAX)), u64::MAX).expect_err("table needs admission");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -2590,7 +2590,7 @@ mod tests {
         assert_eq!(
             double_xar_with_limits(
                 bytes,
-                3,
+                u64::MAX,
                 crate::test_support::allocation_limit_at(
                     cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                     None,
@@ -2603,11 +2603,11 @@ mod tests {
         );
         let error = double_xar_with_limits(
             bytes,
-            3,
+            u64::MAX,
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 Some("creo double_xar literal bytes"),
-                |cap| double_xar_with_limits(bytes, 3, cap),
+                |cap| double_xar_with_limits(bytes, u64::MAX, cap),
             ),
         )
         .expect_err("literal bytes need admission");
@@ -2620,11 +2620,11 @@ mod tests {
 
     #[test]
     fn scalar_cache_unique_image_refuses_before_hash_growth() {
-        let cache = checked_cache_with_collection_limit(3)
+        let cache = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, checked_cache_with_collection_limit))
             .expect("service-sized collection budget admits one scalar");
         assert_eq!(cache.entries.len(), 1);
         assert_eq!(cache.paired_byte_1(&[1, 2, 3, 4, 5, 6]), Some(0x08));
-        let error = checked_cache_with_collection_limit(0)
+        let error = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo scalar cache unique images"), checked_cache_with_collection_limit))
             .expect_err("the unique image needs one collection item");
         assert!(matches!(
             error,
@@ -2635,7 +2635,7 @@ mod tests {
 
     #[test]
     fn scalar_cache_paired_tail_refuses_before_tree_insert() {
-        let error = checked_cache_with_collection_limit(1)
+        let error = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo scalar cache paired tails"), checked_cache_with_collection_limit))
             .expect_err("the paired tail follows the unique image");
         assert!(matches!(
             error,
@@ -2646,7 +2646,7 @@ mod tests {
 
     #[test]
     fn scalar_cache_entry_refuses_before_vector_growth() {
-        let error = checked_cache_with_collection_limit(2)
+        let error = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo scalar cache entries"), checked_cache_with_collection_limit))
             .expect_err("the scalar entry follows the hash and tree nodes");
         assert!(matches!(
             error,

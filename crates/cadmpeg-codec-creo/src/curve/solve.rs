@@ -69,9 +69,8 @@ pub(super) fn solve_nonlinear_expression_block(
         return Ok(None);
     };
     for seed in seeds {
-        let Some(candidate) =
-            scratch.with_storage(|| refine_nonlinear_solution(ctx, block, values, &variable_dimensions, &seed, context))?
-        else {
+        let (candidate, _candidate_storage) = ctx.with_scoped_storage("creo nonlinear candidate scratch", || refine_nonlinear_solution(ctx, block, values, &variable_dimensions, &seed, context))?;
+        let Some(candidate) = candidate else {
             continue;
         };
         if !nonlinear_solutions_close(&solution, &candidate) {
@@ -140,7 +139,7 @@ pub(super) fn nonlinear_expression_is_smooth(
                 let name = &expression[start..end];
                 let mut smooth = false;
                 for candidate in ["sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh", "log", "ln", "exp", "pow", "sqrt"] {
-                    if ctx.eq_ignore_ascii_case(name, candidate, "creo relation text comparison")? { smooth = true; break; }
+                    if name.eq_ignore_ascii_case(candidate) { smooth = true; break; }
                 }
                 if !smooth {
                     return Ok(false);
@@ -503,11 +502,15 @@ pub(super) fn eliminate_pivot_column(
         if factor.abs() <= coefficient_tolerance {
             continue;
         }
-        for (coefficient, pivot_coefficient) in ctx.admit_iter(&mut row.coefficients, "creo matrix elimination")?.zip(&pivot.coefficients)
-        {
-            *coefficient -= factor * pivot_coefficient;
-            if coefficient.abs() <= coefficient_tolerance {
-                *coefficient = 0.0;
+        if row.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
+            for (coefficient, pivot_coefficient) in row.coefficients.iter_mut().zip(&pivot.coefficients) {
+                *coefficient -= factor * pivot_coefficient;
+                if coefficient.abs() <= coefficient_tolerance { *coefficient = 0.0; }
+            }
+        } else {
+            for (coefficient, pivot_coefficient) in ctx.admit_iter(&mut row.coefficients, "creo matrix elimination")?.zip(&pivot.coefficients) {
+                *coefficient -= factor * pivot_coefficient;
+                if coefficient.abs() <= coefficient_tolerance { *coefficient = 0.0; }
             }
         }
         row.rhs -= factor * pivot.rhs;
@@ -524,12 +527,16 @@ pub(super) fn solve_unique_affine_system(
         return Ok(None);
     }
     for row in ctx.admit_iter(&mut *rows, "creo matrix row normalization")? {
-        let scale = ctx.admit_iter(&row.coefficients, "creo matrix row normalization")?
-            .map(|value| value.abs())
-            .fold(0.0, f64::max);
+        let scale = if row.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
+            row.coefficients.iter().map(|value| value.abs()).fold(0.0, f64::max)
+        } else {
+            ctx.admit_iter(&row.coefficients, "creo matrix row normalization")?.map(|value| value.abs()).fold(0.0, f64::max)
+        };
         if scale > 0.0 {
-            for coefficient in ctx.admit_iter(&mut row.coefficients, "creo matrix row normalization")? {
-                *coefficient /= scale;
+            if row.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
+                for coefficient in &mut row.coefficients { *coefficient /= scale; }
+            } else {
+                for coefficient in ctx.admit_iter(&mut row.coefficients, "creo matrix row normalization")? { *coefficient /= scale; }
             }
             row.rhs /= scale;
         }
@@ -538,7 +545,7 @@ pub(super) fn solve_unique_affine_system(
     let coefficient_tolerance = EPS_LINEAR_SYSTEM_COEFFICIENT;
     let residual_tolerance = EPS_LINEAR_SYSTEM_RESIDUAL * rhs_scale;
     let mut columns = 0..variable_count;
-    while let Some(column) = ctx.next_charged(&mut columns, "creo matrix column traversal")? {
+    while let Some(column) = if variable_count <= MAX_NONLINEAR_SOLVE_VARIABLES { columns.next() } else { ctx.next_charged(&mut columns, "creo matrix column traversal")? } {
         let pivot_row = column;
         let Some(selected) = ctx.admit_iter(pivot_row..rows.len(), "creo matrix pivot scan")?.max_by(|&first, &second| {
             rows[first].coefficients[column]
@@ -552,22 +559,31 @@ pub(super) fn solve_unique_affine_system(
             return Ok(None);
         }
         rows.swap(pivot_row, selected);
-        for coefficient in ctx.admit_iter(&mut rows[pivot_row].coefficients, "creo matrix pivot normalization")? {
-            *coefficient /= divisor;
+        if rows[pivot_row].coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
+            for coefficient in &mut rows[pivot_row].coefficients { *coefficient /= divisor; }
+        } else {
+            for coefficient in ctx.admit_iter(&mut rows[pivot_row].coefficients, "creo matrix pivot normalization")? { *coefficient /= divisor; }
         }
         rows[pivot_row].rhs /= divisor;
         eliminate_pivot_column(ctx, rows, pivot_row, column, coefficient_tolerance)?;
     }
     if !ctx.all_by(&rows[variable_count..], |row| {
-        Ok(ctx.all_by(&row.coefficients, |coefficient| Ok(coefficient.abs() <= coefficient_tolerance), "creo matrix residual coefficients")? && row.rhs.abs() <= residual_tolerance)
+        Ok((if row.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
+            row.coefficients.iter().all(|coefficient| coefficient.abs() <= coefficient_tolerance)
+        } else {
+            ctx.all_by(&row.coefficients, |coefficient| Ok(coefficient.abs() <= coefficient_tolerance), "creo matrix residual coefficients")?
+        }) && row.rhs.abs() <= residual_tolerance)
     }, "creo matrix residual scan")? {
         return Ok(None);
     }
     let mut solution = ctx.alloc_filled(variable_count, 0.0, "creo affine unique solution")?;
-    for (slot, row) in ctx.admit_iter(&mut solution, "creo affine solution traversal")?.zip(rows.iter()) {
-        *slot = row.rhs;
+    if solution.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
+        for (slot, row) in solution.iter_mut().zip(rows.iter()) { *slot = row.rhs; }
+        Ok(solution.iter().all(|value| value.is_finite()).then_some(solution))
+    } else {
+        for (slot, row) in ctx.admit_iter(&mut solution, "creo affine solution traversal")?.zip(rows.iter()) { *slot = row.rhs; }
+        Ok(ctx.all_by(&solution, |value| Ok(value.is_finite()), "creo affine solution finite scan")?.then_some(solution))
     }
-    Ok(ctx.all_by(&solution, |value| Ok(value.is_finite()), "creo affine solution finite scan")?.then_some(solution))
 }
 
 pub(super) fn evaluate_affine_program(

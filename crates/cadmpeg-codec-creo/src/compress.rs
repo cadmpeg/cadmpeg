@@ -291,7 +291,12 @@ mod tests {
         let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 2;
+        policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, Some("inflate Creo TOC section"), |cap| {
+            let mut trial = policy;
+            trial.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &trial).expect("root");
+            super::decode(&ctx, &stream, 3)
+        });
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
             .expect("small compressed input is admitted");
         let error = super::decode(&ctx, &stream, 3)

@@ -67,7 +67,12 @@ fn prototype_pcurve_endpoint_record_refuses_collection_limit() {
     let payload = one_prototype_pcurve_input();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo prototype pcurve endpoints"), |cap| {
+        let mut trial = policy;
+        trial.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &trial).expect("root");
+        prototype_pcurve_endpoints(&ctx, &payload)
+    });
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = prototype_pcurve_endpoints(&ctx, &payload)
@@ -299,11 +304,9 @@ fn typed_parameter_rows_require_unique_identity() {
     let unique = parameter_record(7);
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
-            crate::identity::uniquely_identified_rows_checked(
-                ctx,
-                std::slice::from_ref(&unique),
-                |record| record.curve_id,
-            )
+            let rows = std::slice::from_ref(&unique);
+            let index = crate::curve::unique_curve_index(ctx, rows, |record| record.curve_id, "creo unique parameter traversal")?;
+            Ok::<Vec<_>, CodecError>(rows.iter().filter(|row| index.get(&row.curve_id).is_some_and(Option::is_some)).collect())
         })
         .expect("service unique rows")
         .len(),
@@ -311,9 +314,8 @@ fn typed_parameter_rows_require_unique_identity() {
     );
     let duplicates = [unique.clone(), unique];
     assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        crate::identity::uniquely_identified_rows_checked(ctx, &duplicates, |record| {
-            record.curve_id
-        })
+        let index = crate::curve::unique_curve_index(ctx, &duplicates, |record| record.curve_id, "creo unique parameter traversal")?;
+        Ok::<Vec<_>, CodecError>(duplicates.iter().filter(|row| index.get(&row.curve_id).is_some_and(Option::is_some)).collect())
     })
     .expect("service duplicate rows")
     .is_empty());
@@ -880,20 +882,14 @@ fn one_framed_curve_input() -> Vec<u8> {
     ]
 }
 
-fn framed_curve_limit_error(limit: u64, face_ids: Option<&BTreeSet<u32>>) -> CodecError {
+fn framed_curve_limit_error(operation: &'static str, face_ids: Option<&BTreeSet<u32>>) -> CodecError {
     let payload = one_framed_curve_input();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    topology_rows_with_face_ids(&ctx, &payload, face_ids)
-        .expect_err("framed curve exceeds collection limit")
+    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| topology_rows_with_face_ids(ctx, &payload, face_ids))
 }
 
 #[test]
 fn framed_curve_namespace_start_refuses_collection_limit() {
-    let error = framed_curve_limit_error(0, None);
+    let error = framed_curve_limit_error("creo curve namespace starts", None);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo curve namespace starts"));
@@ -901,7 +897,7 @@ fn framed_curve_namespace_start_refuses_collection_limit() {
 
 #[test]
 fn framed_curve_segment_refuses_collection_limit() {
-    let error = framed_curve_limit_error(1, None);
+    let error = framed_curve_limit_error("creo framed curve segments", None);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo framed curve segments"));
@@ -909,7 +905,7 @@ fn framed_curve_segment_refuses_collection_limit() {
 
 #[test]
 fn framed_curve_known_face_node_refuses_collection_limit() {
-    let error = framed_curve_limit_error(2, Some(&BTreeSet::from([10, 11])));
+    let error = framed_curve_limit_error("creo known curve face ID nodes", Some(&BTreeSet::from([10, 11])));
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo known curve face ID nodes"));
@@ -917,7 +913,7 @@ fn framed_curve_known_face_node_refuses_collection_limit() {
 
 #[test]
 fn framed_curve_discovered_face_node_refuses_collection_limit() {
-    let error = framed_curve_limit_error(2, Some(&BTreeSet::new()));
+    let error = framed_curve_limit_error("creo known curve face ID nodes", Some(&BTreeSet::new()));
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo known curve face ID nodes"));
@@ -925,7 +921,7 @@ fn framed_curve_discovered_face_node_refuses_collection_limit() {
 
 #[test]
 fn framed_curve_prefix_refuses_collection_limit() {
-    let error = framed_curve_limit_error(2, None);
+    let error = framed_curve_limit_error("creo framed curve prefixes", None);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo framed curve prefixes"));
@@ -933,7 +929,7 @@ fn framed_curve_prefix_refuses_collection_limit() {
 
 #[test]
 fn framed_curve_row_refuses_collection_limit() {
-    let error = framed_curve_limit_error(3, None);
+    let error = framed_curve_limit_error("creo framed curve rows", None);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo framed curve rows"));
@@ -941,7 +937,7 @@ fn framed_curve_row_refuses_collection_limit() {
 
 #[test]
 fn topology_curve_row_refuses_collection_limit() {
-    let error = framed_curve_limit_error(4, None);
+    let error = framed_curve_limit_error("creo topology curve rows", None);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo topology curve rows"));

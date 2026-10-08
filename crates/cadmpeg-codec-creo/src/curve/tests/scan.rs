@@ -834,7 +834,12 @@ fn prototype_topology_rows_refuse_collection_limit() {
     payload.extend_from_slice(b"topol_ref_data\0");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo prototype topology rows"), |cap| {
+        let mut trial = policy;
+        trial.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &trial).expect("root");
+        crate::curve::prototype_topology(&ctx, &payload)
+    });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = crate::curve::prototype_topology(&ctx, &payload)
         .expect_err("one labeled topology exceeds collection limit");

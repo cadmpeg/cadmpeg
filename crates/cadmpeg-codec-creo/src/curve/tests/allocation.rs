@@ -200,7 +200,11 @@ fn expression_dependency_text_refuses_before_copy() {
 fn expression_assignment_text_refuses_before_copy() {
     let line = expression_lines(&["a=1"]);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo expression assignment text"), |cap| {
+        let mut trial = policy;
+        trial.limits.max_retained_bytes = cap;
+        with_expression_policy(trial, |ctx| super::super::expression_assignment(ctx, &line[0]))
+    });
     let error = with_expression_policy(policy, |ctx| {
         super::super::expression_assignment(ctx, &line[0])
     })
@@ -217,34 +221,6 @@ fn solve_line_index_nodes_refuse_before_insert() {
         crate::curve::tests::compile_solve_program(ctx, &lines)
     });
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve line index nodes"));
-}
-
-#[test]
-fn prohibited_name_case_fold_refuses_work() {
-    let lines = expression_lines(&["ABS(x)"]);
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "creo prohibited function case fold",
-        |ctx| super::super::curve_equation_prohibited_constructs(ctx, &lines),
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "creo prohibited function case fold"));
-}
-
-#[test]
-fn solve_keyword_comparison_refuses_work() {
-    let lines = expression_lines(&["SOLVE"]);
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "creo solve keyword comparison",
-        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "creo solve keyword comparison"));
 }
 
 #[test]
@@ -1012,7 +988,11 @@ fn curve_expression_labels_refuse_before_vector_growth() {
         1
     );
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo expression record labels"), |cap| {
+        let mut trial = policy;
+        trial.limits.max_collection_items = cap;
+        parse(ONE_COMMENT, trial)
+    });
     let error = parse(ONE_COMMENT, policy).expect_err("one label needs one collection item");
     assert!(matches!(
         error,
@@ -1053,7 +1033,11 @@ fn curve_expression_local_system_body_refuses_before_copy() {
 #[test]
 fn curve_expression_lines_refuse_before_vector_growth() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo expression record lines"), |cap| {
+        let mut trial = policy;
+        trial.limits.max_collection_items = cap;
+        parse(ONE_COMMENT, trial)
+    });
     let error = parse(ONE_COMMENT, policy).expect_err("the line follows one label");
     assert!(matches!(
         error,
@@ -1087,7 +1071,11 @@ fn curve_expression_line_text_refuses_before_copy() {
 #[test]
 fn curve_expression_records_refuse_before_vector_growth() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo expression records"), |cap| {
+        let mut trial = policy;
+        trial.limits.max_collection_items = cap;
+        parse(ONE_COMMENT, trial)
+    });
     let error = parse(ONE_COMMENT, policy).expect_err("the record follows its label and line");
     assert!(matches!(
         error,
@@ -1108,8 +1096,8 @@ fn curve_parameter_scalar_cache_refuses_before_unique_image_growth() {
             .expect("root input is admitted");
         super::super::parameter_records_with_face_ids(&ctx, &payload, None)
     };
-    assert!(run(4).expect("service admits scalar image").is_empty());
-    let error = run(0).expect_err("scalar image requires a set node");
+    assert!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run)).expect("service admits scalar image").is_empty());
+    let error = run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo scalar cache unique images"), run)).expect_err("scalar image requires a set node");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -1129,8 +1117,8 @@ fn depdb_curve_scalar_cache_refuses_before_unique_image_growth() {
             .expect("root input is admitted");
         super::super::depdb_cross_section_rows(&ctx, payload)
     };
-    assert!(run(100).expect("service admits scalar image").is_empty());
-    let error = run(1).expect_err("scalar image requires a set node");
+    assert!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run)).expect("service admits scalar image").is_empty());
+    let error = run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo scalar cache unique images"), run)).expect_err("scalar image requires a set node");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -1183,7 +1171,7 @@ fn curve_scalar_raw_token_refuses_before_copy() {
         scalar_lane_with_limits(
             &[0x0e],
             8,
-            2,
+            u64::MAX,
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 None,
@@ -1202,7 +1190,7 @@ fn curve_scalar_raw_token_refuses_before_copy() {
         crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             Some("creo curve scalar raw token"),
-            |cap| scalar_lane_with_limits(&[0x0e], 8, 2, cap),
+            |cap| scalar_lane_with_limits(&[0x0e], 8, u64::MAX, cap),
         ),
     )
     .expect_err("one raw byte needs retained admission");
@@ -1217,7 +1205,7 @@ fn curve_zero_raw_token_refuses_before_copy() {
         scalar_lane_with_limits(
             &[0x18],
             0,
-            2,
+            u64::MAX,
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 None,
@@ -1236,7 +1224,7 @@ fn curve_zero_raw_token_refuses_before_copy() {
         crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             Some("creo curve zero raw token"),
-            |cap| scalar_lane_with_limits(&[0x18], 0, 2, cap),
+            |cap| scalar_lane_with_limits(&[0x18], 0, u64::MAX, cap),
         ),
     )
     .expect_err("one zero byte needs retained admission");
@@ -1260,7 +1248,7 @@ fn curve_opaque_raw_span_refuses_before_copy() {
         scalar_lane_with_limits(
             &[0xff],
             0,
-            2,
+            u64::MAX,
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 None,
@@ -1279,7 +1267,7 @@ fn curve_opaque_raw_span_refuses_before_copy() {
         crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             Some("creo curve opaque raw span"),
-            |cap| scalar_lane_with_limits(&[0xff], 0, 2, cap),
+            |cap| scalar_lane_with_limits(&[0xff], 0, u64::MAX, cap),
         ),
     )
     .expect_err("one opaque byte needs retained admission");
@@ -1329,8 +1317,8 @@ fn expression_conditional_validation_refuses_before_stack_growth() {
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         super::super::expression_program_control_is_valid(&ctx, &lines)
     };
-    assert!(run(1).expect("one conditional is admitted"));
-    let error = run(0).expect_err("one conditional requires a validation slot");
+    assert!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run)).expect("one conditional is admitted"));
+    let error = run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo expression conditional validation"), run)).expect_err("one conditional requires a validation slot");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo expression conditional validation"));
@@ -1340,7 +1328,15 @@ fn expression_conditional_validation_refuses_before_stack_growth() {
 fn expression_conditional_parent_refuses_before_stack_growth() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo expression conditional parents"), |cap| {
+        let mut trial = policy;
+        trial.limits.max_collection_items = cap;
+        with_expression_policy(trial, |ctx| {
+            let mut stack = super::super::ConditionalStack::default();
+            stack.push(ctx, super::super::ConditionalFrame { parent: super::super::CurveExpressionActivation::Active, condition: Some(true) })?;
+            stack.push(ctx, super::super::ConditionalFrame { parent: super::super::CurveExpressionActivation::Active, condition: Some(true) })
+        })
+    });
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let frame = || super::super::ConditionalFrame {
@@ -1374,12 +1370,12 @@ fn depdb_rows_with_limit(limit: u64) -> Result<Vec<super::super::DepdbCurveRow>,
 #[test]
 fn depdb_curve_rows_refuse_before_fallible_reservation() {
     assert_eq!(
-        depdb_rows_with_limit(100)
+        depdb_rows_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, depdb_rows_with_limit))
             .expect("service admits one complete curve row")
             .len(),
         1
     );
-    let error = depdb_rows_with_limit(1).expect_err("one row requires one collection item");
+    let error = depdb_rows_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo cross-section curve rows"), depdb_rows_with_limit)).expect_err("one row requires one collection item");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -1390,7 +1386,7 @@ fn depdb_curve_rows_refuse_before_fallible_reservation() {
 
 #[test]
 fn depdb_curve_boundaries_refuse_before_vec_growth() {
-    let error = depdb_rows_with_limit(2).expect_err("boundary follows row reservation");
+    let error = depdb_rows_with_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo cross-section row boundaries"), depdb_rows_with_limit)).expect_err("boundary follows row reservation");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -1445,8 +1441,8 @@ fn curve_prototype_vec_refuses_before_growth() {
             .expect("root input is admitted");
         super::super::prototypes(&ctx, payload)
     };
-    assert_eq!(run(1).expect("service admits one prototype").len(), 1);
-    let error = run(0).expect_err("one prototype requires a vector item");
+    assert_eq!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run)).expect("service admits one prototype").len(), 1);
+    let error = run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo curve prototypes"), run)).expect_err("one prototype requires a vector item");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -1500,7 +1496,12 @@ fn solve_synchronization_refuses_each_retained_value() {
         }];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 1;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some(operation), |cap| {
+            let mut trial = policy;
+            trial.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &trial).expect("root");
+            super::super::synchronize_solve_blocks(&ctx, &mut blocks.clone(), &[evaluated.clone()], &solutions)
+        });
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert!(
             matches!(super::super::synchronize_solve_blocks(&ctx, &mut blocks, &[evaluated.clone()], &solutions),
@@ -1537,7 +1538,11 @@ fn expression_helix_required_outputs_refuse_scan_work() {
             .is_none()
     );
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    policy.limits.max_work_units = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, Some("creo helix output scan work"), |cap| {
+        let mut trial = policy;
+        trial.limits.max_work_units = cap;
+        with_expression_policy(trial, |ctx| super::super::expression_helix(ctx, &record))
+    });
     let error = with_expression_policy(policy, |ctx| super::super::expression_helix(ctx, &record))
         .expect_err("output scan needs work");
     assert!(
@@ -1555,7 +1560,11 @@ fn affine_equation_merge_propagates_coefficient_node_refusal() {
         coefficients: BTreeMap::from([("y".to_owned(), 1.0)]),
     };
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo affine combined coefficient nodes"), |cap| {
+        let mut trial = policy;
+        trial.limits.max_collection_items = cap;
+        with_expression_policy(trial, |ctx| left.clone().combine_admitted(right.clone(), true, ctx))
+    });
     let error = resource_error(with_expression_policy(policy, |ctx| {
         let result = left.combine_admitted(right, true, ctx);
         assert_eq!(
@@ -1645,4 +1654,51 @@ fn duplicate_solve_unknowns_need_no_retained_storage() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     assert!(with_expression_policy(policy, |ctx| super::super::curve_expression_solve_unknowns(ctx, "x, X")).expect("rejected names are temporary").is_none());
+}
+
+#[test]
+fn zero_affine_addend_needs_no_new_coefficient_node() {
+    let right = super::super::SimultaneousAffineValue { dimension: super::super::RelationDimension::default(), constant: 0.0, coefficients: BTreeMap::from([("x".to_owned(), 0.0)]) };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let result = with_expression_policy(policy, |ctx| super::super::SimultaneousAffineValue::constant(0.0, super::super::RelationDimension::default()).combine_admitted(right, false, ctx)).expect("zero addend reserves no node").expect("matching dimensions");
+    assert!(result.coefficients.is_empty());
+}
+
+#[test]
+fn zero_dimension_addend_needs_no_new_variable_node() {
+    let right = super::super::DimensionForm { constant: super::super::DimensionRational::default(), variables: BTreeMap::from([("x".to_owned(), super::super::DimensionRational::default())]) };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let result = with_expression_policy(policy, |ctx| super::super::DimensionForm::default().combine_admitted(ctx, right, false)).expect("zero addend reserves no node").expect("valid rationals");
+    assert!(result.variables.is_empty());
+}
+
+#[test]
+fn external_relation_string_comparison_refuses_work() {
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits, "creo external relation value comparison", |ctx| {
+        let mut symbols = super::super::ExternalRelationSymbols::default();
+        symbols.observe(ctx, "source".to_owned(), Some(super::super::CurveExpressionValue::String("same".to_owned())))?;
+        symbols.observe(ctx, "source".to_owned(), Some(super::super::CurveExpressionValue::String("same".to_owned())))?;
+        Ok(())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "creo external relation value comparison"));
+}
+
+#[test]
+fn disabled_expression_values_use_temporary_storage() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\xe0\x0aexpression\0\xf8\x01message=itos(2)\0";
+    let records = crate::test_support::assert_refusal_order(ResourceDimension::RetainedBytes, &[], |limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let result = parse(payload, policy);
+        if let Err(CodecError::ResourceLimit(ref refusal)) = result {
+            assert_ne!(refusal.operation, "creo evaluated assignment string");
+        }
+        result
+    });
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].assignments.len(), 1);
+    assert_eq!(records[0].assignments[0].value, None);
+    assert_eq!(records[0].prohibited_constructs, ["itos"]);
 }
