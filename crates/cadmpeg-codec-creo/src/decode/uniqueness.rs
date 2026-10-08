@@ -159,6 +159,32 @@ pub(super) fn unique_feature_datum_plane<'a>(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn unique_query_stops_at_second_match_and_preserves_refusals() {
+        let values = [7, 7, 99];
+        let found = crate::test_support::assert_work_boundaries(&["test unique query"], |ctx| {
+            super::exactly_one_by(
+                ctx,
+                &values,
+                |value| {
+                    assert_ne!(*value, 99, "second match ends the search");
+                    Ok(*value == 7)
+                },
+                "test unique query",
+            )
+            .map(Option::<&i32>::copied)
+        });
+        assert_eq!(found, None);
+        for values in [&[][..], &[1, 7, 2][..], &[1, 2][..]] {
+            let found = crate::decode::with_test_decode_ctx(|ctx| {
+                super::exactly_one_by(ctx, values, |value| Ok(*value == 7), "test unique query")
+                    .map(Option::<&i32>::copied)
+            })
+            .expect("query admitted");
+            assert_eq!(found, values.contains(&7).then_some(7));
+        }
+    }
+
+    #[test]
     fn datum_unique_owner_scan_refuses_work_before_query() {
         let datum = crate::datum::DatumPlaneRecord::new(
             1,
