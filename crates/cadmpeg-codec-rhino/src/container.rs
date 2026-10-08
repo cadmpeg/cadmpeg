@@ -945,9 +945,7 @@ fn plugin_list_checksum_children(
         TABLE_RECORD_CAP,
         count_offset,
     )?;
-    let mut children = ctx
-        .collection_vec(child_count, "Rhino plugin-list child ranges")
-        .map_err(crate::chunks::FramingError::from)?;
+    let mut children = Vec::new();
     for _ in 0..child_count {
         ctx.charge_work(1, "Rhino plugin checksum child walk")?;
         let start = reader.position();
@@ -958,7 +956,7 @@ fn plugin_list_checksum_children(
                 "plugin-list child must be an anonymous long chunk",
             ));
         }
-        children.push(child.range());
+        ctx.push_vec(&mut children, child.range(), "Rhino plugin-list child ranges")?;
         reader.skip(child.next_offset() - start)?;
     }
     Ok(children)
@@ -1546,7 +1544,11 @@ fn push_container_note(
 /// Build the format-neutral container summary.
 fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummary, CodecError> {
     let mut entries = Vec::new();
-    for table in ctx.admit_iter(&scan.tables[..], "Rhino summarize traversal")? {
+    let mut tables = scan.tables.iter();
+    for _ in 0..scan.tables.len() {
+        let table = ctx
+            .next_charged(&mut tables, "Rhino summarize traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino summary table source ended early"))?;
         let mut attributes = BTreeMap::new();
         insert_summary_attribute(
             ctx,
@@ -1572,9 +1574,11 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
             format_args!("record_count"),
             format_args!("{}", table.record_count),
         )?;
-        for (typecode, count) in
-            ctx.admit_iter(&table.object_typecodes, "Rhino summarize traversal")?
-        {
+        let mut typecodes = table.object_typecodes.iter();
+        for _ in 0..table.object_typecodes.len() {
+            let (typecode, count) = ctx
+                .next_charged(&mut typecodes, "Rhino summarize traversal")?
+                .ok_or_else(|| CodecError::malformed("Rhino summary typecode source ended early"))?;
             insert_summary_attribute(
                 ctx,
                 &mut attributes,
@@ -1600,7 +1604,11 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
     }
     let mut class_storage = ctx.reserve_scoped(0, "Rhino container class workspace")?;
     let mut classes = BTreeMap::<Uuid, (usize, usize)>::new();
-    for object in ctx.admit_iter(&scan.objects[..], "Rhino summarize traversal")? {
+    let mut objects = scan.objects.iter();
+    for _ in 0..scan.objects.len() {
+        let object = ctx
+            .next_charged(&mut objects, "Rhino summarize traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino summary object source ended early"))?;
         // The container report groups degraded records under the nil class UUID.
         let class_uuid = object.class_uuid().unwrap_or_else(Uuid::nil);
         let entry = class_storage
@@ -1611,9 +1619,12 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
         entry.0 += 1;
         entry.1 += object.range().len();
     }
-    for (class_uuid, (count, bytes)) in
-        ctx.admit_iter(classes, "Rhino container class traversal")?
-    {
+    let class_count = classes.len();
+    let mut classes = classes.into_iter();
+    for _ in 0..class_count {
+        let (class_uuid, (count, bytes)) = ctx
+            .next_charged(&mut classes, "Rhino container class traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino summary class source ended early"))?;
         let mut attributes = BTreeMap::new();
         insert_summary_attribute(
             ctx,
