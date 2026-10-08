@@ -3,7 +3,6 @@
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
@@ -77,40 +76,31 @@ fn analytic_direction_refusals_render_without_intermediate_strings() {
 }
 
 fn assert_analytic_refusal(bytes: &[u8], operation: &str, retained: bool) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
+    let dimension = if retained {
+        ResourceDimension::RetainedBytes
+    } else {
+        ResourceDimension::CollectionItems
+    };
+    cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
         let mut policy = DecodePolicy::service();
         if retained {
             policy.limits.max_retained_bytes = cap;
         } else {
             policy.limits.max_collection_items = cap;
         }
-        let result = IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        );
-        match result {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                let dimension = if retained {
-                    ResourceDimension::RetainedBytes
-                } else {
-                    ResourceDimension::CollectionItems
-                };
-                assert_eq!(limit.dimension, dimension);
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            )
+            .map_err(|failure| match failure {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("unexpected decode failure: {other:?}"),
+            })
+    });
 }
 
 #[test]
@@ -369,4 +359,134 @@ fn iges_sphere_radius_remains_positive_when_the_ir_carrier_accepts_signed_radii(
     assert!(result.report().losses.iter().any(|loss| loss
         .message
         .contains("sphere radius is not positive and finite")));
+}
+
+#[test]
+fn analytic_surfaces_directory_pass_refuses_before_traversal() {
+    let bytes = pointer_defined_surface_file(190, 0);
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges analytic-surface directory pass",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map_err(|failure| match failure {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
+}
+
+#[test]
+fn analytic_location_index_refuses_work_and_scoped_storage() {
+    let bytes = pointer_defined_surface_file(190, 0);
+    for (dimension, operation) in [
+        (
+            ResourceDimension::WorkUnits,
+            "iges analytic point index traversal",
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            "iges analytic location lookup",
+        ),
+        (
+            ResourceDimension::MaterializedBytes,
+            "iges analytic point index nodes",
+        ),
+    ] {
+        // Isolate projection storage from the scanner's earlier materialization peak.
+        let projection_inputs = (dimension == ResourceDimension::MaterializedBytes).then(|| {
+            let decoded = IgesCodec
+                .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+                .unwrap();
+            let mut ir = decoded.ir().clone();
+            let Some(SolvedSurfaceGeometry::Plane(plane)) = ir.model.surfaces[0].geometry.solved()
+            else {
+                panic!("fixture plane")
+            };
+            let position = plane.origin();
+            // The projection input includes the location point copied into the plane.
+            ir.model.points.push(cadmpeg_ir::topology::Point::new(
+                cadmpeg_ir::ids::PointId::mint("iges:model:point#D1").unwrap(),
+                position,
+                None,
+            ));
+            // Unreferenced points still belong to the location index's input arena.
+            for index in 0..32 {
+                ir.model.points.push(cadmpeg_ir::topology::Point::new(
+                    cadmpeg_ir::ids::PointId::mint(format!("test:model:point#location-{index}"))
+                        .unwrap(),
+                    position,
+                    None,
+                ));
+            }
+            crate::test_support::with_service_context(&bytes, |ctx| {
+                let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
+                let (global, _) = crate::global::parse(&scan, ctx).unwrap();
+                let (directory, quarantined) =
+                    crate::directory::parse(&scan, global.global_table(ctx).unwrap(), ctx).unwrap();
+                assert!(quarantined.is_empty());
+                let parameters = crate::parameter::assemble_with_context(
+                    &scan,
+                    &directory,
+                    &quarantined,
+                    &global,
+                    ctx,
+                )
+                .unwrap()
+                .records;
+                (
+                    ir,
+                    directory,
+                    parameters,
+                    global.length_context(ctx).unwrap().unwrap(),
+                )
+            })
+        });
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                _ => panic!("unexpected test dimension"),
+            }
+            if let Some((source, directory, parameters, global)) = &projection_inputs {
+                let mut ir = source.clone();
+                crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                    super::project(
+                        &mut ir,
+                        directory,
+                        parameters,
+                        global,
+                        ctx,
+                        &mut super::super::geometry::SourceSequences::default(),
+                    )
+                    .map(|_| ())
+                })
+            } else {
+                IgesCodec
+                    .decode(
+                        &mut Cursor::new(&bytes),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .map(|_| ())
+                    .map_err(|failure| match failure {
+                        DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected decode failure: {other:?}"),
+                    })
+            }
+        });
+    }
 }
