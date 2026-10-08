@@ -400,10 +400,7 @@ fn referenced_surface_ids<T>(
         } else if let Some(extrusion) =
             ctx.get_btree_map(extrusions, &construction_id, OPERATION)?
         {
-            for (support, _, _) in ctx.admit_iter(
-                extrusion.directrix.supports(),
-                "catia_b5_extrusion_directrix_references",
-            )? {
+            for (support, _, _) in extrusion.directrix.supports() {
                 add_referenced_surface(ctx, &mut referenced, &mut pending, *support)?;
             }
         }

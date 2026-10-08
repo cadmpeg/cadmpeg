@@ -339,10 +339,11 @@ fn last_save_version_in_segments(
     segments: &[FinjplSegment],
 ) -> Result<Option<LastSaveVersion>, CodecError> {
     let mut selected: Option<LastSaveVersion> = None;
-    for segment in ctx
-        .admit_iter(segments, "catia_last_save_segment_scan")?
-        .filter(|segment| segment.type_word == 0x0101_0003)
-    {
+    let mut segments = segments.iter();
+    while let Some(segment) = ctx.next_charged(&mut segments, "catia_last_save_segment_scan")? {
+        if segment.type_word != 0x0101_0003 {
+            continue;
+        }
         let Some(version) = parse_last_save_version(ctx, &data[segment.range.clone()])? else {
             continue;
         };
@@ -437,7 +438,7 @@ fn parse_external_reference<'a>(
         return Ok(None);
     };
     Ok(
-        (data.get(at) == Some(&0x9f) && is_catia_document_name(ctx, target)?)
+        (data.get(at) == Some(&0x9f) && is_catia_document_name(target))
             .then_some((target_offset, target)),
     )
 }
@@ -466,19 +467,19 @@ fn length_prefixed_ascii<'a>(
         .ok())
 }
 
-fn is_catia_document_name(ctx: &DecodeContext<'_>, value: &str) -> Result<bool, CodecError> {
+fn is_catia_document_name(value: &str) -> bool {
     for extension in [".catpart", ".catproduct", ".catshape", ".cgr"] {
         let suffix = value
             .len()
             .checked_sub(extension.len())
             .and_then(|start| value.get(start..));
         if let Some(suffix) = suffix {
-            if ctx.eq_ignore_ascii_case(suffix, extension, "catia_document_extension")? {
-                return Ok(true);
+            if suffix.eq_ignore_ascii_case(extension) {
+                return true;
             }
         }
     }
-    Ok(false)
+    false
 }
 
 fn parse_last_save_version(
@@ -843,12 +844,8 @@ impl Descriptor {
     }
 
     /// Whether the descriptor names the stream `name`.
-    fn is_named(&self, ctx: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
-        ctx.equal_bytes(
-            self.name.as_bytes(),
-            name.as_bytes(),
-            "catia_descriptor_name_match",
-        )
+    fn is_named(&self, name: &'static str) -> bool {
+        self.name == name
     }
 }
 
@@ -1513,8 +1510,11 @@ pub(crate) fn outer_container_declarations(
     outer: &InnerDir,
 ) -> Result<Vec<OuterContainerDeclaration>, CodecError> {
     let mut data_descriptor = None;
-    for descriptor in ctx.admit_iter(&outer.descriptors, "catia_container_data_stream_scan")? {
-        if descriptor.is_named(ctx, "Data")? {
+    let mut descriptors = outer.descriptors.iter();
+    while let Some(descriptor) =
+        ctx.next_charged(&mut descriptors, "catia_container_data_stream_scan")?
+    {
+        if descriptor.is_named("Data") {
             if data_descriptor.is_some() {
                 return Ok(Vec::new());
             }
@@ -1677,7 +1677,8 @@ fn parse_outer_container_declarations(
         })?;
     }
     let mut selected_streams = HashSet::new();
-    for start in ctx.admit_iter(0..data.len() - 64, "catia_container_declaration_scan")? {
+    let mut starts = 0..data.len() - 64;
+    while let Some(start) = ctx.next_charged(&mut starts, "catia_container_declaration_scan")? {
         if data.get(start + 8..start + 12) != Some(HEADER)
             || data.get(start + 16..start + 24) != Some(PREFIX)
             || data.get(start + 32..start + 36) != Some(CLASS_BLOCK)
@@ -1838,13 +1839,13 @@ fn main_data_stream(
 fn unique_largest_descriptor<'a>(
     ctx: &DecodeContext<'_>,
     descriptors: &'a [Descriptor],
-    name: &str,
+    name: &'static str,
 ) -> Result<Option<&'a Descriptor>, CodecError> {
     let mut selected = None;
     let mut selected_length = 0;
     let mut equal_count = 0;
     for descriptor in ctx.admit_iter(descriptors, "catia_largest_descriptor_scan")? {
-        if !descriptor.is_named(ctx, name)? {
+        if !descriptor.is_named(name) {
             continue;
         }
         let logical_length = descriptor.logical_length(ctx)?;
@@ -2086,7 +2087,13 @@ pub(crate) fn summarize(
             if directory == "outer" {
                 if let Some(declaration) = ctx.find_by(
                     &scan.outer_container_declarations,
-                    |declaration| d.is_named(ctx, &declaration.stream_name),
+                    |declaration| {
+                        ctx.equal_bytes(
+                            d.name.as_bytes(),
+                            declaration.stream_name.as_bytes(),
+                            "catia_descriptor_name_match",
+                        )
+                    },
                     "catia_summary_declaration_lookup",
                 )? {
                     crate::resource::string_attribute(
