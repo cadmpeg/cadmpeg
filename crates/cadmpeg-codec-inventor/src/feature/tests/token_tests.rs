@@ -1,7 +1,5 @@
+use super::{parse_pattern_feature, PmDcPatternFamily, EXTRUSION_CLASS_ID, MIRROR_FEATURE_TYPE};
 use super::{pattern_feature_bytes, segment, test_feature, test_label, test_type_id};
-use super::{
-    parse_pattern_feature, PmDcPatternFamily, EXTRUSION_CLASS_ID, MIRROR_FEATURE_TYPE,
-};
 use crate::record_identity::Located;
 use crate::test_support::test_fixtures::parse;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -11,8 +9,7 @@ use cadmpeg_core::CodecError;
 fn feature_token_check_stops_at_first_distinct_token() {
     let bytes = pattern_feature_bytes(21, PmDcPatternFamily::Mirror);
     let pattern = parse(&bytes, |ctx, source| {
-        parse_pattern_feature(ctx, source, 21, PmDcPatternFamily::Mirror)
-            .expect("pattern fixture")
+        parse_pattern_feature(ctx, source, 21, PmDcPatternFamily::Mirror).expect("pattern fixture")
     });
     for count in [2_u32, 256] {
         // Ordinary-only, pattern-only and ordinary followed by patterns.

@@ -337,8 +337,7 @@ fn projected_feature_tags_retain_literals_without_variable_work() {
         policy.limits.max_collection_items = 0;
         policy.limits.max_entities = 1;
         policy.limits.max_work_units = 0;
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(tag.len());
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(tag.len());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         assert_eq!(
             super::admit_projected_feature(&ctx, tag).expect("retained tag"),
@@ -408,9 +407,7 @@ fn closed_edge_items_stops_at_first_missing_reference() {
     // The null first reference stops validation after one source step.
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert!(
-        !super::closed_edge_items(&ctx, "generated", &items, &index).expect("early rejection")
-    );
+    assert!(!super::closed_edge_items(&ctx, "generated", &items, &index).expect("early rejection"));
     assert!(matches!(ctx.charge_work(1, "probe"),
         Err(CodecError::ResourceLimit(limit)) if limit.used == 1));
 }
@@ -716,8 +713,7 @@ fn extrusion_selection_resolution_stops_at_first_null_reference() {
         "resolve Inventor extrusion selections",
         Some(3),
     );
-    let (projection, _, session) =
-        generated_extrusion_with_work(&[0, 4, 5], policy, false);
+    let (projection, _, session) = generated_extrusion_with_work(&[0, 4, 5], policy, false);
     drop(probe);
     assert!(projection.is_none());
     session.expect("stepwise selection rejection leaves the session clean");

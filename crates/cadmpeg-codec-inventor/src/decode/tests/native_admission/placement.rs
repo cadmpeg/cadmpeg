@@ -24,12 +24,8 @@ fn assembly_placement_native_record_refuses_id_and_digest_before_creation() {
         attribute_reference: 0,
         state: 0,
         transform_prefix: false,
-        transform: CompactMatrix::try_new(
-            0,
-            0,
-            |_| Ok(cadmpeg_ir::scalar::FiniteReal::ZERO),
-        )
-        .expect("finite matrix"),
+        transform: CompactMatrix::try_new(0, 0, |_| Ok(cadmpeg_ir::scalar::FiniteReal::ZERO))
+            .expect("finite matrix"),
         branch: 0,
         graphics_state: 0,
         occurrence_id: 0,
@@ -174,9 +170,11 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
         .expect("service context");
     let bad: AssemblyPlacementRecordWire =
         serde_json::from_value(wire.clone()).expect("wire fixture");
-    assert!(admit_assembly_placement(&ctx, bad.into_record(), &mut issues)
-        .expect("service admission")
-        .is_none());
+    assert!(
+        admit_assembly_placement(&ctx, bad.into_record(), &mut issues)
+            .expect("service admission")
+            .is_none()
+    );
     assert_eq!(issues.len(), 1);
     assert_eq!(issues[0].segment_token.as_str(), "segment");
     assert_eq!(issues[0].record_ordinal, 1);
@@ -184,9 +182,11 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
     let mut wire = wire;
     wire["suffix_sha256"] = serde_json::json!("0".repeat(64));
     let good: AssemblyPlacementRecordWire = serde_json::from_value(wire).expect("wire fixture");
-    assert!(admit_assembly_placement(&ctx, good.into_record(), &mut issues)
-        .expect("service admission")
-        .is_some());
+    assert!(
+        admit_assembly_placement(&ctx, good.into_record(), &mut issues)
+            .expect("service admission")
+            .is_some()
+    );
     assert_eq!(issues.len(), 1);
 }
 
@@ -214,9 +214,11 @@ fn placement_conversion_issue_moves_raw_wire_token_with_legacy_cap() {
         u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let mut issues = Vec::new();
-    assert!(admit_assembly_placement(&ctx, wire.into_record(), &mut issues)
-        .expect("legacy cap admits transferred token")
-        .is_none());
+    assert!(
+        admit_assembly_placement(&ctx, wire.into_record(), &mut issues)
+            .expect("legacy cap admits transferred token")
+            .is_none()
+    );
     assert_eq!(issues.len(), 1);
     assert_eq!(issues[0].family, RecordIssueFamily::Assembly);
     assert_eq!(issues[0].segment_token.as_str(), "segment");
@@ -231,9 +233,11 @@ fn placement_conversion_issue_moves_raw_wire_token_with_legacy_cap() {
     let wire: AssemblyPlacementRecordWire =
         serde_json::from_value(fixture).expect("placement wire");
     let mut issues = Vec::new();
-    assert!(admit_assembly_placement(&ctx, wire.into_record(), &mut issues)
-        .expect("full admission")
-        .is_none());
+    assert!(
+        admit_assembly_placement(&ctx, wire.into_record(), &mut issues)
+            .expect("full admission")
+            .is_none()
+    );
     assert_eq!(issues.len(), 1);
     assert_eq!(issues[0].family, RecordIssueFamily::Assembly);
     assert_eq!(issues[0].segment_token.as_str(), "segment");
@@ -268,9 +272,11 @@ fn uppercase_placement_digest_moves_raw_wire_token_with_legacy_cap() {
         u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let mut issues = Vec::new();
-    assert!(admit_assembly_placement(&ctx, wire.into_record(), &mut issues)
-        .expect("legacy cap admits transferred token")
-        .is_none());
+    assert!(
+        admit_assembly_placement(&ctx, wire.into_record(), &mut issues)
+            .expect("legacy cap admits transferred token")
+            .is_none()
+    );
     assert_eq!(issues.len(), 1);
     assert_eq!(issues[0].family, RecordIssueFamily::Assembly);
     assert_eq!(issues[0].segment_token.as_str(), "segment");
@@ -285,9 +291,11 @@ fn uppercase_placement_digest_moves_raw_wire_token_with_legacy_cap() {
     let wire: AssemblyPlacementRecordWire =
         serde_json::from_value(fixture).expect("placement wire");
     let mut issues = Vec::new();
-    assert!(admit_assembly_placement(&ctx, wire.into_record(), &mut issues)
-        .expect("full admission")
-        .is_none());
+    assert!(
+        admit_assembly_placement(&ctx, wire.into_record(), &mut issues)
+            .expect("full admission")
+            .is_none()
+    );
     assert_eq!(issues.len(), 1);
     assert_eq!(issues[0].family, RecordIssueFamily::Assembly);
     assert_eq!(issues[0].segment_token.as_str(), "segment");
@@ -308,10 +316,8 @@ fn placement_conversion_issue_transfers_admitted_token_without_materialization()
         attribute_reference: 0,
         state: 0,
         transform_prefix: false,
-        transform: CompactMatrix::try_new(0, 0, |_| {
-            Ok(cadmpeg_ir::scalar::FiniteReal::ZERO)
-        })
-        .expect("finite matrix"),
+        transform: CompactMatrix::try_new(0, 0, |_| Ok(cadmpeg_ir::scalar::FiniteReal::ZERO))
+            .expect("finite matrix"),
         branch: 0,
         graphics_state: 0,
         occurrence_id: 1,

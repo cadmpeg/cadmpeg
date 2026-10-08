@@ -1192,7 +1192,7 @@ pub(crate) fn project(
         });
     }
 
-    let (unique_properties, _properties_storage) = ctx.unique_index(
+    let (unique_properties, properties_storage) = ctx.unique_index(
         inventory.properties.iter().map(|record| {
             (
                 {
@@ -1206,7 +1206,7 @@ pub(crate) fn project(
         }),
         "index Inventor feature properties",
     )?;
-    let (unique_parameters, _parameters_storage) = ctx.unique_index(
+    let (unique_parameters, parameters_storage) = ctx.unique_index(
         design.parameters.iter().map(|record| {
             (
                 {
@@ -1220,7 +1220,7 @@ pub(crate) fn project(
         }),
         "index Inventor feature parameters",
     )?;
-    let (unique_sketches, _sketches_storage) = ctx.unique_index(
+    let (unique_sketches, sketches_storage) = ctx.unique_index(
         sketch.sketches.iter().map(|record| {
             (
                 {
@@ -1234,7 +1234,7 @@ pub(crate) fn project(
         }),
         "index Inventor feature sketches",
     )?;
-    let (unique_directions, _directions_storage) = ctx.unique_index(
+    let (unique_directions, directions_storage) = ctx.unique_index(
         sketch.directions.iter().map(|record| {
             (
                 {
@@ -1248,7 +1248,7 @@ pub(crate) fn project(
         }),
         "index Inventor feature directions",
     )?;
-    let (unique_transforms, _transforms_storage) = ctx.unique_index(
+    let (unique_transforms, transforms_storage) = ctx.unique_index(
         sketch.transforms.iter().map(|record| {
             (
                 {
@@ -1262,7 +1262,7 @@ pub(crate) fn project(
         }),
         "index Inventor feature transforms",
     )?;
-    let (parameter_values, _parameter_values_storage) =
+    let (parameter_values, parameter_values_storage) =
         ctx.with_scoped_storage("index Inventor feature parameter values", || {
             let mut values = HashMap::new();
             let mut source = parameters.iter();
@@ -1284,7 +1284,7 @@ pub(crate) fn project(
             }
             Ok::<_, CodecError>(values)
         })?;
-    let (sketch_ids, _sketch_ids_storage) =
+    let (sketch_ids, sketch_ids_storage) =
         ctx.with_scoped_storage("index Inventor feature sketch ids", || {
             let mut ids = HashMap::new();
             let mut source = sketches.iter();
@@ -1302,7 +1302,7 @@ pub(crate) fn project(
             }
             Ok::<_, CodecError>(ids)
         })?;
-    let (entity_style_links, _entity_style_links_storage) =
+    let (entity_style_links, entity_style_links_storage) =
         ctx.with_scoped_storage("index Inventor entity style links", || {
             let mut links = HashSet::new();
             let mut source = inventory.entity_style_links.iter();
@@ -1333,7 +1333,7 @@ pub(crate) fn project(
     // The label owner is a one-based reference. Keying on the optional record
     // ordinal keeps the null reference out of the ordinal space, so a label
     // with no owner never claims the feature at ordinal 0.
-    let (labels, _labels_storage) = ctx.unique_index(
+    let (labels, labels_storage) = ctx.unique_index(
         inventory.labels.iter().map(|label| {
             (
                 {
@@ -1386,17 +1386,17 @@ pub(crate) fn project(
     drop((
         index,
         labels,
-        _properties_storage,
-        _parameters_storage,
-        _sketches_storage,
-        _directions_storage,
-        _transforms_storage,
-        _parameter_values_storage,
-        _sketch_ids_storage,
-        _entity_style_links_storage,
-        _labels_storage,
+        properties_storage,
+        parameters_storage,
+        sketches_storage,
+        directions_storage,
+        transforms_storage,
+        parameter_values_storage,
+        sketch_ids_storage,
+        entity_style_links_storage,
+        labels_storage,
     ));
-    let (ordinal_counts, _ordinal_counts_storage) =
+    let (ordinal_counts, ordinal_counts_storage) =
         ctx.with_scoped_storage("count Inventor feature ordinals", || {
             let mut counts = BTreeMap::<u64, usize>::new();
             let mut source = projected.iter();
@@ -1420,7 +1420,7 @@ pub(crate) fn project(
             }
             Ok::<_, CodecError>(counts)
         })?;
-    let (duplicate_ordinals, _duplicate_ordinals_storage) =
+    let (duplicate_ordinals, duplicate_ordinals_storage) =
         ctx.with_scoped_storage("collect duplicate Inventor feature ordinals", || {
             ctx.collect_hash_set(
                 ctx.admit_iter(
@@ -1431,7 +1431,7 @@ pub(crate) fn project(
                 "collect duplicate Inventor feature ordinals",
             )
         })?;
-    drop((ordinal_counts, _ordinal_counts_storage));
+    drop((ordinal_counts, ordinal_counts_storage));
     ctx.retain_vec(
         &mut projected,
         |(feature, _)| {
@@ -1443,7 +1443,7 @@ pub(crate) fn project(
         },
         "remove duplicate Inventor feature ordinals",
     )?;
-    drop((duplicate_ordinals, _duplicate_ordinals_storage));
+    drop((duplicate_ordinals, duplicate_ordinals_storage));
     ctx.sort_unstable_by(
         &mut projected,
         |value| &value.0.ordinal,
@@ -1510,9 +1510,9 @@ fn project_extrusion(
         option_result_value!(ctx.reserve_scoped(0, "check distinct Inventor extrusion selections"));
     let mut seen = std::collections::HashSet::new();
     let mut references = boundary.references().iter();
-    while let Some(reference) = option_result_value!(
-        ctx.next_charged(&mut references, "visit Inventor feature items")
-    ) {
+    while let Some(reference) =
+        option_result_value!(ctx.next_charged(&mut references, "visit Inventor feature items"))
+    {
         let first = seen_storage.with_storage(|| {
             ctx.insert_hash_set(
                 &mut seen,

@@ -77,11 +77,9 @@ pub(crate) fn count_unresolved<C: Ord + cadmpeg_core::decode::cost::DecodeCost>(
     counts: &mut BTreeMap<C, NonZeroUsize>,
     cause: C,
 ) -> Result<(), CodecError> {
-    if let Some(count) = ctx.get_mut_btree_map(
-        counts,
-        &cause,
-        "count unresolved Inventor projection cause",
-    )? {
+    if let Some(count) =
+        ctx.get_mut_btree_map(counts, &cause, "count unresolved Inventor projection cause")?
+    {
         *count = count.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit(
                 "count unresolved Inventor projection cause",
@@ -180,9 +178,7 @@ pub(crate) fn project_occurrences(
     let mut unresolved_placements = BTreeMap::new();
 
     let mut source_steps = ufrx_occurrences.iter();
-    while let Some(source) =
-        ctx.next_charged(&mut source_steps, "visit Inventor assembly items")?
-    {
+    while let Some(source) = ctx.next_charged(&mut source_steps, "visit Inventor assembly items")? {
         let Some(reference) = ctx
             .get_hash_map(
                 &references,
@@ -269,9 +265,9 @@ pub(crate) fn project_occurrences(
 
         ctx.charge_entities(1, "project Inventor occurrence")?;
         // The prefix and at most ten decimal u32 digits have a fixed grammar.
-        let digits = usize::try_from(source.occurrence_id.max(1).ilog10()).map_err(|_| {
-            CodecError::malformed("Inventor numeric value exceeds target range")
-        })? + 1;
+        let digits = usize::try_from(source.occurrence_id.max(1).ilog10())
+            .map_err(|_| CodecError::malformed("Inventor numeric value exceeds target range"))?
+            + 1;
         let mut id_text = ctx.retained_string(
             "inventor:assembly:instance#".len() + digits,
             "retain projected Inventor occurrence id",
@@ -279,7 +275,8 @@ pub(crate) fn project_occurrences(
         std::fmt::write(
             &mut id_text,
             format_args!("inventor:assembly:instance#{}", source.occurrence_id),
-        ).map_err(|_| CodecError::malformed("cannot format Inventor occurrence id"))?;
+        )
+        .map_err(|_| CodecError::malformed("cannot format Inventor occurrence id"))?;
         let id = OccurrenceId::mint(id_text).map_err(CodecError::malformed)?;
         ctx.push_vec(
             &mut occurrences,
@@ -462,7 +459,10 @@ fn parse_occurrence<'a>(
         )?;
         let mut reference_steps = 0..related_count;
         while ctx
-            .next_charged(&mut reference_steps, "visit Inventor occurrence related references")?
+            .next_charged(
+                &mut reference_steps,
+                "visit Inventor occurrence related references",
+            )?
             .is_some()
         {
             ctx.push_vec(
@@ -479,11 +479,9 @@ fn parse_occurrence<'a>(
         "occurrence identity mode",
     )?;
     let occurrence_id = cursor.u32("occurrence id")?;
-    if let Some(label) = cursor.utf16_label_mismatch(
-        ctx,
-        "occurrence record label",
-        *b"D\0C\0x\0",
-    )? {
+    if let Some(label) =
+        cursor.utf16_label_mismatch(ctx, "occurrence record label", *b"D\0C\0x\0")?
+    {
         return Err(CodecError::malformed(format_args!(
             "Inventor occurrence record label is {label:?}, expected \"DCx\""
         )));
@@ -529,11 +527,9 @@ fn parse_placement<'a>(
     let branch = cursor.u8("placement branch")?;
     let graphics_state = cursor.u8("placement graphics state")?;
     let occurrence_id = cursor.u32("placement occurrence id")?;
-    if let Some(label) = cursor.utf16_label_mismatch(
-        ctx,
-        "placement record label",
-        *b"G\0R\0x\0",
-    )? {
+    if let Some(label) =
+        cursor.utf16_label_mismatch(ctx, "placement record label", *b"G\0R\0x\0")?
+    {
         return Err(CodecError::malformed(format_args!(
             "Inventor placement record label is {label:?}, expected \"GRx\""
         )));
@@ -738,11 +734,22 @@ mod tests {
             let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                 .expect("fixed-label record context");
             if placement {
-                assert_eq!(parse_placement(&ctx, view).expect("GRx placement").occurrence_id, 7);
+                assert_eq!(
+                    parse_placement(&ctx, view)
+                        .expect("GRx placement")
+                        .occurrence_id,
+                    7
+                );
             } else {
-                assert_eq!(parse_occurrence(&ctx, view).expect("DCx occurrence").occurrence_id, 7);
+                assert_eq!(
+                    parse_occurrence(&ctx, view)
+                        .expect("DCx occurrence")
+                        .occurrence_id,
+                    7
+                );
             }
-            ctx.finish_session().expect("fixed label uses no variable work or storage");
+            ctx.finish_session()
+                .expect("fixed label uses no variable work or storage");
         }
     }
 
@@ -766,7 +773,8 @@ mod tests {
             } else {
                 assert_eq!(result.expect("three ASCII bytes fit"), Some("DCy".into()));
                 assert_eq!(cursor.source.position(), bytes.len());
-                ctx.finish_session().expect("decoded mismatch is not a resource refusal");
+                ctx.finish_session()
+                    .expect("decoded mismatch is not a resource refusal");
             }
         }
     }
@@ -787,36 +795,45 @@ mod tests {
             if bytes.len() == 10 {
                 assert!(matches!(result, Err(CodecError::Malformed(_))));
             } else {
-                assert!(matches!(result, Err(CodecError::Truncated { operation: "label", .. })));
+                assert!(matches!(
+                    result,
+                    Err(CodecError::Truncated {
+                        operation: "label",
+                        ..
+                    })
+                ));
             }
             assert_eq!(cursor.source.position(), 4);
-            ctx.finish_session().expect("invalid label is not a resource refusal");
+            ctx.finish_session()
+                .expect("invalid label is not a resource refusal");
         }
     }
 
     #[test]
     fn unresolved_cause_lookup_refuses_before_increment() {
-        let mut counts = BTreeMap::from([(
-            super::UnresolvedCause::Placement,
-            NonZeroUsize::MIN,
-        )]);
+        let mut counts = BTreeMap::from([(super::UnresolvedCause::Placement, NonZeroUsize::MIN)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("cause lookup context");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("cause lookup context");
         let error = super::count_unresolved(&ctx, &mut counts, super::UnresolvedCause::Placement)
             .expect_err("one-key lookup needs one enum comparison");
         assert!(matches!(&error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "count unresolved Inventor projection cause"
-                && limit.used == 0
-                && limit.additional == cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<super::UnresolvedCause>()
-                )));
-        assert_eq!(counts[&super::UnresolvedCause::Placement], NonZeroUsize::MIN);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
-            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "count unresolved Inventor projection cause"
+            && limit.used == 0
+            && limit.additional == cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<super::UnresolvedCause>()
+            )));
+        assert_eq!(
+            counts[&super::UnresolvedCause::Placement],
+            NonZeroUsize::MIN
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit))
+        );
     }
 
     fn project_under_service(
@@ -902,11 +919,16 @@ mod tests {
             &[external_reference(4, "part.ipt", [0, 0])],
             &[assembly_occurrence(u32::MAX)],
             &[assembly_placement(u32::MAX)],
-        ).expect("fixed literal and ten decimal digits use no input-sized work");
+        )
+        .expect("fixed literal and ten decimal digits use no input-sized work");
         assert_eq!(projection.occurrences.len(), 1);
-        assert_eq!(projection.occurrences[0].id.as_str(), "inventor:assembly:instance#4294967295");
+        assert_eq!(
+            projection.occurrences[0].id.as_str(),
+            "inventor:assembly:instance#4294967295"
+        );
         drop(probe);
-        ctx.finish_session().expect("bounded identity format is not a refusal");
+        ctx.finish_session()
+            .expect("bounded identity format is not a refusal");
     }
 
     #[test]
@@ -1237,12 +1259,8 @@ mod tests {
         let mut rows = placement.transform.rows();
         rows[0][3] = 1.25;
         rows[1][3] = -2.0;
-        placement.transform = CompactMatrix::try_from_rows(
-            0,
-            0,
-            rows,
-        )
-        .expect("finite explicit matrix fixture");
+        placement.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
 
         let projection = project_under_service(&[ufrx], &[reference], &[occurrence], &[placement]);
 
@@ -1286,21 +1304,13 @@ mod tests {
         let mut first = assembly_placement(7);
         let mut rows = first.transform.rows();
         rows[0][3] = 1.0;
-        first.transform = CompactMatrix::try_from_rows(
-            0,
-            0,
-            rows,
-        )
-        .expect("finite explicit matrix fixture");
+        first.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
         let mut second = assembly_placement(8);
         let mut rows = second.transform.rows();
         rows[0][3] = 2.0;
-        second.transform = CompactMatrix::try_from_rows(
-            0,
-            0,
-            rows,
-        )
-        .expect("finite explicit matrix fixture");
+        second.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
 
         let projection = project_under_service(&ufrx, &[reference], &occurrences, &[first, second]);
 

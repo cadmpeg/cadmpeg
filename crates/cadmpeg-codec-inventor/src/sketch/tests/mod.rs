@@ -3,9 +3,8 @@
 
 use super::{
     inventory, parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform,
-    project, PmDcSketchConstraintKind, PmDcSketchEntityKind, SketchConstraintTag,
-    SketchEntityTag, SketchInventory,
-    COINCIDENT_TYPE, DIAMETER_TYPE, DIRECTION_TYPE, HORIZONTAL_DISTANCE_TYPE,
+    project, PmDcSketchConstraintKind, PmDcSketchEntityKind, SketchConstraintTag, SketchEntityTag,
+    SketchInventory, COINCIDENT_TYPE, DIAMETER_TYPE, DIRECTION_TYPE, HORIZONTAL_DISTANCE_TYPE,
     HORIZONTAL_TYPE, LINE_TYPE, POINT_TYPE, RADIUS_TYPE, SKETCH_TYPE, TRANSFORM_TYPE,
     VERTICAL_DISTANCE_TYPE,
 };

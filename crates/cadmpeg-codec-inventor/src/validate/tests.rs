@@ -128,8 +128,7 @@ fn presentation_indexes_fit_the_sequential_hash_table_peak() {
     ir.model.faces.push(cadmpeg_ir::topology::Face {
         id: face_id,
         shell: cadmpeg_ir::ids::ShellId::mint("inventor:test:shell#0").expect("shell id"),
-        surface: cadmpeg_ir::ids::SurfaceId::mint("inventor:test:surface#0")
-            .expect("surface id"),
+        surface: cadmpeg_ir::ids::SurfaceId::mint("inventor:test:surface#0").expect("surface id"),
         sense: cadmpeg_ir::topology::Sense::Forward,
         loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
         name: None,
@@ -276,8 +275,9 @@ fn uniqueness_refuses_after_the_first_source_step_without_prepaying_the_tail() {
         // needs the next unit; the remaining source entries stay unvisited.
         policy.limits.max_work_units = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let (mut seen, mut storage) =
-            ctx.temporary_set(0, "index Inventor uniqueness keys").expect("set");
+        let (mut seen, mut storage) = ctx
+            .temporary_set(0, "index Inventor uniqueness keys")
+            .expect("set");
         let mut findings = Vec::new();
         let Err(CodecError::ResourceLimit(limit)) = super::unique_into(
             &ctx,

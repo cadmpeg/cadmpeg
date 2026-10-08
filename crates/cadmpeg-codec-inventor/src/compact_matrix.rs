@@ -114,7 +114,8 @@ mod tests {
         })
         .expect("implicit cells need no variable work");
         assert_eq!(matrix.rows(), [[1.0; 4]; 4]);
-        ctx.finish_session().expect("fixed cells use no decode work");
+        ctx.finish_session()
+            .expect("fixed cells use no decode work");
     }
 
     #[test]

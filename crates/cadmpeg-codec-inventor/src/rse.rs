@@ -509,9 +509,7 @@ impl<'a> RseInventory<'a> {
         let mut metadata = BTreeMap::new();
         let mut bulk = BTreeMap::new();
         let mut entry_steps = snapshot.entries().iter();
-        while let Some(entry) =
-            ctx.next_charged(&mut entry_steps, "index RSe streams")?
-        {
+        while let Some(entry) = ctx.next_charged(&mut entry_steps, "index RSe streams")? {
             let CompoundEntry::Stream(stream) = entry else {
                 continue;
             };
@@ -581,10 +579,8 @@ impl<'a> RseInventory<'a> {
                 },
                 None => {
                     const DETAIL: &str = "RSe database stream handle is absent";
-                    let mut detail = ctx.retained_string(
-                        DETAIL.len(),
-                        "retain RSe missing database detail",
-                    )?;
+                    let mut detail =
+                        ctx.retained_string(DETAIL.len(), "retain RSe missing database detail")?;
                     detail.push_str(DETAIL);
                     DatabaseState::Unreadable(detail)
                 }
@@ -820,9 +816,7 @@ fn join_registry<B>(
         "index RSe registry segment IDs",
     )?;
     let mut segment_steps = segments.iter_mut();
-    while let Some(segment) =
-        ctx.next_charged(&mut segment_steps, "join RSe registry segments")?
-    {
+    while let Some(segment) = ctx.next_charged(&mut segment_steps, "join RSe registry segments")? {
         let SegmentMetaState::Parsed(meta) = &segment.meta else {
             push_identity_issue(
                 ctx,
@@ -1286,22 +1280,27 @@ mod tests {
     fn rse_stream_scan_refuses_one_step_before_any_entry() {
         let bytes = crate::test_support::test_fixtures::primary_envelope_fixture();
         let arena = DecodeArena::new();
-        let (setup, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("RSe fixture context");
+        let (setup, view) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("RSe fixture context");
         let snapshot = CompoundSnapshot::new(&setup, view).expect("RSe fixture directory");
         assert!(snapshot.entries().len() > 1);
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("stream scan context");
-        let error = RseInventory::build(&ctx, &snapshot).err().expect("first step refuses");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("stream scan context");
+        let Err(error) = RseInventory::build(&ctx, &snapshot) else {
+            panic!("first step refuses");
+        };
         assert!(matches!(&error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "index RSe streams"
                 && limit.used == 0
                 && limit.additional == 1));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
-            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit))
+        );
     }
 
     fn inventory_refusal_operations_for(

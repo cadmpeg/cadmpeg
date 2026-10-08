@@ -13,8 +13,7 @@ fn profile_builder_refuses_collection_limit_before_source_index() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("profile context");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("profile context");
     assert!(matches!(
         super::super::build_profiles(&ctx, &[&entity]),
         Err(CodecError::ResourceLimit(limit))
@@ -33,8 +32,7 @@ fn profile_builder_refuses_collection_limit_before_source_index() {
 
 fn circle_profile_entity() -> cadmpeg_ir::sketches::SketchEntity {
     cadmpeg_ir::sketches::SketchEntity::new(
-        cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1")
-            .expect("entity id"),
+        cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1").expect("entity id"),
         cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id"),
         cadmpeg_ir::sketches::SketchGeometry::try_from(
             cadmpeg_ir::sketches::SketchGeometryDefinition::Circle {
@@ -78,8 +76,7 @@ fn profile_builder_refuses_collection_limits_before_circular_profile_allocations
 
 #[test]
 fn short_closed_line_components_skip_profile_entity_id_copies() {
-    let sketch = cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1")
-        .expect("sketch id");
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id");
     let line = |id| {
         cadmpeg_ir::sketches::SketchEntity::new(
             cadmpeg_ir::sketches::SketchEntityId::mint(id).expect("entity id"),
@@ -108,14 +105,14 @@ fn short_closed_line_components_skip_profile_entity_id_copies() {
     let profiles = super::super::build_profiles(&ctx, &[&first, &second])
         .expect("two-edge closed component is not a profile");
     assert!(profiles.is_empty());
-    ctx.finish_session().expect("short component needs no profile ID copies");
+    ctx.finish_session()
+        .expect("short component needs no profile ID copies");
 }
 
 #[test]
 fn line_component_expands_shared_endpoint_neighbours_once() {
     let entity = cadmpeg_ir::sketches::SketchEntity::new(
-        cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#2")
-            .expect("entity id"),
+        cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#2").expect("entity id"),
         cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id"),
         cadmpeg_ir::sketches::SketchGeometry::try_from(
             cadmpeg_ir::sketches::SketchGeometryDefinition::Line {
@@ -305,7 +302,9 @@ fn sketch_projection_without_constraints_skips_native_constraint_indexes() {
     for has_raw_constraint in [false, true] {
         let mut inventory = empty_projectable_inventory();
         if has_raw_constraint {
-            inventory.constraints.push(horizontal_constraint_fixture(3, 0));
+            inventory
+                .constraints
+                .push(horizontal_constraint_fixture(3, 0));
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -317,7 +316,10 @@ fn sketch_projection_without_constraints_skips_native_constraint_indexes() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let projection = project(&ctx, &inventory, &[]).expect("only read indexes are stored");
         assert_eq!(projection.sketches.len(), 1);
-        assert_eq!(projection.unresolved_constraints, usize::from(has_raw_constraint));
+        assert_eq!(
+            projection.unresolved_constraints,
+            usize::from(has_raw_constraint)
+        );
         assert!(projection.entities.is_empty());
         assert!(projection.constraints.is_empty());
         assert!(matches!(ctx.charge_collection_items(1, "probe"),
@@ -344,7 +346,9 @@ fn unprojectable_sketches_skip_parameter_index() {
     }];
     let mut inventory = empty_projectable_inventory();
     inventory.directions.clear();
-    inventory.constraints.push(horizontal_constraint_fixture(3, 0));
+    inventory
+        .constraints
+        .push(horizontal_constraint_fixture(3, 0));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // The unused parameter key exceeds the whole work budget; rejected sketches do not hash it.
@@ -372,11 +376,17 @@ fn rejected_closed_sketches_skip_constraint_native_indexes() {
             cadmpeg_ir::identity_key!("segment"),
             3,
         ));
-        inventory.constraints.push(horizontal_constraint_fixture(5, 4));
+        inventory
+            .constraints
+            .push(horizontal_constraint_fixture(5, 4));
         let references = if closed { &[4, 6][..] } else { &[4, 6, 0][..] };
         let mut bytes = content(2);
         bytes.extend_from_slice(&0_i32.to_le_bytes());
-        bytes.extend_from_slice(&u32::try_from(references.len()).expect("count").to_le_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(references.len())
+                .expect("count")
+                .to_le_bytes(),
+        );
         bytes.extend(list(8, references));
         bytes.extend_from_slice(&1_u32.to_le_bytes());
         bytes.extend_from_slice(&2_u32.to_le_bytes());
@@ -400,9 +410,8 @@ fn rejected_closed_sketches_skip_constraint_native_indexes() {
             policy.limits.max_collection_items = u64::MAX;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
             // Refuse any final native-index entry only in the rejected-sketch case.
-            let _probe = (!closed).then(|| {
-                RefusalProbe::arm(ResourceDimension::CollectionItems, operation, None)
-            });
+            let _probe = (!closed)
+                .then(|| RefusalProbe::arm(ResourceDimension::CollectionItems, operation, None));
             let projection = project(&ctx, &inventory, &[]).expect("native indexes need readers");
             let count = usize::from(closed);
             assert_eq!(projection.sketches.len(), count);
@@ -456,8 +465,7 @@ fn sketch_parameter_index_borrows_unselected_values() {
                 && limit.operation == "retain projected Inventor sketch_id identity"));
     // Two output identities fill this budget before the returned vector is allocated.
     let text_bytes = cadmpeg_core::decode::u64_from_index(
-        "inventor:design:sketch#segment-2".len()
-            + "inventor:pmdc:sketch#segment-2".len(),
+        "inventor:design:sketch#segment-2".len() + "inventor:pmdc:sketch#segment-2".len(),
     );
     policy.limits.max_retained_bytes = text_bytes;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
@@ -552,8 +560,7 @@ fn sketch_projection_without_sketches_skips_parameter_index() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let projection =
-        project(&ctx, &inventory, &parameters).expect("index holds borrowed values");
+    let projection = project(&ctx, &inventory, &parameters).expect("index holds borrowed values");
     assert!(projection.sketches.is_empty());
     assert!(projection.entities.is_empty());
     assert!(projection.constraints.is_empty());
@@ -562,8 +569,7 @@ fn sketch_projection_without_sketches_skips_parameter_index() {
 #[test]
 fn line_component_refuses_collection_limit_before_queue_creation() {
     let entity = cadmpeg_ir::sketches::SketchEntity::new(
-        cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#2")
-            .expect("entity id"),
+        cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#2").expect("entity id"),
         cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id"),
         cadmpeg_ir::sketches::SketchGeometry::try_from(
             cadmpeg_ir::sketches::SketchGeometryDefinition::Line {
@@ -574,15 +580,12 @@ fn line_component_refuses_collection_limit_before_queue_creation() {
         .expect("line geometry"),
     )
     .with_endpoint_refs(vec!["point-a".into(), "point-b".into()]);
-    let adjacency = std::collections::HashMap::from([
-        ("point-a", vec![0_usize]),
-        ("point-b", vec![0_usize]),
-    ]);
+    let adjacency =
+        std::collections::HashMap::from([("point-a", vec![0_usize]), ("point-b", vec![0_usize])]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("profile context");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("profile context");
     assert!(matches!(
         super::super::line_component(&ctx, 0, &[&entity], &adjacency),
         Err(CodecError::ResourceLimit(limit))
@@ -870,8 +873,7 @@ fn sketch_constraint_projection_refuses_retained_limit_before_entity_copy() {
         0,
     );
     let entity = cadmpeg_ir::sketches::SketchEntity::new(
-        cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1")
-            .expect("entity id"),
+        cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1").expect("entity id"),
         cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id"),
         cadmpeg_ir::sketches::SketchGeometry::try_from(
             cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
@@ -929,21 +931,17 @@ fn cross_sketch_constraint_skips_retained_member_id_copies() {
     let first = cadmpeg_ir::sketches::SketchEntity::new(
         cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1")
             .expect("first entity id"),
-        cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1")
-            .expect("first sketch id"),
+        cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("first sketch id"),
         point(),
     );
     let second = cadmpeg_ir::sketches::SketchEntity::new(
         cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#2")
             .expect("second entity id"),
-        cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#2")
-            .expect("second sketch id"),
+        cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#2").expect("second sketch id"),
         point(),
     );
-    let entities = std::collections::BTreeMap::from([
-        (("segment", 0), &first),
-        (("segment", 1), &second),
-    ]);
+    let entities =
+        std::collections::BTreeMap::from([(("segment", 0), &first), (("segment", 1), &second)]);
     let parameters = std::collections::HashMap::new();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -964,8 +962,7 @@ fn dimensioned_constraint_copies_parameter_before_member_ids() {
     let first = cadmpeg_ir::sketches::SketchEntity::new(
         cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#first")
             .expect("first entity id"),
-        cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#same")
-            .expect("first sketch id"),
+        cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#same").expect("first sketch id"),
         cadmpeg_ir::sketches::SketchGeometry::try_from(
             cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
                 position: cadmpeg_ir::math::Point2::new(0.0, 0.0),
@@ -985,18 +982,13 @@ fn dimensioned_constraint_copies_parameter_before_member_ids() {
         )
         .expect("point geometry"),
     );
-    let entities = std::collections::BTreeMap::from([
-        (("segment", 0), &first),
-        (("segment", 1), &second),
-    ]);
-    let parameter = cadmpeg_ir::features::ParameterId::mint(
-        "inventor:test:parameter#selected-parameter-value",
-    )
-    .expect("parameter id");
-    let parameters = std::collections::HashMap::from([(
-        "inventor:pmdc:parameter#segment-0",
-        &parameter,
-    )]);
+    let entities =
+        std::collections::BTreeMap::from([(("segment", 0), &first), (("segment", 1), &second)]);
+    let parameter =
+        cadmpeg_ir::features::ParameterId::mint("inventor:test:parameter#selected-parameter-value")
+            .expect("parameter id");
+    let parameters =
+        std::collections::HashMap::from([("inventor:pmdc:parameter#segment-0", &parameter)]);
 
     let mut horizontal_distance = constraint_header(0, 0);
     horizontal_distance.extend_from_slice(&1_u32.to_le_bytes());
@@ -1021,7 +1013,11 @@ fn dimensioned_constraint_copies_parameter_before_member_ids() {
     diameter.extend_from_slice(&[0; 16]);
 
     let cases = [
-        (HorizontalDistance, HORIZONTAL_DISTANCE_TYPE, horizontal_distance),
+        (
+            HorizontalDistance,
+            HORIZONTAL_DISTANCE_TYPE,
+            horizontal_distance,
+        ),
         (VerticalDistance, VERTICAL_DISTANCE_TYPE, vertical_distance),
         (Radius, RADIUS_TYPE, radius),
         (Diameter, DIAMETER_TYPE, diameter),
@@ -1043,8 +1039,7 @@ fn dimensioned_constraint_copies_parameter_before_member_ids() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = parameter_bytes - 1;
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         assert!(matches!(
             super::super::project_constraint(&ctx, &constraint, &entities, &parameters),
             Some(Err(CodecError::ResourceLimit(limit)))
@@ -1062,8 +1057,7 @@ fn dimensioned_constraint_copies_parameter_before_member_ids() {
         ));
 
         policy.limits.max_retained_bytes = parameter_bytes + first_member_bytes - 1;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         assert!(matches!(
             super::super::project_constraint(&ctx, &constraint, &entities, &parameters),
             Some(Err(CodecError::ResourceLimit(limit)))
@@ -1080,8 +1074,8 @@ fn dimensioned_constraint_copies_parameter_before_member_ids() {
                     && limit.additional == first_member_bytes
         ));
 
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("context");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
         assert!(matches!(
             super::super::project_constraint(&ctx, &constraint, &entities, &parameters),
             Some(Ok(_))
@@ -1112,8 +1106,7 @@ fn sketch_constraint_projection_refuses_entity_limit_before_creation() {
         0,
     );
     let entity = cadmpeg_ir::sketches::SketchEntity::new(
-        cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1")
-            .expect("entity id"),
+        cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1").expect("entity id"),
         cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id"),
         cadmpeg_ir::sketches::SketchGeometry::try_from(
             cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
@@ -1188,9 +1181,7 @@ fn projects_generated_closed_square_and_resolved_plane() {
                     3,
                     position,
                 ),
-                |ctx, source| {
-                    parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point")
-                },
+                |ctx, source| parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point"),
             )
         })
         .collect::<Vec<_>>();

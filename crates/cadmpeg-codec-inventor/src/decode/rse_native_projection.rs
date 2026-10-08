@@ -44,10 +44,16 @@ pub(super) fn project(
         unpaired_segments: Vec::new(),
     };
     let mut segment_steps = container.rse.segments.iter();
-    while let Some(segment) = ctx.next_charged(&mut segment_steps, "visit Inventor decode/rse_native_projection items")? {
+    while let Some(segment) = ctx.next_charged(
+        &mut segment_steps,
+        "visit Inventor decode/rse_native_projection items",
+    )? {
         let token = segment.pair.token.as_str();
         let mut issue_steps = segment.identity_issues.iter().enumerate();
-        while let Some((ordinal, detail)) = ctx.next_charged(&mut issue_steps, "visit Inventor decode/rse_native_projection items")? {
+        while let Some((ordinal, detail)) = ctx.next_charged(
+            &mut issue_steps,
+            "visit Inventor decode/rse_native_projection items",
+        )? {
             ctx.charge_entities(1, "admit Inventor native structural records")?;
             ctx.push_vec(
                 &mut projection.identity_issues,
@@ -174,7 +180,10 @@ pub(super) fn project(
                     )?;
                 }
                 let mut type_steps = meta.tables.types.iter();
-                while let Some(descriptor) = ctx.next_charged(&mut type_steps, "visit Inventor decode/rse_native_projection items")? {
+                while let Some(descriptor) = ctx.next_charged(
+                    &mut type_steps,
+                    "visit Inventor decode/rse_native_projection items",
+                )? {
                     ctx.charge_entities(1, "admit Inventor native structural records")?;
                     ctx.push_vec(
                         &mut projection.meta_types,
@@ -220,7 +229,10 @@ pub(super) fn project(
                 let records = match &bulk.records {
                     RecordFrameState::Framed(table) => {
                         let mut record_steps = table.records.iter();
-                        while let Some(record) = ctx.next_charged(&mut record_steps, "visit Inventor decode/rse_native_projection items")? {
+                        while let Some(record) = ctx.next_charged(
+                            &mut record_steps,
+                            "visit Inventor decode/rse_native_projection items",
+                        )? {
                             ctx.charge_entities(1, "admit Inventor native structural records")?;
                             ctx.push_vec(
                                 &mut projection.rse_records,
@@ -306,7 +318,10 @@ pub(super) fn project(
         }
     }
     let mut token_steps = container.rse.unpaired_metadata.iter();
-    while let Some(token) = ctx.next_charged(&mut token_steps, "visit Inventor decode/rse_native_projection items")? {
+    while let Some(token) = ctx.next_charged(
+        &mut token_steps,
+        "visit Inventor decode/rse_native_projection items",
+    )? {
         ctx.charge_entities(1, "admit Inventor native structural records")?;
         ctx.push_vec(
             &mut projection.unpaired_segments,
@@ -325,7 +340,10 @@ pub(super) fn project(
         )?;
     }
     let mut token_steps = container.rse.unpaired_bulk.iter();
-    while let Some(token) = ctx.next_charged(&mut token_steps, "visit Inventor decode/rse_native_projection items")? {
+    while let Some(token) = ctx.next_charged(
+        &mut token_steps,
+        "visit Inventor decode/rse_native_projection items",
+    )? {
         ctx.charge_entities(1, "admit Inventor native structural records")?;
         ctx.push_vec(
             &mut projection.unpaired_segments,
