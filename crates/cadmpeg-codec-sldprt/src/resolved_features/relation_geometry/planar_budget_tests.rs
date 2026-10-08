@@ -580,7 +580,9 @@ fn assert_owned_loci_refusal(
     };
     assert_eq!(limit.dimension, dimension);
     let operation = match dimension {
-        ResourceDimension::CollectionItems | ResourceDimension::WorkUnits => "index SLDPRT planar relation sketches",
+        ResourceDimension::CollectionItems | ResourceDimension::WorkUnits => {
+            "index SLDPRT planar relation sketches"
+        }
         ResourceDimension::RetainedBytes => "copy SLDPRT planar sketch identity",
         ResourceDimension::RecursionDepth => limit.operation,
         _ => panic!("unexpected owned locus budget dimension"),
@@ -1266,11 +1268,15 @@ fn relation_point_operand_workspace_is_scoped_without_output() {
     use crate::records::FeatureInputRelationFamily;
     let mut lane = relation_lane();
     lane.relation_instances[0].family = FeatureInputRelationFamily::PointLineDistance;
-    lane.relation_instances[0].operands = (0u16..2).map(|index| FeatureInputOperand {
-        offset: u64::from(index), reference_ref: format!("reference-{index}"),
-        kind: FeatureInputOperandKind::D6, entity_index: index,
-        entity_ref: Some(format!("marker-{index}")),
-    }).collect();
+    lane.relation_instances[0].operands = (0u16..2)
+        .map(|index| FeatureInputOperand {
+            offset: u64::from(index),
+            reference_ref: format!("reference-{index}"),
+            kind: FeatureInputOperandKind::D6,
+            entity_index: index,
+            entity_ref: Some(format!("marker-{index}")),
+        })
+        .collect();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -1279,7 +1285,11 @@ fn relation_point_operand_workspace_is_scoped_without_output() {
     let mut entities = Vec::new();
     project_relation_point_geometry(&ctx, &mut entities, &[], &[], &[lane]).unwrap();
     assert!(entities.is_empty());
-    ctx.reserve_scoped(policy.limits.max_materialized_bytes, "released operand workspace").unwrap();
+    ctx.reserve_scoped(
+        policy.limits.max_materialized_bytes,
+        "released operand workspace",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1287,17 +1297,24 @@ fn relation_without_point_operands_does_not_admit_the_operand_roster() {
     use crate::records::FeatureInputRelationFamily;
     let mut lane = relation_lane();
     lane.relation_instances[0].family = FeatureInputRelationFamily::CircleDiameter;
-    lane.relation_instances[0].operands = (0u16..20).map(|index| FeatureInputOperand {
-        offset: u64::from(index), reference_ref: format!("reference-{index}"),
-        kind: FeatureInputOperandKind::D6, entity_index: index,
-        entity_ref: Some(format!("marker-{index}")),
-    }).collect();
+    lane.relation_instances[0].operands = (0u16..20)
+        .map(|index| FeatureInputOperand {
+            offset: u64::from(index),
+            reference_ref: format!("reference-{index}"),
+            kind: FeatureInputOperandKind::D6,
+            entity_index: index,
+            entity_ref: Some(format!("marker-{index}")),
+        })
+        .collect();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits,
-        "index SLDPRT relation-point operands", None);
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT relation-point operands",
+        None,
+    );
     let mut entities = Vec::new();
     project_relation_point_geometry(&ctx, &mut entities, &[], &[], &[lane]).unwrap();
     assert!(entities.is_empty());
@@ -1310,5 +1327,9 @@ fn relation_parameter_lookup_does_not_retry_an_empty_roster() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(super::relation_parameter_by_relation_id(&ctx, &lane.relation_instances[0], &[]).unwrap().is_none());
+    assert!(
+        super::relation_parameter_by_relation_id(&ctx, &lane.relation_instances[0], &[])
+            .unwrap()
+            .is_none()
+    );
 }

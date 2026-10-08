@@ -834,7 +834,8 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }

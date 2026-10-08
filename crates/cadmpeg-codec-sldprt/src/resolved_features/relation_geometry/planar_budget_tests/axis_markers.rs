@@ -142,16 +142,18 @@ fn planar_nested_axis_markers_refuse_nesting_limit() {
             && limit.operation == "traverse SLDPRT axis relation point loci"
             && limit.used == 1 && limit.additional == 1));
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RecursionDepth, "resolve SLDPRT linked point locus", |cap| {
+        ResourceDimension::RecursionDepth,
+        "resolve SLDPRT linked point locus",
+        |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_recursion_depth = cap;
             project_nested_axis_markers_with_policy(&policy)
-        });
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RecursionDepth
             && limit.used == 2 && limit.additional == 1));
     // Root and child axis traversal remain live while the point locus is resolved.
     policy.limits.max_recursion_depth = 3;
     project_nested_axis_markers_with_policy(&policy).unwrap();
-
 }

@@ -128,7 +128,8 @@ fn legacy_compact_84_construction_line_uses_direct_point_ids() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -262,7 +263,8 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -295,7 +297,8 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -338,7 +341,8 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -375,7 +379,8 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -407,7 +412,8 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
                 )
                 .unwrap(),
             )
-            .unwrap(), None,
+            .unwrap(),
+            None,
         );
         result
     }
@@ -484,7 +490,8 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -737,7 +744,8 @@ fn extended_compact_construction_line_distinguishes_direct_ids_from_roster_indic
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -1137,7 +1145,8 @@ fn extended_compact_84_profile_roster_uses_one_based_point_objects() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -1236,7 +1245,8 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
                 )
                 .unwrap(),
             )
-            .unwrap(), None,
+            .unwrap(),
+            None,
         );
         result
     }
@@ -1270,7 +1280,8 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
                 )
                 .unwrap(),
             )
-            .unwrap(), None,
+            .unwrap(),
+            None,
         );
         result
     }
@@ -1301,7 +1312,8 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
                 )
                 .unwrap(),
             )
-            .unwrap(), None,
+            .unwrap(),
+            None,
         );
         result
     }
@@ -1327,7 +1339,8 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
                 )
                 .unwrap(),
             )
-            .unwrap(), None,
+            .unwrap(),
+            None,
         );
         result
     }
@@ -1361,7 +1374,8 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
                 )
                 .unwrap(),
             )
-            .unwrap(), None,
+            .unwrap(),
+            None,
         );
         result
     }
@@ -1391,7 +1405,8 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
                 )
                 .unwrap(),
             )
-            .unwrap(), None,
+            .unwrap(),
+            None,
         );
         result
     }
@@ -1426,7 +1441,8 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
                 )
                 .unwrap(),
             )
-            .unwrap(), None,
+            .unwrap(),
+            None,
         );
         result
     }
@@ -1507,7 +1523,8 @@ fn legacy_compact_marker84_profile_line_uses_zero_based_point_roster() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -1541,7 +1558,8 @@ fn legacy_compact_marker84_profile_line_uses_zero_based_point_roster() {
                 )
                 .unwrap(),
             )
-            .unwrap(), None,
+            .unwrap(),
+            None,
         );
         result
     }
@@ -1613,7 +1631,8 @@ fn extended_compact_marker84_profile_line_uses_zero_based_geometry_roster() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -1648,7 +1667,8 @@ fn extended_compact_marker84_profile_line_uses_zero_based_geometry_roster() {
                 )
                 .unwrap(),
             )
-            .unwrap(), None,
+            .unwrap(),
+            None,
         );
         result
     }
