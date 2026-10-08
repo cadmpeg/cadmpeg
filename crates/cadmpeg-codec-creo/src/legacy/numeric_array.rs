@@ -25,11 +25,17 @@ impl<T> NumericArray<T> {
         dimensions: Vec<u32>,
         runs: Vec<NumericRun<T>>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let mut expected = 1usize;
         let mut extents = dimensions.iter();
-        while let Some(dimension) =
-            ctx.next_charged(&mut extents, "creo numeric array extent validation")?
-        {
+        while extents.len() != 0 {
+            let Some(dimension) =
+                ctx.next_charged(&mut extents, "creo numeric array extent validation")?
+            else {
+                break;
+            };
             let Some(product) = expected.checked_mul(index_from_u32(*dimension)) else {
                 return Ok(None);
             };
@@ -37,9 +43,12 @@ impl<T> NumericArray<T> {
         }
         let mut actual = 0usize;
         let mut source_runs = runs.iter();
-        while let Some(run) =
-            ctx.next_charged(&mut source_runs, "creo numeric array run validation")?
-        {
+        while source_runs.len() != 0 {
+            let Some(run) =
+                ctx.next_charged(&mut source_runs, "creo numeric array run validation")?
+            else {
+                break;
+            };
             let Some(total) = actual.checked_add(index_from_u32(run.count)) else {
                 return Ok(None);
             };
@@ -110,5 +119,79 @@ mod tests {
             |ctx| NumericPayload::array(ctx, vec![2, 2], vec![NumericRun { count: 4, value: 0 }]),
         );
         assert_eq!(payload.expect("array").element_count(), 4);
+    }
+
+    #[test]
+    fn numeric_array_admits_only_present_extents_and_runs() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        // Two extent multiplications and two run-count additions.
+        const ARRAY_VISITS: u64 = 2 + 2;
+        for allowed in 0..=ARRAY_VISITS {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = allowed;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let result = NumericPayload::array(
+                &ctx,
+                vec![2, 2],
+                vec![NumericRun { count: 2, value: 7 }, NumericRun { count: 2, value: 9 }],
+            );
+            if allowed < ARRAY_VISITS {
+                let CodecError::ResourceLimit(original) = result
+                    .expect_err("next present array visit exceeds cap") else {
+                        panic!("expected resource refusal");
+                    };
+                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(original.operation, if allowed < 2 {
+                    "creo numeric array extent validation"
+                } else {
+                    "creo numeric array run validation"
+                });
+                assert_eq!((original.used, original.additional), (allowed, 1));
+                assert!(matches!(NumericPayload::<u32>::array(&ctx, Vec::new(), Vec::new()),
+                    Err(CodecError::ResourceLimit(refusal)) if refusal == original));
+            } else {
+                let payload = result.expect("present visits are admitted").expect("complete array");
+                assert_eq!(payload.element_count(), 4);
+                let NumericPayload::Array(array) = payload else {
+                    panic!("expected numeric array");
+                };
+                assert_eq!(array.dimensions(), &[2, 2]);
+                assert_eq!(array.runs(), &[NumericRun { count: 2, value: 7 }, NumericRun { count: 2, value: 9 }]);
+                let original = ctx.charge_work_limit(1, "after exact numeric array visits")
+                    .expect_err("all allowed visits were consumed");
+                assert_eq!((original.used, original.additional), (ARRAY_VISITS, 1));
+            }
+        }
+    }
+
+    #[test]
+    fn empty_numeric_array_lanes_are_free_and_zero_extent_visits_once() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::CodecError;
+
+        for allowed in [0, 1] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = allowed;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            assert!(NumericPayload::<u32>::array(&ctx, Vec::new(), Vec::new())
+                .expect("empty lanes do no input-sized work").is_none());
+            if allowed == 1 {
+                let payload = NumericPayload::<u32>::array(&ctx, vec![0], Vec::new())
+                    .expect("one extent visit").expect("complete zero extent");
+                assert_eq!(payload.element_count(), 0);
+            }
+            let original = ctx.charge_work_limit(1, "seed empty numeric array refusal")
+                .expect_err("exact work cap");
+            assert_eq!((original.used, original.additional), (allowed, 1));
+            assert!(matches!(NumericPayload::<u32>::array(&ctx, Vec::new(), Vec::new()),
+                Err(CodecError::ResourceLimit(refusal)) if refusal == original));
+        }
     }
 }
