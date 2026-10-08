@@ -123,7 +123,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if feature_recipe(scan, feature_id)
+        if feature_recipe(ctx, scan, feature_id)?
             != Some(crate::feature::operations::FeatureRecipeKind::Revolve)
         {
             continue;
@@ -667,7 +667,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if feature_recipe(scan, feature_id)
+        if feature_recipe(ctx, scan, feature_id)?
             != Some(crate::feature::operations::FeatureRecipeKind::Revolve)
         {
             continue;

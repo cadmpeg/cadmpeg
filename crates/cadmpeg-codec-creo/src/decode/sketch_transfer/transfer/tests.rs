@@ -503,10 +503,12 @@ fn scalar_equality_candidates(
     .expect("function-five scalar-equality fixture is typed")
 }
 
+type ScalarEqualityTransfer = (Vec<(u32, u32)>, Vec<u64>);
+
 fn scalar_equality_transfer_result(
     ctx: &DecodeContext<'_>,
     scan: &crate::container::ContainerScan<'_>,
-) -> Result<(Vec<(u32, u32)>, Vec<u64>), CodecError> {
+) -> Result<ScalarEqualityTransfer, CodecError> {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     super::transfer_sketches(

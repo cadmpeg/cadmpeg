@@ -27,8 +27,8 @@ struct ProfileEdge {
 }
 
 #[derive(Clone, Copy)]
-enum ProfileTopology {
-    Trim,
+enum ProfileTopology<'a> {
+    Trim(&'a BTreeSet<u32>),
     ClosedSegments,
 }
 
@@ -59,7 +59,7 @@ pub(in super::super) fn resolved_profile_chains(
             external_id, vertices: row.vertices, analytic_reversed,
         }, "creo trim profile rows"))?;
     }
-    profile_chains(ctx, &edges, sketch, ProfileTopology::Trim, Some(emitted))
+    profile_chains(ctx, &edges, sketch, ProfileTopology::Trim(emitted))
 }
 
 fn resolved_segment_profile_chains(
@@ -89,15 +89,14 @@ fn resolved_segment_profile_chains(
                 && segment.arc_orientation == Some(0),
         }, "creo segment profile rows"))?;
     }
-    profile_chains(ctx, &edges, sketch, ProfileTopology::ClosedSegments, None)
+    profile_chains(ctx, &edges, sketch, ProfileTopology::ClosedSegments)
 }
 
 fn profile_chains(
     ctx: &DecodeContext<'_>,
     edges: &[ProfileEdge],
     sketch: &SketchId,
-    topology: ProfileTopology,
-    emitted: Option<&BTreeSet<u32>>,
+    topology: ProfileTopology<'_>,
 ) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
     let mut graph_storage = ctx.reserve_scoped(0, "creo profile graph storage")?;
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
@@ -144,7 +143,7 @@ fn profile_chains(
             || matches!(topology, ProfileTopology::ClosedSegments) && !endpoints.is_empty() {
             continue;
         }
-        if let Some(emitted) = emitted {
+        if let ProfileTopology::Trim(emitted) = topology {
             if ctx.any_by(&component, |index| {
                 Ok(!ctx.contains_btree_set(emitted, &edges[*index].external_id, "creo profile emitted membership")?)
             }, "creo profile emitted entities")? { continue; }
@@ -156,7 +155,7 @@ fn profile_chains(
         for (index, endpoint) in endpoints.iter().enumerate() { endpoint_values[index] = *endpoint; }
         let mut vertex = if endpoints.len() == 2 { endpoint_values[0] } else {
             match topology {
-                ProfileTopology::Trim => edges[first].vertices[0],
+                ProfileTopology::Trim(_) => edges[first].vertices[0],
                 ProfileTopology::ClosedSegments => edges[first].vertices[0].min(edges[first].vertices[1]),
             }
         };

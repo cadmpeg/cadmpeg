@@ -15,12 +15,13 @@ pub(in super::super) fn section_entity_external_ids(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
+    let mut identity_storage = ctx.reserve_scoped(0, "creo saved identity scratch storage")?;
     let mut ids = unique_section_segment_external_ids(ctx, definition)?;
     let Some(order) = &definition.order_table else {
         return Ok(ids);
     };
-    let ambiguous_segment_ids = ambiguous_section_segment_external_ids(ctx, definition)?;
-    let unique_saved_ids = unique_saved_section_internal_ids(ctx, definition)?;
+    let ambiguous_segment_ids = identity_storage.with_storage(|| ambiguous_section_segment_external_ids(ctx, definition))?;
+    let unique_saved_ids = identity_storage.with_storage(|| unique_saved_section_internal_ids(ctx, definition))?;
     let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
         std::convert::Infallible,
     >(ctx, definition, |entity| {
@@ -294,6 +295,7 @@ pub(in super::super) fn unique_saved_section_internal_ids(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
+    let mut count_storage = ctx.reserve_scoped(0, "creo saved identity count storage")?;
     let mut counts = BTreeMap::new();
     let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
         std::convert::Infallible,
@@ -301,11 +303,11 @@ pub(in super::super) fn unique_saved_section_internal_ids(
         let Some(internal_id) = saved_section_entity_identity(entity).0 else {
             return Ok(ControlFlow::Continue(()));
         };
-        *ctx.entry_btree_map(
+        *count_storage.with_storage(|| ctx.entry_btree_map(
             &mut counts,
             internal_id,
             "creo saved section ID count nodes",
-        )?
+        ))?
         .or_insert(0usize) += 1;
         Ok(ControlFlow::Continue(()))
     })?;
@@ -431,15 +433,16 @@ pub(in super::super) fn materialized_saved_section_external_ids(
     definition: &crate::feature::definitions::FeatureDefinition,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
-    let unique_saved_ids = unique_saved_section_internal_ids(ctx, definition)?;
-    let ambiguous_segment_ids = ambiguous_section_segment_external_ids(ctx, definition)?;
+    let mut identity_storage = ctx.reserve_scoped(0, "creo saved identity scratch storage")?;
+    let unique_saved_ids = identity_storage.with_storage(|| unique_saved_section_internal_ids(ctx, definition))?;
+    let ambiguous_segment_ids = identity_storage.with_storage(|| ambiguous_section_segment_external_ids(ctx, definition))?;
     let mut external_ids = BTreeSet::new();
     let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
         std::convert::Infallible,
     >(ctx, definition, |entity| {
         let materializes = match entity {
             crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
-                saved_spline_sketch_geometry(ctx, spline, refusal)?.is_some()
+                identity_storage.with_storage(|| saved_spline_sketch_geometry(ctx, spline, refusal))?.is_some()
             }
             _ => saved_section_entity_geometry(entity).is_some(),
         };
