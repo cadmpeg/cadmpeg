@@ -1551,7 +1551,7 @@ fn native_parameter_result(
 
 #[test]
 fn native_parameter_refuses_collection_limit() {
-    crate::test_support::with_decode_context(|ctx| native_parameter_result(ctx)).unwrap();
+    crate::test_support::with_decode_context(native_parameter_result).unwrap();
     let error = crate::test_support::resource_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
@@ -1567,7 +1567,7 @@ fn native_parameter_refuses_collection_limit() {
 
 #[test]
 fn native_parameter_refuses_retained_limit() {
-    crate::test_support::with_decode_context(|ctx| native_parameter_result(ctx)).unwrap();
+    crate::test_support::with_decode_context(native_parameter_result).unwrap();
     let error = crate::test_support::resource_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
@@ -1583,7 +1583,7 @@ fn native_parameter_refuses_retained_limit() {
 
 #[test]
 fn native_parameter_refuses_work_limit() {
-    crate::test_support::with_decode_context(|ctx| native_parameter_result(ctx)).unwrap();
+    crate::test_support::with_decode_context(native_parameter_result).unwrap();
     let error = crate::test_support::resource_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,

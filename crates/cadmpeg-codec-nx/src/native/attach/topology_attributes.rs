@@ -713,19 +713,21 @@ fn topology_attribute_id(
     reference_ordinal: u32,
     entity_suffix: Option<&cadmpeg_ir::ids::IdentityKey>,
 ) -> Result<AttributeId, CodecError> {
-    let scope = IdScope::stream(reference.stream_ordinal);
     match entity_suffix {
-        Some(suffix) => scope.id_charged(
-            ctx,
-            family,
-            format_args!(
-                "{}-{}-{}-{suffix}",
-                reference.topology_type.code(),
-                reference.topology_xmt,
-                reference_ordinal
-            ),
-        ),
-        None => scope.id_charged(
+        Some(suffix) => {
+            let text = ctx.format_retained(
+                format_args!(
+                    "nx:s{}:{family}#{}-{}-{}-{suffix}",
+                    reference.stream_ordinal,
+                    reference.topology_type.code(),
+                    reference.topology_xmt,
+                    reference_ordinal
+                ),
+                "NX Parasolid attribute identity",
+            )?;
+            AttributeId::mint(text).map_err(CodecError::malformed)
+        }
+        None => IdScope::stream(reference.stream_ordinal).id_charged(
             ctx,
             family,
             format_args!(
