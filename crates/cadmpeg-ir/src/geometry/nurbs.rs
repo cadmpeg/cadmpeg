@@ -1270,7 +1270,9 @@ fn require_finite_scalars<S: NurbsAdmission>(
     prefix: &str,
     values: &[f64],
 ) -> Result<(), S::Error> {
-    if !admission.all_by(values, "IR NURBS knot finiteness", |value| value.is_finite())? {
+    if !admission.all_by(values, "IR NURBS knot finiteness", |value| {
+        value.is_finite()
+    })? {
         return Err(admission.structure(format_args!("{prefix}knots contains a non-finite value"))?);
     }
     Ok(())
@@ -1282,17 +1284,15 @@ fn require_knot_order<S: NurbsAdmission>(
     prefix: &str,
 ) -> Result<(), S::Error> {
     let mut previous = knots.first().copied();
-    if admission
-        .all_by(
-            knots.get(1..).unwrap_or_default(),
-            "IR NURBS knot order",
-            |value| {
-                let ordered = previous.is_none_or(|previous| previous <= *value);
-                previous = Some(*value);
-                ordered
-            },
-        )?
-    {
+    if admission.all_by(
+        knots.get(1..).unwrap_or_default(),
+        "IR NURBS knot order",
+        |value| {
+            let ordered = previous.is_none_or(|previous| previous <= *value);
+            previous = Some(*value);
+            ordered
+        },
+    )? {
         Ok(())
     } else {
         Err(admission.structure(format_args!("{prefix}knots must be non-decreasing"))?)
