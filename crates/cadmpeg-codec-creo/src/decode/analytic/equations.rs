@@ -280,22 +280,19 @@ pub(in crate::decode) fn solve_planes(
     ctx: &DecodeContext<'_>,
     planes: &[PlaneEquation],
 ) -> Result<Option<[f64; 3]>, CodecError> {
-    for (first_index, a) in ctx
-        .admit_iter(planes, "creo plane solver candidates")?
-        .enumerate()
+    let mut traversal = (planes).iter().enumerate();
+    while let Some((first_index, a)) =
+        ctx.next_charged(&mut traversal, "creo plane solver candidates")?
     {
-        for (second_offset, b) in ctx
-            .admit_iter(
-                &planes[first_index + 1..],
-                "creo plane solver second candidates",
-            )?
-            .enumerate()
+        let mut traversal = planes[first_index + 1..].iter().enumerate();
+        while let Some((second_offset, b)) =
+            ctx.next_charged(&mut traversal, "creo plane solver second candidates")?
         {
             let second_index = first_index + 1 + second_offset;
-            for c in ctx.admit_iter(
-                &planes[second_index + 1..],
-                "creo plane solver third candidates",
-            )? {
+            let mut traversal = planes[second_index + 1..].iter();
+            while let Some(c) =
+                ctx.next_charged(&mut traversal, "creo plane solver third candidates")?
+            {
                 let b_cross_c = cross(b.normal, c.normal);
                 let determinant = dot(a.normal, b_cross_c);
                 if determinant.abs() <= EPS_AGREE {
@@ -318,7 +315,10 @@ pub(in crate::decode) fn solve_planes(
                     continue;
                 }
                 let mut agrees = true;
-                for plane in ctx.admit_iter(planes, "creo plane solver residual candidates")? {
+                let mut traversal = (planes).iter();
+                while let Some(plane) =
+                    ctx.next_charged(&mut traversal, "creo plane solver residual candidates")?
+                {
                     if !crate::vecmath::within(
                         (dot(plane.normal, point) - dot(plane.normal, plane.origin)).abs(),
                         EPS_PLANE_RESIDUAL,
@@ -386,9 +386,10 @@ pub(super) fn intersect_two_planes_with_quadric(
             + quadric.constant.abs(),
     );
     let mut points = Vec::new();
-    let roots = real_roots(ctx, quadratic, linear, constant)?;
-    for point in ctx
-        .admit_iter(roots.as_slice(), "creo plane quadric line roots")?
+    let roots = real_roots(quadratic, linear, constant);
+    for point in roots
+        .as_slice()
+        .iter()
         .copied()
         .map(|parameter| {
             std::array::from_fn(|index| line_origin[index] + parameter * direction[index])
@@ -472,69 +473,71 @@ fn polynomial_interval_value_bound(
     parameter: f64,
     parameter_error: f64,
 ) -> Result<f64, CodecError> {
-    let (_, mut bound) = polynomial_value_and_bound(ctx, coefficients, parameter)?;
-    let mut derivative = Vec::new();
-    ctx.reserve_vec(
-        &mut derivative,
-        coefficients.len(),
-        "creo polynomial interval coefficients",
-    )?;
-    derivative.extend_from_slice(coefficients);
-    let mut parameter_error_power = 1.0;
-    let mut factorial = 1.0;
-    for order_offset in ctx
-        .admit_iter(
-            &coefficients[1..],
-            "creo polynomial interval derivative orders",
-        )?
-        .enumerate()
-        .map(|(order_offset, _)| order_offset)
-    {
-        let order = order_offset + 1;
-        let mut next_derivative = Vec::new();
-        ctx.reserve_vec(
-            &mut next_derivative,
-            derivative.len() - 1,
-            "creo polynomial interval derivatives",
+    let mut scratch = ctx.reserve_scoped(0, "creo polynomial interval value bound scratch")?;
+    scratch.with_storage(|| {
+        let (_, mut bound) = polynomial_value_and_bound(ctx, coefficients, parameter)?;
+        let mut derivative = Vec::new();
+        ctx.extend_from_slice(
+            &mut derivative,
+            coefficients,
+            "creo polynomial interval coefficients",
         )?;
-        next_derivative.extend(
-            ctx.admit_iter(
-                &derivative[1..],
-                "creo polynomial interval derivative coefficients",
+        let mut parameter_error_power = 1.0;
+        let mut factorial = 1.0;
+        for order_offset in ctx
+            .admit_iter(
+                &coefficients[1..],
+                "creo polynomial interval derivative orders",
             )?
             .enumerate()
-            .map(|(power_offset, coefficient)| {
-                let power = power_offset + 1;
-                let Ok(power) = u32::try_from(power) else {
-                    return BoundedCoefficient {
-                        value: f64::INFINITY,
-                        bound: f64::INFINITY,
+            .map(|(order_offset, _)| order_offset)
+        {
+            let order = order_offset + 1;
+            let mut next_derivative = Vec::new();
+            ctx.reserve_vec(
+                &mut next_derivative,
+                derivative.len() - 1,
+                "creo polynomial interval derivatives",
+            )?;
+            next_derivative.extend(
+                ctx.admit_iter(
+                    &derivative[1..],
+                    "creo polynomial interval derivative coefficients",
+                )?
+                .enumerate()
+                .map(|(power_offset, coefficient)| {
+                    let power = power_offset + 1;
+                    let Ok(power) = u32::try_from(power) else {
+                        return BoundedCoefficient {
+                            value: f64::INFINITY,
+                            bound: f64::INFINITY,
+                        };
                     };
-                };
-                let factor = f64::from(power);
-                let value = coefficient.value * factor;
-                BoundedCoefficient {
-                    value,
-                    bound: inflate_positive_bound(
-                        coefficient.bound * factor + operation_rounding_bound(value),
-                    ),
-                }
-            }),
-        );
-        derivative = next_derivative;
-        let Ok(order) = u32::try_from(order) else {
-            return Ok(f64::INFINITY);
-        };
-        parameter_error_power *= parameter_error;
-        factorial *= f64::from(order);
-        let (derivative_value, derivative_bound) =
-            polynomial_value_and_bound(ctx, &derivative, parameter)?;
-        let term = inflate_positive_bound(
-            (derivative_value.abs() + derivative_bound) * parameter_error_power / factorial,
-        );
-        bound = inflate_positive_bound(bound + term);
-    }
-    Ok(bound)
+                    let factor = f64::from(power);
+                    let value = coefficient.value * factor;
+                    BoundedCoefficient {
+                        value,
+                        bound: inflate_positive_bound(
+                            coefficient.bound * factor + operation_rounding_bound(value),
+                        ),
+                    }
+                }),
+            );
+            derivative = next_derivative;
+            let Ok(order) = u32::try_from(order) else {
+                return Ok(f64::INFINITY);
+            };
+            parameter_error_power *= parameter_error;
+            factorial *= f64::from(order);
+            let (derivative_value, derivative_bound) =
+                polynomial_value_and_bound(ctx, &derivative, parameter)?;
+            let term = inflate_positive_bound(
+                (derivative_value.abs() + derivative_bound) * parameter_error_power / factorial,
+            );
+            bound = inflate_positive_bound(bound + term);
+        }
+        Ok(bound)
+    })
 }
 
 fn polynomial_sign(
@@ -562,13 +565,11 @@ fn polynomial_is_exactly_zero(
         return Ok(false);
     }
     let mut value = 0.0;
-    for coefficient in ctx
-        .admit_iter(
-            coefficients,
-            "creo exact polynomial evaluation coefficients",
-        )?
-        .rev()
-    {
+    let mut traversal = (coefficients).iter().rev();
+    while let Some(coefficient) = ctx.next_charged(
+        &mut traversal,
+        "creo exact polynomial evaluation coefficients",
+    )? {
         let parameter_magnitude = parameter.abs();
         let parameter_bits = parameter_magnitude.to_bits();
         let parameter_exponent = parameter_bits & F64_EXPONENT_MASK;
@@ -653,6 +654,7 @@ fn real_polynomial_roots(
     ctx: &DecodeContext<'_>,
     coefficients: &[BoundedCoefficient],
 ) -> Result<Vec<PolynomialRoot>, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo real polynomial roots scratch")?;
     let _depth = ctx.enter_nested("creo polynomial root recursion")?;
     let largest = ctx
         .admit_iter(coefficients, "creo polynomial root coefficient scale")?
@@ -672,15 +674,20 @@ fn real_polynomial_roots(
         normal_scale
     };
     let mut scaled = Vec::new();
-    ctx.reserve_vec(
-        &mut scaled,
-        coefficients.len(),
-        "creo polynomial scaled coefficients",
-    )?;
-    scaled.extend(coefficients.iter().map(|coefficient| BoundedCoefficient {
-        value: coefficient.value / scale,
-        bound: coefficient.bound / scale,
-    }));
+    scratch.with_storage(|| {
+        ctx.reserve_vec(
+            &mut scaled,
+            coefficients.len(),
+            "creo polynomial scaled coefficients",
+        )
+    })?;
+    scaled.extend(
+        ctx.admit_iter(coefficients, "creo polynomial coefficient normalization")?
+            .map(|coefficient| BoundedCoefficient {
+                value: coefficient.value / scale,
+                bound: coefficient.bound / scale,
+            }),
+    );
     while scaled.len() > 1 {
         ctx.charge_work(1, "creo polynomial leading coefficient trim")?;
         let should_trim = scaled
@@ -696,12 +703,17 @@ fn real_polynomial_roots(
         return Ok(Vec::new());
     }
     let mut coefficients = Vec::new();
-    ctx.reserve_vec(
-        &mut coefficients,
-        scaled.len(),
-        "creo polynomial coefficient values",
-    )?;
-    coefficients.extend(scaled.iter().map(|coefficient| coefficient.value));
+    scratch.with_storage(|| {
+        ctx.reserve_vec(
+            &mut coefficients,
+            scaled.len(),
+            "creo polynomial coefficient values",
+        )
+    })?;
+    coefficients.extend(
+        ctx.admit_iter(&scaled, "creo polynomial coefficient values source")?
+            .map(|coefficient| coefficient.value),
+    );
     if degree == 1 {
         // The pop loop stopped because the leading coefficient is outside its
         // own bound, so the difference below is positive. The exact root is
@@ -724,18 +736,18 @@ fn real_polynomial_roots(
         return Ok(roots);
     }
     let mut derivative = Vec::new();
-    ctx.reserve_vec(
-        &mut derivative,
-        degree,
-        "creo polynomial derivative coefficients",
-    )?;
-    for (power_offset, coefficient) in ctx
-        .admit_iter(
-            &scaled[1..],
-            "creo polynomial derivative source coefficients",
-        )?
-        .enumerate()
-    {
+    scratch.with_storage(|| {
+        ctx.reserve_vec(
+            &mut derivative,
+            degree,
+            "creo polynomial derivative coefficients",
+        )
+    })?;
+    let mut traversal = scaled[1..].iter().enumerate();
+    while let Some((power_offset, coefficient)) = ctx.next_charged(
+        &mut traversal,
+        "creo polynomial derivative source coefficients",
+    )? {
         let power = power_offset + 1;
         let Some(power) = cadmpeg_core::convert::f64_from_index(power) else {
             return Err(CodecError::malformed(
@@ -757,14 +769,19 @@ fn real_polynomial_roots(
     // Each derivative root partitions the polynomial into monotone intervals.
     // Its reported location interval, rather than its approximate value, is
     // removed from those intervals before their endpoint signs are compared.
-    let derivative_roots = real_polynomial_roots(ctx, &derivative)?;
+    let derivative_roots = scratch.with_storage(|| real_polynomial_roots(ctx, &derivative))?;
     let mut derivative_values = Vec::new();
-    ctx.reserve_vec(
-        &mut derivative_values,
-        derivative.len(),
-        "creo polynomial derivative values",
-    )?;
-    derivative_values.extend(derivative.iter().map(|coefficient| coefficient.value));
+    scratch.with_storage(|| {
+        ctx.reserve_vec(
+            &mut derivative_values,
+            derivative.len(),
+            "creo polynomial derivative values",
+        )
+    })?;
+    derivative_values.extend(
+        ctx.admit_iter(&derivative, "creo polynomial derivative values source")?
+            .map(|coefficient| coefficient.value),
+    );
     let mut roots = Vec::new();
     let mut gap_lower = -bound;
     let mut gap_lower_sign = polynomial_sign(ctx, &scaled, gap_lower)?;
@@ -783,7 +800,8 @@ fn real_polynomial_roots(
         let station_lower = station.value - station.error;
         let station_upper = station.value + station.error;
         if gap_lower < station_lower {
-            ctx.reserve_vec(&mut gaps, 1, "creo polynomial monotone gaps")?;
+            scratch
+                .with_storage(|| ctx.reserve_vec(&mut gaps, 1, "creo polynomial monotone gaps"))?;
             gaps.push((
                 gap_lower,
                 gap_lower_sign,
@@ -836,7 +854,7 @@ fn real_polynomial_roots(
         gap_lower = gap_lower.max(station_upper);
         gap_lower_sign = polynomial_sign(ctx, &scaled, gap_lower)?;
     }
-    ctx.reserve_vec(&mut gaps, 1, "creo polynomial monotone gaps")?;
+    scratch.with_storage(|| ctx.reserve_vec(&mut gaps, 1, "creo polynomial monotone gaps"))?;
     gaps.push((
         gap_lower,
         gap_lower_sign,
@@ -853,7 +871,6 @@ fn real_polynomial_roots(
         }
         let complete_lower = lower;
         let complete_upper = upper;
-        ctx.charge_work(80, "creo polynomial root bisection")?;
         for _ in 0..80 {
             let midpoint = 0.5 * (lower + upper);
             let midpoint_sign = match polynomial_sign(ctx, &scaled, midpoint)? {
@@ -1035,13 +1052,15 @@ fn sylvester_polynomial(
         if (0..4).any(|row| matrix[row][permutation[row]].is_none()) {
             continue;
         }
-        let mut term = ctx.alloc_filled(1, 1.0, "creo polynomial identity")?;
+        let mut term_storage = ctx.reserve_scoped(0, "creo Sylvester product storage")?;
+        let mut term =
+            term_storage.with_storage(|| ctx.alloc_filled(1, 1.0, "creo polynomial identity"))?;
         for factor in (0..4).filter_map(|row| {
             matrix[row][permutation[row]]
                 .as_ref()
                 .map(SylvesterEntry::as_slice)
         }) {
-            term = polynomial_product(ctx, &term, factor)?;
+            term = term_storage.with_storage(|| polynomial_product(ctx, &term, factor))?;
         }
         if determinant.len() < term.len() {
             let additional = term.len() - determinant.len();
@@ -1068,16 +1087,21 @@ fn conic_resultant(
     first: PlaneConicEquation,
     second: PlaneConicEquation,
 ) -> Result<Vec<BoundedCoefficient>, CodecError> {
-    let values = sylvester_polynomial(
-        ctx,
-        &sylvester_matrix(first, second, Coefficient::stated),
-        |sign| sign,
-    )?;
-    let terms = sylvester_polynomial(
-        ctx,
-        &sylvester_matrix(first, second, Coefficient::terms),
-        f64::abs,
-    )?;
+    let mut scratch = ctx.reserve_scoped(0, "creo conic resultant scratch")?;
+    let values = scratch.with_storage(|| {
+        sylvester_polynomial(
+            ctx,
+            &sylvester_matrix(first, second, Coefficient::stated),
+            |sign| sign,
+        )
+    })?;
+    let terms = scratch.with_storage(|| {
+        sylvester_polynomial(
+            ctx,
+            &sylvester_matrix(first, second, Coefficient::terms),
+            f64::abs,
+        )
+    })?;
     let mut result = Vec::new();
     ctx.reserve_vec(
         &mut result,
@@ -1388,13 +1412,8 @@ fn refine_plane_conic_tangency(
 /// decision there is the one that constructor made. The two sums formed here
 /// scale that same bar by the powers of `u` they multiply it with, which bounds
 /// each sum against the exact coefficients rather than against the stated ones.
-fn conic_v_roots(
-    ctx: &DecodeContext<'_>,
-    conic: PlaneConicEquation,
-    u: f64,
-) -> Result<QuadraticRoots, CodecError> {
+fn conic_v_roots(conic: PlaneConicEquation, u: f64) -> QuadraticRoots {
     real_roots(
-        ctx,
         conic.vv,
         Coefficient::summed(
             conic.uv.stated().mul_add(u, conic.v.stated()),
@@ -1412,13 +1431,14 @@ pub(super) fn common_plane_conic_parameters(
     first: PlaneConicEquation,
     second: PlaneConicEquation,
 ) -> Result<Vec<[f64; 2]>, CodecError> {
-    let resultant = conic_resultant(ctx, first, second)?;
+    let mut scratch = ctx.reserve_scoped(0, "creo common plane conic parameters scratch")?;
+    let resultant = scratch.with_storage(|| conic_resultant(ctx, first, second))?;
     let mut parameters = Vec::<[f64; 2]>::new();
-    let roots = real_polynomial_roots(ctx, &resultant)?;
+    let roots = scratch.with_storage(|| real_polynomial_roots(ctx, &resultant))?;
     for root in ctx.admit_iter(&roots, "creo common plane conic roots")? {
         let u = root.value;
-        let first_v_roots = conic_v_roots(ctx, first, u)?;
-        let second_v_roots = conic_v_roots(ctx, second, u)?;
+        let first_v_roots = conic_v_roots(first, u);
+        let second_v_roots = conic_v_roots(second, u);
         for v in first_v_roots.into_iter().chain(second_v_roots) {
             // A derivative-station candidate can be two intersections that are
             // close in u or one point where the conics touch. Ordinary
@@ -1489,7 +1509,9 @@ pub(in crate::decode) fn intersect_plane_with_two_quadrics(
     };
     let first_conic = restrict_quadric_to_plane(first_quadric, plane.origin, u_axis, v_axis);
     let second_conic = restrict_quadric_to_plane(second_quadric, plane.origin, u_axis, v_axis);
-    let parameters = common_plane_conic_parameters(ctx, first_conic, second_conic)?;
+    let mut parameter_storage = ctx.reserve_scoped(0, "creo plane quadric parameter storage")?;
+    let parameters = parameter_storage
+        .with_storage(|| common_plane_conic_parameters(ctx, first_conic, second_conic))?;
     let mut intersections = Vec::new();
     ctx.reserve_vec(
         &mut intersections,
@@ -1567,8 +1589,12 @@ pub(in crate::decode) fn intersect_two_planes_with_torus(
         bound: POLYNOMIAL_ERROR_FACTOR * cancellation_bound(polynomial_terms[power]),
     });
     let mut points = Vec::new();
-    let roots = real_polynomial_roots(ctx, &polynomial)?;
-    for root in ctx.admit_iter(&roots, "creo plane torus intersection roots")? {
+    let mut root_storage = ctx.reserve_scoped(0, "creo plane torus root storage")?;
+    let roots = root_storage.with_storage(|| real_polynomial_roots(ctx, &polynomial))?;
+    let mut traversal = roots.iter();
+    while let Some(root) =
+        ctx.next_charged(&mut traversal, "creo plane torus intersection roots")?
+    {
         let point = std::array::from_fn(|index| {
             // The coordinate is the two-term sum `origin + parameter *
             // direction`. Its distance from the coordinate at the exact
@@ -1893,7 +1919,7 @@ mod tests {
                         .expect("empty root admitted");
                     super::real_polynomial_roots(&ctx, &coefficients)
                 };
-                let limit = collection_limit_reaching($operation, run);
+                let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some($operation), run);
                 assert!(matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
                     if refusal.dimension == ResourceDimension::CollectionItems
                         && refusal.operation == $operation));
@@ -2047,32 +2073,6 @@ mod tests {
     }
 
     #[test]
-    fn polynomial_root_bisection_refuses_at_work_limit() {
-        let coefficients = [
-            BoundedCoefficient {
-                value: -1.0,
-                bound: 0.0,
-            },
-            BoundedCoefficient {
-                value: 0.0,
-                bound: 0.0,
-            },
-            BoundedCoefficient {
-                value: 1.0,
-                bound: 0.0,
-            },
-        ];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 79;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        assert!(matches!(super::real_polynomial_roots(&ctx, &coefficients),
-            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                if refusal.operation == "creo polynomial root bisection"));
-    }
-
-    #[test]
     fn torus_line_intersections_refuse_before_vec_growth() {
         let axial_plane = PlaneEquation {
             origin: [0.0; 3],
@@ -2097,7 +2097,11 @@ mod tests {
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
             super::intersect_two_planes_with_torus(&ctx, axial_plane, equatorial_plane, torus)
         };
-        let limit = collection_limit_reaching("creo torus line intersections", run);
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo torus line intersections"),
+            run,
+        );
         assert!(
             matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
@@ -2136,19 +2140,6 @@ mod tests {
         (circle(0.0, -1.0), circle(-2.0, 0.0))
     }
 
-    fn collection_limit_reaching<T>(
-        operation: &'static str,
-        run: impl Fn(u64) -> Result<T, cadmpeg_core::CodecError>,
-    ) -> u64 {
-        (0..512)
-            .find(|limit| {
-                matches!(run(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == operation)
-            })
-            .expect("the input reaches the named collection boundary")
-    }
-
     #[test]
     fn conic_resultant_coefficients_refuse_before_vec_growth() {
         let first = dense_conic([1.0, 2.0, 3.0, 5.0, 7.0, 11.0]);
@@ -2161,7 +2152,11 @@ mod tests {
                 .expect("empty root fits the collection policy");
             super::conic_resultant(&ctx, first, second)
         };
-        let limit = collection_limit_reaching("creo conic resultant coefficients", run);
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo conic resultant coefficients"),
+            run,
+        );
         let error = run(limit)
             .map(|coefficients| coefficients.len())
             .expect_err("five coefficients need a reserved Vec");
@@ -2189,7 +2184,11 @@ mod tests {
                 .expect("empty root fits the collection policy");
             super::common_plane_conic_parameters(&ctx, first, second)
         };
-        let limit = collection_limit_reaching("creo conic intersection parameters", run);
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo conic intersection parameters"),
+            run,
+        );
         let error = run(limit).expect_err("one intersection needs a reserved Vec item");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
@@ -2260,7 +2259,11 @@ mod tests {
                 .expect("empty root fits the collection policy");
             super::intersect_plane_with_two_quadrics(&ctx, plane, sphere(0.0), sphere(1.0))
         };
-        let limit = collection_limit_reaching("creo plane-quadric intersections", run);
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo plane-quadric intersections"),
+            run,
+        );
         let error = run(limit).expect_err("intersection output needs reserved Vec capacity");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
@@ -2277,13 +2280,12 @@ mod tests {
 
     #[test]
     fn polynomial_product_reports_collection_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-        let error = super::polynomial_product(&ctx, &[1.0, 2.0], &[3.0, 4.0])
-            .expect_err("three coefficients exceed the collection limit");
+        let error = crate::test_support::last_refusal_at(
+            &[0],
+            ResourceDimension::CollectionItems,
+            "creo polynomial product",
+            |ctx| super::polynomial_product(ctx, &[1.0, 2.0], &[3.0, 4.0]),
+        );
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -2312,12 +2314,12 @@ mod tests {
             [1.0]
         );
 
-        let mut limited = service;
-        limited.limits.max_collection_items = 5;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[0], &arena, &limited).expect("test decode context");
-        let error = super::sylvester_polynomial(&ctx, &matrix, |value| value)
-            .expect_err("the determinant follows the identity and four products");
+        let error = crate::test_support::last_refusal_at(
+            &[0],
+            ResourceDimension::CollectionItems,
+            "creo polynomial determinant terms",
+            |ctx| super::sylvester_polynomial(ctx, &matrix, |value| value),
+        );
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)

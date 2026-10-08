@@ -1553,14 +1553,13 @@ pub(super) fn section_equal_length_coordinate_values(
         // the residue of the cancellation turns a tangency into two roots or
         // into none.
         let roots = quadratic_roots(
-            ctx,
             Coefficient::single(second_u.0 + second_v.0 - first_u.0 - first_v.0),
             Coefficient::single(second_u.1 + second_v.1 - first_u.1 - first_v.1),
             Coefficient::summed(
                 second_u.2 + second_v.2 - first_u.2 - first_v.2,
                 second_u.2 + second_v.2 + first_u.2 + first_v.2,
             ),
-        )?;
+        );
         let [value] = roots.as_slice() else {
             continue;
         };
@@ -1584,12 +1583,11 @@ pub(super) fn section_equal_length_coordinate_values(
 }
 
 fn quadratic_roots(
-    ctx: &DecodeContext<'_>,
     quadratic: Coefficient,
     linear: Coefficient,
     constant: Coefficient,
-) -> Result<crate::decode::quadratic::QuadraticRoots, CodecError> {
-    let mut roots = crate::decode::quadratic::real_roots(ctx, quadratic, linear, constant)?;
+) -> crate::decode::quadratic::QuadraticRoots {
+    let mut roots = crate::decode::quadratic::real_roots(quadratic, linear, constant);
     let quadratic = quadratic.stated();
     let linear = linear.stated();
     let constant = constant.stated();
@@ -1612,7 +1610,7 @@ fn quadratic_roots(
             .zip(FiniteReal::new(*second))
             .is_some_and(|(first, second)| approximately_equal(first, second))
     });
-    Ok(roots)
+    roots
 }
 
 pub(in crate::decode) fn approximately_equal(first: FiniteReal, second: FiniteReal) -> bool {

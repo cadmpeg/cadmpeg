@@ -123,7 +123,7 @@ pub(in super::super) fn build_report(
             let frame = source.frame();
             let placed = if frame.origin.is_some() && frame.u_axis.is_some() {
                 match frame.normal() {
-                    Some(normal) => !is_axis_aligned(ctx, normal)?,
+                    Some(normal) => !is_axis_aligned(normal),
                     None => false,
                 }
             } else {
