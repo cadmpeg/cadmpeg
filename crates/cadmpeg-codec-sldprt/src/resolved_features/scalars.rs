@@ -272,6 +272,16 @@ pub(super) fn operand_kind(tag: [u8; 2]) -> Option<FeatureInputOperandKind> {
     }
 }
 
+struct SourceNames<'lane, 'ctx> {
+    index: Option<std::collections::HashMap<u32, Option<&'lane FeatureInputName>>>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+struct TextNames<'lane, 'ctx> {
+    index: std::collections::HashMap<&'lane str, Option<&'lane FeatureInputName>>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
 /// The serialized object name of each history feature in one lane, indexed
 /// once so a feature's name is a keyed lookup rather than a scan of the lane.
 ///
@@ -279,9 +289,10 @@ pub(super) fn operand_kind(tag: [u8; 2]) -> Option<FeatureInputOperandKind> {
 /// no name carries that id, it is the one name whose text equals the feature
 /// name. A repeated id or text names no feature.
 pub(crate) struct ObjectNames<'lane, 'ctx> {
-    by_object: std::collections::HashMap<u32, Option<&'lane FeatureInputName>>,
-    by_value: std::collections::HashMap<&'lane str, Option<&'lane FeatureInputName>>,
-    _storage: [cadmpeg_core::decode::ScopedReservation<'ctx>; 2],
+    ctx: &'ctx DecodeContext<'ctx>,
+    lane: &'lane FeatureInputLane,
+    by_object: std::cell::RefCell<SourceNames<'lane, 'ctx>>,
+    by_value: std::cell::RefCell<Option<TextNames<'lane, 'ctx>>>,
 }
 
 impl<'lane, 'ctx> ObjectNames<'lane, 'ctx> {
@@ -289,35 +300,14 @@ impl<'lane, 'ctx> ObjectNames<'lane, 'ctx> {
         ctx: &'ctx DecodeContext<'_>,
         lane: &'lane FeatureInputLane,
     ) -> Result<Self, CodecError> {
-        let mut by_object = std::collections::HashMap::new();
-        let mut object_storage = ctx.reserve_scoped(0, "index SLDPRT object names by id")?;
-        for name in ctx.admit_iter(&lane.names, "index SLDPRT object names by id")? {
-            let Some(source) = name.object_id.and_then(ObjectId::value) else {
-                continue;
-            };
-            if let Some(previous) =
-                ctx.get_mut_hash_map(&mut by_object, &source, "index SLDPRT object names by id")?
-            {
-                *previous = None;
-            } else {
-                object_storage.with_storage(|| {
-                    ctx.insert_hash_map(
-                        &mut by_object,
-                        source,
-                        Some(name),
-                        "index SLDPRT object names by id",
-                    )
-                })?;
-            }
-        }
-        let (by_value, value_storage) = ctx.unique_index(
-            lane.names.iter().map(|name| (name.value.as_str(), name)),
-            "index SLDPRT object names by text",
-        )?;
         Ok(Self {
-            by_object,
-            by_value,
-            _storage: [object_storage, value_storage],
+            ctx,
+            lane,
+            by_object: std::cell::RefCell::new(SourceNames {
+                index: None,
+                storage: ctx.reserve_scoped(0, "index SLDPRT object names by id")?,
+            }),
+            by_value: std::cell::RefCell::new(None),
         })
     }
 
@@ -341,22 +331,45 @@ impl<'lane, 'ctx> ObjectNames<'lane, 'ctx> {
         feature: &crate::records::Feature,
     ) -> Result<NameLookup<'lane>, CodecError> {
         if let Some(source_id) = feature.source_value() {
-            if let Some(name) =
-                ctx.get_hash_map(&self.by_object, &source_id, "find SLDPRT object name by id")?
-            {
-                return Ok(NameLookup::from_unique(*name));
+            let mut source_names = self.by_object.borrow_mut();
+            if source_names.index.is_none() {
+                const OPERATION: &str = "index SLDPRT object names by id";
+                let mut index = std::collections::HashMap::new();
+                for name in self.ctx.admit_iter(&self.lane.names, OPERATION)? {
+                    let Some(source) = name.object_id.and_then(ObjectId::value) else {
+                        continue;
+                    };
+                    if let Some(previous) = self.ctx.get_mut_hash_map(&mut index, &source, OPERATION)? {
+                        *previous = None;
+                    } else {
+                        source_names.storage.with_storage(|| {
+                            self.ctx.insert_hash_map(&mut index, source, Some(name), OPERATION)
+                        })?;
+                    }
+                }
+                source_names.index = Some(index);
+            }
+            if let Some(index) = &source_names.index {
+                if let Some(name) = ctx.get_hash_map(index, &source_id, "find SLDPRT object name by id")? {
+                    return Ok(NameLookup::from_unique(*name));
+                }
             }
         }
-        Ok(
-            match ctx.get_hash_map(
-                &self.by_value,
-                feature.name.as_str(),
-                "find SLDPRT object name by text",
-            )? {
-                Some(name) => NameLookup::from_unique(*name),
-                None => NameLookup::Absent,
-            },
-        )
+        let mut text_names = self.by_value.borrow_mut();
+        let names = match &*text_names {
+            Some(names) => names,
+            None => {
+                let (index, storage) = self.ctx.unique_index(
+                    self.lane.names.iter().map(|name| (name.value.as_str(), name)),
+                    "index SLDPRT object names by text",
+                )?;
+                text_names.insert(TextNames { index, _storage: storage })
+            }
+        };
+        Ok(match ctx.get_hash_map(&names.index, feature.name.as_str(), "find SLDPRT object name by text")? {
+            Some(name) => NameLookup::from_unique(*name),
+            None => NameLookup::Absent,
+        })
     }
 }
 
