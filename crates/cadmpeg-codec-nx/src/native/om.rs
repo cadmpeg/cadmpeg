@@ -510,7 +510,7 @@ pub(super) fn operation_state_statuses(
         };
         let entry_offset = history_section.entry_offset;
         let mut matched = 0_usize;
-        for table_entry in table.into_entries(ctx)? {
+        for table_entry in table.into_entries(ctx) {
             ctx.charge_work(1, "NX operation state statuses")?;
             let (offset, entry_row) = table_entry?;
             let StateTableEntry::Status(row) = entry_row else {
@@ -574,7 +574,7 @@ pub(super) fn operation_state_slot_lanes(
         };
         let entry_offset = history_section.entry_offset;
         let mut matched = 0_usize;
-        for table_entry in table.into_entries(ctx)? {
+        for table_entry in table.into_entries(ctx) {
             ctx.charge_work(1, "NX operation state slot lanes")?;
             let (offset, entry_row) = table_entry?;
             let StateTableEntry::Slots(slots) = entry_row else {
