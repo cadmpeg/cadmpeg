@@ -2,6 +2,7 @@
 //! BREP parser and transfer unit tests.
 
 mod allocation_tests;
+mod actual_visits;
 mod nesting;
 mod source_transfer;
 
