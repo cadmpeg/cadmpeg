@@ -11,7 +11,10 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+mod recipe_index;
 pub(crate) mod selection;
+
+use recipe_index::RecipeTopologyCache;
 
 use crate::bytes::int_at;
 use crate::history_records::{
@@ -3977,6 +3980,7 @@ pub(crate) fn bind_edge_treatment_vertex_history(
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut recipe_topologies = RecipeTopologyCache::default();
     for operand in operands {
         operand.recipe.resolution = None;
         let stream = crate::ids::native_stream(&operand.id);
@@ -4009,7 +4013,12 @@ pub(crate) fn bind_edge_treatment_vertex_history(
             continue;
         };
         for reference in &mut operand.recipe.recipe_references {
-            bind_historical_recipe_reference_candidates(decode, reference, topology)?;
+            bind_historical_recipe_reference_candidates(
+                decode,
+                reference,
+                topology,
+                &mut recipe_topologies,
+            )?;
         }
         let Some(vertex) = recipe_reference_common_vertex(decode, &operand.recipe, topology)?
         else {
@@ -4881,28 +4890,22 @@ fn exact_face_selection_group<'a>(
 
 /// Bind one recipe reference to every live face or edge fragment carrying its
 /// token and Design reference in the recipe-state topology.
-fn bind_historical_recipe_reference_candidates(
+fn bind_historical_recipe_reference_candidates<'a>(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
     reference: &mut crate::records::dimensions::DesignRecipeReference,
-    topology: &AsmHistoricalTopology,
+    topology: &'a AsmHistoricalTopology,
+    recipe_topologies: &mut RecipeTopologyCache<'a>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     reference.candidate_faces.clear();
     reference.candidate_edges.clear();
     reference.alternate_selector_faces.clear();
     reference.alternate_selector_edges.clear();
-    let mut live_faces = HashSet::new();
-    for face in &topology.faces {
-        decode.insert_hash_set(&mut live_faces, *face, "index F3D live recipe faces")?;
-    }
-    let mut live_edges = HashSet::new();
-    for edge in &topology.edges {
-        decode.insert_hash_set(&mut live_edges, *edge, "index F3D live recipe edges")?;
-    }
-    for tag in topology.persistent_subentity_tags.iter().filter(|tag| {
-        tag.token == reference.token && tag.design_references.contains(&reference.design_reference)
-    }) {
+    let index = recipe_topologies.get(decode, topology)?;
+    for tag_index in index.matching_tags(decode, &reference.token, reference.design_reference)? {
+        decode.charge_work(1, "walk F3D matching recipe tags")?;
+        let tag = &index.topology.persistent_subentity_tags[*tag_index];
         match tag.entity_kind {
-            AsmHistoricalEntityKind::Face if live_faces.contains(&tag.entity_ref) => {
+            AsmHistoricalEntityKind::Face => {
                 decode.reserve_vec(
                     &mut reference.candidate_faces,
                     1,
@@ -4912,7 +4915,7 @@ fn bind_historical_recipe_reference_candidates(
                     .candidate_faces
                     .push(historical_face_id(decode, tag.entity_ref)?);
             }
-            AsmHistoricalEntityKind::Edge if live_edges.contains(&tag.entity_ref) => {
+            AsmHistoricalEntityKind::Edge => {
                 decode.reserve_vec(
                     &mut reference.candidate_edges,
                     1,
@@ -4942,24 +4945,19 @@ fn bind_historical_recipe_reference_candidates(
     Ok(())
 }
 
-fn historical_recipe_faces(
+fn historical_recipe_faces<'a>(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
     design_reference: i64,
-    topology: &AsmHistoricalTopology,
+    topology: &'a AsmHistoricalTopology,
+    recipe_topologies: &mut RecipeTopologyCache<'a>,
 ) -> Result<Vec<cadmpeg_ir::ids::FaceId>, cadmpeg_core::CodecError> {
-    let mut live_faces = HashSet::new();
-    for face in &topology.faces {
-        decode.insert_hash_set(&mut live_faces, *face, "index F3D historical recipe faces")?;
-    }
+    let index = recipe_topologies.get(decode, topology)?;
     let mut faces = Vec::new();
-    for tag in &topology.persistent_subentity_tags {
-        if tag.entity_kind == AsmHistoricalEntityKind::Face
-            && live_faces.contains(&tag.entity_ref)
-            && tag.design_references.contains(&design_reference)
-        {
-            decode.reserve_vec(&mut faces, 1, "collect F3D historical recipe faces")?;
-            faces.push(historical_face_id(decode, tag.entity_ref)?);
-        }
+    for tag_index in index.face_tags(decode, design_reference)? {
+        decode.charge_work(1, "walk F3D matching recipe faces")?;
+        let tag = &index.topology.persistent_subentity_tags[*tag_index];
+        decode.reserve_vec(&mut faces, 1, "collect F3D historical recipe faces")?;
+        faces.push(historical_face_id(decode, tag.entity_ref)?);
     }
     decode.stable_sort_by(
         &mut faces,
@@ -5032,6 +5030,7 @@ pub(crate) fn bind_face_operand_history_candidates(
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut recipe_topologies = RecipeTopologyCache::default();
     if projection_was_finalized(histories) {
         return Ok(());
     }
@@ -5093,11 +5092,20 @@ pub(crate) fn bind_face_operand_history_candidates(
             continue;
         };
         for reference in &mut operand.recipe_references {
-            bind_historical_recipe_reference_candidates(decode, reference, topology)?;
+            bind_historical_recipe_reference_candidates(
+                decode,
+                reference,
+                topology,
+                &mut recipe_topologies,
+            )?;
         }
         if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
-            operand.candidate_faces =
-                historical_recipe_faces(decode, i64::from(*recipe_record_index), topology)?;
+            operand.candidate_faces = historical_recipe_faces(
+                decode,
+                i64::from(*recipe_record_index),
+                topology,
+                &mut recipe_topologies,
+            )?;
             operand.unreferenced_candidate_faces = decode.try_collect_vec(
                 (operand.candidate_faces.iter().filter(|face| {
                     !operand
@@ -7364,6 +7372,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut recipe_topologies = RecipeTopologyCache::default();
     if projection_was_finalized(histories) {
         return Ok(());
     }
@@ -7460,11 +7469,20 @@ pub(crate) fn bind_edge_operand_history_candidates(
             continue;
         };
         for reference in &mut operand.recipe_references {
-            bind_historical_recipe_reference_candidates(decode, reference, topology)?;
+            bind_historical_recipe_reference_candidates(
+                decode,
+                reference,
+                topology,
+                &mut recipe_topologies,
+            )?;
         }
         if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
-            operand.candidate_faces =
-                historical_recipe_faces(decode, i64::from(*recipe_record_index), topology)?;
+            operand.candidate_faces = historical_recipe_faces(
+                decode,
+                i64::from(*recipe_record_index),
+                topology,
+                &mut recipe_topologies,
+            )?;
         }
         let states = history_state_index(decode, history)?;
         let Some(changed_faces) =
