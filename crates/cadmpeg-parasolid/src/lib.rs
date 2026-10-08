@@ -266,11 +266,9 @@ pub fn classify_layer(
     let matched = if ctx.any_by(
         verified,
         |candidate| {
-            ctx.equal(
-                candidate.as_str(),
-                id.as_str(),
-                "compare Parasolid verified row",
-            )
+            // schema_row selects one of four fixed literals. Unequal lengths
+            // are free; equal lengths bound the comparison by that literal.
+            Ok(candidate.as_str() == id.as_str())
         },
         "scan Parasolid verified rows",
     )? {
@@ -781,6 +779,39 @@ mod tests {
             assert_eq!(work(&schema, expected), baseline);
         }
         assert_eq!(work("SCH_sw_33103_11000", PARASOLID_SCH_SW_33103), baseline);
+    }
+
+    #[test]
+    fn verified_row_scan_charges_only_visited_slots() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let long = DialectId::parse(format!("other:{}", "a".repeat(1 << 20)))
+            .expect("fixture dialect");
+        let work = |verified: &[DialectId], expected: Admission| {
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::service();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("input");
+            let layer = classify_layer(&ctx, token("SCH_SW_33103_11000"), carrier("stream@12"),
+                LayerInstance::Sole, verified).expect("classification");
+            assert_eq!(layer.matched().dialect(), &PARASOLID_SCH_SW_33103);
+            assert_eq!(layer.matched().admission(), &expected);
+            let error = ctx.charge_work(policy.limits.max_work_units + 1, "probe verified row work")
+                .expect_err("probe exceeds the allowance");
+            let CodecError::ResourceLimit(limit) = error else { panic!("work refusal"); };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            assert!(matches!(classify_layer(&ctx, token("SCH_SW_33103_11000"), carrier("stream@12"),
+                LayerInstance::Sole, verified), Err(CodecError::ResourceLimit(original)) if original == limit));
+            limit.used
+        };
+        // The empty scan pays its end probe. A first-slot match pays one
+        // visit; each additional visited slot or miss end adds one step.
+        let baseline = work(&[], Admission::Residual);
+        assert_eq!(work(&[PARASOLID_SCH_SW_33103, long.clone()], Admission::Admitted), baseline);
+        assert_eq!(work(&[PARASOLID_SCH_SW_32001], Admission::Residual), baseline + 1);
+        assert_eq!(work(&[long.clone()], Admission::Residual), baseline + 1);
+        assert_eq!(work(&[long, PARASOLID_SCH_SW_33103], Admission::Admitted), baseline + 1);
     }
 
     #[test]
