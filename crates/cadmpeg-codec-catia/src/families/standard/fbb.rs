@@ -1713,6 +1713,43 @@ mod allocation_tests {
     }
 
     #[test]
+    fn wide_trim_lengths_pay_one_visit_per_record_and_total() {
+        const COUNT: u32 = 1024;
+        let mut bytes = vec![0x01, 0x42, 0xff];
+        bytes.extend_from_slice(&COUNT.to_le_bytes());
+        bytes.push(0xff);
+        bytes.extend_from_slice(&(3 * COUNT).to_le_bytes());
+        for _ in 0..COUNT {
+            bytes.extend_from_slice(&3_u16.to_be_bytes());
+        }
+        for handle in 0..3 * COUNT {
+            bytes.extend_from_slice(&u16::try_from(handle).expect("small handle").to_be_bytes());
+        }
+        // N fixed-width reads plus a terminal step, then N sum steps plus
+        // a terminal step. The layout query does not decode handle records.
+        let work = 2 * (u64::from(COUNT) + 1);
+        let run = |ctx: &DecodeContext<'_>| {
+            super::parse_trim_record_layout_with_length_encoding(ctx, &bytes, 0, 2, true)
+        };
+        crate::test_support::with_work_limit(work, |ctx| {
+            let layout = run(ctx).expect("one visit per row").expect("valid layout");
+            assert_eq!(
+                layout.handle_count,
+                3 * usize::try_from(COUNT).expect("count")
+            );
+            assert_eq!(layout.end, bytes.len());
+        });
+        assert!(
+            matches!(crate::test_support::with_work_limit(work - 1, run),
+            Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_trim_length_totals")
+        );
+        assert_eq!(
+            work_refusal_at("catia_trim_wide_length_lane", |ctx| run(ctx).map(|_| ())).additional,
+            1
+        );
+    }
+
+    #[test]
     fn wide_trim_length_lane_refuses_work() {
         let mut bytes = vec![0x01, 0x42, 0x01, 0xff];
         bytes.extend_from_slice(&3_u32.to_le_bytes());
@@ -2734,12 +2771,14 @@ fn parse_trim_record_layout_with_length_encoding(
                 ) {
                     return Some(Err(error));
                 }
-                let admitted_lengths =
-                    match ctx.admit_iter(length_lane, "catia_trim_wide_length_lane") {
-                        Ok(bytes) => bytes.chunks(length_width),
-                        Err(error) => return Some(Err(CodecError::from(error))),
-                    };
-                for encoded_length in admitted_lengths {
+                let mut length_chunks = length_lane.chunks(length_width.get());
+                loop {
+                    let encoded_length =
+                        match ctx.next_charged(&mut length_chunks, "catia_trim_wide_length_lane") {
+                            Ok(Some(length)) => length,
+                            Ok(None) => break,
+                            Err(error) => return Some(Err(error)),
+                        };
                     let Some(length) = View::u16_be_at(encoded_length, 0) else {
                         return None;
                     };
@@ -2765,11 +2804,13 @@ fn parse_trim_record_layout_with_length_encoding(
                 }
             }
             let mut length_total = 0_usize;
-            let admitted_lengths = match ctx.admit_iter(&lengths, "catia_trim_length_totals") {
-                Ok(lengths) => lengths,
-                Err(error) => return Some(Err(CodecError::from(error))),
-            };
-            for length in admitted_lengths {
+            let mut length_rows = lengths.iter();
+            loop {
+                let length = match ctx.next_charged(&mut length_rows, "catia_trim_length_totals") {
+                    Ok(Some(length)) => length,
+                    Ok(None) => break,
+                    Err(error) => return Some(Err(error)),
+                };
                 let Some(next) = length_total.checked_add(*length) else {
                     return Some(Err(ctx.refuse_codec_limit(
                         "catia_trim_length_total",
