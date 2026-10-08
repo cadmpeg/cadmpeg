@@ -489,14 +489,26 @@ fn decode_selects_a_length_uncertainty_after_an_angular_measure() {
 
 #[test]
 fn uncertainty_name_refuses_materialized_limit() {
-    use crate::reader::RecordExt;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'distance_accuracy_value','');#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) =
-        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
-            .expect("valid uncertainty exchange");
+    let (original, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+        .expect("valid uncertainty exchange");
+    crate::test_support::with_service_context(SOURCE, |_, ctx| {
+        let (measures, unresolved) = super::super::context_length_uncertainties(
+            &original.records()[&3], &original, ctx,
+        ).expect("original production uncertainty route");
+        assert_eq!(measures.len(), 1);
+        assert_eq!(measures[0].get(), 0.2);
+        assert_eq!(unresolved, 0);
+    });
+    // The original name is smaller than the earlier freed unit-active tree.
+    // A longer name makes the production text allocation raise that peak.
+    let source = std::str::from_utf8(SOURCE).expect("ASCII fixture")
+        .replace("'distance_accuracy_value'", &format!("'{}'", "x".repeat(4096)));
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+        .expect("long uncertainty name exchange");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::MaterializedBytes,
         "step_string_text",
@@ -504,19 +516,11 @@ fn uncertainty_name_refuses_materialized_limit() {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+            let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
                 .expect("root fits materialized policy");
-            let name = exchange
-                .records()
-                .get(&2)
-                .expect("uncertainty measure")
-                .parameter(2)
-                .expect("uncertainty name");
-            // Unit-resolution scratch is released before the name boundary.
-            ctx.with_scoped_storage("test uncertainty name storage", || {
-                super::super::string_value(name, &exchange, &ctx)
-            })
-            .map(|_| ())
+            super::super::context_length_uncertainties(
+                &exchange.records()[&3], &exchange, &ctx,
+            ).map(|_| ())
         },
     );
     assert!(

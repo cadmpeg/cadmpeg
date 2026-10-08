@@ -100,11 +100,11 @@ fn surface_scale_refusal(
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let ir = cadmpeg_ir::document::CadIr::empty();
     let id = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#1").expect("valid identity");
-    let (index, _workspace) =
+    let (mut index, mut workspace) =
         super::super::SurfaceScaleIndex::build(&ir, &ctx).expect("empty model index");
-    super::super::procedural_surface_parameter_scales(
+    workspace.with_storage(|| super::super::procedural_surface_parameter_scales(
         &ir,
-        &index,
+        &mut index,
         &id,
         &cadmpeg_ir::geometry::SurfaceGeometry::Solved(
             cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
@@ -112,7 +112,7 @@ fn surface_scale_refusal(
         [1.0, 1.0],
         &BTreeMap::new(),
         &ctx,
-    )
+    ))
     .expect_err("surface scale exceeds limit")
 }
 
