@@ -395,27 +395,39 @@ fn assembly_placement_native_record_refuses_id_and_digest_before_creation() {
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor assembly placement suffix digest"
     ));
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("zero-materialized service context");
     AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0])
         .expect("admitted placement");
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
+    policy.limits.max_materialized_bytes = 0;
     let (limited, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let wire = AssemblyPlacementRecordWire::from_placement(&limited, &inventory.placements[0])
         .expect("placement wire");
+    let refusal = match admit_assembly_placement(&limited, wire, &mut Vec::new()) {
+        Err(CodecError::ResourceLimit(limit)) => limit,
+        other => panic!("entity admission should refuse: {other:?}"),
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::Entities);
+    assert_eq!(
+        refusal.operation,
+        "admit Inventor native assembly placement"
+    );
     assert!(matches!(
-        admit_assembly_placement(&limited, wire, &mut Vec::new()),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::Entities
-                && limit.operation == "admit Inventor native assembly placement"
+        limited.finish_session(),
+        Err(CodecError::ResourceLimit(limit)) if limit == refusal
     ));
     let wire = AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0])
         .expect("service placement wire");
     assert!(admit_assembly_placement(&ctx, wire, &mut Vec::new())
         .expect("service placement admission")
         .is_some());
+    ctx.finish_session()
+        .expect("placement conversion uses no materialized token copy");
 }
 
 #[test]
@@ -1812,7 +1824,7 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
 }
 
 #[test]
-fn placement_conversion_issue_refuses_before_failure_text_creation() {
+fn placement_conversion_issue_moves_raw_wire_token_with_legacy_cap() {
     let fixture = serde_json::json!({
         "id": "inventor:assembly:placement#segment-1", "segment_token": "segment", "record_ordinal": 1,
         "header_id": 0, "owner_reference": 0, "attribute_reference": 0, "state": 0,
@@ -1826,7 +1838,7 @@ fn placement_conversion_issue_refuses_before_failure_text_creation() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     let issue_detail = "suffix_len must not be zero";
-    // Retain four initial vector slots, then the issue segment token and message.
+    // Keep the old raw-wire budget formula while checking the moved-token path.
     let token_len = wire.segment_token.len();
     let retained_needed = 4 * std::mem::size_of::<crate::record_issue::RecordIssue>()
         + token_len
@@ -1835,18 +1847,22 @@ fn placement_conversion_issue_refuses_before_failure_text_creation() {
         u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let mut issues = Vec::new();
-    assert!(matches!(
-        admit_assembly_placement(&ctx, wire, &mut issues),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor placement issue detail"
-    ));
-    assert!(issues.is_empty());
-    issues = Vec::new();
+    assert!(admit_assembly_placement(&ctx, wire, &mut issues)
+        .expect("legacy cap admits transferred token")
+        .is_none());
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].family, RecordIssueFamily::Assembly);
+    assert_eq!(issues[0].segment_token.as_str(), "segment");
+    assert_eq!(issues[0].record_ordinal, 1);
+    assert_eq!(issues[0].detail, issue_detail);
+    ctx.finish_session()
+        .expect("legacy one-under cap covers issue storage after transfer");
+
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed).expect("full issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
     let wire = serde_json::from_value(fixture).expect("placement wire");
+    let mut issues = Vec::new();
     assert!(admit_assembly_placement(&ctx, wire, &mut issues)
         .expect("full admission")
         .is_none());
@@ -1855,10 +1871,12 @@ fn placement_conversion_issue_refuses_before_failure_text_creation() {
     assert_eq!(issues[0].segment_token.as_str(), "segment");
     assert_eq!(issues[0].record_ordinal, 1);
     assert_eq!(issues[0].detail, issue_detail);
+    ctx.finish_session()
+        .expect("legacy exact cap covers issue storage after transfer");
 }
 
 #[test]
-fn uppercase_placement_digest_refuses_before_failure_text_creation() {
+fn uppercase_placement_digest_moves_raw_wire_token_with_legacy_cap() {
     let fixture = serde_json::json!({
         "id": "inventor:assembly:placement#segment-1", "segment_token": "segment", "record_ordinal": 1,
         "header_id": 0, "owner_reference": 0, "attribute_reference": 0, "state": 0,
@@ -1873,7 +1891,7 @@ fn uppercase_placement_digest_refuses_before_failure_text_creation() {
     let mut policy = DecodePolicy::service();
     let issue_detail =
         "suffix_sha256: sha256 digest must contain exactly 64 lowercase hexadecimal characters";
-    // Retain four initial vector slots, then the issue segment token and message.
+    // Keep the old raw-wire budget formula while checking the moved-token path.
     let token_len = wire.segment_token.len();
     let retained_needed = 4 * std::mem::size_of::<crate::record_issue::RecordIssue>()
         + token_len
@@ -1882,18 +1900,22 @@ fn uppercase_placement_digest_refuses_before_failure_text_creation() {
         u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let mut issues = Vec::new();
-    assert!(matches!(
-        admit_assembly_placement(&ctx, wire, &mut issues),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor placement issue detail"
-    ));
-    assert!(issues.is_empty());
-    issues = Vec::new();
+    assert!(admit_assembly_placement(&ctx, wire, &mut issues)
+        .expect("legacy cap admits transferred token")
+        .is_none());
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].family, RecordIssueFamily::Assembly);
+    assert_eq!(issues[0].segment_token.as_str(), "segment");
+    assert_eq!(issues[0].record_ordinal, 1);
+    assert_eq!(issues[0].detail, issue_detail);
+    ctx.finish_session()
+        .expect("legacy one-under cap covers issue storage after transfer");
+
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed).expect("full issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
     let wire = serde_json::from_value(fixture).expect("placement wire");
+    let mut issues = Vec::new();
     assert!(admit_assembly_placement(&ctx, wire, &mut issues)
         .expect("full admission")
         .is_none());
@@ -1902,6 +1924,81 @@ fn uppercase_placement_digest_refuses_before_failure_text_creation() {
     assert_eq!(issues[0].segment_token.as_str(), "segment");
     assert_eq!(issues[0].record_ordinal, 1);
     assert_eq!(issues[0].detail, issue_detail);
+    ctx.finish_session()
+        .expect("legacy exact cap covers issue storage after transfer");
+}
+
+#[test]
+fn placement_conversion_issue_transfers_admitted_token_without_materialization() {
+    let suffix: [u8; 0] = [];
+    let placement = AssemblyPlacement {
+        segment_token: "segment".into(),
+        record_ordinal: 1,
+        header_id: 0,
+        owner_reference: 0,
+        attribute_reference: 0,
+        state: 0,
+        transform_prefix: false,
+        transform: CompactMatrix::try_new(0, 0, |_| {
+            Ok(cadmpeg_ir::scalar::FiniteReal::ZERO)
+        })
+        .expect("finite matrix"),
+        branch: 0,
+        graphics_state: 0,
+        occurrence_id: 1,
+        graphics_index: 0,
+        object_reference: 0,
+        suffix: View::over_retained(&suffix),
+    };
+    let issue_detail = "suffix_len must not be zero";
+    let id_len = "inventor:assembly:placement#segment-1".len();
+    let source_token_len = placement.segment_token.len();
+    // from_placement admits the ID, token, and fixed-width digest text.
+    let wire_retained = id_len + source_token_len + 64;
+    // Empty-vector amortized growth reserves four RecordIssue slots; detail is copied next.
+    let issue_storage =
+        4 * std::mem::size_of::<crate::record_issue::RecordIssue>() + issue_detail.len();
+    let retained_needed = wire_retained + issue_storage;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained_needed - 1).expect("issue budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let wire = AssemblyPlacementRecordWire::from_placement(&ctx, &placement)
+        .expect("source wire fits before issue storage");
+    let mut issues = Vec::new();
+    let first_refusal = match admit_assembly_placement(&ctx, wire, &mut issues) {
+        Err(CodecError::ResourceLimit(limit)) => limit,
+        other => panic!("issue detail should be the one-under refusal: {other:?}"),
+    };
+    assert_eq!(first_refusal.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(
+        first_refusal.operation,
+        "retain Inventor placement issue detail"
+    );
+    assert!(issues.is_empty());
+    assert!(matches!(
+        ctx.finish_session(),
+        Err(CodecError::ResourceLimit(limit)) if limit == first_refusal
+    ));
+
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained_needed).expect("exact issue budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("exact context");
+    let wire = AssemblyPlacementRecordWire::from_placement(&ctx, &placement)
+        .expect("source wire fits before issue storage");
+    let mut issues = Vec::new();
+    assert!(admit_assembly_placement(&ctx, wire, &mut issues)
+        .expect("exact issue storage admitted with no materialization")
+        .is_none());
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].family, RecordIssueFamily::Assembly);
+    assert_eq!(issues[0].segment_token.as_str(), "segment");
+    assert_eq!(issues[0].record_ordinal, 1);
+    assert_eq!(issues[0].detail, issue_detail);
+    ctx.finish_session()
+        .expect("transferred token and exact issue storage are admitted");
 }
 
 fn assert_ufrx_issue(ir: &cadmpeg_ir::document::CadIr, scope: &str, field: &str) {

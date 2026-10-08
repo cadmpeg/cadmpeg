@@ -2331,7 +2331,7 @@ impl NativeData {
                 namespace,
                 "assembly_placements",
                 "convert Inventor assembly placements",
-                |wire, _ctx| wire.into_record(),
+                |wire, _ctx| wire.into_record().map_err(|failure| failure.error),
             )?,
             assembly_record_issues: read_contextual_arena::<crate::record_issue::RecordIssueWire, _>(
                 ctx,

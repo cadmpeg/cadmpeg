@@ -94,6 +94,32 @@ fn container_summary_attribute_refuses_before_insert() {
 }
 
 #[test]
+fn fixed_summary_attribute_key_needs_no_work_charge() {
+    let mut entry = cadmpeg_core::ContainerEntry {
+        name: String::new(),
+        role: cadmpeg_core::container::ContainerRole::Storage,
+        storage: cadmpeg_core::container::EntryStorage::Directory,
+        attributes: std::collections::BTreeMap::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("fixed attribute context");
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "retain Inventor summary attribute key",
+        None,
+    );
+    insert_attribute(&ctx, &mut entry, b"test", format_args!("value"))
+        .expect("fixed key copy uses no input-sized work");
+    drop(probe);
+    assert_eq!(entry.attributes["test"], "value");
+    ctx.finish_session().expect("fixed attribute key leaves the session clean");
+}
+
+#[test]
 fn container_summary_note_refuses_before_text_creation() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

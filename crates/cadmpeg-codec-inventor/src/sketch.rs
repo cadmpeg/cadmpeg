@@ -1137,7 +1137,7 @@ pub(crate) fn project(
             unresolved_constraints: inventory.constraints.len(),
         });
     }
-    let (raw_sketches, _raw_sketches_storage) = ctx.unique_index(
+    let (raw_sketches, raw_sketches_storage) = ctx.unique_index(
         inventory.sketches.iter().map(|record| {
             (
                 {
@@ -1151,7 +1151,7 @@ pub(crate) fn project(
         }),
         "index Inventor sketches",
     )?;
-    let (raw_entities, _raw_entities_storage) = ctx.unique_index(
+    let (raw_entities, raw_entities_storage) = ctx.unique_index(
         inventory.entities.iter().map(|record| {
             (
                 {
@@ -1165,7 +1165,7 @@ pub(crate) fn project(
         }),
         "index Inventor sketch entities",
     )?;
-    let (transforms, _transforms_storage) = ctx.unique_index(
+    let (transforms, transforms_storage) = ctx.unique_index(
         inventory.transforms.iter().map(|record| {
             (
                 {
@@ -1179,7 +1179,7 @@ pub(crate) fn project(
         }),
         "index Inventor sketch transforms",
     )?;
-    let (directions, _directions_storage) = ctx.unique_index(
+    let (directions, directions_storage) = ctx.unique_index(
         inventory.directions.iter().map(|record| {
             (
                 {
@@ -1193,7 +1193,7 @@ pub(crate) fn project(
         }),
         "index Inventor sketch directions",
     )?;
-    let (raw_constraints, _raw_constraints_storage) = ctx.unique_index(
+    let (raw_constraints, raw_constraints_storage) = ctx.unique_index(
         inventory.constraints.iter().map(|record| {
             (
                 {
@@ -1425,6 +1425,14 @@ pub(crate) fn project(
             "collect Inventor sketch items",
         )?;
     }
+    drop(raw_sketches);
+    drop(raw_sketches_storage);
+    drop(raw_entities);
+    drop(raw_entities_storage);
+    drop(transforms);
+    drop(transforms_storage);
+    drop(directions);
+    drop(directions_storage);
     drop(projected_by_native);
     drop(projected_by_native_storage);
     let mut projected_sketch_ids_storage =
@@ -1571,6 +1579,8 @@ pub(crate) fn project(
             }
         }
     }
+    drop(raw_constraints);
+    drop(raw_constraints_storage);
     drop(parameter_index);
     drop(parameter_index_storage);
     let mut unresolved_constraints = inventory
@@ -1647,6 +1657,8 @@ pub(crate) fn project(
         sketches.len(),
         "Inventor unresolved sketches",
     )?;
+    drop(projected_constraint_keys);
+    drop(projected_constraint_keys_storage);
     drop(raw_sketch_by_native);
     drop(raw_sketch_by_native_storage);
     drop(projected_entity_by_key);
@@ -1823,118 +1835,30 @@ fn project_constraint(
             )?
             .copied())
     };
-    let (definition, orientation, members) = match constraint.kind {
-        PmDcSketchConstraintKind::Coincident { first, second } => {
-            let members = [
+    let (members, parameter) = match constraint.kind {
+        PmDcSketchConstraintKind::Coincident { first, second }
+        | PmDcSketchConstraintKind::Parallel { first, second, .. }
+        | PmDcSketchConstraintKind::Perpendicular { first, second, .. }
+        | PmDcSketchConstraintKind::Tangent { first, second, .. }
+        | PmDcSketchConstraintKind::EqualRadius { first, second } => (
+            [
                 admitted_value!(resolve(first))?,
                 admitted_value!(resolve(second))?,
-            ];
-            (
-                SketchConstraintDefinitionInput::Coincident {
-                    entities: admitted_value!(ctx.try_collect_retained_with(
-                        members,
-                        "collect Inventor coincident constraint members",
-                        |entity| entity.id().try_clone_for_decode(
-                            ctx,
-                            "retain Inventor sketch constraint entity id"
-                        )
-                    )),
-                },
-                None,
-                members,
-            )
-        }
-        PmDcSketchConstraintKind::Parallel {
-            first,
-            second,
-            orientation,
-        } => {
-            let members = [
-                admitted_value!(resolve(first))?,
-                admitted_value!(resolve(second))?,
-            ];
-            (
-                SketchConstraintDefinitionInput::Parallel {
-                    first: admitted_value!(members[0]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                    second: admitted_value!(members[1]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                },
-                Some(u32::from(orientation)),
-                members,
-            )
-        }
-        PmDcSketchConstraintKind::Perpendicular {
-            first,
-            second,
-            orientation,
-        } => {
-            let members = [
-                admitted_value!(resolve(first))?,
-                admitted_value!(resolve(second))?,
-            ];
-            (
-                SketchConstraintDefinitionInput::Perpendicular {
-                    first: admitted_value!(members[0]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                    second: admitted_value!(members[1]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                },
-                Some(u32::from(orientation)),
-                members,
-            )
-        }
-        PmDcSketchConstraintKind::Tangent {
-            first,
-            second,
-            extension,
-        } => {
-            let members = [
-                admitted_value!(resolve(first))?,
-                admitted_value!(resolve(second))?,
-            ];
-            (
-                SketchConstraintDefinitionInput::Tangent {
-                    first: admitted_value!(members[0]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                    second: admitted_value!(members[1]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                },
-                extension,
-                members,
-            )
-        }
-        PmDcSketchConstraintKind::Horizontal { entity, state } => {
+            ],
+            None,
+        ),
+        PmDcSketchConstraintKind::Horizontal { entity, .. }
+        | PmDcSketchConstraintKind::Vertical { entity, .. } => {
             let member = admitted_value!(resolve(entity))?;
-            (
-                SketchConstraintDefinitionInput::Horizontal {
-                    entity: admitted_value!(member
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                },
-                Some(u32::from(state)),
-                [member, member],
-            )
-        }
-        PmDcSketchConstraintKind::Vertical { entity, state } => {
-            let member = admitted_value!(resolve(entity))?;
-            (
-                SketchConstraintDefinitionInput::Vertical {
-                    entity: admitted_value!(member
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                },
-                Some(u32::from(state)),
-                [member, member],
-            )
+            ([member, member], None)
         }
         PmDcSketchConstraintKind::HorizontalDistance {
+            first,
+            second,
+            parameter,
+            ..
+        }
+        | PmDcSketchConstraintKind::VerticalDistance {
             first,
             second,
             parameter,
@@ -1944,8 +1868,114 @@ fn project_constraint(
                 admitted_value!(resolve(first))?,
                 admitted_value!(resolve(second))?,
             ];
-            let parameter =
-                admitted_value!(resolve_parameter(ctx, constraint, parameter, parameters)?);
+            let parameter = Some(admitted_value!(resolve_parameter(
+                ctx,
+                constraint,
+                parameter,
+                parameters
+            )?));
+            (members, parameter)
+        }
+        PmDcSketchConstraintKind::Radius { entity, .. }
+        | PmDcSketchConstraintKind::Diameter { entity, .. } => {
+            let member = admitted_value!(resolve(entity))?;
+            let parameter = Some(admitted_value!(resolve_parameter(
+                ctx,
+                constraint,
+                constraint.header.parameter,
+                parameters
+            )?));
+            ([member, member], parameter)
+        }
+        PmDcSketchConstraintKind::CircleCenter { entity, center } => (
+            [
+                admitted_value!(resolve(entity))?,
+                admitted_value!(resolve(center))?,
+            ],
+            None,
+        ),
+    };
+    if !admitted_value!(ctx.equal(
+        &members[0].sketch,
+        &members[1].sketch,
+        "compare Inventor sketch constraint owners",
+    )) {
+        return None;
+    }
+    let parameter = match parameter {
+        Some(parameter) => Some(admitted_value!(parameter.try_clone_for_decode(
+            ctx,
+            "retain Inventor sketch constraint parameter id"
+        ))),
+        None => None,
+    };
+    let (definition, orientation) = match constraint.kind {
+        PmDcSketchConstraintKind::Coincident { .. } => (
+            SketchConstraintDefinitionInput::Coincident {
+                entities: admitted_value!(ctx.try_collect_retained_with(
+                    members,
+                    "collect Inventor coincident constraint members",
+                    |entity| entity.id().try_clone_for_decode(
+                        ctx,
+                        "retain Inventor sketch constraint entity id"
+                    )
+                )),
+            },
+            None,
+        ),
+        PmDcSketchConstraintKind::Parallel { orientation, .. } => (
+            SketchConstraintDefinitionInput::Parallel {
+                first: admitted_value!(members[0]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+                second: admitted_value!(members[1]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+            },
+            Some(u32::from(orientation)),
+        ),
+        PmDcSketchConstraintKind::Perpendicular { orientation, .. } => (
+            SketchConstraintDefinitionInput::Perpendicular {
+                first: admitted_value!(members[0]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+                second: admitted_value!(members[1]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+            },
+            Some(u32::from(orientation)),
+        ),
+        PmDcSketchConstraintKind::Tangent { extension, .. } => (
+            SketchConstraintDefinitionInput::Tangent {
+                first: admitted_value!(members[0]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+                second: admitted_value!(members[1]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+            },
+            extension,
+        ),
+        PmDcSketchConstraintKind::Horizontal { state, .. } => (
+            SketchConstraintDefinitionInput::Horizontal {
+                entity: admitted_value!(members[0]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+            },
+            Some(u32::from(state)),
+        ),
+        PmDcSketchConstraintKind::Vertical { state, .. } => (
+            SketchConstraintDefinitionInput::Vertical {
+                entity: admitted_value!(members[0]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+            },
+            Some(u32::from(state)),
+        ),
+        PmDcSketchConstraintKind::HorizontalDistance { .. } => {
+            let Some(parameter) = parameter else {
+                return None;
+            };
             (
                 SketchConstraintDefinitionInput::HorizontalDistance {
                     first: SketchLocus::Entity(admitted_value!(members[0]
@@ -1957,21 +1987,12 @@ fn project_constraint(
                     parameter,
                 },
                 None,
-                members,
             )
         }
-        PmDcSketchConstraintKind::VerticalDistance {
-            first,
-            second,
-            parameter,
-            ..
-        } => {
-            let members = [
-                admitted_value!(resolve(first))?,
-                admitted_value!(resolve(second))?,
-            ];
-            let parameter =
-                admitted_value!(resolve_parameter(ctx, constraint, parameter, parameters)?);
+        PmDcSketchConstraintKind::VerticalDistance { .. } => {
+            let Some(parameter) = parameter else {
+                return None;
+            };
             (
                 SketchConstraintDefinitionInput::VerticalDistance {
                     first: SketchLocus::Entity(admitted_value!(members[0]
@@ -1983,112 +2004,80 @@ fn project_constraint(
                     parameter,
                 },
                 None,
-                members,
             )
         }
-        PmDcSketchConstraintKind::Radius { entity, .. } => {
-            let member = admitted_value!(resolve(entity))?;
-            let parameter = admitted_value!(resolve_parameter(
-                ctx,
-                constraint,
-                constraint.header.parameter,
-                parameters
-            )?);
+        PmDcSketchConstraintKind::Radius { .. } => {
+            let Some(parameter) = parameter else {
+                return None;
+            };
             (
                 SketchConstraintDefinitionInput::Radius {
-                    entity: admitted_value!(member
+                    entity: admitted_value!(members[0]
                         .id()
                         .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
                     parameter,
                 },
                 None,
-                [member, member],
             )
         }
-        PmDcSketchConstraintKind::Diameter { entity, .. } => {
-            let member = admitted_value!(resolve(entity))?;
-            let parameter = admitted_value!(resolve_parameter(
-                ctx,
-                constraint,
-                constraint.header.parameter,
-                parameters
-            )?);
+        PmDcSketchConstraintKind::Diameter { .. } => {
+            let Some(parameter) = parameter else {
+                return None;
+            };
             (
                 SketchConstraintDefinitionInput::Diameter {
-                    entity: admitted_value!(member
+                    entity: admitted_value!(members[0]
                         .id()
                         .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
                     parameter,
                 },
                 None,
-                [member, member],
             )
         }
-        PmDcSketchConstraintKind::CircleCenter { entity, center } => {
-            let members = [
-                admitted_value!(resolve(entity))?,
-                admitted_value!(resolve(center))?,
-            ];
-            (
-                SketchConstraintDefinitionInput::Native {
-                    native_kind: cadmpeg_core::nonblank_literal!("circle_center_alignment"),
-                    native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
-                    native_flags: Some(u64::from(constraint.header.content.flags)),
-                    native_properties: std::collections::BTreeMap::new(),
-                    entities: admitted_value!(ctx.try_collect_retained_with(
-                        members,
-                        "collect Inventor circle center entities",
-                        |entity| entity.id().try_clone_for_decode(
-                            ctx,
-                            "retain Inventor sketch constraint entity id"
-                        )
+        PmDcSketchConstraintKind::CircleCenter { entity, center } => (
+            SketchConstraintDefinitionInput::Native {
+                native_kind: cadmpeg_core::nonblank_literal!("circle_center_alignment"),
+                native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
+                native_flags: Some(u64::from(constraint.header.content.flags)),
+                native_properties: std::collections::BTreeMap::new(),
+                entities: admitted_value!(ctx.try_collect_retained_with(
+                    members,
+                    "collect Inventor circle center entities",
+                    |entity| entity.id().try_clone_for_decode(
+                        ctx,
+                        "retain Inventor sketch constraint entity id"
+                    )
+                )),
+                parameter: None,
+                operands: vec![
+                    admitted_value!(native_operand(
+                        ctx,
+                        constraint,
+                        cadmpeg_core::nonblank_literal!("entity"),
+                        entity,
                     )),
-                    parameter: None,
-                    operands: vec![
-                        admitted_value!(native_operand(
-                            ctx,
-                            constraint,
-                            cadmpeg_core::nonblank_literal!("entity"),
-                            entity,
-                        )),
-                        admitted_value!(native_operand(
-                            ctx,
-                            constraint,
-                            cadmpeg_core::nonblank_literal!("center"),
-                            center,
-                        )),
-                    ],
-                },
-                None,
-                members,
-            )
-        }
-        PmDcSketchConstraintKind::EqualRadius { first, second } => {
-            let members = [
-                admitted_value!(resolve(first))?,
-                admitted_value!(resolve(second))?,
-            ];
-            (
-                SketchConstraintDefinitionInput::Equal {
-                    first: admitted_value!(members[0]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                    second: admitted_value!(members[1]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                },
-                None,
-                members,
-            )
-        }
+                    admitted_value!(native_operand(
+                        ctx,
+                        constraint,
+                        cadmpeg_core::nonblank_literal!("center"),
+                        center,
+                    )),
+                ],
+            },
+            None,
+        ),
+        PmDcSketchConstraintKind::EqualRadius { .. } => (
+            SketchConstraintDefinitionInput::Equal {
+                first: admitted_value!(members[0]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+                second: admitted_value!(members[1]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+            },
+            None,
+        ),
     };
-    if !admitted_value!(ctx.equal(
-        &members[0].sketch,
-        &members[1].sketch,
-        "compare Inventor sketch constraint owners",
-    )) {
-        return None;
-    }
     admit!(ctx.charge_entities(1, "project Inventor sketch constraint"));
     let id = admitted_value!(ctx.format_retained(
         format_args!(
@@ -2134,12 +2123,12 @@ fn project_constraint(
     }))
 }
 
-fn resolve_parameter(
+fn resolve_parameter<'a>(
     ctx: &DecodeContext<'_>,
     constraint: &PmDcSketchConstraint,
     reference: PmDcReference,
-    parameters: &HashMap<&str, &ParameterId>,
-) -> Option<Result<ParameterId, CodecError>> {
+    parameters: &HashMap<&str, &'a ParameterId>,
+) -> Option<Result<&'a ParameterId, CodecError>> {
     let ordinal = reference.index().checked_sub(1)?;
     let (native, _storage) = match ctx.format_scoped(
         format_args!(
@@ -2159,7 +2148,7 @@ fn resolve_parameter(
         Ok(value) => value?,
         Err(error) => return Some(Err(error)),
     };
-    Some(parameter.try_clone_for_decode(ctx, "retain Inventor sketch constraint parameter id"))
+    Some(Ok(*parameter))
 }
 
 fn native_operand(
@@ -2602,7 +2591,8 @@ fn build_profiles(
         if ctx.contains_hash_set(&visited, &start_index, "visit Inventor profile line")? {
             continue;
         }
-        let (component, _component_storage) = line_component(ctx, start_index, &lines, &adjacency)?;
+        let (component, component_storage) =
+            line_component(ctx, start_index, &lines, &adjacency)?;
         let mut open_component = false;
         for &index in ctx.admit_iter(&component, "visit Inventor line component")? {
             let endpoint_has_wrong_degree = ctx.any_by(
@@ -2620,12 +2610,15 @@ fn build_profiles(
                 break;
             }
         }
-        if open_component {
+        // Open components and closed components with fewer than three lines cannot form a profile.
+        if open_component || component.len() < 3 {
             for &index in ctx.admit_iter(&component, "visit Inventor line component")? {
                 visited_storage.with_storage(|| {
                     ctx.insert_hash_set(&mut visited, index, "visit Inventor profile line")
                 })?;
             }
+            drop(component);
+            drop(component_storage);
             continue;
         }
         let first = lines[start_index];
@@ -2703,6 +2696,8 @@ fn build_profiles(
                 ctx.insert_hash_set(&mut visited, index, "visit Inventor profile line")
             })?;
         }
+        drop(component);
+        drop(component_storage);
         if loop_uses.len() >= 3 && ctx.equal(point, start_point, "close Inventor profile loop")? {
             loop_uses_storage.commit()?;
             profiles_storage.with_storage(|| {
@@ -2738,6 +2733,8 @@ fn build_profiles(
             "order Inventor line profiles",
         )
     })?;
+    drop(source_positions);
+    drop(source_positions_storage);
     drop(profiles_storage);
     ctx.sort_unstable_by_key(
         &mut ordered,
@@ -2898,8 +2895,9 @@ mod tests {
         inventory, parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform,
         project, PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcTransformPayload,
         PmDcTransformPayloadWire, SketchConstraintTag, SketchEntityTag, SketchInventory,
-        COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, POINT_TYPE, SKETCH_TYPE,
-        TRANSFORM_TYPE,
+        COINCIDENT_TYPE, DIAMETER_TYPE, DIRECTION_TYPE, HORIZONTAL_DISTANCE_TYPE,
+        HORIZONTAL_TYPE, LINE_TYPE, POINT_TYPE, RADIUS_TYPE, SKETCH_TYPE, TRANSFORM_TYPE,
+        VERTICAL_DISTANCE_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcReference, PmDcReferenceList};
@@ -3012,6 +3010,41 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn short_closed_line_components_skip_profile_entity_id_copies() {
+        let sketch = cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1")
+            .expect("sketch id");
+        let line = |id| {
+            cadmpeg_ir::sketches::SketchEntity::new(
+                cadmpeg_ir::sketches::SketchEntityId::mint(id).expect("entity id"),
+                sketch.clone(),
+                cadmpeg_ir::sketches::SketchGeometry::try_from(
+                    cadmpeg_ir::sketches::SketchGeometryDefinition::Line {
+                        start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                        end: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                    },
+                )
+                .expect("line geometry"),
+            )
+            .with_endpoint_refs(vec!["point-a".into(), "point-b".into()])
+        };
+        let first = line("inventor:test:entity#1");
+        let second = line("inventor:test:entity#2");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::MaterializedBytes,
+            "retain Inventor profile use id",
+            None,
+        );
+        let profiles = super::build_profiles(&ctx, &[&first, &second])
+            .expect("two-edge closed component is not a profile");
+        assert!(profiles.is_empty());
+        ctx.finish_session().expect("short component needs no profile ID copies");
     }
 
     #[test]
@@ -3804,6 +3837,194 @@ mod tests {
                 .expect("horizontal constraint projects")
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn cross_sketch_constraint_skips_retained_member_id_copies() {
+        let mut bytes = constraint_header(0, 0);
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&2_u32.to_le_bytes());
+        let payload = parse(&bytes, |ctx, source| {
+            parse_constraint(ctx, SketchConstraintTag::Coincident, source, 22)
+                .expect("coincident constraint")
+        });
+        let constraint = Located::new(
+            payload,
+            fixture_record_type_id(COINCIDENT_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            0,
+        );
+        let point = || {
+            cadmpeg_ir::sketches::SketchGeometry::try_from(
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
+                    position: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                },
+            )
+            .expect("point geometry")
+        };
+        let first = cadmpeg_ir::sketches::SketchEntity::new(
+            cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1")
+                .expect("first entity id"),
+            cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1")
+                .expect("first sketch id"),
+            point(),
+        );
+        let second = cadmpeg_ir::sketches::SketchEntity::new(
+            cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#2")
+                .expect("second entity id"),
+            cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#2")
+                .expect("second sketch id"),
+            point(),
+        );
+        let entities = std::collections::BTreeMap::from([
+            (("segment", 0), &first),
+            (("segment", 1), &second),
+        ]);
+        let parameters = std::collections::HashMap::new();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
+        assert!(super::project_constraint(&ctx, &constraint, &entities, &parameters).is_none());
+        ctx.finish_session()
+            .expect("cross-sketch rejection copies no member IDs");
+    }
+
+    #[test]
+    fn dimensioned_constraint_copies_parameter_before_member_ids() {
+        use super::SketchConstraintTag::{
+            Diameter, HorizontalDistance, Radius, VerticalDistance,
+        };
+
+        let first = cadmpeg_ir::sketches::SketchEntity::new(
+            cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#first")
+                .expect("first entity id"),
+            cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#same")
+                .expect("first sketch id"),
+            cadmpeg_ir::sketches::SketchGeometry::try_from(
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
+                    position: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                },
+            )
+            .expect("point geometry"),
+        );
+        let second = cadmpeg_ir::sketches::SketchEntity::new(
+            cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#second")
+                .expect("second entity id"),
+            cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#same")
+                .expect("second sketch id"),
+            cadmpeg_ir::sketches::SketchGeometry::try_from(
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
+                    position: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                },
+            )
+            .expect("point geometry"),
+        );
+        let entities = std::collections::BTreeMap::from([
+            (("segment", 0), &first),
+            (("segment", 1), &second),
+        ]);
+        let parameter = cadmpeg_ir::features::ParameterId::mint(
+            "inventor:test:parameter#selected-parameter-value",
+        )
+        .expect("parameter id");
+        let parameters = std::collections::HashMap::from([(
+            "inventor:pmdc:parameter#segment-0",
+            &parameter,
+        )]);
+
+        let mut horizontal_distance = constraint_header(0, 0);
+        horizontal_distance.extend_from_slice(&1_u32.to_le_bytes());
+        horizontal_distance.extend_from_slice(&2_u32.to_le_bytes());
+        horizontal_distance.extend_from_slice(&1_u32.to_le_bytes());
+        horizontal_distance.extend_from_slice(&[0; 16]);
+
+        let mut vertical_distance = constraint_header(0, 0);
+        vertical_distance.extend_from_slice(&1_u32.to_le_bytes());
+        vertical_distance.extend_from_slice(&2_u32.to_le_bytes());
+        vertical_distance.extend_from_slice(&1_u32.to_le_bytes());
+        vertical_distance.extend_from_slice(&[0; 16]);
+
+        let mut radius = constraint_header(0, 1);
+        radius.extend_from_slice(&0_u32.to_le_bytes());
+        radius.extend_from_slice(&1_u32.to_le_bytes());
+        radius.extend_from_slice(&[0; 16]);
+
+        let mut diameter = constraint_header(0, 1);
+        diameter.extend_from_slice(&0_u32.to_le_bytes());
+        diameter.extend_from_slice(&1_u32.to_le_bytes());
+        diameter.extend_from_slice(&[0; 16]);
+
+        let cases = [
+            (HorizontalDistance, HORIZONTAL_DISTANCE_TYPE, horizontal_distance),
+            (VerticalDistance, VERTICAL_DISTANCE_TYPE, vertical_distance),
+            (Radius, RADIUS_TYPE, radius),
+            (Diameter, DIAMETER_TYPE, diameter),
+        ];
+        let parameter_bytes = cadmpeg_core::decode::u64_from_index(parameter.as_str().len());
+        let first_member_bytes = cadmpeg_core::decode::u64_from_index(first.id().as_str().len());
+
+        for (tag, type_id, bytes) in cases {
+            let payload = parse(&bytes, |ctx, source| {
+                parse_constraint(ctx, tag, source, 22).expect("dimensioned constraint")
+            });
+            let constraint = Located::new(
+                payload,
+                fixture_record_type_id(type_id),
+                cadmpeg_ir::identity_key!("segment"),
+                0,
+            );
+
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = parameter_bytes - 1;
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            assert!(matches!(
+                super::project_constraint(&ctx, &constraint, &entities, &parameters),
+                Some(Err(CodecError::ResourceLimit(limit)))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == "retain Inventor sketch constraint parameter id"
+                        && limit.used == 0
+                        && limit.additional == parameter_bytes
+            ));
+            assert!(matches!(
+                ctx.finish_session(),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.operation == "retain Inventor sketch constraint parameter id"
+                        && limit.used == 0
+                        && limit.additional == parameter_bytes
+            ));
+
+            policy.limits.max_retained_bytes = parameter_bytes + first_member_bytes - 1;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            assert!(matches!(
+                super::project_constraint(&ctx, &constraint, &entities, &parameters),
+                Some(Err(CodecError::ResourceLimit(limit)))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == "retain Inventor sketch constraint entity id"
+                        && limit.used == parameter_bytes
+                        && limit.additional == first_member_bytes
+            ));
+            assert!(matches!(
+                ctx.finish_session(),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.operation == "retain Inventor sketch constraint entity id"
+                        && limit.used == parameter_bytes
+                        && limit.additional == first_member_bytes
+            ));
+
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                .expect("context");
+            assert!(matches!(
+                super::project_constraint(&ctx, &constraint, &entities, &parameters),
+                Some(Ok(_))
+            ));
+            ctx.finish_session()
+                .expect("accepted dimensioned constraint keeps its output IDs");
+        }
     }
 
     #[test]

@@ -1502,6 +1502,7 @@ mod tests {
             suffix_sha256: "0".repeat(64),
         }
         .into_record()
+        .map_err(|failure| failure.error)
         .expect("valid placement fixture")
     }
 

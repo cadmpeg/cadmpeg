@@ -157,33 +157,29 @@ fn decode_instances_from(
     let Some(mut catalog) = cadmpeg_protein::SchemaCatalog::load(ctx, payload)? else {
         return Ok(Vec::new());
     };
-    let (entries, entries_storage) =
-        ctx.with_scoped_storage("collect Inventor Protein instance streams", || {
-            ctx.collect_vec(
-                ctx.admit_iter(
-                    archive.entries(),
-                    "collect Inventor Protein instance streams",
-                )?
-                .filter(|entry| entry.name.ends_with("InstanceProperties.bin")),
-                "collect Inventor Protein instance streams",
-            )
-        })?;
-    let instances = ctx.try_collect_vec(
-        entries.into_iter().map(|entry| {
-            let instance = archive.open(ctx, &entry.name)?;
-            let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, instance.window())?;
-            let outcome =
-                cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, frames.frames())?;
-            Ok::<ProteinInstanceRecords, CodecError>(ProteinInstanceRecords {
+    let mut instances = Vec::new();
+    let mut entries = archive.entries().iter();
+    while let Some(entry) =
+        ctx.next_charged(&mut entries, "collect Inventor Protein instance streams")?
+    {
+        if !entry.name.ends_with("InstanceProperties.bin") {
+            continue;
+        }
+        let instance = archive.open(ctx, &entry.name)?;
+        let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, instance.window())?;
+        let outcome =
+            cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, frames.frames())?;
+        ctx.push_vec(
+            &mut instances,
+            ProteinInstanceRecords {
                 entry_name: ctx
                     .copy_retained_text(&entry.name, "Inventor Protein instance entry name")?,
                 records: outcome.records,
                 rejected: outcome.rejected,
-            })
-        }),
-        "admit Inventor Protein instance records",
-    )?;
-    drop(entries_storage);
+            },
+            "admit Inventor Protein instance records",
+        )?;
+    }
     Ok(instances)
 }
 
@@ -460,6 +456,45 @@ mod tests {
     }
 
     #[test]
+    fn protein_instance_scan_does_not_prepay_the_tail_before_a_frame_error() {
+        let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
+        for tail_count in [0_usize, 512] {
+            let names: Vec<_> = (0..tail_count)
+                .map(|index| format!("Tail/{index}/InstanceProperties.bin"))
+                .collect();
+            let mut entries = vec![
+                ("Schemas/SimpleSchema.xml", &schema[..]),
+                ("AssetData/InstanceProperties.bin", &b"bad"[..]),
+            ];
+            entries.extend(names.iter().map(|name| (name.as_str(), &b"bad"[..])));
+            let zip = zip_entries(&entries);
+            let mut bytes = u32::try_from(zip.len()).expect("fixture length")
+                .to_le_bytes().to_vec();
+            bytes.extend_from_slice(&zip);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = u64::MAX;
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("Protein scan context");
+            let ParsedProtein::Package { archive, payload, .. } =
+                parse_stream(&ctx, root).expect("Protein scan package")
+            else {
+                panic!("package state");
+            };
+            let probe = RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                "collect Inventor Protein instance streams",
+                Some(cadmpeg_core::decode::u64_from_index(archive.entries().len())),
+            );
+            assert!(matches!(decode_instances_from(&ctx, &archive, payload),
+                Err(cadmpeg_core::CodecError::Malformed(detail))
+                    if detail == "Protein page stream is shorter than its header and one page"));
+            drop(probe);
+ctx.finish_session().expect("instance-stream pass stops at the first malformed frame");
+        }
+    }
+
+    #[test]
     fn protein_instance_result_vec_refuses_collection_limit_before_collect() {
         let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
         let mut record = Vec::new();
@@ -490,25 +525,33 @@ mod tests {
                     .len(),
                 1
             );
-            // Prior slots: ZIP index 10 + schema view 1 + XML tree/depth 58 + schema maps 2 + entry/view 2 + frames 213 + outcome 1 + inheritance guards, active set, path and closure 4 + resolved schema 1 + property 1 = 293; the outer result slot is next.
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = RESULT_COLLECTION_PRIOR_ITEMS;
-            let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("synthetic Protein input fits policy");
-            let refused = decode_instances_from(&limited, &archive, payload);
-            assert!(
-                matches!(
-                    refused,
-                    Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                        if limit.dimension == ResourceDimension::CollectionItems
-                            && limit.operation == "admit Inventor Protein instance records"
-                            && limit.used == RESULT_COLLECTION_PRIOR_ITEMS
-                            && limit.additional == 1
-                ),
-                "result collection must refuse at its own admission: {:?}",
-                refused.as_ref().err()
-            );
+            // Original prior slots: ZIP index10 + schema view1 + XML tree/depth58
+            // + schema maps2 + entry/view2 + frames213 + outcome1 + inheritance,
+            // active-set/path/closure4 + resolved schema1 + property1 =293.
+            // Removing the selected-entry Vec removes one actual slot. The
+            // original cap now fits the final result; one less refuses its push.
+            for cap in [RESULT_COLLECTION_PRIOR_ITEMS, RESULT_COLLECTION_PRIOR_ITEMS - 1] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("synthetic Protein input fits policy");
+                let result = decode_instances_from(&limited, &archive, payload);
+                if cap == RESULT_COLLECTION_PRIOR_ITEMS {
+                    assert_eq!(result.expect("original cap fits after removing the entry slot").len(), 1);
+                    limited.finish_session().expect("only actual result storage is charged");
+                } else {
+                    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+                        panic!("result collection must refuse before its own push");
+                    };
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    assert_eq!(limit.operation, "admit Inventor Protein instance records");
+                    assert_eq!(limit.used, RESULT_COLLECTION_PRIOR_ITEMS - 1);
+                    assert_eq!(limit.additional, 1);
+                    assert!(matches!(limited.finish_session(),
+                        Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+                }
+            }
         });
     }
 
@@ -771,8 +814,10 @@ mod tests {
         // collection and the fallible record collection charge two yields + end.
         let original_archive_entry_work =
             2 * cadmpeg_core::decode::u64_from_index(archive_entry_count) + 2 * (2 + 1);
-        // The validation scan now charges its end probe before returning.
-        let archive_entry_work = original_archive_entry_work + 1;
+        // Validation and the streaming decoder each visit every source entry
+        // and one terminal probe. There is no selected-entry Vec or second
+        // traversal over its two records.
+        let archive_entry_work = 2 * (cadmpeg_core::decode::u64_from_index(archive_entry_count) + 1);
         // Counts the outer ZIP snapshot/name checks, one catalog load and both frame/decode paths, instance CRCs/lookups/name copies, and archive traversals/collections.
         let common_work = inventory_work
             + archive_snapshot_work
@@ -796,15 +841,21 @@ mod tests {
         else {
             panic!("package state");
         };
+        let original_instances = decode_instances_from(
+            &original_ctx, &original_archive, original_payload,
+        ).expect("the original allowance fits after removing both temporary traversals");
+        assert_eq!(original_instances.len(), 2);
+        assert!(original_instances.iter().all(|instance| instance.records.len() == 1));
+        let remaining = original_archive_entry_work - archive_entry_work;
         let Err(cadmpeg_core::CodecError::ResourceLimit(original_limit)) =
-            decode_instances_from(&original_ctx, &original_archive, original_payload)
+            original_ctx.charge_work(remaining + 1, "probe remaining original Protein work")
         else {
-            panic!("the former exact budget must refuse at the new end probe");
+            panic!("the removed traversals leave exactly their original allowance");
         };
         assert_eq!(original_limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original_limit.operation, "admit Inventor Protein instance records");
-        assert_eq!(original_limit.used, original_work);
-        assert_eq!(original_limit.additional, 1);
+        assert_eq!(original_limit.operation, "probe remaining original Protein work");
+        assert_eq!(original_limit.used, common_work + archive_entry_work);
+        assert_eq!(original_limit.additional, remaining + 1);
         assert!(matches!(
             original_ctx.finish_session(),
             Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == original_limit

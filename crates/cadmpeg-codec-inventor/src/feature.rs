@@ -1431,6 +1431,7 @@ pub(crate) fn project(
                 "collect duplicate Inventor feature ordinals",
             )
         })?;
+    drop((ordinal_counts, _ordinal_counts_storage));
     ctx.retain_vec(
         &mut projected,
         |(feature, _)| {
@@ -1442,6 +1443,7 @@ pub(crate) fn project(
         },
         "remove duplicate Inventor feature ordinals",
     )?;
+    drop((duplicate_ordinals, _duplicate_ordinals_storage));
     ctx.sort_unstable_by(
         &mut projected,
         |value| &value.0.ordinal,
