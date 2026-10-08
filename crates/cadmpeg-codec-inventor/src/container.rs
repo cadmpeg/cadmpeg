@@ -73,7 +73,8 @@ impl<'a> InventorContainer<'a> {
                 "index Inventor summary entries",
             )
         })?;
-        for segment in ctx.admit_iter(&self.rse.segments, "visit Inventor summary segments")? {
+        let mut segment_steps = self.rse.segments.iter();
+        while let Some(segment) = ctx.next_charged(&mut segment_steps, "visit Inventor summary segments")? {
             let Some(entry) = summary_entry(
                 ctx,
                 &by_directory,
@@ -85,35 +86,35 @@ impl<'a> InventorContainer<'a> {
             };
             match &segment.meta {
                 SegmentMetaState::Parsed(meta) => {
-                    insert_attribute(ctx, entry, "inner_framing", format_args!("zlib"))?;
+                    insert_attribute(ctx, entry, b"inner_framing", format_args!("zlib"))?;
                     insert_attribute(
                         ctx,
                         entry,
-                        "expanded_size",
+                        b"expanded_size",
                         format_args!("{}", meta.body.window().len()),
                     )?;
                     insert_attribute(
                         ctx,
                         entry,
-                        "meta_marker",
+                        b"meta_marker",
                         format_args!("{}", meta.declared.marker),
                     )?;
                     insert_attribute(
                         ctx,
                         entry,
-                        "meta_stream_version",
+                        b"meta_stream_version",
                         format_args!("{}", meta.declared.version),
                     )?;
                     insert_attribute(
                         ctx,
                         entry,
-                        "segment_kind",
+                        b"segment_kind",
                         format_args!("{}", segment.kind.label()),
                     )?;
                     insert_attribute(
                         ctx,
                         entry,
-                        "display_name",
+                        b"display_name",
                         format_args!("{}", meta.display_name),
                     )?;
                 }
@@ -122,17 +123,17 @@ impl<'a> InventorContainer<'a> {
                         insert_attribute(
                             ctx,
                             entry,
-                            "meta_marker",
+                            b"meta_marker",
                             format_args!("{}", declared.marker),
                         )?;
                         insert_attribute(
                             ctx,
                             entry,
-                            "meta_stream_version",
+                            b"meta_stream_version",
                             format_args!("{}", declared.version),
                         )?;
                     }
-                    insert_attribute(ctx, entry, "framing_error", format_args!("{detail}"))?;
+                    insert_attribute(ctx, entry, b"framing_error", format_args!("{detail}"))?;
                 }
             }
             let Some(bulk_entry) = summary_entry(
@@ -146,25 +147,26 @@ impl<'a> InventorContainer<'a> {
             };
             match &segment.bulk {
                 SegmentBulkState::Framed(bulk) => {
-                    insert_attribute(ctx, bulk_entry, "inner_framing", format_args!("zlib"))?;
+                    insert_attribute(ctx, bulk_entry, b"inner_framing", format_args!("zlib"))?;
                     insert_attribute(
                         ctx,
                         bulk_entry,
-                        "bulk_form",
+                        b"bulk_form",
                         format_args!("0x{:04x}", bulk.form.value()),
                     )?;
                     insert_attribute(
                         ctx,
                         bulk_entry,
-                        "expanded_size",
+                        b"expanded_size",
                         format_args!("{}", bulk.expanded.window().len()),
                     )?;
                 }
                 SegmentBulkState::Malformed(error) => {
-                    insert_attribute(ctx, bulk_entry, "framing_error", format_args!("{error}"))?;
+                    insert_attribute(ctx, bulk_entry, b"framing_error", format_args!("{error}"))?;
                 }
             }
         }
+        drop((by_directory, index_storage));
         let mut recovery_storage =
             ctx.reserve_scoped(0, "collect Inventor dialect declarations")?;
         let recovery =
@@ -174,6 +176,7 @@ impl<'a> InventorContainer<'a> {
         if let Some(loss) = crate::dialect::dialect_loss(ctx, &matched, &recovery)? {
             ctx.push_vec(&mut losses, loss, "collect Inventor summary loss")?;
         }
+        drop((recovery, recovery_storage));
         let (dialects, kernel_loss) =
             crate::dialect::layers(ctx, &matched, &self.rse.active_carrier)?;
         if let Some(loss) = kernel_loss {
@@ -185,12 +188,14 @@ impl<'a> InventorContainer<'a> {
             self.rse.segments.len(),
             self.rse.databases.len(),
         )?;
+        let mut notes = ctx.collection_vec(1, "retain Inventor summary note entries")?;
+        notes.push(note);
         Ok(ContainerSummary::classified(
             dialects,
             cadmpeg_ir::ContainerKind::Cfb,
             entries,
             losses,
-            vec![note],
+            notes,
         ))
     }
 }
@@ -201,12 +206,24 @@ fn summary_note(
     segment_count: usize,
     database_count: usize,
 ) -> Result<String, CodecError> {
-    ctx.format_retained(
-        format_args!(
+    let major_digits = usize::try_from(major.max(1).ilog10()).map_err(|_| {
+        CodecError::malformed("Inventor numeric value exceeds target range")
+    })? + 1;
+    let segment_digits = usize::try_from(segment_count.max(1).ilog10()).map_err(|_| {
+        CodecError::malformed("Inventor numeric value exceeds target range")
+    })? + 1;
+    let database_digits = usize::try_from(database_count.max(1).ilog10()).map_err(|_| {
+        CodecError::malformed("Inventor numeric value exceeds target range")
+    })? + 1;
+    let length = "CFB v".len() + " with ".len() + " RSe segment pair(s) and ".len()
+        + " versioned database(s)".len() + major_digits + segment_digits + database_digits;
+    let mut note = ctx.retained_string(length, "retain Inventor summary note")?;
+    std::fmt::write(
+        &mut note, format_args!(
             "CFB v{major} with {segment_count} RSe segment pair(s) and {database_count} versioned database(s)"
         ),
-        "retain Inventor summary note",
-    )
+    ).map_err(|_| CodecError::malformed("cannot format Inventor summary note"))?;
+    Ok(note)
 }
 
 /// The summary entry for the snapshot entry with `directory_id`.
@@ -221,13 +238,16 @@ fn summary_entry<'a>(
         .and_then(|&index| entries.get_mut(index)))
 }
 
-fn insert_attribute(
+fn insert_attribute<const N: usize>(
     ctx: &DecodeContext<'_>,
     entry: &mut ContainerEntry,
-    key: &'static str,
+    key: &[u8; N],
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    let key = ctx.copy_retained_text(key, "retain Inventor summary attribute key")?;
+    let key_text = std::str::from_utf8(key)
+        .map_err(|_| CodecError::malformed("Inventor summary attribute key is not UTF-8"))?;
+    let mut key = ctx.retained_string(N, "retain Inventor summary attribute key")?;
+    key.push_str(key_text);
     let value = ctx.format_retained(value, "retain Inventor summary attribute value")?;
     ctx.insert_btree_map(
         &mut entry.attributes,

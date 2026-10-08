@@ -121,7 +121,10 @@ fn decode_container<'a>(
     let mut property_sections = Vec::new();
     let mut properties = Vec::new();
     let mut property_set_issues = Vec::new();
-    for descriptor in ctx.admit_iter(&container.property_sets, "visit Inventor decode items")? {
+    let mut property_set_descriptors = container.property_sets.iter();
+    while let Some(descriptor) =
+        ctx.next_charged(&mut property_set_descriptors, "visit Inventor decode items")?
+    {
         match &descriptor.state {
             PropertySetState::Malformed(detail) => {
                 ctx.charge_entities(1, "admit Inventor native structural records")?;
@@ -164,9 +167,9 @@ fn decode_container<'a>(
                     },
                     "retain Inventor native structural records",
                 )?;
-                for (section_ordinal, section) in ctx
-                    .admit_iter(&property_set.sections, "visit Inventor decode items")?
-                    .enumerate()
+                let mut sections = property_set.sections.iter().enumerate();
+                while let Some((section_ordinal, section)) =
+                    ctx.next_charged(&mut sections, "visit Inventor decode items")?
                 {
                     let mut set_name_storage =
                         ctx.reserve_scoped(0, "read Inventor property set name")?;
@@ -243,8 +246,9 @@ fn decode_container<'a>(
                         },
                         "retain Inventor native structural records",
                     )?;
-                    for property in
-                        ctx.admit_iter(&section.properties, "visit Inventor decode items")?
+                    let mut section_properties = section.properties.iter();
+                    while let Some(property) =
+                        ctx.next_charged(&mut section_properties, "visit Inventor decode items")?
                     {
                         ctx.charge_entities(1, "admit Inventor native structural records")?;
                         let property_name = property
@@ -449,7 +453,10 @@ fn decode_container<'a>(
         "retain Inventor databases records",
     )?;
     let mut database_issues = Vec::new();
-    for descriptor in ctx.admit_iter(&container.rse.databases, "visit Inventor decode items")? {
+    let mut database_descriptors = container.rse.databases.iter();
+    while let Some(descriptor) =
+        ctx.next_charged(&mut database_descriptors, "visit Inventor decode items")?
+    {
         if let Some(detail) = descriptor.issue_detail(ctx)? {
             ctx.charge_entities(1, "admit Inventor native structural records")?;
             ctx.push_vec(
@@ -574,8 +581,9 @@ fn decode_container<'a>(
         "retain Inventor assembly_occurrences records",
     )?;
     let mut assembly_placements = Vec::new();
-    for placement in ctx.admit_iter(
-        &assembly_inventory.placements,
+    let mut placements = assembly_inventory.placements.iter();
+    while let Some(placement) = ctx.next_charged(
+        &mut placements,
         "visit Inventor assembly_placements records",
     )? {
         if let Some(record) = admit_assembly_placement(
@@ -753,10 +761,10 @@ fn decode_container<'a>(
         },
     )?;
     if geometry_transferred {
-        for product in ctx.admit_iter(
-            &mut ir.model.product_definitions,
-            "visit Inventor product definitions",
-        )? {
+        let mut product_definitions = ir.model.product_definitions.iter_mut();
+        while let Some(product) =
+            ctx.next_charged(&mut product_definitions, "visit Inventor product definitions")?
+        {
             product.bodies = ctx.collect_indexed_vec(
                 body_ids.len(),
                 "collect Inventor product body ids",
@@ -815,7 +823,8 @@ fn decode_container<'a>(
                 },
             )
         })?;
-        for face in ctx.admit_iter(&mut ir.model.faces, "visit Inventor faces")? {
+        let mut faces = ir.model.faces.iter_mut();
+        while let Some(face) = ctx.next_charged(&mut faces, "visit Inventor faces")? {
             if face.color.is_none() {
                 face.color = ctx
                     .get_hash_map(&face_colors, &face.id, "access Inventor decode records")?
@@ -1152,7 +1161,10 @@ fn decode_container<'a>(
     let preview_asset_count = ir.model.assets.len();
     let mut source_fidelity = SourceFidelity::default();
     let mut annotations = AnnotationBuilder::new();
-    for record in ctx.admit_iter(&kernel_annotations, "visit Inventor kernel annotations")? {
+    let mut kernel_annotation_records = kernel_annotations.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut kernel_annotation_records, "visit Inventor kernel annotations")?
+    {
         admit_kernel_annotation(ctx, &mut annotations, record)?;
     }
     source_fidelity.annotations = annotations.build();
@@ -1464,17 +1476,18 @@ fn record_ordinal(
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::from(u32::MAX), u64::MAX))
 }
 
-fn retained_hex(
+fn retained_hex<const N: usize>(
     ctx: &DecodeContext<'_>,
-    bytes: &[u8],
+    bytes: &[u8; N],
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let len = bytes.len().checked_mul(2).ok_or_else(|| {
+    let len = N.checked_mul(2).ok_or_else(|| {
         ctx.refuse_codec_limit("Inventor hexadecimal length", u64::MAX - 1, u64::MAX)
     })?;
     let mut output = ctx.retained_string(len, operation)?;
-    for byte in ctx.admit_iter(bytes, "visit Inventor decode items")? {
-        push_hex(ctx, &mut output, *byte)?;
+    for &byte in bytes {
+        output.push(HEX_DIGITS[usize::from(byte >> 4)]);
+        output.push(HEX_DIGITS[usize::from(byte & 0x0f)]);
     }
     Ok(output)
 }
@@ -1569,7 +1582,8 @@ fn admit_kernel_annotation(
         record.offset,
         Some(record.tag.as_str()),
     )?;
-    for field in ctx.admit_iter(&record.derived_fields, "visit Inventor decode items")? {
+    let mut derived_fields = record.derived_fields.iter();
+    while let Some(field) = ctx.next_charged(&mut derived_fields, "visit Inventor decode items")? {
         annotations
             .derived(ctx, &record.id, field)
             .map_err(CodecError::from)?;
@@ -1777,7 +1791,10 @@ fn project_protein_records(
     let mut assets = Vec::new();
     let mut rejections = Vec::new();
     let mut issues = Vec::new();
-    for instance in ctx.admit_iter(instances, "visit Inventor Protein instances")? {
+    let mut instances = instances.into_iter();
+    while let Some(instance) =
+        ctx.next_charged(&mut instances, "visit Inventor Protein instances")?
+    {
         if instance.records.is_empty() && instance.rejected.is_empty() {
             continue;
         }
@@ -1785,7 +1802,10 @@ fn project_protein_records(
         ctx.charge_work(entry_name_len, "hash Inventor Protein entry name")?;
         let _digest_reservation = ctx.reserve_scoped(64, "hash Inventor Protein entry name")?;
         let entry_digest = sha256_hex(instance.entry_name.as_bytes());
-        for asset in ctx.admit_iter(instance.records, "visit Inventor Protein assets")? {
+        let mut asset_records = instance.records.into_iter();
+        while let Some(asset) =
+            ctx.next_charged(&mut asset_records, "visit Inventor Protein assets")?
+        {
             let ordinal = asset.ordinal;
             let id = ctx.format_retained(
                 format_args!("inventor:protein:asset#{}-{}", entry_digest, asset.ordinal),
@@ -1814,7 +1834,10 @@ fn project_protein_records(
                 )?;
             }
         }
-        for rejected in ctx.admit_iter(instance.rejected, "visit Inventor Protein rejections")? {
+        let mut rejected_records = instance.rejected.into_iter();
+        while let Some(rejected) =
+            ctx.next_charged(&mut rejected_records, "visit Inventor Protein rejections")?
+        {
             let ordinal = rejected.ordinal;
             let id = ctx.format_retained(
                 format_args!(
@@ -1910,9 +1933,9 @@ fn project_ufrx_state(
         },
         UfrxState::Parsed(document) => {
             let mut model_states = Vec::new();
-            for (ordinal, state) in ctx
-                .admit_iter(&document.model_states, "visit Inventor decode items")?
-                .enumerate()
+            let mut model_states_source = document.model_states.iter().enumerate();
+            while let Some((ordinal, state)) =
+                ctx.next_charged(&mut model_states_source, "visit Inventor decode items")?
             {
                 if let Some(record) = project_ufrx_model_state(ctx, ordinal, state, issues)? {
                     ctx.push_vec(
@@ -1923,9 +1946,9 @@ fn project_ufrx_state(
                 }
             }
             let mut references = Vec::new();
-            for (ordinal, reference) in ctx
-                .admit_iter(&document.references, "visit Inventor decode items")?
-                .enumerate()
+            let mut references_source = document.references.iter().enumerate();
+            while let Some((ordinal, reference)) =
+                ctx.next_charged(&mut references_source, "visit Inventor decode items")?
             {
                 if let Some(record) =
                     project_ufrx_external_reference(ctx, ordinal, reference, issues)?
@@ -1938,9 +1961,9 @@ fn project_ufrx_state(
                 }
             }
             let mut embedded = Vec::new();
-            for (ordinal, reference) in ctx
-                .admit_iter(&document.embedded_references, "visit Inventor decode items")?
-                .enumerate()
+            let mut embedded_references_source = document.embedded_references.iter().enumerate();
+            while let Some((ordinal, reference)) = ctx
+                .next_charged(&mut embedded_references_source, "visit Inventor decode items")?
             {
                 if let Some(record) =
                     project_ufrx_embedded_reference(ctx, ordinal, reference, issues)?
@@ -1953,9 +1976,9 @@ fn project_ufrx_state(
                 }
             }
             let mut occurrences = Vec::new();
-            for (ordinal, occurrence) in ctx
-                .admit_iter(&document.occurrences, "visit Inventor decode items")?
-                .enumerate()
+            let mut occurrences_source = document.occurrences.iter().enumerate();
+            while let Some((ordinal, occurrence)) =
+                ctx.next_charged(&mut occurrences_source, "visit Inventor decode items")?
             {
                 if let Some(record) = project_ufrx_occurrence(ctx, ordinal, occurrence, issues)? {
                     ctx.push_vec(
@@ -2261,7 +2284,8 @@ fn index_colors<'b, T, K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::Dec
     mut project: impl FnMut(&'b T) -> Result<Option<(&'b K, Color)>, CodecError>,
 ) -> Result<HashMap<&'b K, Color>, CodecError> {
     let mut output = HashMap::new();
-    for entry in ctx.admit_iter(entries, operation)? {
+    let mut source = entries.iter();
+    while let Some(entry) = ctx.next_charged(&mut source, operation)? {
         if let Some((key, color)) = project(entry)? {
             ctx.insert_hash_map(&mut output, key, color, operation)?;
         }
@@ -2275,7 +2299,8 @@ fn index_asm_face_keys<'b, T>(
     mut project: impl FnMut(&'b T) -> Result<Option<(&'b FaceId, u64)>, CodecError>,
 ) -> Result<BTreeMap<FaceId, u64>, CodecError> {
     let mut output = BTreeMap::new();
-    for entry in ctx.admit_iter(entries, "visit Inventor ASM face keys")? {
+    let mut source = entries.iter();
+    while let Some(entry) = ctx.next_charged(&mut source, "visit Inventor ASM face keys")? {
         let Some((id, key)) = project(entry)? else {
             continue;
         };
@@ -2916,25 +2941,6 @@ fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static
 const HEX_DIGITS: [char; 16] = [
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
 ];
-
-/// Appends `byte` as two lowercase hexadecimal digits.
-pub(crate) fn push_hex(
-    ctx: &DecodeContext<'_>,
-    out: &mut String,
-    byte: u8,
-) -> Result<(), CodecError> {
-    ctx.push_retained_char(
-        out,
-        HEX_DIGITS[usize::from(byte >> 4)],
-        "format Inventor byte as hexadecimal",
-    )?;
-    ctx.push_retained_char(
-        out,
-        HEX_DIGITS[usize::from(byte & 0x0f)],
-        "format Inventor byte as hexadecimal",
-    )?;
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests;

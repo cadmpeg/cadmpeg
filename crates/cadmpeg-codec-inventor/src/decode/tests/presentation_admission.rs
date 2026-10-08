@@ -86,6 +86,68 @@ fn presentation_default_native_record_refuses_before_id_creation() {
 }
 
 #[test]
+fn presentation_projection_stops_before_unvisited_default_style_on_entity_refusal() {
+    let suffix = [1_u8];
+    let fixture_context = cadmpeg_test_support::service_decode_context();
+    let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
+    let style = |record_ordinal| {
+        Located::new(
+            PmAppDefaultStyle {
+                segment_version_major: 0,
+                header_value: 0,
+                header_id: 0,
+                material_reference: 0,
+                rendering_style_reference: 0,
+                related_references: [0; 7],
+                state: 0,
+                terminal_reference: 0,
+                suffix: View::over_retained(&suffix),
+            },
+            crate::record_identity::RecordTypeId::from_bytes(
+                &fixture_context,
+                [0; 16],
+                "retain Inventor fixture type id",
+            )
+            .expect("fixture type id"),
+            token
+                .try_clone_for_decode(&fixture_context, "Inventor located fixture token")
+                .expect("service fixture token"),
+            record_ordinal,
+        )
+    };
+    let mut inventory = PresentationInventory {
+        default_styles: vec![style(1), style(2)],
+        rendering_styles: Vec::new(),
+        graphics_faces: Vec::new(),
+        graphics_style_collections: Vec::new(),
+        graphics_primary_color_styles: Vec::new(),
+        issues: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    policy.limits.max_entities = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let error = match presentation_native_projection::project(&ctx, &mut inventory) {
+        Ok(_) => panic!("first default style exceeds the entity cap"),
+        Err(error) => error,
+    };
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("default-style entity admission must refuse");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::Entities);
+    assert_eq!(refusal.operation, "admit Inventor native default style");
+    assert_eq!(refusal.limit, 0);
+    assert_eq!(refusal.used, 0);
+    assert_eq!(refusal.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert!(matches!(
+        ctx.finish_session(),
+        Err(CodecError::ResourceLimit(limit)) if limit == refusal
+    ));
+}
+
+#[test]
 fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies() {
     let suffix = [1_u8];
     let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");

@@ -11,8 +11,8 @@ mod presentation_admission;
 mod property_admission;
 
 use super::{
-    built_in_property_name, known_property_name, known_property_set_fmtid, preview_bytes, push_hex,
-    KnownPropertyName, MetadataProjection, PropertyName,
+    built_in_property_name, known_property_name, known_property_set_fmtid, preview_bytes,
+    retained_hex, KnownPropertyName, MetadataProjection, PropertyName,
 };
 use crate::loss::InventorLossCode;
 use crate::native::{DatabaseIssueRecord, DatabaseRecord, VersionTupleRecord};
@@ -101,24 +101,53 @@ fn property_name_classification_charges_only_the_characters_it_reads() {
 }
 
 #[test]
-fn hexadecimal_digit_append_refuses_before_mutation() {
+fn fixed_width_hexadecimal_conversion_admits_storage_without_work() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    let mut text = String::new();
-    assert!(matches!(
-        push_hex(&ctx, &mut text, 0xaf),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "format Inventor byte as hexadecimal"
-    ));
-    assert!(text.is_empty());
+    assert_eq!(
+        retained_hex(&ctx, &[0xaf], "retain Inventor test hexadecimal output")
+            .expect("fixed hexadecimal conversion needs no input work"),
+        "af"
+    );
+    assert_eq!(ctx.resource_refusal(), None);
+    assert!(ctx.finish_session().is_ok());
 
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
-    push_hex(&ctx, &mut text, 0xaf).expect("admitted hexadecimal digits");
-    assert_eq!(text, "af");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = retained_hex(
+        &ctx,
+        &[0xaf],
+        "retain Inventor test hexadecimal output",
+    )
+    .expect_err("one retained byte is below the two-byte output")
+    else {
+        panic!("hex output storage must refuse before writing");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(refusal.operation, "retain Inventor test hexadecimal output");
+    assert_eq!(refusal.limit, 1);
+    assert_eq!(refusal.used, 0);
+    assert_eq!(refusal.additional, 2);
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert!(matches!(
+        ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == refusal
+    ));
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("exact context");
+    assert_eq!(
+        retained_hex(&ctx, &[0xaf], "retain Inventor test hexadecimal output")
+            .expect("exact retained cap admits output without materialized storage"),
+        "af"
+    );
+    assert_eq!(ctx.resource_refusal(), None);
+    assert!(ctx.finish_session().is_ok());
 }
 
 #[test]

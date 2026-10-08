@@ -1492,6 +1492,48 @@ fn color_index_borrows_keys_and_refuses_collection_limit_before_insertion() {
 }
 
 #[test]
+fn flat_color_index_stops_before_unvisited_tail_on_projection_refusal() {
+    let id = AppearanceId::mint("inventor:test:appearance#one").expect("valid appearance id");
+    let color = Color::new(0.2, 0.3, 0.4, 1.0).expect("valid color");
+    let entries = [(&id, color), (&id, color)];
+    let operation = "visit Inventor test color entries";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    policy.limits.max_entities = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let projected = std::cell::Cell::new(0);
+    let error = match index_colors(
+        &ctx,
+        &entries,
+        operation,
+        |entry| {
+            projected.set(projected.get() + 1);
+            ctx.charge_entities(1, "project Inventor test color")?;
+            Ok(Some(*entry))
+        },
+    ) {
+        Ok(_) => panic!("first projected entry exceeds the entity cap"),
+        Err(error) => error,
+    };
+    let CodecError::ResourceLimit(refusal) = error
+    else {
+        panic!("projection entity admission must refuse");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::Entities);
+    assert_eq!(refusal.operation, "project Inventor test color");
+    assert_eq!(refusal.limit, 0);
+    assert_eq!(refusal.used, 0);
+    assert_eq!(refusal.additional, 1);
+    assert_eq!(projected.get(), 1, "the second source entry stays unread");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert!(matches!(
+        ctx.finish_session(),
+        Err(CodecError::ResourceLimit(limit)) if limit == refusal
+    ));
+}
+
+#[test]
 fn asm_face_key_index_refuses_before_face_id_copy() {
     let id = FaceId::mint("inventor:test:face#one").expect("valid face id");
     let arena = DecodeArena::new();

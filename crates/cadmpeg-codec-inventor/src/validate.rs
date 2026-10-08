@@ -168,6 +168,7 @@ pub(crate) fn validate_native(
                     "collect unexpected Inventor arenas",
                 )
             })?;
+        drop((actual_arenas, expected_arenas, _actual_arenas_storage));
         let mut findings = Vec::new();
         push_finding(
             ctx,
@@ -180,6 +181,7 @@ pub(crate) fn validate_native(
         )?;
         return Ok(findings);
     }
+    drop((actual_arenas, expected_arenas, _actual_arenas_storage));
     let mut data_storage = ctx.reserve_scoped(0, "load Inventor native data")?;
     let data = match data_storage.with_storage(|| NativeData::load(ctx, namespace)) {
         Ok(data) => data,
@@ -455,6 +457,7 @@ fn validate_design(
             )?;
         }
     }
+    drop((raw, _raw_storage));
     let (mut native_parameter_ids, mut native_parameter_ids_storage) =
         ctx.temporary_set(0, "index Inventor PmDc parameter identities")?;
     let mut identity_records = data.pm_dc_parameters.iter();
@@ -503,6 +506,7 @@ fn validate_design(
             )?;
         }
     }
+    drop((native_parameter_ids, native_parameter_ids_storage));
     let mut design_issues = data.design_record_issues.iter();
     while let Some(issue) =
         ctx.next_charged(&mut design_issues, "validate Inventor design record issues")?
@@ -860,6 +864,7 @@ fn validate_sketches(
             )?;
         }
     }
+    drop((raw, _raw_storage));
     let (mut native_sketches, mut native_sketches_storage) =
         ctx.temporary_set(0, "index Inventor PmDc sketches")?;
     let mut sketch_index = data.pm_dc_sketches.iter();
@@ -994,6 +999,14 @@ fn validate_sketches(
             )?;
         }
     }
+    drop((
+        native_sketches,
+        native_sketches_storage,
+        native_entities,
+        native_entities_storage,
+        native_constraints,
+        native_constraints_storage,
+    ));
     let mut sketch_issues = data.sketch_record_issues.iter();
     while let Some(issue) =
         ctx.next_charged(&mut sketch_issues, "validate Inventor sketch record issues")?
@@ -1353,6 +1366,7 @@ fn validate_features(
             )?;
         }
     }
+    drop((raw, _raw_storage));
     let mut raw_features = HashMap::new();
     let mut raw_features_storage =
         ctx.reserve_scoped(0, "index Inventor PmDc features by identity")?;
@@ -1545,6 +1559,14 @@ fn validate_features(
             )?;
         }
     }
+    drop((
+        raw_features,
+        raw_features_storage,
+        labels,
+        labels_storage,
+        results,
+        results_storage,
+    ));
     let mut result_topologies = ir.model.feature_result_topologies.iter();
     while let Some(result) =
         ctx.next_charged(&mut result_topologies, "validate Inventor feature result topologies")?
@@ -1658,6 +1680,12 @@ fn validate_features(
             )?;
         }
     }
+    drop((
+        properties,
+        properties_storage,
+        properties_by_record,
+        properties_by_record_storage,
+    ));
     let mut feature_issues = data.feature_record_issues.iter();
     while let Some(issue) =
         ctx.next_charged(&mut feature_issues, "validate Inventor feature record issues")?
@@ -1778,6 +1806,7 @@ fn validate_presentation(
             }
         }
     }
+    drop((face_keys, face_keys_storage));
     let (neutral_faces, _neutral_faces_storage) =
         ctx.with_scoped_storage("index Inventor neutral face ids", || {
             ctx.collect_hash_set(
@@ -1813,6 +1842,7 @@ fn validate_presentation(
         }
     }
 
+    drop((neutral_faces, _neutral_faces_storage));
     let (raw_records, _raw_records_storage) =
         ctx.with_scoped_storage("collect Inventor RSe presentation record index", || {
             ctx.collect_hash_map(
@@ -1877,6 +1907,7 @@ fn validate_presentation(
             }
         }
     }
+    drop((rendering_keys, _rendering_keys_storage));
     let mut rendering_styles = data.pm_app_rendering_styles.iter();
     while let Some(record) =
         ctx.next_charged(&mut rendering_styles, "validate Inventor rendering styles")?
@@ -2052,6 +2083,7 @@ fn validate_presentation(
             )?;
         }
     }
+    drop((raw_records, _raw_records_storage));
     let mut presentation_issues = data.presentation_record_issues.iter();
     while let Some(issue) =
         ctx.next_charged(&mut presentation_issues, "validate Inventor presentation record issues")?
@@ -2534,12 +2566,14 @@ fn validate_databases(
             index_band(issue.band)?;
         }
     }
-    if !equal_btree_sets(
+    let states_match = equal_btree_sets(
         ctx,
         &storage,
         &states,
         "compare Inventor database state bands",
-    )? {
+    )?;
+    drop((storage, _storage_storage, states, states_storage));
+    if !states_match {
         push_finding(
             ctx,
             findings,
@@ -2645,6 +2679,7 @@ fn validate_segments(
             )?;
         }
     }
+    drop((registry_ids, _registry_ids_storage));
     let (pair_tokens, _pair_tokens_storage) =
         ctx.with_scoped_storage("collect Inventor paired segment tokens", || {
             ctx.collect_btree_set(
@@ -2786,6 +2821,14 @@ fn validate_segments(
             )?;
         }
     }
+    drop((
+        metadata_by_token,
+        _metadata_by_token_storage,
+        sections_by_token,
+        sections_by_token_storage,
+        types_by_token,
+        types_by_token_storage,
+    ));
     let (type_keys, _type_keys_storage) =
         ctx.with_scoped_storage("collect Inventor RSe type keys", || {
             ctx.collect_hash_set(
@@ -2827,6 +2870,7 @@ fn validate_segments(
             )?;
         }
     }
+    drop((type_keys, _type_keys_storage));
     unique(
         ctx,
         findings,
@@ -2871,6 +2915,7 @@ fn validate_segments(
             }
         }
     }
+    drop((record_counts, record_counts_storage));
     let (expanded_lengths, _expanded_lengths_storage) =
         ctx.with_scoped_storage("collect Inventor expanded bulk lengths", || {
             ctx.collect_hash_map(
@@ -2903,6 +2948,7 @@ fn validate_segments(
             )?;
         }
     }
+    drop((expanded_lengths, _expanded_lengths_storage));
     let mut unpaired_records = data.unpaired.iter();
     while let Some(record) =
         ctx.next_charged(&mut unpaired_records, "validate Inventor unpaired segments")?
@@ -3048,6 +3094,7 @@ fn validate_properties(
             )?;
         }
     }
+    drop((sections_by_set, sections_by_set_storage));
     let (set_paths, _set_paths_storage) =
         ctx.with_scoped_storage("collect Inventor property-set paths", || {
             ctx.collect_hash_set(
@@ -3372,6 +3419,7 @@ fn validate_ufrx(
         } else {
             false
         };
+    drop((model_state_ordinals, model_state_ordinals_storage));
     if !model_states_contiguous {
         push_finding(
             ctx,
@@ -3481,6 +3529,12 @@ fn validate_ufrx(
             )?;
         }
     }
+    drop((
+        reference_ids,
+        _reference_ids_storage,
+        assembly_ids,
+        _assembly_ids_storage,
+    ));
     let mut external_references = data.ufrx.external_references().iter();
     while let Some(reference) =
         ctx.next_charged(&mut external_references, "validate Inventor UFRxDoc external reference counts")?
@@ -3561,6 +3615,7 @@ fn validate_assembly(
             )?;
         }
     }
+    drop((occurrence_ids, _occurrence_ids_storage));
     if is_assembly_document(ctx, ir)? && !data.ufrx.external_references().is_empty() {
         let mut declared = 0_u64;
         let mut reference_counts = data.ufrx.external_references().iter();

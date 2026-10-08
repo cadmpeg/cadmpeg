@@ -269,10 +269,17 @@ pub(crate) fn project_occurrences(
 
         ctx.charge_entities(1, "project Inventor occurrence")?;
         // The prefix and at most ten decimal u32 digits have a fixed grammar.
-        let id_text = ctx.format_retained(
-            format_args!("inventor:assembly:instance#{}", source.occurrence_id),
+        let digits = usize::try_from(source.occurrence_id.max(1).ilog10()).map_err(|_| {
+            CodecError::malformed("Inventor numeric value exceeds target range")
+        })? + 1;
+        let mut id_text = ctx.retained_string(
+            "inventor:assembly:instance#".len() + digits,
             "retain projected Inventor occurrence id",
         )?;
+        std::fmt::write(
+            &mut id_text,
+            format_args!("inventor:assembly:instance#{}", source.occurrence_id),
+        ).map_err(|_| CodecError::malformed("cannot format Inventor occurrence id"))?;
         let id = OccurrenceId::mint(id_text).map_err(CodecError::malformed)?;
         ctx.push_vec(
             &mut occurrences,
@@ -875,6 +882,31 @@ mod tests {
             .len(),
             1
         );
+    }
+
+    #[test]
+    fn projected_occurrence_identity_format_has_a_fixed_work_bound() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("occurrence identity context");
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "retain projected Inventor occurrence id",
+            None,
+        );
+        let projection = super::project_occurrences(
+            &ctx,
+            &[ufrx_occurrence(4, u32::MAX, 0)],
+            &[external_reference(4, "part.ipt", [0, 0])],
+            &[assembly_occurrence(u32::MAX)],
+            &[assembly_placement(u32::MAX)],
+        ).expect("fixed literal and ten decimal digits use no input-sized work");
+        assert_eq!(projection.occurrences.len(), 1);
+        assert_eq!(projection.occurrences[0].id.as_str(), "inventor:assembly:instance#4294967295");
+        drop(probe);
+        ctx.finish_session().expect("bounded identity format is not a refusal");
     }
 
     #[test]
