@@ -157,7 +157,7 @@ pub(super) fn project(
                 )
                 .map(String::from)?,
             };
-            match wire.into_record(ctx) {
+            match wire.into_record() {
                 Ok(record) => Ok(record),
                 Err(CodecError::Malformed(detail)) => Err(Cow::Owned(detail)),
                 Err(error) => return Err(error),

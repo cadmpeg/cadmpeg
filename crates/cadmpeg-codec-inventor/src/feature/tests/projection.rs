@@ -713,7 +713,6 @@ fn projects_generated_hole() {
             header: test_header(),
             prefix_present: false,
             matrix: crate::compact_matrix::CompactMatrix::try_from_rows(
-                &cadmpeg_test_support::service_decode_context(),
                 0,
                 0,
                 [

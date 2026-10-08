@@ -343,10 +343,7 @@ pub(crate) struct PmDcTransformPayloadWire {
 }
 
 impl PmDcTransformPayloadWire {
-    pub(crate) fn into_payload(
-        self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<PmDcTransformPayload, CodecError> {
+    pub(crate) fn into_payload(self) -> Result<PmDcTransformPayload, CodecError> {
         let prefix_present = match self.prefix {
             None => false,
             Some(TRANSFORM_PREFIX) => true,
@@ -360,7 +357,7 @@ impl PmDcTransformPayloadWire {
             save_version_major: self.save_version_major,
             header: self.header,
             prefix_present,
-            matrix: self.matrix.into_matrix(ctx)?,
+            matrix: self.matrix.into_matrix()?,
         })
     }
 }
@@ -398,7 +395,10 @@ pub(crate) fn inventory(
         constraints: Vec::new(),
         issues: Vec::new(),
     };
-    for segment in ctx.admit_iter(&document.segments, "visit Inventor sketch items")? {
+    let mut segment_steps = document.segments.iter();
+    while let Some(segment) =
+        ctx.next_charged(&mut segment_steps, "visit Inventor sketch items")?
+    {
         if !ctx.equal(
             &segment.kind,
             &SegmentKind::PmDc,
@@ -418,7 +418,10 @@ pub(crate) fn inventory(
         let RecordFrameState::Framed(table) = &bulk.records else {
             continue;
         };
-        for record in ctx.admit_iter(&table.records, "visit Inventor sketch items")? {
+        let mut record_steps = table.records.iter();
+        while let Some(record) =
+            ctx.next_charged(&mut record_steps, "visit Inventor sketch items")?
+        {
             let Some(tag) = SketchRecordTag::from_type_id(record.type_id) else {
                 continue;
             };
@@ -449,7 +452,7 @@ pub(crate) fn inventory(
                         )
                     })
                 }
-                SketchRecordTag::Transform => parse_transform(ctx, record.payload, version)
+                SketchRecordTag::Transform => parse_transform(record.payload, version)
                     .and_then(|value| {
                         push_record(
                             ctx,
@@ -461,7 +464,7 @@ pub(crate) fn inventory(
                             "admit Inventor PmDc transform record",
                         )
                     }),
-                SketchRecordTag::Direction => parse_direction(ctx, record.payload, version)
+                SketchRecordTag::Direction => parse_direction(record.payload, version)
                     .and_then(|value| {
                         push_record(
                             ctx,
@@ -825,7 +828,6 @@ fn parse_ellipse(
 }
 
 fn parse_transform(
-    ctx: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
 ) -> Result<PmDcTransformPayload, CodecError> {
@@ -837,7 +839,7 @@ fn parse_transform(
     }
     let value_mask = cursor.u16("transform value mask")?;
     let zero_mask = cursor.u16("transform zero mask")?;
-    let matrix = CompactMatrix::try_new(ctx, value_mask, zero_mask, |_| {
+    let matrix = CompactMatrix::try_new(value_mask, zero_mask, |_| {
         cursor.f64("transform explicit value")
     })?;
     cursor.finish("transform")?;
@@ -850,7 +852,6 @@ fn parse_transform(
 }
 
 fn parse_direction(
-    _ctx: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
 ) -> Result<PmDcDirectionPayload, CodecError> {
@@ -937,11 +938,10 @@ fn reference_scalar_map(
         MIN_SCALAR_MAP_ENTRY_BYTES,
     )?;
     let mut entries = ctx.vector_storage(count, "admit Inventor sketch constraint map")?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(count),
-        "read Inventor sketch constraint scalar map",
-    )?;
-    for index in 0..count {
+    let mut entry_steps = 0..count;
+    while let Some(index) =
+        ctx.next_charged(&mut entry_steps, "read Inventor sketch constraint scalar map")?
+    {
         let key = cursor.reference("constraint scalar-map key")?;
         let bytes = cursor.take_array::<8>("constraint scalar-map value")?;
         let value = View::f64_le_at(&bytes, 0).ok_or_else(|| {
@@ -970,11 +970,11 @@ fn reference_pair_map(
         MIN_REFERENCE_MAP_ENTRY_BYTES,
     )?;
     let mut entries = ctx.vector_storage(count, "admit Inventor sketch constraint map")?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(count),
-        "read Inventor sketch constraint reference map",
-    )?;
-    for _ in 0..count {
+    let mut entry_steps = 0..count;
+    while ctx
+        .next_charged(&mut entry_steps, "read Inventor sketch constraint reference map")?
+        .is_some()
+    {
         entries.push((
             cursor.reference("constraint reference-map key")?,
             cursor.reference("constraint reference-map value")?,
@@ -1213,11 +1213,14 @@ pub(crate) fn project(
     // listing by lookup instead of scanning its sketch's list.
     let mut sketch_listings_storage = ctx.reserve_scoped(0, "index Inventor sketch listings")?;
     let mut sketch_listings = HashSet::new();
-    for sketch in ctx.admit_iter(&inventory.sketches, "index Inventor sketch listings")? {
-        for reference in ctx.admit_iter(
-            sketch.entities.references(),
-            "index Inventor sketch listings",
-        )? {
+    let mut sketch_steps = inventory.sketches.iter();
+    while let Some(sketch) =
+        ctx.next_charged(&mut sketch_steps, "index Inventor sketch listings")?
+    {
+        let mut reference_steps = sketch.entities.references().iter();
+        while let Some(reference) =
+            ctx.next_charged(&mut reference_steps, "index Inventor sketch listings")?
+        {
             sketch_listings_storage.with_storage(|| {
                 ctx.insert_hash_set(
                     &mut sketch_listings,
@@ -1234,7 +1237,10 @@ pub(crate) fn project(
 
     let mut projected_entities = Vec::new();
     let mut unresolved_entities = 0usize;
-    for entity in ctx.admit_iter(&inventory.entities, "visit Inventor sketch items")? {
+    let mut entity_steps = inventory.entities.iter();
+    while let Some(entity) =
+        ctx.next_charged(&mut entity_steps, "visit Inventor sketch items")?
+    {
         let key = (
             entity.identity.segment_token.as_str(),
             entity.identity.record_ordinal,
@@ -1312,7 +1318,10 @@ pub(crate) fn project(
     })?;
     let mut sketches = Vec::new();
     let mut unresolved_sketches = 0usize;
-    for sketch in ctx.admit_iter(&inventory.sketches, "visit Inventor sketch items")? {
+    let mut sketch_steps = inventory.sketches.iter();
+    while let Some(sketch) =
+        ctx.next_charged(&mut sketch_steps, "visit Inventor sketch items")?
+    {
         let key = (
             sketch.identity.segment_token.as_str(),
             sketch.identity.record_ordinal,
@@ -1327,8 +1336,9 @@ pub(crate) fn project(
         }
         let (mut raw_referenced_entities, mut raw_referenced_storage) =
             ctx.temporary_vec(0, "collect Inventor raw sketch reference")?;
-        for reference in
-            ctx.admit_iter(sketch.entities.references(), "visit Inventor sketch items")?
+        let mut reference_steps = sketch.entities.references().iter();
+        while let Some(reference) =
+            ctx.next_charged(&mut reference_steps, "visit Inventor sketch items")?
         {
             let Some(ordinal) = reference.index().checked_sub(1) else {
                 continue;
@@ -1353,7 +1363,10 @@ pub(crate) fn project(
         }
         let (mut referenced_entities, mut referenced_storage) =
             ctx.temporary_vec(0, "collect Inventor projected sketch reference")?;
-        for raw in ctx.admit_iter(&raw_referenced_entities, "visit Inventor sketch items")? {
+        let mut raw_steps = raw_referenced_entities.iter();
+        while let Some(raw) =
+            ctx.next_charged(&mut raw_steps, "visit Inventor sketch items")?
+        {
             let (native, _native_reservation) = ctx.format_scoped(
                 format_args!(
                     "inventor:pmdc:sketch-entity#{}-{}",
@@ -1469,7 +1482,10 @@ pub(crate) fn project(
         ctx.reserve_scoped(0, "index projected Inventor sketch entity key")?;
     let mut projected_entity_by_key = BTreeMap::new();
     if !projected_by_native.is_empty() {
-        for raw in ctx.admit_iter(&inventory.entities, "visit Inventor sketch items")? {
+        let mut raw_steps = inventory.entities.iter();
+        while let Some(raw) =
+            ctx.next_charged(&mut raw_steps, "visit Inventor sketch items")?
+        {
             let (native_id, _native_reservation) = ctx.format_scoped(
                 format_args!(
                     "inventor:pmdc:sketch-entity#{}-{}",
@@ -1501,7 +1517,10 @@ pub(crate) fn project(
     let mut parameter_index_storage = ctx.reserve_scoped(0, "index Inventor sketch parameter")?;
     let mut parameter_index = HashMap::new();
     if !inventory.constraints.is_empty() {
-        for parameter in ctx.admit_iter(parameters, "visit Inventor sketch items")? {
+        let mut parameter_steps = parameters.iter();
+        while let Some(parameter) =
+            ctx.next_charged(&mut parameter_steps, "visit Inventor sketch items")?
+        {
             if let Some(native) = &parameter.native_ref {
                 parameter_index_storage.with_storage(|| {
                     ctx.insert_hash_map(
@@ -1518,7 +1537,10 @@ pub(crate) fn project(
     let mut projected_constraint_keys_storage =
         ctx.reserve_scoped(0, "index projected Inventor sketch constraint")?;
     let mut projected_constraint_keys = HashSet::new();
-    for constraint in ctx.admit_iter(&inventory.constraints, "visit Inventor sketch items")? {
+    let mut constraint_steps = inventory.constraints.iter();
+    while let Some(constraint) =
+        ctx.next_charged(&mut constraint_steps, "visit Inventor sketch items")?
+    {
         if ctx
             .get_hash_map(
                 &raw_constraints,
@@ -1559,7 +1581,10 @@ pub(crate) fn project(
     let mut raw_sketch_by_native_storage =
         ctx.reserve_scoped(0, "index Inventor raw sketch native refs")?;
     let mut raw_sketch_by_native = HashMap::new();
-    for sketch in ctx.admit_iter(&inventory.sketches, "visit Inventor sketch items")? {
+    let mut sketch_steps = inventory.sketches.iter();
+    while let Some(sketch) =
+        ctx.next_charged(&mut sketch_steps, "visit Inventor sketch items")?
+    {
         let native = raw_sketch_by_native_storage.with_storage(|| sketch.id(ctx))?;
         raw_sketch_by_native_storage.with_storage(|| {
             ctx.insert_hash_map(
@@ -1657,7 +1682,10 @@ pub(crate) fn project(
         ctx.reserve_scoped(0, "index Inventor raw sketch projected ids")?;
     let mut raw_sketch_by_id = HashMap::new();
     if !sketches.is_empty() && !constraints.is_empty() {
-        for sketch in ctx.admit_iter(&inventory.sketches, "visit Inventor sketch items")? {
+        let mut sketch_steps = inventory.sketches.iter();
+        while let Some(sketch) =
+            ctx.next_charged(&mut sketch_steps, "visit Inventor sketch items")?
+        {
             let id = raw_sketch_by_id_storage.with_storage(|| sketch_id(ctx, sketch))?;
             if let Some(id) = id {
                 raw_sketch_by_id_storage.with_storage(|| {
@@ -1675,7 +1703,10 @@ pub(crate) fn project(
         ctx.reserve_scoped(0, "index Inventor raw constraint native refs")?;
     let mut raw_constraint_by_native = HashMap::new();
     if !sketches.is_empty() && !constraints.is_empty() {
-        for constraint in ctx.admit_iter(&inventory.constraints, "visit Inventor sketch items")? {
+        let mut constraint_steps = inventory.constraints.iter();
+        while let Some(constraint) =
+            ctx.next_charged(&mut constraint_steps, "visit Inventor sketch items")?
+        {
             let id = raw_constraint_by_native_storage.with_storage(|| constraint.id(ctx))?;
             raw_constraint_by_native_storage.with_storage(|| {
                 ctx.insert_hash_map(
@@ -2378,7 +2409,10 @@ fn entity_endpoint_refs(
         return Ok(Vec::new());
     };
     let mut endpoint_refs = Vec::new();
-    for reference in ctx.admit_iter(points.references(), "visit Inventor sketch items")? {
+    let mut reference_steps = points.references().iter();
+    while let Some(reference) =
+        ctx.next_charged(&mut reference_steps, "visit Inventor sketch items")?
+    {
         let value = match reference.index().checked_sub(1) {
             Some(ordinal) => ctx
                 .get_hash_map(
@@ -2495,16 +2529,18 @@ fn build_profiles(
     })?;
     let mut profiles = Vec::new();
     let mut profiles_storage = ctx.reserve_scoped(0, "collect Inventor sketch items")?;
-    for entity in ctx
-        .admit_iter(entities, "visit Inventor sketch entity items")?
-        .filter(|entity| !entity.construction)
-        .filter(|entity| {
-            matches!(
+    let mut entity_steps = entities.iter();
+    while let Some(entity) =
+        ctx.next_charged(&mut entity_steps, "visit Inventor sketch entity items")?
+    {
+        if entity.construction
+            || !matches!(
                 *entity.geometry.definition(),
                 SketchGeometryDefinition::Circle { .. } | SketchGeometryDefinition::Ellipse { .. }
             )
-        })
-    {
+        {
+            continue;
+        }
         let mut profile = Vec::new();
         ctx.push_vec(
             &mut profile,
@@ -2538,11 +2574,14 @@ fn build_profiles(
     })?;
     let mut adjacency_storage = ctx.reserve_scoped(0, "index Inventor profile endpoint")?;
     let mut adjacency = HashMap::<&str, Vec<usize>>::new();
-    for (index, line) in ctx
-        .admit_iter(&lines, "visit Inventor sketch items")?
-        .enumerate()
+    let mut line_steps = lines.iter().enumerate();
+    while let Some((index, line)) =
+        ctx.next_charged(&mut line_steps, "visit Inventor sketch items")?
     {
-        for endpoint in ctx.admit_iter(&line.endpoint_refs, "visit Inventor sketch items")? {
+        let mut endpoint_steps = line.endpoint_refs.iter();
+        while let Some(endpoint) =
+            ctx.next_charged(&mut endpoint_steps, "visit Inventor sketch items")?
+        {
             adjacency_storage.with_storage(|| {
                 ctx.push_hash_group(
                     &mut adjacency,
@@ -2556,9 +2595,9 @@ fn build_profiles(
     }
     let mut visited_storage = ctx.reserve_scoped(0, "visit Inventor profile line")?;
     let mut visited = HashSet::new();
-    for (start_index, _) in ctx
-        .admit_iter(&lines, "traverse Inventor profile lines")?
-        .enumerate()
+    let mut start_steps = lines.iter().enumerate();
+    while let Some((start_index, _)) =
+        ctx.next_charged(&mut start_steps, "traverse Inventor profile lines")?
     {
         if ctx.contains_hash_set(&visited, &start_index, "visit Inventor profile line")? {
             continue;
@@ -2682,7 +2721,10 @@ fn build_profiles(
         ctx.try_collect_vec(
             profiles.into_iter().map(|profile| {
                 let mut first = None;
-                for entity in ctx.admit_iter(&profile, "locate Inventor profile source order")? {
+                let mut entity_steps = profile.iter();
+                while let Some(entity) =
+                    ctx.next_charged(&mut entity_steps, "locate Inventor profile source order")?
+                {
                     if let Some(&position) = ctx.get_hash_map(
                         &source_positions,
                         entity.entity.as_str(),
@@ -2739,7 +2781,10 @@ fn line_component<'ctx>(
         })? {
             continue;
         }
-        for point in ctx.admit_iter(&lines[index].endpoint_refs, "visit Inventor sketch items")? {
+        let mut point_steps = lines[index].endpoint_refs.iter();
+        while let Some(point) =
+            ctx.next_charged(&mut point_steps, "visit Inventor sketch items")?
+        {
             if !endpoint_storage.with_storage(|| {
                 ctx.insert_hash_set(
                     &mut expanded_endpoints,
@@ -2752,7 +2797,10 @@ fn line_component<'ctx>(
             if let Some(neighbours) =
                 ctx.get_hash_map(adjacency, point.as_str(), "access Inventor sketch records")?
             {
-                for &neighbour in ctx.admit_iter(neighbours, "queue Inventor profile neighbours")? {
+                let mut neighbour_steps = neighbours.iter();
+                while let Some(&neighbour) =
+                    ctx.next_charged(&mut neighbour_steps, "queue Inventor profile neighbours")?
+                {
                     pending_storage.with_storage(|| {
                         ctx.push_vec(&mut pending, neighbour, "queue Inventor profile neighbours")
                     })?;
@@ -2874,6 +2922,27 @@ mod tests {
             "retain Inventor sketch fixture record type id",
         )
         .expect("service context admits fixture record type id")
+    }
+
+    #[test]
+    fn sketch_inventory_refuses_before_first_segment_step() {
+        let bytes = primary_envelope_fixture();
+        let arena = DecodeArena::new();
+        let (setup, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("sketch fixture context");
+        let container = InventorContainer::open(&setup, view).expect("sketch fixture container");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("sketch scan context");
+        let error = inventory(&ctx, &container.rse).err().expect("first segment step refuses");
+        assert!(matches!(&error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "visit Inventor sketch items"
+                && limit.used == 0
+                && limit.additional == 1));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
     }
 
     #[test]
@@ -3003,7 +3072,7 @@ mod tests {
                 bytes.extend_from_slice(&0x7bde_u16.to_le_bytes());
                 bytes
             },
-            |ctx, source| parse_transform(ctx, source, 22).expect("transform"),
+            |_ctx, source| parse_transform(source, 22).expect("transform"),
         );
         transform.header.source_index = 0;
         let direction = parse(
@@ -3016,7 +3085,7 @@ mod tests {
                 bytes.extend_from_slice(&1.0_f64.to_le_bytes());
                 bytes
             },
-            |ctx, source| parse_direction(ctx, source, 22).expect("direction"),
+            |_ctx, source| parse_direction(source, 22).expect("direction"),
         );
         let mut sketch_bytes = content(2);
         sketch_bytes.extend_from_slice(&0_i32.to_le_bytes());
@@ -3597,7 +3666,7 @@ mod tests {
                 bytes.extend_from_slice(&0x7bde_u16.to_le_bytes());
                 bytes
             },
-            |ctx, source| parse_transform(ctx, source, 22).expect("transform"),
+            |_ctx, source| parse_transform(source, 22).expect("transform"),
         );
         transform.header.source_index = 0;
         let direction = parse(
@@ -3610,7 +3679,7 @@ mod tests {
                 bytes.extend_from_slice(&1.0_f64.to_le_bytes());
                 bytes
             },
-            |ctx, source| parse_direction(ctx, source, 22).expect("direction"),
+            |_ctx, source| parse_direction(source, 22).expect("direction"),
         );
         let mut sketch_bytes = content(2);
         sketch_bytes.extend_from_slice(&0_i32.to_le_bytes());
@@ -4196,6 +4265,81 @@ mod tests {
     }
 
     #[test]
+    fn nonfinite_first_scalar_map_value_does_not_prepay_the_tail() {
+        for count in [1_u32, 512] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&6_u16.to_le_bytes());
+            bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
+            bytes.extend_from_slice(&count.to_le_bytes());
+            bytes.extend_from_slice(&[0; 8]);
+            bytes.extend_from_slice(&1_u32.to_le_bytes());
+            bytes.extend_from_slice(&f64::NAN.to_le_bytes());
+            let entries = usize::try_from(count).expect("fixture count");
+            bytes.resize(16 + entries * super::MIN_SCALAR_MAP_ENTRY_BYTES, 0);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 1;
+            let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("scalar map context");
+            assert!(matches!(
+                super::reference_scalar_map(&ctx, &mut crate::pmdc::Cursor::new(view)),
+                Err(CodecError::Malformed(detail))
+                    if detail == "Inventor PmDc constraint scalar-map value 0 is not finite"
+            ));
+            ctx.finish_session().expect("unread scalar-map values use no work");
+        }
+    }
+
+    #[test]
+    fn reference_maps_admit_each_pair_and_the_end_probe() {
+        for count in [0_usize, 1, 512] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&6_u16.to_le_bytes());
+            bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
+            bytes.extend_from_slice(&u32::try_from(count).expect("fixture count").to_le_bytes());
+            if count != 0 {
+                bytes.extend_from_slice(&[0; 8]);
+            }
+            for _ in 0..count {
+                bytes.extend_from_slice(&0x8000_0001_u32.to_le_bytes());
+                bytes.extend_from_slice(&2_u32.to_le_bytes());
+            }
+            for end_probe in [0_u64, 1] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_work_units =
+                    cadmpeg_core::decode::u64_from_index(count) + end_probe;
+                let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("reference map context");
+                let result = super::reference_pair_map(&ctx, &mut crate::pmdc::Cursor::new(view));
+                if end_probe == 0 {
+                    let error = result.err().expect("pair-map end probe refuses");
+                    assert!(matches!(&error, CodecError::ResourceLimit(limit)
+                        if limit.dimension == ResourceDimension::WorkUnits
+                            && limit.operation == "read Inventor sketch constraint reference map"
+                            && limit.used == cadmpeg_core::decode::u64_from_index(count)
+                            && limit.additional == 1));
+                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+                        if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
+                } else {
+                    let map = result.expect("pairs and end probe fit");
+                    assert_eq!(map.entries().len(), count);
+                    if count != 0 {
+                        for pair in [map.entries()[0], map.entries()[count - 1]] {
+                            assert_eq!(pair.0.index(), 1);
+                            assert!(pair.0.qualified());
+                            assert_eq!(pair.1.index(), 2);
+                            assert!(!pair.1.qualified());
+                        }
+                    }
+                    ctx.finish_session().expect("reference-map work fits exactly");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn planar_geometry_uses_static_diagnostic_fields() {
         let point = point_bytes(1, 3, [1.25, -2.5]);
         let line = line_bytes(2, 3, [4, 5]);
@@ -4216,7 +4360,8 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 0;
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-        assert!(parse_direction(&ctx, view, 22).is_ok());
+        assert!(parse_direction(view, 22).is_ok());
+        ctx.finish_session().expect("fixed direction needs no scratch");
     }
 
     #[test]
@@ -4346,7 +4491,7 @@ mod tests {
                 bytes.extend_from_slice(&0x7bdeu16.to_le_bytes());
                 bytes
             },
-            |ctx, source| parse_transform(ctx, source, 22).expect("transform"),
+            |_ctx, source| parse_transform(source, 22).expect("transform"),
         );
         let direction = parse(
             &{
@@ -4358,7 +4503,7 @@ mod tests {
                 bytes.extend_from_slice(&1.0f64.to_le_bytes());
                 bytes
             },
-            |ctx, source| parse_direction(ctx, source, 22).expect("direction"),
+            |_ctx, source| parse_direction(source, 22).expect("direction"),
         );
         let mut sketch_bytes = content(2);
         sketch_bytes.extend_from_slice(&0i32.to_le_bytes());
@@ -4562,8 +4707,8 @@ mod tests {
         let mut bytes = content(1);
         bytes.extend_from_slice(&0x8421u16.to_le_bytes());
         bytes.extend_from_slice(&0x7bdeu16.to_le_bytes());
-        let transform = parse(&bytes, |ctx, source| {
-            parse_transform(ctx, source, 22).expect("transform")
+        let transform = parse(&bytes, |_ctx, source| {
+            parse_transform(source, 22).expect("transform")
         });
         let mut wire = serde_json::to_value(transform).expect("wire");
         wire["prefix"] = serde_json::json!(516);
@@ -4574,19 +4719,19 @@ mod tests {
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         assert!(matches!(
-            wire.into_payload(&ctx),
+            wire.into_payload(),
             Err(CodecError::Malformed(_))
         ));
+        ctx.finish_session().expect("fixed prefix error needs no budget");
     }
 
     #[test]
     fn transform_prefix_wire_is_constant_or_absent() {
-        let ctx = cadmpeg_test_support::service_decode_context();
         let mut bytes = content(1);
         bytes.extend_from_slice(&0x8421u16.to_le_bytes());
         bytes.extend_from_slice(&0x7bdeu16.to_le_bytes());
-        let transform = parse(&bytes, |ctx, source| {
-            parse_transform(ctx, source, 22).expect("constant-prefix transform fixture is valid")
+        let transform = parse(&bytes, |_ctx, source| {
+            parse_transform(source, 22).expect("constant-prefix transform fixture is valid")
         });
         let mut wire =
             serde_json::to_value(transform).expect("constant-prefix transform fixture is valid");
@@ -4598,7 +4743,7 @@ mod tests {
             let parsed: PmDcTransformPayload =
                 serde_json::from_value::<PmDcTransformPayloadWire>(wire.clone())
                     .expect("constant-prefix transform fixture is valid")
-                    .into_payload(&ctx)
+                    .into_payload()
                     .expect("constant-prefix transform fixture is valid");
             assert_eq!(parsed.prefix_present, present);
             assert_eq!(
@@ -4610,7 +4755,7 @@ mod tests {
         assert!(
             serde_json::from_value::<PmDcTransformPayloadWire>(wire.clone())
                 .expect("transform wire fixture is valid")
-                .into_payload(&ctx)
+                .into_payload()
                 .is_err()
         );
         wire.as_object_mut()
@@ -4619,7 +4764,7 @@ mod tests {
         assert!(
             !serde_json::from_value::<PmDcTransformPayloadWire>(wire)
                 .expect("constant-prefix transform fixture is valid")
-                .into_payload(&ctx)
+                .into_payload()
                 .expect("constant-prefix transform fixture is valid")
                 .prefix_present
         );

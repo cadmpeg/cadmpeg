@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
@@ -28,7 +27,6 @@ impl CompactMatrix {
 
     /// Constructs the matrix from masks and row-major explicit values.
     pub(crate) fn try_new(
-        _ctx: &DecodeContext<'_>,
         value_mask: u16,
         zero_mask: u16,
         mut explicit: impl FnMut(usize) -> Result<FiniteReal, CodecError>,
@@ -53,12 +51,11 @@ impl CompactMatrix {
 
     /// Admits finite rows that agree with the compact encoding masks.
     pub(crate) fn try_from_rows(
-        ctx: &DecodeContext<'_>,
         value_mask: u16,
         zero_mask: u16,
         matrix: [[f64; 4]; 4],
     ) -> Result<Self, CodecError> {
-        let expected = Self::try_new(ctx, value_mask, zero_mask, |index| {
+        let expected = Self::try_new(value_mask, zero_mask, |index| {
             FiniteReal::new(matrix[index / 4][index % 4]).ok_or_else(|| {
                 CodecError::malformed(format_args!("compact matrix[{index}] is not finite"))
             })
@@ -83,8 +80,8 @@ impl CompactMatrix {
 }
 
 impl CompactMatrixWire {
-    pub(crate) fn into_matrix(self, ctx: &DecodeContext<'_>) -> Result<CompactMatrix, CodecError> {
-        CompactMatrix::try_from_rows(ctx, self.value_mask, self.zero_mask, self.matrix)
+    pub(crate) fn into_matrix(self) -> Result<CompactMatrix, CodecError> {
+        CompactMatrix::try_from_rows(self.value_mask, self.zero_mask, self.matrix)
     }
 }
 
@@ -109,21 +106,21 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let matrix = CompactMatrix::try_from_rows(&ctx, 0, 0, [[2.5; 4]; 4])
+        let matrix = CompactMatrix::try_from_rows(0, 0, [[2.5; 4]; 4])
             .expect("sixteen fixed cells need no variable work");
         assert_eq!(matrix.rows(), [[2.5; 4]; 4]);
-        let matrix = CompactMatrix::try_new(&ctx, u16::MAX, 0, |_| {
+        let matrix = CompactMatrix::try_new(u16::MAX, 0, |_| {
             panic!("implicit cells do not read explicit values")
         })
         .expect("implicit cells need no variable work");
         assert_eq!(matrix.rows(), [[1.0; 4]; 4]);
+        ctx.finish_session().expect("fixed cells use no decode work");
     }
 
     #[test]
     fn masks_select_explicit_positive_zero_and_negative_cells() {
         let mut indices = Vec::new();
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let matrix = CompactMatrix::try_new(&ctx, 0x000a, 0xfffc, |index| {
+        let matrix = CompactMatrix::try_new(0x000a, 0xfffc, |index| {
             indices.push(index);
             Ok(cadmpeg_ir::scalar::FiniteReal::new(2.5).expect("finite matrix cell"))
         })
@@ -133,7 +130,7 @@ mod tests {
         let wire = serde_json::to_value(matrix).expect("matrix fixture agrees with its masks");
         let decoded = serde_json::from_value::<CompactMatrixWire>(wire.clone())
             .expect("matrix fixture agrees with its masks")
-            .into_matrix(&ctx)
+            .into_matrix()
             .expect("matrix fixture agrees with its masks");
         assert_eq!(decoded, matrix);
         for column in 1..4 {
@@ -141,14 +138,14 @@ mod tests {
             invalid["matrix"][0][column] = serde_json::json!(3.0);
             assert!(serde_json::from_value::<CompactMatrixWire>(invalid)
                 .expect("matrix wire fixture")
-                .into_matrix(&ctx)
+                .into_matrix()
                 .is_err());
         }
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            assert!(CompactMatrix::try_from_rows(&ctx, 0, 0, [[value; 4]; 4]).is_err());
+            assert!(CompactMatrix::try_from_rows(0, 0, [[value; 4]; 4]).is_err());
             let mut rows = matrix.rows();
             rows[0][1] = value;
-            assert!(CompactMatrix::try_from_rows(&ctx, 0x000a, 0xfffc, rows).is_err());
+            assert!(CompactMatrix::try_from_rows(0x000a, 0xfffc, rows).is_err());
         }
     }
 }

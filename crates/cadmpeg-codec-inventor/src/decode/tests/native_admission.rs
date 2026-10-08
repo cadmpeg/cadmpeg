@@ -360,7 +360,6 @@ fn assembly_placement_native_record_refuses_id_and_digest_before_creation() {
             state: 0,
             transform_prefix: false,
             transform: CompactMatrix::try_new(
-                &cadmpeg_test_support::service_decode_context(),
                 0,
                 0,
                 |_| Ok(cadmpeg_ir::scalar::FiniteReal::ZERO),

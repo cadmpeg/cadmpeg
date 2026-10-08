@@ -2409,12 +2409,11 @@ fn admit_assembly_placement(
         ctx.copy_retained_text(&wire.segment_token, "copy Inventor placement issue token")
     })?;
     let record_ordinal = wire.record_ordinal;
-    match wire.into_record(ctx) {
+    match wire.into_record() {
         Ok(record) => {
             ctx.charge_entities(1, "admit Inventor native assembly placement")?;
             Ok(Some(record))
         }
-        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(CodecError::Malformed(detail)) => {
             ctx.charge_entities(1, "admit Inventor placement conversion issue")?;
             ctx.reserve_capacity(issues, 1, "retain Inventor native structural records")?;

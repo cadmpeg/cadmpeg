@@ -145,28 +145,84 @@ fn design_record_collector_charges_one_source_traversal() {
     // Two source steps (record and end probe), two hashes of the one-byte
     // token plus four-byte ordinal, and growth for four map buckets with
     // alignment padding and control bytes: 2 + 2 * 5 + 4 * slot_size + 15 + 4 + 16.
-    let need = 12
+    let collector_need = 12
         + cadmpeg_core::decode::u64_from_index(
             4 * std::mem::size_of::<((&str, u32), &str)>() + 15 + 4 + 16,
         );
-    for budget in [need, need - 1] {
+    // After the first collector, three empty uniqueness sources, three empty
+    // validation sources, the empty identity index, neutral parameters and
+    // design issues each perform one charged end probe.
+    let full_validation_need = collector_need + 9;
+    for budget in [
+        collector_need - 1,
+        collector_need,
+        full_validation_need,
+        full_validation_need - 1,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = budget;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let mut findings = Vec::new();
         let result = validate_design(&ctx, &data, &cadmpeg_ir::CadIr::empty(), &mut findings);
-        if budget == need {
+        if budget == full_validation_need {
             result.expect("one record index within exact budget");
             assert!(findings.is_empty());
             assert!(matches!(ctx.charge_work(1, "probe"),
-                Err(CodecError::ResourceLimit(limit)) if limit.used == need));
-        } else {
+                Err(CodecError::ResourceLimit(limit)) if limit.used == full_validation_need));
+        } else if budget == collector_need - 1 {
             assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "collect Inventor RSe design record index"
-                    && limit.used == need - 1 && limit.additional == 1));
+                    && limit.used == collector_need - 1 && limit.additional == 1));
+        } else if budget == collector_need {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "validate Inventor uniqueness source"
+                    && limit.used == collector_need && limit.additional == 1));
+        } else {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "validate Inventor design record issues"
+                    && limit.used == full_validation_need - 1 && limit.additional == 1));
         }
+    }
+}
+
+#[test]
+fn uniqueness_refuses_after_the_first_source_step_without_prepaying_the_tail() {
+    for count in [1, 512] {
+        let values = vec![7_u8; count];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The first source step uses one work unit. Hashing that one-byte key
+        // needs the next unit; the remaining source entries stay unvisited.
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (mut seen, mut storage) =
+            ctx.temporary_set(0, "index Inventor uniqueness keys").expect("set");
+        let mut findings = Vec::new();
+        let Err(CodecError::ResourceLimit(limit)) = super::unique_into(
+            &ctx,
+            &mut storage,
+            &mut findings,
+            &mut seen,
+            &values,
+            |value| Ok(*value),
+            format_args!("test key"),
+        ) else {
+            panic!("the first key hash must exceed the one-step budget");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "index Inventor uniqueness keys");
+        assert_eq!(limit.used, 1);
+        assert_eq!(limit.additional, 1);
+        assert!(findings.is_empty());
+        drop((seen, storage));
+        assert!(matches!(
+            ctx.finish_session(),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit
+        ));
     }
 }
 
@@ -188,20 +244,32 @@ fn sketch_endpoint_search_admits_the_first_lookup_before_refusal() {
     ir.model.sketch_entities.push(entity);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Empty record-index end probe + neutral entity visit + first endpoint step = 3.
-    // The next charge is the one-byte endpoint key; the other 99 endpoints are unvisited.
-    policy.limits.max_work_units = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let mut findings = Vec::new();
-    assert!(matches!(validate_sketches(&ctx, &data, &ir, &mut findings),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "resolve Inventor neutral endpoint source"
-                && limit.used == 3 && limit.additional == 1));
-    assert!(findings.is_empty());
+    for (budget, operation, used) in [
+        (3, "validate Inventor uniqueness source", 3),
+        (17, "resolve Inventor neutral endpoint source", 17),
+    ] {
+        policy.limits.max_work_units = budget;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut findings = Vec::new();
+        let Err(CodecError::ResourceLimit(limit)) =
+            validate_sketches(&ctx, &data, &ir, &mut findings)
+        else {
+            panic!("the next source or lookup step must exceed the budget");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, operation);
+        assert_eq!(limit.used, used);
+        assert_eq!(limit.additional, 1);
+        assert!(matches!(
+            ctx.finish_session(),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit
+        ));
+        assert!(findings.is_empty());
+    }
 
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let mut findings = Vec::new();
     validate_sketches(&ctx, &data, &ir, &mut findings).expect("unresolved endpoint finding");
     assert_eq!(findings.len(), 1);
     assert_eq!(

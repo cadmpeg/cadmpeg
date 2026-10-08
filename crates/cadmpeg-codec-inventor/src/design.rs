@@ -322,7 +322,8 @@ pub(crate) fn inventory(
         units: Vec::new(),
         issues: Vec::new(),
     };
-    for segment in ctx.admit_iter(&document.segments, "visit Inventor design items")? {
+    let mut segments = document.segments.iter();
+    while let Some(segment) = ctx.next_charged(&mut segments, "visit Inventor design items")? {
         if !ctx.equal(
             &segment.kind,
             &SegmentKind::PmDc,
@@ -342,8 +343,10 @@ pub(crate) fn inventory(
         let RecordFrameState::Framed(table) = &bulk.records else {
             continue;
         };
-        for record in &table.records {
-            ctx.charge_work(1, "scan Inventor PmDc design record")?;
+        let mut records = table.records.iter();
+        while let Some(record) =
+            ctx.next_charged(&mut records, "scan Inventor PmDc design record")?
+        {
             let result = if record.type_id == PARAMETER_FULL_TYPE {
                 parse_parameter(ctx, record.payload, version).and_then(|value| {
                     push_record(
@@ -514,7 +517,10 @@ pub(crate) fn project_parameters(
     let mut projected = Vec::new();
     let mut projected_storage = ctx.reserve_scoped(0, "project Inventor parameter")?;
     let mut unresolved = 0usize;
-    for parameter in ctx.admit_iter(&inventory.parameters, "visit Inventor design items")? {
+    let mut parameters_to_project = inventory.parameters.iter();
+    while let Some(parameter) =
+        ctx.next_charged(&mut parameters_to_project, "visit Inventor design items")?
+    {
         if ctx
             .get_hash_map(
                 &parameters,
@@ -639,14 +645,14 @@ fn close_parameter_graph(
         })
     })?;
     let mut ready = VecDeque::new();
-    for (index, parameter) in ctx
-        .admit_iter(&parameters, "visit Inventor parameter closure inputs")?
-        .enumerate()
+    let mut parameter_inputs = parameters.iter().enumerate();
+    while let Some((index, parameter)) =
+        ctx.next_charged(&mut parameter_inputs, "visit Inventor parameter closure inputs")?
     {
-        for dependency in ctx.admit_iter(
-            parameter.dependencies.as_slice(),
-            "index Inventor parameter edge",
-        )? {
+        let mut parameter_dependencies = parameter.dependencies.as_slice().iter();
+        while let Some(dependency) =
+            ctx.next_charged(&mut parameter_dependencies, "index Inventor parameter edge")?
+        {
             if let Some(&source) = ctx.get_hash_map(
                 &indices,
                 dependency,
@@ -678,7 +684,10 @@ fn close_parameter_graph(
             break;
         };
         closed[source] = true;
-        for &dependent in ctx.admit_iter(&dependents[source], "visit Inventor parameter edge")? {
+        let mut source_dependents = dependents[source].iter();
+        while let Some(&dependent) =
+            ctx.next_charged(&mut source_dependents, "visit Inventor parameter edge")?
+        {
             remaining[dependent] -= 1;
             if remaining[dependent] == 0 {
                 scratch.with_storage(|| {
@@ -849,7 +858,10 @@ fn render_expression<'a>(
     let mut reserved = ctx.reserve_scoped(0, "render Inventor expression bytes")?;
     let mut rendered: HashMap<u32, String> = HashMap::new();
     let mut result = None;
-    for &(ordinal, measured) in ctx.admit_iter(&plan.order, "visit Inventor design items")? {
+    let mut measured_nodes = plan.order.iter();
+    while let Some(&(ordinal, measured)) =
+        ctx.next_charged(&mut measured_nodes, "visit Inventor design items")?
+    {
         let mut text = String::new();
         if ordinal == root {
             ctx.try_reserve_retained_text(
@@ -920,7 +932,7 @@ fn render_expression<'a>(
                 ctx.append_retained(&mut text, "-(", "render Inventor expression bytes")?;
                 ctx.append_retained(
                     &mut text,
-                    rendered_operand(&rendered, *operand)?,
+                    rendered_operand(ctx, &rendered, *operand)?,
                     "render Inventor expression bytes",
                 )?;
                 ctx.push_retained_char(&mut text, ')', "render Inventor expression bytes")?;
@@ -933,7 +945,7 @@ fn render_expression<'a>(
                 ctx.push_retained_char(&mut text, '(', "render Inventor expression bytes")?;
                 ctx.append_retained(
                     &mut text,
-                    rendered_operand(&rendered, *left)?,
+                    rendered_operand(ctx, &rendered, *left)?,
                     "render Inventor expression bytes",
                 )?;
                 ctx.append_retained(&mut text, ") ", "render Inventor expression bytes")?;
@@ -949,7 +961,7 @@ fn render_expression<'a>(
                 ctx.append_retained(&mut text, " (", "render Inventor expression bytes")?;
                 ctx.append_retained(
                     &mut text,
-                    rendered_operand(&rendered, *right)?,
+                    rendered_operand(ctx, &rendered, *right)?,
                     "render Inventor expression bytes",
                 )?;
                 ctx.push_retained_char(&mut text, ')', "render Inventor expression bytes")?;
@@ -973,8 +985,9 @@ fn render_expression<'a>(
     })?;
     drop(rendered);
     drop(reserved);
-    for &ordinal in ctx.admit_iter(
-        &plan.dependency_ordinals,
+    let mut dependencies_to_retain = plan.dependency_ordinals.iter();
+    while let Some(&ordinal) = ctx.next_charged(
+        &mut dependencies_to_retain,
         "visit Inventor expression dependencies",
     )? {
         let target = ctx
@@ -1000,16 +1013,21 @@ fn render_expression<'a>(
 }
 
 /// The rendered text of an operand that measurement completed before its user.
-fn rendered_operand(
-    rendered: &HashMap<u32, String>,
+fn rendered_operand<'a>(
+    ctx: &DecodeContext<'_>,
+    rendered: &'a HashMap<u32, String>,
     operand: PmDcReference,
-) -> Result<&str, CodecError> {
-    operand
-        .index()
-        .checked_sub(1)
-        .and_then(|ordinal| rendered.get(&ordinal))
+) -> Result<&'a str, CodecError> {
+    let Some(ordinal) = operand.index().checked_sub(1) else {
+        return Err(CodecError::Malformed(
+            "Inventor expression operand was not rendered".into(),
+        ));
+    };
+    ctx.get_hash_map(rendered, &ordinal, "access Inventor rendered expression")?
         .map(String::as_str)
-        .ok_or_else(|| CodecError::Malformed("Inventor expression operand was not rendered".into()))
+        .ok_or_else(|| {
+            CodecError::Malformed("Inventor expression operand was not rendered".into())
+        })
 }
 
 struct ExpressionRenderPlan<'a, 'b> {
@@ -1043,7 +1061,11 @@ impl ExpressionRenderPlan<'_, '_> {
         let Some(ordinal) = reference.checked_sub(1) else {
             return Ok(None);
         };
-        match self.shapes.get(&ordinal) {
+        match self.ctx.get_hash_map(
+            &self.shapes,
+            &ordinal,
+            "access Inventor expression shape",
+        )? {
             Some(Some(measured)) => return Ok(Some(measured.length)),
             Some(None) => {
                 return Err(CodecError::Malformed(
@@ -1159,7 +1181,11 @@ impl ExpressionRenderPlan<'_, '_> {
             }
         };
         // The marker inserted above is still present: nothing removes entries.
-        if let Some(shape) = self.shapes.get_mut(&ordinal) {
+        if let Some(shape) = self.ctx.get_mut_hash_map(
+            &mut self.shapes,
+            &ordinal,
+            "update Inventor expression shape",
+        )? {
             *shape = Some(measured);
         }
         self.storage.with_storage(|| {
@@ -1467,7 +1493,11 @@ impl Cursor<'_> {
             )));
         }
         let mut references = ctx.vector_storage(count, "admit Inventor PmDc unit references")?;
-        for _ in ctx.admit_iter(&(0..count), "admit Inventor PmDc unit references")? {
+        let mut reference_indices = 0..count;
+        while ctx
+            .next_charged(&mut reference_indices, "admit Inventor PmDc unit references")?
+            .is_some()
+        {
             ctx.push_vec(
                 &mut references,
                 self.reference("reference-array entry")?,
@@ -1695,7 +1725,7 @@ mod tests {
     fn pmdc_record_scan_refuses_work_limit_before_parsing() {
         let payload = [0_u8; 14];
         let mut policy = DecodePolicy::service();
-        // Visit one design segment, then compare two one-byte segment tags.
+        // One segment visit and the two one-byte segment tags precede the record step.
         policy.limits.max_work_units = 3;
         assert!(matches!(
             inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, policy),
@@ -1705,6 +1735,87 @@ mod tests {
                     && limit.used == 3
                     && limit.additional == 1
         ));
+    }
+
+    #[test]
+    fn pmdc_segment_scan_refuses_before_first_item_and_sticks() {
+        let bytes = primary_envelope_fixture();
+        let payload = [0_u8; 14];
+        let arena = DecodeArena::new();
+        let (setup_ctx, source) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("envelope view");
+        let mut container = InventorContainer::open(&setup_ctx, source).expect("framed envelope");
+        let segment = &mut container.rse.segments[0];
+        segment.kind = SegmentKind::PmDc;
+        let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
+            panic!("framed bulk fixture");
+        };
+        let RecordFrameState::Framed(table) = &mut bulk.records else {
+            panic!("framed record fixture");
+        };
+        table.records[0].type_id = EXPRESSION_REFERENCE_TYPE;
+        table.records[0].payload = View::over_retained(&payload);
+
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
+        assert!(matches!(
+            inventory(&ctx, &container.rse),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "visit Inventor design items"
+                    && limit.used == 0
+                    && limit.additional == 1
+        ));
+        assert!(matches!(
+            ctx.charge_work(1, "probe sticky work refusal"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "visit Inventor design items"
+                    && limit.used == 0
+                    && limit.additional == 1
+        ));
+    }
+
+    #[test]
+    fn pmdc_record_and_segment_scans_charge_both_terminal_probes() {
+        let payload = [0_u8; 14];
+        let unknown_type = [0xff; 16];
+
+        // A segment item and its kind comparison use 3 units; scanning the
+        // unknown record uses 1, then the record and segment end probes use 1 each.
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 4;
+        assert!(matches!(
+            inventory_with_record(unknown_type, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan Inventor PmDc design record"
+                    && limit.used == 4
+                    && limit.additional == 1
+        ));
+
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 5;
+        assert!(matches!(
+            inventory_with_record(unknown_type, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "visit Inventor design items"
+                    && limit.used == 5
+                    && limit.additional == 1
+        ));
+
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 6;
+        let inventory = inventory_with_record(unknown_type, &payload, policy)
+            .expect("both terminal probes are admitted");
+        assert!(inventory.parameters.is_empty());
+        assert!(inventory.expressions.is_empty());
+        assert!(inventory.units.is_empty());
+        assert!(inventory.issues.is_empty());
     }
 
     #[test]
@@ -1850,6 +1961,26 @@ mod tests {
                         && limit.used == 0
             ));
         }
+    }
+
+    #[test]
+    fn pmdc_empty_unit_reference_range_charges_its_terminal_probe() {
+        let mut definition = [0_u8; 27];
+        definition[6..10].copy_from_slice(&[3, 0, 0, 0x30]);
+        definition[14..18].copy_from_slice(&[3, 0, 0, 0x30]);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let arena = DecodeArena::new();
+        let (ctx, source) = DecodeContext::from_root_bytes(&definition, &arena, &policy)
+            .expect("unit payload view");
+        assert!(matches!(
+            parse_unit_definition(&ctx, source, 22),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "admit Inventor PmDc unit references"
+                    && limit.used == 0
+                    && limit.additional == 1
+        ));
     }
 
     #[test]
@@ -2615,28 +2746,68 @@ mod tests {
             pmi: None,
             native_ref: None,
         };
-        let parameters = vec![make("c", Some("b")), make("b", Some("a")), make("a", None)];
+        let parameters = || {
+            vec![make("c", Some("b")), make("b", Some("a")), make("a", None)]
+        };
         let id_bytes =
-            u64::try_from(parameters[0].id.as_str().len()).expect("identity byte length fits u64");
+            u64::try_from(id("c").as_str().len()).expect("identity byte length fits u64");
         // The index table's growth bound is four buckets of (&ParameterId, usize) slots with
-        // their control bytes, alignment and trailing controls. Indexing (three steps and the
-        // end probe, two hashes of each id), dependency visits, closure flags, and the first
-        // queue step use the remaining units.
+        // their control bytes, alignment and trailing controls. The work before closure flags
+        // is the index table, three index source steps and end probe, two hashes of each id,
+        // three indegree fills, three adjacency entries, four parameter input steps, and five
+        // dependency steps plus two dependency-key hashes.
         let index_table =
             u64::try_from(4 * std::mem::size_of::<(&ParameterId, usize)>() + 15 + 4 + 16)
                 .expect("table bytes fit u64");
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units =
-            index_table + (4 + 6 * id_bytes) + 3 + 3 + (3 + 2 + 2 * id_bytes) + 3 + 1;
+        let index_work = index_table + (4 + 6 * id_bytes);
+        let original_budget = index_work + 3 + 3 + (3 + 2 + 2 * id_bytes) + 3 + 1;
+        let work_before_closure_flags = index_work
+            + 3
+            + 3
+            + (3 + 1)
+            + ((1 + 1) + (1 + 1) + 1 + 2 * id_bytes);
+        assert_eq!(work_before_closure_flags, original_budget);
+        // The closure-flag fill and first queue visit use four units before the first reverse
+        // edge step.
+        let edge_budget = work_before_closure_flags + 3 + 1;
+
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
-        let error = close_parameter_graph(&ctx, parameters).expect_err("reverse-edge work refusal");
+        let mut original_policy = DecodePolicy::service();
+        original_policy.limits.max_work_units = original_budget;
+        let (original_ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &original_policy)
+                .expect("empty fixture view");
+        let CodecError::ResourceLimit(original_limit) =
+            close_parameter_graph(&original_ctx, parameters())
+                .expect_err("the original work cap refuses before closure flags")
+        else {
+            panic!("the original work cap must refuse");
+        };
+        assert_eq!(original_limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(original_limit.operation, "admit Inventor parameter closure");
+        assert_eq!(original_limit.used, original_budget);
+        assert_eq!(original_limit.additional, 3);
         assert!(matches!(
-            error,
-            CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "visit Inventor parameter edge"
+            original_ctx.finish_session(),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == original_limit
+        ));
+
+        let mut edge_policy = DecodePolicy::service();
+        edge_policy.limits.max_work_units = edge_budget;
+        let (edge_ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &edge_policy).expect("empty fixture view");
+        let CodecError::ResourceLimit(edge_limit) =
+            close_parameter_graph(&edge_ctx, parameters()).expect_err("reverse-edge work refusal")
+        else {
+            panic!("the reverse-edge work cap must refuse");
+        };
+        assert_eq!(edge_limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(edge_limit.operation, "visit Inventor parameter edge");
+        assert_eq!(edge_limit.used, edge_budget);
+        assert_eq!(edge_limit.additional, 1);
+        assert!(matches!(
+            edge_ctx.finish_session(),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == edge_limit
         ));
     }
 
@@ -2934,13 +3105,48 @@ mod tests {
     #[test]
     fn expression_render_refuses_work_limit_before_text_allocation() {
         let mut policy = DecodePolicy::service();
-        // One expression visit and two complete four-byte ancestor-key hashes precede rendering.
+        // The node visit and shape lookup use 1 + 4 units. The expression key
+        // then hashes the seven-byte segment token and four-byte ordinal.
         policy.limits.max_work_units = 1 + 2 * 4;
         assert!(matches!(
             render_graph(&policy, vec![reference_leaf()], 1),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "access Inventor expression record"
+                    && limit.used == 5
+                    && limit.additional == 11
+        ));
+    }
+
+    #[test]
+    fn expression_shape_lookup_refuses_work_before_map_read() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        assert!(matches!(
+            render_graph(&policy, vec![reference_leaf()], 1),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "access Inventor expression shape"
+                    && limit.used == 1
+                    && limit.additional == 4
+        ));
+    }
+
+    #[test]
+    fn rendered_operand_lookup_refuses_work_before_map_read() {
+        let rendered = HashMap::from([(0_u32, String::from("x"))]);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty fixture view");
+        assert!(matches!(
+            super::rendered_operand(&ctx, &rendered, reference(1, false)),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "access Inventor rendered expression"
+                    && limit.used == 0
+                    && limit.additional == 4
         ));
     }
 
