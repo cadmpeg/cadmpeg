@@ -3,7 +3,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
@@ -79,7 +79,6 @@ fn spline_projection_refuses_unadmitted_knots_rows_slots_and_losses() {
     let curve = parametric_spline_curve_file();
     for operation in [
         "iges spline curve knots",
-        "iges spline curve admitted knots",
         "iges spline neutral point slots",
         "iges spline neutral vertex slots",
         "iges spline neutral curve slots",
@@ -93,8 +92,6 @@ fn spline_projection_refuses_unadmitted_knots_rows_slots_and_losses() {
     for operation in [
         "iges spline surface u knots",
         "iges spline surface v knots",
-        "iges spline surface admitted u knots",
-        "iges spline surface admitted v knots",
         "iges spline surface pole rows",
         "iges spline surface pole row controls",
         "iges spline neutral surface slots",
@@ -171,6 +168,53 @@ fn decode_refuses_a_parametric_spline_surface_over_its_pole_limit() {
                 && limit.used == 1_000_000
                 && limit.additional == 8_006_001
     ));
+}
+
+#[test]
+fn spline_surface_patch_projection_fits_required_collection_storage() {
+    let bytes = parametric_spline_surface_file();
+    let scan = crate::test_support::scan(&bytes).unwrap();
+    let (global, _) = crate::test_support::parse_global(&scan).unwrap();
+    let (directory, parameters) = crate::test_support::with_service_context(&bytes, |ctx| {
+        let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), ctx)?;
+        let parameters =
+            crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, ctx)?;
+        Ok::<_, CodecError>((directory, parameters))
+    })
+    .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // A 4-by-4 surface needs fewer than 100 projection slots. Its 48
+    // coefficients are a fixed array and do not need heap collection slots.
+    policy.limits.max_collection_items = 100;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let result = super::project(
+        &mut ir,
+        &directory,
+        &parameters.records,
+        &global.length_context().unwrap(),
+        &ctx,
+        &mut super::super::geometry::SourceSequences::default(),
+    )
+    .unwrap();
+    assert!(result.decoded.contains(&1));
+    assert_eq!(ir.model.surfaces.len(), 1);
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = ir.model.surfaces[0].geometry.solved() else {
+        panic!("expected a bicubic NURBS carrier");
+    };
+    assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
+    assert_eq!((surface.u_count(), surface.v_count()), (4, 4));
+    assert_eq!(
+        cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            surface,
+            0.25,
+            0.75,
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
+        Ok(Point3::new(0.25, 0.75, 0.0))
+    );
 }
 
 #[test]

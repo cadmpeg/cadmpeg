@@ -1926,10 +1926,9 @@ struct OccurrenceDefinition {
     transform: Transform,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct NativeParameterRecordSlot(Option<NativeParameterRecord>);
+struct NativeParameterRecordSlot<'a>(Option<&'a ParameterRecord>);
 
-impl Serialize for NativeParameterRecordSlot {
+impl Serialize for NativeParameterRecordSlot<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
@@ -1939,28 +1938,20 @@ impl Serialize for NativeParameterRecordSlot {
             parameters: &'a [Token],
             comment: &'a [u8],
         }
-        let record = self.0.as_ref();
+        let record = self.0;
         Wire {
-            parameter_line_start: record.map(|record| record.lines.start),
-            parameter_line_end: record.map(|record| record.lines.end),
+            parameter_line_start: record.map(|record| record.line_range.start),
+            parameter_line_end: record.map(|record| record.line_range.end),
             parameter_bytes: record.map_or(&[], |record| record.bytes.as_slice()),
-            parameters: record.map_or(&[], |record| record.parameters.as_slice()),
+            parameters: record.map_or(&[], ParameterRecord::tokens),
             comment: record.map_or(&[], |record| record.comment.as_slice()),
         }
         .serialize(serializer)
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct NativeParameterRecord {
-    lines: std::ops::Range<u32>,
-    bytes: Vec<u8>,
-    parameters: Vec<Token>,
-    comment: Vec<u8>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-struct NativeEntity {
+#[derive(Serialize)]
+struct NativeEntity<'a> {
     id: String,
     directory_sequence: u32,
     entity_type: i64,
@@ -1981,7 +1972,7 @@ struct NativeEntity {
     label: [u8; 8],
     subscript: Option<i64>,
     #[serde(flatten)]
-    parameter_record: NativeParameterRecordSlot,
+    parameter_record: NativeParameterRecordSlot<'a>,
     association_links: Vec<String>,
     property_links: Vec<String>,
     links: Vec<String>,
@@ -1998,15 +1989,15 @@ struct NativeMacroDefinition {
     end_statement: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-struct NativeMacroInstance {
+#[derive(Serialize)]
+struct NativeMacroInstance<'a> {
     id: String,
     source_entity: String,
     entity_type: i64,
     form: i64,
     macro_definition: Option<String>,
     macro_library: Option<String>,
-    parameters: Vec<Token>,
+    parameters: &'a [Token],
 }
 
 fn binary_integer(value: Option<i64>) -> Option<bool> {
@@ -2217,23 +2208,6 @@ impl OccurrenceExpansion<'_, '_> {
     }
 }
 
-fn copy_native_tokens(ctx: &DecodeContext<'_>, tokens: &[Token]) -> Result<Vec<Token>, CodecError> {
-    let mut copies = ctx.collection_vec(tokens.len(), "iges native token slots")?;
-    for token in tokens {
-        let value = match &token.value {
-            TokenValue::String(bytes) => {
-                TokenValue::String(ctx.copy_retained(bytes, "iges native token bytes")?)
-            }
-            value => value.clone(),
-        };
-        copies.push(Token {
-            value,
-            span: token.span.clone(),
-        });
-    }
-    Ok(copies)
-}
-
 fn copy_native_token_value(
     ctx: &DecodeContext<'_>,
     value: &TokenValue,
@@ -2295,18 +2269,6 @@ impl std::fmt::Display for ColonsAsUnderscores<'_> {
         }
         Ok(())
     }
-}
-
-fn copy_native_parameter_record(
-    ctx: &DecodeContext<'_>,
-    record: &ParameterRecord,
-) -> Result<NativeParameterRecord, CodecError> {
-    Ok(NativeParameterRecord {
-        lines: record.line_range.clone(),
-        bytes: ctx.copy_retained(&record.bytes, "iges native parameter bytes")?,
-        parameters: copy_native_tokens(ctx, record.tokens())?,
-        comment: ctx.copy_retained(&record.comment, "iges native parameter comment")?,
-    })
 }
 
 fn collect_native_items<I, T>(
@@ -2542,7 +2504,7 @@ pub(crate) fn store(
             form: entry.form,
             macro_definition,
             macro_library,
-            parameters: copy_native_tokens(ctx, record.tokens().get(1..).unwrap_or(&[]))?,
+            parameters: record.tokens().get(1..).unwrap_or(&[]),
         });
     }
     // The native reading boundary is the retained trailing-group boundary
@@ -2735,33 +2697,13 @@ pub(crate) fn store(
                 reserved: entry.reserved,
                 label: entry.label,
                 subscript: entry.subscript,
-                parameter_record: NativeParameterRecordSlot(
-                    parameters
-                        .map(|record| copy_native_parameter_record(ctx, record))
-                        .transpose()?,
-                ),
+                parameter_record: NativeParameterRecordSlot(parameters),
                 association_links,
                 property_links,
-                links: native_entity_ids(
-                    ctx,
-                    references
-                        .get(&entry.sequence)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(ReferenceEdge::target_sequence),
-                    "iges native reference link slots",
-                )?,
-                references: match references.get(&entry.sequence) {
-                    Some(edges) => {
-                        let mut copies =
-                            ctx.collection_vec(edges.len(), "iges native reference slots")?;
-                        for edge in edges {
-                            copies.push(edge.copy_for_native(ctx)?);
-                        }
-                        copies
-                    }
-                    None => Vec::new(),
-                },
+                // Populate these once, after native resolution appends all
+                // edges. No consumer reads the partial reference graph.
+                links: Vec::new(),
+                references: Vec::new(),
             })
         })?;
     let directions = collect_native_items(

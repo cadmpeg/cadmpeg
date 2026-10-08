@@ -1234,22 +1234,22 @@ fn concatenate_nurbs<T>(
         for knot in &mut shifted_knots {
             *knot = (*knot - child_start) + cursor;
         }
-        let mut child_control_points =
-            ctx.collection_vec(control_count, "iges composite child control points")?;
-        let child_weights = match poles {
-            NurbsPoles3::Polynomial { points } => {
-                child_control_points.extend(points);
+        let (child_control_points, child_weights) = match poles {
+            NurbsPoles3::Polynomial { points } => (
+                points,
                 ctx.alloc_filled(control_count, 1.0, "iges composite child weights")
-                    .map_err(CompositeCurveError::ChildWeightAllocation)?
-            }
+                    .map_err(CompositeCurveError::ChildWeightAllocation)?,
+            ),
             NurbsPoles3::Rational { points } => {
+                let mut child_control_points =
+                    ctx.collection_vec(control_count, "iges composite child control points")?;
                 let mut weights =
                     ctx.collection_vec(control_count, "iges composite child weight copy")?;
                 for pole in points {
                     child_control_points.push(pole.point);
                     weights.push(pole.weight.get());
                 }
-                weights
+                (child_control_points, weights)
             }
         };
         if let Some(weight) = child_weights.iter().copied().find(|weight| *weight <= 0.0) {

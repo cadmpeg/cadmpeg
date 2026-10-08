@@ -16,43 +16,36 @@ use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
 
 #[test]
-fn native_token_copy_refuses_outer_and_nested_allocations() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+fn native_macro_instance_keeps_parameter_wire_fields() {
     let tokens = [crate::parameter::Token {
         value: crate::parameter::TokenValue::String(b"abc".to_vec()),
         span: 0..3,
     }];
-    for (collection_cap, retained_cap, dimension, operation) in [
-        (
-            0,
-            16,
-            ResourceDimension::CollectionItems,
-            "iges native token slots",
-        ),
-        (
-            1,
-            2,
-            ResourceDimension::RetainedBytes,
-            "iges native token bytes",
-        ),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = collection_cap;
-        policy.limits.max_retained_bytes = retained_cap
-            + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<crate::parameter::Token>());
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            super::copy_native_tokens(&ctx, &tokens),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == dimension && limit.operation == operation
-        ));
-    }
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(super::copy_native_tokens(&ctx, &tokens).unwrap(), tokens);
+    let instance = super::NativeMacroInstance {
+        id: "iges:native:macro-instance#D3".into(),
+        source_entity: "iges:entity:directory#3".into(),
+        entity_type: 621,
+        form: 0,
+        macro_definition: None,
+        macro_library: None,
+        parameters: &tokens,
+    };
+    assert_eq!(
+        serde_json::to_value(instance).unwrap(),
+        serde_json::json!({
+            "id": "iges:native:macro-instance#D3",
+            "source_entity": "iges:entity:directory#3",
+            "entity_type": 621,
+            "form": 0,
+            "macro_definition": null,
+            "macro_library": null,
+            "parameters": [{
+                "start": 0,
+                "end": 3,
+                "value": {"kind": "string", "value": b"abc"},
+            }],
+        })
+    );
 }
 
 #[test]
@@ -95,10 +88,7 @@ fn native_entity_links_refuse_slots_and_text_before_copy() {
 }
 
 #[test]
-fn native_parameter_record_refuses_bytes_tokens_and_comment() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+fn native_parameter_record_keeps_bytes_tokens_comment_and_line_wire_fields() {
     let record = crate::parameter::ParameterRecord::from_test_tokens(
         1,
         1..2,
@@ -110,57 +100,20 @@ fn native_parameter_record_refuses_bytes_tokens_and_comment() {
         }],
         b"e".to_vec(),
     );
-    for (collection_cap, retained_cap, dimension, operation) in [
-        (
-            1,
-            2,
-            ResourceDimension::RetainedBytes,
-            "iges native parameter bytes",
-        ),
-        (
-            0,
-            8,
-            ResourceDimension::CollectionItems,
-            "iges native token slots",
-        ),
-        (
-            1,
-            3,
-            ResourceDimension::RetainedBytes,
-            "iges native token bytes",
-        ),
-        (
-            1,
-            4,
-            ResourceDimension::RetainedBytes,
-            "iges native parameter comment",
-        ),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = collection_cap;
-        policy.limits.max_retained_bytes = retained_cap
-            + if operation == "iges native token bytes"
-                || operation == "iges native parameter comment"
-                || dimension == ResourceDimension::CollectionItems
-            {
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<crate::parameter::Token>())
-            } else {
-                0
-            };
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            super::copy_native_parameter_record(&ctx, &record),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == dimension && limit.operation == operation
-        ));
-    }
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let copy = super::copy_native_parameter_record(&ctx, &record).unwrap();
-    assert_eq!(copy.bytes, record.bytes);
-    assert_eq!(copy.parameters, record.tokens());
-    assert_eq!(copy.comment, record.comment);
+    assert_eq!(
+        serde_json::to_value(super::NativeParameterRecordSlot(Some(&record))).unwrap(),
+        serde_json::json!({
+            "parameter_line_start": 1,
+            "parameter_line_end": 2,
+            "parameter_bytes": b"abc",
+            "parameters": [{
+                "start": 0,
+                "end": 1,
+                "value": {"kind": "string", "value": b"d"},
+            }],
+            "comment": b"e",
+        })
+    );
 }
 
 #[test]
@@ -664,9 +617,9 @@ fn decode_preserves_native_entities_and_graph() {
 #[test]
 fn absent_native_parameter_record_keeps_empty_wire_fields() {
     #[derive(serde::Serialize)]
-    struct Record {
+    struct Record<'a> {
         #[serde(flatten)]
-        parameters: super::NativeParameterRecordSlot,
+        parameters: super::NativeParameterRecordSlot<'a>,
     }
     assert_eq!(
         serde_json::to_value(Record {

@@ -1743,7 +1743,7 @@ fn composite_child_weights_refuse_collection_limit() {
     );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 3;
+    policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = concatenate_nurbs(&ctx, vec![(curve, [0.0, 1.0], ())], None)
         .unwrap_err()
@@ -1753,7 +1753,8 @@ fn composite_child_weights_refuse_collection_limit() {
         error,
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.used == 2
+                && limit.operation == "iges composite child weights"
+                && limit.used == 0
                 && limit.additional == 2
     ));
 }
@@ -1787,7 +1788,7 @@ fn composite_join_refuses_child_and_joined_lane_storage() {
         ]
     };
     for (rational, operation) in [
-        (false, "iges composite child control points"),
+        (true, "iges composite child control points"),
         (true, "iges composite child weight copy"),
         (false, "iges composite segment slots"),
         (false, "iges composite joined knots"),
