@@ -387,7 +387,7 @@ fn explicit_weight_program_refuses_lane_read_work() {
 }
 
 #[test]
-fn grid_rows_charge_one_unit_per_row_and_value() {
+fn grid_rows_charge_each_row_and_value_probe() {
     let bytes: Vec<u8> = [1.0_f64, 2.0, 3.0, 4.0]
         .into_iter()
         .flat_map(f64::to_le_bytes)
@@ -395,8 +395,8 @@ fn grid_rows_charge_one_unit_per_row_and_value() {
     let read = |ctx: &DecodeContext<'_>| {
         super::super::read_weight_rows(ctx, &bytes, 0, 2, 2, "test grid rows")
     };
-    // Two rows and four values use six work units.
-    let rows = crate::test_support::with_work_limit(6, read)
+    // Three row probes and three value probes per row use nine work units.
+    let rows = crate::test_support::with_work_limit(9, read)
         .expect("two rows and four values")
         .expect("complete grid");
     assert_eq!(
@@ -406,7 +406,7 @@ fn grid_rows_charge_one_unit_per_row_and_value() {
             .collect::<Vec<_>>(),
         [1.0, 2.0, 3.0, 4.0]
     );
-    crate::test_support::with_work_limit(5, |ctx| {
+    crate::test_support::with_work_limit(6, |ctx| {
         let Err(CodecError::ResourceLimit(limit)) = read(ctx) else {
             panic!("the last value must refuse")
         };

@@ -1929,8 +1929,8 @@ fn a5_surface_strict_knot_refusal_stays_in_the_outer_result() {
     // Distinct materialization admits work before the strict knot scan.
     assert_eq!(original.operation, "catia_a5_distinct_materialization");
     assert_eq!(original.used, 0);
-    // The fixture stores the two distinct u-knots 0 and 1.
-    assert_eq!(original.additional, 2);
+    // The first distinct-knot read requests one visited step.
+    assert_eq!(original.additional, 1);
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
     );

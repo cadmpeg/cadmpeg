@@ -53,19 +53,16 @@ impl A8KnotLane {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
-        let count = ctx.fold(
-            &self.multiplicities,
-            0usize,
-            |sum, &value| {
-                usize::try_from(value)
-                    .ok()
-                    .and_then(|repeats| sum.checked_add(repeats))
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("catia_a8_expanded_knots", u64::MAX - 1, u64::MAX)
-                    })
-            },
-            "catia_a8_knot_expansion_scan",
-        )?;
+        let mut count = 0usize;
+        let mut values = self.multiplicities.iter();
+        while let Some(&value) = ctx.next_charged(&mut values, "catia_a8_knot_expansion_scan")? {
+            count = usize::try_from(value)
+                .ok()
+                .and_then(|repeats| count.checked_add(repeats))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("catia_a8_expanded_knots", u64::MAX - 1, u64::MAX)
+                })?;
+        }
         let mut expanded = Vec::new();
         ctx.reserve_capacity(&mut expanded, count, "catia_a8_expanded_knots")?;
         for (knot, &multiplicity) in ctx
@@ -214,12 +211,12 @@ mod tests {
                     if limit.operation == operation));
         }
         assert_eq!(
-            // Two multiplicity visits, two distinct knot visits and four knot writes.
-            crate::test_support::with_work_limit(8, |ctx| lane.expanded(ctx))
+            // Two multiplicity visits and exhaustion, two paired visits and four writes.
+            crate::test_support::with_work_limit(9, |ctx| lane.expanded(ctx))
                 .expect("scan and emission fit the work limit"),
             vec![0.0, 0.0, 1.0, 1.0]
         );
-        assert!(crate::test_support::with_work_limit(7, |ctx| lane.expanded(ctx)).is_err());
+        assert!(crate::test_support::with_work_limit(8, |ctx| lane.expanded(ctx)).is_err());
     }
 
     #[test]

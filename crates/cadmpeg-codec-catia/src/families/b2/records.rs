@@ -2573,8 +2573,8 @@ fn parse_b2_nurbs_curve(
         let mut control_points =
             ctx.collection_vec(control_count, "catia_b2_nurbs_control_points")?;
         let mut weights = ctx.collection_vec(control_count, "catia_b2_nurbs_weights")?;
-        for index in 0..control_count {
-            ctx.charge_work(1, "catia_b2_nurbs_control_point_emit")?;
+        let mut steps = 0..control_count;
+        while let Some(index) = ctx.next_charged(&mut steps, "catia_b2_nurbs_control_point_emit")? {
             let (Some(point), Some(weight)) = (
                 f64_point(data, point_start + index * 24),
                 f64_le(data, point_end + index * 8)
@@ -3950,8 +3950,10 @@ pub(in crate::families) fn offset_support_carriers(
         let [v0, v1] = offset.v_range.endpoints();
         let mut selected = None;
         let mut ambiguous = false;
-        for (index, carrier) in carriers.iter().enumerate() {
-            ctx.charge_work(1, "catia_b2_offset_carrier_scan")?;
+        let mut candidates = carriers.iter().enumerate();
+        while let Some((index, carrier)) =
+            ctx.next_charged(&mut candidates, "catia_b2_offset_carrier_scan")?
+        {
             let surface = &carrier.geometry;
             let (Some(&u_min), Some(&u_max), Some(&v_min), Some(&v_max)) = (
                 surface.u_knots().first(),

@@ -11,7 +11,7 @@ use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_
 #[cfg(test)]
 use crate::wire::records::{consolidated_records, ConsolidatedPcurve};
 use crate::wire::records::{ConsolidatedFamily, ConsolidatedFrame, ConsolidatedRecord};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
@@ -1020,8 +1020,8 @@ fn parse_a5_guide_curve(
     let mut previous_knot = None;
     let sites = retain_built(ctx, "catia_a5_guide_sites", || {
         let mut sites = ctx.collection_vec(count, "catia_a5_guide_sites")?;
-        for index in 0..count {
-            ctx.charge_work(1, "catia_a5_guide_materialization")?;
+        let mut steps = 0..count;
+        while let Some(index) = ctx.next_charged(&mut steps, "catia_a5_guide_materialization")? {
             let (Some(value), Some(first_derivative), Some(second_derivative), Some(knot)) = (
                 read_f64_array::<6>(data, first_block + index * 48),
                 read_f64_array::<6>(data, second_block + index * 48),
@@ -1213,8 +1213,10 @@ fn parse_a8_curve(
         return Ok(None);
     };
     let mut at = multiplicity_start;
-    for index in 0..count {
-        ctx.charge_work(1, "catia_a8_jet_multiplicity_preflight_scan")?;
+    let mut steps = 0..count;
+    while let Some(index) =
+        ctx.next_charged(&mut steps, "catia_a8_jet_multiplicity_preflight_scan")?
+    {
         let Some(multiplicity) = compact_int(data, &mut at) else {
             return Ok(None);
         };
@@ -1240,8 +1242,8 @@ fn parse_a8_curve(
     let mut multiplicity_at = multiplicity_start;
     let sites = retain_built(ctx, "catia_a8_freeform_sites", || {
         let mut sites = ctx.collection_vec(count, "catia_a8_freeform_sites")?;
-        for index in 0..count {
-            ctx.charge_work(1, "catia_a8_jet_materialization")?;
+        let mut steps = 0..count;
+        while let Some(index) = ctx.next_charged(&mut steps, "catia_a8_jet_materialization")? {
             let (
                 Some(knot),
                 Some(multiplicity),
@@ -1365,8 +1367,8 @@ fn parse_a5_curve(
     let mut previous_knot = None;
     let sites = retain_built(ctx, "catia_a5_freeform_sites", || {
         let mut sites = ctx.collection_vec(count, "catia_a5_freeform_sites")?;
-        for index in 0..count {
-            ctx.charge_work(1, "catia_a5_jet_materialization")?;
+        let mut steps = 0..count;
+        while let Some(index) = ctx.next_charged(&mut steps, "catia_a5_jet_materialization")? {
             let (Some(knot), Some(positions), Some(first_derivatives), Some(second_derivatives)) = (
                 f64_le(data, knot_start + index * 8),
                 read_f64_array::<10>(data, block_start + index * 80),
@@ -1493,8 +1495,11 @@ fn parse_object_stream_pcurve(
     })() else {
         return Ok(None);
     };
-    for index in 0..count {
-        ctx.charge_work(1, "catia_object_stream_pcurve_multiplicity_preflight_scan")?;
+    let mut steps = 0..count;
+    while let Some(index) = ctx.next_charged(
+        &mut steps,
+        "catia_object_stream_pcurve_multiplicity_preflight_scan",
+    )? {
         let Some(multiplicity) = compact_int(data, &mut at) else {
             return Ok(None);
         };
@@ -1549,8 +1554,10 @@ fn parse_object_stream_pcurve(
     let mut previous_knot = None;
     let sites = retain_built(ctx, "catia_object_stream_pcurve_sites", || {
         let mut sites = ctx.collection_vec(count, "catia_object_stream_pcurve_sites")?;
-        for index in 0..count {
-            ctx.charge_work(1, "catia_object_stream_pcurve_materialization")?;
+        let mut steps = 0..count;
+        while let Some(index) =
+            ctx.next_charged(&mut steps, "catia_object_stream_pcurve_materialization")?
+        {
             let offset = index * 8;
             let (Some(knot), Some(u), Some(v), Some(du), Some(dv), Some(ddu), Some(ddv)) = (
                 f64_le(data, knot_start + offset),
@@ -1762,8 +1769,10 @@ fn a8_surface_from_external_grid<'ctx>(
         return Ok(None);
     };
     let mut unique = None;
-    for &start in grids.starts(ctx, data, need.object_id)? {
-        ctx.charge_work(1, "catia_a8_external_grid_candidate_visits")?;
+    let mut starts = grids.starts(ctx, data, need.object_id)?.iter();
+    while let Some(&start) =
+        ctx.next_charged(&mut starts, "catia_a8_external_grid_candidate_visits")?
+    {
         let Some(range) = external_grid_candidate(ctx, data, layout, start)? else {
             continue;
         };
@@ -2020,11 +2029,11 @@ fn read_rows<T>(
 ) -> Result<Option<Vec<Vec<T>>>, CodecError> {
     let mut grid = ctx.collection_vec(rows, operation)?;
     let mut at = 0usize;
-    for _ in 0..rows {
-        ctx.charge_work(1, operation)?;
+    let mut steps = 0..rows;
+    while ctx.next_charged(&mut steps, operation)?.is_some() {
         let mut row = ctx.collection_vec(columns, operation)?;
-        for _ in 0..columns {
-            ctx.charge_work(1, operation)?;
+        let mut steps = 0..columns;
+        while ctx.next_charged(&mut steps, operation)?.is_some() {
             let Some(value) = read(lane, at) else {
                 return Ok(None);
             };
@@ -2300,8 +2309,11 @@ fn scan_a8_lane(
     *at = distinct_end;
     let multiplicity_start = *at;
     let mut total = 0u32;
-    for _ in 0..count {
-        ctx.charge_work(1, "catia_a8_surface_multiplicity_preflight_scan")?;
+    let mut steps = 0..count;
+    while ctx
+        .next_charged(&mut steps, "catia_a8_surface_multiplicity_preflight_scan")?
+        .is_some()
+    {
         let Some(multiplicity) = compact_int(data, at) else {
             return Ok(None);
         };
@@ -2438,13 +2450,13 @@ fn materialize_a8_lane(
     layout: A8LaneLayout,
 ) -> Result<Option<A8KnotLane>, CodecError> {
     let mut distinct = Vec::new();
-    ctx.charge_work(
-        u64_from_index(layout.count),
-        "catia_a8_distinct_materialization",
-    )?;
     ctx.reserve_vec(&mut distinct, layout.count, "catia_a8_distinct_knots")?;
     let mut at = layout.distinct_start;
-    for _ in 0..layout.count {
+    let mut steps = 0..layout.count;
+    while ctx
+        .next_charged(&mut steps, "catia_a8_distinct_materialization")?
+        .is_some()
+    {
         let Some(value) = f64_le(data, at) else {
             return Ok(None);
         };
@@ -2452,13 +2464,13 @@ fn materialize_a8_lane(
         at += 8;
     }
     let mut multiplicities = Vec::new();
-    ctx.charge_work(
-        u64_from_index(layout.count),
-        "catia_a8_multiplicity_materialization",
-    )?;
     ctx.reserve_vec(&mut multiplicities, layout.count, "catia_a8_multiplicities")?;
     at = layout.multiplicity_start;
-    for _ in 0..layout.count {
+    let mut steps = 0..layout.count;
+    while ctx
+        .next_charged(&mut steps, "catia_a8_multiplicity_materialization")?
+        .is_some()
+    {
         let Some(value) = compact_int(data, &mut at) else {
             return Ok(None);
         };
@@ -2659,9 +2671,12 @@ fn a5_distinct_values(
         return Ok(None);
     }
     let mut values = Vec::new();
-    ctx.charge_work(u64_from_index(count), "catia_a5_distinct_materialization")?;
     ctx.reserve_vec(&mut values, count, "catia_a5_distinct_knots")?;
-    for _ in 0..count {
+    let mut steps = 0..count;
+    while ctx
+        .next_charged(&mut steps, "catia_a5_distinct_materialization")?
+        .is_some()
+    {
         let Some(value) = f64_le(bytes, *at) else {
             return Ok(None);
         };
@@ -2754,8 +2769,11 @@ fn a5_weights(
     let seed_count = cols.div_ceil(2);
     let mut weights: Vec<Vec<NonZeroReal>> =
         ctx.collection_vec(rows, "catia_a5_mirrored_weights")?;
-    for _ in 0..rows {
-        ctx.charge_work(1, "catia_a5_weight_row_scan")?;
+    let mut steps = 0..rows;
+    while ctx
+        .next_charged(&mut steps, "catia_a5_weight_row_scan")?
+        .is_some()
+    {
         if bytes.get(*at) == Some(&0x02) {
             *at += 1;
             let Some(previous) = weights.last() else {
@@ -2777,8 +2795,8 @@ fn a5_weights(
             return Ok(None);
         };
         let mut row = ctx.collection_vec(cols, "catia_a5_mirrored_weights")?;
-        for index in 0..seed_count {
-            ctx.charge_work(1, "catia_a5_weight_seed_scan")?;
+        let mut steps = 0..seed_count;
+        while let Some(index) = ctx.next_charged(&mut steps, "catia_a5_weight_seed_scan")? {
             let Some(weight) = nonzero_weight(bytes, *at + index * 8) else {
                 return Ok(None);
             };

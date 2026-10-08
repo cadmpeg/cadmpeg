@@ -58,10 +58,9 @@ fn paired_surface_candidate_scan_propagates_work_refusal() {
             &resolved,
             &pcurve,
             [0.0, 1.0],
-            &candidates,
+            candidates.iter().map(|(id, geometry)| (*id, geometry)),
         )
-        .map(|_| ())
-        .map_err(cadmpeg_core::CodecError::ResourceLimit);
+        .map(|_| ());
         if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
             assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
         }

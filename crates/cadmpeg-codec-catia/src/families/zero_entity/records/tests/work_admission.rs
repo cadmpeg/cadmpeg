@@ -96,3 +96,76 @@ fn zero_member_ranges_reject_count_above_identifier_extent() {
     .expect("nonzero count");
     assert!(super::super::ZeroEntityLoopMembers::try_new(u32::MAX, 1, count).is_none());
 }
+
+#[test]
+fn endpoint_orientation_stops_at_second_missing_pair() {
+    let endpoints = [None; 64];
+    let result = crate::test_support::with_work_limit(2, |ctx| {
+        super::super::oriented_closed_model_endpoints(ctx, &endpoints, &[true; 64])
+    });
+    assert_eq!(result.expect("two visited pairs fit the work budget"), None);
+}
+
+#[test]
+fn constant_coordinate_search_stops_at_first_different_pole() {
+    use cadmpeg_ir::geometry::{
+        pcurve::{PcurveGeometry, PcurveNurbsPoles, WeightedPole2},
+        SolvedSurfaceGeometry, SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::scalar::NonZeroReal;
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid cone"),
+    ));
+    for rational in [false, true] {
+        let points = (0..64)
+            .map(|index| Point2::new(f64::from(index), f64::from(index)))
+            .collect::<Vec<_>>();
+        let poles = if rational {
+            PcurveNurbsPoles::Rational {
+                points: points
+                    .into_iter()
+                    .map(|point| WeightedPole2 {
+                        point,
+                        weight: NonZeroReal::ONE,
+                    })
+                    .collect(),
+            }
+        } else {
+            PcurveNurbsPoles::Polynomial { points }
+        };
+        let pcurve = crate::test_support::with_service_context(|ctx| {
+            cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+                ctx,
+                1,
+                (0..66).map(f64::from).collect::<Vec<_>>(),
+                poles,
+                false,
+            )
+        })
+        .expect("service budget")
+        .expect("valid pcurve");
+        let result = crate::test_support::with_work_limit(4, |ctx| {
+            super::super::zero_entity_model_curve(
+                ctx,
+                &surface,
+                &PcurveGeometry::Nurbs { nurbs: pcurve },
+                [[0.0, 0.0], [63.0, 63.0]],
+                &"varying coordinates",
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        });
+        assert_eq!(
+            result.expect("two visits per coordinate fit the work budget"),
+            None
+        );
+    }
+}

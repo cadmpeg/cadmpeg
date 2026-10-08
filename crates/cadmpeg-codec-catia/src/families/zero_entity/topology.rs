@@ -294,35 +294,36 @@ fn endpoint_pair_candidates_with_budget(
         if visited[start] {
             continue;
         }
-        let by_face_component = scratch.with_storage(|| {
-            let mut stack = Vec::new();
-            ctx.push_vec(&mut stack, start, "catia_zero_pair_stack")?;
-            visited[start] = true;
-            let mut group = Vec::new();
-            while let Some(index) = stack.pop() {
-                ctx.push_vec(&mut group, index, "catia_zero_pair_group")?;
-                for neighbor in
-                    ctx.admit_iter(&endpoint_matches[index], "catia_zero_pair_neighbor_visits")?
-                {
-                    if !visited[*neighbor] {
-                        visited[*neighbor] = true;
-                        ctx.push_vec(&mut stack, *neighbor, "catia_zero_pair_stack")?;
+        let (by_face_component, _component_storage) =
+            ctx.with_scoped_storage("catia_zero_pair_component_workspace", || {
+                let mut stack = Vec::new();
+                let mut stack_storage = ctx.reserve_scoped(0, "catia_zero_pair_stack")?;
+                stack_storage
+                    .with_storage(|| ctx.push_vec(&mut stack, start, "catia_zero_pair_stack"))?;
+                visited[start] = true;
+                let mut by_face_component = BTreeMap::<usize, Vec<usize>>::new();
+                while let Some(index) = stack.pop() {
+                    let component = face_components.find(ctx, face_index(index)?)?;
+                    ctx.push_btree_group(
+                        &mut by_face_component,
+                        component,
+                        index,
+                        "catia_zero_pair_face_components",
+                        "catia_zero_pair_face_members",
+                    )?;
+                    for neighbor in
+                        ctx.admit_iter(&endpoint_matches[index], "catia_zero_pair_neighbor_visits")?
+                    {
+                        if !visited[*neighbor] {
+                            visited[*neighbor] = true;
+                            stack_storage.with_storage(|| {
+                                ctx.push_vec(&mut stack, *neighbor, "catia_zero_pair_stack")
+                            })?;
+                        }
                     }
                 }
-            }
-            let mut by_face_component = BTreeMap::<usize, Vec<usize>>::new();
-            for &index in ctx.admit_iter(&group, "catia_zero_pair_group_visits")? {
-                let component = face_components.find(ctx, face_index(index)?)?;
-                ctx.push_btree_group(
-                    &mut by_face_component,
-                    component,
-                    index,
-                    "catia_zero_pair_face_components",
-                    "catia_zero_pair_face_members",
-                )?;
-            }
-            Ok::<_, CodecError>(by_face_component)
-        })?;
+                Ok::<_, CodecError>(by_face_component)
+            })?;
         for (_, pair) in ctx.admit_iter(&by_face_component, "catia_zero_pair_component_visits")? {
             let &[left, right] = pair.as_slice() else {
                 continue;
@@ -488,24 +489,29 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         if visited[start] {
             continue;
         }
-        let mut component = scratch.with_storage(|| {
-            let mut component = Vec::new();
-            let mut stack = Vec::new();
-            ctx.push_vec(&mut stack, start, "catia_zero_locus_stack")?;
-            visited[start] = true;
-            while let Some(index) = stack.pop() {
-                ctx.push_vec(&mut component, index, "catia_zero_locus_component")?;
-                for neighbor in
-                    ctx.admit_iter(&neighbors[index], "catia_zero_locus_neighbor_visits")?
-                {
-                    if !visited[*neighbor] {
-                        visited[*neighbor] = true;
-                        ctx.push_vec(&mut stack, *neighbor, "catia_zero_locus_stack")?;
+        let (mut component, _component_storage) =
+            ctx.with_scoped_storage("catia_zero_locus_component_workspace", || {
+                let mut component = Vec::new();
+                let mut stack = Vec::new();
+                let mut stack_storage = ctx.reserve_scoped(0, "catia_zero_locus_stack")?;
+                stack_storage
+                    .with_storage(|| ctx.push_vec(&mut stack, start, "catia_zero_locus_stack"))?;
+                visited[start] = true;
+                while let Some(index) = stack.pop() {
+                    ctx.push_vec(&mut component, index, "catia_zero_locus_component")?;
+                    for neighbor in
+                        ctx.admit_iter(&neighbors[index], "catia_zero_locus_neighbor_visits")?
+                    {
+                        if !visited[*neighbor] {
+                            visited[*neighbor] = true;
+                            stack_storage.with_storage(|| {
+                                ctx.push_vec(&mut stack, *neighbor, "catia_zero_locus_stack")
+                            })?;
+                        }
                     }
                 }
-            }
-            Ok::<_, CodecError>(component)
-        })?;
+                Ok::<_, CodecError>(component)
+            })?;
         ctx.sort_unstable_by(
             &mut component,
             |value| value,
@@ -1065,7 +1071,6 @@ mod tests {
             "catia_zero_endpoint_pairs",
             "catia_zero_pair_visited",
             "catia_zero_pair_stack",
-            "catia_zero_pair_group",
             "catia_zero_pair_face_members",
             "catia_zero_pair_face_components",
         ] {

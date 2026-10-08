@@ -76,7 +76,8 @@ pub(crate) struct ModelCurvePositions<'ctx> {
 impl<'ctx> ModelCurvePositions<'ctx> {
     pub(crate) fn new(
         ctx: &'ctx DecodeContext<'_>,
-        ir: &CadIr,
+        curves: &[cadmpeg_ir::geometry::Curve],
+        procedurals: &[cadmpeg_ir::geometry::ProceduralCurve],
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut positions = Self {
             curves: std::collections::BTreeMap::new(),
@@ -84,16 +85,13 @@ impl<'ctx> ModelCurvePositions<'ctx> {
             storage: ctx.reserve_scoped(0, "catia_zero_wire_curve_positions")?,
         };
         for (position, curve) in ctx
-            .admit_iter(&ir.model.curves, "catia_zero_wire_curve_positions")?
+            .admit_iter(curves, "catia_zero_wire_curve_positions")?
             .enumerate()
         {
             positions.add_curve(ctx, &curve.id, position)?;
         }
         for (position, procedural) in ctx
-            .admit_iter(
-                &ir.model.procedural_curves,
-                "catia_zero_wire_procedural_positions",
-            )?
+            .admit_iter(procedurals, "catia_zero_wire_procedural_positions")?
             .enumerate()
         {
             positions.add_procedural(ctx, &procedural.id, position)?;
