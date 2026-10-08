@@ -725,10 +725,7 @@ fn face_tolerance_policy_separates_declared_and_coordinate_bounds() {
     )
     .unwrap()
     .0;
-    let global =
-        crate::test_support::with_service_context(&[], |ctx| resolved_global.length_context(ctx))
-            .unwrap()
-            .unwrap();
+    let global = resolved_global.length_context().unwrap();
     let points = [Point3::new(100.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)];
     let policy = crate::test_support::with_service_context(&[], |ctx| {
         FaceTolerancePolicy::from_global(&global, points.into_iter(), ctx)

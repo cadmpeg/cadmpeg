@@ -53,7 +53,7 @@ pub(crate) fn dialect_loss(
         return Ok(None);
     };
     let declared = global.declared_version_flag();
-    let version = global.version_name(ctx)?;
+    let version = global.version_name();
     let names = VerifiedVersionNames;
     let message = match recovery {
         UnverifiedDialectRecovery::UnreadableDeclaration(declaration) => ctx.format_retained(format_args!(
@@ -61,7 +61,7 @@ pub(crate) fn dialect_loss(
             ), "iges dialect loss message")?,
         UnverifiedDialectRecovery::Clamped => ctx.format_retained(format_args!(
                 "IGES Global version flag {declared} names effective specification version {version} after the clamp to {} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor; this decode interpreted the file with the semantics verified for versions {names}",
-                global.effective_version_flag(ctx)?,
+                global.effective_version_flag(),
             ), "iges dialect loss message")?,
         UnverifiedDialectRecovery::UnverifiedVersion => ctx.format_retained(format_args!(
                 "IGES Global version flag {declared} names effective specification version {version}; this decode interpreted the file with the semantics verified for versions {names}",
@@ -174,35 +174,51 @@ pub(crate) fn classify(
     representation: Representation,
     global: &ResolvedGlobal,
 ) -> Result<DialectMatch, cadmpeg_core::CodecError> {
-    let dialect = dialect_id(representation, global.declared_version(ctx)?);
+    let dialect = dialect_id(representation, global.declared_version());
     let recovery = global.dialect_recovery();
     let mut declared = BTreeMap::new();
-    declared.insert(
+    ctx.insert_btree_map(
+        &mut declared,
         cadmpeg_core::nonblank_const!(DECLARED_REPRESENTATION),
-        representation.as_str().into(),
-    );
-    declared.insert(
+        ctx.copy_retained_text(representation.as_str(), "iges declared representation")?,
+        "iges dialect declarations",
+    )?;
+    ctx.insert_btree_map(
+        &mut declared,
         cadmpeg_core::nonblank_const!(DECLARED_VERSION_FLAG),
-        global.declared_version_flag().to_string(),
-    );
-    declared.insert(
+        ctx.format_retained(
+            format_args!("{}", global.declared_version_flag()),
+            "iges declared version flag",
+        )?,
+        "iges dialect declarations",
+    )?;
+    ctx.insert_btree_map(
+        &mut declared,
         cadmpeg_core::nonblank_const!(DECLARED_EFFECTIVE_VERSION),
-        global.version_name(ctx)?.to_owned(),
-    );
+        ctx.copy_retained_text(global.version_name(), "iges declared effective version")?,
+        "iges dialect declarations",
+    )?;
     if matches!(
         recovery,
         DialectRecovery::Unverified(UnverifiedDialectRecovery::Clamped)
     ) {
-        declared.insert(
+        ctx.insert_btree_map(
+            &mut declared,
             cadmpeg_core::nonblank_const!(DECLARED_EFFECTIVE_VERSION_FLAG),
-            global.effective_version_flag(ctx)?.to_string(),
-        );
+            ctx.format_retained(
+                format_args!("{}", global.effective_version_flag()),
+                "iges declared effective flag",
+            )?,
+            "iges dialect declarations",
+        )?;
     }
     if let Some(text) = global.unreadable_version_declaration() {
-        declared.insert(
+        ctx.insert_btree_map(
+            &mut declared,
             cadmpeg_core::nonblank_const!(DECLARED_VERSION_FLAG_DECLARATION),
-            text.to_owned(),
-        );
+            ctx.copy_retained_text(text, "iges declared unreadable flag")?,
+            "iges dialect declarations",
+        )?;
     }
     Ok(if matches!(recovery, DialectRecovery::Verified) {
         DialectMatch::admitted(dialect)

@@ -4397,7 +4397,7 @@ pub(crate) fn assemble_with_context(
     global: &ResolvedGlobal,
     ctx: &DecodeContext<'_>,
 ) -> Result<ParameterAssembly, CodecError> {
-    let global_table = global.global_table(ctx)?;
+    let global_table = global.global_table();
     // The card view and the indexes below are dropped with this assembly.
     let mut scratch = ctx.reserve_scoped(0, "iges parameter assembly indexes")?;
     let lines =

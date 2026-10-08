@@ -31,7 +31,7 @@ fn version_flags_clamp_unrecognized_values() {
         fields[22] = value.into();
         let (parsed, _) = resolve_global_fields(&fields);
         assert_eq!(parsed.declared_version_flag(), declared);
-        assert_eq!(crate::test_support::with_service_context(&[], |ctx| parsed.effective_version_flag(ctx)).unwrap(), expected);
+        assert_eq!(parsed.effective_version_flag(), expected);
     }
 }
 
@@ -61,8 +61,8 @@ fn every_version_flag_class_maps_to_its_specification_version() {
         fields[22] = value.into();
         let (parsed, _) = resolve_global_fields(&fields);
         assert_eq!(parsed.declared_version_flag(), declared, "{value}");
-        assert_eq!(crate::test_support::with_service_context(&[], |ctx| parsed.effective_version_flag(ctx)).unwrap(), effective, "{value}");
-        assert_eq!(crate::test_support::with_service_context(&[], |ctx| parsed.version_name(ctx)).unwrap(), version, "{value}");
+        assert_eq!(parsed.effective_version_flag(), effective, "{value}");
+        assert_eq!(parsed.version_name(), version, "{value}");
     }
 }
 
@@ -249,7 +249,7 @@ fn the_4_0_global_contract_accepts_twenty_four_fields_and_the_short_date() {
     let (parsed, losses) = resolve_global_fields(&fields);
 
     assert_eq!(
-        crate::test_support::with_service_context(&[], |ctx| parsed.declaration.effective_version(ctx)).unwrap().verified_version(),
+        parsed.declaration.effective_version().verified_version(),
         Some(crate::IgesVersion::V4_0)
     );
     assert!(losses.is_empty(), "{losses:#?}");
@@ -313,7 +313,7 @@ fn the_5_0_global_contract_stops_at_model_date_and_keeps_the_short_date() {
     let (parsed, losses) = resolve_global_fields(&fields);
 
     assert_eq!(
-        crate::test_support::with_service_context(&[], |ctx| parsed.declaration.effective_version(ctx)).unwrap().verified_version(),
+        parsed.declaration.effective_version().verified_version(),
         Some(crate::IgesVersion::V5_0)
     );
     assert!(losses.is_empty(), "{losses:#?}");
@@ -353,14 +353,14 @@ fn the_5_0_model_scale_default_is_not_the_4_0_implicit_zero() {
 
     let (parsed, losses) = resolve_global_fields(&fields);
 
-    assert_eq!(crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().unwrap().length_factor_mm(), 1.0);
+    assert_eq!(parsed.length_context().unwrap().length_factor_mm(), 1.0);
     assert!(losses.is_empty(), "{losses:#?}");
 
     fields[22] = "6".into();
     fields[17] = "13H260714.000000".into();
     fields.truncate(24);
     let (parsed, losses) = resolve_global_fields(&fields);
-    assert!(crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().is_none());
+    assert!(parsed.length_context().is_none());
     assert_eq!(
         code_count(&losses, IgesLossCode::GlobalLengthUnitUnresolved),
         1
@@ -510,7 +510,7 @@ fn the_5_0_line_weight_fields_support_optional_and_relative_modes() {
 
     let (parsed, losses) = resolve_global_fields(&fields);
     assert!(losses.is_empty(), "{losses:#?}");
-    let context = crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().unwrap();
+    let context = parsed.length_context().unwrap();
     assert!(context.line_weight_number_is_valid(0));
     assert!(!context.line_weight_number_is_valid(1));
     assert_eq!(context.line_weight_mm(1), None);
@@ -519,7 +519,7 @@ fn the_5_0_line_weight_fields_support_optional_and_relative_modes() {
     fields[16] = "0".into();
     let (parsed, losses) = resolve_global_fields(&fields);
     assert!(losses.is_empty(), "{losses:#?}");
-    let context = crate::test_support::with_service_context(&[], |ctx| parsed.length_context(ctx)).unwrap().unwrap();
+    let context = parsed.length_context().unwrap();
     assert!(context.line_weight_number_is_valid(0));
     assert!(context.line_weight_number_is_valid(3));
     assert!(!context.line_weight_number_is_valid(4));
