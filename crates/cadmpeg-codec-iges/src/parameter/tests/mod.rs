@@ -35,6 +35,7 @@ mod presentation_forms;
 mod presentation_string_forms;
 mod queries;
 mod solid_entity_boundaries;
+mod storage_lifetimes;
 mod type_fem;
 
 #[test]

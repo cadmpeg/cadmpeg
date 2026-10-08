@@ -1190,7 +1190,12 @@ fn shared_drawing_property_names_do_not_repeat_text_comparisons() {
         });
     }
     let bytes = owned_test_file(&entities);
-    let (directory, global, assembly) = crate::test_support::with_service_context(&bytes, |ctx| {
+    let setup_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (setup_ctx, _) = DecodeContext::from_root_bytes(
+        &bytes, &setup_arena, &DecodePolicy::service(),
+    ).unwrap();
+    let (directory, global, assembly) = {
+        let ctx = &setup_ctx;
         let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
         let (global, _, _global_storage) = crate::global::parse(&scan, ctx).unwrap();
         let (directory, quarantined) =
@@ -1204,7 +1209,7 @@ fn shared_drawing_property_names_do_not_repeat_text_comparisons() {
             Some(crate::parameter::TrailingPointerAnalysis::Unambiguous(_))
         ));
         (directory, global, assembly)
-    });
+    };
     let entries = directory
         .iter()
         .map(|entry| (entry.sequence, entry))
@@ -1269,7 +1274,12 @@ fn assert_drawing_property_conflict_without_text_work(form: i64, first: &str, se
             parameters: second.into(),
         },
     ]);
-    let (directory, assembly) = crate::test_support::with_service_context(&bytes, |ctx| {
+    let setup_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (setup_ctx, _) = DecodeContext::from_root_bytes(
+        &bytes, &setup_arena, &DecodePolicy::service(),
+    ).unwrap();
+    let (directory, assembly) = {
+        let ctx = &setup_ctx;
         let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
         let (global, _, _global_storage) = crate::global::parse(&scan, ctx).unwrap();
         let (directory, quarantined) =
@@ -1283,7 +1293,7 @@ fn assert_drawing_property_conflict_without_text_work(form: i64, first: &str, se
             Some(crate::parameter::TrailingPointerAnalysis::Unambiguous(_))
         ));
         (directory, assembly)
-    });
+    };
     let entries = directory
         .iter()
         .map(|entry| (entry.sequence, entry))
@@ -1347,7 +1357,12 @@ fn shared_view_associations_are_indexed_once() {
         });
     }
     let bytes = owned_test_file(&entities);
-    let (directory, global, assembly) = crate::test_support::with_service_context(&bytes, |ctx| {
+    let setup_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (setup_ctx, _) = DecodeContext::from_root_bytes(
+        &bytes, &setup_arena, &DecodePolicy::service(),
+    ).unwrap();
+    let (directory, global, assembly) = {
+        let ctx = &setup_ctx;
         let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
         let (global, _, _global_storage) = crate::global::parse(&scan, ctx).unwrap();
         let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), ctx).unwrap();
@@ -1355,7 +1370,7 @@ fn shared_view_associations_are_indexed_once() {
         let assembly = crate::parameter::assemble_with_context(&scan, &directory, &[], &global, ctx).unwrap();
         assert!(assembly.quarantined.is_empty());
         (directory, global, assembly)
-    });
+    };
     let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect();
     let records = assembly.records.iter().map(|record| (record.directory_sequence, record)).collect();
     let arena = cadmpeg_core::decode::DecodeArena::new();
