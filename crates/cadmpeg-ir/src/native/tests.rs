@@ -498,7 +498,7 @@ fn native_arena_installation_admits_the_actual_tree_insertion_once() {
     }
 
     namespace
-        .set_arena(&ctx, "n".repeat(30), &[] as &[serde_json::Value])
+        .set_arena::<serde_json::Value>(&ctx, "n".repeat(30), &[])
         .expect("the admitted B-tree insertion fits its work budget");
     assert_eq!(namespace.arenas().len(), 101);
     assert!(namespace.arenas().contains_key(&"n".repeat(30)));
