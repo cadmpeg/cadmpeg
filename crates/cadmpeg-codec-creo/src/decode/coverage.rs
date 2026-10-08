@@ -460,7 +460,7 @@ pub(super) fn curve_transfer_coverage(
     rows: &[crate::curve::CurveTopologyRow],
     curves: &[Curve],
 ) -> Result<CurveTransferCoverage, CodecError> {
-    let unique_rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let (unique_rows, _unique_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
     let mut transferred_ids = BTreeSet::new();
     for curve in curves.iter().filter(|curve| {
         !matches!(
@@ -539,7 +539,7 @@ pub(super) fn surface_transfer_coverage(
     surfaces: &[Surface],
     procedural_surfaces: &[ProceduralSurface],
 ) -> Result<SurfaceTransferCoverage, CodecError> {
-    let unique_rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let (unique_rows, _unique_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
     let mut extrusion_constructions = BTreeSet::new();
     for id in procedural_surfaces
         .iter()

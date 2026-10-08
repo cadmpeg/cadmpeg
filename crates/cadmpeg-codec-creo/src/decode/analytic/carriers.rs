@@ -86,10 +86,9 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         &scan.topology.vertices,
         &scan.topology.half_edges,
     )?;
-    let unique_rows =
-        crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?;
+    let (unique_rows, _unique_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?;
     let mut unique_curve_ids = BTreeSet::new();
-    let unique_curve_rows = crate::identity::uniquely_identified_rows_checked(
+    let (unique_curve_rows, _unique_curve_rows_storage) = crate::identity::uniquely_identified_rows_checked(
         ctx,
         &scan.curves.topology_rows,
         |row| row.id,
@@ -335,8 +334,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             LegacySurfaceNamespace::NonVisible,
         ),
     ] {
-        let unique_rows =
-            crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+        let (unique_rows, _unique_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
         for row in ctx.admit_iter(&unique_rows, "creo unresolved surface rows")? {
             let identity_namespace = match namespace {
                 LegacySurfaceNamespace::Visible => &crate::identity::VISIBGEOM_SURFACE,
@@ -412,7 +410,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             )?;
         }
     }
-    let unique_curve_rows = crate::identity::uniquely_identified_rows_checked(
+    let (unique_curve_rows, _unique_curve_rows_storage) = crate::identity::uniquely_identified_rows_checked(
         ctx,
         &scan.curves.topology_rows,
         |row| row.id,
