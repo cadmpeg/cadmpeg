@@ -163,3 +163,106 @@ fn schema_conflict_does_not_admit_unused_rows_or_depdb_tail() {
         None
     );
 }
+
+
+fn operation(feature_id: u32) -> crate::feature::operations::FeatureOperation {
+    crate::feature::operations::FeatureOperation {
+        feature_id,
+        kind: crate::feature::operations::OperationKind::Extrude,
+        name: crate::feature::operations::OperationName::Derived,
+        recipe: crate::feature::operations::RecipeResolution::Resolved(
+            crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
+        ),
+        display_state_conflict: false,
+        depdb: Some(crate::feature::operations::DepdbPrefix {
+            schema: crate::feature::schema::SchemaClass::Protrusion, parent: 7,
+        }),
+        offset: 0,
+        state_offset: 0,
+    }
+}
+
+#[test]
+fn feature_operation_selector_visits_each_present_record_once() {
+    let records = [operation(11), operation(40), operation(12)];
+    for cap in [2, 3] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = super::current_feature_operation(&ctx, &records, 40);
+        if cap == 3 {
+            assert!(std::ptr::eq(result.expect("three visits").expect("unique"), &records[1]));
+        } else {
+            let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result else {
+                panic!("third visit must refuse");
+            };
+            assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(refusal.operation, "creo current feature operation rows");
+            assert_eq!(refusal.used, 2);
+            assert_eq!(refusal.additional, 1);
+            assert!(matches!(super::current_feature_recipe(&ctx, &[], 40),
+                Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == refusal));
+        }
+    }
+    for count in 0..4 {
+        let records = vec![operation(11); count];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::try_from(count).expect("fixed test count");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(super::current_feature_operation(&ctx, &records, 40)
+            .expect("only present visits").is_none());
+    }
+}
+
+#[test]
+fn feature_operation_selector_stops_at_the_second_match() {
+    let mut records = vec![operation(40), operation(40)];
+    records.extend((0..64).map(|_| operation(11)));
+    for cap in [1, 2] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = super::current_feature_operation(&ctx, &records, 40);
+        if cap == 2 {
+            assert!(result.expect("two matching visits").is_none());
+        } else {
+            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::WorkUnits
+                    && refusal.operation == "creo current feature operation rows"
+                    && refusal.used == 1 && refusal.additional == 1));
+        }
+    }
+}
+
+#[test]
+fn sweep_conflict_discriminant_does_not_traverse_stored_kind_text() {
+    use crate::feature::operations::OperationKind;
+    for (kind, expected) in [
+        (OperationKind::Native, true),
+        (OperationKind::Extrude, false),
+        (OperationKind::Revolve, false),
+        (OperationKind::Stored("arbitrary stored family".repeat(256)), false),
+    ] {
+        let mut scan = crate::test_support::empty_container_scan();
+        let mut selected = operation(40);
+        selected.kind = kind;
+        selected.recipe = crate::feature::operations::RecipeResolution::None;
+        selected.display_state_conflict = true;
+        scan.features.operations.push(selected);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(super::feature_section_sweep_semantics_conflict(&ctx, &scan, 40)
+            .expect("one record visit and fixed variant tag"), expected);
+    }
+}
