@@ -43,6 +43,8 @@ pub(super) trait CarrierKind {
     const STORE: &'static str;
     const OWNER_IDENTITY: &'static str;
     const INDEX: &'static str;
+    const INDEX_NAMED: &'static str;
+    const INDEX_CONSTRUCTIONS: &'static str;
 
     fn carriers(model: &Model) -> &[Self::Carrier];
     fn carriers_mut(model: &mut Model) -> &mut [Self::Carrier];
@@ -81,6 +83,8 @@ impl CarrierKind for CurveKind {
     const STORE: &'static str = "store procedural curve constructions";
     const OWNER_IDENTITY: &'static str = "ir_procedural_curve_construction_id";
     const INDEX: &'static str = "index procedural curve carriers";
+    const INDEX_NAMED: &'static str = "index procedural curve ownership";
+    const INDEX_CONSTRUCTIONS: &'static str = "index procedural curve constructions";
 
     fn carriers(model: &Model) -> &[Curve] {
         &model.curves
@@ -158,6 +162,8 @@ impl CarrierKind for SurfaceKind {
     const STORE: &'static str = "store procedural surface constructions";
     const OWNER_IDENTITY: &'static str = "procedural surface owner identity";
     const INDEX: &'static str = "index procedural surface carriers";
+    const INDEX_NAMED: &'static str = "index procedural surface ownership";
+    const INDEX_CONSTRUCTIONS: &'static str = "index procedural surface constructions";
 
     fn carriers(model: &Model) -> &[Surface] {
         &model.surfaces
@@ -230,6 +236,7 @@ fn refuse<K: CarrierKind, A: ModelAdmission, T>(
 }
 
 /// How an attachment ended once its owner is known.
+#[derive(Clone, Copy)]
 enum Attached {
     /// The owner was solved and now names the construction.
     Owned,
@@ -237,16 +244,15 @@ enum Attached {
     Direct,
 }
 
-/// Finish an attachment to the carrier at `owner`: refuse an owner owned by
-/// another construction, then store the construction.
-fn attach_at<K: CarrierKind, A: ModelAdmission>(
-    model: &mut Model,
+/// Classify an attachment without changing either arena.
+fn plan_at<K: CarrierKind, A: ModelAdmission>(
+    model: &Model,
     admission: &A,
     owner: usize,
     owner_id: &K::Owner,
-    procedural: K::Procedural,
+    procedural: &K::Procedural,
 ) -> Result<Result<Attached, ProceduralCarrierError>, A::Error> {
-    let id = K::procedural_id(&procedural);
+    let id = K::procedural_id(procedural);
     let attached = match K::owner_geometry(&K::carriers(model)[owner]) {
         OwnerGeometry::Procedural {
             construction,
@@ -262,7 +268,6 @@ fn attach_at<K: CarrierKind, A: ModelAdmission>(
                 )
                 .map(|refused| refused.map(|()| Attached::Direct));
             }
-            admission.reserve(K::procedurals(model), 1, K::STORE)?;
             Attached::Direct
         }
         OwnerGeometry::Procedural { construction, .. } => {
@@ -274,15 +279,39 @@ fn attach_at<K: CarrierKind, A: ModelAdmission>(
                 ),
             );
         }
-        OwnerGeometry::Solved => {
-            let construction = K::construction(admission, &procedural)?;
-            admission.reserve(K::procedurals(model), 1, K::STORE)?;
-            K::own(&mut K::carriers_mut(model)[owner], construction);
-            Attached::Owned
-        }
+        OwnerGeometry::Solved => Attached::Owned,
     };
-    K::procedurals(model).push(procedural);
     Ok(Ok(attached))
+}
+
+/// Own a construction identity only after every other fallible batch step.
+enum PreparedConstruction<C> {
+    Direct,
+    Owned(C),
+}
+
+fn prepare_construction<K: CarrierKind, A: ModelAdmission>(
+    admission: &A,
+    procedural: &K::Procedural,
+    attached: Attached,
+) -> Result<PreparedConstruction<K::Construction>, A::Error> {
+    match attached {
+        Attached::Direct => Ok(PreparedConstruction::Direct),
+        Attached::Owned => K::construction(admission, procedural).map(PreparedConstruction::Owned),
+    }
+}
+
+/// Commit an attachment after all admission and temporary-index work passed.
+fn commit_at<K: CarrierKind>(
+    model: &mut Model,
+    owner: usize,
+    procedural: K::Procedural,
+    prepared: PreparedConstruction<K::Construction>,
+) {
+    if let PreparedConstruction::Owned(construction) = prepared {
+        K::own(&mut K::carriers_mut(model)[owner], construction);
+    }
+    K::procedurals(model).push(procedural);
 }
 
 /// Attach one construction by scanning the arenas.
@@ -341,7 +370,14 @@ pub(super) fn attach_scanning<K: CarrierKind, A: ModelAdmission>(
             ),
         );
     };
-    Ok(attach_at::<K, A>(model, admission, owner_index, owner, procedural)?.map(|_| ()))
+    let attached = match plan_at::<K, A>(model, admission, owner_index, owner, &procedural)? {
+        Ok(attached) => attached,
+        Err(refused) => return Ok(Err(refused)),
+    };
+    admission.reserve(K::procedurals(model), 1, K::STORE)?;
+    let prepared = prepare_construction::<K, A>(admission, &procedural, attached)?;
+    commit_at::<K>(model, owner_index, procedural, prepared);
+    Ok(Ok(()))
 }
 
 /// Keyed views of one carrier family's arenas.
@@ -481,14 +517,22 @@ fn attach_one_indexed<K: CarrierKind, A: ModelAdmission>(
             ),
         );
     };
-    let stored_position = K::procedurals(model).len();
-    match attach_at::<K, A>(model, admission, owner_index, owner, procedural)? {
+    let attached = match plan_at::<K, A>(model, admission, owner_index, owner, &procedural)? {
+        Ok(attached) => attached,
         Err(refused) => return Ok(Err(refused)),
-        Ok(Attached::Owned) => {
-            admission.push_position(&mut indexes.named, hash, owner_index, K::INDEX)?;
-        }
-        Ok(Attached::Direct) => {}
+    };
+    let stored_position = K::procedurals(model).len();
+    admission.reserve(K::procedurals(model), 1, K::STORE)?;
+    if matches!(attached, Attached::Owned) {
+        admission.push_position(&mut indexes.named, hash, owner_index, K::INDEX_NAMED)?;
     }
-    admission.push_position(&mut indexes.constructions, hash, stored_position, K::INDEX)?;
+    admission.push_position(
+        &mut indexes.constructions,
+        hash,
+        stored_position,
+        K::INDEX_CONSTRUCTIONS,
+    )?;
+    let prepared = prepare_construction::<K, A>(admission, &procedural, attached)?;
+    commit_at::<K>(model, owner_index, procedural, prepared);
     Ok(Ok(()))
 }

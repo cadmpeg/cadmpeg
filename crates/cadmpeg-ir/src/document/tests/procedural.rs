@@ -141,3 +141,87 @@ fn batch_attachment_pays_for_its_index_and_preserves_refusals() {
         );
     }
 }
+
+fn expect_collection_refusal_at(operation: &'static str) -> cadmpeg_core::decode::ResourceLimit {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let base = model(&[(0, (0, 0))], &[]);
+    for max_collection_items in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_collection_items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut actual = base.clone();
+        let result = actual.add_procedural_curves(&ctx, vec![(curve_id(0), procedural(7))]);
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+            panic!("budget {max_collection_items} did not refuse at {operation}");
+        };
+        assert_eq!(
+            actual, base,
+            "refusal at {} changed the model",
+            limit.operation
+        );
+        assert!(matches!(
+            ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit
+        ));
+        if limit.operation == operation {
+            assert_eq!(
+                limit.dimension,
+                cadmpeg_core::decode::ResourceDimension::CollectionItems
+            );
+            return limit;
+        }
+    }
+    panic!("no collection budget reached {operation}");
+}
+
+#[test]
+fn indexed_attachment_keeps_the_current_item_atomic_through_both_index_pushes() {
+    use crate::document::procedural::{CarrierKind, CurveKind};
+
+    let named = expect_collection_refusal_at(<CurveKind as CarrierKind>::INDEX_NAMED);
+    let constructions =
+        expect_collection_refusal_at(<CurveKind as CarrierKind>::INDEX_CONSTRUCTIONS);
+    assert!(
+        constructions.used > named.used,
+        "the constructions insertion must follow a successful ownership-index insertion"
+    );
+}
+
+#[test]
+fn indexed_attachment_keeps_the_current_item_atomic_when_identity_copy_refuses() {
+    use crate::document::procedural::{CarrierKind, CurveKind};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let base = model(&[(0, (0, 0))], &[]);
+    let mut max_retained_bytes = 0;
+    for _ in 0..8 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = max_retained_bytes;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut actual = base.clone();
+        let result = actual.add_procedural_curves(&ctx, vec![(curve_id(0), procedural(7))]);
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+            panic!("retained budget {max_retained_bytes} did not refuse");
+        };
+        assert_eq!(
+            actual, base,
+            "refusal at {} changed the model",
+            limit.operation
+        );
+        assert!(matches!(
+            ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit
+        ));
+        if limit.operation == <CurveKind as CarrierKind>::OWNER_IDENTITY {
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert!(limit.used + limit.additional > max_retained_bytes);
+            return;
+        }
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        max_retained_bytes = limit.used + limit.additional;
+    }
+    panic!("retained budget did not reach construction identity copy");
+}
