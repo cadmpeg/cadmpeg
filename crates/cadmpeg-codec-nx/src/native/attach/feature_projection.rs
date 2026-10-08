@@ -1865,16 +1865,14 @@ pub(super) fn non_modeling_history_definition(
         "NX history source property keys",
     )?;
     Ok((ctx.contains_key_btree_map(
-            source_properties,
-            "operation_record",
-            "NX history operation record membership",
-        )?
-        && ctx.contains_key_btree_map(
-            source_properties,
-            "operation_terminal_frame",
-            "NX history terminal frame membership",
-        )?
-        && operation_identity_only)
+        source_properties,
+        "operation_record",
+        "NX history operation record membership",
+    )? && ctx.contains_key_btree_map(
+        source_properties,
+        "operation_terminal_frame",
+        "NX history terminal frame membership",
+    )? && operation_identity_only)
         .then_some(FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::History,
             children: TreeChildren::default(),
