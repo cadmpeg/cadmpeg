@@ -3,7 +3,7 @@
 use super::markers::{
     admit_sketch_input_entities, reference_cells_charged, relation_bindings_charged,
 };
-use super::names::{class_declarations, configuration, declared_class_names, object_names};
+use super::names::{class_declarations, configuration, next_payload_class, object_names};
 use super::scalars::named_scalars_charged;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::classification::native_object_class;
@@ -15,6 +15,19 @@ use cadmpeg_ir::Exactness;
 
 pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
     lane.id.contains(":config-objects#")
+}
+
+/// Whether a lane carries supplemental configuration objects.
+pub(crate) fn is_supplemental_config_lane_charged(
+    ctx: &DecodeContext<'_>,
+    lane: &FeatureInputLane,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const MARKER: &[u8] = b":config-objects#";
+    ctx.any_by(
+        lane.id.as_bytes().windows(MARKER.len()),
+        |window| Ok(window == MARKER),
+        "classify SLDPRT supplemental configuration lane",
+    )
 }
 
 pub(crate) fn lanes(
@@ -189,19 +202,14 @@ fn legacy_feature_input_section(
         )?)
 }
 
-pub(super) fn contains_ascii_case_insensitive(text: &str, needle: &str) -> bool {
-    text.as_bytes()
-        .windows(needle.len())
-        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
-}
-
 fn legacy_sketch_object_stream(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut sketch = false;
     let mut sketch_entity = false;
-    for name in declared_class_names(ctx, payload)? {
+    let mut offsets = 0..payload.len().saturating_sub(3);
+    while let Some((_, name)) = next_payload_class(ctx, payload, &mut offsets)? {
         sketch |= name == "sgSketch";
         sketch_entity |= native_object_class(name).role() == FeatureInputClassRole::SketchEntity;
         if sketch && sketch_entity {

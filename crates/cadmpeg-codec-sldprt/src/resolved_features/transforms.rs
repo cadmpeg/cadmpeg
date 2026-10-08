@@ -391,17 +391,15 @@ pub(super) fn dimensioned_circle_transform(
     circles: &[(impl Copy + Into<GridPoint>, GridCoordinate)],
 ) -> Result<Option<MarkerTransform>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "select SLDPRT dimensioned circle transform";
-    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut signature =
+    let signature =
         |transform: MarkerTransform| -> Result<Option<Vec<_>>, cadmpeg_core::CodecError> {
-            let mut transformed = storage.with_storage(|| {
-                ctx.collection_vec::<(i64, i64, GridCoordinate)>(circles.len(), OPERATION)
-            })?;
-            for (center, radius) in ctx.admit_iter(circles, OPERATION)? {
+            let mut transformed = Vec::new();
+            let mut remaining = circles.iter();
+            while let Some((center, radius)) = ctx.next_charged(&mut remaining, OPERATION)? {
                 let Some(center) = transform.apply(*center) else {
-                    continue;
+                    return Ok(None);
                 };
-                transformed.push((center.0, center.1, *radius));
+                ctx.push_vec(&mut transformed, (center.0, center.1, *radius), OPERATION)?;
             }
             ctx.sort_unstable_by(&mut transformed, |value| value, Ord::cmp, OPERATION)?;
             Ok(
@@ -412,11 +410,16 @@ pub(super) fn dimensioned_circle_transform(
     let Some((first, rest)) = candidates.split_first() else {
         return Ok(None);
     };
-    let Some(first_signature) = signature(*first)? else {
+    let (first_signature, _first_storage) =
+        ctx.with_scoped_storage(OPERATION, || signature(*first))?;
+    let Some(first_signature) = first_signature else {
         return Ok(None);
     };
-    for transform in ctx.admit_iter(rest, OPERATION)? {
-        let Some(other) = signature(*transform)? else {
+    let mut remaining = rest.iter();
+    while let Some(transform) = ctx.next_charged(&mut remaining, OPERATION)? {
+        let (other, _other_storage) =
+            ctx.with_scoped_storage(OPERATION, || signature(*transform))?;
+        let Some(other) = other else {
             return Ok(None);
         };
         if !ctx.equal(&other, &first_signature, OPERATION)? {
@@ -553,8 +556,7 @@ where
     V: Borrow<BTreeSet<GridPoint>>,
 {
     const OPERATION: &str = "score SLDPRT compatible marker transforms";
-    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut score =
+    let score =
         |axes: MarkerTransform| -> Result<BTreeMap<(i64, i64), usize>, cadmpeg_core::CodecError> {
             let mut translations = BTreeMap::<(i64, i64), usize>::new();
             for (marker, loci) in ctx.admit_iter(compatible_locus_points, OPERATION)? {
@@ -572,10 +574,9 @@ where
                     else {
                         continue;
                     };
-                    let count = storage.with_storage(|| {
-                        ctx.entry_btree_map(&mut translations, translation, OPERATION)
-                            .map(|entry| entry.or_insert(0_usize))
-                    })?;
+                    let count = ctx
+                        .entry_btree_map(&mut translations, translation, OPERATION)?
+                        .or_insert(0_usize);
                     // A count never exceeds the number of compatible pairs.
                     *count += 1;
                 }
@@ -590,8 +591,11 @@ where
         },
         translation: (0, 0),
     };
-    let translations = score(identity)?;
-    if let Some(transform) = unique_scored_transform(ctx, identity, translations)? {
+    let first = {
+        let (translations, _storage) = ctx.with_scoped_storage(OPERATION, || score(identity))?;
+        unique_scored_transform(ctx, identity, translations)?
+    };
+    if let Some(transform) = first {
         let mut result = Vec::new();
         ctx.push_vec(&mut result, transform, OPERATION)?;
         return Ok(result);
@@ -611,7 +615,9 @@ where
                     },
                     translation: (0, 0),
                 };
-                for (translation, count) in ctx.admit_iter(score(axes)?, OPERATION)? {
+                let (translations, _storage) =
+                    ctx.with_scoped_storage(OPERATION, || score(axes))?;
+                for (translation, count) in ctx.admit_iter(translations, OPERATION)? {
                     ctx.push_vec(
                         &mut scored,
                         (
@@ -678,16 +684,23 @@ fn unique_scored_transform(
     if maximum < 2 {
         return Ok(None);
     }
-    let mut candidates = ctx
-        .admit_iter(translations, OPERATION)?
-        .filter_map(|(translation, count)| (count == maximum).then_some(translation));
-    let Some(translation) = candidates.next() else {
+    let mut remaining = translations.into_iter();
+    let Some(translation) = ctx.find_map(
+        &mut remaining,
+        |(translation, count)| Ok((count == maximum).then_some(translation)),
+        OPERATION,
+    )?
+    else {
         return Ok(None);
     };
-    Ok(candidates.next().is_none().then_some(MarkerTransform {
-        translation,
-        ..axes
-    }))
+    Ok(
+        (!ctx.any_by(remaining, |(_, count)| Ok(count == maximum), OPERATION)?).then_some(
+            MarkerTransform {
+                translation,
+                ..axes
+            },
+        ),
+    )
 }
 
 #[cfg(test)]

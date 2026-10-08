@@ -456,19 +456,25 @@ fn bind_sweep_operations_with(
 
 /// Inline extrusion trailer fields: the family word and operation byte.
 pub(super) fn feature_inline_operation_fields(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     name: &FeatureInputName,
-) -> Option<(u16, u8)> {
-    let name_offset = usize::try_from(name.offset).ok()?;
-    let name_bytes = name.value.encode_utf16().count().checked_mul(2)?;
-    let trailer = name_offset.checked_add(6 + name_bytes)?;
-    let bytes = lane.native_payload.get(trailer..trailer + 19)?;
-    let terminated = bytes[sparse_tr::SPARSE_ZERO_PREFIX..19] == [0xff, 0xfe, 0xff]
-        || lane
-            .native_payload
-            .get(trailer + sparse_tr::SPARSE_ZERO_PREFIX..trailer + sparse_tr::LEN)
-            .is_some_and(|suffix| {
-                (suffix[..sparse_tr::SPARSE_MARKER - sparse_tr::SPARSE_ZERO_PREFIX] == [0; 6]
+) -> Result<Option<(u16, u8)>, CodecError> {
+    let name_units = ctx
+        .admit_iter(name.value.as_str(), "measure SLDPRT inline operation name")?
+        .encode_utf16()
+        .count();
+    Ok((|| {
+        let name_offset = usize::try_from(name.offset).ok()?;
+        let name_bytes = name_units.checked_mul(2)?;
+        let trailer = name_offset.checked_add(6 + name_bytes)?;
+        let bytes = lane.native_payload.get(trailer..trailer + 19)?;
+        let terminated = bytes[sparse_tr::SPARSE_ZERO_PREFIX..19] == [0xff, 0xfe, 0xff]
+            || lane
+                .native_payload
+                .get(trailer + sparse_tr::SPARSE_ZERO_PREFIX..trailer + sparse_tr::LEN)
+                .is_some_and(|suffix| {
+                    (suffix[..sparse_tr::SPARSE_MARKER - sparse_tr::SPARSE_ZERO_PREFIX] == [0; 6]
                     && suffix[sparse_tr::SPARSE_MARKER - sparse_tr::SPARSE_ZERO_PREFIX
                         ..sparse_tr::FIRST_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX]
                         == [1, 0]
@@ -504,29 +510,34 @@ pub(super) fn feature_inline_operation_fields(
                         && suffix[8..18] == [0; 10]
                         && suffix[18..20] != [0, 0]
                         && suffix[20..24] == [0; 4])
-            });
-    if bytes[sparse_tr::ZERO_HEADER..sparse_tr::FAMILY] != [0; 4]
-        || bytes[sparse_tr::OBJECT_ID..sparse_tr::ZERO_AFTER_OBJECT]
-            != name.object_id.and_then(ObjectId::value)?.to_le_bytes()
-        || bytes[sparse_tr::ZERO_AFTER_OBJECT..sparse_tr::SPARSE_ZERO_PREFIX] != [0; 4]
-        || !terminated
-        || !matches!(bytes[sparse_tr::OPERATION], 0 | 2)
-    {
-        return None;
-    }
-    Some((
-        View::u16_le_at(bytes, sparse_tr::FAMILY)?,
-        bytes[sparse_tr::OPERATION],
-    ))
+                });
+        if bytes[sparse_tr::ZERO_HEADER..sparse_tr::FAMILY] != [0; 4]
+            || bytes[sparse_tr::OBJECT_ID..sparse_tr::ZERO_AFTER_OBJECT]
+                != name.object_id.and_then(ObjectId::value)?.to_le_bytes()
+            || bytes[sparse_tr::ZERO_AFTER_OBJECT..sparse_tr::SPARSE_ZERO_PREFIX] != [0; 4]
+            || !terminated
+            || !matches!(bytes[sparse_tr::OPERATION], 0 | 2)
+        {
+            return None;
+        }
+        Some((
+            View::u16_le_at(bytes, sparse_tr::FAMILY)?,
+            bytes[sparse_tr::OPERATION],
+        ))
+    })())
 }
 
 /// Project an inline Boolean operation from a recognized complete family.
-fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) -> Option<BooleanOp> {
-    match feature_inline_operation_fields(lane, name)? {
-        (0x0140, 0) => Some(BooleanOp::Join),
-        (0x01ca, 0 | 2) => Some(BooleanOp::Cut),
+fn feature_inline_operation(
+    ctx: &DecodeContext<'_>,
+    lane: &FeatureInputLane,
+    name: &FeatureInputName,
+) -> Result<Option<BooleanOp>, CodecError> {
+    Ok(match feature_inline_operation_fields(ctx, lane, name)? {
+        Some((0x0140, 0)) => Some(BooleanOp::Join),
+        Some((0x01ca, 0 | 2)) => Some(BooleanOp::Cut),
         _ => None,
-    }
+    })
 }
 
 /// Project the feature-input operation discriminator onto typed extrusions.
@@ -569,7 +580,7 @@ fn bind_extrusion_operations_with(
             indexes,
             history,
             |lane, direct, name| {
-                if let Some(operation) = feature_inline_operation(lane, name) {
+                if let Some(operation) = feature_inline_operation(ctx, lane, name)? {
                     return Ok(Some(operation));
                 }
                 Ok(
@@ -701,7 +712,7 @@ fn operation_carrier_present(
         NameLookup::One(name) => name,
     };
     if matches!(kind, OperationKind::Extrusion)
-        && feature_inline_operation_fields(lane, name).is_some()
+        && feature_inline_operation_fields(ctx, lane, name)?.is_some()
     {
         return Ok(true);
     }
@@ -735,9 +746,10 @@ pub(crate) fn enrich_history_split_lines(
     let mut storage = ctx.reserve_scoped(0, "SLDPRT split-line workspace")?;
     let mut observations = HashMap::<String, (bool, bool)>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT split-line lanes")? {
+        let mut lane_storage = ctx.reserve_scoped(0, "SLDPRT split-line lane workspace")?;
         let project_classes = sorted_classes(
             ctx,
-            &mut storage,
+            &mut lane_storage,
             lane,
             "moPLineProject_c",
             "index SLDPRT split-line projection classes",
@@ -747,7 +759,7 @@ pub(crate) fn enrich_history_split_lines(
         for history in ctx.admit_iter(&*histories, "scan SLDPRT split-line objects")? {
             for feature in ctx.admit_iter(&history.features, "scan SLDPRT split-line objects")? {
                 if let Some(name) = object_names.of(ctx, feature)? {
-                    storage.with_storage(|| {
+                    lane_storage.with_storage(|| {
                         ctx.push_vec(
                             &mut objects,
                             (name.offset, feature),

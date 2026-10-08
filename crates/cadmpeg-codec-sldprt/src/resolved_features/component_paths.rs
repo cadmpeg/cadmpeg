@@ -15,13 +15,19 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// History features by native source identifier, indexed once. A source that
 /// more than one feature carries names no feature.
-pub(super) struct FeaturesBySource<'a, 'ctx> {
+pub(crate) struct FeaturesBySource<'a, 'ctx> {
     table: HashMap<u32, Option<&'a Feature>>,
     _storage: ScopedReservation<'ctx>,
 }
 
+#[derive(Debug)]
+enum ComponentProducer<'a> {
+    Ambiguous,
+    Feature(&'a Feature),
+}
+
 impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
-    pub(super) fn new(
+    pub(crate) fn new(
         ctx: &'ctx DecodeContext<'_>,
         features: impl IntoIterator<Item = &'a Feature>,
     ) -> Result<Self, CodecError> {
@@ -47,29 +53,36 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
         })
     }
 
-    /// The feature a component's type signature names: `None` when no feature
-    /// carries its source, `Some(None)` when more than one does.
+    /// The producer named by a component signature. An absent source returns
+    /// `None`; a repeated source returns `Ambiguous`.
     fn component(
         &self,
         ctx: &DecodeContext<'_>,
         component: &FeatureInputComponentPathEntry,
         operation: &'static str,
-    ) -> Result<Option<Option<&'a Feature>>, CodecError> {
+    ) -> Result<Option<ComponentProducer<'a>>, CodecError> {
         let Some(source) = View::u32_le_at(&component.type_signature, 4) else {
             return Ok(None);
         };
-        Ok(ctx.get_hash_map(&self.table, &source, operation)?.copied())
+        Ok(ctx
+            .get_hash_map(&self.table, &source, operation)?
+            .map(|producer| match producer {
+                Some(feature) => ComponentProducer::Feature(feature),
+                None => ComponentProducer::Ambiguous,
+            }))
     }
 
-    /// The feature that carries a native source: `None` when none does,
-    /// `Some(None)` when more than one does.
+    /// The unique feature that carries a native source.
     pub(super) fn source(
         &self,
         ctx: &DecodeContext<'_>,
         source: u32,
         operation: &'static str,
-    ) -> Result<Option<Option<&'a Feature>>, CodecError> {
-        Ok(ctx.get_hash_map(&self.table, &source, operation)?.copied())
+    ) -> Result<Option<&'a Feature>, CodecError> {
+        Ok(ctx
+            .get_hash_map(&self.table, &source, operation)?
+            .copied()
+            .flatten())
     }
 
     /// The feature the last resolvable component names, if one feature
@@ -86,7 +99,10 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
                 |component| self.component(ctx, component, OPERATION),
                 OPERATION,
             )?
-            .flatten())
+            .and_then(|producer| match producer {
+                ComponentProducer::Feature(feature) => Some(feature),
+                ComponentProducer::Ambiguous => None,
+            }))
     }
 
     /// The distinct features the components name, in component order.
@@ -100,7 +116,9 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
         let mut seen = HashSet::new();
         let mut result = Vec::new();
         for component in ctx.admit_iter(components, OPERATION)? {
-            let Some(Some(feature)) = self.component(ctx, component, OPERATION)? else {
+            let Some(ComponentProducer::Feature(feature)) =
+                self.component(ctx, component, OPERATION)?
+            else {
                 continue;
             };
             if !storage
@@ -233,14 +251,6 @@ pub(crate) fn surface_selection_producer_features(
     Ok(producers)
 }
 
-pub(super) fn component_path_terminal_feature<'a>(
-    ctx: &DecodeContext<'_>,
-    components: &[FeatureInputComponentPathEntry],
-    features: impl IntoIterator<Item = &'a Feature>,
-) -> Result<Option<String>, CodecError> {
-    FeaturesBySource::new(ctx, features)?.terminal(ctx, components)
-}
-
 #[derive(Clone, Copy)]
 pub(super) enum ComponentPathEnd {
     Leading,
@@ -274,8 +284,10 @@ pub(super) fn component_path_feature<'a>(
         }
         Ok(by_source
             .component(ctx, component, OPERATION)?
-            .flatten()
-            .map(|feature| (component, feature)))
+            .and_then(|producer| match producer {
+                ComponentProducer::Feature(feature) => Some((component, feature)),
+                ComponentProducer::Ambiguous => None,
+            }))
     };
     match end {
         ComponentPathEnd::Leading => ctx.find_map(components, candidate, OPERATION),
@@ -289,6 +301,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
+    const DEPENDENCY: &str = "collect SLDPRT adjacent profile dependencies";
     #[derive(PartialEq)]
     enum ProfileVote<'a> {
         Missing,
@@ -332,9 +345,14 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     let mut neutral_indices = HashMap::new();
     for (index, feature) in ctx.admit_iter(&*features, INDEX)?.enumerate() {
         if let Some(native) = feature.native_ref.as_deref() {
-            let native = storage.with_storage(|| ctx.copy_retained_text(native, INDEX))?;
-            storage
-                .with_storage(|| ctx.insert_hash_map(&mut neutral_indices, native, index, INDEX))?;
+            if let Some(indexed) = ctx.get_mut_hash_map(&mut neutral_indices, native, INDEX)? {
+                *indexed = index;
+            } else {
+                let native = storage.with_storage(|| ctx.copy_retained_text(native, INDEX))?;
+                storage.with_storage(|| {
+                    ctx.insert_hash_map(&mut neutral_indices, native, index, INDEX)
+                })?;
+            }
         }
     }
     let mut profiles = BTreeMap::<&str, Vec<ProfileVote<'_>>>::new();
@@ -378,19 +396,20 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             Ord::cmp,
             "sort SLDPRT component path objects",
         )?;
-        let object_kind = |name: &FeatureInputName, feature: &Feature| {
-            let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
-            if is_profile_feature_object(feature) {
-                NativeClassKind::ProfileFeature
-            } else if kind == NativeClassKind::Unknown
-                && (matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut")
-                    || feature_inline_operation_fields(lane, name).is_some())
-            {
-                NativeClassKind::Extrusion
-            } else {
-                kind
-            }
-        };
+        let object_kind =
+            |name: &FeatureInputName, feature: &Feature| -> Result<NativeClassKind, CodecError> {
+                let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
+                Ok(if is_profile_feature_object(feature) {
+                    NativeClassKind::ProfileFeature
+                } else if kind == NativeClassKind::Unknown
+                    && (matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut")
+                        || feature_inline_operation_fields(ctx, lane, name)?.is_some())
+                {
+                    NativeClassKind::Extrusion
+                } else {
+                    kind
+                })
+            };
         let is_dissectable = |feature: &Feature| -> Result<bool, CodecError> {
             const OPERATION: &str = "find SLDPRT dissectable profile properties";
             Ok(
@@ -402,7 +421,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             )
         };
         for (_, (name, feature)) in ctx.admit_iter(&objects, INDEX)? {
-            if object_kind(name, feature) == NativeClassKind::Extrusion {
+            if object_kind(name, feature)? == NativeClassKind::Extrusion {
                 storage.with_storage(|| {
                     ctx.push_btree_group(
                         &mut profiles,
@@ -422,8 +441,8 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             let [(_, (first_name, first)), (_, (second_name, second))] = pair else {
                 continue;
             };
-            let first_kind = object_kind(first_name, first);
-            let second_kind = object_kind(second_name, second);
+            let first_kind = object_kind(first_name, first)?;
+            let second_kind = object_kind(second_name, second)?;
             let association = match (first_kind, second_kind) {
                 (NativeClassKind::ProfileFeature, NativeClassKind::Extrusion) => {
                     Some((*first, *second, 0))
@@ -449,7 +468,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             .admit_iter(&objects, "match SLDPRT adjacent profile owners")?
             .enumerate()
         {
-            if object_kind(extrusion_name, extrusion) != NativeClassKind::Extrusion {
+            if object_kind(extrusion_name, extrusion)? != NativeClassKind::Extrusion {
                 continue;
             }
             // A profile owns the objects between it and the extrusion only
@@ -459,7 +478,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             for profile_index in (0..extrusion_index).rev() {
                 ctx.charge_work(1, "match SLDPRT adjacent profile owners")?;
                 let (_, (profile_name, profile)) = objects[profile_index];
-                if object_kind(profile_name, profile) == NativeClassKind::ProfileFeature
+                if object_kind(profile_name, profile)? == NativeClassKind::ProfileFeature
                     && profile_owns_intervening_sketch_blocks(
                         ctx,
                         profile,
@@ -567,7 +586,6 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         let Some(&profile_index) = ctx.get_hash_map(&neutral_indices, *profile, INDEX)? else {
             continue;
         };
-        const DEPENDENCY: &str = "collect SLDPRT adjacent profile dependencies";
         let reference = features[profile_index]
             .id
             .try_clone_for_decode(ctx, DEPENDENCY)?;
@@ -621,16 +639,20 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
     let explicit_children = if let Some(encoded) =
         ctx.get_btree_map(&profile.properties, "DissectableChildren", OWNERSHIP)?
     {
-        // The split and trims read each byte of the list a bounded number
-        // of times.
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(encoded.len()),
-            "parse SLDPRT profile block children",
-        )?;
         let mut children = BTreeSet::new();
-        for value in encoded.split(',') {
-            let Ok(source) =
-                ctx.parse_text::<u32>(value.trim(), "parse SLDPRT profile child identity")?
+        let mut characters = encoded.char_indices();
+        let mut start = 0;
+        loop {
+            let end = ctx
+                .find_map(
+                    &mut characters,
+                    |(offset, character)| Ok((character == ',').then_some(offset)),
+                    "parse SLDPRT profile block children",
+                )?
+                .unwrap_or(encoded.len());
+            let value =
+                ctx.trim_text(&encoded[start..end], "trim SLDPRT profile child identity")?;
+            let Ok(source) = ctx.parse_text::<u32>(value, "parse SLDPRT profile child identity")?
             else {
                 return Ok(false);
             };
@@ -640,6 +662,10 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
             {
                 return Ok(false);
             }
+            if end == encoded.len() {
+                break;
+            }
+            start = end + 1;
         }
         Some(children)
     } else {
@@ -755,6 +781,7 @@ pub(crate) fn project_dissected_sketches(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[crate::records::FeatureHistory],
 ) -> Result<(), CodecError> {
+    const DEPENDENCY: &str = "replace SLDPRT dissected profile dependency";
     const INDEX: &str = "index SLDPRT dissected profiles";
     const IDENTITY: &str = "retain SLDPRT dissected profile identity";
     let mut storage = ctx.reserve_scoped(0, INDEX)?;
@@ -964,7 +991,6 @@ pub(crate) fn project_dissected_sketches(
         for (child, owner) in
             ctx.admit_iter(replaced?, "replace SLDPRT dissected profile dependency")?
         {
-            const DEPENDENCY: &str = "replace SLDPRT dissected profile dependency";
             if let Some(position) = ctx.position_by(
                 feature.dependencies.as_slice(),
                 |dependency| ctx.equal(dependency, &child, DEPENDENCY),

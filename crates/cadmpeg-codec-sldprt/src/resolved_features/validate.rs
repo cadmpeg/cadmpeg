@@ -1,6 +1,6 @@
 //! Native lane validation findings.
 
-use super::assembly::is_supplemental_config_lane;
+use super::assembly::is_supplemental_config_lane_charged;
 use crate::records::charged_clone::CloneCharged;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -8,7 +8,7 @@ use cadmpeg_ir::report::{
     check::{Check, Finding},
     Severity,
 };
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 /// Validate `SolidWorks` native feature-input byte references.
 pub(crate) fn validate_native(
@@ -45,7 +45,8 @@ pub(crate) fn validate_native(
             )?;
         }
         if !history.content.is_empty() {
-            let configurations = temporary.with_storage(|| {
+            let mut history_storage = ctx.reserve_scoped(0, "SLDPRT history content workspace")?;
+            let configurations = history_storage.with_storage(|| {
                 ctx.collect_btree_set(
                     history
                         .configurations
@@ -54,7 +55,7 @@ pub(crate) fn validate_native(
                     "index SLDPRT native history content",
                 )
             })?;
-            let root_features = temporary.with_storage(|| {
+            let root_features = history_storage.with_storage(|| {
                 ctx.collect_btree_set(
                     ctx.admit_iter(&history.features, "scan SLDPRT native features")?
                         .filter(|feature| feature.tree_parent.is_none())
@@ -62,14 +63,14 @@ pub(crate) fn validate_native(
                     "index SLDPRT native history content",
                 )
             })?;
-            let all_features = temporary.with_storage(|| {
-                ctx.collect_hash_set(
+            let all_features = history_storage.with_storage(|| {
+                ctx.collect_btree_set(
                     history.features.iter().map(|feature| feature.id.as_str()),
                     "index SLDPRT native history content",
                 )
             })?;
-            let mut seen_configurations = HashSet::new();
-            let mut seen_features = HashSet::new();
+            let mut seen_configurations = BTreeSet::new();
+            let mut seen_features = BTreeSet::new();
             for item in ctx.admit_iter(&history.content, "scan SLDPRT native history content")? {
                 let error = match item {
                     crate::records::HistoryContent::Configuration(id) => {
@@ -84,8 +85,8 @@ pub(crate) fn validate_native(
                                 ),
                                 "format SLDPRT native finding",
                             )?)
-                        } else if !temporary.with_storage(|| {
-                            ctx.insert_hash_set(
+                        } else if !history_storage.with_storage(|| {
+                            ctx.insert_btree_set(
                                 &mut seen_configurations,
                                 id.as_str(),
                                 "index SLDPRT native history content",
@@ -100,7 +101,7 @@ pub(crate) fn validate_native(
                         }
                     }
                     crate::records::HistoryContent::Feature(id) => {
-                        if !ctx.contains_hash_set(
+                        if !ctx.contains_btree_set(
                             &all_features,
                             id.as_str(),
                             "find SLDPRT native history content",
@@ -122,8 +123,8 @@ pub(crate) fn validate_native(
                                 ),
                                 "format SLDPRT native finding",
                             )?)
-                        } else if !temporary.with_storage(|| {
-                            ctx.insert_hash_set(
+                        } else if !history_storage.with_storage(|| {
+                            ctx.insert_btree_set(
                                 &mut seen_features,
                                 id.as_str(),
                                 "index SLDPRT native history content",
@@ -153,7 +154,7 @@ pub(crate) fn validate_native(
                 }
             }
             for missing in ctx.admit_iter(&configurations, "scan SLDPRT omitted history content")? {
-                if ctx.contains_hash_set(
+                if ctx.contains_btree_set(
                     &seen_configurations,
                     *missing,
                     "find SLDPRT native history content",
@@ -175,7 +176,7 @@ pub(crate) fn validate_native(
                 )?;
             }
             for missing in ctx.admit_iter(&root_features, "scan SLDPRT omitted history content")? {
-                if ctx.contains_hash_set(
+                if ctx.contains_btree_set(
                     &seen_features,
                     *missing,
                     "find SLDPRT native history content",
@@ -206,13 +207,14 @@ pub(crate) fn validate_native(
                 |record| record.clone_charged(ctx, "validate SLDPRT expected histories"),
             )
         })?;
-    let history_lanes = temporary.with_storage(|| {
-        ctx.collect_vec(
-            ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT validation lanes")?
-                .filter(|lane| !is_supplemental_config_lane(lane)),
-            "validate SLDPRT history lanes",
-        )
-    })?;
+    let mut history_lanes = Vec::new();
+    for lane in ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT validation lanes")? {
+        if !is_supplemental_config_lane_charged(ctx, lane)? {
+            temporary.with_storage(|| {
+                ctx.push_vec(&mut history_lanes, lane, "validate SLDPRT history lanes")
+            })?;
+        }
+    }
     history_reservation.with_storage(|| {
         crate::resolved_features::classes::bind_history_classes(
             ctx,

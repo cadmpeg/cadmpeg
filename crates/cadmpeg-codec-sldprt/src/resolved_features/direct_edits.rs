@@ -127,20 +127,29 @@ pub(super) fn move_body_translation_record(
         let Some(ids) = payload.get(ids_start..ids_end) else {
             continue;
         };
-        let local_body_ids = super::selections::read_compact_body_ids(ctx, ids, OPERATION)?;
+        let (local_body_ids, storage) = ctx.with_scoped_storage(OPERATION, || {
+            super::selections::read_compact_body_ids(ctx, ids, OPERATION)
+        })?;
         if ctx.contains(&local_body_ids, &0, OPERATION)? {
             continue;
         }
         if candidate.is_some() {
             return Ok(None);
         }
-        candidate = Some(MoveBodyTranslationRecord {
-            selection_offset,
-            local_body_ids,
-            translation_m,
-        });
+        candidate = Some((
+            MoveBodyTranslationRecord {
+                selection_offset,
+                local_body_ids,
+                translation_m,
+            },
+            storage,
+        ));
     }
-    Ok(candidate)
+    let Some((candidate, storage)) = candidate else {
+        return Ok(None);
+    };
+    storage.commit()?;
+    Ok(Some(candidate))
 }
 
 pub(super) fn move_body_selection_at(
@@ -148,11 +157,21 @@ pub(super) fn move_body_selection_at(
     payload: &[u8],
     offset: usize,
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    Ok(
-        move_body_translation_record(ctx, payload, offset, payload.len(), u64_from_index(offset))?
-            .filter(|record| record.selection_offset == offset)
-            .map(|record| record.local_body_ids),
-    )
+    let (record, storage) =
+        ctx.with_scoped_storage("hold SLDPRT move-body selection candidate", || {
+            move_body_translation_record(
+                ctx,
+                payload,
+                offset,
+                payload.len(),
+                u64_from_index(offset),
+            )
+        })?;
+    let Some(record) = record.filter(|record| record.selection_offset == offset) else {
+        return Ok(None);
+    };
+    storage.commit()?;
+    Ok(Some(record.local_body_ids))
 }
 
 /// Charge each Move Face candidate and its per-feature slot before insertion.
@@ -177,9 +196,10 @@ pub(crate) fn enrich_history_move_face_translations(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
-    let mut storage = ctx.reserve_scoped(0, "SLDPRT move-face workspace")?;
+    let mut candidate_storage = ctx.reserve_scoped(0, "SLDPRT move-face candidates")?;
     let mut candidates = BTreeMap::<(usize, usize), Vec<Option<FeatureDirection3>>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT direct-edit lanes")? {
+        let mut storage = ctx.reserve_scoped(0, "SLDPRT move-face lane workspace")?;
         let direction_specs = sorted_classes(
             ctx,
             &mut storage,
@@ -254,12 +274,14 @@ pub(crate) fn enrich_history_move_face_translations(
                 continue;
             };
             if start >= end {
-                push_move_face_candidate(
-                    ctx,
-                    &mut candidates,
-                    (history_index, feature_index),
-                    None,
-                )?;
+                candidate_storage.with_storage(|| {
+                    push_move_face_candidate(
+                        ctx,
+                        &mut candidates,
+                        (history_index, feature_index),
+                        None,
+                    )
+                })?;
                 continue;
             }
             let specs_within = classes_within(
@@ -277,12 +299,14 @@ pub(crate) fn enrich_history_move_face_translations(
                 "find SLDPRT move-face line references",
             )?;
             let ([_], [line_ref]) = (specs_within, line_refs_within) else {
-                push_move_face_candidate(
-                    ctx,
-                    &mut candidates,
-                    (history_index, feature_index),
-                    None,
-                )?;
+                candidate_storage.with_storage(|| {
+                    push_move_face_candidate(
+                        ctx,
+                        &mut candidates,
+                        (history_index, feature_index),
+                        None,
+                    )
+                })?;
                 continue;
             };
             let mut direction_storage =
@@ -346,15 +370,17 @@ pub(crate) fn enrich_history_move_face_translations(
                     })?;
                 }
             }
-            push_move_face_candidate(
-                ctx,
-                &mut candidates,
-                (history_index, feature_index),
-                match unique.as_slice() {
-                    [direction] => Some(*direction),
-                    _ => None,
-                },
-            )?;
+            candidate_storage.with_storage(|| {
+                push_move_face_candidate(
+                    ctx,
+                    &mut candidates,
+                    (history_index, feature_index),
+                    match unique.as_slice() {
+                        [direction] => Some(*direction),
+                        _ => None,
+                    },
+                )
+            })?;
         }
     }
     for (&(history_index, feature_index), candidates) in
@@ -408,9 +434,10 @@ pub(crate) fn enrich_history_move_body_translations(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
-    let mut storage = ctx.reserve_scoped(0, "SLDPRT move-body workspace")?;
+    let mut candidate_storage = ctx.reserve_scoped(0, "SLDPRT move-body candidates")?;
     let mut candidates = BTreeMap::<(usize, usize), Vec<Option<FiniteVector3>>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT direct-edit lanes")? {
+        let mut storage = ctx.reserve_scoped(0, "SLDPRT move-body lane workspace")?;
         let data_classes = sorted_classes(
             ctx,
             &mut storage,
@@ -479,24 +506,33 @@ pub(crate) fn enrich_history_move_body_translations(
                 u64_from_index(end),
                 "find SLDPRT move-body data classes",
             )? {
-                [class] => move_body_translation_record(
-                    ctx,
-                    &lane.native_payload,
-                    start,
-                    end,
-                    class.offset,
-                )?
-                .map(|record| record.translation_m),
+                [class] => {
+                    let (record, _storage) = ctx.with_scoped_storage(
+                        "hold SLDPRT move-body translation candidate",
+                        || {
+                            move_body_translation_record(
+                                ctx,
+                                &lane.native_payload,
+                                start,
+                                end,
+                                class.offset,
+                            )
+                        },
+                    )?;
+                    record.map(|record| record.translation_m)
+                }
                 _ => None,
             };
             let key = (history_index, feature_index);
-            ctx.push_btree_group(
-                &mut candidates,
-                key,
-                candidate,
-                "index SLDPRT move-body candidates",
-                "collect SLDPRT move-body candidates",
-            )?;
+            candidate_storage.with_storage(|| {
+                ctx.push_btree_group(
+                    &mut candidates,
+                    key,
+                    candidate,
+                    "index SLDPRT move-body candidates",
+                    "collect SLDPRT move-body candidates",
+                )
+            })?;
         }
     }
     for (&(history_index, feature_index), candidates) in
@@ -916,6 +952,20 @@ mod tests {
                     FiniteReal::new(0.03).expect("finite z"),
                 ),
             })
+        );
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (scratch_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(
+            super::move_body_selection_at(&scratch_ctx, &payload, 0).unwrap(),
+            None
+        );
+        let mut zero_id = payload.clone();
+        zero_id[selection_offset + 4..selection_offset + 8].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            move_body_translation_record(&scratch_ctx, &zero_id, 0, zero_id.len(), 0).unwrap(),
+            None
         );
         let mut rotated = payload.clone();
         rotated[matrix_offset..matrix_offset + 8].copy_from_slice(&0.0f64.to_le_bytes());

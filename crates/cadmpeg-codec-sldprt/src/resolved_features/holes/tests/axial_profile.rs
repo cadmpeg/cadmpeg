@@ -21,7 +21,7 @@ use crate::resolved_features::holes::direct_hole_position_feature;
 use crate::resolved_features::holes::profiled_hole_construction;
 use crate::resolved_features::holes::profiled_hole_construction_with_evidence;
 use crate::resolved_features::holes::project_profiled_hole_constructions;
-use crate::resolved_features::holes::ProfileEvidence;
+use crate::resolved_features::holes::{HoleHistoryIndex, ProfileEvidence};
 
 #[test]
 fn profiled_hole_histories_report_collection_limit() {
@@ -43,16 +43,21 @@ fn profiled_hole_histories_report_collection_limit() {
 }
 
 #[test]
-fn profiled_hole_histories_refuse_retained_copy() {
+fn profiled_hole_histories_refuse_materialized_copy() {
     let histories = [native_history()];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    let error = project_profiled_hole_constructions(&ctx, &mut [], &[], &histories, &[])
-        .expect_err("history text requires retained storage");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "clone SLDPRT history text",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+            project_profiled_hole_constructions(&ctx, &mut [], &[], &histories, &[])
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
+        if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "clone SLDPRT history text"));
 }
 
@@ -892,7 +897,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         direct_hole_position_feature(
             &ctx,
             &histories[0].features[0],
-            &histories,
+            &[HoleHistoryIndex::new(&ctx, &histories[0]).unwrap()],
             |id| Ok(model_sketches.get(id)),
             &entities,
         )
@@ -912,7 +917,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         direct_hole_position_feature(
             &ctx,
             &single_child_history.features[0],
-            std::slice::from_ref(&single_child_history),
+            &[HoleHistoryIndex::new(&ctx, &single_child_history).unwrap()],
             |id| Ok(model_sketches.get(id)),
             &entities,
         )
@@ -927,7 +932,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         direct_hole_position_feature(
             &ctx,
             &single_child_history.features[0],
-            std::slice::from_ref(&single_child_history),
+            &[HoleHistoryIndex::new(&ctx, &single_child_history).unwrap()],
             |id| Ok(model_sketches.get(id)),
             &entities,
         )
@@ -1085,4 +1090,27 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
             }),
             ..
         }) if matches!((&shape.diameter(),), (Some(actual_diameter),) if actual_diameter.get() == 6.0 && actual_length.get() == 14.0)));
+}
+
+#[test]
+fn hole_child_index_counts_a_record_matching_both_keys_once() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut history = native_history();
+    history.features[0].id = "7".into();
+    history.features[0].source_id = FeatureSource::from_value(7);
+    {
+        let records = HoleHistoryIndex::new(&ctx, &history).unwrap();
+        assert_eq!(
+            records
+                .child(&ctx, "7")
+                .unwrap()
+                .map(|feature| feature.id.as_str()),
+            Some("7")
+        );
+    }
+    let mut duplicate = history.features[0].clone();
+    duplicate.id = "different-record".into();
+    history.features.push(duplicate);
+    let records = HoleHistoryIndex::new(&ctx, &history).unwrap();
+    assert!(records.child(&ctx, "7").unwrap().is_none());
 }

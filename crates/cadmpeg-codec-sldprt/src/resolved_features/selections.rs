@@ -1,8 +1,8 @@
 //! Compact body, edge and surface selection decoding.
 
 use super::component_paths::{
-    component_path_input_features, component_path_terminal_feature, feature_precedes_consumer,
-    surface_selection_producer_features,
+    component_path_input_features, feature_precedes_consumer, surface_selection_producer_features,
+    FeaturesBySource,
 };
 use super::endpoints::{
     legacy_wide_profile_roster_curve, marker_profile_curve_role,
@@ -666,6 +666,7 @@ pub(super) fn compact_surface_selections(
 ) -> Result<Vec<FeatureInputSurfaceSelection>, CodecError> {
     const OPERATION: &str = "decode SLDPRT compact surface selections";
     let history_features = history_features_with_object_sources(ctx, histories, lane)?;
+    let feature_sources = FeaturesBySource::new(ctx, history_features.iter())?;
     let mut classes = lane
         .classes
         .iter()
@@ -945,7 +946,7 @@ pub(super) fn compact_surface_selections(
                 &lane.native_payload,
                 offset,
                 &components,
-                &history_features,
+                &feature_sources,
             )?;
             let producer_feature_refs = surface_selection_producer_features(
                 ctx,
@@ -3748,29 +3749,18 @@ pub(crate) fn surface_selection_terminal_feature_at(
     payload: &[u8],
     marker: usize,
     components: &[FeatureInputComponentPathEntry],
-    features: &[crate::records::Feature],
+    features: &FeaturesBySource<'_, '_>,
 ) -> Result<Option<String>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT surface selection terminal";
     if let Some(source) = compact_single_face_reference_record_at(ctx, payload, marker)?
         .and_then(|ComponentPathReference(_, source)| source)
     {
-        let mut found = None;
-        for feature in features {
-            ctx.charge_work(1, OPERATION)?;
-            if feature.source_value() != Some(source) {
-                continue;
-            }
-            if found.is_some() {
-                found = None;
-                break;
-            }
-            found = Some(feature);
-        }
+        let found = features.source(ctx, source, OPERATION)?;
         if let Some(feature) = found {
             return Ok(Some(ctx.copy_retained_text(&feature.id, OPERATION)?));
         }
     }
-    component_path_terminal_feature(ctx, components, features)
+    features.terminal(ctx, components)
 }
 
 fn compact_homogeneous_edge_ids(
