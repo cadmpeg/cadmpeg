@@ -89,10 +89,13 @@ pub fn texture_asset(
             Ok(None) => {}
             Err(DistanceError::UnknownUnit(_)) => unknown_count += 1,
             Err(DistanceError::NonFinite) => {
-                return Err(CodecError::malformed(format_args!(
-                    "Protein asset {} distance {suffix} is non-finite after millimetre conversion",
-                    record.guid
-                )));
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!(
+                        "Protein asset {} distance {suffix} is non-finite after millimetre conversion",
+                        record.guid
+                    ),
+                    "Protein malformed detail",
+                )?));
             }
         }
     }
@@ -157,10 +160,13 @@ pub fn texture_asset(
                 .to_radians(),
         )
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "Protein asset {} property WAngle is non-finite in radians",
-                record.guid
-            ))
+            ctx.format_retained(
+                format_args!(
+                    "Protein asset {} property WAngle is non-finite in radians",
+                    record.guid
+                ),
+                "Protein malformed detail",
+            ).map(CodecError::Malformed).unwrap_or_else(|error| error)
         })?,
         repeat_u: boolean_property(ctx, record, "URepeat")?.unwrap_or(true),
         repeat_v: boolean_property(ctx, record, "VRepeat")?.unwrap_or(true),
