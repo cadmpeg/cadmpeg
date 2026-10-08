@@ -1693,3 +1693,35 @@ fn linear_pattern_count_processing_propagates_work_refusal() {
     assert_eq!(count, 3);
     assert_eq!(spacing.get(), 25.0);
 }
+
+#[test]
+fn revolution_binding_skips_markers_without_profile_target() {
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: vec![SketchInputEntity::new(
+            "marker",
+            "lane",
+            1,
+            0,
+            SketchInputKind::Point,
+        )],
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::bind_profile_revolution_axes(&ctx, &mut [], &[], &[lane], &[], &[]).unwrap();
+}

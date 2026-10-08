@@ -36,5 +36,8 @@ fn hole_child_tokens_refuse_on_first_text_visit() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.reason == ResourceFailure::BudgetExceeded
-            && limit.operation == "scan SLDPRT hole child references"));
+            && limit.operation == "scan SLDPRT hole child references"
+            && limit.used == 0
+            && limit.additional == 1
+            && limit.limit == 0));
 }

@@ -31,7 +31,14 @@ fn hole_position_axes_refuse_collection_limit() {
             let mut policy = DecodePolicy::default();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            project_hole_axes(&ctx, &mut [], &[], &topology(&[]), &[native_history()], &[])
+            project_hole_axes(
+                &ctx,
+                &mut [model_hole()],
+                &[],
+                &topology(&[]),
+                &[native_history()],
+                &[],
+            )
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -49,7 +56,14 @@ fn hole_position_axes_refuse_work_limit() {
             let mut policy = DecodePolicy::default();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            project_hole_axes(&ctx, &mut [], &[], &topology(&[]), &[native_history()], &[])
+            project_hole_axes(
+                &ctx,
+                &mut [model_hole()],
+                &[],
+                &topology(&[]),
+                &[native_history()],
+                &[],
+            )
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -75,7 +89,14 @@ fn hole_position_axes_refuse_scoped_materialized_limit() {
             let mut policy = DecodePolicy::default();
             policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            project_hole_axes(&ctx, &mut [feature.clone()], &[], &topology(&[]), &[], &[])
+            project_hole_axes(
+                &ctx,
+                &mut [feature.clone(), model_hole()],
+                &[],
+                &topology(&[]),
+                &[native_history()],
+                &[],
+            )
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -225,6 +246,36 @@ fn bore_backed_position_projection_refuses_retained_limit() {
     assert!(
         matches!(features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: SketchFeatureBinding::Planar(Some(id)) }) if id == &expected)
     );
+    for dimension in [
+        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
+    ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            dimension,
+            "project SLDPRT bore backed position sketches",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                    _ => unreachable!(),
+                }
+                let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                project_bore_backed_position_sketches(
+                    &limited,
+                    &mut input.clone(),
+                    &mut Vec::new(),
+                    &mut Vec::new(),
+                    &surfaces,
+                    std::slice::from_ref(&history),
+                    std::slice::from_ref(&lane),
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension
+                && limit.operation == "project SLDPRT bore backed position sketches"));
+    }
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(expected.as_str().len()).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -246,4 +297,167 @@ fn bore_backed_position_projection_refuses_retained_limit() {
             && limit.used + limit.additional == u64::try_from(expected.as_str().len()).unwrap()),
         "{error:?}"
     );
+}
+
+#[test]
+fn helix_projection_skips_lane_indexes_without_target() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let lane = lane_with_position_reference(12);
+    super::super::project_helix_axes(&ctx, &mut [model_hole()], &[native_history()], &[lane])
+        .unwrap();
+}
+
+#[test]
+fn hole_ownership_skips_indexes_without_eligible_holes() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut history = native_history();
+    history.features[0].properties.insert(
+        cadmpeg_core::nonblank_literal!("DissectableChildren"),
+        "12".into(),
+    );
+    let lane = lane_with_position_reference(12);
+    super::super::enrich_history_hole_constructions(&ctx, &mut [history], &[lane]).unwrap();
+    super::super::enrich_history_hole_constructions(
+        &ctx,
+        &mut [],
+        &[lane_with_position_reference(12)],
+    )
+    .unwrap();
+}
+
+#[test]
+fn hole_carrier_skips_lane_indexes_without_native_hole() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let hole = model_hole();
+    let lane = lane_with_position_reference(12);
+    assert!(!super::super::hole_position_carrier_present(
+        &ctx,
+        &hole,
+        &[],
+        std::slice::from_ref(&lane)
+    )
+    .unwrap());
+    let mut history = native_history();
+    history.features[0].input_class = Some("moProfileFeature_c".into());
+    history.features[0].xml_tag = "Sketch".into();
+    assert!(
+        !super::super::hole_position_carrier_present(&ctx, &hole, &[history], &[lane]).unwrap()
+    );
+}
+
+#[test]
+fn planar_hole_projection_skips_indexes_without_target() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let lane = lane_with_position_reference(12);
+    super::super::project_hole_position_sketches(
+        &ctx,
+        &mut [],
+        &[],
+        &[],
+        &[],
+        std::slice::from_ref(&lane),
+    )
+    .unwrap();
+    let mut hole = model_hole();
+    hole.suppressed = Some(true);
+    super::super::project_hole_position_sketches(
+        &ctx,
+        &mut [hole],
+        &[],
+        &[],
+        &[native_history()],
+        &[lane],
+    )
+    .unwrap();
+}
+
+#[test]
+fn spatial_hole_projection_skips_indexes_without_target() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let lane = lane_with_position_reference(12);
+    super::super::project_spatial_hole_position_sketches(
+        &ctx,
+        &mut [],
+        &[],
+        &[],
+        &[],
+        &[],
+        std::slice::from_ref(&lane),
+    )
+    .unwrap();
+    let mut hole = model_hole();
+    hole.suppressed = Some(true);
+    super::super::project_spatial_hole_position_sketches(
+        &ctx,
+        &mut [hole],
+        &[],
+        &[],
+        &[],
+        &[native_history()],
+        &[lane],
+    )
+    .unwrap();
+}
+
+#[test]
+fn hole_axis_projection_skips_indexes_without_target() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let lane = lane_with_position_reference(12);
+    project_hole_axes(
+        &ctx,
+        &mut [],
+        &[],
+        &topology(&[]),
+        &[],
+        std::slice::from_ref(&lane),
+    )
+    .unwrap();
+    project_hole_axes(&ctx, &mut [model_hole()], &[], &topology(&[]), &[], &[lane]).unwrap();
+}
+
+#[test]
+fn bore_projection_skips_indexes_without_bore_target() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let lane = lane_with_position_reference(12);
+    super::super::project_bore_backed_position_sketches(
+        &ctx,
+        &mut [],
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &[],
+        &[],
+        std::slice::from_ref(&lane),
+    )
+    .unwrap();
+    super::super::project_bore_backed_position_sketches(
+        &ctx,
+        &mut [model_hole()],
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &[],
+        &[native_history()],
+        &[lane],
+    )
+    .unwrap();
 }

@@ -17,41 +17,28 @@ use std::collections::{HashMap, HashSet};
 struct OperandCandidates<'a, 'ctx> {
     by_object: HashMap<u32, Vec<&'a SketchInputEntity>>,
     by_local: HashMap<u32, Vec<&'a SketchInputEntity>>,
-    by_id: HashMap<&'a str, &'a SketchInputEntity>,
-    first_by_id: HashMap<&'a str, &'a SketchInputEntity>,
-    compatible: [Vec<&'a SketchInputEntity>; 5],
+    by_id: Option<HashMap<&'a str, &'a SketchInputEntity>>,
+    first_by_id: Option<HashMap<&'a str, &'a SketchInputEntity>>,
+    compatible: [Option<Vec<&'a SketchInputEntity>>; 5],
     coordinate_points: Vec<&'a SketchInputEntity>,
     storage: ScopedReservation<'ctx>,
 }
 
 fn compatibility_family(kind: FeatureInputOperandKind) -> usize {
-    // These representatives have the five distinct marker acceptance sets.
-    match kind {
-        FeatureInputOperandKind::D6
-        | FeatureInputOperandKind::Native(
-            NativeOperandTag::TAG_80CC
-            | NativeOperandTag::TAG_8152
-            | NativeOperandTag::TAG_81B2
-            | NativeOperandTag::TAG_8AB6
-            | NativeOperandTag::TAG_8DCB
-            | NativeOperandTag::TAG_929D
-            | NativeOperandTag::TAG_BC7C
-            | NativeOperandTag::TAG_BD69
-            | NativeOperandTag::TAG_81DD,
-        ) => 0,
-        FeatureInputOperandKind::E1
-        | FeatureInputOperandKind::Native(
-            NativeOperandTag::TAG_8386
-            | NativeOperandTag::TAG_83FE
-            | NativeOperandTag::TAG_8DDA
-            | NativeOperandTag::TAG_BC87
-            | NativeOperandTag::TAG_81E7,
-        ) => 1,
-        FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B) => 2,
-        FeatureInputOperandKind::Native(
-            NativeOperandTag::TAG_80AC | NativeOperandTag::TAG_80D5 | NativeOperandTag::TAG_8138,
-        ) => 3,
-        FeatureInputOperandKind::Native(_) => 4,
+    // Classify the acceptance set through its owning predicate.
+    match (
+        operand_accepts_marker(kind, SketchInputKind::Point),
+        operand_accepts_marker(kind, SketchInputKind::LineOrCircle),
+        operand_accepts_marker(
+            kind,
+            SketchInputKind::Relation(crate::records::SketchRelationKind::Distance),
+        ),
+    ) {
+        (true, false, false) => 0,
+        (false, true, false) => 1,
+        (true, true, false) => 2,
+        (true, false, true) => 3,
+        _ => 4,
     }
 }
 
@@ -62,12 +49,9 @@ impl<'a, 'ctx> OperandCandidates<'a, 'ctx> {
         kinds: impl IntoIterator<Item = FeatureInputOperandKind>,
     ) -> Result<Self, CodecError> {
         const OPERATION: &str = "index SLDPRT scalar operand candidates";
-        let mut needed = [false; 5];
         let mut needs_coordinate_points = false;
         let mut needs_object = false;
         let mut needs_local = false;
-        let mut needs_last_id = false;
-        let mut needs_first_id = false;
         let mut kinds = kinds.into_iter();
         while let Some(kind) = ctx.next_charged(&mut kinds, OPERATION)? {
             if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7) {
@@ -83,20 +67,13 @@ impl<'a, 'ctx> OperandCandidates<'a, 'ctx> {
                 continue;
             }
             needs_local = true;
-            if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_810F) {
-                continue;
-            }
-            needs_first_id |= operand_accepts_link_indirection(kind);
-            needs_last_id |= point_operand_uses_link_graph(kind)
-                || kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386);
-            needed[compatibility_family(kind)] = true;
         }
         let mut result = Self {
             by_object: HashMap::new(),
             by_local: HashMap::new(),
-            by_id: HashMap::new(),
-            first_by_id: HashMap::new(),
-            compatible: std::array::from_fn(|_| Vec::new()),
+            by_id: None,
+            first_by_id: None,
+            compatible: std::array::from_fn(|_| None),
             coordinate_points: Vec::new(),
             storage: ctx.reserve_scoped(0, OPERATION)?,
         };
@@ -117,28 +94,6 @@ impl<'a, 'ctx> OperandCandidates<'a, 'ctx> {
                 if let Some(index) = entity.local_id().filter(|_| needs_local) {
                     ctx.push_hash_group(&mut result.by_local, index, entity, OPERATION, OPERATION)?;
                 }
-                if needs_last_id {
-                    ctx.insert_hash_map(&mut result.by_id, entity.id(), entity, OPERATION)?;
-                }
-                if needs_first_id
-                    && !ctx.contains_key_hash_map(&result.first_by_id, entity.id(), OPERATION)?
-                {
-                    ctx.insert_hash_map(&mut result.first_by_id, entity.id(), entity, OPERATION)?;
-                }
-                for (family, representative) in [
-                    FeatureInputOperandKind::D6,
-                    FeatureInputOperandKind::E1,
-                    FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
-                    FeatureInputOperandKind::Native(NativeOperandTag::TAG_80AC),
-                    FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
-                ]
-                .into_iter()
-                .enumerate()
-                {
-                    if needed[family] && operand_accepts_marker(representative, entity.kind()) {
-                        ctx.push_vec(&mut result.compatible[family], entity, OPERATION)?;
-                    }
-                }
                 if needs_coordinate_points
                     && entity.coordinates_m.is_some()
                     && matches!(
@@ -151,14 +106,6 @@ impl<'a, 'ctx> OperandCandidates<'a, 'ctx> {
                 Ok::<_, CodecError>(())
             })?;
         }
-        for roster in &mut result.compatible {
-            ctx.sort_unstable_by_key(
-                roster,
-                |entity| entity.offset(),
-                Ord::cmp,
-                "sort SLDPRT compatible operand markers",
-            )?;
-        }
         ctx.sort_unstable_by_key(
             &mut result.coordinate_points,
             |entity| entity.offset(),
@@ -166,6 +113,67 @@ impl<'a, 'ctx> OperandCandidates<'a, 'ctx> {
             "sort SLDPRT scalar operand points",
         )?;
         Ok(result)
+    }
+
+    fn id_index<'index>(
+        ctx: &DecodeContext<'_>,
+        entities: &[&'a SketchInputEntity],
+        index: &'index mut Option<HashMap<&'a str, &'a SketchInputEntity>>,
+        storage: &mut ScopedReservation<'_>,
+        first: bool,
+    ) -> Result<&'index HashMap<&'a str, &'a SketchInputEntity>, CodecError> {
+        const OPERATION: &str = "index SLDPRT scalar operand links";
+        Ok(match index {
+            Some(index) => index,
+            slot @ None => {
+                let mut values = HashMap::new();
+                for &entity in ctx.admit_iter(entities, OPERATION)? {
+                    storage.with_storage(|| {
+                        if first {
+                            ctx.entry_hash_map(&mut values, entity.id(), OPERATION)?
+                                .or_insert(entity);
+                        } else {
+                            ctx.insert_hash_map(&mut values, entity.id(), entity, OPERATION)?;
+                        }
+                        Ok::<_, CodecError>(())
+                    })?;
+                }
+                slot.insert(values)
+            }
+        })
+    }
+
+    fn compatible_roster<'roster>(
+        ctx: &DecodeContext<'_>,
+        entities: &[&'a SketchInputEntity],
+        roster: &'roster mut Option<Vec<&'a SketchInputEntity>>,
+        storage: &mut ScopedReservation<'_>,
+        kind: FeatureInputOperandKind,
+    ) -> Result<&'roster [&'a SketchInputEntity], CodecError> {
+        Ok(match roster {
+            Some(roster) => roster,
+            slot @ None => {
+                let mut values = Vec::new();
+                for &entity in ctx.admit_iter(entities, "scan SLDPRT compatible operand markers")? {
+                    if operand_accepts_marker(kind, entity.kind()) {
+                        storage.with_storage(|| {
+                            ctx.push_vec(
+                                &mut values,
+                                entity,
+                                "index SLDPRT compatible operand markers",
+                            )
+                        })?;
+                    }
+                }
+                ctx.sort_unstable_by_key(
+                    &mut values,
+                    |entity| entity.offset(),
+                    Ord::cmp,
+                    "sort SLDPRT compatible operand markers",
+                )?;
+                slot.insert(values)
+            }
+        })
     }
 }
 
@@ -178,13 +186,14 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
     if operands.is_empty() {
         return Ok(Vec::new());
     }
-    let candidates =
+    let mut candidates =
         OperandCandidates::new(ctx, entities, operands.iter().map(|operand| operand.kind))?;
     let mut resolved = Vec::new();
     for operand in ctx.admit_iter(operands, "resolve SLDPRT scalar operands")? {
         let marker = resolve_indexed_operand_marker(
             ctx,
-            &candidates,
+            &mut candidates,
+            entities,
             operand.kind,
             operand.entity_index,
             |_| Ok(false),
@@ -207,7 +216,8 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
             let alternatives = [
                 resolve_indexed_operand_marker(
                     ctx,
-                    &candidates,
+                    &mut candidates,
+                    entities,
                     first_operand.kind,
                     first_operand.entity_index,
                     |id| ctx.equal(id, second.id(), "compare SLDPRT scalar operand markers"),
@@ -215,7 +225,8 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
                 .map(|alternative| [alternative, *second]),
                 resolve_indexed_operand_marker(
                     ctx,
-                    &candidates,
+                    &mut candidates,
+                    entities,
                     second_operand.kind,
                     second_operand.entity_index,
                     |id| ctx.equal(id, first.id(), "compare SLDPRT scalar operand markers"),
@@ -278,7 +289,8 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
         if target.is_none() {
             *target = resolve_indexed_operand_marker(
                 ctx,
-                &candidates,
+                &mut candidates,
+                entities,
                 operand.kind,
                 operand.entity_index,
                 |id| {
@@ -337,13 +349,14 @@ fn resolve_operand_marker_excluding<'a>(
     address: u16,
     excluded: impl Fn(&str) -> Result<bool, CodecError>,
 ) -> Result<Option<&'a SketchInputEntity>, CodecError> {
-    let candidates = OperandCandidates::new(ctx, entities, [kind])?;
-    resolve_indexed_operand_marker(ctx, &candidates, kind, address, excluded)
+    let mut candidates = OperandCandidates::new(ctx, entities, [kind])?;
+    resolve_indexed_operand_marker(ctx, &mut candidates, entities, kind, address, excluded)
 }
 
 fn resolve_indexed_operand_marker<'a>(
     ctx: &DecodeContext<'_>,
-    candidates: &OperandCandidates<'a, '_>,
+    candidates: &mut OperandCandidates<'a, '_>,
+    entities: &[&'a SketchInputEntity],
     kind: FeatureInputOperandKind,
     address: u16,
     excluded: impl Fn(&str) -> Result<bool, CodecError>,
@@ -577,8 +590,17 @@ fn resolve_indexed_operand_marker<'a>(
                 |entity| {
                     Ok(entity.object_index() == Some(u32::from(address))
                         && !excluded(entity.id())?
-                        && linked_coordinate_line_endpoints(ctx, entity, &candidates.by_id)?
-                            .is_some())
+                        && linked_coordinate_line_endpoints(ctx, entity, |id, operation| {
+                            let by_id = OperandCandidates::id_index(
+                                ctx,
+                                entities,
+                                &mut candidates.by_id,
+                                &mut candidates.storage,
+                                false,
+                            )?;
+                            Ok(ctx.get_hash_map(by_id, id, operation)?.copied())
+                        })?
+                        .is_some())
                 },
                 "select unique indexed SLDPRT line handle",
             )? {
@@ -586,9 +608,16 @@ fn resolve_indexed_operand_marker<'a>(
             }
         }
     }
-    let compatible = &candidates.compatible[compatibility_family(kind)];
+    let family = compatibility_family(kind);
     let mut ordinal_link_graph = false;
     if operand_uses_compatible_ordinal(kind) {
+        let compatible = OperandCandidates::compatible_roster(
+            ctx,
+            entities,
+            &mut candidates.compatible[family],
+            &mut candidates.storage,
+            kind,
+        )?;
         if let Some(entity) = compatible.get(usize::from(address)).copied() {
             if excluded(entity.id())? {
                 return Ok(None);
@@ -625,8 +654,17 @@ fn resolve_indexed_operand_marker<'a>(
                     |entity| {
                         Ok(entity.local_id() == Some(u32::from(address))
                             && !excluded(entity.id())?
-                            && linked_coordinate_line_endpoints(ctx, entity, &candidates.by_id)?
-                                .is_some())
+                            && linked_coordinate_line_endpoints(ctx, entity, |id, operation| {
+                                let by_id = OperandCandidates::id_index(
+                                    ctx,
+                                    entities,
+                                    &mut candidates.by_id,
+                                    &mut candidates.storage,
+                                    false,
+                                )?;
+                                Ok(ctx.get_hash_map(by_id, id, operation)?.copied())
+                            })?
+                            .is_some())
                     },
                     "select unique local SLDPRT line handle",
                 )? {
@@ -637,7 +675,19 @@ fn resolve_indexed_operand_marker<'a>(
                 linked_point_markers(
                     ctx,
                     &mut temporary_storage,
-                    candidates,
+                    &candidates.by_local,
+                    |id| {
+                        let by_id = OperandCandidates::id_index(
+                            ctx,
+                            entities,
+                            &mut candidates.by_id,
+                            &mut candidates.storage,
+                            false,
+                        )?;
+                        Ok(ctx
+                            .get_hash_map(by_id, id, "resolve SLDPRT scalar operand link")?
+                            .copied())
+                    },
                     address,
                     kind,
                     excluded,
@@ -649,8 +699,15 @@ fn resolve_indexed_operand_marker<'a>(
                         continue;
                     }
                     for link in ctx.admit_iter(entity.links(), "scan SLDPRT linked operands")? {
+                        let first_by_id = OperandCandidates::id_index(
+                            ctx,
+                            entities,
+                            &mut candidates.first_by_id,
+                            &mut candidates.storage,
+                            true,
+                        )?;
                         let Some(&target) = ctx.get_hash_map(
-                            &candidates.first_by_id,
+                            first_by_id,
                             link.entity_ref.as_str(),
                             "resolve SLDPRT linked operand target",
                         )?
@@ -690,7 +747,19 @@ fn resolve_indexed_operand_marker<'a>(
                     let linked = linked_point_markers(
                         ctx,
                         &mut temporary_storage,
-                        candidates,
+                        &candidates.by_local,
+                        |id| {
+                            let by_id = OperandCandidates::id_index(
+                                ctx,
+                                entities,
+                                &mut candidates.by_id,
+                                &mut candidates.storage,
+                                false,
+                            )?;
+                            Ok(ctx
+                                .get_hash_map(by_id, id, "resolve SLDPRT scalar operand link")?
+                                .copied())
+                        },
                         address,
                         kind,
                         |_| Ok(false),
@@ -703,6 +772,13 @@ fn resolve_indexed_operand_marker<'a>(
                         )?
                 } =>
                 {
+                    let compatible = OperandCandidates::compatible_roster(
+                        ctx,
+                        entities,
+                        &mut candidates.compatible[family],
+                        &mut candidates.storage,
+                        kind,
+                    )?;
                     unique_entity(
                         ctx,
                         compatible,
@@ -711,6 +787,13 @@ fn resolve_indexed_operand_marker<'a>(
                     )?
                 }
                 [] if operand_allows_compatible_ordinal_fallback(kind) => {
+                    let compatible = OperandCandidates::compatible_roster(
+                        ctx,
+                        entities,
+                        &mut candidates.compatible[family],
+                        &mut candidates.storage,
+                        kind,
+                    )?;
                     if let Some(entity) = compatible.get(usize::from(address)).copied() {
                         Some(entity)
                     } else if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C) {
@@ -755,14 +838,15 @@ fn point_operand_uses_link_graph(kind: FeatureInputOperandKind) -> bool {
 fn linked_point_markers<'a>(
     ctx: &DecodeContext<'_>,
     temporary_storage: &mut ScopedReservation<'_>,
-    candidates: &OperandCandidates<'a, '_>,
+    local_index: &HashMap<u32, Vec<&'a SketchInputEntity>>,
+    mut lookup: impl FnMut(&str) -> Result<Option<&'a SketchInputEntity>, CodecError>,
     address: u16,
     kind: FeatureInputOperandKind,
     excluded: impl Fn(&str) -> Result<bool, CodecError>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     let roots = ctx
         .get_hash_map(
-            &candidates.by_local,
+            local_index,
             &u32::from(address),
             "find SLDPRT scalar operand link roots",
         )?
@@ -791,10 +875,7 @@ fn linked_point_markers<'a>(
         temporary_storage.with_storage(|| {
             ctx.insert_hash_set(&mut visited, id, "index SLDPRT scalar operand markers")
         })?;
-        let Some(entity) = ctx
-            .get_hash_map(&candidates.by_id, id, "resolve SLDPRT scalar operand link")?
-            .copied()
-        else {
+        let Some(entity) = lookup(id)? else {
             continue;
         };
         if operand_accepts_marker(kind, entity.kind()) && !excluded(entity.id())? {
@@ -836,7 +917,7 @@ fn operand_accepts_link_indirection(kind: FeatureInputOperandKind) -> bool {
 pub(super) fn linked_coordinate_line_endpoints<'a>(
     ctx: &DecodeContext<'_>,
     marker: &SketchInputEntity,
-    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
+    mut lookup: impl FnMut(&str, &'static str) -> Result<Option<&'a SketchInputEntity>, CodecError>,
 ) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
     let mut links = [None, None];
     for link in ctx.admit_iter(marker.links(), "resolve SLDPRT linked line endpoints")? {
@@ -856,23 +937,17 @@ pub(super) fn linked_coordinate_line_endpoints<'a>(
     let [Some(first_link), Some(second_link)] = links else {
         return Ok(None);
     };
-    let Some(first) = ctx
-        .get_hash_map(
-            markers_by_id,
-            first_link.entity_ref.as_str(),
-            "resolve SLDPRT first linked line endpoint",
-        )?
-        .copied()
+    let Some(first) = lookup(
+        first_link.entity_ref.as_str(),
+        "resolve SLDPRT first linked line endpoint",
+    )?
     else {
         return Ok(None);
     };
-    let Some(second) = ctx
-        .get_hash_map(
-            markers_by_id,
-            second_link.entity_ref.as_str(),
-            "resolve SLDPRT second linked line endpoint",
-        )?
-        .copied()
+    let Some(second) = lookup(
+        second_link.entity_ref.as_str(),
+        "resolve SLDPRT second linked line endpoint",
+    )?
     else {
         return Ok(None);
     };
