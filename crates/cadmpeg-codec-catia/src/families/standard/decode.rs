@@ -1671,23 +1671,28 @@ fn standard_extrusion_support_id(
     ctx: &DecodeContext<'_>,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     surfaces: &mut Vec<Surface>,
-    procedural_supports: &mut HashMap<u32, SurfaceId>,
+    procedural_supports: &mut HashMap<u32, usize>,
     surface_object_id: u32,
     geometry: SurfaceGeometry,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<SurfaceId, cadmpeg_core::CodecError> {
-    if let Some(id) = ctx.get_hash_map(
+    if let Some(&index) = ctx.get_hash_map(
         procedural_supports,
         &surface_object_id,
         "catia_extrusion_support_lookup",
     )? {
-        return id.try_clone_for_decode(ctx, "catia_extrusion_existing_support_id_copy");
+        return surfaces[index]
+            .id
+            .try_clone_for_decode(ctx, "catia_extrusion_existing_support_id_copy");
     }
     let source_object = cgm_source(ctx, "surface", surface_object_id)?;
-    let id = SurfaceId::compose(
+    let id = crate::resource::compose_u32_id(
+        ctx,
         &cadmpeg_ir::identity_namespace!("catia", "standard", "procedural-support"),
         surface_object_id,
-    );
+        SurfaceId::mint,
+        "catia_extrusion_support_surface_id",
+    )?;
     annotate(
         ctx,
         annotations,
@@ -1703,11 +1708,10 @@ fn standard_extrusion_support_id(
         geometry,
         source_object: Some(source_object),
     });
-    let map_id = id.try_clone_for_decode(ctx, "catia_extrusion_support_map_id_copy")?;
     ctx.insert_hash_map(
         procedural_supports,
         surface_object_id,
-        map_id,
+        surfaces.len() - 1,
         "catia_extrusion_support_map",
     )?;
     Ok(id)
@@ -1718,7 +1722,7 @@ fn emit_standard_extrusion_definition(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
-    (surfaces, procedural_supports): (&mut Vec<Surface>, &mut HashMap<u32, SurfaceId>),
+    (surfaces, procedural_supports): (&mut Vec<Surface>, &mut HashMap<u32, usize>),
     extrusion_definitions: &mut HashMap<
         u32,
         cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction,
@@ -3119,7 +3123,7 @@ fn try_decode_standard_population(
         }
     }
 
-    let mut procedural_supports = HashMap::<u32, SurfaceId>::new();
+    let mut procedural_supports = HashMap::<u32, usize>::new();
     let mut extrusion_definitions = HashMap::new();
     for (index, surface_index, tag, procedure) in admitted!(ctx.admit_iter(procedural_surface_plans, "catia_standard_procedural_surface_plans")) {
         let procedural_id = admitted!(crate::resource::compose_index_id(ctx,
@@ -3158,8 +3162,8 @@ fn try_decode_standard_population(
             } => {
                 let support_id = match support {
                     crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(support) => {
-                        if let Some(id) = admitted!(ctx.get_hash_map(&procedural_supports, &support_object_id, "catia_standard_procedural_support_lookup")) {
-                            admitted!(id.try_clone_for_decode(ctx, "catia_standard_existing_support_id"))
+                        if let Some(&index) = admitted!(ctx.get_hash_map(&procedural_supports, &support_object_id, "catia_standard_procedural_support_lookup")) {
+                            admitted!(surfaces[index].id.try_clone_for_decode(ctx, "catia_standard_existing_support_id"))
                         } else {
                             let source_object = admitted!(cgm_source(ctx, "surface", support_object_id));
                             let id = admitted!(crate::resource::compose_u32_id(ctx,
@@ -3186,7 +3190,7 @@ fn try_decode_standard_population(
                                 geometry: support,
                                 source_object: Some(source_object),
                             });
-                            admitted!(ctx.insert_hash_map(&mut procedural_supports, support_object_id, admitted!(id.try_clone_for_decode(ctx, "catia_standard_support_map_id")), "catia_standard_procedural_supports"));
+                            admitted!(ctx.insert_hash_map(&mut procedural_supports, support_object_id, surfaces.len() - 1, "catia_standard_procedural_supports"));
                             id
                         }
                     }
@@ -3211,7 +3215,7 @@ fn try_decode_standard_population(
                         // Supports share one identity namespace, so a support
                         // object emitted earlier owns the first surface with
                         // this identity; otherwise the surface pushed here does.
-                        let earlier_support = admitted!(ctx.contains_key_hash_map(&procedural_supports, &support_object_id, "catia_standard_procedural_support_lookup"));
+                        let earlier_support = admitted!(ctx.get_hash_map(&procedural_supports, &support_object_id, "catia_standard_procedural_support_lookup")).copied();
                         let pushed_index = surfaces.len();
                         if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                             return Some(Err(error));
@@ -3241,17 +3245,9 @@ fn try_decode_standard_population(
                             ),
                             support_object_id, ProceduralSurfaceId::mint,
                             "catia_standard_support_construction_id"));
-                        let support_index = if earlier_support {
-                            admitted!(ctx.position_by(
-                                &surfaces,
-                                |surface| ctx.equal(&surface.id, &support_id, "catia_standard_support_surface_candidates"),
-                                "catia_standard_support_surface_candidates",
-                            ))
-                        } else {
-                            Some(pushed_index)
-                        };
+                        let support_index = earlier_support.unwrap_or(pushed_index);
                         let attached = if let Some(surface) =
-                            support_index.and_then(|index| surfaces.get_mut(index))
+                            surfaces.get_mut(support_index)
                         {
                             let cache = std::mem::replace(
                                 &mut surface.geometry,
@@ -3285,7 +3281,7 @@ fn try_decode_standard_population(
                                 Some(record_bounds),
                             ));
                         }
-                        admitted!(ctx.insert_hash_map(&mut procedural_supports, support_object_id, admitted!(support_id.try_clone_for_decode(ctx, "catia_standard_support_map_id")), "catia_standard_procedural_supports"));
+                        admitted!(ctx.insert_hash_map(&mut procedural_supports, support_object_id, support_index, "catia_standard_procedural_supports"));
                         support_id
                     }
                 };

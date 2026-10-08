@@ -279,3 +279,44 @@ fn a5_bounds_binding_avoids_separated_owner_carrier_and_face_products() {
     };
     crate::test_support::with_work_limit(limit.used + 900_000, run).expect("both indexed products");
 }
+
+#[test]
+fn procedural_support_lookup_uses_the_stored_arena_index() {
+    use super::super::standard_extrusion_support_id;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::SurfaceId;
+    let expected = SurfaceId::mint("catia:test:surface#existing").expect("id");
+    let mut surfaces = (0..1024)
+        .map(|index| Surface {
+            id: SurfaceId::mint(format!("catia:test:surface#{index}")).expect("id"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        })
+        .collect::<Vec<_>>();
+    surfaces.push(Surface {
+        id: expected.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    let mut supports = std::collections::HashMap::from([(7u32, 1024usize)]);
+    crate::test_support::with_work_limit(1024, |ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let result = standard_extrusion_support_id(
+            ctx,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut surfaces,
+            &mut supports,
+            7,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            &mut admission,
+        )?;
+        assert_eq!(result, expected);
+        assert_eq!(surfaces.len(), 1025);
+        assert_eq!(
+            supports,
+            std::collections::HashMap::from([(7u32, 1024usize)])
+        );
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .expect("one lookup and identity copy");
+}
