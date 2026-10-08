@@ -14,6 +14,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+mod body_owner_tests;
 mod graph_diagnostic_tests;
 mod property_diagnostic_tests;
 mod resource_admission_tests;
