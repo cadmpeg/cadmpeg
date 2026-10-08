@@ -17,6 +17,7 @@ use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 mod orientations;
+mod ordering_storage;
 
 fn carrier_surface(id: u32, geometry: SurfaceGeometry) -> Surface {
     Surface {

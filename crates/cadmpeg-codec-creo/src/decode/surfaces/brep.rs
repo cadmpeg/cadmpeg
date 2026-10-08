@@ -1509,11 +1509,16 @@ fn ordered_native_parameter_face_loops<'a>(
         )?;
         polygons.push(polygon);
     }
+    let mut input_storage = ctx.reserve_scoped(0, "creo native face ordering candidate references")?;
     let mut copied_loops = Vec::new();
-    ctx.extend_from_slice(&mut copied_loops, loops, "creo native face loop references")?;
+    input_storage.with_storage(|| {
+        ctx.extend_from_slice(&mut copied_loops, loops, "creo native face loop references")
+    })?;
     if let Some(ordered) = ordered_parameter_face_loops(ctx, copied_loops, &polygons)? {
+        input_storage.commit()?;
         Ok(Some(ordered))
     } else {
+        drop(input_storage);
         ordered_two_edge_circle_loops(
             ctx,
             loops,

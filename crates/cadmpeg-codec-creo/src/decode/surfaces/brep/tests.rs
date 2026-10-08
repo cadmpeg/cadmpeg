@@ -30,6 +30,7 @@ mod eligible_index;
 mod empty_traversal;
 mod face_references;
 mod loop_ring;
+mod ordering_storage;
 mod pcurve_emission;
 mod shell_references;
 mod split_shells;
