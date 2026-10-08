@@ -105,7 +105,7 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         .is_empty());
 }
 
-fn pattern_hole_features() -> Vec<Feature> {
+pub(super) fn pattern_hole_features() -> Vec<Feature> {
     let seed = FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar");
     let pattern_definition = FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds: vec![PatternSeed::Feature(seed.clone())],
@@ -175,7 +175,7 @@ fn pattern_hole_nominal_context_refuses_work_limit() {
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
 }
 
-fn cad_feature(class: &str, identifier: &str) -> Entity {
+pub(super) fn cad_feature(class: &str, identifier: &str) -> Entity {
     let mut cad_ref = entity("CadRef");
     cad_ref
         .strings
@@ -216,13 +216,36 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
         .push(reference("A10", "GdtDatum"));
     root.annotations.entities.push(datum);
 
-    let mut index = TopologyIdentityIndex::default();
-    index.sequence_targets.insert(
-        42,
-        Some(PmiTarget::Face {
-            face: FaceId::mint("sldprt:brep:face#42").expect("identity grammar"),
-        }),
-    );
+    let mut index = TopologyIdentityIndex::from_model(
+        &ctx,
+        crate::swift::PrimaryTopology {
+            bodies: &[],
+            faces: &[],
+            edges: &[],
+            vertices: &[],
+        },
+        &[],
+        &[],
+        &[],
+    )
+    .expect("empty topology index carries its storage admission");
+    let TopologyIdentityIndex {
+        sequence_targets,
+        _storage,
+        ..
+    } = &mut index;
+    _storage
+        .with_storage(|| {
+            TopologyIdentityIndex::insert_sequence_target(
+                &ctx,
+                sequence_targets,
+                42,
+                Some(PmiTarget::Face {
+                    face: FaceId::mint("sldprt:brep:face#42").expect("identity grammar"),
+                }),
+            )
+        })
+        .expect("sequence fixture uses the index storage admission");
     let projected = project_with_topology(&ctx, &root, Some(&index), &[], None)
         .expect("test projection fits policy")
         .annotations;
@@ -300,6 +323,48 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         point: PointId::mint("sldprt:brep:point#44").expect("identity grammar"),
         tolerance: None,
     };
+    for operation in [
+        "index SWIFT face attribute identities",
+        "index SWIFT edge attribute identities",
+        "index SWIFT vertex attribute identities",
+    ] {
+        let probe_arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (probe_ctx, _) = DecodeContext::from_root_bytes(&[], &probe_arena, &policy).unwrap();
+        let topology = crate::swift::PrimaryTopology {
+            bodies: std::slice::from_ref(&body),
+            faces: std::slice::from_ref(&face),
+            edges: std::slice::from_ref(&edge),
+            vertices: std::slice::from_ref(&vertex),
+        };
+        let skipped_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            operation,
+            None,
+        );
+        let no_sequences = TopologyIdentityIndex::from_model(
+            &probe_ctx, topology, &[], &[], &[],
+        ).expect("primary identities do not need attribute joins");
+        assert!(no_sequences.resolve(&probe_ctx, "schema:22").unwrap().is_none());
+        assert!(no_sequences.resolve(&probe_ctx, "schema:11").unwrap().is_some());
+        drop((no_sequences, skipped_probe));
+        assert!(probe_ctx.resource_refusal().is_none());
+
+        let selected_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            operation,
+            None,
+        );
+        let result = TopologyIdentityIndex::from_model(
+            &probe_ctx, topology, &[(222, 22)], &[(333, 33)], &[(444, 44)],
+        );
+        drop(selected_probe);
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref limit))
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == operation));
+        drop(result);
+        assert!(probe_ctx.finish_session().is_err());
+    }
     let index = TopologyIdentityIndex::from_model(
         &ctx,
         crate::swift::PrimaryTopology {
@@ -543,13 +608,62 @@ fn swift_topology_index_refuses_work_limit() {
 }
 
 #[test]
-fn swift_topology_index_refuses_retained_limit() {
+fn swift_topology_index_refuses_materialized_limit() {
     let CodecError::ResourceLimit(limit) =
-        topology_index_limit_error(|limits| limits.max_retained_bytes = 0)
+        topology_index_limit_error(|limits| limits.max_materialized_bytes = 0)
     else {
+        panic!("expected materialized refusal")
+    };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(limit.operation, "copy SWIFT topology identity");
+}
+
+#[test]
+fn swift_topology_index_scratch_does_not_consume_retained_budget() {
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::{Body, BodyKind};
+
+    let body = Body {
+        id: BodyId::mint("sldprt:brep:body#11").expect("identity grammar"),
+        kind: BodyKind::default(),
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
+    let index = TopologyIdentityIndex::from_model(
+        &ctx,
+        crate::swift::PrimaryTopology {
+            bodies: std::slice::from_ref(&body),
+            faces: &[],
+            edges: &[],
+            vertices: &[],
+        },
+        &[],
+        &[],
+        &[],
+    )
+    .expect("scratch identity index uses the materialized budget");
+    assert_eq!(
+        index.resolve(&ctx, "schema:11").unwrap().cloned(),
+        Some(PmiTarget::Body {
+            body: body.id.clone()
+        })
+    );
+
+    let error = crate::swift::copy_pmi_target(&ctx, &PmiTarget::Body { body: body.id })
+        .expect_err("final PMI output identity remains retained");
+    let CodecError::ResourceLimit(limit) = error else {
         panic!("expected retained refusal")
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "copy SWIFT topology identity");
 }
 
 #[test]

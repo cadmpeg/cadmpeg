@@ -387,10 +387,16 @@ impl<'a> Section<'a> {
         }
     }
 
-    pub(crate) fn site_key(self) -> String {
+    pub(crate) fn site_key(self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
         match self {
-            Self::Block(block) => format!("block@{}", block.offset),
-            Self::Compound(stream) => format!("compound@{}", stream.directory_id),
+            Self::Block(block) => ctx.format_retained(
+                format_args!("block@{}", block.offset),
+                "format SLDPRT Parasolid site key",
+            ),
+            Self::Compound(stream) => ctx.format_retained(
+                format_args!("compound@{}", stream.directory_id),
+                "format SLDPRT Parasolid site key",
+            ),
         }
     }
 
@@ -1275,8 +1281,8 @@ impl ActiveParasolidSite<'_> {
         self.section.source_stream()
     }
 
-    pub(crate) fn site_key(&self) -> String {
-        self.section.site_key()
+    pub(crate) fn site_key(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        self.section.site_key(ctx)
     }
 }
 

@@ -101,17 +101,19 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let mut admitted_entities = 0_u64;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns, mut pmi_losses, _native) = build_metadata_ir(
-            ctx,
-            &scan,
-            &classification,
-            form_padding,
-            &mut admitted_entities,
-        )?;
+        let (ir, annotations, unknowns, mut pmi_losses, _native, unsupported_swift_loss) =
+            build_metadata_ir(
+                ctx,
+                &scan,
+                &classification,
+                form_padding,
+                &mut admitted_entities,
+            )?;
         let mut report = build_container_report(
             ctx,
             &scan,
             &classification,
+            unsupported_swift_loss,
             container::notes_charged(ctx, &scan)?,
         )?;
         ctx.append_vec(
@@ -128,16 +130,18 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         })?;
     if !streams.is_empty() {
         ctx.charge_entities(u64_from_index(streams.len()), "admit SLDPRT body streams")?;
-        if let Some((decoded, mut report)) = try_decode_brep(ctx, &scan, &streams, &classification)?
-        {
-            let (ir, annotations, unknowns, mut pmi_losses, native) = build_geometry_ir(
-                ctx,
-                &mut scan,
-                &classification,
-                decoded,
-                form_padding,
-                &mut admitted_entities,
-            )?;
+        if let Some((decoded, mut report)) = try_decode_brep(ctx, &scan, &streams)? {
+            let (ir, annotations, unknowns, mut pmi_losses, native, unsupported_swift_loss) =
+                build_geometry_ir(
+                    ctx,
+                    &mut scan,
+                    &classification,
+                    decoded,
+                    form_padding,
+                    &mut admitted_entities,
+                )?;
+            append_swift_pmi_loss(ctx, unsupported_swift_loss, &mut report.losses)?;
+            classification.append_losses(ctx, &mut report.losses)?;
             ctx.append_vec(
                 &mut report.losses,
                 &mut pmi_losses,
@@ -149,17 +153,19 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         }
     }
 
-    let (ir, annotations, unknowns, mut pmi_losses, native) = build_metadata_ir(
-        ctx,
-        &scan,
-        &classification,
-        form_padding,
-        &mut admitted_entities,
-    )?;
+    let (ir, annotations, unknowns, mut pmi_losses, native, unsupported_swift_loss) =
+        build_metadata_ir(
+            ctx,
+            &scan,
+            &classification,
+            form_padding,
+            &mut admitted_entities,
+        )?;
     let mut report = build_container_report(
         ctx,
         &scan,
         &classification,
+        unsupported_swift_loss,
         container::notes_charged(ctx, &scan)?,
     )?;
     ctx.append_vec(
@@ -2231,7 +2237,13 @@ fn unbound_feature_input_operation_objects(
 
     if !ctx.any_by(
         &native.feature_input_lanes,
-        |lane| ctx.any_by(&lane.classes, |class| Ok(class.role() == FeatureInputClassRole::Feature), CONSUMER),
+        |lane| {
+            ctx.any_by(
+                &lane.classes,
+                |class| Ok(class.role() == FeatureInputClassRole::Feature),
+                CONSUMER,
+            )
+        },
         CONSUMER,
     )? {
         return Ok(0);
@@ -2742,21 +2754,24 @@ fn try_decode_brep<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
     streams: &[ActiveParasolidSite<'_>],
-    classification: &crate::dialect::LayerClassification,
 ) -> Result<Option<(DecodedBrep<'ctx>, DecodeBody)>, CodecError> {
+    let mut sites_storage = ctx.reserve_scoped(0, "SLDPRT B-rep site index workspace")?;
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in ctx
         .admit_iter(streams, "scan SLDPRT try_decode_brep values")?
         .enumerate()
     {
-        ctx.push_btree_group(
-            &mut sites,
-            stream.site_key(),
-            index,
-            "collect SLDPRT B-rep sites",
-            "collect SLDPRT site streams",
-        )?;
+        sites_storage.with_storage(|| {
+            ctx.push_btree_group(
+                &mut sites,
+                stream.site_key(ctx)?,
+                index,
+                "collect SLDPRT B-rep sites",
+                "collect SLDPRT site streams",
+            )
+        })?;
     }
+    let mut decoded_sites_storage = ctx.reserve_scoped(0, "SLDPRT decoded site list workspace")?;
     let mut decoded_sites = Vec::new();
     for (site, indices) in ctx.admit_iter(&sites, "scan SLDPRT try_decode_brep values")? {
         let first = indices[0];
@@ -2775,20 +2790,36 @@ fn try_decode_brep<'ctx>(
             })?;
         }
         let decoded = decode_bodies(ctx, &bodies, streams[first].source_stream())?;
-        ctx.reserve_vec(&mut decoded_sites, 1, "collect decoded SLDPRT sites")?;
-        decoded_sites.push((site, first, decoded));
+        decoded_sites_storage.with_storage(|| {
+            ctx.reserve_vec(&mut decoded_sites, 1, "collect decoded SLDPRT sites")?;
+            decoded_sites.push((site, first, decoded));
+            Ok::<_, CodecError>(())
+        })?;
     }
     if decoded_sites.is_empty() {
         return Ok(None);
     }
-    let active_site =
-        container::select_active_parasolid_site(ctx, scan)?.map(|site| site.site_key());
-    let resolved_active_site = match active_site.as_ref() {
-        Some(active) => ctx.position_by(
-            &decoded_sites,
-            |(site, _, _)| ctx.equal(site.as_str(), active.as_str(), "select SLDPRT active site"),
-            "select SLDPRT active site",
-        )?,
+    let resolved_active_site = match container::select_active_parasolid_site(ctx, scan)? {
+        Some(site) => {
+            let (active_key, active_key_storage) = ctx
+                .with_scoped_storage("SLDPRT active B-rep site key workspace", || {
+                    site.site_key(ctx)
+                })?;
+            let selected = ctx.position_by(
+                &decoded_sites,
+                |(site, _, _)| {
+                    ctx.equal(
+                        site.as_str(),
+                        active_key.as_str(),
+                        "select SLDPRT active site",
+                    )
+                },
+                "select SLDPRT active site",
+            )?;
+            drop(active_key);
+            drop(active_key_storage);
+            selected
+        }
         None => None,
     };
     // Without a resolved active site, this is only a deterministic merge
@@ -2799,27 +2830,29 @@ fn try_decode_brep<'ctx>(
         || !decoded_sites[selected_site].2.points.is_empty();
     if resolved_active_site.is_some() {
         if !selected_has_geometry {
-            let selected_is_empty_model = if decoded_sites[selected_site].2.stats.source_entity_records == 0
-            {
-                let selected_streams = ctx
-                    .get_btree_map(
-                        &sites,
-                        decoded_sites[selected_site].0,
-                        "look up SLDPRT site streams",
+            let selected_is_empty_model =
+                if decoded_sites[selected_site].2.stats.source_entity_records == 0 {
+                    let selected_streams = ctx
+                        .get_btree_map(
+                            &sites,
+                            decoded_sites[selected_site].0,
+                            "look up SLDPRT site streams",
+                        )?
+                        .ok_or_else(|| {
+                            CodecError::malformed("decoded SLDPRT site has no streams")
+                        })?;
+                    ctx.any_by(
+                        selected_streams,
+                        |index| Ok(streams[*index].header.words.partition()),
+                        "scan SLDPRT selected site body streams",
+                    )? && ctx.any_by(
+                        selected_streams,
+                        |index| Ok(streams[*index].header.words.deltas()),
+                        "scan SLDPRT selected site body streams",
                     )?
-                    .ok_or_else(|| CodecError::malformed("decoded SLDPRT site has no streams"))?;
-                ctx.any_by(
-                    selected_streams,
-                    |index| Ok(streams[*index].header.words.partition()),
-                    "scan SLDPRT selected site body streams",
-                )? && ctx.any_by(
-                    selected_streams,
-                    |index| Ok(streams[*index].header.words.deltas()),
-                    "scan SLDPRT selected site body streams",
-                )?
-            } else {
-                false
-            };
+                } else {
+                    false
+                };
             if !selected_is_empty_model {
                 return Ok(None);
             }
@@ -2836,27 +2869,30 @@ fn try_decode_brep<'ctx>(
             },
             "scan SLDPRT try_decode_brep values",
         )?;
-        let any_empty_model = !any_site_has_geometry && ctx.any_by(
-            &decoded_sites,
-            |(site, _, decoded)| {
-                if decoded.stats.source_entity_records != 0 {
-                    return Ok(false);
-                }
-                let indices = ctx
-                    .get_btree_map(&sites, *site, "look up SLDPRT site streams")?
-                    .ok_or_else(|| CodecError::malformed("decoded SLDPRT site has no streams"))?;
-                Ok(ctx.any_by(
-                    indices,
-                    |index| Ok(streams[*index].header.words.partition()),
-                    "scan SLDPRT empty site streams",
-                )? && ctx.any_by(
-                    indices,
-                    |index| Ok(streams[*index].header.words.deltas()),
-                    "scan SLDPRT empty site streams",
-                )?)
-            },
-            "scan SLDPRT empty model sites",
-        )?;
+        let any_empty_model = !any_site_has_geometry
+            && ctx.any_by(
+                &decoded_sites,
+                |(site, _, decoded)| {
+                    if decoded.stats.source_entity_records != 0 {
+                        return Ok(false);
+                    }
+                    let indices = ctx
+                        .get_btree_map(&sites, *site, "look up SLDPRT site streams")?
+                        .ok_or_else(|| {
+                            CodecError::malformed("decoded SLDPRT site has no streams")
+                        })?;
+                    Ok(ctx.any_by(
+                        indices,
+                        |index| Ok(streams[*index].header.words.partition()),
+                        "scan SLDPRT empty site streams",
+                    )? && ctx.any_by(
+                        indices,
+                        |index| Ok(streams[*index].header.words.deltas()),
+                        "scan SLDPRT empty site streams",
+                    )?)
+                },
+                "scan SLDPRT empty model sites",
+            )?;
         if !any_site_has_geometry && !any_empty_model {
             return Ok(None);
         }
@@ -2950,13 +2986,10 @@ fn try_decode_brep<'ctx>(
         // active SWIFT CadIdentifier lane.
         merge_brep(ctx, &mut decoded, alternate)?;
     }
-    let report = build_geometry_report(
-        ctx,
-        scan,
-        &mut decoded,
-        classification,
-        container::notes_charged(ctx, scan)?,
-    )?;
+    drop(decoded_sites_storage);
+    drop(sites);
+    drop(sites_storage);
+    let report = build_geometry_report(ctx, &mut decoded, container::notes_charged(ctx, scan)?)?;
     Ok(Some((
         DecodedBrep {
             _workspace: workspace,
@@ -3147,6 +3180,7 @@ type BuiltIr = (
     Vec<UnknownRecord>,
     Vec<cadmpeg_ir::report::loss::LossNote>,
     crate::native::SldprtNative,
+    Option<String>,
 );
 
 fn build_geometry_ir(
@@ -3454,18 +3488,6 @@ fn build_geometry_ir(
     let face_bridge_sequences = std::mem::take(&mut brep.face_bridge_sequences);
     let edge_use_sequences = std::mem::take(&mut brep.edge_use_sequences);
     let vertex_use_sequences = std::mem::take(&mut brep.vertex_use_sequences);
-    let topology_index = crate::swift::TopologyIdentityIndex::from_model(
-        ctx,
-        crate::swift::PrimaryTopology {
-            bodies: &ir.model.bodies,
-            faces: &ir.model.faces,
-            edges: &ir.model.edges,
-            vertices: &ir.model.vertices,
-        },
-        &face_bridge_sequences,
-        &edge_use_sequences,
-        &vertex_use_sequences,
-    )?;
     let face_atoms = std::mem::take(&mut brep.face_atoms);
     let mut face_identities = Vec::new();
     ctx.reserve_vec(
@@ -3683,17 +3705,22 @@ fn build_geometry_ir(
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
     sync_active_configuration_resolutions(ctx, &mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
-    let (pattern_hole_nominals, _nominal_storage) = ctx
-        .with_scoped_storage("SLDPRT hole-pattern nominal workspace", || {
-            crate::swift::pattern_hole_nominal_context(ctx, &ir.model.features)
-        })?;
-    ir.model.pmi = crate::swift::annotations(
-        ctx,
-        scan,
-        &mut annotations,
-        Some(&topology_index),
-        Some(&pattern_hole_nominals),
-    )?;
+    let geometry_projection = crate::swift::GeometryProjectionInputs {
+        topology: crate::swift::PrimaryTopology {
+            bodies: &ir.model.bodies,
+            faces: &ir.model.faces,
+            edges: &ir.model.edges,
+            vertices: &ir.model.vertices,
+        },
+        face_bridge_sequences: &face_bridge_sequences,
+        edge_use_sequences: &edge_use_sequences,
+        vertex_use_sequences: &vertex_use_sequences,
+        features: &ir.model.features,
+    };
+    let swift_projection =
+        crate::swift::annotations(ctx, scan, &mut annotations, Some(geometry_projection))?;
+    ir.model.pmi = swift_projection.annotations;
+    let unsupported_swift_loss = swift_projection.unsupported_loss;
     stamp_feature_baseline(ctx, &mut ir)?;
     let mut native = crate::native::SldprtNative {
         feature_histories: histories,
@@ -4206,7 +4233,14 @@ fn build_geometry_ir(
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
     ir.finalize(ctx)?;
-    Ok((ir, annotations, unknowns, pmi_losses, native))
+    Ok((
+        ir,
+        annotations,
+        unknowns,
+        pmi_losses,
+        native,
+        unsupported_swift_loss,
+    ))
 }
 
 fn assign_native_configuration_indices(
@@ -4570,9 +4604,7 @@ fn add_solidworks_xml_metadata(
 
 fn build_geometry_report(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
     decoded: &mut Brep,
-    classification: &crate::dialect::LayerClassification,
     notes: Vec<String>,
 ) -> Result<DecodeBody, CodecError> {
     let s = &decoded.stats;
@@ -4671,8 +4703,6 @@ fn build_geometry_report(
             ),
         );
     }
-    append_swift_pmi_losses(ctx, scan, &mut losses)?;
-    classification.append_losses(ctx, &mut losses)?;
     Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
@@ -4705,7 +4735,9 @@ fn build_metadata_ir(
         &mut supplemental_config_lanes,
     )?;
     let pmi_dimensions = crate::pmi::dimensions(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    ir.model.pmi = crate::swift::annotations(ctx, scan, &mut annotations, None, None)?;
+    let swift_projection = crate::swift::annotations(ctx, scan, &mut annotations, None)?;
+    ir.model.pmi = swift_projection.annotations;
+    let unsupported_swift_loss = swift_projection.unsupported_loss;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
         sketches,
         entities: sketch_entities,
@@ -5129,7 +5161,14 @@ fn build_metadata_ir(
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
     ir.finalize(ctx)?;
-    Ok((ir, annotations, unknowns, pmi_losses, native))
+    Ok((
+        ir,
+        annotations,
+        unknowns,
+        pmi_losses,
+        native,
+        unsupported_swift_loss,
+    ))
 }
 
 #[derive(Clone, Copy)]
@@ -6644,6 +6683,7 @@ fn build_container_report(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
+    unsupported_swift_loss: Option<String>,
     notes: Vec<String>,
 ) -> Result<DecodeBody, CodecError> {
     let parasolid_sources = ctx
@@ -6688,7 +6728,7 @@ fn build_container_report(
             ),
         );
     }
-    append_swift_pmi_losses(ctx, scan, &mut losses)?;
+    append_swift_pmi_loss(ctx, unsupported_swift_loss, &mut losses)?;
     classification.append_losses(ctx, &mut losses)?;
 
     Ok(DecodeBody {
@@ -6700,45 +6740,14 @@ fn build_container_report(
     })
 }
 
-fn append_swift_pmi_losses(
+fn append_swift_pmi_loss(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
+    message: Option<String>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    const OPERATION: &str = "format SLDPRT unsupported SWIFT classes";
-    let (unsupported, _unsupported_storage) = ctx
-        .with_scoped_storage("SLDPRT unsupported SWIFT workspace", || {
-            crate::swift::unsupported_annotation_classes(ctx, scan)
-        })?;
-    if unsupported.is_empty() {
+    let Some(message) = message else {
         return Ok(());
-    }
-    let mut count = 0_usize;
-    let (mut classes, mut reservation) = ctx.scoped_string(0, OPERATION)?;
-    for (index, (class, class_count)) in ctx
-        .admit_iter(&unsupported, "scan SLDPRT append_swift_pmi_losses values")?
-        .enumerate()
-    {
-        count = count
-            .checked_add(*class_count)
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        reservation.with_storage(|| {
-            if index > 0 {
-                ctx.append_retained(&mut classes, ", ", OPERATION)?;
-            }
-            ctx.append_formatted_retained(
-                &mut classes,
-                format_args!("{class} ({class_count})"),
-                OPERATION,
-            )
-        })?;
-    }
-    let message = ctx.format_retained(
-        format_args!(
-            "{count} SWIFT semantic annotation(s) have no neutral PMI definition: {classes}."
-        ),
-        "retain SLDPRT unsupported SWIFT loss",
-    )?;
+    };
     ctx.reserve_vec(losses, 1, "append SLDPRT unsupported SWIFT loss")?;
     losses.push(SldprtLossCode::PmiSwiftAnnotationUnsupported.note(message));
     Ok(())
