@@ -163,10 +163,12 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let mut findings = Vec::new();
     let findings = &mut findings;
     {
-        let (expected, _expected_storage) = ctx
+        let expected = ctx
             .with_scoped_storage("FreeCAD expected carrier census", || {
                 brep::carrier_census(ctx, &shape_payloads)
             })?;
+        let _expected_storage = expected.1;
+        let expected = expected.0;
         if first_difference(
             ctx,
             &carrier_census,
@@ -187,7 +189,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     match ctx.with_scoped_storage("FreeCAD expected design census", || {
         design::census(ctx, &objects, &ir.model.features)
     }) {
-        Ok((expected, _expected_storage)) => {
+        Ok(expected) => {
+            let _expected_storage = expected.1;
+            let expected = expected.0;
             match first_difference(ctx, &design_census, &expected, "FreeCAD design census comparison")? {
                 None => {}
                 Some(SliceDifference::Pair(index)) => push_finding(
@@ -358,7 +362,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     match ctx.with_scoped_storage("FreeCAD expected attachment graph", || {
         attachment::transfer(ctx, &objects, &properties)
     }) {
-        Ok((expected, _expected_storage)) => {
+        Ok(expected) => {
+            let _expected_storage = expected.1;
+            let expected = expected.0;
             if first_difference(
                 ctx,
                 &attachments,
@@ -465,10 +471,12 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     }
     drop(gui_provider_ids);
     drop(gui_provider_id_storage);
-    let (cyclic_products, _cycle_storage) = ctx
+    let cyclic_products = ctx
         .with_scoped_storage("fcstd product cycle lookup", || {
             product::product_cycle_nodes(ctx, &product_nodes)
         })?;
+    let _cycle_storage = cyclic_products.1;
+    let cyclic_products = cyclic_products.0;
     let mut node_sources = product_nodes.iter();
     while node_sources.len() != 0 {
         let Some(node) = ctx.next_charged(&mut node_sources, "FreeCAD validation product nodes")? else {
@@ -813,10 +821,12 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         None => None,
     };
     {
-        let (mut ordered, _ordered_storage) = ctx
+        let ordered = ctx
             .with_scoped_storage("FreeCAD archive span chain sort", || {
                 ctx.collect_vec(physical.iter(), "FreeCAD archive span chain sort")
             })?;
+        let _ordered_storage = ordered.1;
+        let mut ordered = ordered.0;
         ctx.stable_sort_by_key(
             &mut ordered,
             |value| value.span.start(),
@@ -856,7 +866,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         &property_ids,
         findings,
     )?;
-    let (expected_coverage, _expected_coverage_storage) =
+    let expected_coverage =
         ctx.with_scoped_storage("FreeCAD expected byte coverage", || {
             container::byte_coverage(
                 ctx,
@@ -866,6 +876,8 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                 physical_end.unwrap_or_default(),
             )
         })?;
+    let _expected_coverage_storage = expected_coverage.1;
+    let expected_coverage = expected_coverage.0;
     if first_difference(
         ctx,
         &coverage_records,
