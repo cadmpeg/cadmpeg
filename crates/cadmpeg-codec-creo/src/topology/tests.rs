@@ -175,7 +175,11 @@ fn build_with_collection_limit(
     build(&ctx, rows)
 }
 
-fn assert_build_collection_refusal(limit: u64, operation: &'static str) {
+fn assert_build_collection_refusal(operation: &'static str) {
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems, Some(operation),
+        |limit| build_with_collection_limit(&[row(1, 1)], limit),
+    );
     let error = build_with_collection_limit(&[row(1, 1)], limit)
         .expect_err("one closed face-side ring exceeds the limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -205,7 +209,11 @@ fn orphan_edge() -> HalfEdge {
     }
 }
 
-fn assert_orbit_collection_refusal(limit: u64, operation: &'static str) {
+fn assert_orbit_collection_refusal(operation: &'static str) {
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems, Some(operation),
+        |limit| orbit_with_collection_limit(&[orphan_edge()], limit),
+    );
     let error = orbit_with_collection_limit(&[orphan_edge()], limit)
         .expect_err("one half-edge exceeds the limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -224,7 +232,11 @@ fn components_with_collection_limit(
     face_components(&ctx, rows)
 }
 
-fn assert_component_collection_refusal(limit: u64, operation: &'static str) {
+fn assert_component_collection_refusal(operation: &'static str) {
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems, Some(operation),
+        |limit| components_with_collection_limit(&[row(1, 1)], limit),
+    );
     let error = components_with_collection_limit(&[row(1, 1)], limit)
         .expect_err("one two-face component exceeds the limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -234,144 +246,137 @@ fn assert_component_collection_refusal(limit: u64, operation: &'static str) {
 
 #[test]
 fn face_components_refuse_unique_row_count_node() {
-    assert_component_collection_refusal(0, "creo unique-row count nodes");
+    assert_component_collection_refusal( "creo unique-row count nodes");
 }
 
 #[test]
 fn face_components_refuse_unique_row_projection() {
-    assert_component_collection_refusal(1, "creo unique-row projection");
+    assert_component_collection_refusal( "creo unique-row projection");
 }
 
 #[test]
 fn face_components_refuse_adjacency_node() {
-    assert_component_collection_refusal(2, "creo face adjacency nodes");
+    assert_component_collection_refusal( "creo face adjacency nodes");
 }
 
 #[test]
 fn face_components_refuse_curve_group_node() {
-    assert_component_collection_refusal(3, "creo face curve group nodes");
+    assert_component_collection_refusal( "creo face curve group nodes");
 }
 
 #[test]
 fn face_components_refuse_curve_member_node() {
-    assert_component_collection_refusal(4, "creo face curve member nodes");
+    assert_component_collection_refusal( "creo face curve member nodes");
 }
 
 #[test]
 fn face_components_refuse_adjacency_link() {
-    assert_component_collection_refusal(8, "creo face adjacency links");
+    assert_component_collection_refusal( "creo face adjacency links");
 }
 
 #[test]
 fn face_components_refuse_seen_start_node() {
-    assert_component_collection_refusal(10, "creo seen component faces");
+    assert_component_collection_refusal( "creo seen component faces");
 }
 
 #[test]
 fn face_components_refuse_pending_start() {
-    assert_component_collection_refusal(11, "creo pending component faces");
+    assert_component_collection_refusal( "creo pending component faces");
 }
 
 #[test]
 fn face_components_refuse_face_member_node() {
-    assert_component_collection_refusal(12, "creo component face nodes");
+    assert_component_collection_refusal( "creo component face nodes");
 }
 
 #[test]
 fn face_components_refuse_curve_node() {
-    assert_component_collection_refusal(13, "creo component curve nodes");
+    assert_component_collection_refusal( "creo component curve nodes");
 }
 
 #[test]
 fn face_components_refuse_seen_neighbor_node() {
-    assert_component_collection_refusal(14, "creo seen component faces");
+    assert_component_collection_refusal( "creo seen component faces");
 }
 
 #[test]
 fn face_components_refuse_pending_neighbor() {
-    assert_component_collection_refusal(15, "creo pending component faces");
+    assert_component_collection_refusal( "creo pending component faces");
 }
 
 #[test]
 fn face_components_refuse_face_id_vector() {
-    assert_component_collection_refusal(17, "creo component face IDs");
+    assert_component_collection_refusal( "creo component face IDs");
 }
 
 #[test]
 fn face_components_refuse_curve_id_vector() {
-    assert_component_collection_refusal(19, "creo component curve IDs");
+    assert_component_collection_refusal( "creo component curve IDs");
 }
 
 #[test]
 fn face_components_refuse_component_vector() {
-    assert_component_collection_refusal(20, "creo face components");
+    assert_component_collection_refusal( "creo face components");
 }
 
 #[test]
 fn vertex_orbits_refuse_half_edge_lookup_node() {
-    assert_orbit_collection_refusal(0, "creo vertex-orbit half-edge lookup nodes");
+    assert_orbit_collection_refusal( "creo vertex-orbit half-edge lookup nodes");
 }
 
 #[test]
 fn vertex_orbits_refuse_adjacency_node() {
-    assert_orbit_collection_refusal(1, "creo vertex adjacency nodes");
+    assert_orbit_collection_refusal( "creo vertex adjacency nodes");
 }
 
 #[test]
 fn vertex_orbits_refuse_pending_seed() {
-    assert_orbit_collection_refusal(2, "creo vertex orbit pending edges");
+    assert_orbit_collection_refusal( "creo vertex orbit pending edges");
 }
 
 #[test]
 fn vertex_orbits_refuse_visited_node() {
-    assert_orbit_collection_refusal(3, "creo visited vertex-orbit edges");
+    assert_orbit_collection_refusal( "creo visited vertex-orbit edges");
 }
 
 #[test]
 fn vertex_orbits_refuse_member_node() {
-    assert_orbit_collection_refusal(4, "creo vertex orbit member nodes");
+    assert_orbit_collection_refusal( "creo vertex orbit member nodes");
 }
 
 #[test]
 fn vertex_orbits_refuse_half_edge_vector() {
-    assert_orbit_collection_refusal(5, "creo vertex orbit half-edges");
+    assert_orbit_collection_refusal( "creo vertex orbit half-edges");
 }
 
 #[test]
 fn vertex_orbits_refuse_vertex_vector() {
-    assert_orbit_collection_refusal(6, "creo topological vertices");
+    assert_orbit_collection_refusal( "creo topological vertices");
 }
 
 #[test]
 fn vertex_orbits_refuse_start_vertex_lookup_node() {
-    assert_orbit_collection_refusal(7, "creo start-vertex lookup nodes");
+    assert_orbit_collection_refusal( "creo start-vertex lookup nodes");
 }
 
 #[test]
 fn vertex_orbits_refuse_incidence_vector() {
-    assert_orbit_collection_refusal(8, "creo half-edge vertex incidence");
+    assert_orbit_collection_refusal( "creo half-edge vertex incidence");
 }
 
 #[test]
 fn vertex_orbits_refuse_predecessor_group_node() {
     let mut edge = orphan_edge();
     edge.next = Some(edge.id);
-    let error = orbit_with_collection_limit(&[edge], 1)
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems, Some("creo predecessor group nodes"),
+        |limit| orbit_with_collection_limit(&[edge.clone()], limit),
+    );
+    let error = orbit_with_collection_limit(&[edge], limit)
         .expect_err("one successor needs a predecessor node");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo predecessor group nodes"));
-}
-
-#[test]
-fn vertex_orbits_refuse_predecessor_group_member() {
-    let mut edge = orphan_edge();
-    edge.next = Some(edge.id);
-    let error = orbit_with_collection_limit(&[edge], 2)
-        .expect_err("one successor needs a predecessor member");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo predecessor group members"));
 }
 
 #[test]
@@ -395,7 +400,11 @@ fn vertex_orbits_refuse_adjacency_links() {
         },
         ..orphan_edge()
     };
-    let error = orbit_with_collection_limit(&[first, second, third], 8)
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems, Some("creo vertex adjacency links"),
+        |limit| orbit_with_collection_limit(&[first.clone(), second.clone(), third.clone()], limit),
+    );
+    let error = orbit_with_collection_limit(&[first, second, third], limit)
         .expect_err("linked predecessor needs an adjacency edge");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -404,47 +413,42 @@ fn vertex_orbits_refuse_adjacency_links() {
 
 #[test]
 fn topology_build_refuses_unique_row_count_node() {
-    assert_build_collection_refusal(0, "creo unique-row count nodes");
+    assert_build_collection_refusal( "creo unique-row count nodes");
 }
 
 #[test]
 fn topology_build_refuses_unique_row_projection() {
-    assert_build_collection_refusal(1, "creo unique-row projection");
+    assert_build_collection_refusal( "creo unique-row projection");
 }
 
 #[test]
 fn topology_build_refuses_face_side_group_node() {
-    assert_build_collection_refusal(2, "creo face-side group nodes");
-}
-
-#[test]
-fn topology_build_refuses_face_side_group_member() {
-    assert_build_collection_refusal(3, "creo face-side group members");
+    assert_build_collection_refusal( "creo topology successor index");
 }
 
 #[test]
 fn topology_build_refuses_half_edge_vector() {
-    assert_build_collection_refusal(6, "creo topology half-edges");
+    assert_build_collection_refusal( "creo topology half-edges");
 }
 
 #[test]
 fn topology_build_refuses_ring_visit_node() {
-    assert_build_collection_refusal(8, "creo topology ring visit nodes");
+    assert_build_collection_refusal( "creo topology ring visit nodes");
 }
 
 #[test]
 fn topology_build_refuses_ring_half_edge() {
-    assert_build_collection_refusal(9, "creo topology ring half-edges");
+    assert_build_collection_refusal( "creo topology ring half-edges");
 }
 
 #[test]
 fn topology_build_refuses_consumed_half_edge_node() {
-    assert_build_collection_refusal(10, "creo consumed topology half-edges");
+    assert_build_collection_refusal( "creo consumed topology half-edges");
 }
 
 #[test]
 fn topology_build_refuses_loop_vector() {
-    assert_build_collection_refusal(11, "creo topology loops");
+    assert_build_collection_refusal( "creo topology loops");
 }
 
 #[test]
@@ -1165,7 +1169,7 @@ fn topology_successor_and_open_tail_walks_refuse_work() {
     let rows = [row(1, 2), row(2, 3), row(3, 99)];
     let (edges, loops) = crate::test_support::assert_work_boundaries(
         &[
-            "creo topology successor scan",
+            "creo topology successor lookup",
             "creo topology ring successor lookup",
             "creo topology open tail lookup",
         ],
