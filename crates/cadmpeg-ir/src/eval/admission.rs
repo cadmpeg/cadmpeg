@@ -339,16 +339,17 @@ mod tests {
                 let arena = DecodeArena::new();
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let parent = ctx.work_budget(3);
-                let iterate = |admission: EvaluationAdmission<'_, '_>| -> Result<(), EvaluationFailure<()>> {
-                    let values = crate::index::IndexQuery::admit_iter(
-                        &admission,
-                        &source,
-                        "test index source visits",
-                    )
-                    .map_err(EvaluationFailure::ResourceLimit)?;
-                    assert!(values.copied().eq(source));
-                    Ok(())
-                };
+                let iterate =
+                    |admission: EvaluationAdmission<'_, '_>| -> Result<(), EvaluationFailure<()>> {
+                        let values = crate::index::IndexQuery::admit_iter(
+                            &admission,
+                            &source,
+                            "test index source visits",
+                        )
+                        .map_err(EvaluationFailure::ResourceLimit)?;
+                        assert!(values.copied().eq(source));
+                        Ok(())
+                    };
                 let admission = EvaluationAdmission::Decode(&ctx);
                 let result = if sliced {
                     admission.within_work_slice(&parent, iterate)
@@ -363,17 +364,34 @@ mod tests {
                         panic!("source visit refusal");
                     };
                     assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                    assert_eq!((original.limit, original.used, original.additional), (cap, 0, 3));
-                    assert_eq!(original.operation, if sliced { "work_budget" } else { "test index source visits" });
+                    assert_eq!(
+                        (original.limit, original.used, original.additional),
+                        (cap, 0, 3)
+                    );
+                    assert_eq!(
+                        original.operation,
+                        if sliced {
+                            "work_budget"
+                        } else {
+                            "test index source visits"
+                        }
+                    );
                     original
                 } else {
                     assert_eq!(result, Ok(()));
-                    let original = ctx.charge_work_limit(1, "test next source visit").unwrap_err();
+                    let original = ctx
+                        .charge_work_limit(1, "test next source visit")
+                        .unwrap_err();
                     assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                    assert_eq!((original.limit, original.used, original.additional), (3, 3, 1));
+                    assert_eq!(
+                        (original.limit, original.used, original.additional),
+                        (3, 3, 1)
+                    );
                     original
                 };
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+                );
             }
         }
     }
@@ -388,15 +406,16 @@ mod tests {
             let parent = ctx.work_budget(3);
             // The inclusive range has u64::MAX + 1 visits; core saturates the
             // refused request to u64::MAX without advancing its source.
-            let iterate = |admission: EvaluationAdmission<'_, '_>| -> Result<(), EvaluationFailure<()>> {
-                crate::index::IndexQuery::admit_iter(
-                    &admission,
-                    0_u64..=u64::MAX,
-                    "test overflowing index source",
-                )
-                .map(|_| ())
-                .map_err(EvaluationFailure::ResourceLimit)
-            };
+            let iterate =
+                |admission: EvaluationAdmission<'_, '_>| -> Result<(), EvaluationFailure<()>> {
+                    crate::index::IndexQuery::admit_iter(
+                        &admission,
+                        0_u64..=u64::MAX,
+                        "test overflowing index source",
+                    )
+                    .map(|_| ())
+                    .map_err(EvaluationFailure::ResourceLimit)
+                };
             let admission = EvaluationAdmission::Decode(&ctx);
             let result = if sliced {
                 admission.within_work_slice(&parent, iterate)
@@ -407,11 +426,19 @@ mod tests {
                 panic!("source bound overflow must preserve its refusal");
             };
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(original.reason, cadmpeg_core::decode::ResourceFailure::BudgetExceeded);
-            assert_eq!((original.limit, original.used, original.additional), (u64::MAX, 0, u64::MAX));
+            assert_eq!(
+                original.reason,
+                cadmpeg_core::decode::ResourceFailure::BudgetExceeded
+            );
+            assert_eq!(
+                (original.limit, original.used, original.additional),
+                (u64::MAX, 0, u64::MAX)
+            );
             assert_eq!(original.operation, "test overflowing index source");
             assert_eq!(parent.consumed(), 0);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+            );
         }
     }
 

@@ -1339,7 +1339,10 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
-        let hash_bytes = points.iter().map(|point| point.id.as_str().len()).sum::<usize>();
+        let hash_bytes = points
+            .iter()
+            .map(|point| point.id.as_str().len())
+            .sum::<usize>();
         for cap in [7, 8] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -1350,25 +1353,36 @@ mod tests {
                 14 * std::mem::size_of::<(u64, super::IdentityEntry)>(),
             );
             // One visit per point and one hash work unit per identity byte.
-            policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(points.len() + hash_bytes);
+            policy.limits.max_work_units =
+                cadmpeg_core::decode::u64_from_index(points.len() + hash_bytes);
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = super::build_identity_index(&points, &super::DecodeStorage(&ctx));
             let original = if cap < 8 {
                 let original = result.unwrap_err();
                 assert_eq!(original.dimension, ResourceDimension::CollectionItems);
-                assert_eq!((original.limit, original.used, original.additional), (7, 0, 8));
+                assert_eq!(
+                    (original.limit, original.used, original.additional),
+                    (7, 0, 8)
+                );
                 assert_eq!(original.operation, "model identity index slots");
                 original
             } else {
                 let index = result.unwrap();
                 assert_eq!(index.len(), points.len());
-                let original = ctx.charge_collection_items_limit(1, "test next identity slot").unwrap_err();
+                let original = ctx
+                    .charge_collection_items_limit(1, "test next identity slot")
+                    .unwrap_err();
                 assert_eq!(original.dimension, ResourceDimension::CollectionItems);
-                assert_eq!((original.limit, original.used, original.additional), (8, 8, 1));
+                assert_eq!(
+                    (original.limit, original.used, original.additional),
+                    (8, 8, 1)
+                );
                 assert_eq!(original.operation, "test next identity slot");
                 original
             };
-            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == original));
+            assert!(
+                matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == original)
+            );
         }
     }
 
