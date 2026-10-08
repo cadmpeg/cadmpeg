@@ -613,8 +613,10 @@ fn homogeneous_control_points<'ctx>(
     curve: &NurbsCurve,
 ) -> Result<Option<HomogeneousNet<'ctx>>, CodecError> {
     let control_count = curve.pole_count();
-    let (mut homogeneous, storage) =
+    let storage;
+    let (mut homogeneous, result_storage) =
         ctx.temporary_vec(control_count, "iges composite homogeneous control points")?;
+    storage = result_storage;
     let mut homogeneous_indices = 0..control_count;
     while let Some(index) = ctx.next_charged(
         &mut homogeneous_indices,
@@ -713,8 +715,10 @@ fn elevate_bezier_homogeneous<'ctx>(
     )? {
         return Ok(None);
     }
-    let (mut elevated, mut storage) =
+    let mut storage;
+    let (mut elevated, result_storage) =
         ctx.copy_temporary_slice(control_points, "iges composite Bezier source copy")?;
+    storage = result_storage;
     let mut degree = source_degree;
     let mut elevation_degrees = source_degree..target_degree;
     while ctx
@@ -730,8 +734,10 @@ fn elevate_bezier_homogeneous<'ctx>(
         let Some(next_count) = next_degree.checked_add(1) else {
             return Ok(None);
         };
-        let (mut next, next_storage) =
+        let next_storage;
+        let (mut next, result_next_storage) =
             ctx.temporary_vec(next_count, "iges composite Bezier elevated net")?;
+        next_storage = result_next_storage;
         next.push(elevated[0]);
         let mut elevated_indices = 1..=degree;
         while let Some(index) = ctx.next_charged(
@@ -950,8 +956,10 @@ fn insert_homogeneous_knot<'ctx>(
     let Some(right_knots) = knots.get(span + 1..) else {
         return Ok(None);
     };
-    let (mut inserted_knots, mut storage) =
+    let mut storage;
+    let (mut inserted_knots, result_storage) =
         ctx.temporary_vec(knot_count, "iges composite inserted knots")?;
+    storage = result_storage;
     inserted_knots.extend(
         ctx.admit_iter(left_knots, "iges composite inserted knot prefix")?
             .copied(),
@@ -1010,11 +1018,13 @@ fn trim_nurbs_to_interval(
     curve: &NurbsCurve,
     interval: [f64; 2],
 ) -> Result<Option<NurbsCurve>, CompositeCurveError> {
-    let Some((control_points, weights, trimmed_knots, _lane_storage)) =
+    let _lane_storage;
+    let Some((control_points, weights, trimmed_knots, result_lane_storage)) =
         trim_nurbs_lanes(ctx, curve, interval)?
     else {
         return Ok(None);
     };
+    _lane_storage = result_lane_storage;
     Ok(Some(NurbsCurve::from_checked_lanes(
         ctx,
         curve.degree(),
@@ -1061,9 +1071,11 @@ fn trim_nurbs_lanes<'ctx>(
     {
         return Ok(None);
     }
-    let Some((mut homogeneous, mut net_storage)) = homogeneous_control_points(ctx, curve)? else {
+    let mut net_storage;
+    let Some((mut homogeneous, result_net_storage)) = homogeneous_control_points(ctx, curve)? else {
         return Ok(None);
     };
+    net_storage = result_net_storage;
     let mut knots = net_storage
         .with_storage(|| ctx.copy_slice(curve.knots(), "iges composite trim knot copy"))?;
     for value in [start, end] {
@@ -1135,10 +1147,11 @@ fn trim_nurbs_lanes<'ctx>(
         return Ok(None);
     }
     let trimmed_knots = ctx.copy_slice(knot_slice, "iges composite trimmed knots")?;
+    let lane_storage;
     let Some(EuclideanControlNet {
         control_points,
         weights,
-        _storage: lane_storage,
+        _storage: result_lane_storage,
     }) = euclidean_control_points(
         ctx,
         homogeneous_slice,
@@ -1147,6 +1160,7 @@ fn trim_nurbs_lanes<'ctx>(
     else {
         return Ok(None);
     };
+    lane_storage = result_lane_storage;
     Ok(Some((control_points, weights, trimmed_knots, lane_storage)))
 }
 
@@ -1467,11 +1481,13 @@ fn elevate_nurbs_to_degree(
             .into());
         }
     }
-    let Some((mut homogeneous, mut net_storage)) =
+    let mut net_storage;
+    let Some((mut homogeneous, result_net_storage)) =
         homogeneous_control_points(ctx, curve).map_err(DegreeElevationError::Allocation)?
     else {
         return Err(DegreeElevationError::HomogeneousControlNet.into());
     };
+    net_storage = result_net_storage;
     let mut knots = net_storage
         .with_storage(|| ctx.copy_slice(curve.knots(), "iges composite elevation knot copy"))
         .map_err(DegreeElevationError::Allocation)?;
@@ -1565,7 +1581,8 @@ fn elevate_nurbs_to_degree(
         let Some(source_points) = homogeneous.get(span - source_degree..=span) else {
             return Err(DegreeElevationError::SpanControlNet { span }.into());
         };
-        let Some((elevated, _elevated_storage)) =
+        let _elevated_storage;
+        let Some((elevated, result_elevated_storage)) =
             elevate_bezier_homogeneous(ctx, source_points, source_degree, target_degree)
                 .map_err(DegreeElevationError::Allocation)?
         else {
@@ -1575,16 +1592,19 @@ fn elevate_nurbs_to_degree(
             }
             .into());
         };
+        _elevated_storage = result_elevated_storage;
+        let _lane_storage;
         let Some(EuclideanControlNet {
             control_points,
             weights,
-            _storage: _lane_storage,
+            _storage: result_lane_storage,
         }) = piece_storage
             .with_storage(|| euclidean_control_points(ctx, &elevated, rational))
             .map_err(DegreeElevationError::Allocation)?
         else {
             return Err(DegreeElevationError::SpanEuclideanNet { span }.into());
         };
+        _lane_storage = result_lane_storage;
         let Some(target_knot_count) = target_degree.checked_add(1) else {
             return Err(DegreeElevationError::TargetDegree {
                 degree: stated_target,
@@ -1681,7 +1701,7 @@ fn elevate_nurbs_to_degree(
 
 fn concatenate_nurbs<'ctx, T>(
     ctx: &'ctx DecodeContext<'_>,
-    mut children: Vec<(NurbsCurve, [f64; 2], T)>,
+    children: Vec<(NurbsCurve, [f64; 2], T)>,
     join_tolerance: Option<f64>,
 ) -> Result<Option<ConcatenatedNurbs<'ctx, T>>, CompositeCurveError> {
     let Some(first) = children.first() else {
@@ -1692,6 +1712,7 @@ fn concatenate_nurbs<'ctx, T>(
         .map(|(curve, _, _)| curve.degree())
         .fold(first.0.degree(), u32::max);
     let mut elevation_storage = ctx.reserve_scoped(0, "iges composite elevated child storage")?;
+    let mut children = children;
     let mut children_to_elevate = children.iter_mut();
     while let Some((curve, interval, _)) = ctx.next_charged(
         &mut children_to_elevate,
@@ -1777,8 +1798,9 @@ fn concatenate_nurbs<'ctx, T>(
     let first = ctx
         .next_charged(&mut children, "iges composite child lane traversal")?
         .ok_or(CompositeCurveError::EmptyChildList)?;
+    let mut lane_storage;
     let (mut knots, first_poles, last) = prepare_child(first, 0.0)?;
-    let mut lane_storage = ctx.reserve_scoped(0, "iges composite joined lane storage")?;
+    lane_storage = ctx.reserve_scoped(0, "iges composite joined lane storage")?;
     let mut weight_storage = ctx.reserve_scoped(0, "iges composite weight storage")?;
     let (mut control_points, mut weights) = match first_poles {
         NurbsPoles3::Polynomial { points } => {
@@ -1803,8 +1825,10 @@ fn concatenate_nurbs<'ctx, T>(
             (controls, weights)
         }
     };
-    let (preceding, segment_storage) =
+    let segment_storage;
+    let (preceding, result_segment_storage) =
         ctx.temporary_vec(child_count - 1, "iges composite segment slots")?;
+    segment_storage = result_segment_storage;
     let mut segments = ConcatenatedSegments {
         preceding,
         last,
@@ -2077,8 +2101,10 @@ fn bounded_nurbs_for_id(
         return Ok(None);
     };
     if let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved() {
-        let (mut children, mut child_storage) =
+        let mut child_storage;
+        let (mut children, result_child_storage) =
             ctx.temporary_vec(segments.len(), "iges composite nested children")?;
+        child_storage = result_child_storage;
         let mut nested_segments = segments.iter();
         while let Some(segment) = ctx.next_charged(
             &mut nested_segments,
@@ -2855,8 +2881,10 @@ fn project_with_type_130_policy<'ctx>(
             )?;
             continue;
         };
-        let (mut child_sequences, _pointer_storage) =
+        let _pointer_storage;
+        let (mut child_sequences, result_pointer_storage) =
             ctx.temporary_vec(child_count, "iges composite child pointer slots")?;
+        _pointer_storage = result_pointer_storage;
         let mut valid_child_pointers = true;
         let mut pointer_indices = 0..child_count;
         while let Some(index) = ctx.next_charged(
@@ -3040,8 +3068,10 @@ fn project_with_type_130_policy<'ctx>(
             child_curves: &curve_ids,
             join_tolerance,
         };
-        let (mut children, mut child_storage) =
+        let mut child_storage;
+        let (mut children, result_child_storage) =
             ctx.temporary_vec(curve_ids.len(), "iges composite projected children")?;
+        child_storage = result_child_storage;
         let mut child_refusal = None;
         let mut projected_curves = curve_ids.iter();
         while let Some(curve_id) = ctx.next_charged(

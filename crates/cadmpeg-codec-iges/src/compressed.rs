@@ -170,10 +170,14 @@ fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec
         },
         "iges compressed Global card widths",
     )?;
-    let (mut stream, _stream_storage) =
+    let _stream_storage;
+    let (mut stream, result_stream_storage) =
         ctx.scoped_vector_storage(length, "iges_compressed_global_stream")?;
-    let (mut pending_digits, _digits_storage) =
+    _stream_storage = result_stream_storage;
+    let _digits_storage;
+    let (mut pending_digits, result_digits_storage) =
         ctx.scoped_vector_storage(length, "iges_compressed_global_digits")?;
+    _digits_storage = result_digits_storage;
     let mut hollerith_remaining = 0_usize;
     for card in ctx.admit_iter(cards, "iges_compressed_global_stream")? {
         for byte in card[..CARD_DATA_WIDTH].iter().copied() {
@@ -458,8 +462,10 @@ fn parse_directory_record(
             ));
         }
     };
-    let (mut spec_bytes, _spec_storage) =
+    let _spec_storage;
+    let (mut spec_bytes, result_spec_storage) =
         ctx.scoped_vector_storage(length, "iges_compressed_directory_spec_bytes")?;
+    _spec_storage = result_spec_storage;
     if line_index == start {
         spec_bytes.extend_from_slice(&first[cursor..cursor + delimiter_offset]);
     } else {

@@ -365,8 +365,10 @@ fn resolve_pcurve_uses<'a>(
         surface_point_or_refusal(evaluation)
     };
     let mut resolved = ctx.collection_vec(uses.len(), "iges B-rep resolved pcurves")?;
-    let (mut mapped, _mapped_storage) =
+    let _mapped_storage;
+    let (mut mapped, result_mapped_storage) =
         ctx.temporary_vec(uses.len(), "iges B-rep mapped pcurves")?;
+    _mapped_storage = result_mapped_storage;
     let mut use_sequences = uses.iter();
     while let Some((_, sequence)) =
         ctx.next_charged(&mut use_sequences, "iges B-rep pcurve resolution traversal")?
@@ -1343,8 +1345,10 @@ pub(super) fn project<'ctx>(
                     let mut coedge_position = 0;
                     let mut predecessor = coedge_ids.last();
                     let vertex_use_count = uses.len() - edge_use_count;
-                    let (mut loop_vertex_uses, vertex_use_storage) =
+                    let vertex_use_storage;
+                    let (mut loop_vertex_uses, result_vertex_use_storage) =
                         ctx.temporary_vec(vertex_use_count, "iges B-rep loop vertex uses")?;
+                    vertex_use_storage = result_vertex_use_storage;
                     let mut loop_uses = uses.iter().enumerate();
                     while let Some((use_index, use_)) =
                         ctx.next_charged(&mut loop_uses, "iges B-rep loop use traversal")?

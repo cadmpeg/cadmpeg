@@ -744,10 +744,10 @@ fn attribute_definition_valid_and_shape<'ctx>(
     let attribute_count = record.count(3).filter(|count| *count > 0);
     let mut cursor = 4;
     let mut attributes_valid = attribute_count.is_some();
-    let mut attribute_types = BTreeSet::new();
     let mut attribute_type_storage = ctx.reserve_scoped(0, "iges attribute type nodes")?;
-    let mut descriptors = Vec::new();
+    let mut attribute_types = BTreeSet::new();
     let mut shape_storage = ctx.reserve_scoped(0, "iges attribute shape descriptors")?;
+    let mut descriptors = Vec::new();
     for _ in ctx.admit_iter(
         0..attribute_count.unwrap_or_default(),
         "iges structure list traversal",
@@ -838,8 +838,8 @@ fn unit_values_valid(
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let count = record.count(1).filter(|count| *count > 0);
-    let mut types = BTreeSet::<&[u8]>::new();
     let mut type_storage = ctx.reserve_scoped(0, "iges unit type nodes")?;
+    let mut types = BTreeSet::<&[u8]>::new();
     let mut units_valid = count.is_some_and(|count| record.parameter_end() == 2 + count * 3);
     if let Some(count) = count.filter(|_| units_valid) {
         let mut input = 0..count;
@@ -2510,8 +2510,10 @@ fn legacy_single_parent_face<'ir, 'ctx>(
     let Some(child_count) = record.count(2).filter(|count| *count > 0) else {
         return Err("legacy single-parent plane hole has no children".into());
     };
-    let (mut children, mut child_storage) =
+    let mut child_storage;
+    let (mut children, result_child_storage) =
         ctx.temporary_vec(child_count, "iges legacy plane child pointers")?;
+    child_storage = result_child_storage;
     let mut children_are_type_108 = true;
     let mut children_have_negative_physical_status = true;
     let mut input = 0..child_count;
@@ -2541,8 +2543,10 @@ fn legacy_single_parent_face<'ir, 'ctx>(
     let boundary_count = child_count
         .checked_add(1)
         .ok_or("legacy single-parent plane hole has an invalid child pointer")?;
-    let (mut boundary_sequences, _boundary_storage) =
+    let _boundary_storage;
+    let (mut boundary_sequences, result_boundary_storage) =
         ctx.temporary_vec(boundary_count, "iges legacy plane boundary pointers")?;
+    _boundary_storage = result_boundary_storage;
     for sequence in std::iter::once(parent_sequence).chain(
         ctx.admit_iter(&children, "iges legacy plane children traversal")
             .map_err(CodecError::from)?
@@ -2561,8 +2565,10 @@ fn legacy_single_parent_face<'ir, 'ctx>(
     let parent_plane = plane_carrier(index, parent_sequence, ctx)?
         .ok_or("legacy single-parent parent plane was not projected")?;
     let resolution = global.minimum_resolution_mm();
-    let (mut boundary_edges, _edge_storage) =
+    let _edge_storage;
+    let (mut boundary_edges, result_edge_storage) =
         ctx.temporary_vec(boundary_sequences.len(), "iges legacy plane boundary edges")?;
+    _edge_storage = result_edge_storage;
     let mut input = std::iter::once(parent_sequence)
         .chain(children.iter().copied())
         .zip(boundary_sequences.iter().copied())
@@ -3386,8 +3392,10 @@ pub(super) fn project<'ctx>(
             33 => {
                 let identity = record.integer(2).zip(record.string(3));
                 if sheet_identities.is_none() {
-                    let (mut identities, mut identity_storage) =
+                    let mut identity_storage;
+                    let (mut identities, result_identity_storage) =
                         ctx.temporary_vec(0, "iges sheet identity index inputs")?;
+                    identity_storage = result_identity_storage;
                     for candidate in
                         ctx.admit_iter(directory, "iges sheet identity directory")?
                     {
@@ -3912,7 +3920,10 @@ pub(super) fn project<'ctx>(
                     ctx,
                     sequences,
                 ) {
-                    Ok(Some((candidate, plane_sequences, _plane_storage))) => {
+                    Ok(Some(result)) => {
+                        let _plane_storage;
+                        let (candidate, plane_sequences, result_plane_storage) = result;
+                        _plane_storage = result_plane_storage;
                         for sequence in
                             ctx.admit_iter(plane_sequences, "iges structure list traversal")?
                         {
@@ -3997,8 +4008,10 @@ pub(super) fn project<'ctx>(
                         crate::ids::Word::BoundedPlane,
                         entry.sequence,
                     );
-                    let (mut boundary_edges, _edge_storage) =
+                    let _edge_storage;
+                    let (mut boundary_edges, result_edge_storage) =
                         ctx.temporary_vec(1, "iges bounded plane boundary edges")?;
+                    _edge_storage = result_edge_storage;
                     boundary_edges.push(edge);
                     let candidate = plane_face_draft(
                         entry.sequence,
