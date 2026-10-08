@@ -2538,7 +2538,7 @@ impl<'roster, 'a, 'ctx> CurveMarkers<'roster, 'a, 'ctx> {
             None => {
                 let built = self.storage.borrow_mut().with_storage(|| {
                     let mut index = HashMap::new();
-                    for &marker in ctx.admit_iter(self.roster, OPERATION)? {
+                    for &marker in ctx.admit_iter(self.roster, "scan SLDPRT curve feature markers")? {
                         ctx.push_hash_group(
                             &mut index,
                             marker.feature_ref.as_deref(),

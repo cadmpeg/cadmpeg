@@ -95,6 +95,18 @@ fn curve_marker_index_storage_is_scoped_and_refuses_before_growth() {
         let index = CurveMarkers::new(ctx, &roster)?;
         index.feature_markers(ctx, &marker).map(|_| ())
     });
+    let source_error = crate::test_support::work_refusal_at(
+        "scan SLDPRT curve feature markers",
+        |ctx| {
+            let index = CurveMarkers::new(ctx, &roster)?;
+            index.feature_markers(ctx, &marker).map(|_| ())
+        },
+    );
+    assert!(matches!(source_error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "scan SLDPRT curve feature markers"
+            && limit.used == 0
+            && limit.additional == 1));
 }
 
 #[test]
