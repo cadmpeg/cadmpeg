@@ -1195,9 +1195,12 @@ fn shared_drawing_property_names_do_not_repeat_text_comparisons() {
         .collect();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Integer identity insertion admits node passes and up to 44 comparisons per lookup.
-    // This permits those admissions and one text-index pass, but not 2,000 long comparisons.
-    policy.limits.max_work_units = 2_000_000;
+    // A Directory lookup admits at most 44 four-byte key comparisons. The
+    // property, reference, and decoded-index operations fit in 4,000 units
+    // per drawing plus the shared text-index pass. Repeated name comparisons
+    // alone read at least count * name.len() bytes, which exceeds this cap.
+    policy.limits.max_work_units = count as u64 * 4_000 + 100_000;
+    assert!(policy.limits.max_work_units < (count * name.len()) as u64);
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let global = global.length_context().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
@@ -1296,4 +1299,85 @@ fn drawing_property_length_conflict_skips_text_index() {
 #[test]
 fn drawing_unit_flag_conflict_skips_text_index() {
     assert_drawing_property_conflict_without_text_work(17, "406,2,1,1HA;", "406,2,2,1HA;");
+}
+
+#[test]
+fn shared_view_associations_are_indexed_once() {
+    let count = 2_000;
+    let pointers = (0..count)
+        .map(|index| (3 + index * 2).to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut entities = vec![OwnedTestEntity {
+        entity_type: 410,
+        form: 0,
+        label: "VIEW".into(),
+        status: "00000100",
+        parameters: format!("410,1,1,0,0,0,0,0,0,{count},{pointers},0;"),
+    }];
+    for _ in 0..count {
+        entities.push(OwnedTestEntity {
+            entity_type: 402,
+            form: 3,
+            label: "VISIBLE".into(),
+            status: "00000100",
+            parameters: "402,1,0,1;".into(),
+        });
+    }
+    let bytes = owned_test_file(&entities);
+    let (directory, global, assembly) = crate::test_support::with_service_context(&bytes, |ctx| {
+        let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
+        let (global, _, _global_storage) = crate::global::parse(&scan, ctx).unwrap();
+        let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), ctx).unwrap();
+        assert!(quarantined.is_empty());
+        let assembly = crate::parameter::assemble_with_context(&scan, &directory, &[], &global, ctx).unwrap();
+        assert!(assembly.quarantined.is_empty());
+        (directory, global, assembly)
+    });
+    let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect();
+    let records = assembly.records.iter().map(|record| (record.directory_sequence, record)).collect();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Tree lookups, node passes, and the one membership-index construction
+    // fit in 2,000 units per association. A linear membership search pays
+    // one visit and two four-byte comparisons per candidate, over prefixes
+    // of lengths 1 through count. That work alone exceeds this cap.
+    policy.limits.max_work_units = count as u64 * 2_000;
+    let linear_search_work = 9 * count as u64 * (count as u64 + 1) / 2;
+    assert!(policy.limits.max_work_units < linear_search_work);
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let outcome = super::project(
+        &mut ir, &directory, (&entries, &records),
+        &assembly.trailing_pointer_analysis, &global.length_context().unwrap(), &ctx,
+    ).unwrap();
+    assert!(outcome.losses.is_empty(), "{:#?}", outcome.losses);
+    assert_eq!(outcome.decoded.len(), count + 1);
+    for entry in &directory {
+        assert!(outcome.decoded.contains(&entry.sequence));
+    }
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn drawing_lookup_refusals_reach_decode() {
+    for (bytes, operation) in [
+        (drawing_with_properties_file(), "iges drawing parameter lookup"),
+        (drawing_with_properties_file(), "iges drawing directory lookup"),
+        (drawing_with_properties_file(), "iges drawing trailing analysis lookup"),
+        (view_visibility_forms_file(), "iges view association index members"),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, operation, |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions {
+                    policy, ..DecodeOptions::default()
+                }).map_err(|failure| match failure {
+                    cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+            },
+        );
+    }
 }

@@ -156,7 +156,7 @@ fn conflicting_drawing_property_forms<'text>(
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let Some(TrailingPointerAnalysis::Unambiguous(groups)) =
-        trailing_pointer_analysis.get(&record.directory_sequence)
+        ctx.get_btree_map(trailing_pointer_analysis, &record.directory_sequence, "iges drawing trailing analysis lookup")?
     else {
         return Ok(false);
     };
@@ -165,14 +165,12 @@ fn conflicting_drawing_property_forms<'text>(
     while let Some(sequence) =
         ctx.next_charged(&mut properties, "iges drawing property traversal")?
     {
-        if directory
-            .get(sequence)
+        if ctx.get_btree_map(directory, sequence, "iges drawing directory lookup")?
             .is_none_or(|entry| entry.entity_type != 406 || entry.form != form)
         {
             continue;
         }
-        let Some(value) = records
-            .get(sequence)
+        let Some(value) = ctx.get_btree_map(records, sequence, "iges drawing parameter lookup")?
             .and_then(|&record| drawing_property_value(form, record))
         else {
             continue;
@@ -285,7 +283,7 @@ pub(super) fn project(
         .admit_iter(directory, "iges drawing directory traversal")?
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 16 | 17))
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges drawing parameter lookup")?.copied() else {
             push_drawing_entity_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
@@ -318,7 +316,7 @@ pub(super) fn project(
         .admit_iter(directory, "iges drawing directory traversal")?
         .filter(|entry| entry.entity_type == 404 && matches!(entry.form, 0 | 1))
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges drawing parameter lookup")?.copied() else {
             push_drawing_entity_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
@@ -354,7 +352,8 @@ pub(super) fn project(
                         Ok(record
                             .integer(start)
                             .and_then(|value| u32::try_from(value).ok())
-                            .and_then(|sequence| entries.get(&sequence).copied())
+                            .map(|sequence| ctx.get_btree_map(entries, &sequence, "iges drawing directory lookup").map(|entry| entry.copied()))
+                            .transpose()?.flatten()
                             .is_some_and(|view| {
                                 view.entity_type == 410 && view.status.is_logically_dependent()
                             })
@@ -380,7 +379,8 @@ pub(super) fn project(
                         Ok(record
                             .integer(annotation_count_index + 1 + index)
                             .and_then(|value| u32::try_from(value).ok())
-                            .and_then(|sequence| entries.get(&sequence).copied())
+                            .map(|sequence| ctx.get_btree_map(entries, &sequence, "iges drawing directory lookup").map(|entry| entry.copied()))
+                            .transpose()?.flatten()
                             .is_some_and(|annotation| {
                                 annotation.status.use_flag(global.global_table())
                                     == Some(UseFlag::Annotation)
@@ -413,7 +413,7 @@ pub(super) fn project(
         .admit_iter(directory, "iges drawing directory traversal")?
         .filter(|entry| entry.entity_type == 410 && matches!(entry.form, 0 | 1))
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges drawing parameter lookup")?.copied() else {
             push_drawing_entity_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
@@ -425,11 +425,10 @@ pub(super) fn project(
             let transform_valid = if entry.transform == 0 {
                 true
             } else {
-                let target_valid = u32::try_from(entry.transform).ok().is_some_and(|sequence| {
-                    entries
-                        .get(&sequence)
-                        .is_some_and(|target| target.entity_type == 124 && target.form == 0)
-                });
+                let target_valid = u32::try_from(entry.transform).ok().map(|sequence| {
+                    ctx.get_btree_map(entries, &sequence, "iges drawing directory lookup")
+                        .map(|entry| entry.is_some_and(|target| target.entity_type == 124 && target.form == 0))
+                }).transpose()?.unwrap_or(false);
                 if target_valid {
                     let mut transform_storage =
                         ctx.reserve_scoped(0, "iges drawing transform scratch")?;
@@ -454,16 +453,22 @@ pub(super) fn project(
                     false
                 }
             };
-            let clipping_valid = (3..=8).all(|index| {
-                record.integer_or(index, 0).is_some_and(|value| {
-                    value == 0
-                        || u32::try_from(value).ok().is_some_and(|sequence| {
-                            entries.get(&sequence).is_some_and(|target| {
-                                clipping_plane_valid(target, global.global_table())
-                            })
-                        })
-                })
-            });
+            let mut clipping_valid = true;
+            for index in 3..=8 {
+                let valid = match record.integer_or(index, 0) {
+                    Some(0) => true,
+                    Some(value) => match u32::try_from(value).ok() {
+                        Some(sequence) => ctx.get_btree_map(entries, &sequence, "iges drawing directory lookup")?
+                            .is_some_and(|target| clipping_plane_valid(target, global.global_table())),
+                        None => false,
+                    },
+                    None => false,
+                };
+                if !valid {
+                    clipping_valid = false;
+                    break;
+                }
+            }
             transform_valid && clipping_valid
         } else {
             let normal = finite_vector(record, 3);
@@ -523,7 +528,7 @@ pub(super) fn project(
         .admit_iter(directory, "iges drawing directory traversal")?
         .filter(|entry| entry.entity_type == 402 && entry.form == 19)
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges drawing parameter lookup")?.copied() else {
             push_drawing_entity_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
@@ -540,11 +545,10 @@ pub(super) fn project(
                     let view = record
                         .integer(start)
                         .and_then(|value| u32::try_from(value).ok())
-                        .filter(|sequence| {
-                            entries
-                                .get(sequence)
-                                .is_some_and(|target| target.entity_type == 410)
-                        });
+                        .map(|sequence| {
+                            ctx.get_btree_map(entries, &sequence, "iges drawing directory lookup")
+                                .map(|target| target.filter(|target| target.entity_type == 410).map(|_| sequence))
+                        }).transpose()?.flatten();
                     if view != last_view {
                         if let Some(previous) = last_view {
                             closed_view_storage.with_storage(|| {
@@ -557,7 +561,10 @@ pub(super) fn project(
                         }
                         last_breakpoint = None;
                     }
-                    let view_order_valid = view.is_some_and(|view| !closed_views.contains(&view));
+                    let view_order_valid = match view {
+                        Some(view) => !ctx.contains_btree_set(&closed_views, &view, "iges drawing closed view lookup")?,
+                        None => false,
+                    };
                     let breakpoint = record.number(start + 1).and_then(FiniteReal::new);
                     let breakpoint_order_valid = breakpoint.is_some_and(|value| {
                         last_breakpoint.is_none_or(|previous| value.get() > previous.get())
@@ -567,36 +574,27 @@ pub(super) fn project(
                     let display_valid = record.integer(start + 2).is_some_and(display_flag_valid);
                     let color_valid = match record.value(start + 3) {
                         None | Some(crate::parameter::TokenValue::Omitted) => true,
-                        _ => record.integer(start + 3).is_some_and(|value| {
-                            standard_color_valid(value)
-                                || value
-                                    .checked_neg()
-                                    .and_then(|value| {
-                                        u32::try_from(value).ok().filter(|sequence| {
-                                            entries
-                                                .get(sequence)
-                                                .is_some_and(|target| target.entity_type == 314)
-                                        })
-                                    })
-                                    .is_some()
-                        }),
+                        _ => match record.integer(start + 3) {
+                            Some(value) if standard_color_valid(value) => true,
+                            Some(value) => match value.checked_neg().and_then(|value| u32::try_from(value).ok()) {
+                                Some(sequence) => ctx.get_btree_map(entries, &sequence, "iges drawing directory lookup")?
+                                    .is_some_and(|target| target.entity_type == 314),
+                                None => false,
+                            },
+                            None => false,
+                        },
                     };
                     let font_valid = match record.value(start + 4) {
                         None | Some(crate::parameter::TokenValue::Omitted) => true,
-                        _ => record.integer(start + 4).is_some_and(|value| {
-                            value == 0
-                                || standard_line_font_valid(value)
-                                || value
-                                    .checked_neg()
-                                    .and_then(|value| {
-                                        u32::try_from(value).ok().filter(|sequence| {
-                                            entries
-                                                .get(sequence)
-                                                .is_some_and(|target| target.entity_type == 304)
-                                        })
-                                    })
-                                    .is_some()
-                        }),
+                        _ => match record.integer(start + 4) {
+                            Some(value) if value == 0 || standard_line_font_valid(value) => true,
+                            Some(value) => match value.checked_neg().and_then(|value| u32::try_from(value).ok()) {
+                                Some(sequence) => ctx.get_btree_map(entries, &sequence, "iges drawing directory lookup")?
+                                    .is_some_and(|target| target.entity_type == 304),
+                                None => false,
+                            },
+                            None => false,
+                        },
                     };
                     let weight_valid = match record.value(start + 5) {
                         None | Some(crate::parameter::TokenValue::Omitted) => true,
@@ -630,11 +628,14 @@ pub(super) fn project(
         }
     }
 
+    let mut association_storage = ctx.reserve_scoped(0, "iges view association index")?;
+    let mut associations = BTreeMap::<u32, BTreeSet<u32>>::new();
+
     for entry in ctx
         .admit_iter(directory, "iges drawing directory traversal")?
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 3 | 4))
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges drawing parameter lookup")?.copied() else {
             push_drawing_entity_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
@@ -648,70 +649,56 @@ pub(super) fn project(
                     0..count,
                     |index| {
                         let start = 3 + index * block_width;
-                        Ok(record
-                            .integer(start)
-                            .and_then(|value| u32::try_from(value).ok())
-                            .and_then(|sequence| entries.get(&sequence).copied())
-                            .map(|view| -> Result<bool, CodecError> {
-                                if view.entity_type != 410 {
-                                    return Ok(false);
-                                }
-                                let groups = records
-                                    .get(&view.sequence)
-                                    .and_then(|view_record| {
-                                        trailing_pointer_analysis
-                                            .get(&view_record.directory_sequence)
-                                    })
-                                    .and_then(|analysis| match analysis {
-                                        TrailingPointerAnalysis::Unambiguous(groups) => {
-                                            Some(groups)
-                                        }
-                                        _ => None,
-                                    });
-                                groups
-                                    .map(|groups| {
-                                        ctx.contains(
-                                            groups.associations(),
-                                            &entry.sequence,
-                                            "iges view association search",
-                                        )
-                                    })
-                                    .transpose()
-                                    .map(|valid| valid.unwrap_or(false))
-                            })
-                            .transpose()?
-                            .unwrap_or(false)
-                            && (entry.form == 3 || {
-                                let line_font = record.integer(start + 1);
-                                let definition = record.integer(start + 2);
-                                let color = record.integer_or(start + 3, 0);
-                                let weight = record.integer(start + 4);
-                                line_font.is_some_and(|value| {
-                                    value == 0 || standard_line_font_valid(value)
-                                }) && definition.is_some_and(|value| {
-                                    if line_font == Some(0) {
-                                        u32::try_from(value).ok().is_some_and(|sequence| {
-                                            entries
-                                                .get(&sequence)
-                                                .is_some_and(|target| target.entity_type == 304)
-                                        })
-                                    } else {
-                                        value == 0
+                        let view = match record.integer(start).and_then(|value| u32::try_from(value).ok()) {
+                            Some(sequence) => ctx.get_btree_map(entries, &sequence, "iges drawing directory lookup")?.copied(),
+                            None => None,
+                        };
+                        let back_pointer_valid = if let Some(view) = view.filter(|view| view.entity_type == 410) {
+                            if !ctx.contains_key_btree_map(&associations, &view.sequence, "iges view association index lookup")? {
+                                let groups = match ctx.get_btree_map(records, &view.sequence, "iges drawing parameter lookup")? {
+                                    Some(view_record) => ctx.get_btree_map(trailing_pointer_analysis, &view_record.directory_sequence, "iges drawing trailing analysis lookup")?,
+                                    None => None,
+                                };
+                                let mut members = BTreeSet::new();
+                                if let Some(TrailingPointerAnalysis::Unambiguous(groups)) = groups {
+                                    for sequence in ctx.admit_iter(groups.associations(), "iges view association index traversal")? {
+                                        association_storage.with_storage(|| ctx.insert_btree_set(&mut members, *sequence, "iges view association index members"))?;
                                     }
-                                }) && color.is_some_and(|value| {
-                                    standard_color_valid(value)
-                                        || value
-                                            .checked_neg()
-                                            .and_then(|value| {
-                                                u32::try_from(value).ok().filter(|sequence| {
-                                                    entries.get(sequence).is_some_and(|target| {
-                                                        target.entity_type == 314
-                                                    })
-                                                })
-                                            })
-                                            .is_some()
-                                }) && weight.is_some_and(|value| value >= 0)
-                            }))
+                                }
+                                association_storage.with_storage(|| ctx.insert_btree_map(&mut associations, view.sequence, members, "iges view association index views"))?;
+                            }
+                            let members = ctx.get_btree_map(&associations, &view.sequence, "iges view association index lookup")?
+                                .ok_or_else(|| CodecError::malformed("IGES view association index is absent"))?;
+                            ctx.contains_btree_set(members, &entry.sequence, "iges view association search")?
+                        } else {
+                            false
+                        };
+                        Ok(back_pointer_valid && (entry.form == 3 || {
+                            let line_font = record.integer(start + 1);
+                            let definition = record.integer(start + 2);
+                            let color = record.integer_or(start + 3, 0);
+                            let weight = record.integer(start + 4);
+                            line_font.is_some_and(|value| value == 0 || standard_line_font_valid(value))
+                                && match definition {
+                                    Some(value) if line_font == Some(0) => match u32::try_from(value).ok() {
+                                        Some(sequence) => ctx.get_btree_map(entries, &sequence, "iges drawing directory lookup")?
+                                            .is_some_and(|target| target.entity_type == 304),
+                                        None => false,
+                                    },
+                                    Some(value) => value == 0,
+                                    None => false,
+                                }
+                                && match color {
+                                    Some(value) if standard_color_valid(value) => true,
+                                    Some(value) => match value.checked_neg().and_then(|value| u32::try_from(value).ok()) {
+                                        Some(sequence) => ctx.get_btree_map(entries, &sequence, "iges drawing directory lookup")?
+                                            .is_some_and(|target| target.entity_type == 314),
+                                        None => false,
+                                    },
+                                    None => false,
+                                }
+                                && weight.is_some_and(|value| value >= 0)
+                        }))
                     },
                     "iges drawing reference traversal",
                 )
@@ -728,7 +715,8 @@ pub(super) fn project(
                             .integer(3 + views * block_width + index)
                             .and_then(|value| u32::try_from(value).ok())
                             .filter(|sequence| sequence % 2 == 1)
-                            .is_some_and(|sequence| entries.contains_key(&sequence)))
+                            .map(|sequence| ctx.contains_key_btree_map(entries, &sequence, "iges drawing directory lookup"))
+                            .transpose()?.unwrap_or(false))
                     },
                     "iges drawing reference traversal",
                 )
