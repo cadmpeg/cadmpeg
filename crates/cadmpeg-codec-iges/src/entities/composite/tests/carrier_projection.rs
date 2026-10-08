@@ -364,7 +364,14 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
         assert_eq!(concatenated.nurbs.degree(), 3);
         assert_eq!(
             std::iter::once(0.0)
-                .chain(concatenated.segments.preceding.into_iter().chain(std::iter::once(concatenated.segments.last)).map(|segment| segment.end))
+                .chain(
+                    concatenated
+                        .segments
+                        .preceding
+                        .into_iter()
+                        .chain(std::iter::once(concatenated.segments.last))
+                        .map(|segment| segment.end)
+                )
                 .collect::<Vec<_>>(),
             vec![0.0, 1.0, 3.0, 4.0, 5.0, 7.0, 8.0]
         );
@@ -719,12 +726,27 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
 #[test]
 fn composite_analytic_child_refuses_arc_lane_before_projection() {
     let bytes = mixed_analytic_composite_curve_file();
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "iges analytic arc weighted poles", |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-            .map(|_| ()).map_err(|error| match error { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "iges analytic arc weighted poles",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map(|_| ())
+                .map_err(|error| match error {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
 }
 
 #[test]

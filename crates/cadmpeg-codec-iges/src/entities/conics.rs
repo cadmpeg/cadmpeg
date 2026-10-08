@@ -150,10 +150,17 @@ pub(super) fn project<'ctx>(
     let mut wire_edges = Vec::new();
 
     let mut directory_entries = directory.iter();
-    while let Some(entry) = ctx.next_charged(&mut directory_entries, "iges conic directory traversal")? {
-        if entry.entity_type != 104 || !(0..=3).contains(&entry.form) { continue; }
+    while let Some(entry) =
+        ctx.next_charged(&mut directory_entries, "iges conic directory traversal")?
+    {
+        if entry.entity_type != 104 || !(0..=3).contains(&entry.form) {
+            continue;
+        }
         let factor = global.length_factor_mm();
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges conic parameter lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(records, &entry.sequence, "iges conic parameter lookup")?
+            .copied()
+        else {
             push_entity_loss(
                 ctx,
                 &mut losses,

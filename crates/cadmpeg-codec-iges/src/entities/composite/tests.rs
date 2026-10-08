@@ -2,8 +2,8 @@
 
 #![allow(clippy::unwrap_used)]
 
-mod nurbs;
 mod index_admission;
+mod nurbs;
 
 use crate::directory::UseFlag;
 
@@ -91,13 +91,17 @@ fn composite_index_refuses_each_collection_before_insertion() {
         "iges composite point index nodes",
         "iges composite vertex index nodes",
     ] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            CompositeIndex::from_ir(ir, &ctx).map(|_| ())
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                CompositeIndex::from_ir(ir, &ctx).map(|_| ())
+            },
+        );
     }
 }
 
@@ -111,12 +115,30 @@ fn composite_index_refuses_each_retained_identity_copy() {
         .unwrap();
     let ir = decoded.ir();
     for (dimension, operation) in [
-        (ResourceDimension::RetainedBytes, "iges composite curve index keys"),
-        (ResourceDimension::RetainedBytes, "iges composite edge index keys"),
-        (ResourceDimension::RetainedBytes, "iges composite indexed start ids"),
-        (ResourceDimension::RetainedBytes, "iges composite indexed end ids"),
-        (ResourceDimension::RetainedBytes, "iges composite point index keys"),
-        (ResourceDimension::RetainedBytes, "iges composite vertex index keys"),
+        (
+            ResourceDimension::RetainedBytes,
+            "iges composite curve index keys",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "iges composite edge index keys",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "iges composite indexed start ids",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "iges composite indexed end ids",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "iges composite point index keys",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "iges composite vertex index keys",
+        ),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let arena = DecodeArena::new();
@@ -192,7 +214,10 @@ fn composite_index_admits_added_entity_nodes_and_identity_keys() {
                 _ => panic!("unexpected dimension"),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            { let mut index = CompositeIndex::default(); add(&mut index, &ctx) }
+            {
+                let mut index = CompositeIndex::default();
+                add(&mut index, &ctx)
+            }
         });
     }
     let arena = DecodeArena::new();
@@ -241,22 +266,54 @@ fn composite_projection_refuses_model_and_procedural_slots_before_growth() {
         ),
         (composite_curve_file(), "iges composite wire edge ids"),
     ] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy: policy.clone(), ..DecodeOptions::default() }).map(|_| ()).map_err(|error| match error { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                IgesCodec
+                    .decode(
+                        &mut Cursor::new(&bytes),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .map(|_| ())
+                    .map_err(|error| match error {
+                        DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected decode failure: {other:?}"),
+                    })
+            },
+        );
     }
 }
 
 #[test]
 fn native_composite_segment_curve_ids_refuse_retained_copy() {
     let bytes = composite_curve_with_join_gap(0.001_001);
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "iges composite native segment curve ids", |cap| {
-        let mut policy = DecodePolicy::service(); policy.limits.max_retained_bytes = cap;
-        IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-            .map(|_| ()).map_err(|error| match error { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges composite native segment curve ids",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map(|_| ())
+                .map_err(|error| match error {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
 }
 
 #[test]
@@ -268,11 +325,27 @@ fn composite_projection_identity_copies_refuse_retained_limit() {
         IgesCodec
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
             .unwrap();
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "iges composite projection identity copy", |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy: policy.clone(), ..DecodeOptions::default() }).map(|_| ()).map_err(|error| match error { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "iges composite projection identity copy",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                IgesCodec
+                    .decode(
+                        &mut Cursor::new(&bytes),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .map(|_| ())
+                    .map_err(|error| match error {
+                        DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected decode failure: {other:?}"),
+                    })
+            },
+        );
     }
 }
 
@@ -286,11 +359,27 @@ fn composite_child_carriers_refuse_nested_collection_admission() {
         "iges composite line knots",
         "iges composite line points",
     ] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy: policy.clone(), ..DecodeOptions::default() }).map(|_| ()).map_err(|error| match error { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                IgesCodec
+                    .decode(
+                        &mut Cursor::new(&bytes),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .map(|_| ())
+                    .map_err(|error| match error {
+                        DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected decode failure: {other:?}"),
+                    })
+            },
+        );
     }
 }
 
@@ -303,20 +392,40 @@ fn project_composite_at_limit(
     cap: u64,
 ) -> Result<(), CodecError> {
     let setup_arena = DecodeArena::new();
-    let (setup, _) = DecodeContext::from_root_bytes(bytes, &setup_arena, &DecodePolicy::service()).unwrap();
+    let (setup, _) =
+        DecodeContext::from_root_bytes(bytes, &setup_arena, &DecodePolicy::service()).unwrap();
     let scan = crate::card::scan_with_context(bytes, &setup).unwrap();
     let (global, _, _global_storage) = crate::global::parse(&scan, &setup).unwrap();
-    let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), &setup).unwrap();
-    let parameters = crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, &setup).unwrap();
+    let (directory, quarantined) =
+        crate::directory::parse(&scan, global.global_table(), &setup).unwrap();
+    let parameters =
+        crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, &setup)
+            .unwrap();
     let projected_global = global.length_context().unwrap();
-    let primitives: Vec<_> = directory.iter().filter(|entry| entry.entity_type != 102).cloned().collect();
+    let primitives: Vec<_> = directory
+        .iter()
+        .filter(|entry| entry.entity_type != 102)
+        .copied()
+        .collect();
     let mut ir = CadIr::empty();
     let _primitive_projection = super::super::geometry::project_geometry(
-        &mut ir, &primitives, &parameters.records, &parameters.trailing_pointer_analysis,
-        &projected_global, &setup,
-    ).unwrap();
-    let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect();
-    let records = parameters.records.iter().map(|record| (record.directory_sequence, record)).collect();
+        &mut ir,
+        &primitives,
+        &parameters.records,
+        &parameters.trailing_pointer_analysis,
+        &projected_global,
+        &setup,
+    )
+    .unwrap();
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect();
+    let records = parameters
+        .records
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     match dimension {
@@ -326,23 +435,35 @@ fn project_composite_at_limit(
     }
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut sequences = super::super::geometry::SourceSequences::new(&ctx)?;
-    super::project(&mut ir, &directory, (&entries, &records), &projected_global, &ctx, &mut sequences).map(|_| ())
+    super::project(
+        &mut ir,
+        &directory,
+        (&entries, &records),
+        &projected_global,
+        &ctx,
+        &mut sequences,
+    )
+    .map(|_| ())
 }
 
 #[test]
 fn composite_child_curve_id_copies_refuse_retained_budget() {
     let bytes = composite_curve_file();
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "iges composite projected child curve IDs", |cap| {
-        project_composite_at_limit(&bytes, ResourceDimension::RetainedBytes, cap)
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges composite projected child curve IDs",
+        |cap| project_composite_at_limit(&bytes, ResourceDimension::RetainedBytes, cap),
+    );
 }
 
 #[test]
 fn composite_source_object_refusal_survives_candidate_projection() {
     let bytes = composite_curve_file();
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "iges source object ID", |cap| {
-        project_composite_at_limit(&bytes, ResourceDimension::RetainedBytes, cap)
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges source object ID",
+        |cap| project_composite_at_limit(&bytes, ResourceDimension::RetainedBytes, cap),
+    );
 }
 
 use super::{
@@ -1383,9 +1504,18 @@ fn composite_scanned_edges_admit_slots_and_endpoint_ids() {
     let ir = decoded.ir();
     let curve_id = ir.model.edges.iter().find_map(|edge| edge.curve()).unwrap();
     for (dimension, operation) in [
-        (ResourceDimension::CollectionItems, "iges composite scanned edge candidates"),
-        (ResourceDimension::MaterializedBytes, "iges composite scanned edge start ID"),
-        (ResourceDimension::MaterializedBytes, "iges composite scanned edge end ID"),
+        (
+            ResourceDimension::CollectionItems,
+            "iges composite scanned edge candidates",
+        ),
+        (
+            ResourceDimension::MaterializedBytes,
+            "iges composite scanned edge start ID",
+        ),
+        (
+            ResourceDimension::MaterializedBytes,
+            "iges composite scanned edge end ID",
+        ),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let mut policy = DecodePolicy::service();
@@ -1438,13 +1568,17 @@ fn homogeneous_control_points_refuse_collection_limit() {
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
     );
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "iges composite homogeneous control points", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        homogeneous_control_points(&ctx, &curve).map(|_| ())
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "iges composite homogeneous control points",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            homogeneous_control_points(&ctx, &curve).map(|_| ())
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.additional == 2));
 }
 
@@ -1452,13 +1586,17 @@ fn homogeneous_control_points_refuse_collection_limit() {
 fn composite_knot_insertion_refuses_knot_collection_limit() {
     let controls = [[1.0, 0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]];
     let knots = [0.0, 0.0, 1.0, 1.0];
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "iges composite inserted knots", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        insert_homogeneous_knot(&ctx, &controls, &knots, 1, 0.5).map(|_| ())
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "iges composite inserted knots",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            insert_homogeneous_knot(&ctx, &controls, &knots, 1, 0.5).map(|_| ())
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.additional == 5));
 }
 
@@ -1466,13 +1604,17 @@ fn composite_knot_insertion_refuses_knot_collection_limit() {
 fn composite_knot_insertion_refuses_control_collection_limit() {
     let controls = [[1.0, 0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]];
     let knots = [0.0, 0.0, 1.0, 1.0];
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "iges composite knot-insertion control points", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        insert_homogeneous_knot(&ctx, &controls, &knots, 1, 0.5).map(|_| ())
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "iges composite knot-insertion control points",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            insert_homogeneous_knot(&ctx, &controls, &knots, 1, 0.5).map(|_| ())
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.additional == 3));
 }
 
@@ -1484,14 +1626,19 @@ fn composite_elevated_knots_refuse_collection_limit() {
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         Some(vec![1.0, 2.0]),
     );
-        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "iges composite elevated knots", |cap| {
-        let mut curve = curve.clone();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], 2, None).map_err(|error| error.non_resource().expect_err("resource refusal"))
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "iges composite elevated knots",
+        |cap| {
+            let mut curve = curve.clone();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], 2, None)
+                .map_err(|error| error.non_resource().expect_err("resource refusal"))
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.additional == 3));
 }
 
@@ -1512,13 +1659,19 @@ fn composite_trimmed_lanes_refuse_fallible_copies_and_weight_conversion() {
         "iges composite trim knot copy",
         "iges composite trimmed knots",
     ] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            trim_nurbs_to_interval(&ctx, &curve, [0.25, 1.5]).map(|_| ()).map_err(|error| error.non_resource().expect_err("resource refusal"))
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                trim_nurbs_to_interval(&ctx, &curve, [0.25, 1.5])
+                    .map(|_| ())
+                    .map_err(|error| error.non_resource().expect_err("resource refusal"))
+            },
+        );
     }
 }
 
@@ -1543,13 +1696,21 @@ fn composite_elevation_refuses_nested_knot_and_weight_storage() {
         "iges composite elevated knot suffix",
         "iges composite elevated span",
     ] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            { let mut curve = source(); elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], 3, None).map_err(|error| error.non_resource().expect_err("resource refusal")) }
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                {
+                    let mut curve = source();
+                    elevate_nurbs_to_degree(&ctx, &mut curve, [0.0, 1.0], 3, None)
+                        .map_err(|error| error.non_resource().expect_err("resource refusal"))
+                }
+            },
+        );
     }
 }
 
@@ -1561,14 +1722,20 @@ fn composite_child_weights_refuse_collection_limit() {
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
     );
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "iges composite child weights", |cap| {
-        let curve = curve.clone();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        concatenate_nurbs(&ctx, vec![(curve, [0.0, 1.0], ())], None).map(|_| ()).map_err(|error| error.non_resource().expect_err("resource refusal"))
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "iges composite child weights",
+        |cap| {
+            let curve = curve.clone();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            concatenate_nurbs(&ctx, vec![(curve, [0.0, 1.0], ())], None)
+                .map(|_| ())
+                .map_err(|error| error.non_resource().expect_err("resource refusal"))
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.additional == 2));
 }
 
@@ -1609,13 +1776,19 @@ fn composite_join_refuses_child_and_joined_lane_storage() {
         (false, "iges composite joined weights"),
         (true, "iges composite joined weighted poles"),
     ] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            concatenate_nurbs(&ctx, children(rational), Some(0.0)).map(|_| ()).map_err(|error| error.non_resource().expect_err("resource refusal"))
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                concatenate_nurbs(&ctx, children(rational), Some(0.0))
+                    .map(|_| ())
+                    .map_err(|error| error.non_resource().expect_err("resource refusal"))
+            },
+        );
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -1633,9 +1806,11 @@ fn bezier_degree_elevation_refuses_loop_work() {
     let service_arena = DecodeArena::new();
     let service_policy = DecodePolicy::service();
     let service_ctx = DecodeContext::new(&service_arena, &service_policy, false);
-    assert!(super::elevate_bezier_homogeneous(&service_ctx, &controls, 1, 2)
-        .unwrap()
-        .is_some());
+    assert!(
+        super::elevate_bezier_homogeneous(&service_ctx, &controls, 1, 2)
+            .unwrap()
+            .is_some()
+    );
     assert_work_refusal("iges composite Bezier degree elevation", |ctx| {
         super::elevate_bezier_homogeneous(ctx, &controls, 1, 2).map(|_| ())
     });
@@ -1645,13 +1820,17 @@ fn assert_work_refusal<T>(
     operation: &str,
     run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
 ) {
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let arena = DecodeArena::new();
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        run(&ctx)
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let ctx = DecodeContext::new(&arena, &policy, false);
+            run(&ctx)
+        },
+    );
 }
 
 #[test]

@@ -6907,7 +6907,9 @@ pub(crate) fn store<'ctx>(
             .source_object
             .as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
-            .map(|_| sequences.curve(&curve.id, ctx)).transpose()?.flatten()
+            .map(|_| sequences.curve(&curve.id, ctx))
+            .transpose()?
+            .flatten()
         {
             neutral_storage.with_storage(|| {
                 ctx.push_btree_group(
@@ -6925,7 +6927,9 @@ pub(crate) fn store<'ctx>(
             .source_object
             .as_ref()
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
-            .map(|_| sequences.surface(&surface.id, ctx)).transpose()?.flatten()
+            .map(|_| sequences.surface(&surface.id, ctx))
+            .transpose()?
+            .flatten()
         {
             neutral_storage.with_storage(|| {
                 ctx.push_btree_group(
