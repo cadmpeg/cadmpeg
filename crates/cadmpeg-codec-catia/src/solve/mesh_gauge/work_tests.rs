@@ -477,3 +477,37 @@ fn gauge_coedge_queries_stop_before_unvisited_faces() {
         );
     });
 }
+
+#[test]
+fn least_rotation_refuses_an_overflowing_bound_before_key_visits() {
+    crate::test_support::with_service_context(|ctx| {
+        let visited = std::cell::Cell::new(false);
+        let CodecError::ResourceLimit(limit) = super::least_rotation(
+            ctx,
+            usize::MAX,
+            |_| {
+                visited.set(true);
+                0_usize
+            },
+            "test least rotation bound",
+        )
+        .expect_err("three times the cycle length exceeds the index range") else {
+            panic!("resource refusal");
+        };
+        assert_eq!(
+            limit.dimension,
+            ResourceDimension::Codec("test least rotation bound")
+        );
+        assert_eq!(limit.operation, "test least rotation bound");
+        assert_eq!(
+            limit.used,
+            cadmpeg_core::decode::u64_from_index(usize::MAX / 3)
+        );
+        assert_eq!(
+            limit.additional,
+            cadmpeg_core::decode::u64_from_index(usize::MAX - usize::MAX / 3)
+        );
+        assert!(!visited.get());
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}

@@ -4943,7 +4943,11 @@ fn standard_mesh_missing_edge_endpoint_assignments(
                             }
                         }
                     }
-                    ordered.sort_unstable();
+                    for (first, second) in [(0, 1), (2, 3), (0, 2), (1, 3), (1, 2)] {
+                        if ordered[first] > ordered[second] {
+                            ordered.swap(first, second);
+                        }
+                    }
                     let mut pairs = Vec::new();
                     let mut previous = None;
                     for pair in ordered.into_iter().flatten() {
