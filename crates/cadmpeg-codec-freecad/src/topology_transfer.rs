@@ -281,7 +281,7 @@ pub(crate) fn transfer<'ctx>(
             "FreeCAD referenced pcurve lookup",
         )? {
             let (pcurve, storage) = candidate;
-            storage.commit()?;
+            let pcurve = storage.commit_value(pcurve)?;
             ctx.push_vec(&mut ir.model.pcurves, pcurve, "FreeCAD pcurves records")?;
         }
     }
@@ -1259,12 +1259,11 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             self.append_shell_shape(ctx, ir, &region_id.data, traversal, &mut shells)?;
         }
         if !shells.is_empty() {
-            region_id._storage.commit()?;
+            let region_id = region_id._storage.commit_value(region_id.data)?;
             self.ctx
                 .reserve_vec(&mut ir.model.regions, 1, "FreeCAD regions records")?;
             ir.model.regions.push(Region {
                 id: region_id
-                    .data
                     .try_clone_for_decode(self.ctx, "FreeCAD region record identity")?,
                 body: body.try_clone_for_decode(self.ctx, "FreeCAD region body identity")?,
                 shells,
@@ -1274,11 +1273,11 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                     TextShapeKind::Solid,
                     shape_index,
                     transform,
-                    region_id.data.as_str(),
+                    region_id.as_str(),
                 )?;
             }
             ctx.reserve_vec(output, 1, "FreeCAD body regions")?;
-            output.push(region_id.data);
+            output.push(region_id);
         }
         Ok(())
     }
@@ -1490,8 +1489,8 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                     )
                     .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
                 );
-                shell_id._storage.commit()?;
-                ctx.push_vec(output, shell_id.data, "FreeCAD shell components")?;
+                let shell_id = shell_id._storage.commit_value(shell_id.data)?;
+                ctx.push_vec(output, shell_id, "FreeCAD shell components")?;
                 return Ok(());
             }
             _ => {}
@@ -1513,8 +1512,8 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
         if shape.kind() == TextShapeKind::Wire {
             self.bind_topology(shape.kind(), shape_index, transform, shell_id.data.as_str())?;
         }
-        shell_id._storage.commit()?;
-        ctx.push_vec(output, shell_id.data, "FreeCAD shell components")?;
+        let shell_id = shell_id._storage.commit_value(shell_id.data)?;
+        ctx.push_vec(output, shell_id, "FreeCAD shell components")?;
         Ok(())
     }
 
@@ -1601,10 +1600,10 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                         &key.data,
                         "FreeCAD face connectivity edge lookup",
                     )? {
-                        key._storage.commit()?;
+                        let key = key._storage.commit_value(key.data)?;
                         ctx.insert_btree_set(
                             &mut keys,
-                            key.data,
+                            key,
                             "FreeCAD face connectivity edge keys",
                         )?;
                     }
@@ -1654,10 +1653,10 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                             &key.data,
                             "FreeCAD face connectivity vertex lookup",
                         )? {
-                            key._storage.commit()?;
+                            let key = key._storage.commit_value(key.data)?;
                             ctx.insert_btree_set(
                                 &mut keys,
-                                key.data,
+                                key,
                                 "FreeCAD face connectivity vertex keys",
                             )?;
                         }
@@ -2178,9 +2177,9 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
         self.bind_topology(TextShapeKind::Edge, edge_use.shape, transform, id.as_str())?;
         self.cache_storage.with_storage(|| {
             let cached_id = id.try_clone_for_decode(self.ctx, "FreeCAD cached edge identity")?;
-            key._storage.commit()?;
+            let key = key._storage.commit_value(key.data)?;
             self.ctx
-                .insert_hash_map(&mut self.edges, key.data, cached_id, "FreeCAD cached edges")?;
+                .insert_hash_map(&mut self.edges, key, cached_id, "FreeCAD cached edges")?;
             Ok::<(), CodecError>(())
         })?;
         Ok(id)
@@ -2475,10 +2474,10 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
         )?;
         self.cache_storage.with_storage(|| {
             let cached_id = vertex_id.try_clone_for_decode(self.ctx, "FreeCAD cached vertex identity")?;
-            key._storage.commit()?;
+            let key = key._storage.commit_value(key.data)?;
             self.ctx.insert_hash_map(
                 &mut self.vertices,
-                key.data,
+                key,
                 cached_id,
                 "FreeCAD cached vertices",
             )?;
@@ -3579,10 +3578,10 @@ fn source_topology_indices(
                         &key.data,
                         "FreeCAD source topology lookup",
                     )? {
-                        key._storage.commit()?;
+                        let key = key._storage.commit_value(key.data)?;
                         ctx.insert_hash_map(
                             &mut indices,
-                            key.data,
+                            key,
                             next_index,
                             "FreeCAD source topology index",
                         )?;
