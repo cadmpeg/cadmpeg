@@ -49,6 +49,9 @@ pub(crate) fn matches_native(
     let mut actual = namespace.arena_iter_as_for_decode::<serde_json::Value>(ctx, "applications");
     let mut expected = expected.into_iter();
     while expected.len() != 0 {
+        if actual.size_hint().1 == Some(0) {
+            return Ok(false);
+        }
         let Some(record) = ctx.next_charged(&mut expected, "FreeCAD expected applications")? else {
             break;
         };
@@ -65,6 +68,9 @@ pub(crate) fn matches_native(
         if actual != serde_json::to_value(record)? {
             return Ok(false);
         }
+    }
+    if actual.size_hint().1 == Some(0) {
+        return Ok(true);
     }
     let tail =
         ctx.with_scoped_storage("FreeCAD actual application tail", || {

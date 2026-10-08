@@ -16,6 +16,7 @@ use std::io::Cursor;
 
 mod body_owner_tests;
 mod graph_diagnostic_tests;
+mod index_demand;
 mod property_diagnostic_tests;
 mod resource_admission_tests;
 mod source_visits;
