@@ -1034,21 +1034,28 @@ pub(in crate::decode) fn ordered_face_loops<'a>(
     incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
 ) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
+    let mut input_storage = ctx.reserve_scoped(0, "creo face ordering candidate references")?;
     let mut ordered_input = Vec::new();
-    ctx.extend_from_slice(
-        &mut ordered_input,
-        loops,
-        "creo native face ordering loop references",
-    )?;
+    input_storage.with_storage(|| {
+        ctx.extend_from_slice(
+            &mut ordered_input,
+            loops,
+            "creo native face ordering loop references",
+        )
+    })?;
     let plane = match plane {
         Some(plane) => Some(plane),
         None => face_boundary_plane(ctx, &ordered_input, incidence, solved_vertices)?,
     };
-    if let Some(plane) = plane {
-        ordered_planar_face_loops(ctx, ordered_input, plane, incidence, solved_vertices)
+    let ordered = if let Some(plane) = plane {
+        ordered_planar_face_loops(ctx, ordered_input, plane, incidence, solved_vertices)?
     } else {
-        Ok((ordered_input.len() == 1).then_some(ordered_input))
+        (ordered_input.len() == 1).then_some(ordered_input)
+    };
+    if ordered.is_some() {
+        input_storage.commit()?;
     }
+    Ok(ordered)
 }
 
 pub(in crate::decode) fn rowless_round_face_orientations(
