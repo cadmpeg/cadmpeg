@@ -2391,10 +2391,12 @@ mod tests {
             |ctx| ScalarCache::from_section_checked(ctx, &images),
         );
         assert_eq!(cache.entries.len(), 1, "equal images remain deduplicated");
-        let error = with_recursive_limits(&[0; 16], 128, 0, |ctx| {
-            ScalarCache::from_section_checked(ctx, &[0; 16])
-        })
-        .expect_err("miss scan refuses");
+        let error = crate::test_support::last_refusal_at(
+            &[0; 16],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "creo scalar cache discovery",
+            |ctx| ScalarCache::from_section_checked(ctx, &[0; 16]),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo scalar cache discovery")
         );
@@ -2426,8 +2428,12 @@ mod tests {
             |ctx| double_xar_tables(ctx, bytes),
         );
         assert_eq!(tables.len(), 1);
-        let error = with_recursive_limits(&[0; 16], 128, 0, |ctx| double_xar_tables(ctx, &[0; 16]))
-            .expect_err("miss scan refuses");
+        let error = crate::test_support::last_refusal_at(
+            &[0; 16],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "creo double_xar discovery",
+            |ctx| double_xar_tables(ctx, &[0; 16]),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo double_xar discovery")
         );
