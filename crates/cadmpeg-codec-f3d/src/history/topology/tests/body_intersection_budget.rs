@@ -426,3 +426,27 @@ fn incomplete_body_closure_releases_owner_prefix_storage() {
             if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == 0
     ));
 }
+
+#[test]
+fn missing_free_vertex_point_skips_unvisited_suffix() {
+    fn work(free_vertices: Vec<i64>) -> u64 {
+        let mut topology = wire_topology(false);
+        topology.shell_wire_edges[0].member_refs.clear();
+        topology.shell_free_vertices[0].member_refs = free_vertices;
+        topology.vertex_points.clear();
+        crate::test_support::with_decode_context(|ctx| {
+            assert!(
+                !crate::history::topology::walk_body_closures(ctx, &topology, |_, _| Ok(()),)
+                    .unwrap()
+            );
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "measure incomplete body walk")
+                .unwrap_err()
+            else {
+                panic!("work refusal");
+            };
+            limit.used
+        })
+    }
+    assert_eq!(work(vec![8]), work(vec![8; 4096]));
+}

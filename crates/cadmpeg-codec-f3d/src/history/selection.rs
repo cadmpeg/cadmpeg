@@ -369,7 +369,8 @@ pub(super) fn bind_face_selection<'a, 'ctx>(
                 }
                 return Ok(false);
             }
-            let Some(group) = super::scope_group(ctx, &index.groups, scope, native, |_| true)? else {
+            let Some(group) = super::scope_group(ctx, &index.groups, scope, native, |_| true)?
+            else {
                 return Ok(false);
             };
             let stream = super::native_stream_of(ctx, &scope.id)?;
@@ -462,7 +463,10 @@ pub(super) fn bind_body_recipe_face_selection<'a, 'ctx>(
             let FaceSelection::Native(native) = selection else {
                 return Ok(false);
             };
-            let Some(group) = super::scope_group(ctx, &index.groups, scope, native, |group| group.role() == DesignOperandRole::ROLE_0X5)? else {
+            let Some(group) = super::scope_group(ctx, &index.groups, scope, native, |group| {
+                group.role() == DesignOperandRole::ROLE_0X5
+            })?
+            else {
                 return Ok(false);
             };
             let stream = super::native_stream_of(ctx, &scope.id)?;

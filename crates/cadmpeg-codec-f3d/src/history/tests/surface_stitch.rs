@@ -381,3 +381,87 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     ));
     assert!(ambiguous_topologies[0].faces.is_empty());
 }
+
+#[test]
+fn empty_face_selection_features_skip_input_indexes() {
+    let mut fixture = surface_stitch_fixture();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_work_units = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        bind_feature_face_selections(
+            ctx,
+            &mut [],
+            &mut fixture.input_topologies,
+            crate::history::FeatureFaceSelectionInputs {
+                scopes: std::slice::from_ref(&fixture.scope),
+                groups: &fixture.groups,
+                operands: &[],
+                entity_operands: &fixture.operands,
+                body_recipe_operands: &[],
+                histories: std::slice::from_ref(&fixture.history),
+            },
+        )
+    })
+    .unwrap();
+}
+
+#[test]
+fn face_selection_without_native_reference_skips_input_indexes() {
+    let mut fixture = surface_stitch_fixture();
+    fixture.feature.native_ref = None;
+    let original = fixture.feature.clone();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        bind_feature_face_selections(
+            ctx,
+            std::slice::from_mut(&mut fixture.feature),
+            &mut fixture.input_topologies,
+            crate::history::FeatureFaceSelectionInputs {
+                scopes: std::slice::from_ref(&fixture.scope),
+                groups: &fixture.groups,
+                operands: &[],
+                entity_operands: &fixture.operands,
+                body_recipe_operands: &[],
+                histories: std::slice::from_ref(&fixture.history),
+            },
+        )
+    })
+    .unwrap();
+    assert_eq!(fixture.feature, original);
+}
+
+#[test]
+fn consuming_face_selection_refuses_input_topology_index() {
+    let operation = "index F3D feature input topologies";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| {
+            let mut fixture = surface_stitch_fixture();
+            bind_feature_face_selections(
+                ctx,
+                std::slice::from_mut(&mut fixture.feature),
+                &mut fixture.input_topologies,
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: std::slice::from_ref(&fixture.scope),
+                    groups: &fixture.groups,
+                    operands: &[],
+                    entity_operands: &fixture.operands,
+                    body_recipe_operands: &[],
+                    histories: std::slice::from_ref(&fixture.history),
+                },
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation)
+    );
+}
