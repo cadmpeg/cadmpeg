@@ -1123,6 +1123,8 @@ fn mark_characteristic_representations(
     (typed, claim_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    let mut visited = BTreeSet::new();
+    let mut visited_storage = ctx.reserve_scoped(0, "STEP characteristic claim index scratch")?;
     for (id, record) in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
         let Some(_) = find_record_value(record, ctx, |value| {
             first_matching([value], ctx, |reference| {
@@ -1140,6 +1142,11 @@ fn mark_characteristic_representations(
             )? {
                 for representation_id in references(parameter, ctx) {
                     let representation_id = representation_id?;
+                    if !visited_storage.with_storage(|| ctx.insert_btree_set(
+                        &mut visited, representation_id, "step_characteristic_claim_visited",
+                    ))? {
+                        continue;
+                    }
                     let Some(representation) = ctx.get_btree_map(
                         exchange.records(),
                         &representation_id,
