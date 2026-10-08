@@ -452,7 +452,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<WireProjectionOutcome, CodecError> {
     let mut transform_tables = None;
     let mut transform_storage = ctx.reserve_scoped(0, "iges offsets transform lookup")?;

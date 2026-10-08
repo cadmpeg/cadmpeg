@@ -2022,7 +2022,7 @@ fn plane_face_draft(
     stem: &crate::ids::Stem,
     boundary_edges: Vec<Edge>,
     resolution: f64,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<ModelDraft, LegacyPlaneError> {
     let tolerance = if resolution > 0.0 {
@@ -2212,7 +2212,7 @@ fn legacy_single_parent_face<'ir, 'ctx>(
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
     ctx: &'ctx DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<
     Option<(
         ModelDraft,
@@ -2751,7 +2751,7 @@ pub(super) fn project(
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<(ProjectionOutcome, BTreeMap<u32, PlacementRejection>), CodecError> {
     let (entries, records) = indexes;
     let mut scratch = ctx.reserve_scoped(0, "iges structure scratch")?;
