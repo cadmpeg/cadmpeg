@@ -18,8 +18,8 @@ mod edge_geometry;
 mod surface_membership;
 use edge_geometry::{
     attach_standard_circles, attach_standard_lines, bounds_overlap, build_standard_edge_curve,
-    canonical_unoriented_axis, intersection_line_direction, nurbs_surface_control_bounds,
-    point_bounds, point_on_standard_face, point_on_surface, point_on_surface_if_supported,
+    intersection_line_direction, nurbs_surface_control_bounds, point_bounds,
+    point_on_standard_face, point_on_surface, point_on_surface_if_supported,
     resolve_standard_limit_curve_binding, same_cone_generator_pair, standard_limit_curve_bindings,
     standard_nurbs_line_pair_on_face, standard_pcurve_geometry,
     standard_shared_nurbs_boundary_pair_options, BoundsEntry, BoundsIndex, EdgeLineRole,
@@ -7415,7 +7415,7 @@ fn attach_standard_topology(
                         (&line_constraint.edge_roles).into_iter()
                         .map(|role| *role == EdgeLineRole::Flexible),
                     )
-                    .zip(ctx.admit_iter(&face_domain_edges, "catia_standard_face_domain_edges")?)
+                    .zip(&face_domain_edges)
                     .map(|((circle, line), face)| *circle || line || *face),
                     "catia_standard_partial_constraint_edges",
                 )?;
@@ -10738,13 +10738,16 @@ mod circle_axis_tests {
     fn unoriented_circle_axes_use_one_parameter_frame() {
         const AXIS_COMPONENT_TOLERANCE: f64 = 1e-12;
 
-        assert_eq!(super::canonical_unoriented_axis(z()), Some(unit(z())));
         assert_eq!(
-            super::canonical_unoriented_axis(Vector3::new(0.0, 0.0, -1.0)),
+            super::edge_geometry::canonical_unoriented_axis(z()),
             Some(unit(z()))
         );
-        let axis =
-            super::canonical_unoriented_axis(Vector3::new(-2.0, 1.0, 0.0)).expect("finite axis");
+        assert_eq!(
+            super::edge_geometry::canonical_unoriented_axis(Vector3::new(0.0, 0.0, -1.0)),
+            Some(unit(z()))
+        );
+        let axis = super::edge_geometry::canonical_unoriented_axis(Vector3::new(-2.0, 1.0, 0.0))
+            .expect("finite axis");
         let axis = axis.as_raw();
         let length = 5.0_f64.sqrt();
         assert!((axis.x - 2.0 / length).abs() < AXIS_COMPONENT_TOLERANCE);

@@ -887,7 +887,7 @@ fn line_segment_projection_filters_overlapping_boxes_and_tolerance_coincidence()
     use crate::families::standard::decode::edge_geometry::StandardLinePairConstraint;
     use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::{ids::PointId, topology::Point};
-    for separated in [true, false] {
+    for (separated, vertical) in [(true, false), (false, false), (false, true)] {
         let points = (0..1024_u32)
             .flat_map(|row| {
                 let y = if separated {
@@ -896,10 +896,18 @@ fn line_segment_projection_filters_overlapping_boxes_and_tolerance_coincidence()
                     f64::from(row) * LINE_COINCIDENCE_OFFSET_STEP
                 };
                 {
-                    let mut endpoints = [
-                        Point3::new(0.0, y, 0.0),
-                        Point3::new(10_000.0, 10_000.0 + y, 0.0),
-                    ];
+                    let mut endpoints = if vertical {
+                        let zero = if row % 2 == 0 { -0.0 } else { 0.0 };
+                        [
+                            Point3::new(zero, y, 0.0),
+                            Point3::new(-zero, 10_000.0 + y, 0.0),
+                        ]
+                    } else {
+                        [
+                            Point3::new(0.0, y, 0.0),
+                            Point3::new(10_000.0, 10_000.0 + y, 0.0),
+                        ]
+                    };
                     if row % 2 != 0 {
                         endpoints.swap(0, 1);
                     }
@@ -956,7 +964,7 @@ fn projected_line_validation_matches_pair_predicate_at_tolerance_boundaries() {
     use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::{ids::PointId, topology::Point};
     for origin in [-100_000_000.0, 0.0, 100_000_000.0] {
-        for length in [0.003, 1.0, 10_000.0] {
+        for length in [0.001, 0.002, 0.003, 1.0, 10_000.0] {
             for offset in [0.0, 0.0019, 0.002, 0.0021] {
                 for angle in [0.0, 0.0002] {
                     let points = (0..8_u32)

@@ -4694,7 +4694,6 @@ use line_edge_pairs::StandardLineEdgePairs;
 #[derive(Clone, Copy)]
 struct LineEndpointBounds {
     ends: [[[f64; 2]; 3]; 2],
-    min_length: f64,
     max_length: f64,
 }
 
@@ -4704,7 +4703,9 @@ impl LineEndpointBounds {
         let mut points = [segment.start, segment.end].map(|point| [point.x, point.y, point.z]);
         if (0..3)
             .find_map(|axis| {
-                let order = points[0][axis].total_cmp(&points[1][axis]);
+                let coordinates =
+                    points.map(|point| if point[axis] == 0.0 { 0.0 } else { point[axis] });
+                let order = coordinates[0].total_cmp(&coordinates[1]);
                 (!order.is_eq()).then_some(order)
             })
             .is_some_and(|order| order.is_gt())
@@ -4713,7 +4714,6 @@ impl LineEndpointBounds {
         }
         Self {
             ends: points.map(|point| point.map(|value| [value, value])),
-            min_length: length,
             max_length: length,
         }
     }
@@ -4728,18 +4728,18 @@ impl LineEndpointBounds {
                     ]
                 })
             }),
-            min_length: self.min_length.min(other.min_length),
             max_length: self.max_length.max(other.max_length),
         }
     }
 
     fn coincides_with(self, segment: StandardLineSegment) -> bool {
         let length = segment.end.vector_from(segment.start).norm();
-        if !length.is_finite()
-            || !self.max_length.is_finite()
-            || length <= LINE_SEGMENT_GEOMETRY_TOLERANCE
-            || self.min_length <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+        if length <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+            || self.max_length <= LINE_SEGMENT_GEOMETRY_TOLERANCE
         {
+            return true;
+        }
+        if !length.is_finite() || !self.max_length.is_finite() {
             return false;
         }
         let points = Self::from_segment(segment)
