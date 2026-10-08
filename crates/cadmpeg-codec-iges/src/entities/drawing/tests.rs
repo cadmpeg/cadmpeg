@@ -1199,8 +1199,8 @@ fn shared_drawing_property_names_do_not_repeat_text_comparisons() {
     // property, reference, and decoded-index operations fit in 4,000 units
     // per drawing plus the shared text-index pass. Repeated name comparisons
     // alone read at least count * name.len() bytes, which exceeds this cap.
-    policy.limits.max_work_units = count as u64 * 4_000 + 100_000;
-    assert!(policy.limits.max_work_units < (count * name.len()) as u64);
+    policy.limits.max_work_units = u64::try_from(count).unwrap() * 4_000 + 100_000;
+    assert!(policy.limits.max_work_units < u64::try_from(count * name.len()).unwrap());
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let global = global.length_context().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
@@ -1342,8 +1342,9 @@ fn shared_view_associations_are_indexed_once() {
     // fit in 2,000 units per association. A linear membership search pays
     // one visit and two four-byte comparisons per candidate, over prefixes
     // of lengths 1 through count. That work alone exceeds this cap.
-    policy.limits.max_work_units = count as u64 * 2_000;
-    let linear_search_work = 9 * count as u64 * (count as u64 + 1) / 2;
+    let count_u64 = u64::try_from(count).unwrap();
+    policy.limits.max_work_units = count_u64 * 2_000;
+    let linear_search_work = 9 * count_u64 * (count_u64 + 1) / 2;
     assert!(policy.limits.max_work_units < linear_search_work);
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();

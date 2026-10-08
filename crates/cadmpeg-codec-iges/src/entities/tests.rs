@@ -161,9 +161,9 @@ fn entity_projector_indexes_refuse_collection_limits() {
         status: "00000000",
         parameters: "110,0;".into(),
     }]);
-    // CSG and structure borrow the geometry indexes. Offsets build transform
-    // tables on demand, and trimming queries the source slices directly.
-    for name in ["geometry", "surfaces", "splines", "composite"] {
+    // CSG, structure, and composite borrow the geometry indexes. Offsets build
+    // transform tables on demand; trimming queries the source slices directly.
+    for name in ["geometry", "surfaces", "splines"] {
         for index in ["parameter index", "directory index"] {
             let operation = format!("iges {name} {index}");
             assert_entity_loss_limit(&bytes, &operation, false);
