@@ -518,7 +518,7 @@ fn offset_candidate_index_is_not_built_without_a_search() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let _probe = RefusalProbe::arm(
             ResourceDimension::WorkUnits,
-            "index SLDPRT offset plane candidates",
+            "scan SLDPRT offset plane candidates",
             None,
         );
         super::bind_offset_plane_references(&ctx, &mut features).unwrap();
@@ -536,6 +536,65 @@ fn offset_candidate_index_is_not_built_without_a_search() {
             ));
         }
     }
+}
+
+#[test]
+fn offset_binding_does_not_copy_a_dependency_that_already_exists() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::features::{DatumPlaneReference, PrincipalPlane};
+    use cadmpeg_ir::scalar::Length;
+
+    let base = projected_plane(
+        0,
+        FeatureOperation::DatumPrincipalPlane {
+            plane: PrincipalPlane::Top,
+        },
+    );
+    let mut offset = projected_plane(
+        1,
+        FeatureOperation::DatumOffsetPlane {
+            reference: None,
+            distance: Length::new(1.0).unwrap(),
+        },
+    );
+    offset
+        .dependencies
+        .insert(
+            &cadmpeg_test_support::service_decode_context(),
+            base.id.clone(),
+            "prepare offset dependency fixture",
+        )
+        .unwrap();
+    for (name, value) in [
+        ("Origin", "0mm,0mm,1mm"),
+        ("Normal", "0,0,1"),
+        ("UAxis", "1,0,0"),
+    ] {
+        offset
+            .source_properties
+            .insert(name.try_into().unwrap(), value.into());
+    }
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
+        "copy SLDPRT offset plane dependency",
+        None,
+    );
+    let mut features = [base.clone(), offset];
+    super::bind_offset_plane_references(&ctx, &mut features).unwrap();
+    assert!(ctx.resource_refusal().is_none());
+    assert!(matches!(
+        features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature { feature }),
+            ..
+        }) if feature == &base.id
+    ));
+    assert_eq!(features[1].dependencies.as_slice(), [base.id]);
 }
 
 #[test]
@@ -566,10 +625,15 @@ fn offset_candidate_index_refuses_at_first_search_and_binds_same_plane() {
             .source_properties
             .insert(name.try_into().unwrap(), value.into());
     }
-    crate::test_support::work_refusal_at("index SLDPRT offset plane candidates", |ctx| {
-        let mut features = [base.clone(), offset.clone()];
-        super::bind_offset_plane_references(ctx, &mut features)
-    });
+    for operation in [
+        "scan SLDPRT offset plane candidates",
+        "index SLDPRT offset plane candidate groups",
+    ] {
+        crate::test_support::work_refusal_at(operation, |ctx| {
+            let mut features = [base.clone(), offset.clone()];
+            super::bind_offset_plane_references(ctx, &mut features)
+        });
+    }
     let mut features = [base.clone(), offset];
     super::bind_offset_plane_references(
         &cadmpeg_test_support::service_decode_context(),

@@ -430,14 +430,7 @@ fn feature(
             let source_id = ctx
                 .xml_attribute(ancestor, "id", HISTORY_OPERATION)?
                 .map(|value| {
-                    if value == "-1" {
-                        return Ok(Some(FeatureSource::Reserved));
-                    }
-                    Ok::<_, CodecError>(
-                        ctx.parse_text::<u32>(value, HISTORY_OPERATION)?
-                            .ok()
-                            .and_then(FeatureSource::from_value),
-                    )
+                    FeatureSource::parse_for_decode(ctx, value, HISTORY_OPERATION)
                 })
                 .transpose()?
                 .flatten();
@@ -460,14 +453,7 @@ fn feature(
         source_id: ctx
             .xml_attribute(node, "id", HISTORY_OPERATION)?
             .map(|value| {
-                if value == "-1" {
-                    return Ok(Some(FeatureSource::Reserved));
-                }
-                Ok::<_, CodecError>(
-                    ctx.parse_text::<u32>(value, HISTORY_OPERATION)?
-                        .ok()
-                        .and_then(FeatureSource::from_value),
-                )
+                FeatureSource::parse_for_decode(ctx, value, HISTORY_OPERATION)
             })
             .transpose()?
             .flatten(),

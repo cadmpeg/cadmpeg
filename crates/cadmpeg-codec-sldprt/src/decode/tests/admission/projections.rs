@@ -231,6 +231,16 @@ fn metadata_edit_projection_refuses_work_limit() {
     assert_eq!(refusal.additional, 1);
 }
 
+fn reference_dependent_definition_source() -> Vec<u8> {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="10"><Dimension Name="Producer">1</Dimension><Dimension Name="Consumer">Producer + 1</Dimension></Feature></Keywords>"#,
+    ));
+    source
+}
+
 fn native_definition_source() -> Vec<u8> {
     let mut source = outer_header();
     source.extend(make_block(
@@ -631,7 +641,7 @@ fn metadata_parameter_aliases_refuse_work_limit() {
 fn metadata_parameter_value_states_refuse_collection_limit() {
     let options = DecodeOptions::default();
     let refusal = collection_refusal_with_options(
-        &native_definition_source(),
+        &reference_dependent_definition_source(),
         options,
         "collect SLDPRT parameter value states",
     );
@@ -646,16 +656,17 @@ fn metadata_parameter_value_states_refuse_collection_limit() {
 fn metadata_parameter_value_states_refuse_work_limit() {
     let options = DecodeOptions::default();
     let refusal = work_refusal_with_request(
-        &native_definition_source(),
+        &reference_dependent_definition_source(),
         options,
         "collect SLDPRT parameter value state",
-        Some(1), // One visitor work unit; key reads have separate requests.
+        Some(2), // Both source parameter rows are admitted as one batch.
     );
     assert_eq!(
         refusal.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
-    assert_eq!(refusal.additional, 1);
+    // The value index admits both DesignParameter rows before visiting them.
+    assert_eq!(refusal.additional, 2);
 }
 
 #[test]

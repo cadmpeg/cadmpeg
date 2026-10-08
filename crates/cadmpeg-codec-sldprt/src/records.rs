@@ -215,6 +215,21 @@ impl FeatureSource {
     pub(crate) fn from_value(value: u32) -> Option<Self> {
         FeatureSourceId::try_from(value).ok().map(Self::Id)
     }
+
+    /// Parse a native source id while admitting numeric parsing. The reserved sentinel is a fixed comparison.
+    pub(crate) fn parse_for_decode(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: &str,
+        operation: &'static str,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if value == RESERVED_FEATURE_SOURCE {
+            return Ok(Some(Self::Reserved));
+        }
+        Ok(ctx
+            .parse_text::<u32>(value, operation)?
+            .ok()
+            .and_then(Self::from_value))
+    }
 }
 
 impl TryFrom<&str> for FeatureSource {
@@ -2505,6 +2520,34 @@ impl SketchRelationKind {
 mod tests {
     use super::PmiDimension;
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
+
+    #[test]
+    fn feature_source_decode_parser_preserves_reserved_and_numeric_grammar() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("decode context");
+        assert_eq!(
+            super::FeatureSource::parse_for_decode(&ctx, "-1", "parse test source")
+                .expect("reserved source admission"),
+            Some(super::FeatureSource::Reserved),
+        );
+        assert_eq!(
+            super::FeatureSource::parse_for_decode(&ctx, "41", "parse test source")
+                .expect("numeric source admission"),
+            Some(super::FeatureSource::Id(
+                super::FeatureSourceId::try_from(41).expect("positive source id"),
+            )),
+        );
+        for invalid in ["0", "4294967295", "not-an-id"] {
+            assert_eq!(
+                super::FeatureSource::parse_for_decode(&ctx, invalid, "parse test source")
+                    .expect("invalid grammar is not a refusal"),
+                None,
+            );
+        }
+    }
 
     #[test]
     fn feature_source_borrowed_json_matches_owned_string_bytes() {

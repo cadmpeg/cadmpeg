@@ -32,6 +32,12 @@ struct ConfigurationDefinitions<'features, 'ctx> {
     _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
+struct ConfigurationBaseFeatures<'features, 'ctx> {
+    features: Vec<cadmpeg_ir::features::Feature>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    definitions: ConfigurationDefinitions<'features, 'ctx>,
+}
+
 impl<'features, 'ctx> ConfigurationDefinitions<'features, 'ctx> {
     fn new(
         ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
@@ -65,6 +71,47 @@ impl<'features, 'ctx> ConfigurationDefinitions<'features, 'ctx> {
             .get_hash_map(&self.definitions, id, "look up SLDPRT hash key")?
             .copied())
     }
+}
+
+fn configuration_base_features<'features, 'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    model_features: &'features [cadmpeg_ir::features::Feature],
+    histories: &[FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+    form_padding: Option<usize>,
+) -> Result<ConfigurationBaseFeatures<'features, 'ctx>, cadmpeg_core::CodecError> {
+    let (features, storage) =
+        ctx.with_scoped_storage("SLDPRT configuration base features", || {
+            let mut features = copy_configuration_features(ctx, model_features)?;
+            crate::resolved_features::operations::bind_extrusion_operations(
+                ctx,
+                &mut features,
+                histories,
+                lanes,
+                form_padding,
+            )?;
+            crate::resolved_features::operations::bind_revolution_operations(
+                ctx,
+                &mut features,
+                histories,
+                lanes,
+                form_padding,
+            )?;
+            crate::resolved_features::operations::bind_sweep_operations(
+                ctx,
+                &mut features,
+                histories,
+                lanes,
+                form_padding,
+            )?;
+            Ok::<_, cadmpeg_core::CodecError>(features)
+        })?;
+    let definitions = ConfigurationDefinitions::new(ctx, model_features)?;
+    Ok(ConfigurationBaseFeatures {
+        features,
+        _storage: storage,
+        definitions,
+    })
 }
 
 fn apply_configuration_state(
@@ -299,33 +346,7 @@ pub(crate) fn project_configuration_design_states(
     if lane_assignments.is_empty() {
         return Ok(());
     }
-    let (resolved_base_features, _base_storage) =
-        ctx.with_scoped_storage("SLDPRT configuration base features", || {
-            let mut resolved_base_features = copy_configuration_features(ctx, &ir.model.features)?;
-            crate::resolved_features::operations::bind_extrusion_operations(
-                ctx,
-                &mut resolved_base_features,
-                histories,
-                lanes,
-                form_padding,
-            )?;
-            crate::resolved_features::operations::bind_revolution_operations(
-                ctx,
-                &mut resolved_base_features,
-                histories,
-                lanes,
-                form_padding,
-            )?;
-            crate::resolved_features::operations::bind_sweep_operations(
-                ctx,
-                &mut resolved_base_features,
-                histories,
-                lanes,
-                form_padding,
-            )?;
-            Ok::<_, cadmpeg_core::CodecError>(resolved_base_features)
-        })?;
-    let base_definitions = ConfigurationDefinitions::new(ctx, &ir.model.features)?;
+    let mut base_features = None;
     for (configuration_index, lane_index) in ctx
         .admit_iter(
             &lane_assignments,
@@ -390,109 +411,149 @@ pub(crate) fn project_configuration_design_states(
         };
         ir.model.configurations[configuration_index].parameter_values = parameter_values;
 
-        let (projection, _feature_projection_storage) =
-            ctx.with_scoped_storage("SLDPRT configuration feature histories", || {
-                let mut projection = crate::records::charged_clone::clone_histories_charged(
-                    ctx,
-                    histories,
-                    "clone SLDPRT configuration feature histories",
-                )?;
-                enrich_history_semantic(
-                    ctx,
-                    &mut projection,
-                    scoped_lanes,
-                    pmi_dimensions,
-                    HistoryEnrichment::Write,
-                )?;
-                Ok::<_, cadmpeg_core::CodecError>(projection)
-            })?;
-        let mut features = project_features(ctx, &projection)?;
-        crate::resolved_features::bindings::bind_pattern_inputs(
-            ctx,
-            &mut features,
-            &projection,
-            scoped_lanes,
-        )?;
-        project_compact_and_generated(ctx, &mut features, &projection, scoped_lanes)?;
-        crate::resolved_features::operations::bind_extrusion_operations(
-            ctx,
-            &mut features,
-            histories,
-            scoped_lanes,
-            form_padding,
-        )?;
-        crate::resolved_features::operations::bind_revolution_operations(
-            ctx,
-            &mut features,
-            histories,
-            scoped_lanes,
-            form_padding,
-        )?;
-        crate::resolved_features::operations::bind_sweep_operations(
-            ctx,
-            &mut features,
-            histories,
-            scoped_lanes,
-            form_padding,
-        )?;
-        crate::resolved_features::operations::inherit_configuration_operations(
-            ctx,
-            &mut features,
-            &resolved_base_features,
-            histories,
-            scoped_lanes,
-            form_padding,
-        )?;
-        inherit_configuration_reference_plane_semantics(
-            ctx,
-            &mut features,
-            &resolved_base_features,
-        )?;
-        crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
-            ctx,
-            &mut features,
-            histories,
-            scoped_lanes,
-        )?;
-        restore_configuration_tree_node_definitions(ctx, &mut features, &ir.model.features)?;
-        let mut feature_states = BTreeMap::new();
-        for mut feature in ctx.admit_iter(features, "collect SLDPRT configuration values")? {
-            if let Some(base_definition) = base_definitions.get(ctx, &feature.id)? {
-                if matches!(
-                    feature.evaluation.definition(),
-                    FeatureDefinition::Operation(FeatureOperation::Hole { .. })
-                ) {
-                    // A scoped lane may author positions without repeating
-                    // shared hole construction. Copy missing construction
-                    // fields while preserving authored local placements.
-                    let inherit_placements =
-                        !crate::resolved_features::holes::hole_position_carrier_present(
+        let (projected, feature_projection_storage) =
+            ctx.with_scoped_storage("SLDPRT configuration feature projection", || {
+                let (projection, _history_storage) =
+                    ctx.with_scoped_storage("SLDPRT configuration feature histories", || {
+                        let mut projection =
+                            crate::records::charged_clone::clone_histories_charged(
+                                ctx,
+                                histories,
+                                "clone SLDPRT configuration feature histories",
+                            )?;
+                        enrich_history_semantic(
                             ctx,
-                            &feature,
-                            histories,
+                            &mut projection,
                             scoped_lanes,
+                            pmi_dimensions,
+                            HistoryEnrichment::Write,
                         )?;
-                    let mut result = Ok(());
-                    feature.evaluation.edit(|definition, _| {
-                        result = inherit_configuration_hole_semantics(
-                            ctx,
-                            definition,
-                            base_definition,
-                            inherit_placements,
-                        );
-                    });
-                    result?;
+                        Ok::<_, cadmpeg_core::CodecError>(projection)
+                    })?;
+                let mut features = project_features(ctx, &projection)?;
+                if features.is_empty() {
+                    return Ok(None);
                 }
+                let base = match base_features.as_mut() {
+                    Some(base) => base,
+                    None => base_features.insert(configuration_base_features(
+                        ctx,
+                        &ir.model.features,
+                        histories,
+                        lanes,
+                        form_padding,
+                    )?),
+                };
+                crate::resolved_features::bindings::bind_pattern_inputs(
+                    ctx,
+                    &mut features,
+                    &projection,
+                    scoped_lanes,
+                )?;
+                project_compact_and_generated(ctx, &mut features, &projection, scoped_lanes)?;
+                crate::resolved_features::operations::bind_extrusion_operations(
+                    ctx,
+                    &mut features,
+                    histories,
+                    scoped_lanes,
+                    form_padding,
+                )?;
+                crate::resolved_features::operations::bind_revolution_operations(
+                    ctx,
+                    &mut features,
+                    histories,
+                    scoped_lanes,
+                    form_padding,
+                )?;
+                crate::resolved_features::operations::bind_sweep_operations(
+                    ctx,
+                    &mut features,
+                    histories,
+                    scoped_lanes,
+                    form_padding,
+                )?;
+                crate::resolved_features::operations::inherit_configuration_operations(
+                    ctx,
+                    &mut features,
+                    &base.features,
+                    histories,
+                    scoped_lanes,
+                    form_padding,
+                )?;
+                inherit_configuration_reference_plane_semantics(
+                    ctx,
+                    &mut features,
+                    &base.features,
+                )?;
+                crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
+                    ctx,
+                    &mut features,
+                    histories,
+                    scoped_lanes,
+                )?;
+                restore_configuration_tree_node_definitions(
+                    ctx,
+                    &mut features,
+                    &ir.model.features,
+                )?;
+                for feature in
+                    ctx.admit_iter(&mut features, "collect SLDPRT configuration values")?
+                {
+                    if let Some(base_definition) = base.definitions.get(ctx, &feature.id)? {
+                        if matches!(
+                            feature.evaluation.definition(),
+                            FeatureDefinition::Operation(FeatureOperation::Hole { .. })
+                        ) {
+                            // A scoped lane may author positions without repeating shared
+                            // hole construction. Copy missing construction fields while preserving
+                            // authored local placements.
+                            let inherit_placements =
+                                !crate::resolved_features::holes::hole_position_carrier_present(
+                                    ctx,
+                                    feature,
+                                    histories,
+                                    scoped_lanes,
+                                )?;
+                            let mut result = Ok(());
+                            feature.evaluation.edit(|definition, _| {
+                                result = inherit_configuration_hole_semantics(
+                                    ctx,
+                                    definition,
+                                    base_definition,
+                                    inherit_placements,
+                                );
+                            });
+                            result?;
+                        }
+                    }
+                }
+                Ok::<_, cadmpeg_core::CodecError>(Some(features))
+            })?;
+        if let Some(features) = projected {
+            let mut feature_states = BTreeMap::new();
+            for feature in ctx.admit_iter(&features, "collect SLDPRT configuration values")? {
+                let id = feature.id.try_clone_for_decode(
+                    ctx,
+                    "retain SLDPRT configuration feature identity",
+                )?;
+                let state = feature.configuration_state(
+                    ctx,
+                    "retain SLDPRT configuration feature state",
+                )?;
+                ctx.insert_btree_map(
+                    &mut feature_states,
+                    id,
+                    state,
+                    "collect SLDPRT configuration values",
+                )?;
             }
-            let (id, state) = configuration_feature_state(feature);
-            ctx.insert_btree_map(
-                &mut feature_states,
-                id,
-                state,
-                "collect SLDPRT configuration values",
-            )?;
+            drop(features);
+            drop(feature_projection_storage);
+            ir.model.configurations[configuration_index].feature_states = feature_states;
+        } else {
+            drop(feature_projection_storage);
+            ir.model.configurations[configuration_index].feature_states.clear();
         }
-        ir.model.configurations[configuration_index].feature_states = feature_states;
     }
 
     Ok(())
