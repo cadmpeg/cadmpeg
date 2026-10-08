@@ -1400,7 +1400,10 @@ fn feature_name_index_refuses_caller_scoped_limit() {
     let feature_ids = 4 * std::mem::size_of::<&FeatureId>() + 15 + 4 + 16;
     let identity = ir.model.features[0].id.as_str().len();
     let name = ir.model.features[0].name.as_ref().unwrap().len();
-    assert_eq!(limit.used, u64::try_from(feature_ids + identity + name).unwrap());
+    assert_eq!(
+        limit.used,
+        u64::try_from(feature_ids + identity + name).unwrap()
+    );
     let storage = design_loss_probe(
         &ir,
         ResourceDimension::MaterializedBytes,

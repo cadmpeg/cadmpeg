@@ -50,7 +50,9 @@ impl ObjectSection {
         let mut ids = std::collections::HashSet::new();
         let mut ids_storage = ctx.reserve_scoped(0, "SWIFT reference identity workspace")?;
         let mut reference_ids = references.iter();
-        while let Some(reference) = ctx.next_charged(&mut reference_ids, "scan SLDPRT new values")? {
+        while let Some(reference) =
+            ctx.next_charged(&mut reference_ids, "scan SLDPRT new values")?
+        {
             if !ids_storage.with_storage(|| {
                 ctx.insert_hash_set(
                     &mut ids,
@@ -69,13 +71,17 @@ impl ObjectSection {
             return Ok(None);
         }
         let mut pairs = references.iter().zip(&entities);
-        while let Some((reference, entity)) = ctx.next_charged(&mut pairs, "scan SWIFT object pairs")? {
+        while let Some((reference, entity)) =
+            ctx.next_charged(&mut pairs, "scan SWIFT object pairs")?
+        {
             let separator = ctx.find_map(
                 reference.class.bytes().enumerate(),
                 |(offset, byte)| Ok((byte == b',').then_some(offset)),
                 "bind SWIFT reference classes",
             )?;
-            let class = separator.map_or(reference.class.as_str(), |offset| reference.class.split_at(offset).0);
+            let class = separator.map_or(reference.class.as_str(), |offset| {
+                reference.class.split_at(offset).0
+            });
             if !ctx.equal(class, entity.class.as_str(), "bind SWIFT reference classes")? {
                 return Ok(None);
             }
@@ -2179,11 +2185,17 @@ fn feature_reaches<'a>(
         )
     })?;
     let mut reaches = |child: &'a str| {
-        Ok(ctx.equal(child, target, "compare SWIFT reachability target")?
-            || feature_reaches(ctx, child, target, feature_index, visited, next_depth)?)
+        Ok(
+            ctx.equal(child, target, "compare SWIFT reachability target")?
+                || feature_reaches(ctx, child, target, feature_index, visited, next_depth)?,
+        )
     };
     if ctx.any_by(
-        feature.features.references.iter().map(|reference| reference.id.as_str()),
+        feature
+            .features
+            .references
+            .iter()
+            .map(|reference| reference.id.as_str()),
         &mut reaches,
         "scan SWIFT child features",
     )? {

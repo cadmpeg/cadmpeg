@@ -438,14 +438,14 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
             "index SLDPRT object names by id",
             None,
         );
-    assert_eq!(
-        unbound_feature_input_operation_objects(
-            &cadmpeg_test_support::service_decode_context(),
-            &native
-        )
-        .unwrap(),
-        1
-    );
+        assert_eq!(
+            unbound_feature_input_operation_objects(
+                &cadmpeg_test_support::service_decode_context(),
+                &native
+            )
+            .unwrap(),
+            1
+        );
     }
 
     native.feature_histories.push(FeatureHistory {
