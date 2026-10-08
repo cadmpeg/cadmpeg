@@ -523,14 +523,7 @@ pub(super) fn project<'ctx>(
                 "iges B-rep vertex-list nodes",
             )
         })?;
-        definition_storage.with_storage(|| {
-            ctx.reserve_vec(
-                &mut definition_reservations,
-                1,
-                "iges B-rep definition reservations",
-            )
-        })?;
-        definition_reservations.push(record_storage);
+        definition_storage.absorb(&mut record_storage)?;
     }
 
     for entry in ctx

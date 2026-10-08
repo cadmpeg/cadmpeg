@@ -1169,3 +1169,5 @@ fn rejected_brep_definition_vectors_release_their_storage() {
     drop(global_storage);
     ctx.finish_session().unwrap();
 }
+
+mod definition_storage;
