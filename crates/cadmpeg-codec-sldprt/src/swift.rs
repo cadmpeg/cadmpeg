@@ -2254,15 +2254,21 @@ fn location_projection(
             let (projections, _projection_storage) =
                 ctx.with_scoped_storage("SWIFT rotational projection workspace", || {
                     let mut projections = Vec::new();
-                    collect_rotational_projections(
+                    let mut traversal = FeatureListTraversal::new(
                         ctx,
-                        id,
                         feature_index,
-                        direction,
-                        &mut BTreeSet::new(),
-                        0,
-                        &mut projections,
+                        "scan SWIFT rotational features",
+                        "track SWIFT rotational path",
+                        "collect SWIFT rotational projections",
+                        |feature| match short_class(ctx, &feature.class)? {
+                            "GdtCylinder" => {
+                                axis_projection(ctx, feature, "NomCylinder", direction)
+                            }
+                            "GdtCone" => axis_projection(ctx, feature, "NomCone", direction),
+                            _ => Ok(None),
+                        },
                     )?;
+                    traversal.collect(id, 0, &mut projections)?;
                     Ok::<_, CodecError>(projections)
                 })?;
             unique_measurement(ctx, projections.iter().copied())?
@@ -2340,62 +2346,126 @@ fn axis_projection(
     ))
 }
 
-fn collect_rotational_projections<'a>(
-    ctx: &DecodeContext<'_>,
-    id: &'a str,
-    feature_index: &BTreeMap<&str, &'a Entity>,
-    direction: [f64; 3],
-    visited: &mut BTreeSet<&'a str>,
-    depth: usize,
-    projections: &mut Vec<FiniteReal>,
-) -> Result<(), CodecError> {
-    ctx.charge_work(1, "scan SWIFT rotational features")?;
-    if ctx.contains_btree_set(visited, id, "check SWIFT traversal path")? {
-        return Ok(());
+/// One ordered feature-list query. Completed values keep their path order and
+/// are appended for every contributor path. A result touched by a cycle is
+/// never cached because its value list depends on the active path.
+struct FeatureListTraversal<'a, 'ctx, 'arena, T, F>
+where
+    T: Copy + cadmpeg_core::decode::cost::DecodeCost,
+    F: Fn(&Entity) -> Result<Option<T>, CodecError>,
+{
+    ctx: &'ctx DecodeContext<'arena>,
+    feature_index: &'a BTreeMap<&'a str, &'a Entity>,
+    direct_value: F,
+    operation: &'static str,
+    path_operation: &'static str,
+    result_operation: &'static str,
+    active: BTreeSet<&'a str>,
+    completed: BTreeMap<(&'a str, usize), Vec<T>>,
+    cache_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'a, 'ctx, 'arena, T, F> FeatureListTraversal<'a, 'ctx, 'arena, T, F>
+where
+    T: Copy + cadmpeg_core::decode::cost::DecodeCost,
+    F: Fn(&Entity) -> Result<Option<T>, CodecError>,
+{
+    fn new(
+        ctx: &'ctx DecodeContext<'arena>,
+        feature_index: &'a BTreeMap<&'a str, &'a Entity>,
+        operation: &'static str,
+        path_operation: &'static str,
+        result_operation: &'static str,
+        direct_value: F,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            ctx,
+            feature_index,
+            direct_value,
+            operation,
+            path_operation,
+            result_operation,
+            active: BTreeSet::new(),
+            completed: BTreeMap::new(),
+            cache_storage: ctx.reserve_scoped(0, "cache SWIFT feature traversal results")?,
+        })
     }
-    admit_swift_depth(ctx, depth, "scan SWIFT rotational features")?;
-    let _depth = ctx.enter_nested("scan SWIFT rotational features")?;
-    let (_, _path_storage) = ctx.with_scoped_storage("SWIFT traversal path storage", || {
-        ctx.insert_btree_set(visited, id, "track SWIFT rotational path")
-    })?;
-    let result = (|| {
-        let Some(feature) = ctx.get_btree_map(feature_index, id, "look up SLDPRT ordered key")?
-        else {
-            return Ok(());
-        };
-        let projection = match short_class(ctx, &feature.class)? {
-            "GdtCylinder" => axis_projection(ctx, feature, "NomCylinder", direction)?,
-            "GdtCone" => axis_projection(ctx, feature, "NomCone", direction)?,
-            _ => None,
-        };
-        if let Some(projection) = projection {
-            ctx.reserve_vec(projections, 1, "collect SWIFT rotational projections")?;
-            projections.push(projection);
-            return Ok(());
+
+    fn collect(
+        &mut self,
+        id: &'a str,
+        depth: usize,
+        output: &mut Vec<T>,
+    ) -> Result<bool, CodecError> {
+        const CACHE_LOOKUP: &str = "look up SWIFT feature traversal result";
+        const CACHE_COPY: &str = "copy SWIFT feature traversal result";
+        const CACHE_INSERT: &str = "cache SWIFT feature traversal result";
+        let ctx = self.ctx;
+        ctx.charge_work(1, self.operation)?;
+        if ctx.contains_btree_set(&self.active, id, "check SWIFT traversal path")? {
+            return Ok(false);
         }
-        let next_depth = depth.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "advance SWIFT recursion depth",
-                u64_from_index(MAX_DEPTH),
-                u64::MAX,
-            )
+        admit_swift_depth(ctx, depth, self.operation)?;
+        let _depth = ctx.enter_nested(self.operation)?;
+        if let Some(cached) = ctx.get_btree_map(&self.completed, &(id, depth), CACHE_LOOKUP)? {
+            // The key includes logical depth. This subtree completed before
+            // under the same query and policy, at this same nesting depth.
+            ctx.extend_from_slice(output, cached, self.result_operation)?;
+            return Ok(true);
+        }
+        let (_, path_storage) = ctx.with_scoped_storage("SWIFT traversal path storage", || {
+            ctx.insert_btree_set(&mut self.active, id, self.path_operation)
         })?;
-        let mut children = child_feature_ids(ctx, feature)?;
-        while let Some(child) = ctx.next_charged(&mut children, "scan SWIFT child features")? {
-            collect_rotational_projections(
-                ctx,
-                child,
-                feature_index,
-                direction,
-                visited,
-                next_depth,
-                projections,
-            )?;
-        }
-        Ok(())
-    })();
-    ctx.remove_btree_set(visited, id, "leave SWIFT traversal path")?;
-    result
+        let first_value = output.len();
+        let result = (|| -> Result<bool, CodecError> {
+            let mut cacheable = true;
+            if let Some(feature) =
+                ctx.get_btree_map(self.feature_index, id, "look up SLDPRT ordered key")?
+            {
+                if let Some(value) = (self.direct_value)(feature)? {
+                    ctx.reserve_vec(output, 1, self.result_operation)?;
+                    output.push(value);
+                } else {
+                    let next_depth = depth.checked_add(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "advance SWIFT recursion depth",
+                            u64_from_index(MAX_DEPTH),
+                            u64::MAX,
+                        )
+                    })?;
+                    let mut children = child_feature_ids(ctx, feature)?;
+                    while let Some(child) =
+                        ctx.next_charged(&mut children, "scan SWIFT child features")?
+                    {
+                        let child_result = self.collect(child, next_depth, output)?;
+                        if !child_result {
+                            cacheable = false;
+                        }
+                    }
+                }
+            }
+            if cacheable {
+                let values = output
+                    .get(first_value..)
+                    .ok_or_else(|| CodecError::malformed("invalid SWIFT traversal result range"))?;
+                let cached_values = self
+                    .cache_storage
+                    .with_storage(|| ctx.copy_slice(values, CACHE_COPY))?;
+                self.cache_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut self.completed,
+                        (id, depth),
+                        cached_values,
+                        CACHE_INSERT,
+                    )
+                })?;
+            }
+            Ok(cacheable)
+        })();
+        ctx.remove_btree_set(&mut self.active, id, self.path_operation)?;
+        drop(path_storage);
+        result
+    }
 }
 
 fn diameter_nominal(
@@ -2551,84 +2621,50 @@ fn hole_diameter_excluding_counterbore(
     Ok(removed_counterbore.then_some(first).flatten())
 }
 
-fn diameter_contributors(
+fn diameter_contributors<'a>(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &'a BTreeMap<&'a str, &'a Entity>,
 ) -> Result<Vec<PositiveReal>, CodecError> {
     let mut values = Vec::new();
+    let mut traversal = FeatureListTraversal::new(
+        ctx,
+        feature_index,
+        "scan SWIFT diameter features",
+        "track SWIFT diameter path",
+        "collect SWIFT diameter contributors",
+        |feature| {
+            let radius = match short_class(ctx, &feature.class)? {
+                "GdtCylinder" => nominal_radius(ctx, feature, "NomCylinder")?,
+                "GdtSphere" => nominal_radius(ctx, feature, "NomSphere")?,
+                _ => None,
+            };
+            Ok(radius.and_then(|radius| PositiveReal::new(radius.get() * 2.0)))
+        },
+    )?;
     for reference in ctx.admit_iter(
         &annotation.features.references,
         "scan SLDPRT diameter_contributors values",
     )? {
-        collect_diameter_contributors(
-            ctx,
-            &reference.id,
-            feature_index,
-            &mut BTreeSet::new(),
-            0,
-            &mut values,
-        )?;
+        traversal.collect(&reference.id, 0, &mut values)?;
     }
     Ok(values)
 }
 
-fn collect_diameter_contributors<'a>(
-    ctx: &DecodeContext<'_>,
-    id: &'a str,
-    feature_index: &BTreeMap<&str, &'a Entity>,
-    visited: &mut BTreeSet<&'a str>,
-    depth: usize,
-    values: &mut Vec<PositiveReal>,
-) -> Result<(), CodecError> {
-    ctx.charge_work(1, "scan SWIFT diameter features")?;
-    if ctx.contains_btree_set(visited, id, "check SWIFT traversal path")? {
-        return Ok(());
-    }
-    admit_swift_depth(ctx, depth, "scan SWIFT diameter features")?;
-    let _depth = ctx.enter_nested("scan SWIFT diameter features")?;
-    let (_, _path_storage) = ctx.with_scoped_storage("SWIFT traversal path storage", || {
-        ctx.insert_btree_set(visited, id, "track SWIFT diameter path")
-    })?;
-    let result = (|| {
-        let Some(feature) = ctx.get_btree_map(feature_index, id, "look up SLDPRT ordered key")?
-        else {
-            return Ok(());
-        };
-        let radius = match short_class(ctx, &feature.class)? {
-            "GdtCylinder" => nominal_radius(ctx, feature, "NomCylinder")?,
-            "GdtSphere" => nominal_radius(ctx, feature, "NomSphere")?,
-            _ => None,
-        };
-        if let Some(diameter) = radius.and_then(|radius| PositiveReal::new(radius.get() * 2.0)) {
-            ctx.reserve_vec(values, 1, "collect SWIFT diameter contributors")?;
-            values.push(diameter);
-            return Ok(());
-        }
-        let next_depth = depth.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "advance SWIFT recursion depth",
-                u64_from_index(MAX_DEPTH),
-                u64::MAX,
-            )
-        })?;
-        let mut children = child_feature_ids(ctx, feature)?;
-        while let Some(child) = ctx.next_charged(&mut children, "scan SWIFT child features")? {
-            collect_diameter_contributors(ctx, child, feature_index, visited, next_depth, values)?;
-        }
-        Ok(())
-    })();
-    ctx.remove_btree_set(visited, id, "leave SWIFT traversal path")?;
-    result
-}
-
-fn depth_from_applied_geometry(
+fn depth_from_applied_geometry<'a>(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &'a BTreeMap<&'a str, &'a Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
+    let mut traversal = FeatureMeasurementTraversal::new(ctx, feature_index, |feature| {
+        if short_class(ctx, &feature.class)? == "GdtCylinder" {
+            nominal_cylinder_depth(ctx, feature)
+        } else {
+            Ok(None)
+        }
+    })?;
     measurement_from_applied_geometry(ctx, annotation, |id| {
-        depth_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
+        traversal.visit(id, 0).map(|result| result.value)
     })
 }
 
@@ -2973,33 +3009,61 @@ fn thread_depth_from_direct_geometry(
     })
 }
 
-fn width_from_applied_geometry(
+fn width_from_applied_geometry<'a>(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &'a BTreeMap<&'a str, &'a Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
+    let mut traversal = FeatureMeasurementTraversal::new(ctx, feature_index, |feature| {
+        Ok(match short_class(ctx, &feature.class)? {
+            "GdtCompoundWidth" => nominal_measurement(ctx, feature, "NomCompoundWidth", "Width")?,
+            "GdtCompoundClosedSlot3D" => {
+                nominal_measurement(ctx, feature, "NomClosedSlot", "Width")?
+            }
+            _ => None,
+        })
+    })?;
     measurement_from_applied_geometry(ctx, annotation, |id| {
-        width_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
+        traversal.visit(id, 0).map(|result| result.value)
     })
 }
 
-fn radius_from_applied_geometry(
+fn radius_from_applied_geometry<'a>(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &'a BTreeMap<&'a str, &'a Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
+    let mut traversal = FeatureMeasurementTraversal::new(ctx, feature_index, |feature| {
+        Ok(match short_class(ctx, &feature.class)? {
+            "GdtFillet" => ctx
+                .get_btree_map(&feature.doubles, "Radius", "look up SWIFT attribute")?
+                .copied()
+                .and_then(PositiveReal::new),
+            "GdtCylinder" => nominal_radius(ctx, feature, "NomCylinder")?,
+            "GdtSphere" => nominal_radius(ctx, feature, "NomSphere")?,
+            _ => None,
+        })
+    })?;
     measurement_from_applied_geometry(ctx, annotation, |id| {
-        radius_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
+        traversal.visit(id, 0).map(|result| result.value)
     })
 }
 
-fn length_from_applied_geometry(
+fn length_from_applied_geometry<'a>(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &'a BTreeMap<&'a str, &'a Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
+    let mut traversal = FeatureMeasurementTraversal::new(ctx, feature_index, |feature| {
+        Ok(match short_class(ctx, &feature.class)? {
+            "GdtCompoundClosedSlot3D" => {
+                nominal_measurement(ctx, feature, "NomClosedSlot", "Length")?
+            }
+            _ => None,
+        })
+    })?;
     measurement_from_applied_geometry(ctx, annotation, |id| {
-        length_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
+        traversal.visit(id, 0).map(|result| result.value)
     })
 }
 
@@ -3040,10 +3104,10 @@ fn countersink_angle_from_direct_geometry(
     })
 }
 
-fn measurement_from_applied_geometry(
+fn measurement_from_applied_geometry<'a>(
     ctx: &DecodeContext<'_>,
-    annotation: &Entity,
-    mut measurement: impl FnMut(&str) -> Result<Option<PositiveReal>, CodecError>,
+    annotation: &'a Entity,
+    mut measurement: impl FnMut(&'a str) -> Result<Option<PositiveReal>, CodecError>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     let mut first: Option<PositiveReal> = None;
     for reference in ctx.admit_iter(
@@ -3278,135 +3342,125 @@ fn rendered_dimension_literals(
     Ok(values)
 }
 
-fn depth_for_feature<'a>(
-    ctx: &DecodeContext<'_>,
-    id: &'a str,
-    feature_index: &BTreeMap<&str, &'a Entity>,
-    visited: &mut BTreeSet<&'a str>,
-    depth: usize,
-) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_for_feature(ctx, id, feature_index, visited, depth, |feature| {
-        if short_class(ctx, &feature.class)? == "GdtCylinder" {
-            nominal_cylinder_depth(ctx, feature)
-        } else {
-            Ok(None)
-        }
-    })
+struct FeatureMeasurementCompletion {
+    value: Option<PositiveReal>,
+    cacheable: bool,
 }
 
-fn width_for_feature<'a>(
-    ctx: &DecodeContext<'_>,
-    id: &'a str,
-    feature_index: &BTreeMap<&str, &'a Entity>,
-    visited: &mut BTreeSet<&'a str>,
-    depth: usize,
-) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_for_feature(ctx, id, feature_index, visited, depth, |feature| {
-        Ok::<_, cadmpeg_core::CodecError>(match short_class(ctx, &feature.class)? {
-            "GdtCompoundWidth" => nominal_measurement(ctx, feature, "NomCompoundWidth", "Width")?,
-            "GdtCompoundClosedSlot3D" => {
-                nominal_measurement(ctx, feature, "NomClosedSlot", "Width")?
-            }
-            _ => None,
+/// One callback-bound scalar query. The direct measurement function cannot
+/// vary while results are cached, and cycle-dependent results are excluded.
+struct FeatureMeasurementTraversal<'a, 'ctx, 'arena, F>
+where
+    F: Fn(&Entity) -> Result<Option<PositiveReal>, CodecError>,
+{
+    ctx: &'ctx DecodeContext<'arena>,
+    feature_index: &'a BTreeMap<&'a str, &'a Entity>,
+    direct_measurement: F,
+    active: BTreeSet<&'a str>,
+    completed: BTreeMap<(&'a str, usize), Option<PositiveReal>>,
+    cache_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'a, 'ctx, 'arena, F> FeatureMeasurementTraversal<'a, 'ctx, 'arena, F>
+where
+    F: Fn(&Entity) -> Result<Option<PositiveReal>, CodecError>,
+{
+    fn new(
+        ctx: &'ctx DecodeContext<'arena>,
+        feature_index: &'a BTreeMap<&'a str, &'a Entity>,
+        direct_measurement: F,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            ctx,
+            feature_index,
+            direct_measurement,
+            active: BTreeSet::new(),
+            completed: BTreeMap::new(),
+            cache_storage: ctx.reserve_scoped(0, "cache SWIFT feature measurements")?,
         })
-    })
-}
-
-fn radius_for_feature<'a>(
-    ctx: &DecodeContext<'_>,
-    id: &'a str,
-    feature_index: &BTreeMap<&str, &'a Entity>,
-    visited: &mut BTreeSet<&'a str>,
-    depth: usize,
-) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_for_feature(ctx, id, feature_index, visited, depth, |feature| {
-        Ok::<_, cadmpeg_core::CodecError>(match short_class(ctx, &feature.class)? {
-            "GdtFillet" => ctx
-                .get_btree_map(&feature.doubles, "Radius", "look up SWIFT attribute")?
-                .copied()
-                .and_then(PositiveReal::new),
-            "GdtCylinder" => nominal_radius(ctx, feature, "NomCylinder")?,
-            "GdtSphere" => nominal_radius(ctx, feature, "NomSphere")?,
-            _ => None,
-        })
-    })
-}
-
-fn length_for_feature<'a>(
-    ctx: &DecodeContext<'_>,
-    id: &'a str,
-    feature_index: &BTreeMap<&str, &'a Entity>,
-    visited: &mut BTreeSet<&'a str>,
-    depth: usize,
-) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_for_feature(ctx, id, feature_index, visited, depth, |feature| {
-        Ok::<_, cadmpeg_core::CodecError>(match short_class(ctx, &feature.class)? {
-            "GdtCompoundClosedSlot3D" => {
-                nominal_measurement(ctx, feature, "NomClosedSlot", "Length")?
-            }
-            _ => None,
-        })
-    })
-}
-
-fn measurement_for_feature<'a>(
-    ctx: &DecodeContext<'_>,
-    id: &'a str,
-    feature_index: &BTreeMap<&str, &'a Entity>,
-    visited: &mut BTreeSet<&'a str>,
-    depth: usize,
-    direct_measurement: impl Copy + Fn(&Entity) -> Result<Option<PositiveReal>, CodecError>,
-) -> Result<Option<PositiveReal>, CodecError> {
-    ctx.charge_work(1, "measure SWIFT feature geometry")?;
-    if ctx.contains_btree_set(visited, id, "check SWIFT traversal path")? {
-        return Ok(None);
     }
-    admit_swift_depth(ctx, depth, "measure SWIFT feature geometry")?;
-    let _depth = ctx.enter_nested("measure SWIFT feature geometry")?;
-    let (_, _path_storage) = ctx.with_scoped_storage("SWIFT traversal path storage", || {
-        ctx.insert_btree_set(visited, id, "track SWIFT measurement path")
-    })?;
-    let result = (|| {
-        let Some(feature) = ctx.get_btree_map(feature_index, id, "look up SLDPRT ordered key")?
-        else {
-            return Ok(None);
-        };
-        if let Some(measurement) = direct_measurement(feature)? {
-            return Ok(Some(measurement));
+
+    fn visit(
+        &mut self,
+        id: &'a str,
+        depth: usize,
+    ) -> Result<FeatureMeasurementCompletion, CodecError> {
+        const OPERATION: &str = "measure SWIFT feature geometry";
+        const CACHE_LOOKUP: &str = "look up SWIFT feature measurement";
+        const CACHE_INSERT: &str = "cache SWIFT feature measurement";
+        let ctx = self.ctx;
+        ctx.charge_work(1, OPERATION)?;
+        if ctx.contains_btree_set(&self.active, id, "check SWIFT traversal path")? {
+            return Ok(FeatureMeasurementCompletion {
+                value: None,
+                cacheable: false,
+            });
         }
-        let next_depth = depth.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "advance SWIFT recursion depth",
-                u64_from_index(MAX_DEPTH),
-                u64::MAX,
-            )
+        admit_swift_depth(ctx, depth, OPERATION)?;
+        let _depth = ctx.enter_nested(OPERATION)?;
+        if let Some(cached) = ctx.get_btree_map(&self.completed, &(id, depth), CACHE_LOOKUP)? {
+            // The key includes logical depth; a hit can only reuse a subtree
+            // that already passed the same live recursion-depth policy.
+            return Ok(FeatureMeasurementCompletion {
+                value: *cached,
+                cacheable: true,
+            });
+        }
+        let (_, path_storage) = ctx.with_scoped_storage("SWIFT traversal path storage", || {
+            ctx.insert_btree_set(&mut self.active, id, "track SWIFT measurement path")
         })?;
-        let mut first: Option<PositiveReal> = None;
-        let mut children = child_feature_ids(ctx, feature)?;
-        while let Some(child) = ctx.next_charged(&mut children, "scan SWIFT child features")? {
-            let Some(value) = measurement_for_feature(
-                ctx,
-                child,
-                feature_index,
-                visited,
-                next_depth,
-                direct_measurement,
-            )?
-            else {
-                continue;
-            };
-            if let Some(prior) = first {
-                if !approximately_equal(value.get(), prior.get()) {
-                    return Ok(None);
+        let result = (|| -> Result<FeatureMeasurementCompletion, CodecError> {
+            let mut value = None;
+            let mut cacheable = true;
+            if let Some(feature) =
+                ctx.get_btree_map(self.feature_index, id, "look up SLDPRT ordered key")?
+            {
+                if let Some(measurement) = (self.direct_measurement)(feature)? {
+                    value = Some(measurement);
+                } else {
+                    let next_depth = depth.checked_add(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "advance SWIFT recursion depth",
+                            u64_from_index(MAX_DEPTH),
+                            u64::MAX,
+                        )
+                    })?;
+                    let mut first: Option<PositiveReal> = None;
+                    let mut disagreement = false;
+                    let mut children = child_feature_ids(ctx, feature)?;
+                    while let Some(child) =
+                        ctx.next_charged(&mut children, "scan SWIFT child features")?
+                    {
+                        let child_result = self.visit(child, next_depth)?;
+                        if !child_result.cacheable {
+                            cacheable = false;
+                        }
+                        let Some(child_value) = child_result.value else {
+                            continue;
+                        };
+                        if let Some(prior) = first {
+                            if !approximately_equal(child_value.get(), prior.get()) {
+                                disagreement = true;
+                                break;
+                            }
+                        } else {
+                            first = Some(child_value);
+                        }
+                    }
+                    value = (!disagreement).then_some(first).flatten();
                 }
-            } else {
-                first = Some(value);
             }
-        }
-        Ok(first)
-    })();
-    ctx.remove_btree_set(visited, id, "leave SWIFT traversal path")?;
-    result
+            if cacheable {
+                self.cache_storage.with_storage(|| {
+                    ctx.insert_btree_map(&mut self.completed, (id, depth), value, CACHE_INSERT)
+                })?;
+            }
+            Ok(FeatureMeasurementCompletion { value, cacheable })
+        })();
+        ctx.remove_btree_set(&mut self.active, id, "track SWIFT measurement path")?;
+        drop(path_storage);
+        result
+    }
 }
 
 fn child_feature_ids<'a>(
