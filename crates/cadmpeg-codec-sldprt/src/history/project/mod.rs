@@ -1018,8 +1018,7 @@ pub(super) fn bind_offset_plane_references(
     let mut candidates_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut candidates_by_history = BTreeMap::<usize, Vec<usize>>::new();
     let mut candidates_indexed = false;
-    for (position, feature) in ctx.admit_iter(&*features, OPERATION)?.enumerate()
-    {
+    for (position, feature) in ctx.admit_iter(&*features, OPERATION)?.enumerate() {
         let offset = matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })
@@ -1095,17 +1094,20 @@ pub(super) fn bind_offset_plane_references(
             let mut found: Option<(usize, f64)> = None;
             if !candidates_indexed {
                 const INDEX: &str = "index SLDPRT offset plane candidates";
-                for (candidate_position, (candidate, fact)) in ctx
-                    .admit_iter(&*features, INDEX)?
-                    .zip(&facts)
-                    .enumerate()
+                for (candidate_position, (candidate, fact)) in
+                    ctx.admit_iter(&*features, INDEX)?.zip(&facts).enumerate()
                 {
                     if fact.base.is_some()
-                        || matches!(candidate.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. }))
+                        || matches!(
+                            candidate.evaluation.definition(),
+                            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })
+                        )
                     {
                         if let Some(history) = fact.history {
                             candidates_storage.with_storage(|| {
-                                let candidates = ctx.entry_btree_map(&mut candidates_by_history, history, INDEX)?.or_default();
+                                let candidates = ctx
+                                    .entry_btree_map(&mut candidates_by_history, history, INDEX)?
+                                    .or_default();
                                 ctx.push_vec(candidates, candidate_position, INDEX)
                             })?;
                         }

@@ -324,7 +324,9 @@ pub(super) fn project_extrude(
             return Ok(profile);
         }
         let profile = match feature.source_id {
-            Some(source) if history_profile_extrusion => source_features.preceding_profile(ctx, source)?,
+            Some(source) if history_profile_extrusion => {
+                source_features.preceding_profile(ctx, source)?
+            }
             _ => None,
         };
         cached_history_profile = Some(profile);
@@ -1032,12 +1034,25 @@ mod tests {
         let features = [sketch("first", "9"), sketch("second", "19")];
         let mut extrusion = feature("extrusion", Some("20"), 0);
         extrusion.kind = "BossExtrude".into();
-        extrusion.properties.insert(cadmpeg_core::nonblank_literal!("Profile"), "first".into());
-        extrusion.properties.insert(cadmpeg_core::nonblank_literal!("EndCondition"), "ThroughAll".into());
+        extrusion
+            .properties
+            .insert(cadmpeg_core::nonblank_literal!("Profile"), "first".into());
+        extrusion.properties.insert(
+            cadmpeg_core::nonblank_literal!("EndCondition"),
+            "ThroughAll".into(),
+        );
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut index = SourceFeatures::new(&ctx, &features).unwrap();
-        let definition = super::project_extrude(&ctx, &extrusion, &std::collections::HashMap::new(), &mut index).unwrap();
-        assert!(matches!(definition, Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude { profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(ref profile)), .. })) if profile == "first"));
+        let definition = super::project_extrude(
+            &ctx,
+            &extrusion,
+            &std::collections::HashMap::new(),
+            &mut index,
+        )
+        .unwrap();
+        assert!(
+            matches!(definition, Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude { profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(ref profile)), .. })) if profile == "first")
+        );
         assert!(index.profiles.is_none());
     }
 
@@ -1047,8 +1062,12 @@ mod tests {
         let mut extrusion = feature("extrusion", Some("20"), 0);
         extrusion.xml_tag = "Extrusion".into();
         extrusion.content = vec![crate::records::FeatureContent::Dimension("D1".into())];
-        extrusion.parameters.insert(cadmpeg_core::nonblank_literal!("D1"), "2mm".into());
-        extrusion.properties.insert(cadmpeg_core::nonblank_literal!("Operation"), "join".into());
+        extrusion
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D1"), "2mm".into());
+        extrusion
+            .properties
+            .insert(cadmpeg_core::nonblank_literal!("Operation"), "join".into());
         extrusion
             .properties
             .insert(cadmpeg_core::nonblank_literal!("Profile"), "first".into());
@@ -1073,18 +1092,39 @@ mod tests {
 
     #[test]
     fn explicit_legacy_profile_preserves_preceding_profile_operation_inference() {
-        use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
+        use cadmpeg_ir::features::{
+            BooleanOp, FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef,
+        };
         let mut extrusion = feature("extrusion", Some("20"), 0);
         extrusion.xml_tag = "Extrusion".into();
         extrusion.content = vec![crate::records::FeatureContent::Dimension("D1".into())];
-        extrusion.parameters.insert(cadmpeg_core::nonblank_literal!("D1"), "2mm".into());
-        extrusion.properties.insert(cadmpeg_core::nonblank_literal!("Profile"), "explicit".into());
-        extrusion.properties.insert(cadmpeg_core::nonblank_literal!("EndCondition"), "ThroughAll".into());
-        for (features, expected) in [(vec![sketch("preceding", "19")], BooleanOp::Join), (Vec::new(), BooleanOp::Unresolved)] {
+        extrusion
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D1"), "2mm".into());
+        extrusion.properties.insert(
+            cadmpeg_core::nonblank_literal!("Profile"),
+            "explicit".into(),
+        );
+        extrusion.properties.insert(
+            cadmpeg_core::nonblank_literal!("EndCondition"),
+            "ThroughAll".into(),
+        );
+        for (features, expected) in [
+            (vec![sketch("preceding", "19")], BooleanOp::Join),
+            (Vec::new(), BooleanOp::Unresolved),
+        ] {
             let ctx = cadmpeg_test_support::service_decode_context();
             let mut index = SourceFeatures::new(&ctx, &features).unwrap();
-            let definition = super::project_extrude(&ctx, &extrusion, &std::collections::HashMap::new(), &mut index).unwrap();
-            assert!(matches!(definition, Some(FeatureDefinition::Operation(FeatureOperation::Extrude { profile: ProfileRef::Planar(PlanarProfileRef::Native(profile)), op, .. })) if profile == "explicit" && op == expected));
+            let definition = super::project_extrude(
+                &ctx,
+                &extrusion,
+                &std::collections::HashMap::new(),
+                &mut index,
+            )
+            .unwrap();
+            assert!(
+                matches!(definition, Some(FeatureDefinition::Operation(FeatureOperation::Extrude { profile: ProfileRef::Planar(PlanarProfileRef::Native(profile)), op, .. })) if profile == "explicit" && op == expected)
+            );
         }
     }
 
@@ -1094,11 +1134,22 @@ mod tests {
         let mut extrusion = feature("extrusion", Some("20"), 0);
         extrusion.xml_tag = "Extrusion".into();
         extrusion.content = vec![crate::records::FeatureContent::Dimension("D1".into())];
-        extrusion.parameters.insert(cadmpeg_core::nonblank_literal!("D1"), "2mm".into());
-        extrusion.properties.insert(cadmpeg_core::nonblank_literal!("Direction"), "0,0,0".into());
+        extrusion
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D1"), "2mm".into());
+        extrusion
+            .properties
+            .insert(cadmpeg_core::nonblank_literal!("Direction"), "0,0,0".into());
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut index = SourceFeatures::new(&ctx, &features).unwrap();
-        assert!(super::project_extrude(&ctx, &extrusion, &std::collections::HashMap::new(), &mut index).unwrap().is_none());
+        assert!(super::project_extrude(
+            &ctx,
+            &extrusion,
+            &std::collections::HashMap::new(),
+            &mut index
+        )
+        .unwrap()
+        .is_none());
         assert!(index.profiles.is_none());
     }
 
