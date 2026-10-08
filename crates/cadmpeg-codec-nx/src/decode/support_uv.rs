@@ -168,11 +168,11 @@ pub(super) fn linear_knots(
         .len()
         .checked_add(2)
         .ok_or_else(|| ctx.refuse_codec_limit("nx linear knot count", u64::MAX - 1, u64::MAX))?;
+    let mut knots = ctx.collection_vec(count, "nx linear knots")?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(count),
         "form nx linear knots",
     )?;
-    let mut knots = ctx.collection_vec(count, "nx linear knots")?;
     knots.extend(parameters.first().copied());
     knots.extend_from_slice(parameters);
     knots.extend(parameters.last().copied());
@@ -3589,6 +3589,65 @@ mod tests {
                 &geometry_budget,
             )
         })
+    }
+
+    #[test]
+    fn linear_knots_allocate_before_admitting_executed_copy_work() {
+        let bytes = cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<f64>());
+        for (work, retained, refused_dimension) in [
+            (0, 0, Some(ResourceDimension::RetainedBytes)),
+            (3, bytes, Some(ResourceDimension::WorkUnits)),
+            (4, bytes, None),
+        ] {
+            crate::test_support::with_decode_context_over(&[], |policy| {
+                policy.limits.max_work_units = work;
+                policy.limits.max_retained_bytes = retained;
+            }, |ctx| {
+                let budget = GeometryWorkBudget::from_context(ctx, 100);
+                let result = super::linear_knots(&[0.0, 1.0], &budget);
+                if let Some(dimension) = refused_dimension {
+                    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+                        panic!("the binding allocation or copy-work limit must refuse");
+                    };
+                    assert_eq!(limit.dimension, dimension);
+                    assert_eq!(limit.used, 0);
+                    if dimension == ResourceDimension::RetainedBytes {
+                        assert_eq!(limit.operation, "nx linear knots");
+                        assert_eq!(limit.additional, bytes);
+                    } else {
+                        assert_eq!(limit.operation, "form nx linear knots");
+                        assert_eq!(limit.additional, 4);
+                    }
+                    assert_eq!(ctx.resource_refusal(), Some(limit));
+                } else {
+                    assert_eq!(result.unwrap(), [0.0, 0.0, 1.0, 1.0]);
+                    assert!(ctx.resource_refusal().is_none());
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn linear_knots_scoped_copy_refusal_preserves_the_original_fuse() {
+        let bytes = cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<f64>());
+        crate::test_support::with_decode_context_over(&[], |policy| {
+            policy.limits.max_work_units = 3;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = bytes;
+        }, |ctx| {
+            let budget = GeometryWorkBudget::from_context(ctx, 100);
+            let error = ctx.with_scoped_storage("test scoped linear knots", ||
+                super::linear_knots(&[0.0, 1.0], &budget)).unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("the allocated knot vector must refuse before copying");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "form nx linear knots");
+            assert_eq!((limit.used, limit.additional), (0, 4));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            assert!(matches!(ctx.reserve_scoped(0, "after linear knots refusal"),
+                Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+        });
     }
 
     #[test]
