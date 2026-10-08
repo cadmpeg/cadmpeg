@@ -797,7 +797,7 @@ pub(in super::super) fn section_degenerate_axis_line(
     };
     let mut unary_orientation = false;
     let mut symmetry_axis = false;
-    let _ = visit_section_skamps(ctx, definition, false, |skamp| {
+    let evidence = visit_section_skamps(ctx, definition, false, |skamp| {
         unary_orientation |= matches!((skamp.kind, skamp.items.as_slice()), (kind, [item])
             if kind == expected_kind && item.entity_id == segment.external_id && item.sense == 0);
         symmetry_axis |= matches!((skamp.kind, skamp.items.as_slice()), (14, [axis, _, _])
@@ -808,7 +808,7 @@ pub(in super::super) fn section_degenerate_axis_line(
             ControlFlow::Continue(())
         })
     })?;
-    Ok(unary_orientation && symmetry_axis)
+    Ok(evidence.is_break())
 }
 
 pub(in super::super) fn section_skamp_is_point(

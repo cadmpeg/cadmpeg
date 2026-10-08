@@ -646,6 +646,8 @@ mod tests {
 
     #[test]
     fn unresolved_saved_dummy_refuses_each_field() {
+        use cadmpeg_core::decode::ResourceDimension;
+
         let definition = definition(None);
         let saved = crate::feature::definitions::FeatureSavedEntity::Dummy(
             crate::feature::definitions::FeatureSavedDummy {
@@ -656,7 +658,6 @@ mod tests {
         );
         let sketch =
             cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        use cadmpeg_core::decode::ResourceDimension;
         for (dimension, operation) in [
             (
                 ResourceDimension::MaterializedBytes,

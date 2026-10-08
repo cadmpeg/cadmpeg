@@ -625,7 +625,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             None => native_constraint(&resource_error)?,
                         }
                     }
-                    (kind @ (7 | 8 | 9), [first, second]) => {
+                    (kind @ 7..=9, [first, second]) => {
                         let pair = defer_resource(
                             section_skamp_line_pair(
                                 ctx,
