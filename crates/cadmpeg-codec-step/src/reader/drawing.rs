@@ -32,6 +32,7 @@ struct TargetContext<'a> {
     known_typed: &'a HashSet<u64>,
     exchange: &'a Exchange,
     external_documents: &'a BTreeMap<u64, &'a str>,
+    wrappers: WrapperCache<'a>,
     ctx: &'a DecodeContext<'a>,
 }
 
@@ -157,6 +158,7 @@ impl TargetContext<'_> {
             self.known_typed,
             self.exchange,
             self.external_documents,
+            Some(&self.wrappers),
             self.ctx,
         )
     }
@@ -345,6 +347,7 @@ pub(super) fn decode<'ctx>(
         known_typed,
         exchange,
         external_documents: &external_documents,
+        wrappers: WrapperCache::new(ctx)?,
         ctx,
     };
 
@@ -1215,6 +1218,7 @@ fn target_resolution<'ctx>(
     known_typed: &HashSet<u64>,
     exchange: &Exchange,
     external_documents: &BTreeMap<u64, &str>,
+    wrappers: Option<&WrapperCache<'ctx>>,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<TargetResolution<'ctx>, CodecError> {
     if let Some(identity) = ctx
@@ -1242,7 +1246,12 @@ fn target_resolution<'ctx>(
             Vec::new(),
         )));
     }
-    let wrapper_ambiguity = match wrapper_target_resolution(id, target_identities, exchange, ctx)? {
+    let wrapper = if let Some(cache) = wrappers {
+        cache.resolve(id, target_identities, exchange, ctx)?
+    } else {
+        wrapper_target_resolution(id, target_identities, exchange, ctx)?
+    };
+    let wrapper_ambiguity = match wrapper {
         Some(WrapperTargetResolution::Singleton(identity)) => {
             return Ok(TargetResolution::Resolved(ReferenceSelection::new(
                 ReferenceTarget::Local(identity),
@@ -1278,6 +1287,46 @@ fn target_resolution<'ctx>(
 enum WrapperTargetResolution<'ctx> {
     Singleton(String),
     Ambiguous((BTreeSet<String>, ScopedReservation<'ctx>)),
+}
+
+type CachedWrapper<'ctx> = (Option<WrapperTargetResolution<'ctx>>, ScopedReservation<'ctx>);
+
+struct WrapperCache<'ctx> {
+    values: std::cell::RefCell<BTreeMap<u64, CachedWrapper<'ctx>>>,
+    storage: std::cell::RefCell<ScopedReservation<'ctx>>,
+}
+
+impl<'ctx> WrapperCache<'ctx> {
+    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self { values: std::cell::RefCell::new(BTreeMap::new()), storage: std::cell::RefCell::new(ctx.reserve_scoped(0, "STEP drawing wrapper cache scratch")?) })
+    }
+
+    fn resolve(
+        &self, id: u64, target_identities: &BTreeMap<u64, BTreeSet<String>>,
+        exchange: &Exchange, ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<Option<WrapperTargetResolution<'ctx>>, CodecError> {
+        if !ctx.contains_key_btree_map(&self.values.borrow(), &id, "STEP drawing wrapper cache lookup")? {
+            let result = ctx.with_scoped_storage("STEP cached wrapper query scratch", || {
+                wrapper_target_resolution(id, target_identities, exchange, ctx)
+            })?;
+            self.storage.borrow_mut().with_storage(|| {
+                ctx.insert_btree_map(&mut self.values.borrow_mut(), id, result, "step_drawing_wrapper_cache")
+            })?;
+        }
+        let values = self.values.borrow();
+        let (result, _) = ctx.get_btree_map(&values, &id, "STEP drawing wrapper cache lookup")?
+            .ok_or_else(|| CodecError::malformed("STEP drawing wrapper was not indexed"))?;
+        match result {
+            None => Ok(None),
+            Some(WrapperTargetResolution::Singleton(identity)) => Ok(Some(WrapperTargetResolution::Singleton(
+                ctx.copy_retained_text(identity, "step_drawing_wrapper_identity_text")?,
+            ))),
+            Some(WrapperTargetResolution::Ambiguous((identities, _))) => {
+                let copy = ctx.with_scoped_storage("STEP drawing ambiguity scratch", || clone_drawing_identities(identities, ctx))?;
+                Ok(Some(WrapperTargetResolution::Ambiguous(copy)))
+            }
+        }
+    }
 }
 
 fn wrapper_target_resolution<'ctx>(

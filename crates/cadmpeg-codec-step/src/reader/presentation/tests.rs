@@ -81,6 +81,7 @@ ENDSEC;END-ISO-10303-21;",
                     ),
                 ),
                 invalid_surface_sides: &mut BTreeSet::new(),
+
             },
             0,
             ctx,
@@ -1614,3 +1615,5 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
 mod set_lookups;
 
 mod color_bindings;
+
+mod shared_graphs;
