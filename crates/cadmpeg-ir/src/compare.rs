@@ -184,10 +184,9 @@ fn is_fixed_ascii_card_text(text: &str) -> bool {
     saw_card
 }
 
-fn fixed_ascii_card_lines(text: &str) -> Vec<&str> {
+fn fixed_ascii_card_lines(text: &str) -> impl Iterator<Item = &str> {
     text.split_terminator('\n')
         .map(|line| line.strip_suffix('\r').unwrap_or(line))
-        .collect()
 }
 
 /// Compares fixed-width IGES cards while ignoring padding at the end of a
@@ -195,19 +194,24 @@ fn fixed_ascii_card_lines(text: &str) -> Vec<&str> {
 /// fewer or more byte; the writer then changes the card framing, not the
 /// parameter stream.
 fn fixed_ascii_card_texts_agree(left: &str, right: &str) -> bool {
-    let left_lines = fixed_ascii_card_lines(left);
-    let right_lines = fixed_ascii_card_lines(right);
-    if fixed_ascii_cards_agree(&left_lines, &right_lines) {
+    if fixed_ascii_cards_agree(fixed_ascii_card_lines(left), fixed_ascii_card_lines(right)) {
         return true;
     }
+    let left_lines = fixed_ascii_card_lines(left).collect::<Vec<_>>();
+    let right_lines = fixed_ascii_card_lines(right).collect::<Vec<_>>();
     fixed_ascii_reframed_cards_agree(&left_lines, &right_lines)
 }
 
-fn fixed_ascii_cards_agree(left_lines: &[&str], right_lines: &[&str]) -> bool {
-    if left_lines.len() != right_lines.len() {
-        return false;
-    }
-    for (&left_line, &right_line) in left_lines.iter().zip(right_lines) {
+fn fixed_ascii_cards_agree<'left, 'right>(
+    mut left_lines: impl Iterator<Item = &'left str>,
+    mut right_lines: impl Iterator<Item = &'right str>,
+) -> bool {
+    loop {
+        let (left_line, right_line) = match (left_lines.next(), right_lines.next()) {
+            (Some(left), Some(right)) => (left, right),
+            (None, None) => return true,
+            _ => return false,
+        };
         let left_bytes = left_line.as_bytes();
         let right_bytes = right_line.as_bytes();
         if left_bytes[72..] != right_bytes[72..] {
@@ -227,7 +231,6 @@ fn fixed_ascii_cards_agree(left_lines: &[&str], right_lines: &[&str]) -> bool {
             return false;
         }
     }
-    true
 }
 
 /// Compares an IGES file after a tolerated real changed the Parameter Data
@@ -436,6 +439,7 @@ fn match_numeric_at(bytes: &[u8], start: usize) -> Option<(usize, f64, bool)> {
         return None;
     }
 
+    let mut normalize_exponent = false;
     if saw_dot && index < bytes.len() && matches!(bytes[index], b'e' | b'E' | b'd' | b'D') {
         let exponent_mark = index;
         index += 1;
@@ -448,12 +452,17 @@ fn match_numeric_at(bytes: &[u8], start: usize) -> Option<(usize, f64, bool)> {
         }
         if index == exponent_digits {
             index = exponent_mark;
+        } else {
+            normalize_exponent = matches!(bytes[exponent_mark], b'd' | b'D');
         }
     }
 
     let token = std::str::from_utf8(&bytes[start..index]).ok()?;
-    let normalized = token.replace(['d', 'D'], "e");
-    let value = normalized.parse().ok()?;
+    let value = if normalize_exponent {
+        token.replace(['d', 'D'], "e").parse().ok()?
+    } else {
+        token.parse().ok()?
+    };
     Some((index, value, saw_dot))
 }
 
@@ -550,23 +559,85 @@ fn disagreement(path: &str, detail: &str) -> String {
     format!("at `{location}`: {detail}")
 }
 
+const PREVIEW_BYTES: usize = 120;
+
+struct JsonPreview(String);
+
+impl std::fmt::Write for JsonPreview {
+    fn write_str(&mut self, fragment: &str) -> std::fmt::Result {
+        for character in fragment.chars() {
+            if self.0.len() >= PREVIEW_BYTES {
+                return Err(std::fmt::Error);
+            }
+            self.0.push(character);
+        }
+        Ok(())
+    }
+}
+
+impl JsonPreview {
+    fn string(&mut self, text: &str) -> std::fmt::Result {
+        use std::fmt::Write as _;
+        self.write_char('"')?;
+        for character in text.chars() {
+            match character {
+                '"' => self.write_str("\\\"")?,
+                '\\' => self.write_str("\\\\")?,
+                '\u{8}' => self.write_str("\\b")?,
+                '\t' => self.write_str("\\t")?,
+                '\n' => self.write_str("\\n")?,
+                '\u{c}' => self.write_str("\\f")?,
+                '\r' => self.write_str("\\r")?,
+                character if character <= '\u{1f}' => write!(self, "\\u{:04x}", u32::from(character))?,
+                character => self.write_char(character)?,
+            }
+        }
+        self.write_char('"')
+    }
+
+    fn value(&mut self, value: &Value) -> std::fmt::Result {
+        use std::fmt::Write as _;
+        match value {
+            Value::Null => self.write_str("null"),
+            Value::Bool(value) => self.write_str(if *value { "true" } else { "false" }),
+            Value::Number(value) => write!(self, "{value}"),
+            Value::String(value) => self.string(value),
+            Value::Array(values) => {
+                self.write_char('[')?;
+                for (index, value) in values.iter().enumerate() {
+                    if index != 0 {
+                        self.write_char(',')?;
+                    }
+                    self.value(value)?;
+                }
+                self.write_char(']')
+            }
+            Value::Object(values) => {
+                self.write_char('{')?;
+                for (index, (key, value)) in values.iter().enumerate() {
+                    if index != 0 {
+                        self.write_char(',')?;
+                    }
+                    self.string(key)?;
+                    self.write_char(':')?;
+                    self.value(value)?;
+                }
+                self.write_char('}')
+            }
+        }
+    }
+}
+
 /// Renders a value for a failure message, bounded so a whole arena cannot land
 /// in a panic or a report.
 fn truncate(value: &Value) -> String {
-    let text = value.to_string();
-    let Some((end, last)) = text
-        .char_indices()
-        .take_while(|(index, _)| *index < 120)
-        .last()
-    else {
-        return text;
-    };
-    let end = end + last.len_utf8();
-    if end < text.len() {
-        format!("{}…", &text[..end])
-    } else {
-        text
+    // Every container emits before descending. The output bound therefore
+    // bounds descent as well as visited fields and string characters.
+    let mut preview = JsonPreview(String::new());
+    if preview.value(value).is_err() {
+        preview.0.push('…');
     }
+    preview.0
 }
 
 #[cfg(test)]
@@ -903,4 +974,64 @@ mod tests {
         let right = format!("{moved:.16e}").replace('e', "D");
         assert!(!texts_agree(left, &right));
     }
+
+    #[test]
+    fn comparison_preview_preserves_json_escaping_and_utf8_boundaries() {
+        fn expected(value: &Value) -> String {
+            let text = value.to_string();
+            let end = text.char_indices()
+                .take_while(|(offset, _)| *offset < super::PREVIEW_BYTES)
+                .last().map_or(0, |(offset, character)| offset + character.len_utf8());
+            if end < text.len() { format!("{}…", &text[..end]) } else { text }
+        }
+        let controls: String = (0..=31).map(char::from).collect();
+        let mut values = vec![
+            Value::Null, Value::Bool(true), Value::Bool(false),
+            serde_json::json!(i64::MIN), serde_json::json!(u64::MAX),
+            serde_json::json!(-0.0), serde_json::json!(f64::MAX),
+            serde_json::json!(f64::MIN_POSITIVE),
+            Value::String(format!("{controls}\"\\é🦀")),
+            serde_json::json!({"\"\\\n": [null, false, 1.25, {"é": "🦀"}]}),
+        ];
+        for prefix in 110..=122 {
+            for suffix in ["", "a", "é", "🦀", "\"", "\\", "\u{0}", "\n"] {
+                values.push(Value::String(format!("{}{suffix}", "x".repeat(prefix))));
+            }
+        }
+        values.push(Value::Array((0..100).map(|_| serde_json::json!("é\n")).collect()));
+        for value in values {
+            assert_eq!(super::truncate(&value), expected(&value), "{value:?}");
+        }
+    }
+
+    #[test]
+    fn comparison_preview_stops_before_nested_suffixes() {
+        let mut value = Value::Null;
+        for _ in 0..256 { value = Value::Array(vec![value]); }
+        assert_eq!(super::truncate(&value), format!("{}…", "[".repeat(super::PREVIEW_BYTES)));
+        let value = serde_json::json!({"a": "x".repeat(1024), "b": value});
+        assert_eq!(super::truncate(&value), format!("{{\"a\":\"{}…", "x".repeat(super::PREVIEW_BYTES - 6)));
+    }
+
+    #[test]
+    fn numeric_token_normalization_preserves_exponent_and_suffix_rules() {
+        let cases: [(&str, usize, f64, bool); 9] = [
+            ("12x", 2, 12.0, false),
+            ("-0", 2, -0.0, false),
+            ("1.25", 4, 1.25, true),
+            ("1.25e2,", 6, 125.0, true),
+            ("1.25E+2", 7, 125.0, true),
+            ("1.25d2", 6, 125.0, true),
+            ("1.25D+2", 7, 125.0, true),
+            ("1.25D-", 4, 1.25, true),
+            ("1D2", 1, 1.0, false),
+        ];
+        for (text, end, number, fractional) in cases {
+            let actual = super::match_numeric_at(text.as_bytes(), 0).unwrap();
+            assert_eq!(actual.0, end, "{text}");
+            assert_eq!(actual.1.to_bits(), number.to_bits(), "{text}");
+            assert_eq!(actual.2, fractional, "{text}");
+        }
+    }
+
 }
