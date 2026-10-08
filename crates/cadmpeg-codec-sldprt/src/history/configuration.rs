@@ -1802,7 +1802,7 @@ pub(crate) fn align_configuration_parameter_kinds(
         ctx.retain_btree_map(
             &mut configuration.parameter_values,
             |parameter, value| {
-                Ok(
+                Ok::<_, cadmpeg_core::CodecError>(
                     match ctx.get_hash_map(
                         &parameter_kinds,
                         parameter,
