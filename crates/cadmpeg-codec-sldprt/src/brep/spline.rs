@@ -2,6 +2,7 @@
 //! B-spline/list carrier tables.
 
 use std::borrow::Cow;
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::FinitePoint3;
@@ -12,7 +13,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
 
-use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
+use cadmpeg_core::decode::{index_from_u32, DecodeContext, ScopedReservation, View};
 
 use super::{CurveCarrier, SurfaceCarrier, LEN_TO_MM};
 
@@ -21,9 +22,9 @@ use crate::layout::bspline_compact_array_header as compact_arr;
 use crate::layout::bspline_surface_descriptor as surf_desc;
 
 #[derive(Debug, Default)]
-struct Arrays {
-    f64s: BTreeMap<u16, Vec<f64>>,
-    u16s: BTreeMap<u16, Vec<u16>>,
+struct Arrays<'ctx> {
+    f64s: BTreeMap<u16, FramedArray<'ctx, f64>>,
+    u16s: BTreeMap<u16, FramedArray<'ctx, u16>>,
     compact: BTreeMap<u16, Vec<CompactArray>>,
 }
 
@@ -37,6 +38,41 @@ struct CompactArray {
 struct ArraySpan {
     start: usize,
     count: usize,
+}
+
+/// A bounded framed payload, decoded once when a consumer first reads it.
+/// Its cached values and their reservation have the same lifetime.
+#[derive(Debug)]
+struct FramedArray<'ctx, T> {
+    span: ArraySpan,
+    operation: &'static str,
+    values: OnceCell<(Vec<T>, ScopedReservation<'ctx>)>,
+}
+
+impl<'ctx, T> FramedArray<'ctx, T> {
+    fn read(
+        &self,
+        ctx: &'ctx DecodeContext<'_>,
+        read: impl Fn(usize) -> Option<T>,
+    ) -> Result<&[T], cadmpeg_core::CodecError> {
+        if self.values.get().is_none() {
+            let (values, storage) = ctx.with_scoped_storage(self.operation, || {
+                read_array(ctx, self.span.count, self.operation, |index| {
+                    read(self.span.start + index * std::mem::size_of::<T>())
+                })
+            })?;
+            let Some(values) = values else {
+                return Err(cadmpeg_core::CodecError::malformed("bounded Parasolid array lost a cell"));
+            };
+            if self.values.set((values, storage)).is_err() {
+                return Err(cadmpeg_core::CodecError::malformed("Parasolid array initialized twice"));
+            }
+        }
+        let Some((values, _storage)) = self.values.get() else {
+            return Err(cadmpeg_core::CodecError::malformed("Parasolid array cache is absent"));
+        };
+        Ok(values.as_slice())
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -191,12 +227,12 @@ fn array_body(bytes: &[u8], off: usize, tag: u8) -> Option<usize> {
     Some(p)
 }
 
-fn scan_arrays(
-    ctx: &DecodeContext<'_>,
+fn scan_arrays<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     compact_attrs: Option<&BTreeSet<u16>>,
     required_attrs: Option<&BTreeSet<u16>>,
-) -> Result<Arrays, cadmpeg_core::CodecError> {
+) -> Result<Arrays<'ctx>, cadmpeg_core::CodecError> {
     let mut arrays = Arrays::default();
     let starts = 0..bytes.len().checked_sub(9).map_or(0, |end| end);
     for off in ctx.admit_iter(starts, "scan Parasolid spline arrays")? {
@@ -257,17 +293,10 @@ fn scan_arrays(
             {
                 continue;
             }
-            let Some(values) =
-                read_array(ctx, count, "decode Parasolid integer array values", |i| {
-                    View::u16_be_at(bytes, values_at + i * 2)
-                })?
-            else {
-                continue;
-            };
             ctx.insert_btree_map(
                 &mut arrays.u16s,
                 attr,
-                values,
+                FramedArray { span: ArraySpan { start: values_at, count }, operation: "decode Parasolid integer array values", values: OnceCell::new() },
                 "collect Parasolid integer arrays",
             )?;
         } else {
@@ -281,13 +310,6 @@ fn scan_arrays(
             {
                 continue;
             }
-            let Some(values) =
-                read_array(ctx, count, "decode Parasolid scalar array values", |i| {
-                    View::f64_be_at(bytes, values_at + i * 8)
-                })?
-            else {
-                continue;
-            };
             // The native surface format can reserve physical knot slots beyond
             // the descriptor's distinct-knot count. Their bits are not
             // semantic data when the matching multiplicities are zero, so
@@ -295,7 +317,7 @@ fn scan_arrays(
             ctx.insert_btree_map(
                 &mut arrays.f64s,
                 attr,
-                values,
+                FramedArray { span: ArraySpan { start: values_at, count }, operation: "decode Parasolid scalar array values", values: OnceCell::new() },
                 "collect Parasolid scalar arrays",
             )?;
         }
@@ -305,15 +327,16 @@ fn scan_arrays(
 
 /// The distinct value arrays an attribute names: its framed array, borrowed
 /// from the table, then each compact array that differs from those before it.
-/// Compact reads are held under the caller's scoped reservation. A value
-/// occupies `size_of::<T>()` bytes on the wire.
-fn array_candidates<'a, T>(
-    ctx: &DecodeContext<'_>,
+/// Framed reads are cached with their source reservation. Compact reads use
+/// the caller's reservation. A requested exact count filters headers before
+/// decoding. A value occupies `size_of::<T>()` bytes on the wire.
+fn array_candidates<'a, 'ctx, T>(
+    ctx: &'ctx DecodeContext<'_>,
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     bytes: &[u8],
-    framed: &'a BTreeMap<u16, Vec<T>>,
+    framed: &'a BTreeMap<u16, FramedArray<'ctx, T>>,
     compact: &BTreeMap<u16, Vec<CompactArray>>,
-    attr: u16,
+    (attr, exact_count): (u16, Option<usize>),
     read: impl Fn(usize) -> Option<T>,
 ) -> Result<Vec<Cow<'a, [T]>>, cadmpeg_core::CodecError>
 where
@@ -322,18 +345,24 @@ where
     const OPERATION: &str = "collect Parasolid array candidates";
     let width = std::mem::size_of::<T>();
     let mut candidates = Vec::new();
-    if let Some(values) = ctx.get_btree_map(framed, &attr, OPERATION)? {
-        ctx.push_scoped_vec(
-            storage,
-            &mut candidates,
-            Cow::Borrowed(values.as_slice()),
-            OPERATION,
-        )?;
+    if let Some(array) = ctx.get_btree_map(framed, &attr, OPERATION)? {
+        if exact_count.is_none_or(|count| array.span.count == count) {
+            let values = array.read(ctx, &read)?;
+            ctx.push_scoped_vec(
+                storage,
+                &mut candidates,
+                Cow::Borrowed(values),
+                OPERATION,
+            )?;
+        }
     }
     let Some(arrays) = ctx.get_btree_map(compact, &attr, OPERATION)? else {
         return Ok(candidates);
     };
     for array in ctx.admit_iter(arrays, "scan Parasolid compact attribute arrays")? {
+        if exact_count.is_some_and(|count| array.count != count) {
+            continue;
+        }
         let Some(start) = array.offset.checked_add(compact_arr::LEN) else {
             continue;
         };
@@ -370,11 +399,11 @@ where
 
 /// The one scalar array of `count` values an attribute names, when its
 /// candidates of that length agree.
-fn exact_f64_array<'a>(
-    ctx: &DecodeContext<'_>,
+fn exact_f64_array<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     bytes: &[u8],
-    arrays: &'a Arrays,
+    arrays: &'a Arrays<'ctx>,
     attr: u16,
     count: usize,
 ) -> Result<Option<Cow<'a, [f64]>>, cadmpeg_core::CodecError> {
@@ -384,7 +413,7 @@ fn exact_f64_array<'a>(
         bytes,
         &arrays.f64s,
         &arrays.compact,
-        attr,
+        (attr, Some(count)),
         |at| View::f64_be_at(bytes, at),
     )?;
     let mut selected: Option<Cow<'a, [f64]>> = None;
@@ -580,7 +609,7 @@ fn array_span(bytes: &[u8], tag: u8, attr: u16) -> Option<(usize, usize)> {
 fn array_spans(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    arrays: &Arrays,
+    arrays: &Arrays<'_>,
     tag: u8,
     attr: u16,
 ) -> Result<Vec<ArraySpan>, cadmpeg_core::CodecError> {
@@ -677,7 +706,7 @@ fn u16_values(
 fn unique_control_span(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    arrays: &Arrays,
+    arrays: &Arrays<'_>,
     attr: u16,
     old_values: &[f64],
 ) -> Result<Option<ArraySpan>, cadmpeg_core::CodecError> {
@@ -713,7 +742,7 @@ fn unique_control_span(
 fn unique_surface_knot_span(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    arrays: &Arrays,
+    arrays: &Arrays<'_>,
     (knot_attr, multiplicity_attr): (u16, u16),
     declared_count: usize,
     old_values: &[f64],
@@ -1150,29 +1179,30 @@ pub(crate) fn scan_curve_carriers(
         if ctx.contains_key_btree_map(&out, &attr, "collect Parasolid curve carriers")? {
             continue;
         }
-        let Some(control) =
+        let Some(control_array) =
             ctx.get_btree_map(&arrays.f64s, &descriptor.control_attr, CURVE_ARRAYS)?
         else {
             continue;
         };
-        let Some(multiplicities) =
+        let Some(expected_control_values) = descriptor.control_count.checked_mul(descriptor.dimension) else {
+            continue;
+        };
+        if control_array.span.count != expected_control_values {
+            continue;
+        }
+        let control = control_array.read(ctx, |at| View::f64_be_at(bytes, at))?;
+        let Some(multiplicity_array) =
             ctx.get_btree_map(&arrays.u16s, &descriptor.multiplicity_attr, CURVE_ARRAYS)?
         else {
             continue;
         };
-        let Some(unique_knots) =
+        let multiplicities = multiplicity_array.read(ctx, |at| View::u16_be_at(bytes, at))?;
+        let Some(knot_array) =
             ctx.get_btree_map(&arrays.f64s, &descriptor.knot_attr, CURVE_ARRAYS)?
         else {
             continue;
         };
-        let Some(expected_control_values) =
-            descriptor.control_count.checked_mul(descriptor.dimension)
-        else {
-            continue;
-        };
-        if control.len() != expected_control_values {
-            continue;
-        }
+        let unique_knots = knot_array.read(ctx, |at| View::f64_be_at(bytes, at))?;
         if !ctx.all_by(
             unique_knots,
             |value| Ok(value.is_finite()),
@@ -1193,7 +1223,7 @@ pub(crate) fn scan_curve_carriers(
             continue;
         };
         for pole in ctx
-            .admit_iter(control.as_slice(), "scan Parasolid curve poles")?
+            .admit_iter(control, "scan Parasolid curve poles")?
             .chunks(dimension)
         {
             // A pole holds three or four values.
@@ -1322,11 +1352,11 @@ struct SurfaceKnotValues {
 
 /// The one distinct-knot and multiplicity pairing an axis names, when every
 /// candidate pairing that fits the declared count agrees.
-fn surface_knot_values(
-    ctx: &DecodeContext<'_>,
+fn surface_knot_values<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     bytes: &[u8],
-    arrays: &Arrays,
+    arrays: &Arrays<'ctx>,
     knot_attr: u16,
     multiplicity_attr: u16,
     declared_count: usize,
@@ -1338,7 +1368,7 @@ fn surface_knot_values(
         bytes,
         &arrays.u16s,
         &arrays.compact,
-        multiplicity_attr,
+        (multiplicity_attr, None),
         |at| View::u16_be_at(bytes, at),
     )?;
     let unique_candidates = array_candidates(
@@ -1347,7 +1377,7 @@ fn surface_knot_values(
         bytes,
         &arrays.f64s,
         &arrays.compact,
-        knot_attr,
+        (knot_attr, None),
         |at| View::f64_be_at(bytes, at),
     )?;
     let mut multiplicities_by_count = BTreeMap::<usize, Vec<&[u16]>>::new();
@@ -1676,7 +1706,7 @@ mod tests {
         expanded_knots, scan_arrays, scan_curve_carriers, scan_surface_carriers, unique_knots,
         unique_surface_knot_span, Arrays,
     };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
 
@@ -1793,6 +1823,53 @@ mod tests {
     }
 
     #[test]
+    fn framed_array_payload_is_cached_with_its_scoped_storage() {
+        let bytes = crate::test_support::parasolid::f64_array(0x2d, 12, &[0.0, 1.0, 2.0]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 4096;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (arrays, nodes) = ctx.with_scoped_storage("test framed array index", || {
+            scan_arrays(&ctx, &bytes, None, None)
+        }).unwrap();
+        let array = arrays.f64s.get(&12).unwrap();
+        assert!(array.values.get().is_none());
+        assert_eq!(array.read(&ctx, |at| View::f64_be_at(&bytes, at)).unwrap(), [0.0, 1.0, 2.0]);
+        {
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::WorkUnits, "decode Parasolid scalar array values", None,
+            );
+            assert_eq!(array.read(&ctx, |at| View::f64_be_at(&bytes, at)).unwrap(), [0.0, 1.0, 2.0]);
+        }
+        drop(arrays);
+        drop(nodes);
+        let released = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test released framed values").unwrap();
+        drop(released);
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn duplicate_curve_wrapper_does_not_read_its_unused_large_payload() {
+        let mut bytes = crate::test_support::parasolid::nurbs_curve_carrier(170, 171);
+        let mut duplicate = crate::test_support::parasolid::nurbs_curve_carrier(170, 400);
+        let control = crate::test_support::parasolid::f64_array(0x2d, 401, &[0.0, 0.0, 0.0, 0.5, 1.0, 0.0, 1.0, 0.0, 0.0]);
+        let at = duplicate.windows(control.len()).position(|window| window == control).unwrap();
+        let unused = crate::test_support::parasolid::f64_array(0x2d, 401, &vec![0.25; 131072]);
+        duplicate.splice(at..at + control.len(), unused);
+        bytes.extend(duplicate);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 128 * 1024;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let decoded = scan_curve_carriers(&ctx, &bytes, &mut Vec::new()).unwrap();
+        assert_eq!(decoded.len(), 1);
+        assert!(decoded.contains_key(&170));
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
     fn scalar_array_read_stops_at_first_missing_cell() {
         use std::cell::Cell;
         let arena = DecodeArena::new();
@@ -1827,7 +1904,11 @@ mod tests {
                 policy.limits.max_collection_items = cap;
                 let (ctx, _) =
                     DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-                scan_arrays(&ctx, &bytes, None, None)
+                let arrays = scan_arrays(&ctx, &bytes, None, None)?;
+                let Some(array) = ctx.get_btree_map(&arrays.f64s, &12, "test framed array lookup")? else {
+                    panic!("framed array is present");
+                };
+                array.read(&ctx, |at| View::f64_be_at(&bytes, at)).map(|values| values.len())
             },
         );
         assert!(matches!(error,
@@ -1843,7 +1924,7 @@ mod tests {
                 .expect("service scan")
                 .f64s
                 .get(&12)
-                .map(Vec::len),
+                .map(|array| array.read(&ctx, |at| View::f64_be_at(&bytes, at)).expect("service values").len()),
             Some(3)
         );
     }
@@ -1860,7 +1941,11 @@ mod tests {
                 policy.limits.max_collection_items = cap;
                 let (ctx, _) =
                     DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-                scan_arrays(&ctx, &bytes, None, None)
+                let arrays = scan_arrays(&ctx, &bytes, None, None)?;
+                let Some(array) = ctx.get_btree_map(&arrays.u16s, &12, "test framed array lookup")? else {
+                    panic!("framed array is present");
+                };
+                array.read(&ctx, |at| View::u16_be_at(&bytes, at)).map(|values| values.len())
             },
         );
         assert!(matches!(error,
