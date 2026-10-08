@@ -165,11 +165,17 @@ pub(crate) fn transfer_parameters<'ctx>(
             )? {
                 Some(existing) => {
                     if !formula_parameter_candidates_agree(ctx, existing, &candidate)? {
+                        let conflict = scratch.with_storage(|| {
+                            candidate
+                                .parameter
+                                .id
+                                .try_clone_for_decode(ctx, "catia_formula_conflict_id")
+                        })?;
                         insert_formula_conflict(
                             ctx,
                             &mut scratch,
                             &mut conflicting_inputs,
-                            candidate.parameter.id,
+                            conflict,
                         )?;
                     }
                 }
@@ -1003,12 +1009,13 @@ fn collect_definition_chain_parameters<'ctx>(
             None => insert_formula_candidate(ctx, scratch, candidates, candidate)?,
             Some(existing) => {
                 if !formula_parameter_candidates_agree(ctx, existing, &candidate)? {
-                    insert_formula_conflict(
-                        ctx,
-                        scratch,
-                        conflicting_inputs,
-                        candidate.parameter.id,
-                    )?;
+                    let conflict = scratch.with_storage(|| {
+                        candidate
+                            .parameter
+                            .id
+                            .try_clone_for_decode(ctx, "catia_formula_conflict_id")
+                    })?;
+                    insert_formula_conflict(ctx, scratch, conflicting_inputs, conflict)?;
                 }
             }
         }
@@ -4326,9 +4333,10 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         }
 
         let mut scalar_arguments = Vec::new();
-        for argument in self
+        let mut argument_rows = arguments.iter();
+        while let Some(argument) = self
             .ctx
-            .admit_iter(&arguments, "catia_formula_scalar_argument_visits")?
+            .next_charged(&mut argument_rows, "catia_formula_scalar_argument_visits")?
         {
             let EvaluatedFormulaValue::Scalar(scalar) = argument else {
                 return Ok(None);
@@ -4346,11 +4354,14 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         let arguments = scalar_arguments;
 
         if matches!(function, "min" | "max") {
-            let mut arguments = self
+            let mut arguments = arguments.iter();
+            let mut result = *formula_value!(self
                 .ctx
-                .admit_iter(&arguments, "catia_formula_extremum_argument_visits")?;
-            let mut result = *formula_value!(arguments.next());
-            for argument in arguments {
+                .next_charged(&mut arguments, "catia_formula_extremum_argument_visits")?);
+            while let Some(argument) = self
+                .ctx
+                .next_charged(&mut arguments, "catia_formula_extremum_argument_visits")?
+            {
                 if result.dimension() != argument.dimension() {
                     return Ok(None);
                 }
@@ -5056,6 +5067,84 @@ mod parser_tests {
             role: FormulaParameterRole::Input,
             source_order: 1,
         }
+    }
+
+    #[test]
+    fn formula_fallback_box_refuses_scoped_storage_and_preserves_input() {
+        for output_first in [false, true] {
+            let refused = crate::test_support::with_materialized_limit(0, |ctx| {
+                let mut existing = unset_candidate(FormulaParameterType::String);
+                let mut incoming = unset_candidate(FormulaParameterType::String);
+                if output_first {
+                    existing.role = FormulaParameterRole::FormulaOutput { fallback: None };
+                } else {
+                    incoming.role = FormulaParameterRole::FormulaOutput { fallback: None };
+                }
+                let mut candidates = BTreeMap::from([(existing.parameter.id.clone(), existing)]);
+                super::merge_formula_parameter_candidate(
+                    ctx,
+                    &mut ctx.reserve_scoped(0, "test index")?,
+                    &mut candidates,
+                    &mut std::collections::BTreeSet::new(),
+                    incoming,
+                )
+            });
+            assert!(
+                matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_formula_fallback_box")
+            );
+            crate::test_support::with_retained_limit(
+                0,
+                |ctx| -> Result<_, cadmpeg_core::CodecError> {
+                    let mut existing = unset_candidate(FormulaParameterType::String);
+                    let mut incoming = unset_candidate(FormulaParameterType::String);
+                    let expected = existing.parameter.clone();
+                    if output_first {
+                        existing.role = FormulaParameterRole::FormulaOutput { fallback: None };
+                    } else {
+                        incoming.role = FormulaParameterRole::FormulaOutput { fallback: None };
+                    }
+                    let mut candidates =
+                        BTreeMap::from([(existing.parameter.id.clone(), existing)]);
+                    super::merge_formula_parameter_candidate(
+                        ctx,
+                        &mut ctx.reserve_scoped(0, "test index")?,
+                        &mut candidates,
+                        &mut std::collections::BTreeSet::new(),
+                        incoming,
+                    )?;
+                    let candidate = candidates.values_mut().next().expect("one output");
+                    assert!(super::demote_formula_output(candidate));
+                    assert_eq!(candidate.parameter, expected);
+                    assert!(!candidate.role.is_formula_output());
+                    Ok(())
+                },
+            )
+            .expect("fallback is temporary and demotes to the exact input");
+        }
+    }
+
+    #[test]
+    fn formula_dependency_free_candidate_queue_refuses_work() {
+        let candidate = unset_candidate(FormulaParameterType::String);
+        let candidates = BTreeMap::from([(candidate.parameter.id.clone(), candidate)]);
+        let refused = crate::test_support::with_work_refusal(
+            "catia_formula_released_candidate_visits",
+            |ctx| {
+                super::derivable_candidates(
+                    ctx,
+                    &mut ctx.reserve_scoped(0, "test queue")?,
+                    &candidates,
+                )
+            },
+        );
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_formula_released_candidate_visits")
+        );
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            super::derivable_candidates(ctx, &mut ctx.reserve_scoped(0, "test queue")?, &candidates)
+        })
+        .expect("dependency-free root is derivable");
+        assert_eq!(admitted, [true]);
     }
 
     #[test]

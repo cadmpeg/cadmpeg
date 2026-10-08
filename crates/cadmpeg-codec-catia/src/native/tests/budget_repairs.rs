@@ -76,10 +76,13 @@ fn native_vertex_reference_membership_preserves_order_with_linear_work() {
             node
         })
         .collect();
-    let vertices = // Two endpoint lookups and insertions, two incident-name comparisons,
+    // Two endpoint lookups and insertions, two incident-name comparisons,
     // and geometric table/vector relocation fit within 512 units per node.
     // Scanning the growing reference vectors requires more than 4 million units.
-    with_work_limit(1024 * 512, |ctx| super::super::edge_node::consolidated_vertex_identities(ctx, &nodes)).expect("membership work is linear in distinct distances");
+    let vertices = with_work_limit(1024 * 512, |ctx| {
+        super::super::edge_node::consolidated_vertex_identities(ctx, &nodes)
+    })
+    .expect("membership work is linear in distinct distances");
     assert_eq!(vertices.len(), 2);
     assert_eq!(vertices[0].reference_values, (0..1024).collect::<Vec<_>>());
     assert_eq!(

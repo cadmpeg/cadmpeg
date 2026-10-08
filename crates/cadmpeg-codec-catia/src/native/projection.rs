@@ -403,10 +403,11 @@ pub(crate) fn consolidated_edge_runs(
         })?;
     }
     let mut output = Vec::new();
-    let topology_edge_runs =
+    let topology_edge_runs = lookup_storage.with_storage(|| {
         crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
             ctx, bytes, records,
-        )?;
+        )
+    })?;
     for (index, run) in ctx
         .admit_iter(&topology_edge_runs, "catia_native_topology_edge_run_visits")?
         .enumerate()
@@ -540,35 +541,31 @@ pub(crate) fn consolidated_edge_nodes(
         })?;
     }
     let mut use_runs = HashMap::new();
-    for run in ctx.admit_iter(
+    let use_rows = temporary.with_storage(|| {
         crate::families::consolidated::records::consolidated_edge_use_runs_from_records(
             ctx, bytes, records,
-        )?,
-        "catia_native_edge_use_run_visits",
-    )? {
+        )
+    })?;
+    for run in ctx.admit_iter(&use_rows, "catia_native_edge_use_run_visits")? {
         let Some(uses) = native_consolidated_edge_uses(&run.uses) else {
             continue;
         };
-        let definition = run
-            .definition
-            .map(|definition| CatiaConsolidatedEdgeDefinition::from_source(ctx, definition))
-            .transpose()?;
         temporary.with_storage(|| {
             ctx.insert_hash_map(
                 &mut use_runs,
                 run.node.pos,
-                (uses, definition),
+                (uses, run.definition.as_ref()),
                 "catia_native_edge_use_runs",
             )
         })?;
     }
     let mut analytic_circles = HashMap::new();
-    for run in ctx.admit_iter(
+    let analytic_rows = temporary.with_storage(|| {
         crate::families::consolidated::records::consolidated_analytic_circle_edge_runs_from_records(
             ctx, bytes, records,
-        )?,
-        "catia_native_analytic_edge_run_visits",
-    )? {
+        )
+    })?;
+    for run in ctx.admit_iter(&analytic_rows, "catia_native_analytic_edge_run_visits")? {
         let Some(circle) = ctx.get_hash_map(
             &circle_ids,
             &u64_from_index(run.circle.pos),
@@ -577,15 +574,11 @@ pub(crate) fn consolidated_edge_nodes(
         else {
             continue;
         };
-        let circle = ctx.copy_retained_text(circle, "catia_native_analytic_edge_circle_id")?;
         temporary.with_storage(|| {
             ctx.insert_hash_map(
                 &mut analytic_circles,
                 run.node.pos,
-                CatiaConsolidatedAnalyticCircleBinding {
-                    descriptor: run.descriptor.into(),
-                    circle,
-                },
+                (&run.descriptor, *circle),
                 "catia_native_analytic_edge_bindings",
             )
         })?;
@@ -636,6 +629,48 @@ pub(crate) fn consolidated_edge_nodes(
             Some((uses, definition)) => (Some(uses), definition),
             None => (None, None),
         };
+        let definition = definition
+            .map(|source| -> Result<_, CodecError> {
+                let frame = crate::wire::records::ConsolidatedRawFrame::new(
+                    source.frame.pos,
+                    source.frame.width(),
+                    source.frame.flag,
+                    source.frame.header_token(),
+                    ctx.copy_slice(
+                        &source.frame.payload,
+                        "catia_native_edge_definition_payload",
+                    )?,
+                )
+                .map_err(CodecError::malformed)?;
+                CatiaConsolidatedEdgeDefinition::from_source(
+                    ctx,
+                    crate::families::consolidated::records::ConsolidatedEdgeDefinition {
+                        frame,
+                        class: source.class,
+                    },
+                )
+            })
+            .transpose()?;
+        let analytic_circle = ctx
+            .remove_hash_map(&mut analytic_circles, &node.pos, LOOKUP)?
+            .map(|(descriptor, circle)| -> Result<_, CodecError> {
+                Ok(CatiaConsolidatedAnalyticCircleBinding {
+                    descriptor: crate::wire::records::ConsolidatedRawFrame::new(
+                        u64_from_index(descriptor.pos),
+                        descriptor.width(),
+                        descriptor.flag,
+                        descriptor.header_token(),
+                        ctx.copy_slice(
+                            &descriptor.payload,
+                            "catia_native_analytic_edge_descriptor",
+                        )?,
+                    )
+                    .map_err(CodecError::malformed)?,
+                    circle: ctx
+                        .copy_retained_text(circle, "catia_native_analytic_edge_circle_id")?,
+                })
+            })
+            .transpose()?;
         output.push(CatiaConsolidatedEdgeNode {
             id: ctx.format_retained(
                 format_args!("catia:consolidated:edge-node#{index:01}"),
@@ -661,7 +696,7 @@ pub(crate) fn consolidated_edge_nodes(
             tail: node.tail,
             definition,
             uses,
-            analytic_circle: ctx.remove_hash_map(&mut analytic_circles, &node.pos, LOOKUP)?,
+            analytic_circle,
             class25_descriptor: ctx.remove_hash_map(&mut class25_descriptors, &node.pos, LOOKUP)?,
         });
     }
