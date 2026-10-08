@@ -850,6 +850,7 @@ fn transfer_schema_one<'ctx>(
             })
             .transpose()?
             .flatten()
+            .filter(|_| !payload_prefixes.is_empty())
             .map(|value| convert_packed_alpha(value, requires_alpha_conversion))
         {
             let width = value_attribute("LineWidth", "value")?;
@@ -899,6 +900,7 @@ fn transfer_schema_one<'ctx>(
             })
             .transpose()?
             .flatten()
+            .filter(|_| !payload_prefixes.is_empty())
             .map(|value| convert_packed_alpha(value, requires_alpha_conversion))
         {
             let size = value_attribute("PointSize", "value")?;
@@ -1695,7 +1697,7 @@ impl<'source, 'ctx> PrimitiveIndex<'source, 'ctx> {
                 ctx.push_scoped_btree_group(
                     &mut storage,
                     &mut by_prefix,
-                    &key[..offset + 1],
+                    &key[..=offset],
                     || (ordinal, target),
                     0,
                     "FCStd GUI primitive index",
