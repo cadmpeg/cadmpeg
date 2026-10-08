@@ -36,13 +36,9 @@ pub(super) fn check(
     })?;
     let mut complete = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     let mut active = BorrowedIdentities::build(ctx, |_| Ok(()))?;
-    let mut roots = BorrowedIdentities::build(ctx, |_| Ok(()))?;
-    for identity in segments.identities("composite curve root scan")? {
-        roots.insert_unique(identity, ())?;
-    }
     let mut storage = ctx.reserve_scoped(0, "composite curve traversal")?;
     let mut ordered = Vec::new();
-    for identity in roots.identities("composite curve ordered root scan")? {
+    for identity in segments.identities("composite curve root scan")? {
         storage.with_storage(|| {
             ctx.push_vec(&mut ordered, identity, "composite curve ordered roots")
         })?;
@@ -53,6 +49,7 @@ pub(super) fn check(
         Ord::cmp,
         "sort composite curve roots",
     )?;
+    ctx.dedup_vec(&mut ordered, "deduplicate composite curve roots")?;
     let mut stack = Vec::new();
     for root in ordered {
         ctx.charge_work(1, "composite curve root visit")?;
