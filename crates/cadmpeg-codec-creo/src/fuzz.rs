@@ -44,10 +44,10 @@ pub fn scalar(
     data: &[u8],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let cache = ScalarCache::from_section_checked(ctx, data)?;
-    let mut offset = 0usize;
-    while offset < data.len() {
+    let mut offsets = 0usize..data.len();
+    while let Some(offset) = ctx.next_charged(&mut offsets, "creo fuzz scalar traversal")? {
         match decode_in_lane(data, offset, &cache) {
-            Some((_, next)) if next > offset => offset = next,
+            Some((_, next)) if next > offset => offsets.start = next,
             _ => break,
         }
     }
@@ -164,5 +164,12 @@ mod tests {
                 && refusal.limit == refusal.used
                 && refusal.additional > 0)
         );
+    }
+    #[test]
+    fn scalar_probe_admits_each_visited_value() {
+        let data = [0x00, 0x00];
+        crate::test_support::assert_work_boundaries(&["creo fuzz scalar traversal"], |ctx| {
+            super::scalar(ctx, &data)
+        });
     }
 }

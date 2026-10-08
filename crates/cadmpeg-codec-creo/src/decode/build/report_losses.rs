@@ -10,7 +10,6 @@ use crate::loss::CreoLossCode;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use super::coverage::torus_parameter_coverage;
 use cadmpeg_ir::report::loss::LossNote;
 
 pub(super) fn push_report_loss(
@@ -303,31 +302,14 @@ impl std::fmt::Display for CarrierRejectionEvidence<'_> {
     }
 }
 
-pub(super) fn coverage_count(coverage: &cadmpeg_ir::report::decode::Coverage, key: &str) -> usize {
-    coverage.get(key).copied().unwrap_or(0)
-}
-
-fn legacy_type_count(
+pub(super) fn coverage_count(
     ctx: &DecodeContext<'_>,
     coverage: &cadmpeg_ir::report::decode::Coverage,
-    prefix: &str,
-    type_code: u8,
-    suffix: &str,
+    key: &str,
 ) -> Result<usize, CodecError> {
     Ok(ctx
-        .find_map(
-            &**coverage,
-            |(key, count)| {
-                // The prefix and suffix are code constants and the type code
-                // fits in a byte, so the comparison and parse are bounded.
-                let stored_type = key
-                    .strip_prefix(prefix)
-                    .and_then(|rest| rest.strip_suffix(suffix))
-                    .and_then(|digits| digits.parse::<u8>().ok());
-                Ok((stored_type == Some(type_code)).then_some(*count))
-            },
-            "creo legacy type coverage search",
-        )?
+        .get_btree_map(&**coverage, key, "creo report coverage lookup")?
+        .copied()
         .unwrap_or(0))
 }
 
@@ -336,7 +318,8 @@ pub(super) fn push_legacy_value_losses(
     losses: &mut Vec<LossNote>,
     coverage: &cadmpeg_ir::report::decode::Coverage,
 ) -> Result<(), CodecError> {
-    let unresolved_legacy_reals = coverage_count(coverage, "unresolved_legacy_real_value_count");
+    let unresolved_legacy_reals =
+        coverage_count(ctx, coverage, "unresolved_legacy_real_value_count")?;
     if unresolved_legacy_reals != 0 {
         push_report_loss(
             ctx,
@@ -349,7 +332,7 @@ pub(super) fn push_legacy_value_losses(
         )?;
     }
     let unresolved_legacy_integers =
-        coverage_count(coverage, "unresolved_legacy_integer_value_count");
+        coverage_count(ctx, coverage, "unresolved_legacy_integer_value_count")?;
     if unresolved_legacy_integers != 0 {
         push_report_loss(
             ctx,
@@ -361,14 +344,19 @@ pub(super) fn push_legacy_value_losses(
             ),
         )?;
     }
-    for type_code in [3u8, 4] {
-        let unresolved = legacy_type_count(
-            ctx,
-            coverage,
-            "unresolved_legacy_type_",
-            type_code,
-            "_value_count",
-        )?;
+    for (type_code, unresolved_key, undecoded_key) in [
+        (
+            3u8,
+            crate::coverage::UNRESOLVED_LEGACY_TYPE_3_VALUE_COUNT,
+            crate::coverage::UNDECODED_LEGACY_TYPE_3_ENCODING_COUNT,
+        ),
+        (
+            4,
+            crate::coverage::UNRESOLVED_LEGACY_TYPE_4_VALUE_COUNT,
+            crate::coverage::UNDECODED_LEGACY_TYPE_4_ENCODING_COUNT,
+        ),
+    ] {
+        let unresolved = coverage_count(ctx, coverage, unresolved_key.as_str())?;
         if unresolved != 0 {
             push_report_loss(
                 ctx,
@@ -380,13 +368,7 @@ pub(super) fn push_legacy_value_losses(
                 ),
             )?;
         }
-        let undecoded = legacy_type_count(
-            ctx,
-            coverage,
-            "undecoded_legacy_type_",
-            type_code,
-            "_encoding_count",
-        )?;
+        let undecoded = coverage_count(ctx, coverage, undecoded_key.as_str())?;
         if undecoded != 0 {
             push_report_loss(
                 ctx,
@@ -399,14 +381,13 @@ pub(super) fn push_legacy_value_losses(
             )?;
         }
     }
-    for type_code in [5u8, 7, 9, 11] {
-        let unresolved = legacy_type_count(
-            ctx,
-            coverage,
-            "unresolved_legacy_type_",
-            type_code,
-            "_value_count",
-        )?;
+    for (type_code, unresolved_key) in [
+        (5u8, crate::coverage::UNRESOLVED_LEGACY_TYPE_5_VALUE_COUNT),
+        (7, crate::coverage::UNRESOLVED_LEGACY_TYPE_7_VALUE_COUNT),
+        (9, crate::coverage::UNRESOLVED_LEGACY_TYPE_9_VALUE_COUNT),
+        (11, crate::coverage::UNRESOLVED_LEGACY_TYPE_11_VALUE_COUNT),
+    ] {
+        let unresolved = coverage_count(ctx, coverage, unresolved_key.as_str())?;
         if unresolved != 0 {
             push_report_loss(
                 ctx,
@@ -419,7 +400,8 @@ pub(super) fn push_legacy_value_losses(
             )?;
         }
     }
-    let unresolved_legacy_type_6 = coverage_count(coverage, "unresolved_legacy_type_6_value_count");
+    let unresolved_legacy_type_6 =
+        coverage_count(ctx, coverage, "unresolved_legacy_type_6_value_count")?;
     if unresolved_legacy_type_6 != 0 {
         push_report_loss(
             ctx,
@@ -432,7 +414,7 @@ pub(super) fn push_legacy_value_losses(
         )?;
     }
     let incomplete_legacy_object_arrays =
-        coverage_count(coverage, "incomplete_legacy_object_array_count");
+        coverage_count(ctx, coverage, "incomplete_legacy_object_array_count")?;
     if incomplete_legacy_object_arrays != 0 {
         push_report_loss(
             ctx,
@@ -445,7 +427,7 @@ pub(super) fn push_legacy_value_losses(
         )?;
     }
     let unresolved_legacy_objects =
-        coverage_count(coverage, "unresolved_legacy_object_value_count");
+        coverage_count(ctx, coverage, "unresolved_legacy_object_value_count")?;
     if unresolved_legacy_objects != 0 {
         push_report_loss(
             ctx,
@@ -458,7 +440,7 @@ pub(super) fn push_legacy_value_losses(
         )?;
     }
     let incomplete_legacy_string_arrays =
-        coverage_count(coverage, "incomplete_legacy_string_array_count");
+        coverage_count(ctx, coverage, "incomplete_legacy_string_array_count")?;
     if incomplete_legacy_string_arrays != 0 {
         push_report_loss(
             ctx,
@@ -471,7 +453,7 @@ pub(super) fn push_legacy_value_losses(
         )?;
     }
     let unresolved_legacy_strings =
-        coverage_count(coverage, "unresolved_legacy_string_value_count");
+        coverage_count(ctx, coverage, "unresolved_legacy_string_value_count")?;
     if unresolved_legacy_strings != 0 {
         push_report_loss(
             ctx,
@@ -484,7 +466,7 @@ pub(super) fn push_legacy_value_losses(
         )?;
     }
     let undecoded_legacy_string_encodings =
-        coverage_count(coverage, "undecoded_legacy_string_encoding_count");
+        coverage_count(ctx, coverage, "undecoded_legacy_string_encoding_count")?;
     if undecoded_legacy_string_encodings != 0 {
         push_report_loss(
             ctx,
@@ -498,9 +480,10 @@ pub(super) fn push_legacy_value_losses(
     }
 
     let conflicting_triangle_strip_representations = coverage_count(
+        ctx,
         coverage,
         "conflicting_primitive_triangle_strip_representation_count",
-    );
+    )?;
     if conflicting_triangle_strip_representations != 0 {
         push_report_loss(
             ctx,
@@ -627,26 +610,33 @@ pub(super) fn push_carrier_transfer_notes(
     container_only: bool,
     placed_plane_count: usize,
 ) -> Result<(), CodecError> {
-    let topology_bound_plane_count =
-        coverage_count(coverage, "transferred_topology_bound_plane_surface_count");
+    let topology_bound_plane_count = coverage_count(
+        ctx,
+        coverage,
+        "transferred_topology_bound_plane_surface_count",
+    )?;
     let first_instance_prototype_surface_count = coverage_count(
+        ctx,
         coverage,
         "transferred_first_instance_prototype_surface_count",
-    );
+    )?;
     let paired_envelope_sphere_count =
-        coverage_count(coverage, "transferred_paired_envelope_sphere_count");
-    let positional_torus_count = coverage_count(coverage, "transferred_positional_torus_count");
+        coverage_count(ctx, coverage, "transferred_paired_envelope_sphere_count")?;
+    let positional_torus_count =
+        coverage_count(ctx, coverage, "transferred_positional_torus_count")?;
     let positional_cylinder_count =
-        coverage_count(coverage, "transferred_positional_cylinder_count");
-    let positional_cone_count = coverage_count(coverage, "transferred_positional_cone_count");
+        coverage_count(ctx, coverage, "transferred_positional_cylinder_count")?;
+    let positional_cone_count = coverage_count(ctx, coverage, "transferred_positional_cone_count")?;
     let positional_line_extrusion_plane_count = coverage_count(
+        ctx,
         coverage,
         "transferred_positional_line_extrusion_plane_count",
-    );
+    )?;
     let tabulated_cylinder_spline_extrusion_count = coverage_count(
+        ctx,
         coverage,
         "transferred_tabulated_cylinder_spline_extrusion_count",
-    );
+    )?;
     if !container_only && placed_plane_count != 0 {
         push_report_loss(
             ctx,
@@ -799,7 +789,8 @@ pub(super) fn push_carrier_transfer_notes(
         ))?;
     }
 
-    let topological_point_count = coverage_count(coverage, "transferred_topological_point_count");
+    let topological_point_count =
+        coverage_count(ctx, coverage, "transferred_topological_point_count")?;
     if !container_only && topological_point_count != 0 {
         push_report_loss(ctx, losses, CreoLossCode::CarrierTopologicalPoints, format_args!(
             "Transferred {topological_point_count} exact model-space point(s) for native topological vertex orbits from unique placed-carrier intersections or pcurve endpoint domains constrained by agreeing face maps and incident analytic edge carriers."
@@ -807,7 +798,7 @@ pub(super) fn push_carrier_transfer_notes(
     }
 
     let native_topological_edge_count =
-        coverage_count(coverage, "transferred_native_topological_edge_count");
+        coverage_count(ctx, coverage, "transferred_native_topological_edge_count")?;
     if !container_only && native_topological_edge_count != 0 {
         push_report_loss(ctx, losses, CreoLossCode::CarrierTopologicalEdges, format_args!(
             "Transferred {native_topological_edge_count} native topological edge(s) whose endpoint vertex orbits have exact model-space points."
@@ -815,15 +806,18 @@ pub(super) fn push_carrier_transfer_notes(
     }
 
     let analytic_pcurve_carrier_count =
-        coverage_count(coverage, "transferred_analytic_pcurve_carrier_count");
+        coverage_count(ctx, coverage, "transferred_analytic_pcurve_carrier_count")?;
     if !container_only && analytic_pcurve_carrier_count != 0 {
         push_report_loss(ctx, losses, CreoLossCode::CarrierAnalyticPcurves, format_args!(
             "Transferred {analytic_pcurve_carrier_count} exact analytic carrier(s) by mapping native linear pcurves through placed planar, cylindrical, conical, spherical, or toroidal face charts."
         ))?;
     }
 
-    let extrusion_plane_boundary_curve_count =
-        coverage_count(coverage, "transferred_extrusion_plane_boundary_curve_count");
+    let extrusion_plane_boundary_curve_count = coverage_count(
+        ctx,
+        coverage,
+        "transferred_extrusion_plane_boundary_curve_count",
+    )?;
     if !container_only && extrusion_plane_boundary_curve_count != 0 {
         push_report_loss(
             ctx,
@@ -838,9 +832,10 @@ pub(super) fn push_carrier_transfer_notes(
     }
 
     let extrusion_plane_section_generator_curve_count = coverage_count(
+        ctx,
         coverage,
         "transferred_extrusion_plane_section_generator_curve_count",
-    );
+    )?;
     if !container_only && extrusion_plane_section_generator_curve_count != 0 {
         push_report_loss(
             ctx,
@@ -855,9 +850,10 @@ pub(super) fn push_carrier_transfer_notes(
     }
 
     let shared_extrusion_generator_curve_count = coverage_count(
+        ctx,
         coverage,
         "transferred_shared_extrusion_generator_curve_count",
-    );
+    )?;
     if !container_only && shared_extrusion_generator_curve_count != 0 {
         push_report_loss(
             ctx,
@@ -871,28 +867,48 @@ pub(super) fn push_carrier_transfer_notes(
         )?;
     }
 
-    let torus_coverage = torus_parameter_coverage(ctx, scan)?;
-    if torus_coverage.radius_overrides != 0
-        || torus_coverage.replayed_minor_radii != 0
-        || torus_coverage.outline_extents != 0
-        || torus_coverage.five_coordinate_envelopes != 0
-        || torus_coverage.split_coordinate_envelopes != 0
+    let radius_overrides = coverage_count(
+        ctx,
+        coverage,
+        crate::coverage::DECODED_TORUS_RADIUS_OVERRIDE_COUNT.as_str(),
+    )?;
+    let replayed_minor_radii = coverage_count(
+        ctx,
+        coverage,
+        crate::coverage::DECODED_TYPE26_REPLAYED_MINOR_RADIUS_COUNT.as_str(),
+    )?;
+    let outline_extents = coverage_count(
+        ctx,
+        coverage,
+        crate::coverage::DECODED_TORUS_OUTLINE_EXTENT_COUNT.as_str(),
+    )?;
+    let five_coordinate_envelopes = coverage_count(
+        ctx,
+        coverage,
+        crate::coverage::DECODED_TYPE26_FIVE_COORDINATE_ENVELOPE_COUNT.as_str(),
+    )?;
+    let split_coordinate_envelopes = coverage_count(
+        ctx,
+        coverage,
+        crate::coverage::DECODED_TYPE26_SPLIT_COORDINATE_ENVELOPE_COUNT.as_str(),
+    )?;
+    if radius_overrides != 0
+        || replayed_minor_radii != 0
+        || outline_extents != 0
+        || five_coordinate_envelopes != 0
+        || split_coordinate_envelopes != 0
     {
         push_report_loss(
             ctx,
             losses,
             CreoLossCode::CarrierTorusParameterRetention,
             format_args!(
-                "Retained {} tagged type-26 radius override(s), {} prototype-minor-radius \
-             replay(s), {} terminal outline extent(s), {} five-coordinate envelope(s), and \
-             {} split-coordinate envelope(s). These row-local fields remain byte-exact native \
-             data. Placement-complete paired sphere envelopes additionally transfer as \
-             analytic carriers.",
-                torus_coverage.radius_overrides,
-                torus_coverage.replayed_minor_radii,
-                torus_coverage.outline_extents,
-                torus_coverage.five_coordinate_envelopes,
-                torus_coverage.split_coordinate_envelopes,
+                "Retained {radius_overrides} tagged type-26 radius override(s), \
+                 {replayed_minor_radii} prototype-minor-radius replay(s), {outline_extents} terminal \
+                 outline extent(s), {five_coordinate_envelopes} five-coordinate envelope(s), and \
+                 {split_coordinate_envelopes} split-coordinate envelope(s). These row-local fields \
+                 remain byte-exact native data. Placement-complete paired sphere envelopes \
+                 additionally transfer as analytic carriers.",
             ),
         )?;
     }
@@ -1021,20 +1037,17 @@ pub(super) fn push_structural_layer_notes(
                 return Ok::<_, CodecError>(total);
             }
             let unresolved = if record.prohibited_constructs.is_empty() {
-                let mut unresolved_solve = false;
-                for block in ctx.admit_iter(
+                let unresolved_solve = ctx.any_by(
                     &record.solve_blocks,
+                    |block| {
+                        ctx.any_by(
+                            &block.unknowns,
+                            |unknown| Ok(unknown.solution.is_none()),
+                            "creo unresolved solve unknown loss traversal",
+                        )
+                    },
                     "creo unresolved solve block loss traversal",
-                )? {
-                    if ctx.any_by(
-                        &block.unknowns,
-                        |unknown| Ok(unknown.solution.is_none()),
-                        "creo unresolved solve unknown loss traversal",
-                    )? {
-                        unresolved_solve = true;
-                        break;
-                    }
-                }
+                )?;
                 unresolved_solve || record.unresolved_solve_control
             } else {
                 true
@@ -1093,6 +1106,43 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         run(&ctx).expect_err("report allocation refused")
+    }
+
+    #[test]
+    fn carrier_parameter_loss_uses_source_coverage() {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
+            for (key, count) in [
+                (crate::coverage::DECODED_TORUS_RADIUS_OVERRIDE_COUNT, 1),
+                (
+                    crate::coverage::DECODED_TYPE26_REPLAYED_MINOR_RADIUS_COUNT,
+                    2,
+                ),
+                (crate::coverage::DECODED_TORUS_OUTLINE_EXTENT_COUNT, 3),
+                (
+                    crate::coverage::DECODED_TYPE26_FIVE_COORDINATE_ENVELOPE_COUNT,
+                    4,
+                ),
+                (
+                    crate::coverage::DECODED_TYPE26_SPLIT_COORDINATE_ENVELOPE_COUNT,
+                    5,
+                ),
+            ] {
+                coverage.record(ctx, key, count).expect("source coverage");
+            }
+            let mut losses = Vec::new();
+            super::push_carrier_transfer_notes(
+                ctx,
+                &mut losses,
+                &crate::test_support::empty_container_scan(),
+                &coverage,
+                false,
+                0,
+            )
+            .expect("carrier loss");
+            assert_eq!(losses.len(), 1);
+            assert!(losses[0].message.starts_with("Retained 1 tagged type-26 radius override(s), 2 prototype-minor-radius replay(s), 3 terminal outline extent(s), 4 five-coordinate envelope(s), and 5 split-coordinate envelope(s)."));
+        });
     }
 
     #[test]

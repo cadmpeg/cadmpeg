@@ -30,12 +30,11 @@ pub(super) fn preserve_passthrough_sections(
     annotations: &mut AnnotationBuilder,
 ) -> Result<Vec<UnknownRecord>, CodecError> {
     let mut unknowns = Vec::new();
-    for section in ctx
-        .admit_iter(&scan.framing.sections, "creo passthrough sections")?
-        .filter(|section| {
-            section.role() == SectionRole::PsbGeometry || section.role() == SectionRole::Thumbnail
-        })
-    {
+    let mut sections = scan.framing.sections.iter();
+    while let Some(section) = ctx.next_charged(&mut sections, "creo passthrough sections")? {
+        if section.role() != SectionRole::PsbGeometry && section.role() != SectionRole::Thumbnail {
+            continue;
+        }
         let Some(section_bytes) = container::section_region(&scan.framing.data, section) else {
             return Err(CodecError::Malformed(ctx.format_retained(
                 format_args!(
@@ -392,14 +391,14 @@ mod tests {
             .expect("section extent")
             .section,
         );
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Each feature annotation owns handles, provenance, and exactness nodes.
-        policy.limits.max_collection_items = 3;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let error =
-            preserve_passthrough_sections(&ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())
-                .expect_err("fourth collection item is the unknown record");
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "creo passthrough unknown records",
+            |ctx| {
+                preserve_passthrough_sections(ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.operation == "creo passthrough unknown records")
@@ -450,5 +449,50 @@ mod tests {
             Ok::<(), cadmpeg_core::CodecError>(())
         })
         .expect("service error text admitted");
+    }
+
+    #[test]
+    fn passthrough_bounds_refusal_admits_only_the_first_visited_section() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        let section = crate::container::Section::scan_for_test(
+            "ND:0:VisibGeom:0".to_owned(),
+            32,
+            48,
+            None,
+            &[0u8; 48],
+        )
+        .expect("section extent")
+        .section;
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.framing.data = vec![0u8; 16].into();
+        scan.framing.sections = vec![section.clone(), section];
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo passthrough sections",
+            |ctx| match preserve_passthrough_sections(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+            ) {
+                Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+                result => Ok(result),
+            },
+        );
+        assert!(
+            matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo passthrough sections" && resource.additional == 1)
+        );
+        crate::decode::with_test_decode_ctx(|ctx| {
+            let error = preserve_passthrough_sections(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+            )
+            .expect_err("the first section is outside the source extent");
+            assert!(
+                matches!(error, CodecError::Malformed(message) if message.contains("VisibGeom"))
+            );
+        });
     }
 }
