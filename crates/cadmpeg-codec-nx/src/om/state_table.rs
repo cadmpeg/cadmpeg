@@ -77,8 +77,8 @@ impl<'a> OperationStateStatusTable<'a> {
     {
         let mut offset = self.offset;
         let (initial, last) = self.entries.into_parts();
-        Ok(ctx
-            .admit_iter(initial, "NX status table entry projection")?
+        Ok(initial
+            .into_iter()
             .chain(std::iter::once(last))
             .map(move |entry| {
                 let start = offset;
