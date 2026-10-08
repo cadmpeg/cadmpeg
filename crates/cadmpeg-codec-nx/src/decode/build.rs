@@ -1716,9 +1716,13 @@ fn map_stream_carriers<'ctx>(
                         }),
                         None => None,
                     };
-                if ctx.get_btree_map(curves_by_xmt, &trim.xmt, "nx trimmed curve index")?
-                    != Some(basis)
-                {
+                let same = match ctx.get_btree_map(
+                    curves_by_xmt, &trim.xmt, "nx trimmed curve index",
+                )? {
+                    Some(current) => ctx.equal(current, basis, "nx trimmed curve identity comparison")?,
+                    None => false,
+                };
+                if !same {
                     let basis = storage.with_storage(|| {
                         basis.try_clone_for_decode(ctx, "nx trimmed curve identity")
                     })?;
@@ -1749,9 +1753,13 @@ fn map_stream_carriers<'ctx>(
             if let Some(pcurve) =
                 ctx.get_btree_map(pcurves_by_xmt, &trim.state.basis(), "nx pcurve node index")?
             {
-                if ctx.get_btree_map(pcurves_by_xmt, &trim.xmt, "nx trimmed pcurve index")?
-                    != Some(pcurve)
-                {
+                let same = match ctx.get_btree_map(
+                    pcurves_by_xmt, &trim.xmt, "nx trimmed pcurve index",
+                )? {
+                    Some(current) => ctx.equal(current, pcurve, "nx trimmed pcurve identity comparison")?,
+                    None => false,
+                };
+                if !same {
                     let pcurve = storage.with_storage(|| {
                         pcurve.try_clone_for_decode(ctx, "nx trimmed pcurve identity")
                     })?;
@@ -1769,12 +1777,15 @@ fn map_stream_carriers<'ctx>(
                     &trim.state.basis(),
                     "nx pcurve supports",
                 )? {
-                    if ctx.get_btree_map(
+                    let same = match ctx.get_btree_map(
                         pcurve_supports_by_xmt,
                         &trim.xmt,
                         "nx trimmed pcurve supports",
-                    )? != Some(support)
-                    {
+                    )? {
+                        Some(current) => ctx.equal(current, support, "nx trimmed pcurve support comparison")?,
+                        None => false,
+                    };
+                    if !same {
                         let support = storage.with_storage(|| {
                             support.try_clone_for_decode(ctx, "nx trimmed pcurve support")
                         })?;
@@ -1883,12 +1894,15 @@ fn map_stream_carriers<'ctx>(
                         }
                     }
                 }
-                if ctx.get_btree_map(
+                let same = match ctx.get_btree_map(
                     pcurves_by_xmt,
                     &surface_curve.xmt,
                     "nx surface pcurve index",
-                )? != Some(pcurve_ref)
-                {
+                )? {
+                    Some(current) => ctx.equal(current, pcurve_ref, "nx surface pcurve identity comparison")?,
+                    None => false,
+                };
+                if !same {
                     let pcurve = storage.with_storage(|| {
                         pcurve_ref.try_clone_for_decode(ctx, "nx surface pcurve identity")
                     })?;
@@ -1906,12 +1920,15 @@ fn map_stream_carriers<'ctx>(
                     &surface_curve.state.surface(),
                     "nx surface node index",
                 )? {
-                    if ctx.get_btree_map(
+                    let same = match ctx.get_btree_map(
                         pcurve_supports_by_xmt,
                         &surface_curve.xmt,
                         "nx surface pcurve supports",
-                    )? != Some(support)
-                    {
+                    )? {
+                        Some(current) => ctx.equal(current, support, "nx surface pcurve support comparison")?,
+                        None => false,
+                    };
+                    if !same {
                         storage.with_storage(|| {
                             let support =
                                 support.try_clone_for_decode(ctx, "nx surface pcurve support")?;
@@ -1929,17 +1946,25 @@ fn map_stream_carriers<'ctx>(
                 if let Some(original) =
                     ctx.get_btree_map(curves_by_xmt, &original, "nx curve node index")?
                 {
-                    let original = storage.with_storage(|| {
-                        original.try_clone_for_decode(ctx, "nx surface curve identity")
-                    })?;
-                    storage.with_storage(|| {
-                        ctx.insert_btree_map(
-                            curves_by_xmt,
-                            surface_curve.xmt,
-                            original,
-                            "nx surface curve index",
-                        )
-                    })?;
+                    let same = match ctx.get_btree_map(
+                        curves_by_xmt, &surface_curve.xmt, "nx surface curve index",
+                    )? {
+                        Some(current) => ctx.equal(current, original, "nx surface curve identity comparison")?,
+                        None => false,
+                    };
+                    if !same {
+                        let original = storage.with_storage(|| {
+                            original.try_clone_for_decode(ctx, "nx surface curve identity")
+                        })?;
+                        storage.with_storage(|| {
+                            ctx.insert_btree_map(
+                                curves_by_xmt,
+                                surface_curve.xmt,
+                                original,
+                                "nx surface curve index",
+                            )
+                        })?;
+                    }
                 }
             }
         }

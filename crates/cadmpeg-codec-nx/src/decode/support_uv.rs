@@ -426,7 +426,6 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
             lane_matches_surface(surfaces[1], 1)?,
         ],
     ];
-    let mut assigned = [None, None];
     let mut assigned_lanes = [None, None];
     for lane in 0..2 {
         let support_matches = [matches[0][lane], matches[1][lane]];
@@ -437,21 +436,9 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
         else {
             continue;
         };
-        if assigned[support].is_some() {
+        if assigned_lanes[support].is_some() {
             return Ok(None);
         }
-        assigned[support] = lanes[lane]
-            .as_ref()
-            .map(|lane| {
-                crate::intersection::SupportUvLane::from_checked(
-                    ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
-                    lane.as_slice().len(),
-                )
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("NX copied support-UV lane count")
-                })
-            })
-            .transpose()?;
         assigned_lanes[support] = Some(lane);
     }
     let distinct_surfaces = !ctx.equal(
@@ -459,8 +446,8 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
         surfaces[1].as_str(),
         "nx EXT11 support identity comparison",
     )?;
-    if distinct_surfaces && assigned.iter().filter(|lane| lane.is_some()).count() == 1 {
-        let Some(assigned_support) = assigned.iter().position(Option::is_some) else {
+    if distinct_surfaces && assigned_lanes.iter().filter(|lane| lane.is_some()).count() == 1 {
+        let Some(assigned_support) = assigned_lanes.iter().position(Option::is_some) else {
             return Ok(None);
         };
         let Some(assigned_lane) = assigned_lanes[assigned_support] else {
@@ -469,19 +456,23 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
         let other_support = 1 - assigned_support;
         let other_lane = 1 - assigned_lane;
         if lane_matches_surface(surfaces[other_support], other_lane)? {
-            assigned[other_support] = lanes[other_lane]
-                .as_ref()
-                .map(|lane| {
-                    crate::intersection::SupportUvLane::from_checked(
-                        ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
-                        lane.as_slice().len(),
-                    )
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("NX copied support-UV lane count")
-                    })
-                })
-                .transpose()?;
+            assigned_lanes[other_support] = Some(other_lane);
         }
+    }
+    let mut assigned = [None, None];
+    for support in 0..2 {
+        let Some(lane) = assigned_lanes[support].and_then(|lane| lanes[lane].as_ref()) else {
+            continue;
+        };
+        assigned[support] = Some(
+            crate::intersection::SupportUvLane::from_checked(
+                ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+                lane.as_slice().len(),
+            )
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("NX copied support-UV lane count")
+            })?,
+        );
     }
     Ok(assigned.iter().any(Option::is_some).then_some(assigned))
 }
@@ -3368,6 +3359,91 @@ mod tests {
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::Point3;
+
+    fn ext11_assignment(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        duplicate: bool,
+    ) -> Result<Option<crate::intersection::SupportUv>, cadmpeg_core::CodecError> {
+        let plane = SurfaceId::mint("nx:test:surface#plane").unwrap();
+        let unknown = SurfaceId::mint("nx:test:surface#unknown").unwrap();
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: plane.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                ).unwrap(),
+            )),
+            source_object: None,
+        });
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: unknown.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        let lane = || SupportUvLane::new(vec![[0.0, 0.0], [0.125, 0.0]], 2).unwrap();
+        let lanes = [Some(lane()), duplicate.then(lane)];
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(
+            &ir, cadmpeg_ir::index::StandardIndex,
+        );
+        let budget = GeometryWorkBudget::from_context(
+            ctx, cadmpeg_core::decode::u64_from_index(super::super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK),
+        );
+        super::assign_ext11_support_uv_to_surfaces_with_index(
+            ctx, &index, [&plane, &unknown],
+            &[Point3::new(0.0, 0.0, 0.0), Point3::new(125.0, 0.0, 0.0)],
+            0.0, &lanes, &budget,
+        )
+    }
+
+    #[test]
+    fn ext11_duplicate_support_assignment_rejects_without_an_owning_copy() {
+        crate::test_support::with_decode_context_over(&[], |policy| {
+            policy.limits.max_retained_bytes = 0;
+        }, |ctx| {
+            assert!(ext11_assignment(ctx, true).unwrap().is_none());
+            assert!(ctx.resource_refusal().is_none());
+        });
+    }
+
+    #[test]
+    fn ext11_unique_support_assignment_copies_only_the_accepted_lane() {
+        let bytes = cadmpeg_core::decode::u64_from_index(
+            2 * std::mem::size_of::<cadmpeg_ir::units::FiniteVector<2>>(),
+        );
+        crate::test_support::with_decode_context_over(&[], |policy| {
+            policy.limits.max_retained_bytes = bytes;
+        }, |ctx| {
+            let [Some(lane), None] = ext11_assignment(ctx, false).unwrap().unwrap() else {
+                panic!("only the planar support has a matching lane");
+            };
+            assert_eq!(lane.as_slice(), &[
+                cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]).unwrap(),
+                cadmpeg_ir::units::FiniteVector::new([0.125, 0.0]).unwrap(),
+            ]);
+            assert!(ctx.resource_refusal().is_none());
+        });
+    }
+
+    #[test]
+    fn ext11_accepted_lane_copy_refuses_one_byte_below_its_actual_storage() {
+        let bytes = cadmpeg_core::decode::u64_from_index(
+            2 * std::mem::size_of::<cadmpeg_ir::units::FiniteVector<2>>(),
+        );
+        crate::test_support::with_decode_context_over(&[], |policy| {
+            policy.limits.max_retained_bytes = bytes - 1;
+        }, |ctx| {
+            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = ext11_assignment(ctx, false) else {
+                panic!("the accepted lane needs its two finite-vector slots");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.operation, "NX solved support-UV lane copy");
+            assert_eq!((limit.used, limit.additional), (0, bytes));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
 
     #[test]
     fn serialized_support_seed_selection_preserves_surface_walk_refusals() {
