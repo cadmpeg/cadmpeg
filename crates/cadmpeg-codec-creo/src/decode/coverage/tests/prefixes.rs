@@ -173,9 +173,14 @@ fn native_constraint_kind_prefix_refuses_work() {
 
 #[test]
 fn curve_coverage_admits_model_traversal_and_uses_scoped_lookup_storage() {
-    let curve = curve(CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }));
+    let curve = curve(CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+        record: None,
+    }));
     crate::test_support::assert_work_boundaries(
-        &["creo curve coverage traversal", "creo coverage identity prefix"],
+        &[
+            "creo curve coverage traversal",
+            "creo coverage identity prefix",
+        ],
         |ctx| curve_transfer_coverage(ctx, &[], std::slice::from_ref(&curve)),
     );
     let error = crate::test_support::last_refusal_at(
@@ -190,9 +195,14 @@ fn curve_coverage_admits_model_traversal_and_uses_scoped_lookup_storage() {
 
 #[test]
 fn surface_coverage_admits_model_traversal_and_uses_scoped_lookup_storage() {
-    let surface = surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }));
+    let surface = surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+        record: None,
+    }));
     crate::test_support::assert_work_boundaries(
-        &["creo surface coverage traversal", "creo coverage identity prefix"],
+        &[
+            "creo surface coverage traversal",
+            "creo coverage identity prefix",
+        ],
         |ctx| surface_transfer_coverage(ctx, &[], std::slice::from_ref(&surface), &[]),
     );
     let error = crate::test_support::last_refusal_at(
@@ -210,8 +220,11 @@ fn surface_coverage_shares_extrusion_evidence_across_equal_neutral_ids() {
     use cadmpeg_ir::geometry::{ProceduralSurface, ProceduralSurfaceDefinition};
     use cadmpeg_ir::ids::ProceduralSurfaceId;
     let plane = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-        Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0),
-    ).expect("plane");
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .expect("plane");
     let known = surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)));
     let construction = ProceduralSurfaceId::mint("test:model:surface#extrusion").expect("identity");
     let mut alias = surface(SurfaceGeometry::Procedural {
@@ -219,20 +232,34 @@ fn surface_coverage_shares_extrusion_evidence_across_equal_neutral_ids() {
         cache: None,
     });
     alias.source_object = None;
-    let procedural = ProceduralSurface::new(construction,
+    let procedural = ProceduralSurface::new(
+        construction,
         ProceduralSurfaceDefinition::Extrusion(
             cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                CurveId::mint("test:model:entity#directrix").expect("identity"), None,
-                Vector3::new(0.0, 0.0, 1.0), None,
+                CurveId::mint("test:model:entity#directrix").expect("identity"),
+                None,
+                Vector3::new(0.0, 0.0, 1.0),
+                None,
                 cadmpeg_ir::geometry::CacheContract::from_form(None),
-            ).expect("extrusion"),
-        ), None,
+            )
+            .expect("extrusion"),
+        ),
+        None,
     );
     let kind = crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear);
-    let row = crate::surface::SurfaceRow { id: 41, kind, feature_id: 0, reversed: false, boundary_type: crate::surface::BoundaryType::Code00, next_surface: 0, offset: 0 };
+    let row = crate::surface::SurfaceRow {
+        id: 41,
+        kind,
+        feature_id: 0,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    };
     let result = crate::decode::with_test_decode_ctx(|ctx| {
         surface_transfer_coverage(ctx, &[row], &[known, alias], &[procedural])
-    }).expect("coverage");
+    })
+    .expect("coverage");
     assert_eq!(result.family(kind), (1, 1));
     assert_eq!(result.transferred_rows(), 1);
 }

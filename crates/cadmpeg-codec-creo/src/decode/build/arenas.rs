@@ -136,7 +136,8 @@ pub(super) fn emit_geometry_arenas(
 ) -> Result<(), CodecError> {
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let surface_rows = record_storage.with_storage(|| surface_row_records(ctx, scan, &scan.surfaces.rows, "visibgeom"))?;
+        let surface_rows = record_storage
+            .with_storage(|| surface_row_records(ctx, scan, &scan.surfaces.rows, "visibgeom"))?;
         emit_uniform(
             ctx,
             ir,
@@ -154,7 +155,9 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let nonvisible_surface_rows = record_storage.with_storage(|| surface_row_records(ctx, scan, &scan.surfaces.nonvisible_rows, "novisgeom"))?;
+        let nonvisible_surface_rows = record_storage.with_storage(|| {
+            surface_row_records(ctx, scan, &scan.surfaces.nonvisible_rows, "novisgeom")
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -172,12 +175,14 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let cross_section_surface_rows = record_storage.with_storage(|| surface_row_records(
-            ctx,
-            scan,
-            &scan.surfaces.cross_section_rows,
-            "cross_section_geometry",
-        ))?;
+        let cross_section_surface_rows = record_storage.with_storage(|| {
+            surface_row_records(
+                ctx,
+                scan,
+                &scan.surfaces.cross_section_rows,
+                "cross_section_geometry",
+            )
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -195,7 +200,9 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let surface_contours = record_storage.with_storage(|| surface_contour_records(ctx, scan, &scan.surfaces.contours, "visibgeom"))?;
+        let surface_contours = record_storage.with_storage(|| {
+            surface_contour_records(ctx, scan, &scan.surfaces.contours, "visibgeom")
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -213,7 +220,9 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let nonvisible_surface_contours = record_storage.with_storage(|| surface_contour_records(ctx, scan, &scan.surfaces.nonvisible_contours, "novisgeom"))?;
+        let nonvisible_surface_contours = record_storage.with_storage(|| {
+            surface_contour_records(ctx, scan, &scan.surfaces.nonvisible_contours, "novisgeom")
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -231,12 +240,14 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let cross_section_surface_contours = record_storage.with_storage(|| surface_contour_records(
-            ctx,
-            scan,
-            &scan.surfaces.cross_section_contours,
-            "cross_section_geometry",
-        ))?;
+        let cross_section_surface_contours = record_storage.with_storage(|| {
+            surface_contour_records(
+                ctx,
+                scan,
+                &scan.surfaces.cross_section_contours,
+                "cross_section_geometry",
+            )
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -254,7 +265,9 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let surface_prototypes = record_storage.with_storage(|| surface_prototype_records(ctx, scan, &scan.surfaces.prototype_records, "visibgeom"))?;
+        let surface_prototypes = record_storage.with_storage(|| {
+            surface_prototype_records(ctx, scan, &scan.surfaces.prototype_records, "visibgeom")
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -272,12 +285,14 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let nonvisible_surface_prototypes = record_storage.with_storage(|| surface_prototype_records(
-            ctx,
-            scan,
-            &scan.surfaces.nonvisible_prototype_records,
-            "novisgeom",
-        ))?;
+        let nonvisible_surface_prototypes = record_storage.with_storage(|| {
+            surface_prototype_records(
+                ctx,
+                scan,
+                &scan.surfaces.nonvisible_prototype_records,
+                "novisgeom",
+            )
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -295,7 +310,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let tabulated_cylinder_curve_replays = record_storage.with_storage(|| tabulated_cylinder_curve_replay_records(ctx, scan))?;
+        let tabulated_cylinder_curve_replays =
+            record_storage.with_storage(|| tabulated_cylinder_curve_replay_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -313,7 +329,9 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let curve_parameters = record_storage.with_storage(|| curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom"))?;
+        let curve_parameters = record_storage.with_storage(|| {
+            curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom")
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -331,7 +349,9 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let nonvisible_curve_parameters = record_storage.with_storage(|| curve_parameter_records(ctx, scan, &scan.curves.nonvisible_parameters, "novisgeom"))?;
+        let nonvisible_curve_parameters = record_storage.with_storage(|| {
+            curve_parameter_records(ctx, scan, &scan.curves.nonvisible_parameters, "novisgeom")
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -349,7 +369,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let fc_curve_coordinates = record_storage.with_storage(|| fc_curve_coordinate_records(ctx, scan))?;
+        let fc_curve_coordinates =
+            record_storage.with_storage(|| fc_curve_coordinate_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -372,7 +393,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let fc05_cylinder_cap_pairs = record_storage.with_storage(|| fc05_cylinder_cap_pair_records(ctx, scan))?;
+        let fc05_cylinder_cap_pairs =
+            record_storage.with_storage(|| fc05_cylinder_cap_pair_records(ctx, scan))?;
         store_arena(
             ctx,
             ir,
@@ -382,12 +404,14 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let prototype_pcurves = record_storage.with_storage(|| prototype_pcurve_records(ctx, scan))?;
+        let prototype_pcurves =
+            record_storage.with_storage(|| prototype_pcurve_records(ctx, scan))?;
         store_arena(ctx, ir, CreoArena::PrototypePcurves, &prototype_pcurves)?;
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let curve_prototype_topology = record_storage.with_storage(|| curve_prototype_topology_records(ctx, scan))?;
+        let curve_prototype_topology =
+            record_storage.with_storage(|| curve_prototype_topology_records(ctx, scan))?;
         store_arena(
             ctx,
             ir,
@@ -397,7 +421,9 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let curve_prototypes = record_storage.with_storage(|| curve_prototype_records(ctx, scan, &scan.curves.prototypes, "creo:curve:prototype"))?;
+        let curve_prototypes = record_storage.with_storage(|| {
+            curve_prototype_records(ctx, scan, &scan.curves.prototypes, "creo:curve:prototype")
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -415,12 +441,14 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let nonvisible_curve_prototypes = record_storage.with_storage(|| curve_prototype_records(
-            ctx,
-            scan,
-            &scan.curves.nonvisible_prototypes,
-            "creo:novisgeom:curve_prototype",
-        ))?;
+        let nonvisible_curve_prototypes = record_storage.with_storage(|| {
+            curve_prototype_records(
+                ctx,
+                scan,
+                &scan.curves.nonvisible_prototypes,
+                "creo:novisgeom:curve_prototype",
+            )
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -438,12 +466,14 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let cross_section_curve_prototypes = record_storage.with_storage(|| curve_prototype_records(
-            ctx,
-            scan,
-            &scan.curves.cross_section_prototypes,
-            "creo:cross_section_geometry:curve_prototype",
-        ))?;
+        let cross_section_curve_prototypes = record_storage.with_storage(|| {
+            curve_prototype_records(
+                ctx,
+                scan,
+                &scan.curves.cross_section_prototypes,
+                "creo:cross_section_geometry:curve_prototype",
+            )
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -461,7 +491,9 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let curve_topology_rows = record_storage.with_storage(|| curve_topology_row_records(ctx, scan, &scan.curves.topology_rows, "visibgeom"))?;
+        let curve_topology_rows = record_storage.with_storage(|| {
+            curve_topology_row_records(ctx, scan, &scan.curves.topology_rows, "visibgeom")
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -479,12 +511,14 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let nonvisible_curve_topology_rows = record_storage.with_storage(|| curve_topology_row_records(
-            ctx,
-            scan,
-            &scan.curves.nonvisible_topology_rows,
-            "novisgeom",
-        ))?;
+        let nonvisible_curve_topology_rows = record_storage.with_storage(|| {
+            curve_topology_row_records(
+                ctx,
+                scan,
+                &scan.curves.nonvisible_topology_rows,
+                "novisgeom",
+            )
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -502,7 +536,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let cross_section_curve_rows = record_storage.with_storage(|| cross_section_curve_row_records(ctx, scan))?;
+        let cross_section_curve_rows =
+            record_storage.with_storage(|| cross_section_curve_row_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -520,12 +555,14 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let loop_array_frames = record_storage.with_storage(|| loop_array_frame_records(ctx, scan))?;
+        let loop_array_frames =
+            record_storage.with_storage(|| loop_array_frame_records(ctx, scan))?;
         store_arena(ctx, ir, CreoArena::LoopArrayFrames, &loop_array_frames)?;
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let loop_array_records = record_storage.with_storage(|| loop_array_record_records(ctx, scan))?;
+        let loop_array_records =
+            record_storage.with_storage(|| loop_array_record_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -566,7 +603,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let topological_vertices = record_storage.with_storage(|| topological_vertex_records(ctx, scan))?;
+        let topological_vertices =
+            record_storage.with_storage(|| topological_vertex_records(ctx, scan))?;
         store_arena(
             ctx,
             ir,
@@ -576,7 +614,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let half_edge_vertex_incidence = record_storage.with_storage(|| half_edge_vertex_incidence_records(ctx, scan))?;
+        let half_edge_vertex_incidence =
+            record_storage.with_storage(|| half_edge_vertex_incidence_records(ctx, scan))?;
         store_arena(
             ctx,
             ir,
@@ -591,7 +630,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let face_admission_rejections = record_storage.with_storage(|| brep_diagnostics.face_admission_rejection_records(ctx))?;
+        let face_admission_rejections = record_storage
+            .with_storage(|| brep_diagnostics.face_admission_rejection_records(ctx))?;
         store_arena(
             ctx,
             ir,
@@ -601,13 +641,15 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let surface_parameters = record_storage.with_storage(|| surface_parameter_records(
-            ctx,
-            scan,
-            &scan.surfaces.rows,
-            &scan.surfaces.parameters,
-            "visibgeom",
-        ))?;
+        let surface_parameters = record_storage.with_storage(|| {
+            surface_parameter_records(
+                ctx,
+                scan,
+                &scan.surfaces.rows,
+                &scan.surfaces.parameters,
+                "visibgeom",
+            )
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -625,13 +667,15 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let nonvisible_surface_parameters = record_storage.with_storage(|| surface_parameter_records(
-            ctx,
-            scan,
-            &scan.surfaces.nonvisible_rows,
-            &scan.surfaces.nonvisible_parameters,
-            "novisgeom",
-        ))?;
+        let nonvisible_surface_parameters = record_storage.with_storage(|| {
+            surface_parameter_records(
+                ctx,
+                scan,
+                &scan.surfaces.nonvisible_rows,
+                &scan.surfaces.nonvisible_parameters,
+                "novisgeom",
+            )
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -649,13 +693,15 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let cross_section_surface_parameters = record_storage.with_storage(|| surface_parameter_records(
-            ctx,
-            scan,
-            &scan.surfaces.cross_section_rows,
-            &scan.surfaces.cross_section_parameters,
-            "cross_section_geometry",
-        ))?;
+        let cross_section_surface_parameters = record_storage.with_storage(|| {
+            surface_parameter_records(
+                ctx,
+                scan,
+                &scan.surfaces.cross_section_rows,
+                &scan.surfaces.cross_section_parameters,
+                "cross_section_geometry",
+            )
+        })?;
         emit_uniform(
             ctx,
             ir,
@@ -673,22 +719,26 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let plane_local_systems = record_storage.with_storage(|| plane_local_system_records(
-            ctx,
-            scan,
-            &scan.planes.local_systems,
-            "creo:surface:plane_local_system",
-        ))?;
+        let plane_local_systems = record_storage.with_storage(|| {
+            plane_local_system_records(
+                ctx,
+                scan,
+                &scan.planes.local_systems,
+                "creo:surface:plane_local_system",
+            )
+        })?;
         store_arena(ctx, ir, CreoArena::PlaneLocalSystems, &plane_local_systems)?;
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let cross_section_plane_local_systems = record_storage.with_storage(|| plane_local_system_records(
-            ctx,
-            scan,
-            &scan.planes.cross_section_local_systems,
-            "creo:cross_section_geometry:plane_local_system",
-        ))?;
+        let cross_section_plane_local_systems = record_storage.with_storage(|| {
+            plane_local_system_records(
+                ctx,
+                scan,
+                &scan.planes.cross_section_local_systems,
+                "creo:cross_section_geometry:plane_local_system",
+            )
+        })?;
         store_arena(
             ctx,
             ir,
@@ -698,22 +748,26 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let plane_envelopes = record_storage.with_storage(|| plane_envelope_records(
-            ctx,
-            scan,
-            &scan.planes.envelopes,
-            "creo:surface:plane_envelope",
-        ))?;
+        let plane_envelopes = record_storage.with_storage(|| {
+            plane_envelope_records(
+                ctx,
+                scan,
+                &scan.planes.envelopes,
+                "creo:surface:plane_envelope",
+            )
+        })?;
         store_arena(ctx, ir, CreoArena::PlaneEnvelopes, &plane_envelopes)?;
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let cross_section_plane_envelopes = record_storage.with_storage(|| plane_envelope_records(
-            ctx,
-            scan,
-            &scan.planes.cross_section_envelopes,
-            "creo:cross_section_geometry:plane_envelope",
-        ))?;
+        let cross_section_plane_envelopes = record_storage.with_storage(|| {
+            plane_envelope_records(
+                ctx,
+                scan,
+                &scan.planes.cross_section_envelopes,
+                "creo:cross_section_geometry:plane_envelope",
+            )
+        })?;
         store_arena(
             ctx,
             ir,
@@ -723,22 +777,26 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let outline_planes = record_storage.with_storage(|| outline_plane_records(
-            ctx,
-            scan,
-            &scan.planes.outlines,
-            "creo:surface:outline_plane",
-        ))?;
+        let outline_planes = record_storage.with_storage(|| {
+            outline_plane_records(
+                ctx,
+                scan,
+                &scan.planes.outlines,
+                "creo:surface:outline_plane",
+            )
+        })?;
         store_arena(ctx, ir, CreoArena::OutlinePlanes, &outline_planes)?;
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let positional_frame_planes = record_storage.with_storage(|| outline_plane_records(
-            ctx,
-            scan,
-            &scan.planes.positional_frames,
-            "creo:surface:positional_frame_plane",
-        ))?;
+        let positional_frame_planes = record_storage.with_storage(|| {
+            outline_plane_records(
+                ctx,
+                scan,
+                &scan.planes.positional_frames,
+                "creo:surface:positional_frame_plane",
+            )
+        })?;
         store_arena(
             ctx,
             ir,
@@ -748,12 +806,14 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let cross_section_outline_planes = record_storage.with_storage(|| outline_plane_records(
-            ctx,
-            scan,
-            &scan.planes.cross_section_outlines,
-            "creo:cross_section_geometry:outline_plane",
-        ))?;
+        let cross_section_outline_planes = record_storage.with_storage(|| {
+            outline_plane_records(
+                ctx,
+                scan,
+                &scan.planes.cross_section_outlines,
+                "creo:cross_section_geometry:outline_plane",
+            )
+        })?;
         store_arena(
             ctx,
             ir,
@@ -773,7 +833,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_section_transforms = record_storage.with_storage(|| feature_section_transform_records(ctx, scan))?;
+        let feature_section_transforms =
+            record_storage.with_storage(|| feature_section_transform_records(ctx, scan))?;
         store_arena(
             ctx,
             ir,
@@ -783,7 +844,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_placement_instructions = record_storage.with_storage(|| feature_placement_instruction_records(ctx, scan))?;
+        let feature_placement_instructions =
+            record_storage.with_storage(|| feature_placement_instruction_records(ctx, scan))?;
         store_arena(
             ctx,
             ir,
@@ -795,7 +857,8 @@ pub(super) fn emit_geometry_arenas(
     // annotation needs, so the offset travels alongside each record in a tuple.
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let pcurve_endpoints = record_storage.with_storage(|| pcurve_endpoint_records(ctx, scan))?;
+        let pcurve_endpoints =
+            record_storage.with_storage(|| pcurve_endpoint_records(ctx, scan))?;
         let mut pcurve_endpoint_payload = Vec::new();
         for (record, offset) in ctx.admit_iter(
             &pcurve_endpoints,
@@ -810,7 +873,12 @@ pub(super) fn emit_geometry_arenas(
                 "pcurve_endpoint_frames",
                 Exactness::Derived,
             )?;
-            ctx.push_scoped_vec(&mut record_storage, &mut pcurve_endpoint_payload, record, "creo native pcurve endpoint payload references")?;
+            ctx.push_scoped_vec(
+                &mut record_storage,
+                &mut pcurve_endpoint_payload,
+                record,
+                "creo native pcurve endpoint payload references",
+            )?;
         }
         store_arena(
             ctx,
@@ -821,7 +889,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_definitions = record_storage.with_storage(|| feature_definition_records(ctx, scan))?;
+        let feature_definitions =
+            record_storage.with_storage(|| feature_definition_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -857,7 +926,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_entity_references = record_storage.with_storage(|| feature_entity_reference_records(ctx, scan))?;
+        let feature_entity_references =
+            record_storage.with_storage(|| feature_entity_reference_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -875,7 +945,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_entity_tables = record_storage.with_storage(|| feature_entity_table_records(ctx, scan))?;
+        let feature_entity_tables =
+            record_storage.with_storage(|| feature_entity_table_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -893,7 +964,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_surface_replays = record_storage.with_storage(|| feature_surface_replay_associations(ctx, scan))?;
+        let feature_surface_replays =
+            record_storage.with_storage(|| feature_surface_replay_associations(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -903,7 +975,9 @@ pub(super) fn emit_geometry_arenas(
                 records: &feature_surface_replays,
                 id: |association| &association.id,
                 stream: |_| "AllFeatur",
-                offset: |association| cadmpeg_core::decode::u64_from_index(association.table_offset),
+                offset: |association| {
+                    cadmpeg_core::decode::u64_from_index(association.table_offset)
+                },
                 tag: "feature_surface_replay_association",
                 exactness: Exactness::Derived,
             },
@@ -911,7 +985,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_geometry_tables = record_storage.with_storage(|| feature_geometry_table_records(ctx, scan))?;
+        let feature_geometry_tables =
+            record_storage.with_storage(|| feature_geometry_table_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -929,7 +1004,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_loop_history_entries = record_storage.with_storage(|| feature_loop_history_entry_records(ctx, scan))?;
+        let feature_loop_history_entries =
+            record_storage.with_storage(|| feature_loop_history_entry_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -947,7 +1023,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_affected_ids = record_storage.with_storage(|| feature_affected_id_records(ctx, scan))?;
+        let feature_affected_ids =
+            record_storage.with_storage(|| feature_affected_id_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -965,7 +1042,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_replay_affected_ids = record_storage.with_storage(|| feature_replay_affected_id_records(ctx, scan))?;
+        let feature_replay_affected_ids =
+            record_storage.with_storage(|| feature_replay_affected_id_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -983,7 +1061,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let surface_merge_replay_affected_ids = record_storage.with_storage(|| surface_merge_replay_affected_id_records(ctx, scan))?;
+        let surface_merge_replay_affected_ids =
+            record_storage.with_storage(|| surface_merge_replay_affected_id_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -1001,7 +1080,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_loop_restore_directions = record_storage.with_storage(|| feature_loop_restore_direction_records(ctx, scan))?;
+        let feature_loop_restore_directions =
+            record_storage.with_storage(|| feature_loop_restore_direction_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -1019,7 +1099,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_revolution_extents = record_storage.with_storage(|| feature_revolution_extent_records(ctx, scan))?;
+        let feature_revolution_extents =
+            record_storage.with_storage(|| feature_revolution_extent_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -1055,7 +1136,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let depdb_recipe_rows = record_storage.with_storage(|| depdb_recipe_row_records(ctx, scan))?;
+        let depdb_recipe_rows =
+            record_storage.with_storage(|| depdb_recipe_row_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -1091,7 +1173,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_choice_fields = record_storage.with_storage(|| feature_choice_field_records(ctx, scan))?;
+        let feature_choice_fields =
+            record_storage.with_storage(|| feature_choice_field_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,
@@ -1129,7 +1212,8 @@ pub(super) fn emit_geometry_arenas(
     // the record, so annotation zips the two before the arena is stored.
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let curve_expressions = record_storage.with_storage(|| curve_expression_records(ctx, scan))?;
+        let curve_expressions =
+            record_storage.with_storage(|| curve_expression_records(ctx, scan))?;
         for (expression, source) in ctx
             .admit_iter(
                 &curve_expressions,
@@ -1155,7 +1239,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_operation_states = record_storage.with_storage(|| feature_operation_state_records(ctx, scan))?;
+        let feature_operation_states =
+            record_storage.with_storage(|| feature_operation_state_records(ctx, scan))?;
         emit_arena(
             ctx,
             ir,
@@ -1185,7 +1270,8 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let mut record_storage = ctx.reserve_scoped(0, "creo model arena record storage")?;
-        let feature_reference_names = record_storage.with_storage(|| feature_reference_name_records(ctx, scan))?;
+        let feature_reference_names =
+            record_storage.with_storage(|| feature_reference_name_records(ctx, scan))?;
         emit_uniform(
             ctx,
             ir,

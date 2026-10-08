@@ -149,11 +149,13 @@ pub(in super::super) fn build_report(
         let Some(id) = id? else {
             continue;
         };
-        lookup_storage.with_storage(|| ctx.insert_btree_set(
-            &mut placed_plane_ids,
-            id,
-            "creo report placed plane ID nodes",
-        ))?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut placed_plane_ids,
+                id,
+                "creo report placed plane ID nodes",
+            )
+        })?;
     }
     let placed_plane_count = placed_plane_ids.len();
     drop(placed_plane_ids);

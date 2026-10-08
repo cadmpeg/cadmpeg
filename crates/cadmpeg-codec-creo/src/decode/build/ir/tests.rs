@@ -59,7 +59,10 @@ fn retained_boundary_sweep(
 ) {
     for operation in expected {
         crate::test_support::last_refusal_at(
-            &[], cadmpeg_core::decode::ResourceDimension::RetainedBytes, operation, &run,
+            &[],
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            operation,
+            &run,
         );
     }
 }
@@ -70,7 +73,10 @@ fn collection_boundary_sweep(
 ) {
     for operation in expected {
         crate::test_support::last_refusal_at(
-            &[], cadmpeg_core::decode::ResourceDimension::CollectionItems, operation, &run,
+            &[],
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            &run,
         );
     }
 }
@@ -552,8 +558,15 @@ fn display_strip_error_text_refuses_below_retained_limits() {
     let overflow = inch_strip(vec![[f64::MAX, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
     let operation = "creo display tessellation overflow text";
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::RetainedBytes, operation,
-        |ctx| match transfer_display_tessellations(ctx, &overflow, &mut CadIr::empty(), &mut cadmpeg_ir::AnnotationBuilder::new()) {
+        &[],
+        ResourceDimension::RetainedBytes,
+        operation,
+        |ctx| match transfer_display_tessellations(
+            ctx,
+            &overflow,
+            &mut CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+        ) {
             Err(error @ CodecError::ResourceLimit(_)) => Err(error),
             result => Ok(result),
         },
@@ -561,8 +574,14 @@ fn display_strip_error_text_refuses_below_retained_limits() {
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == operation));
     let error = crate::decode::with_test_decode_ctx(|ctx| {
-        transfer_display_tessellations(ctx, &overflow, &mut CadIr::empty(), &mut cadmpeg_ir::AnnotationBuilder::new())
-    }).expect_err("invalid display strip was admitted");
+        transfer_display_tessellations(
+            ctx,
+            &overflow,
+            &mut CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+        )
+    })
+    .expect_err("invalid display strip was admitted");
     match error {
         CodecError::Malformed(message) | CodecError::NotImplemented(message) => {
             assert_eq!(message, "SolidPrimdata display triangle strip at byte 0 has a vertex that cannot be represented in millimeters");
@@ -1108,7 +1127,13 @@ fn placed_plane_duplicate_index_admits_model_rows_before_numeric_identity_probe(
         &["creo placed plane surface index traversal"],
         |ctx| {
             let mut trial_ir = ir.clone();
-            let result = transfer_placed_plane_surfaces_into_ir(ctx, &scan, &mut trial_ir, &mut cadmpeg_ir::AnnotationBuilder::new(), &mut SourceUnitCarriers::default());
+            let result = transfer_placed_plane_surfaces_into_ir(
+                ctx,
+                &scan,
+                &mut trial_ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &mut SourceUnitCarriers::default(),
+            );
             assert_eq!(trial_ir.model.surfaces.len(), 1);
             result
         },
@@ -1129,15 +1154,34 @@ fn placed_plane_duplicate_index_admits_model_rows_before_numeric_identity_probe(
 #[test]
 fn display_strip_vertex_range_refuses_after_collection_and_admits_at_service() {
     use cadmpeg_core::decode::ResourceDimension;
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| super::admitted_display_strips(ctx, vec![0_u8, 1, 2], &[3]);
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits, "creo display strip vertex traversal", run);
-    let CodecError::ResourceLimit(resource) = error else { panic!("expected a work limit refusal"); };
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::admitted_display_strips(ctx, vec![0_u8, 1, 2], &[3])
+    };
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo display strip vertex traversal",
+        run,
+    );
+    let CodecError::ResourceLimit(resource) = error else {
+        panic!("expected a work limit refusal");
+    };
     assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
     assert_eq!(resource.operation, "creo display strip vertex traversal");
     assert_eq!(resource.additional, 3);
-    for operation in ["creo display tessellation strip rows", "creo display tessellation strip vertices"] {
-        let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, run);
-        let CodecError::ResourceLimit(resource) = error else { panic!("expected a collection limit refusal"); };
+    for operation in [
+        "creo display tessellation strip rows",
+        "creo display tessellation strip vertices",
+    ] {
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::CollectionItems,
+            operation,
+            run,
+        );
+        let CodecError::ResourceLimit(resource) = error else {
+            panic!("expected a collection limit refusal");
+        };
         assert_eq!(resource.dimension, ResourceDimension::CollectionItems);
         assert_eq!(resource.operation, operation);
     }
@@ -1161,7 +1205,8 @@ fn display_strip_vertex_range_refuses_after_collection_and_admits_at_service() {
 fn display_strip_rejects_unavailable_span_without_admitting_vertex_work() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let result = crate::test_support::assert_refusal_order(
-        ResourceDimension::WorkUnits, &["creo display strip span traversal"],
+        ResourceDimension::WorkUnits,
+        &["creo display strip span traversal"],
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -1178,9 +1223,19 @@ fn display_vertex_staging_refuses_materialized_storage() {
     use cadmpeg_core::decode::ResourceDimension;
     let scan = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::MaterializedBytes,
+        &[],
+        ResourceDimension::MaterializedBytes,
         "creo display tessellation positions",
-        |ctx| transfer_display_tessellations(ctx, &scan, &mut CadIr::empty(), &mut cadmpeg_ir::AnnotationBuilder::new()),
+        |ctx| {
+            transfer_display_tessellations(
+                ctx,
+                &scan,
+                &mut CadIr::empty(),
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+            )
+        },
     );
-    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::MaterializedBytes && resource.operation == "creo display tessellation positions"));
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::MaterializedBytes && resource.operation == "creo display tessellation positions")
+    );
 }

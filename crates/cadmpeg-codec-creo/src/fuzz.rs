@@ -161,6 +161,8 @@ mod tests {
     #[test]
     fn scalar_probe_admits_each_visited_value() {
         let data = [0x00, 0x00];
-        crate::test_support::assert_work_boundaries(&["creo fuzz scalar traversal"], |ctx| super::scalar(ctx, &data));
+        crate::test_support::assert_work_boundaries(&["creo fuzz scalar traversal"], |ctx| {
+            super::scalar(ctx, &data)
+        });
     }
 }
