@@ -26,6 +26,27 @@ impl PartialEq for TrimPacket {
     }
 }
 
+/// A comparison reads the primitive count and every length and handle.
+impl cadmpeg_core::decode::cost::DecodeCost for TrimPacket {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let mut bytes = u64_from_index(std::mem::size_of::<usize>());
+        for part in [
+            self.strip_lengths.decode_cost(ctx, operation)?,
+            self.fan_lengths.decode_cost(ctx, operation)?,
+            self.handles.decode_cost(ctx, operation)?,
+        ] {
+            bytes = bytes
+                .checked_add(part)
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        }
+        Ok(bytes)
+    }
+}
+
 impl TrimPacket {
     pub(crate) fn try_from(
         ctx: &DecodeContext<'_>,
@@ -119,11 +140,8 @@ impl TrimPacket {
                 })
             })
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        let work = u64_from_index(triangle_count)
-            .checked_mul(3)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        ctx.charge_work(work, operation)?;
         let mut triangles = Vec::new();
+        ctx.reserve_vec(&mut triangles, triangle_count, "catia_trim_triangles")?;
         let (independent, mut remaining) = self.handles.split_at(3 * self.independent_count);
         let Some(triple_width) = NonZeroUsize::new(3) else {
             return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
@@ -132,15 +150,7 @@ impl TrimPacket {
             let [first, second, third] = triple else {
                 return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
             };
-            ctx.charge_retained(
-                u64_from_index(std::mem::size_of::<[u32; 3]>()),
-                "catia_trim_triangles",
-            )?;
-            ctx.push_vec(
-                &mut triangles,
-                [*first, *second, *third],
-                "catia_trim_triangles",
-            )?;
+            triangles.push([*first, *second, *third]);
         }
         for &length in ctx.admit_iter(&self.strip_lengths, operation)? {
             let (strip, tail) = remaining.split_at(length);
@@ -150,19 +160,11 @@ impl TrimPacket {
                 .windows(triple_width)
                 .enumerate()
             {
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<[u32; 3]>()),
-                    "catia_trim_triangles",
-                )?;
-                ctx.push_vec(
-                    &mut triangles,
-                    if index % 2 == 0 {
-                        [triple[0], triple[1], triple[2]]
-                    } else {
-                        [triple[1], triple[0], triple[2]]
-                    },
-                    "catia_trim_triangles",
-                )?;
+                triangles.push(if index % 2 == 0 {
+                    [triple[0], triple[1], triple[2]]
+                } else {
+                    [triple[1], triple[0], triple[2]]
+                });
             }
         }
         for &length in ctx.admit_iter(&self.fan_lengths, operation)? {
@@ -175,15 +177,7 @@ impl TrimPacket {
                 continue;
             };
             for pair in ctx.admit_iter(rim, operation)?.windows(pair_width) {
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<[u32; 3]>()),
-                    "catia_trim_triangles",
-                )?;
-                ctx.push_vec(
-                    &mut triangles,
-                    [center, pair[0], pair[1]],
-                    "catia_trim_triangles",
-                )?;
+                triangles.push([center, pair[0], pair[1]]);
             }
         }
         Ok(triangles)

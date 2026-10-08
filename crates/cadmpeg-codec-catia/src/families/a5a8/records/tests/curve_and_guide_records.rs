@@ -85,6 +85,7 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
         &points,
         &derivatives,
         &derivatives,
+        cadmpeg_ir::units::FiniteVector::new,
     )
     .expect("service resource budget")
     .expect("exact 3D quintic jet");

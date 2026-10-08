@@ -209,3 +209,35 @@ pub fn removals(
     }
     removed
 }
+
+pub fn charged_traversals(
+    ctx: &DecodeContext<'_>,
+    map: &HashMap<String, u8>,
+    set: HashSet<u32>,
+    out: &mut Vec<u32>,
+) -> Result<usize, CodecError> {
+    let mut total = 0;
+    // A charge per step pays for the steps, not for the unspecified order.
+    for (_name, value) in map { // finding: uncharged_decode_work
+        ctx.charge_work(1, "visit")?;
+        total += usize::from(*value);
+    }
+    let copied = ctx.collect_vec(map, "copy")?; // finding: uncharged_decode_work, unproven_decode_charge
+    total += copied.len();
+    out.extend(set); // finding: uncharged_decode_allocation, uncharged_decode_work
+    Ok(total)
+}
+
+pub fn flattened_groups(
+    ctx: &DecodeContext<'_>,
+    groups: &HashMap<u32, HashSet<u32>>,
+    key: &u32,
+) -> Result<u32, CodecError> {
+    let mut total = 0;
+    // The group lookup is keyed; walking the group it returns is a traversal.
+    for value in ctx.get_hash_map(groups, key, "group")?.into_iter().flatten() { // finding: uncharged_decode_work, unproven_decode_charge
+        ctx.charge_work(1, "member")?;
+        total += *value;
+    }
+    Ok(total)
+}

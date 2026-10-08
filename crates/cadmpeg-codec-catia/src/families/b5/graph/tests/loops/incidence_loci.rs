@@ -6,7 +6,7 @@ use super::{
     incidence_vertex_coordinates, parameter_incidence, pcurve_endpoints, point_index,
     sphere_great_circle_point, test_loop_members, test_loop_metadata, B5IncidenceLane, B5Loop,
     B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5PcurveContext, B5PcurveParameterization,
-    B5Record, B5SphereGreatCirclePcurve, B5Surface, B5VertexIncidenceControl,
+    B5RecordBuf, B5SphereGreatCirclePcurve, B5Surface, B5VertexIncidenceControl,
     B5VertexIncidenceLink, BTreeMap, HashMap,
 };
 
@@ -220,21 +220,21 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
     incidence_payload.extend_from_slice(&parameter.to_le_bytes());
     incidence_payload.push(0x01);
     let mut records = [
-        B5Record {
+        B5RecordBuf {
             offset: 0,
             family: 0xb5,
             class: 0x05,
             object_id: 20,
             payload: vec![0x82, 0x9e, 0x9f],
         },
-        B5Record {
+        B5RecordBuf {
             offset: 1,
             family: 0xb5,
             class: 0x06,
             object_id: 30,
             payload: incidence_payload.clone(),
         },
-        B5Record {
+        B5RecordBuf {
             offset: 2,
             family: 0xb5,
             class: 0x06,
@@ -242,30 +242,56 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             payload: incidence_payload,
         },
     ];
-    let by_id = records
-        .iter()
-        .map(|record| (record.object_id, record))
-        .collect::<HashMap<_, _>>();
     let pcurves = BTreeMap::new();
     let profiles = BTreeMap::new();
     let edge_parameter_incidences = BTreeMap::new();
-    let parameter_incidences = BTreeMap::new();
-    let geometry = B5PcurveContext {
-        pcurves: &pcurves,
-        opaque_pcurves: &opaque_pcurves,
-        surfaces: &surfaces,
-        profiles: &profiles,
-        edge_parameter_incidences: &edge_parameter_incidences,
-        parameter_incidences: &parameter_incidences,
+    // The graph indexes each parsed class-06 incidence by object id.
+    let incidence_coordinates = |records: &[B5RecordBuf]| {
+        crate::test_support::with_service_context(|ctx| {
+            let views = records.iter().map(B5RecordBuf::record).collect::<Vec<_>>();
+            let by_id = views
+                .iter()
+                .map(|record| (record.object_id, record))
+                .collect::<HashMap<_, _>>();
+            let mut parameter_incidences = BTreeMap::new();
+            for record in &views {
+                if let Some(incidence) = parameter_incidence(ctx, record)? {
+                    parameter_incidences.insert(record.object_id, incidence);
+                }
+            }
+            let geometry = B5PcurveContext {
+                pcurves: &pcurves,
+                opaque_pcurves: &opaque_pcurves,
+                surfaces: &surfaces,
+                profiles: &profiles,
+                edge_parameter_incidences: &edge_parameter_incidences,
+                parameter_incidences: &parameter_incidences,
+            };
+            incidence_vertex_coordinates(
+                ctx,
+                &BTreeMap::from([(40, [10, 11])]),
+                &BTreeMap::from([(
+                    10,
+                    B5VertexIncidenceLink {
+                        object_id: 10,
+                        incidence: 20,
+                        terminal_control: B5VertexIncidenceControl::Control00,
+                    },
+                )]),
+                &by_id,
+                &geometry,
+            )
+        })
+        .expect("service budget")
     };
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            counted_references(ctx, &records[0], 0x05).expect("service budget")
+            counted_references(ctx, &records[0].record(), 0x05).expect("service budget")
         }),
         Some(vec![30, 31])
     );
     let incidence = crate::test_support::with_service_context(|ctx| {
-        parameter_incidence(ctx, &records[1]).expect("service budget")
+        parameter_incidence(ctx, &records[1].record()).expect("service budget")
     })
     .expect("parameter incidence");
     assert_eq!(
@@ -292,23 +318,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             [0.0, 5.0, 0.0]
         ) < 1e-24
     );
-    let coordinates = crate::test_support::with_service_context(|ctx| {
-        incidence_vertex_coordinates(
-            ctx,
-            &BTreeMap::from([(40, [10, 11])]),
-            &BTreeMap::from([(
-                10,
-                B5VertexIncidenceLink {
-                    object_id: 10,
-                    incidence: 20,
-                    terminal_control: B5VertexIncidenceControl::Control00,
-                },
-            )]),
-            &by_id,
-            &geometry,
-        )
-    })
-    .expect("service budget");
+    let coordinates = incidence_coordinates(&records);
 
     assert_eq!(coordinates.len(), 1);
     assert!(
@@ -320,55 +330,11 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
         ) < 1e-24
     );
 
-    drop(by_id);
     records[2].payload[3..11].copy_from_slice(&0.0f64.to_le_bytes());
-    let conflicting_by_id = records
-        .iter()
-        .map(|record| (record.object_id, record))
-        .collect::<HashMap<_, _>>();
-    let conflicting = crate::test_support::with_service_context(|ctx| {
-        incidence_vertex_coordinates(
-            ctx,
-            &BTreeMap::from([(40, [10, 11])]),
-            &BTreeMap::from([(
-                10,
-                B5VertexIncidenceLink {
-                    object_id: 10,
-                    incidence: 20,
-                    terminal_control: B5VertexIncidenceControl::Control00,
-                },
-            )]),
-            &conflicting_by_id,
-            &geometry,
-        )
-    })
-    .expect("service budget");
-    assert!(conflicting.is_empty());
+    assert!(incidence_coordinates(&records).is_empty());
 
-    drop(conflicting_by_id);
     records[2].payload[3..11].copy_from_slice(&(parameter + 1.0).to_le_bytes());
-    let out_of_domain_by_id = records
-        .iter()
-        .map(|record| (record.object_id, record))
-        .collect::<HashMap<_, _>>();
-    let out_of_domain = crate::test_support::with_service_context(|ctx| {
-        incidence_vertex_coordinates(
-            ctx,
-            &BTreeMap::from([(40, [10, 11])]),
-            &BTreeMap::from([(
-                10,
-                B5VertexIncidenceLink {
-                    object_id: 10,
-                    incidence: 20,
-                    terminal_control: B5VertexIncidenceControl::Control00,
-                },
-            )]),
-            &out_of_domain_by_id,
-            &geometry,
-        )
-    })
-    .expect("service budget");
-    assert!(out_of_domain.is_empty());
+    assert!(incidence_coordinates(&records).is_empty());
 }
 
 #[test]
