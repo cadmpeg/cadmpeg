@@ -216,31 +216,57 @@ fn curve_path_admits_each_output_item_once() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let components = super::super::component_reference_curve_path_at(&ctx, &payload, 12)
-        .unwrap().expect("two curve components");
-    assert_eq!(components, vec![
-        crate::records::FeatureInputComponentPathEntry {
-            instance: Some(0x8130), type_signature: signature, local_id: Some(7),
-        },
-        crate::records::FeatureInputComponentPathEntry {
-            instance: Some(0x8130), type_signature: signature, local_id: Some(8),
-        },
-    ]);
+        .unwrap()
+        .expect("two curve components");
+    assert_eq!(
+        components,
+        vec![
+            crate::records::FeatureInputComponentPathEntry {
+                instance: Some(0x8130),
+                type_signature: signature,
+                local_id: Some(7),
+            },
+            crate::records::FeatureInputComponentPathEntry {
+                instance: Some(0x8130),
+                type_signature: signature,
+                local_id: Some(8),
+            },
+        ]
+    );
 }
 
 #[test]
 fn surface_metadata_is_built_only_by_its_consuming_operation() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let lane = crate::records::FeatureInputLane {
-        id: "lane".into(), configuration: None, native_payload: vec![0; 128],
-        classes: ["moCompSurfaceBody_c", "moPLineProjIdRep_c", "moPLineSurfIdRep_c"]
-            .into_iter().enumerate().map(|(ordinal, name)| crate::records::FeatureInputClass {
-                id: name.into(), parent: "lane".into(), ordinal: u32::try_from(ordinal).unwrap(),
-                offset: 0, name: name.into(),
-            }).collect(),
-        names: Vec::new(), scalars: Vec::new(), relation_bindings: Vec::new(),
-        relation_instances: Vec::new(), body_selections: Vec::new(), edge_selections: Vec::new(),
-        surface_selections: Vec::new(), generated_surface_identities: Vec::new(),
-        references: Vec::new(), sketch_entities: Vec::new(),
+        id: "lane".into(),
+        configuration: None,
+        native_payload: vec![0; 128],
+        classes: [
+            "moCompSurfaceBody_c",
+            "moPLineProjIdRep_c",
+            "moPLineSurfIdRep_c",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, name)| crate::records::FeatureInputClass {
+            id: name.into(),
+            parent: "lane".into(),
+            ordinal: u32::try_from(ordinal).unwrap(),
+            offset: 0,
+            name: name.into(),
+        })
+        .collect(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -248,24 +274,38 @@ fn surface_metadata_is_built_only_by_its_consuming_operation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     {
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            ResourceDimension::WorkUnits, "index SLDPRT operation surface classes", None,
+            ResourceDimension::WorkUnits,
+            "index SLDPRT operation surface classes",
+            None,
         );
-        assert!(super::super::compact_surface_selections(&ctx, &[], &[], &lane, &[])
-            .unwrap().is_empty());
+        assert!(
+            super::super::compact_surface_selections(&ctx, &[], &[], &lane, &[])
+                .unwrap()
+                .is_empty()
+        );
         let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[]).unwrap();
         assert!(classes.surfaces.get().is_none());
         assert!(classes.split_classes.get().is_none());
         assert!(super::super::operation_surface_selection_candidates(
-            &ctx, crate::classification::FeatureClass::CutWithSurface, &lane,
-            &classes, 0, 0, None,
-        ).unwrap().is_empty());
+            &ctx,
+            crate::classification::FeatureClass::CutWithSurface,
+            &lane,
+            &classes,
+            0,
+            0,
+            None,
+        )
+        .unwrap()
+        .is_empty());
         assert!(classes.surfaces.get().is_none());
         assert!(classes.split_classes.get().is_none());
     }
     let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[]).unwrap();
     assert!(classes.has_split_classes(&lane).unwrap());
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, "index SLDPRT operation surface classes", None,
+        ResourceDimension::WorkUnits,
+        "index SLDPRT operation surface classes",
+        None,
     );
     assert!(classes.has_split_classes(&lane).unwrap());
     assert!(classes.surfaces.get().is_none());
@@ -274,16 +314,33 @@ fn surface_metadata_is_built_only_by_its_consuming_operation() {
 #[test]
 fn split_object_without_source_does_not_search_split_classes() {
     let lane = crate::records::FeatureInputLane {
-        id: "lane".into(), configuration: None, native_payload: Vec::new(), classes: Vec::new(),
-        names: Vec::new(), scalars: Vec::new(), relation_bindings: Vec::new(),
-        relation_instances: Vec::new(), body_selections: Vec::new(), edge_selections: Vec::new(),
-        surface_selections: Vec::new(), generated_surface_identities: Vec::new(),
-        references: Vec::new(), sketch_entities: Vec::new(),
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
     };
     let ctx = cadmpeg_test_support::service_decode_context();
     let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[]).unwrap();
     assert!(super::super::operation_surface_selection_candidates(
-        &ctx, crate::classification::FeatureClass::SplitFace, &lane, &classes, 0, 0, None,
-    ).unwrap().is_empty());
+        &ctx,
+        crate::classification::FeatureClass::SplitFace,
+        &lane,
+        &classes,
+        0,
+        0,
+        None,
+    )
+    .unwrap()
+    .is_empty());
     assert!(classes.split_classes.get().is_none());
 }

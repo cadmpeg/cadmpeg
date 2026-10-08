@@ -701,14 +701,27 @@ fn cosmetic_cylinder_scan_visits_overlapping_and_touching_ranges_once() {
         (0..20, None, vec![3, 18]),
     ] {
         let (offsets, _storage) = super::super::cosmetic_thread_cylinder_offsets(
-            &ctx, &payload, object, tail, &tokens, Some, "scan synthetic cosmetic cylinders",
-        ).unwrap();
+            &ctx,
+            &payload,
+            object,
+            tail,
+            &tokens,
+            Some,
+            "scan synthetic cosmetic cylinders",
+        )
+        .unwrap();
         assert_eq!(offsets, expected);
     }
     crate::test_support::work_refusal_at("scan synthetic cosmetic cylinders", |ctx| {
         super::super::cosmetic_thread_cylinder_offsets(
-            ctx, &payload, 0..20, Some(10..30), &tokens, Some,
+            ctx,
+            &payload,
+            0..20,
+            Some(10..30),
+            &tokens,
+            Some,
             "scan synthetic cosmetic cylinders",
-        ).map(|(offsets, _storage)| offsets)
+        )
+        .map(|(offsets, _storage)| offsets)
     });
 }

@@ -585,55 +585,63 @@ pub(super) struct SlotReferences<'payload, 'ctx> {
 }
 
 impl<'payload, 'ctx> SlotReferences<'payload, 'ctx> {
-    pub(super) fn new(ctx: &'ctx DecodeContext<'_>, payload: &'payload [u8]) -> Result<Self, CodecError> {
+    pub(super) fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        payload: &'payload [u8],
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             payload,
             records: std::cell::OnceCell::new(),
-            storage: std::cell::RefCell::new(ctx.reserve_scoped(0, "index SLDPRT slot predecessors")?),
+            storage: std::cell::RefCell::new(
+                ctx.reserve_scoped(0, "index SLDPRT slot predecessors")?,
+            ),
         })
     }
 
-    fn records(&self, ctx: &DecodeContext<'_>) -> Result<&HashMap<usize, SlotReferenceLayout>, CodecError> {
+    fn records(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<&HashMap<usize, SlotReferenceLayout>, CodecError> {
         if let Some(records) = self.records.get() {
             return Ok(records);
         }
         let records = self.storage.borrow_mut().with_storage(|| {
-        let payload = self.payload;
-        const OPERATION: &str = "index SLDPRT slot predecessors";
-        const SLOT_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x08\x00sgSlot_c\0\0\0\0\x01\0\0\0";
-        let declared_at = |offset: usize| {
-            offset
-                .checked_sub(SLOT_DECLARATION.len())
-                .and_then(|start| payload.get(start..offset))
-                == Some(SLOT_DECLARATION)
-        };
-        let mut records: HashMap<usize, SlotReferenceLayout> = HashMap::new();
-        for (offset, _) in ctx.admit_iter(payload, OPERATION)?.enumerate() {
-            if !sketch_marker_prefix_at(payload, offset) {
-                continue;
-            }
-            let Some(layout) = slot_curve_reference_cells(payload, offset) else {
-                continue;
+            const OPERATION: &str = "index SLDPRT slot predecessors";
+            const SLOT_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x08\x00sgSlot_c\0\0\0\0\x01\0\0\0";
+            let payload = self.payload;
+            let declared_at = |offset: usize| {
+                offset
+                    .checked_sub(SLOT_DECLARATION.len())
+                    .and_then(|start| payload.get(start..offset))
+                    == Some(SLOT_DECLARATION)
             };
-            let mut declared = declared_at(offset);
-            if !declared {
-                if let Some(previous) = layout
-                    .continuation_stride
-                    .and_then(|stride| offset.checked_sub(stride))
-                {
-                    declared = declared_at(previous)
-                        || ctx
-                            .get_hash_map(&records, &previous, OPERATION)?
-                            .is_some_and(|candidate| {
-                                candidate.continuation_stride == layout.continuation_stride
-                            });
+            let mut records: HashMap<usize, SlotReferenceLayout> = HashMap::new();
+            for (offset, _) in ctx.admit_iter(payload, OPERATION)?.enumerate() {
+                if !sketch_marker_prefix_at(payload, offset) {
+                    continue;
+                }
+                let Some(layout) = slot_curve_reference_cells(payload, offset) else {
+                    continue;
+                };
+                let mut declared = declared_at(offset);
+                if !declared {
+                    if let Some(previous) = layout
+                        .continuation_stride
+                        .and_then(|stride| offset.checked_sub(stride))
+                    {
+                        declared = declared_at(previous)
+                            || ctx
+                                .get_hash_map(&records, &previous, OPERATION)?
+                                .is_some_and(|candidate| {
+                                    candidate.continuation_stride == layout.continuation_stride
+                                });
+                    }
+                }
+                if declared {
+                    ctx.insert_hash_map(&mut records, offset, layout, OPERATION)?;
                 }
             }
-            if declared {
-                ctx.insert_hash_map(&mut records, offset, layout, OPERATION)?;
-            }
-        }
-        Ok::<_, CodecError>(records)
+            Ok::<_, CodecError>(records)
         })?;
         Ok(self.records.get_or_init(|| records))
     }

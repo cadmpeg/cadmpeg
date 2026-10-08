@@ -193,12 +193,13 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_collection_items = limit;
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &[], &arena, &policy,
-            )?;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             super::super::project_compact_edge_selections(
-                &ctx, &mut projected.clone(),
-                std::slice::from_ref(&history), std::slice::from_ref(&lane),
+                &ctx,
+                &mut projected.clone(),
+                std::slice::from_ref(&history),
+                std::slice::from_ref(&lane),
             )
         },
     );
@@ -209,12 +210,8 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = limit.used + limit.additional;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &policy,
-    )
-    .expect("fillet fixture context");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("fillet fixture context");
     super::super::project_compact_edge_selections(
         &ctx,
         &mut projected,
