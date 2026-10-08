@@ -704,19 +704,6 @@ impl NativeNamespace {
     ) -> Result<(), NativeConvertError> {
         let name = name.as_ref();
         let name = ctx.copy_retained_text(name, "retain native arena name")?;
-        let comparisons = name
-            .len()
-            .checked_add(1)
-            .and_then(|bytes| {
-                self.arenas
-                    .len()
-                    .checked_add(1)
-                    .and_then(|count| bytes.checked_mul(count))
-            })
-            .and_then(|work| work.checked_mul(2))
-            .map(u64_from_index)
-            .ok_or_else(|| ctx.refuse_codec_limit("store native arena", u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(comparisons, "store native arena")?;
         let converted = match arena_from(ctx, records.into_iter().map(Ok::<T, NativeConvertError>))
         {
             Ok(converted) => converted,
@@ -732,7 +719,6 @@ impl NativeNamespace {
                 });
             }
         };
-        ctx.charge_work(1, "store native arena")?;
         ctx.insert_btree_map(&mut self.arenas, name, converted, "store native arena")?;
         Ok(())
     }

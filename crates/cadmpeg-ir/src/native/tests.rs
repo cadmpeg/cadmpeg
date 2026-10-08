@@ -290,6 +290,33 @@ fn native_arena_name_refuses_retained_limit_before_copy() {
 }
 
 #[test]
+fn native_arena_installation_admits_the_actual_tree_insertion_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The real insert into this 100-entry map fits within this work limit.
+    // The old (name length + 1) * (map length + 1) * 2 estimate refused
+    // before the B-tree insertion had a chance to admit its own work.
+    policy.limits.max_work_units = 5_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = crate::native::NativeNamespace::default();
+    for index in 0..100 {
+        namespace
+            .arenas_mut()
+            .insert(format!("existing-{index:03}"), Vec::new());
+    }
+
+    namespace
+        .set_arena(&ctx, "n".repeat(30), &[] as &[serde_json::Value])
+        .expect("the admitted B-tree insertion fits its work budget");
+    assert_eq!(namespace.arenas().len(), 101);
+    assert!(namespace.arenas().contains_key(&"n".repeat(30)));
+    ctx.finish_session()
+        .expect("arena installation did not exceed the caller's work budget");
+}
+
+#[test]
 fn native_record_slot_refuses_collection_limit_before_json_materialization() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
