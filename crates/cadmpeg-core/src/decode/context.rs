@@ -511,19 +511,19 @@ impl<'a> DecodeContext<'a> {
         mut compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        // Small runs use adjacent swaps, so their stable order needs no scratch.
+        // Small runs insert by adjacent swaps, so their stable order needs no
+        // scratch. Every insertion compares each earlier neighbour, without
+        // stopping where the value comes to rest, so the steps depend only on
+        // the length: the compared prefix is already sorted and swaps nothing.
         if values.len() <= 20 {
             self.admit_sort(values, projection, operation)?;
             for end in 1..values.len() {
                 self.charge_work(1, operation)?;
-                let mut position = end;
-                while position > 0 {
+                for position in (1..=end).rev() {
                     self.charge_work(1, operation)?;
-                    if !compare(&values[position], &values[position - 1]).is_lt() {
-                        break;
+                    if compare(&values[position], &values[position - 1]).is_lt() {
+                        values.swap(position, position - 1);
                     }
-                    values.swap(position, position - 1);
-                    position -= 1;
                 }
             }
             return Ok(());
@@ -564,6 +564,7 @@ impl<'a> DecodeContext<'a> {
             .and_then(|bytes| bytes.checked_mul(count))
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         self.charge_work(moved, operation)?;
+        let mut swaps = 0;
         for index in 0..values.len() {
             self.charge_work(1, operation)?;
             while destinations[index] != index {
@@ -571,7 +572,15 @@ impl<'a> DecodeContext<'a> {
                 let destination = destinations[index];
                 values.swap(index, destination);
                 destinations.swap(index, destination);
+                swaps += 1;
             }
+        }
+        // The swaps number the values less the cycles, which depends on the
+        // input's order. One unit per value not swapped tops the swap charges
+        // up to one per value, so the total and every refusal, each at a
+        // one-unit charge, depend only on the length.
+        for _ in swaps..values.len() {
+            self.charge_work(1, operation)?;
         }
         Ok(())
     }
