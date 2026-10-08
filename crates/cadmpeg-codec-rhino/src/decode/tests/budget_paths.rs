@@ -553,8 +553,8 @@ fn staged_curve_links_preserve_work_and_storage_refusals() {
 
 #[test]
 fn instance_member_rejection_charges_only_the_visited_prefix() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     use crate::test_support::test_dump as bytes;
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     let archive = ArchiveVersion::V5;
     let members = (1..=128_u8).map(|index| [index; 16]).collect::<Vec<_>>();
     let definition = bytes::v5_definition_payload(archive, 7, [0x51; 16], &members, false);
@@ -565,20 +565,27 @@ fn instance_member_rejection_charges_only_the_visited_prefix() {
         &bytes::instance_reference_payload([0x51; 16], bytes::transform(1.0, [0.0; 3])),
     );
     let mut scan = crate::container::scan_owned(bytes::document_with_definitions(
-        "50", archive, &[bytes::definition_record(archive, &definition)], &[reference],
-    )).expect("instance scan");
+        "50",
+        archive,
+        &[bytes::definition_record(archive, &definition)],
+        &[reference],
+    ))
+    .expect("instance scan");
     bytes::set_test_units(&mut scan, 1.0);
     let run = |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            scan.data, &arena, &policy,
-        )?;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
         let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
         let mut scratch = ctx.reserve_scoped(0, "instance member prefix fixture")?;
         let result = transaction.expand_reference_inner(
-            0, cadmpeg_ir::transform::Transform::identity(), &mut Vec::new(), &mut Vec::new(), &mut scratch,
+            0,
+            cadmpeg_ir::transform::Transform::identity(),
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut scratch,
         );
         match result {
             Err(super::super::ReferenceFailure::Codec(error)) => Err(error),
@@ -592,7 +599,9 @@ fn instance_member_rejection_charges_only_the_visited_prefix() {
         }
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "Rhino instance definition members", run,
+        ResourceDimension::WorkUnits,
+        "Rhino instance definition members",
+        run,
     );
     let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
         panic!("member visit must preserve its refusal");
@@ -603,7 +612,9 @@ fn instance_member_rejection_charges_only_the_visited_prefix() {
 
 #[test]
 fn borrowed_geometry_association_uses_scratch_and_preserves_output_fields() {
-    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, DecodeArena, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{
+        refusal_probe::RefusalProbe, DecodeArena, DecodePolicy, ResourceDimension,
+    };
     let mut scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
     let crate::objects::ObjectRecord::Framed(object) = &mut scan.objects[0] else {
         panic!("framed fixture object");
@@ -613,18 +624,41 @@ fn borrowed_geometry_association_uses_scratch_and_preserves_output_fields() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::MAX;
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
-    let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root)).unwrap();
-    let _probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, "Rhino source association object ID", None);
-    assert!(transaction.commit_geometry(0, crate::curves::DecodedGeometry::Point {
-        position: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).unwrap(),
-        scaled: false,
-    }).expect("the borrowed template does not consume retained bytes"));
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
+    let mut transaction =
+        DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root)).unwrap();
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
+        "Rhino source association object ID",
+        None,
+    );
+    assert!(transaction
+        .commit_geometry(
+            0,
+            crate::curves::DecodedGeometry::Point {
+                position: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                    1.0, 2.0, 3.0
+                ))
+                .unwrap(),
+                scaled: false,
+            }
+        )
+        .expect("the borrowed template does not consume retained bytes"));
     let point = &transaction.session.document().model.points[0];
-    let association = point.source_object.as_ref().expect("output source association");
+    let association = point
+        .source_object
+        .as_ref()
+        .expect("output source association");
     assert_eq!(association.name.as_deref(), Some(expected_name.as_str()));
-    assert_eq!(association.object_id.as_str(), scan.objects[0].identity().unwrap().object_id.to_string());
-    assert_eq!(point.position().get(), cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
+    assert_eq!(
+        association.object_id.as_str(),
+        scan.objects[0].identity().unwrap().object_id.to_string()
+    );
+    assert_eq!(
+        point.position().get(),
+        cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+    );
     assert!(ctx.resource_refusal().is_none());
     drop(transaction);
     ctx.finish_session().unwrap();
@@ -637,31 +671,41 @@ fn consumed_instance_link_buffers_release_backing_while_text_stays_live() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 4096;
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        scan.data, &arena, &policy,
-    ).unwrap();
-    let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root)).unwrap();
-    let checkpoint = cadmpeg_ir::draft::ModelCheckpoint::capture(
-        &transaction.session.document().model, &ctx,
-    ).unwrap();
-    transaction.ir_mut().model.bodies.push(cadmpeg_ir::topology::Body {
-        id: "rhino:test:body#one".try_into().unwrap(),
-        name: None,
-        kind: cadmpeg_ir::topology::BodyKind::Solid,
-        regions: Vec::new(),
-        color: None,
-        visible: None,
-        transform: None,
-    });
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
+    let mut transaction =
+        DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root)).unwrap();
+    let checkpoint =
+        cadmpeg_ir::draft::ModelCheckpoint::capture(&transaction.session.document().model, &ctx)
+            .unwrap();
+    transaction
+        .ir_mut()
+        .model
+        .bodies
+        .push(cadmpeg_ir::topology::Body {
+            id: "rhino:test:body#one".try_into().unwrap(),
+            name: None,
+            kind: cadmpeg_ir::topology::BodyKind::Solid,
+            regions: Vec::new(),
+            color: None,
+            visible: None,
+            transform: None,
+        });
     let mut text_storage = ctx.reserve_scoped(0, "fixture live instance text").unwrap();
     let (mut collected, mut backing) = ctx.temporary_vec(64, "fixture aggregate backing").unwrap();
     for _ in 0..64 {
-        let child = transaction.transform_new_entities(
-            &checkpoint.0, cadmpeg_ir::transform::Transform::identity(), &mut text_storage,
-        ).expect("only live source and aggregate backing use temporary storage");
-        backing.with_storage(|| ctx.extend_vec(
-            &mut collected, child.values, "fixture aggregate links",
-        )).unwrap();
+        let child = transaction
+            .transform_new_entities(
+                &checkpoint.0,
+                cadmpeg_ir::transform::Transform::identity(),
+                &mut text_storage,
+            )
+            .expect("only live source and aggregate backing use temporary storage");
+        backing
+            .with_storage(|| {
+                ctx.extend_vec(&mut collected, child.values, "fixture aggregate links")
+            })
+            .unwrap();
     }
     assert_eq!(collected.len(), 64);
     assert!(collected.iter().all(|id| id == "rhino:test:body#one"));
@@ -671,7 +715,9 @@ fn consumed_instance_link_buffers_release_backing_while_text_stays_live() {
     drop(text_storage);
     drop(checkpoint);
     drop(transaction);
-    let released = ctx.reserve_scoped(4096, "all instance scratch released").unwrap();
+    let released = ctx
+        .reserve_scoped(4096, "all instance scratch released")
+        .unwrap();
     drop(released);
     ctx.finish_session().unwrap();
 }
@@ -684,21 +730,35 @@ fn instance_point_placement_rejects_first_point_without_charging_unused_suffix()
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
         let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
-        let checkpoint = cadmpeg_ir::draft::ModelCheckpoint::capture(&transaction.session.document().model, &ctx)?;
+        let checkpoint = cadmpeg_ir::draft::ModelCheckpoint::capture(
+            &transaction.session.document().model,
+            &ctx,
+        )?;
         for index in 0..128 {
-            transaction.ir_mut().model.points.push(cadmpeg_ir::topology::Point::new(
-                format!("rhino:test:point#{index}").try_into().unwrap(),
-                cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(f64::MAX, 0.0, 0.0)).unwrap(),
-                None,
-            ));
+            transaction
+                .ir_mut()
+                .model
+                .points
+                .push(cadmpeg_ir::topology::Point::new(
+                    format!("rhino:test:point#{index}").try_into().unwrap(),
+                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                        f64::MAX,
+                        0.0,
+                        0.0,
+                    ))
+                    .unwrap(),
+                    None,
+                ));
         }
         let transform = cadmpeg_ir::transform::Transform::affine([
             [2.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-        ]).unwrap();
+        ])
+        .unwrap();
         let mut scratch = ctx.reserve_scoped(0, "placement prefix fixture")?;
         let result = transaction.transform_new_entities(&checkpoint.0, transform, &mut scratch);
         match result {
@@ -706,14 +766,19 @@ fn instance_point_placement_rejects_first_point_without_charging_unused_suffix()
             Err(super::super::ReferenceFailure::Semantic(message)) => {
                 assert_eq!(message, super::super::NON_FINITE_PLACEMENT);
                 assert!(ctx.resource_refusal().is_none());
-                assert_eq!(transaction.session.document().model.points[0].position().x, f64::MAX);
+                assert_eq!(
+                    transaction.session.document().model.points[0].position().x,
+                    f64::MAX
+                );
                 Ok(())
             }
             Ok(_) => panic!("the first point must overflow"),
         }
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "Rhino transformed entity traversal", run,
+        ResourceDimension::WorkUnits,
+        "Rhino transformed entity traversal",
+        run,
     );
     let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
         panic!("point visit must preserve its refusal");
@@ -724,55 +789,87 @@ fn instance_point_placement_rejects_first_point_without_charging_unused_suffix()
 
 #[test]
 fn mesh_source_association_is_constructed_after_payload_decode() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     use crate::test_support::test_dump as bytes;
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     let mut scan = scan_with_objects(&[bytes::object_record_with_payload(
-        ArchiveVersion::V5, 0x20, crate::mesh::ON_MESH.to_wire(), &crate::test_support::test_archive::mesh_payload(3, 0, false, false),
+        ArchiveVersion::V5,
+        0x20,
+        crate::mesh::ON_MESH.to_wire(),
+        &crate::test_support::test_archive::mesh_payload(3, 0, false, false),
     )]);
     bytes::set_test_units(&mut scan, 1.0);
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes, "Rhino source association object ID", |cap| {
+        ResourceDimension::RetainedBytes,
+        "Rhino source association object ID",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
-            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
-            let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+            let mut transaction =
+                DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
             let result = transaction.decode_geometry();
             if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
                 if refusal.operation == "Rhino source association object ID" {
-                    assert!(transaction.mesh_budget.used() > 0, "mesh payload is decoded before its final association");
-                    assert!(transaction.session.document().model.tessellations.is_empty());
+                    assert!(
+                        transaction.mesh_budget.used() > 0,
+                        "mesh payload is decoded before its final association"
+                    );
+                    assert!(transaction
+                        .session
+                        .document()
+                        .model
+                        .tessellations
+                        .is_empty());
                     assert_eq!(ctx.resource_refusal(), Some(*refusal));
                 }
             }
             result
         },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-        if refusal.operation == "Rhino source association object ID" && refusal.dimension == ResourceDimension::RetainedBytes));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino source association object ID" && refusal.dimension == ResourceDimension::RetainedBytes)
+    );
     super::with_expand(&scan, |expand| {
         let mut transaction = DecodeContext::new(&scan, expand).unwrap();
         transaction.decode_geometry().unwrap();
         let meshes = &transaction.session.document().model.tessellations;
         assert_eq!(meshes.len(), 1);
         let source = meshes[0].source_object.as_ref().expect("final association");
-        assert_eq!(source.object_id.as_str(), scan.objects[0].identity().unwrap().object_id.to_string());
+        assert_eq!(
+            source.object_id.as_str(),
+            scan.objects[0].identity().unwrap().object_id.to_string()
+        );
     });
 }
 
 #[test]
 fn hatch_placement_rejection_charges_only_the_first_loop() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     use crate::test_support::{test_archive as curves, test_dump as bytes};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     let archive = ArchiveVersion::V5;
     let mut payload = vec![0x10];
     for value in [
-        0.0, 0.0, 0.0, // origin
-        f64::MAX, 0.0, 0.0, // x axis
-        0.0, 1.0, 0.0, // y axis
-        0.0, 0.0, 1.0, // z axis
-        0.0, 0.0, 1.0, 0.0, // equation
-        1.0, 0.0, // pattern scale and rotation
+        0.0,
+        0.0,
+        0.0, // origin
+        f64::MAX,
+        0.0,
+        0.0, // x axis
+        0.0,
+        1.0,
+        0.0, // y axis
+        0.0,
+        0.0,
+        1.0, // z axis
+        0.0,
+        0.0,
+        1.0,
+        0.0, // equation
+        1.0,
+        0.0, // pattern scale and rotation
     ] {
         bytes::push_f64(&mut payload, value);
     }
@@ -787,22 +884,37 @@ fn hatch_placement_rejection_charges_only_the_first_loop() {
         bytes::push_i32(&mut payload, 0);
         payload.extend_from_slice(&child);
     }
-    let scan = scan_with_objects(&[bytes::object_record_with_payload(archive, 0x1_0000, crate::hatch::CLASS.to_wire(), &payload)]);
+    let scan = scan_with_objects(&[bytes::object_record_with_payload(
+        archive,
+        0x1_0000,
+        crate::hatch::CLASS.to_wire(),
+        &payload,
+    )]);
     let run = |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
         let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
         transaction.decode_geometry()?;
         assert!(transaction.session.document().model.curves.is_empty());
-        assert_eq!(transaction.statuses[0], Some(super::GeometryOutcome::Failed));
-        assert!(transaction.report.phase_warnings.iter().any(|warning| warning.contains("hatch loop placement failed")));
+        assert_eq!(
+            transaction.statuses[0],
+            Some(super::GeometryOutcome::Failed)
+        );
+        assert!(transaction
+            .report
+            .phase_warnings
+            .iter()
+            .any(|warning| warning.contains("hatch loop placement failed")));
         assert!(ctx.resource_refusal().is_none());
         Ok::<(), cadmpeg_core::CodecError>(())
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "Rhino hatch placement traversal", run,
+        ResourceDimension::WorkUnits,
+        "Rhino hatch placement traversal",
+        run,
     );
     let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
         panic!("hatch loop visit must preserve its refusal");
@@ -822,32 +934,53 @@ fn brep_scaled_vertex_rejection_charges_only_the_first_vertex() {
     raw.trims.clear();
     raw.loops.clear();
     raw.faces.clear();
-    raw.vertices = (0..128_i32).map(|index| crate::brep::RawBrepVertex {
-        index,
-        point: crate::settings::CoordinateLane::Admitted(crate::test_support::point3([
-            if index == 0 { f64::MAX } else { 0.0 }, 0.0, 0.0,
-        ]).0),
-        edges: Vec::new(), tolerance: 0.0, source_range: 0..0,
-    }).collect();
-    let brep = super::with_expand_bytes(&data, |expand| crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)).unwrap();
+    raw.vertices = (0..128_i32)
+        .map(|index| crate::brep::RawBrepVertex {
+            index,
+            point: crate::settings::CoordinateLane::Admitted(
+                crate::test_support::point3([if index == 0 { f64::MAX } else { 0.0 }, 0.0, 0.0]).0,
+            ),
+            edges: Vec::new(),
+            tolerance: 0.0,
+            source_range: 0..0,
+        })
+        .collect();
+    let brep = super::with_expand_bytes(&data, |expand| {
+        crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)
+    })
+    .unwrap();
     let run = |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)?;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)?;
         let mut backing = ctx.reserve_scoped(0, "vertex prefix fixture backing")?;
         let mut metadata = ctx.reserve_scoped(0, "vertex prefix fixture metadata")?;
         let association = super::test_association();
         let unknown = DecodeContext::mint_unknown_id(0);
         let mut budget = crate::mesh::MeshBudget::new();
-        match super::stage_brep(super::BrepTransferInput {
-            expand: crate::mesh::MeshExpand::new(&ctx, root), data: &data, archive: ArchiveVersion::V5,
-            writer_version: Some(200_206_180), brep: &brep, key: "prefix", association: &association,
-            unknown: &unknown, scale: crate::test_support::millimeter_scale(2.0), mesh_budget: &mut budget,
-        }, &mut backing, &mut metadata) {
+        match super::stage_brep(
+            super::BrepTransferInput {
+                expand: crate::mesh::MeshExpand::new(&ctx, root),
+                data: &data,
+                archive: ArchiveVersion::V5,
+                writer_version: Some(200_206_180),
+                brep: &brep,
+                key: "prefix",
+                association: &association,
+                unknown: &unknown,
+                scale: crate::test_support::millimeter_scale(2.0),
+                mesh_budget: &mut budget,
+            },
+            &mut backing,
+            &mut metadata,
+        ) {
             Err(crate::curves::GeometryError::Codec(error)) => Err(error),
             Err(error) => {
-                assert!(error.to_string().contains("scaled Brep vertex coordinate is invalid"));
+                assert!(error
+                    .to_string()
+                    .contains("scaled Brep vertex coordinate is invalid"));
                 assert!(ctx.resource_refusal().is_none());
                 Ok(())
             }
@@ -855,7 +988,9 @@ fn brep_scaled_vertex_rejection_charges_only_the_first_vertex() {
         }
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "Rhino stage brep traversal", run,
+        ResourceDimension::WorkUnits,
+        "Rhino stage brep traversal",
+        run,
     );
     let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
         panic!("vertex visit must preserve its refusal");
@@ -869,10 +1004,12 @@ fn extrusion_cap_rejection_charges_only_the_first_boundary() {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     let mut extrusion = super::cap_extrusion([true, false]);
     extrusion.boundaries[0].start_pcurve.knots.clear();
-    let boundaries = (0..128).map(|_| super::CommittedExtrusionBoundary {
-        boundary: &extrusion.boundaries[0],
-        directrix: "rhino:test:curve#cap".try_into().unwrap(),
-    }).collect::<Vec<_>>();
+    let boundaries = (0..128)
+        .map(|_| super::CommittedExtrusionBoundary {
+            boundary: &extrusion.boundaries[0],
+            directrix: "rhino:test:curve#cap".try_into().unwrap(),
+        })
+        .collect::<Vec<_>>();
     let run = |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -880,8 +1017,13 @@ fn extrusion_cap_rejection_charges_only_the_first_boundary() {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
         let mut backing = ctx.reserve_scoped(0, "cap prefix fixture backing")?;
         match super::stage_extrusion_caps(
-            (&ctx, &mut backing), &mut cadmpeg_ir::CadIr::empty(), &mut cadmpeg_ir::Annotations::default(),
-            "caps", &super::test_association(), &extrusion, &boundaries,
+            (&ctx, &mut backing),
+            &mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::Annotations::default(),
+            "caps",
+            &super::test_association(),
+            &extrusion,
+            &boundaries,
         ) {
             Err(super::CandidateError::Codec(error)) => Err(error),
             Err(super::CandidateError::Admission(message)) => {
@@ -893,7 +1035,9 @@ fn extrusion_cap_rejection_charges_only_the_first_boundary() {
         }
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "Rhino stage extrusion caps traversal", run,
+        ResourceDimension::WorkUnits,
+        "Rhino stage extrusion caps traversal",
+        run,
     );
     let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
         panic!("cap boundary visit must preserve its refusal");
@@ -908,21 +1052,49 @@ fn plane_pcurve_overflow_charges_only_the_first_pcurve() {
     let (data, raw) = source_shaped_plane_brep();
     let mut fixture = super::with_expand_bytes(&data, |expand| {
         let brep = crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw).unwrap();
-        super::stage_brep(super::BrepTransferInput {
-            expand, data: &data, archive: ArchiveVersion::V5,
-            writer_version: Some(200_206_180), brep: &brep, key: "plane-prefix",
-            association: &super::test_association(), unknown: &DecodeContext::mint_unknown_id(0),
-            scale: crate::test_support::millimeter_scale(1.0), mesh_budget: &mut crate::mesh::MeshBudget::new(),
-        }, &mut expand.ctx().reserve_scoped(0, "plane prefix fixture backing").unwrap(),
-        &mut expand.ctx().reserve_scoped(0, "plane prefix fixture metadata").unwrap()).unwrap()
+        super::stage_brep(
+            super::BrepTransferInput {
+                expand,
+                data: &data,
+                archive: ArchiveVersion::V5,
+                writer_version: Some(200_206_180),
+                brep: &brep,
+                key: "plane-prefix",
+                association: &super::test_association(),
+                unknown: &DecodeContext::mint_unknown_id(0),
+                scale: crate::test_support::millimeter_scale(1.0),
+                mesh_budget: &mut crate::mesh::MeshBudget::new(),
+            },
+            &mut expand
+                .ctx()
+                .reserve_scoped(0, "plane prefix fixture backing")
+                .unwrap(),
+            &mut expand
+                .ctx()
+                .reserve_scoped(0, "plane prefix fixture metadata")
+                .unwrap(),
+        )
+        .unwrap()
     });
     let pcurve = &mut fixture.draft.model_mut().pcurves[0];
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("fixture has a NURBS pcurve");
     };
-    nurbs.try_map_control_points(|_, _| {
-        Ok::<_, ()>(cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(f64::MAX, 0.0)).unwrap())
-    }, &cadmpeg_test_support::service_decode_context()).unwrap().unwrap();
+    nurbs
+        .try_map_control_points(
+            |_, _| {
+                Ok::<_, ()>(
+                    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        f64::MAX,
+                        0.0,
+                    ))
+                    .unwrap(),
+                )
+            },
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap()
+        .unwrap();
     let pcurve = pcurve.clone();
     fixture.draft.model_mut().pcurves = (0..128).map(|_| pcurve.clone()).collect();
     let run = |cap| {
@@ -932,10 +1104,16 @@ fn plane_pcurve_overflow_charges_only_the_first_pcurve() {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
         let mut staged = super::BrepDraft::default();
         *staged.draft.model_mut() = fixture.draft.model().clone();
-        match crate::decode::scale_plane_pcurves(&ctx, &mut staged, crate::test_support::millimeter_scale(2.0)) {
+        match crate::decode::scale_plane_pcurves(
+            &ctx,
+            &mut staged,
+            crate::test_support::millimeter_scale(2.0),
+        ) {
             Err(crate::curves::GeometryError::Codec(error)) => Err(error),
             Err(error) => {
-                assert!(error.to_string().contains("control_points contains a non-finite point"));
+                assert!(error
+                    .to_string()
+                    .contains("control_points contains a non-finite point"));
                 assert!(ctx.resource_refusal().is_none());
                 Ok(())
             }
@@ -943,7 +1121,9 @@ fn plane_pcurve_overflow_charges_only_the_first_pcurve() {
         }
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "Rhino plane pcurve traversal", run,
+        ResourceDimension::WorkUnits,
+        "Rhino plane pcurve traversal",
+        run,
     );
     let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
         panic!("pcurve visit must preserve its refusal");
