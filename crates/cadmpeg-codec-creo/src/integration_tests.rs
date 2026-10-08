@@ -270,6 +270,7 @@ fn container_only_pipeline_preserves_geometry_thumbnail_and_design_sections() {
 }
 
 mod carrier_rejection;
+mod inspection_storage;
 
 #[test]
 fn detection_reads_fixed_magic_with_zero_work_budget() {
