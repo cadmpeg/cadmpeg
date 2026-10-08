@@ -77,7 +77,7 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
     let mut pairs = Vec::new();
     for table in ctx.admit_iter(tables, "creo rowless round feature tables")? {
         let feature_id = table.feature_id;
-        if !round_feature_ids.contains(&feature_id) {
+        if !ctx.contains_btree_set(&round_feature_ids, &feature_id, "creo round feature ids lookup")? {
             continue;
         }
         let [first, second, rowless, cylinder] = table.entries.as_slice() else {
@@ -178,6 +178,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut round_feature_ids = BTreeSet::new();
     for row in ctx
@@ -251,17 +252,10 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             if row.feature_id != *feature_id || row.kind != crate::surface::SurfaceKind::Cylinder {
                 continue;
             }
-            let already_present = ctx.any_by(
-                &ir.model.surfaces,
-                |surface| {
-                    Ok(crate::identity::matches_numbered_identity(
-                        surface.id.as_str(),
-                        "creo:visibgeom:surface#",
-                        row.id,
-                    ))
-                },
-                "creo constrained slot existing model surfaces",
-            )?;
+            let (key, _key_storage) = crate::identity::compose_scoped::<SurfaceId>(ctx,
+                &crate::identity::VISIBGEOM_SURFACE, row.id, "creo constrained slot query identity")?;
+            let already_present = surfaces_index.lookup(ctx, &ir.model.surfaces,
+                |surface| surface.id.as_str(), key.as_str())?.is_some();
             if already_present {
                 continue;
             }
@@ -1255,7 +1249,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         } else {
             None
         };
-        let support_planes = round_edge_support_planes.get(&row.id);
+        let support_planes = ctx.get_btree_map(&round_edge_support_planes, &row.id, "creo round edge support planes lookup")?;
         let support_tangent_frame = if selector_corner_interval {
             None
         } else {
@@ -1289,7 +1283,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         };
         let round_edge_frame = match support_planes.zip(round_edge_envelope) {
             Some((support_planes, envelope)) => {
-                let replay = match constant_round_radii.get(&row.feature_id).copied() {
+                let replay = match ctx.get_btree_map(&constant_round_radii, &row.feature_id, "creo constant round radii lookup")?.copied() {
                     Some(radius) => {
                         round_edge_cylinder_frame(ctx, envelope, radius, support_planes)?
                     }
@@ -1353,7 +1347,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             && !selector_corner_interval
             && (matches!(feature_class, Some(SchemaClass::Cut))
                 || matches!(feature_class, Some(SchemaClass::Round))
-                    && !constant_round_radii.contains_key(&row.feature_id)
+                    && !ctx.contains_key_btree_map(&constant_round_radii, &row.feature_id, "creo constant round radii lookup")?
                     && round_support_frame.is_none()
                     && round_edge_frame.is_none()
                     && support_tangent_frame.is_none()
@@ -1381,8 +1375,8 @@ pub(in super::super) fn transfer_positional_cylinders(
             let mut circles = Vec::new();
             for circle in ctx
                 .admit_iter(&scan.references.circles, "creo reference cylinder circles")?
-                .filter(|circle| entity_ids.contains(&circle.entity_id))
             {
+                if !ctx.contains_btree_set(&entity_ids, &circle.entity_id, "creo entity ids lookup")? { continue; }
                 ctx.reserve_vec(&mut circles, 1, "creo reference cylinder circles")?;
                 circles.push(circle);
             }

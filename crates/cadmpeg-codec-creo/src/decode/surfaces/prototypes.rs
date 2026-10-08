@@ -392,7 +392,7 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
     }
     ctx.retain_vec(
         &mut associations,
-        |(_, row, _)| Ok(association_counts.get(&row.offset) == Some(&1)),
+        |(_, row, _)| Ok(ctx.get_btree_map(&association_counts, &row.offset, "creo association counts lookup")? == Some(&1)),
         "creo unique surface prototype associations retention",
     )?;
     Ok(associations)

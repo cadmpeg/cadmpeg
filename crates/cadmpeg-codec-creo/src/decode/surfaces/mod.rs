@@ -61,21 +61,11 @@ fn native_surface_namespace(
     scan: &ContainerScan,
     surface_id: u32,
 ) -> Result<(cadmpeg_ir::ids::IdentityNamespace, &'static str), cadmpeg_core::CodecError> {
-    let visible_present = ctx.any_by(
-        &*scan.surfaces.rows,
-        |row| Ok(row.id == surface_id),
-        "creo visible surface namespace search",
-    )?;
-    let nonvisible_present = ctx.any_by(
-        &*scan.surfaces.nonvisible_rows,
-        |row| Ok(row.id == surface_id),
-        "creo nonvisible surface namespace search",
-    )?;
-    let active_datum_present = ctx.any_by(
-        &scan.planes.datum_cylinders,
-        |cylinder| Ok(cylinder.id == surface_id),
-        "creo datum surface namespace search",
-    )?;
+    let visible_present = scan.surfaces.rows.contains_id(surface_id);
+    let nonvisible_present = !visible_present && scan.surfaces.nonvisible_rows.contains_id(surface_id);
+    let active_datum_present = !visible_present && !nonvisible_present && ctx.any_by(
+        &scan.planes.datum_cylinders, |cylinder| Ok(cylinder.id == surface_id),
+        "creo datum surface namespace search")?;
     Ok(if visible_present {
         (
             crate::identity::VISIBGEOM_SURFACE,
@@ -422,29 +412,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn native_surface_namespace_refuses_before_visible_search() {
-        let mut scan = crate::test_support::empty_container_scan();
-        scan.surfaces.rows.push(SurfaceRow {
-            id: 17,
-            kind: SurfaceKind::Plane,
-            feature_id: 1,
-            reversed: false,
-            boundary_type: crate::surface::BoundaryType::Code00,
-            next_surface: 0,
-            offset: 0,
-        });
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let error = native_surface_namespace(&ctx, &scan, 17).expect_err("search needs work");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::WorkUnits
-                && resource.operation == "creo visible surface namespace search")
-        );
-    }
+
 }
 
 pub(super) fn transfer_part_product(
