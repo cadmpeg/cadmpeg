@@ -1844,6 +1844,7 @@ pub(super) fn circular_range_choices_have_simple_selection<T: AsRef<[[f64; 2]]>>
         selected: &mut [u16; MAX_SELECTION_STATES],
         states: &mut usize,
     ) -> Result<Option<bool>, CodecError> {
+        let _depth = ctx.enter_nested("catia_standard_circle_range_selection")?;
         if *states >= MAX_SELECTION_STATES {
             return Ok(None);
         }
@@ -1851,10 +1852,17 @@ pub(super) fn circular_range_choices_have_simple_selection<T: AsRef<[[f64; 2]]>>
         if index == choices.len() {
             return Ok(Some(true));
         }
-        for (choice_index, _) in ctx
-            .admit_iter(choices[index].as_ref(), "catia_standard_iteration")?
-            .enumerate()
-        {
+        // Production rows contain at most two fixed choices. Larger generic
+        // rows admit each visited choice before advancing.
+        let ranges = choices[index].as_ref();
+        let mut candidates = ranges.iter().enumerate();
+        loop {
+            let next = if ranges.len() <= 2 {
+                candidates.next()
+            } else {
+                ctx.next_charged(&mut candidates, "catia_standard_iteration")?
+            };
+            let Some((choice_index, _)) = next else { break };
             let Ok(choice_index) = u16::try_from(choice_index) else {
                 return Ok(None);
             };

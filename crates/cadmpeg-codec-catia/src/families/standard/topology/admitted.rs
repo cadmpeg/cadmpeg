@@ -80,9 +80,15 @@ impl StandardTopology {
             return Ok(None);
         };
         let mut faces = Vec::new();
-        for face in ctx.admit_iter(draft_faces, "catia_admitted_topology_faces")? {
+        let mut draft_faces = draft_faces.into_iter();
+        while let Some(face) =
+            ctx.next_charged(&mut draft_faces, "catia_admitted_topology_faces")?
+        {
             let mut boundaries = Vec::new();
-            for boundary in ctx.admit_iter(face.boundaries, "catia_admitted_topology_boundaries")? {
+            let mut draft_boundaries = face.boundaries.into_iter();
+            while let Some(boundary) =
+                ctx.next_charged(&mut draft_boundaries, "catia_admitted_topology_boundaries")?
+            {
                 let Some(boundary) = Boundary::new(ctx, boundary.coedges)? else {
                     return Ok(None);
                 };
@@ -188,6 +194,34 @@ mod tests {
                 valid.faces()[0].boundaries()[0].coedges()[0],
                 coedge(0, 0, 0)
             );
+        });
+    }
+
+    #[test]
+    fn topology_admission_stops_before_unvisited_faces_and_boundaries() {
+        crate::test_support::with_work_limit(64, |ctx| {
+            let mut invalid = draft(coedge(1, 0, 0));
+            for _ in 0..1024 {
+                invalid.faces.push(super::super::FaceTopologyDraft {
+                    boundaries: vec![
+                        super::super::BoundaryDraft::new(vec![coedge(0, 0, 0)]).expect("boundary")
+                    ],
+                });
+            }
+            assert!(StandardTopology::new(ctx, invalid)
+                .expect("first face is visited")
+                .is_none());
+        });
+        crate::test_support::with_work_limit(64, |ctx| {
+            let mut invalid = draft(coedge(1, 0, 0));
+            for _ in 0..1024 {
+                invalid.faces[0].boundaries.push(
+                    super::super::BoundaryDraft::new(vec![coedge(0, 0, 0)]).expect("boundary"),
+                );
+            }
+            assert!(StandardTopology::new(ctx, invalid)
+                .expect("first boundary is visited")
+                .is_none());
         });
     }
 

@@ -42,3 +42,74 @@ fn standard_edge_merge_propagates_source_work_refusal() {
         assert_eq!(target, BTreeMap::from([(70, [500, 300])]));
     });
 }
+
+#[test]
+fn circle_selection_admits_caller_recursion_depth() {
+    use crate::families::standard::decode::edge_geometry::circular_range_choices_have_simple_selection;
+    let choices = vec![[[0.0, 1.0]]; 32];
+    assert!(crate::test_support::with_service_context(|ctx| {
+        circular_range_choices_have_simple_selection(ctx, &choices)
+    })
+    .expect("compatible coincident ranges"));
+    crate::test_support::with_depth_limit(4, |ctx| {
+        let error = circular_range_choices_have_simple_selection(ctx, &choices)
+            .expect_err("fifth selection frame must refuse");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("depth refusal")
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RecursionDepth
+        );
+        assert_eq!(limit.operation, "catia_standard_circle_range_selection");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn bezier_heap_admits_sifting_and_releases_search_storage() {
+    use crate::families::standard::decode::collect_bezier_point_parameters;
+    let control = std::array::from_fn(|index| {
+        Point3::new(
+            f64::from(u32::try_from(index).expect("six poles")),
+            0.0,
+            0.0,
+        )
+    });
+    for operation in ["catia_bezier_search_queue", "catia_bezier_search_work"] {
+        let error = crate::test_support::with_work_refusal(operation, |ctx| {
+            let mut parameters = Vec::new();
+            collect_bezier_point_parameters(
+                ctx,
+                control,
+                [0.0, 1.0],
+                Point3::new(2.5, 0.0, 0.0),
+                0.001,
+                1.0,
+                &mut parameters,
+            )?;
+            Ok(parameters)
+        })
+        .expect_err("heap work must be admitted");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation)
+        );
+    }
+    crate::test_support::with_retained_limit(0, |ctx| {
+        // The retained destination already owns two slots. All search storage
+        // must use materialized bytes, and both admitted solutions stay intact.
+        let mut parameters = Vec::with_capacity(2);
+        collect_bezier_point_parameters(
+            ctx,
+            control,
+            [0.0, 1.0],
+            Point3::new(2.5, 0.0, 0.0),
+            0.001,
+            1.0,
+            &mut parameters,
+        )
+        .expect("search storage is temporary");
+        assert_eq!(parameters, vec![(0.5, 0.0), (0.5, 0.0)]);
+    });
+}

@@ -5436,8 +5436,10 @@ fn collect_bezier_point_parameters(
         }
     }
 
+    let mut search_storage = ctx.reserve_scoped(0, "catia_bezier_search_storage")?;
     let mut nodes = Vec::new();
-    ctx.push_vec(
+    ctx.push_scoped_vec(
+        &mut search_storage,
         &mut nodes,
         Node {
             control,
@@ -5447,10 +5449,16 @@ fn collect_bezier_point_parameters(
         "catia_bezier_search_nodes",
     )?;
     let mut queue = BinaryHeap::new();
-    ctx.reserve_heap(&mut queue, 1, "catia_bezier_search_queue")?;
-    queue.push((Reverse(root_lower_bound.to_bits()), 0usize));
-    while let Some((Reverse(lower_bits), node_index)) = queue.pop() {
-        ctx.charge_work(1, "catia_bezier_search_work")?;
+    search_storage.with_storage(|| {
+        ctx.push_heap(
+            &mut queue,
+            (Reverse(root_lower_bound.to_bits()), 0usize),
+            "catia_bezier_search_queue",
+        )
+    })?;
+    while let Some((Reverse(lower_bits), node_index)) =
+        ctx.pop_heap(&mut queue, "catia_bezier_search_work")?
+    {
         let lower = f64::from_bits(lower_bits);
         if lower > tolerance || lower > best.1 {
             continue;
@@ -5487,7 +5495,8 @@ fn collect_bezier_point_parameters(
                 best = candidate;
             }
             let index = nodes.len();
-            ctx.push_vec(
+            ctx.push_scoped_vec(
+                &mut search_storage,
                 &mut nodes,
                 Node {
                     control,
@@ -5496,8 +5505,13 @@ fn collect_bezier_point_parameters(
                 },
                 "catia_bezier_search_nodes",
             )?;
-            ctx.reserve_heap(&mut queue, 1, "catia_bezier_search_queue")?;
-            queue.push((Reverse(lower.to_bits()), index));
+            search_storage.with_storage(|| {
+                ctx.push_heap(
+                    &mut queue,
+                    (Reverse(lower.to_bits()), index),
+                    "catia_bezier_search_queue",
+                )
+            })?;
         }
     }
     if best.1 <= tolerance {
@@ -7502,7 +7516,7 @@ fn attach_standard_topology(
                     "catia_standard_partial_constraint_edges",
                 )?;
                 let preferred_budget =
-                    solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
+                    solve_budget.session_child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
                 let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
                     ctx,
                     crate::solve::mesh_quotient::ParseStandardMeshCandidateOutcomeInputs {
@@ -7549,7 +7563,7 @@ fn attach_standard_topology(
                         },
                     },
                 )?;
-                if !solve_budget.charge_by(preferred_budget.consumed()) {
+                if solve_budget.consume_child(&preferred_budget).is_err() {
                     return Ok(mesh_quotient::MeshSolve::Failed(
                         mesh_quotient::MeshCandidateFailure::Exhausted(
                             mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
@@ -7566,8 +7580,8 @@ fn attach_standard_topology(
                     // complementary arcs can be valid. The fallback relaxes
                     // only that choice; straight-carrier interval overlap is
                     // an invalid endpoint relation in both searches.
-                    let fallback_budget =
-                        solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
+                    let fallback_budget = solve_budget
+                        .session_child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
                     let fallback = mesh_quotient::parse_standard_mesh_candidate_outcome(
                         ctx,
                         crate::solve::mesh_quotient::ParseStandardMeshCandidateOutcomeInputs {
@@ -7604,7 +7618,7 @@ fn attach_standard_topology(
                             },
                         },
                     )?;
-                    if !solve_budget.charge_by(fallback_budget.consumed()) {
+                    if solve_budget.consume_child(&fallback_budget).is_err() {
                         return Ok(mesh_quotient::MeshSolve::Failed(
                             mesh_quotient::MeshCandidateFailure::Exhausted(
                                 mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
@@ -9885,20 +9899,48 @@ fn nurbs_surface_control_bounds(
 ) -> Result<Option<[[f64; 2]; 3]>, cadmpeg_core::decode::ResourceLimit> {
     const OPERATION: &str = "catia surface control bounds";
     let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
-    for u in ctx.admit_iter(0..surface.u_count(), OPERATION)? {
-        for v in ctx.admit_iter(0..surface.v_count(), OPERATION)? {
-            if surface
-                .weight(u, v)
-                .is_some_and(|weight| weight.get() <= 0.0)
-            {
+    let mut include = |point: FinitePoint3| {
+        for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
+            bounds[axis][0] = bounds[axis][0].min(coordinate);
+            bounds[axis][1] = bounds[axis][1].max(coordinate);
+        }
+    };
+    match surface.pole_grid() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows } => {
+            ctx.all_by_limit(
+                rows,
+                |row| {
+                    ctx.all_by_limit(
+                        row,
+                        |point| {
+                            include(*point);
+                            Ok(true)
+                        },
+                        OPERATION,
+                    )
+                },
+                OPERATION,
+            )?;
+        }
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { rows } => {
+            if !ctx.all_by_limit(
+                rows,
+                |row| {
+                    ctx.all_by_limit(
+                        row,
+                        |pole| {
+                            if pole.weight.get() <= 0.0 {
+                                return Ok(false);
+                            }
+                            include(pole.point);
+                            Ok(true)
+                        },
+                        OPERATION,
+                    )
+                },
+                OPERATION,
+            )? {
                 return Ok(None);
-            }
-            let Some(point) = surface.pole(u, v) else {
-                continue;
-            };
-            for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
-                bounds[axis][0] = bounds[axis][0].min(coordinate);
-                bounds[axis][1] = bounds[axis][1].max(coordinate);
             }
         }
     }
@@ -11192,9 +11234,9 @@ impl StandardLinePairConstraint {
         ctx: &DecodeContext<'_>,
         pairs: &StandardLineEdgePairs<'_>,
     ) -> Result<bool, CodecError> {
-        for (role, pair) in ctx
-            .admit_iter(&self.edge_roles, "catia_standard_line_valid_roles")?
-            .zip(pairs.pairs())
+        let mut roles = self.edge_roles.iter().zip(pairs.pairs());
+        while let Some((role, pair)) =
+            ctx.next_charged(&mut roles, "catia_standard_line_valid_roles")?
         {
             if *role == EdgeLineRole::NotLine {
                 continue;
@@ -11220,13 +11262,11 @@ impl StandardLinePairConstraint {
         if !self.is_valid(ctx, pairs)? {
             return Ok(false);
         }
-        for edges in ctx
-            .admit_iter(&self.edges_by_face, "catia_standard_line_face_lists")?
-            .map(|(_, edges)| edges)
-        {
-            for (left_position, &left_edge) in ctx
-                .admit_iter(edges.as_slice(), "catia_standard_line_left_edges")?
-                .enumerate()
+        let mut faces = self.edges_by_face.values();
+        while let Some(edges) = ctx.next_charged(&mut faces, "catia_standard_line_face_lists")? {
+            let mut left_edges = edges.iter().enumerate();
+            while let Some((left_position, &left_edge)) =
+                ctx.next_charged(&mut left_edges, "catia_standard_line_left_edges")?
             {
                 let Some(left_pair) = pairs.pairs()[left_edge] else {
                     continue;
@@ -11234,10 +11274,10 @@ impl StandardLinePairConstraint {
                 let Some(left) = standard_line_segment(&self.points, left_pair) else {
                     continue;
                 };
-                for &right_edge in ctx.admit_iter(
-                    &edges[left_position + 1..],
-                    "catia_standard_line_right_edges",
-                )? {
+                let mut right_edges = edges[left_position + 1..].iter();
+                while let Some(&right_edge) =
+                    ctx.next_charged(&mut right_edges, "catia_standard_line_right_edges")?
+                {
                     let Some(right_pair) = pairs.pairs()[right_edge] else {
                         continue;
                     };
