@@ -323,3 +323,31 @@ fn cmnm_forbidden_name_search_charges_only_visited_bytes() {
     // Both routes have identical setup; the later match visits two more bytes.
     assert_eq!(last.used, first.used + 2);
 }
+
+#[test]
+fn skipped_sections_still_require_traversal_work() {
+    let bytes = b"#Other\n";
+    let sections = [Section::scan_for_test("Other".into(), 0, bytes.len(), None, bytes).expect("section")];
+    let selected = crate::test_support::assert_work_boundaries(&["creo section traversal"], |ctx| {
+        super::super::nonvisible_geometry_sections(ctx, &sections)
+    });
+    assert!(selected.is_empty());
+}
+
+#[test]
+fn native_model_name_search_stops_before_unvisited_sections() {
+    let bytes = b"model_name\0part\0";
+    let first = Section::scan_for_test("Other".into(), 0, bytes.len(), None, bytes).expect("section");
+    let mut sections = vec![first.clone()];
+    let boundary = |sections: &[super::super::ScannedSection<'_>]| {
+        let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits,
+            "creo native model-name section selection", |ctx| super::super::native_model_name(ctx, sections));
+        let CodecError::ResourceLimit(resource) = error else { panic!("work refusal") };
+        resource
+    };
+    let one = boundary(&sections);
+    sections.extend(std::iter::repeat_n(first, 64));
+    assert_eq!(one, boundary(&sections));
+    let name = crate::decode::with_test_decode_ctx(|ctx| super::super::native_model_name(ctx, &sections)).expect("search");
+    assert_eq!(name, Some(("part".into(), 11)));
+}

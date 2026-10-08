@@ -1199,7 +1199,7 @@ fn expanded_sections(
 ) -> Result<Vec<ExpandedSection>, CodecError> {
     const MAX_EXPANDED_SECTION: usize = 256 * 1024 * 1024;
     let mut expanded_sections = Vec::new();
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo section traversal")? {
         let Some(expected_length) = section.section.expanded_length else {
             continue;
         };
@@ -1404,7 +1404,7 @@ fn legacy_scope_ranges(
         .first()
         .map_or(data.len(), |section| section.section.offset());
     scopes.push(framing.object_offset..initial_end);
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo section traversal")? {
         let region = section.region;
         let Some(payload_start) = section
             .section
@@ -1428,37 +1428,22 @@ fn legacy_scope_ranges(
 /// ASCII object remains unknown.
 fn identify_layout(
     ctx: &DecodeContext<'_>,
-    data: &[u8],
+    _data: &[u8],
     sections: &[ScannedSection<'_>],
     legacy_ascii: Option<LegacyAsciiFraming>,
 ) -> Result<Layout, CodecError> {
-    let has_depdb_root = ctx.any_by(
-        sections,
-        |section| {
-            if section.section.name() != "DEPDB_DATA" {
-                return Ok(false);
-            }
-            let Some(header_end) = section
-                .section
-                .offset()
-                .checked_add(section.section.raw_name.len() + 2)
-            else {
-                return Ok(false);
-            };
-            Ok(data
-                .get(header_end..section.section.end())
-                .is_some_and(|payload| payload.starts_with(DEPDB_ROOT_RECORD)))
-        },
-        "creo DEPDB root section selection",
-    )?;
-    let has_depdb_section = ctx.any_by(
-        sections,
-        |section| Ok(section.section.name() == "DEPDB_DATA"),
-        "creo DEPDB section selection",
-    )?;
-    let has_nd_decoration = sections
-        .iter()
-        .any(|s| s.section.raw_name.starts_with("ND:"));
+    let mut has_depdb_root = false;
+    let mut has_depdb_section = false;
+    let mut has_nd_decoration = false;
+    for section in ctx.admit_iter(sections, "creo layout section traversal")? {
+        has_nd_decoration |= section.section.raw_name.starts_with("ND:");
+        if section.section.name() == "DEPDB_DATA" {
+            has_depdb_section = true;
+            let header_length = section.section.raw_name.len() + 2;
+            has_depdb_root |= section.region.get(header_length..)
+                .is_some_and(|payload| payload.starts_with(DEPDB_ROOT_RECORD));
+        }
+    }
     Ok(if has_depdb_section {
         if has_depdb_root {
             Layout::Depdb
@@ -1663,9 +1648,9 @@ fn native_model_name(
 ) -> Result<Option<(String, usize)>, CodecError> {
     const FIELD: &[u8] = b"model_name\0";
 
-    for section in sections {
+    ctx.find_map(sections, |section| {
         if section.section.role() == SectionRole::Thumbnail {
-            continue;
+            return Ok(None);
         }
         let region = section.region;
         let mut from = 0;
@@ -1701,8 +1686,8 @@ fn native_model_name(
             }
             from = value_end + 1;
         }
-    }
-    Ok(None)
+        Ok(None)
+    }, "creo native model-name section selection")
 }
 
 fn relation_model_name<'a>(
@@ -1780,25 +1765,16 @@ fn model_geometry_sections<'a>(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'a>],
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
-    let mut visible_namespace_present = false;
-    for candidate in sections {
+    let visible_namespace_present = ctx.any_by(sections, |candidate| {
         if candidate.section.name() != VISIBGEOM {
-            continue;
+            return Ok(false);
         }
         let payload = candidate.region;
-        if ctx
-            .find_bytes_from(payload, b"srf_array\0", 0, "find Creo container marker")?
-            .is_some()
-            || ctx
-                .find_bytes_from(payload, b"crv_array\0", 0, "find Creo container marker")?
-                .is_some()
-        {
-            visible_namespace_present = true;
-            break;
-        }
-    }
+        Ok(ctx.find_bytes_from(payload, b"srf_array\0", 0, "find Creo container marker")?.is_some()
+            || ctx.find_bytes_from(payload, b"crv_array\0", 0, "find Creo container marker")?.is_some())
+    }, "creo visible geometry section selection")?;
     let mut selected = Vec::new();
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo section traversal")? {
         let keep = if visible_namespace_present {
             section.section.name() == VISIBGEOM
         } else if section.section.name() == "DEPDB_DATA" {
@@ -1824,7 +1800,7 @@ fn nonvisible_geometry_sections<'a>(
     sections: &[ScannedSection<'a>],
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     let mut selected = Vec::new();
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo section traversal")? {
         if section.section.name() != "NovisGeom" {
             continue;
         }
@@ -1841,11 +1817,11 @@ fn loop_array_sections<'a>(
     sections: &[ScannedSection<'a>],
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     let mut selected = Vec::new();
-    for section in model.iter().chain(nonvisible) {
+    for section in ctx.admit_iter(model, "creo loop model section traversal")?.chain(ctx.admit_iter(nonvisible, "creo loop nonvisible section traversal")?) {
         ctx.reserve_vec(&mut selected, 1, "creo loop array sections")?;
         selected.push(section.copy_retained(ctx)?);
     }
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo section traversal")? {
         if section.section.name() != "Xsections" {
             continue;
         }
@@ -1882,7 +1858,7 @@ fn surface_rows(
 ) -> Result<Vec<SurfaceRow>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter().map(Ok),
+        ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| surface::rows(ctx, bytes),
         |row, base| row.offset += base,
         |row| row.offset,
@@ -1895,7 +1871,7 @@ fn cross_section_surface_rows(
 ) -> Result<Vec<SurfaceRow>, CodecError> {
     collect_section_records_result(
         ctx,
-        cross_sections(ctx, sections),
+        cross_sections(ctx, sections)?,
         |bytes| surface::cross_section_rows(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
@@ -1907,7 +1883,7 @@ fn surface_prototype_count(
     sections: &[ScannedSection<'_>],
 ) -> Result<usize, CodecError> {
     let mut total = 0usize;
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo section traversal")? {
         let section_bytes = section.region;
         total += surface::prototype_count(ctx, section_bytes)?;
     }
@@ -1921,7 +1897,7 @@ fn surface_prototype_records(
 ) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter().map(Ok),
+        ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| surface::named_prototype_records(ctx, bytes, refusals),
         |record, base| {
             record.offset += base;
@@ -1940,7 +1916,7 @@ fn surface_parameters(
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter().map(Ok),
+        ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| surface::parameter_records(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -1956,7 +1932,7 @@ fn cross_section_surface_parameters(
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        cross_sections(ctx, sections),
+        cross_sections(ctx, sections)?,
         |bytes| surface::cross_section_parameter_records(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -1972,7 +1948,7 @@ fn surface_contours(
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter().map(Ok),
+        ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| surface::contour_records(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -1989,7 +1965,7 @@ fn cross_section_surface_contours(
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        cross_sections(ctx, sections),
+        cross_sections(ctx, sections)?,
         |bytes| surface::cross_section_contour_records(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -2006,7 +1982,7 @@ fn loop_array_scan(
 ) -> Result<LoopArrayScan, CodecError> {
     let mut frames = Vec::new();
     let mut records = Vec::new();
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo section traversal")? {
         let payload = section.region;
         let scan = loop_array::scan(ctx, payload)?;
         ctx.reserve_vec(
@@ -2053,7 +2029,7 @@ fn tabulated_cylinder_curve_replays(
 ) -> Result<Vec<TabulatedCylinderCurveReplay>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter().map(Ok),
+        ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| surface::tabulated_cylinder_curve_replays(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -2069,7 +2045,7 @@ fn plane_local_systems(
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter().map(Ok),
+        ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| surface::plane_local_systems(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -2085,7 +2061,7 @@ fn cross_section_plane_local_systems(
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
     collect_section_records_result(
         ctx,
-        cross_sections(ctx, sections),
+        cross_sections(ctx, sections)?,
         |bytes| surface::cross_section_plane_local_systems(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -2101,7 +2077,7 @@ fn plane_envelopes(
 ) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter().map(Ok),
+        ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| surface::plane_envelopes(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -2117,7 +2093,7 @@ fn cross_section_plane_envelopes(
 ) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        cross_sections(ctx, sections),
+        cross_sections(ctx, sections)?,
         |bytes| surface::cross_section_plane_envelopes(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
@@ -2130,7 +2106,7 @@ fn curve_prototypes(
 ) -> Result<Vec<CurvePrototype>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter().map(Ok),
+        ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::prototypes(ctx, bytes),
         |prototype, base| prototype.offset += base,
         |prototype| prototype.offset,
@@ -2144,7 +2120,7 @@ fn curve_expressions(
 ) -> Result<Vec<CurveExpressionRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter().map(Ok),
+        ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::expression_records_with_model_name(ctx, bytes, model_name),
         |record, base| {
             record.offset += base;
@@ -2177,7 +2153,7 @@ fn curve_parameters(
 ) -> Result<Vec<CurveParameterRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter().map(Ok),
+        ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::parameter_records_with_face_ids(ctx, bytes, Some(face_ids)),
         |record, base| {
             record.offset += base;
@@ -2195,7 +2171,7 @@ fn two_chart_pcurves(
 ) -> Result<Vec<TwoChartPcurveSamples>, CodecError> {
     let mut records = collect_section_records_result(
         ctx,
-        sections.iter().map(Ok),
+        ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::two_chart_pcurve_samples(ctx, bytes, Some(face_ids)),
         |record, base| record.offset += base,
         |record| record.offset,
@@ -2221,7 +2197,7 @@ fn prototype_pcurves(
 ) -> Result<Vec<PrototypePcurveEndpoints>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter().map(Ok),
+        ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::prototype_pcurve_endpoints(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
@@ -2234,7 +2210,7 @@ fn curve_prototype_topology(
 ) -> Result<Vec<CurvePrototypeTopology>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter().map(Ok),
+        ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::prototype_topology(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
@@ -2248,7 +2224,7 @@ fn curve_topology_rows(
 ) -> Result<Vec<CurveTopologyRow>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections.iter().map(Ok),
+        ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::topology_rows_with_face_ids(ctx, bytes, Some(face_ids)),
         |row, base| row.offset += base,
         |row| row.offset,
@@ -2261,7 +2237,7 @@ fn cross_section_curve_rows(
 ) -> Result<Vec<DepdbCurveRow>, CodecError> {
     collect_section_records_result(
         ctx,
-        cross_sections(ctx, sections),
+        cross_sections(ctx, sections)?,
         |bytes| curve::depdb_cross_section_rows(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
@@ -2274,7 +2250,7 @@ fn cross_section_curve_prototypes(
 ) -> Result<Vec<CurvePrototype>, CodecError> {
     collect_section_records_result(
         ctx,
-        cross_sections(ctx, sections),
+        cross_sections(ctx, sections)?,
         |bytes| curve::prototypes(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
@@ -2287,8 +2263,7 @@ fn datum_planes(
 ) -> Result<Vec<DatumPlaneRecord>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections
-            .iter()
+        ctx.admit_iter(sections, "creo section traversal")?
             .filter(|section| section.section.name() == "ActDatums")
             .map(Ok),
         |bytes| {
@@ -2310,8 +2285,7 @@ fn datum_cylinders(
 ) -> Result<Vec<DatumCylinder>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections
-            .iter()
+        ctx.admit_iter(sections, "creo section traversal")?
             .filter(|section| section.section.name() == "ActDatums")
             .map(Ok),
         |bytes| datum::cylinders(ctx, bytes),
@@ -2566,8 +2540,7 @@ fn feature_entity_tables(
     }
     collect_section_records_result(
         ctx,
-        sections
-            .iter()
+        ctx.admit_iter(sections, "creo section traversal")?
             .filter(|section| section.section.name() == "AllFeatur")
             .map(Ok),
         |bytes| feature::entity::entity_tables(ctx, bytes, &feature_ids_set, &surface_ids),
@@ -2588,7 +2561,7 @@ fn feature_rows(
     feature_ids: &BTreeSet<u32>,
 ) -> Result<Vec<FeatureRow>, CodecError> {
     let mut rows = Vec::new();
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo section traversal")? {
         if section.section.name() != "AllFeatur" {
             continue;
         }
@@ -2728,7 +2701,7 @@ fn feature_definitions(
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut definitions = Vec::new();
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo section traversal")? {
         if !(section.section.name() == "FeatDefs" || section.section.name() == "DEPDB_DATA") {
             continue;
         }
@@ -2916,7 +2889,7 @@ fn section_owner_ranges(
         .ok_or_else(|| ctx.refuse_codec_limit("creo section owner count", u64::MAX, u64::MAX))?;
     let mut ranges = Vec::new();
     ctx.reserve_vec(&mut ranges, count, "creo section owner ranges")?;
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo section traversal")? {
         if section.section.name() == "DEPDB_DATA" {
             ranges.push((section.section.offset(), section.section.end()));
         }
@@ -2937,8 +2910,7 @@ fn positional_replay_definitions(
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections
-            .iter()
+        ctx.admit_iter(sections, "creo section traversal")?
             .filter(|section| section.section.name() == "FeatDefs")
             .map(Ok),
         |bytes| feature::definitions::positional_replay_definitions(ctx, bytes),
@@ -2953,8 +2925,7 @@ fn feature_operations(
 ) -> Result<Vec<FeatureOperation>, CodecError> {
     let records = collect_section_records_result(
         ctx,
-        sections
-            .iter()
+        ctx.admit_iter(sections, "creo section traversal")?
             .filter(|section| matches!(section.section.name(), "MdlStatus" | "DEPDB_DATA"))
             .map(Ok),
         |bytes| feature::operations::operations(ctx, bytes),
@@ -2994,7 +2965,7 @@ fn feature_reference_names(
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<FeatureReferenceName>, CodecError> {
     let mut records = Vec::new();
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo section traversal")? {
         if section.section.name() != "MdlRefInfo" {
             continue;
         }
@@ -3015,8 +2986,7 @@ fn feature_operation_states(
 ) -> Result<Vec<FeatureOperationState>, CodecError> {
     collect_section_records_result(
         ctx,
-        sections
-            .iter()
+        ctx.admit_iter(sections, "creo section traversal")?
             .filter(|section| matches!(section.section.name(), "MdlStatus" | "DEPDB_DATA"))
             .map(Ok),
         |bytes| feature::operations::operation_states(ctx, bytes),
@@ -3033,7 +3003,7 @@ fn depdb_recipe_rows(
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<FeatureRow>, CodecError> {
     let mut rows = Vec::new();
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo section traversal")? {
         if section.section.name() != "DEPDB_DATA" {
             continue;
         }
@@ -3150,7 +3120,7 @@ fn reference_scan(
     let mut lines = Vec::new();
     let mut circles = Vec::new();
     let mut conics = Vec::new();
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo section traversal")? {
         if section.section.name() != "MdlRefInfo" {
             continue;
         }
@@ -3701,7 +3671,7 @@ pub(crate) fn scan_bytes<'a>(
     // The `Cow` takes the bytes here, so the scan's borrowed regions end and
     // the framing keeps the owned sections.
     let mut retained_sections = Vec::new();
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo section traversal")? {
         ctx.reserve_vec(&mut retained_sections, 1, "creo retained scan sections")?;
         retained_sections.push(section.section);
     }
@@ -3817,7 +3787,7 @@ fn scan_primitives(
     let mut primitive_triangle_strips = Vec::new();
     let mut conflicting_triangle_strip_representation_count = 0usize;
     let mut primitive_namespace_seen = false;
-    for section in expanded_sections {
+    for section in ctx.admit_iter(expanded_sections, "creo primitive section traversal")? {
         let tables = crate::scalar::double_xar_tables(ctx, &section.data)?;
         ctx.reserve_vec(
             &mut double_xar_tables,
@@ -3869,8 +3839,8 @@ fn scan_primitives(
 fn cross_sections<'a, 'data, 'ctx>(
     ctx: &'a DecodeContext<'ctx>,
     sections: &'a [ScannedSection<'data>],
-) -> impl Iterator<Item = Result<&'a ScannedSection<'data>, CodecError>> + use<'a, 'data, 'ctx> {
-    sections.iter().filter_map(move |section| {
+) -> Result<impl Iterator<Item = Result<&'a ScannedSection<'data>, CodecError>> + use<'a, 'data, 'ctx>, CodecError> {
+    Ok(ctx.admit_iter(sections, "creo cross-section traversal")?.filter_map(move |section| {
         if section.section.name() != "Xsections" {
             return None;
         }
@@ -3884,7 +3854,7 @@ fn cross_sections<'a, 'data, 'ctx>(
             Ok(None) => None,
             Err(error) => Some(Err(error)),
         }
-    })
+    }))
 }
 
 fn collect_section_records_result<'a, 'data: 'a, T>(
@@ -3940,12 +3910,12 @@ pub(crate) fn has_thumbnail(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<bool, CodecError> {
-    for section in &scan.framing.sections {
+    ctx.any_by(&scan.framing.sections, |section| {
         if section.role() != SectionRole::Thumbnail {
-            continue;
+            return Ok(false);
         }
         let Some(raw) = section_region(&scan.framing.data, section) else {
-            continue;
+            return Ok(false);
         };
         // The `#<name>\n` header precedes the payload.
         let payload_start = section.raw_name.len() + 2;
@@ -3970,11 +3940,8 @@ pub(crate) fn has_thumbnail(
                 .is_some()
                 || expanded_carries_jpeg
         };
-        if carries_jpeg {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+        Ok(carries_jpeg)
+    }, "creo thumbnail section selection")
 }
 
 /// Build a codec-neutral summary of the sections, layout, and namespace census.
@@ -3984,7 +3951,7 @@ pub(crate) fn summarize(
     classification: crate::dialect::DialectClassification,
 ) -> Result<ContainerSummary, CodecError> {
     let mut entries = Vec::new();
-    for s in &scan.framing.sections {
+    for s in ctx.admit_iter(&scan.framing.sections, "creo summary section traversal")? {
         let mut attributes = BTreeMap::new();
         ctx.insert_btree_map(
             &mut attributes,
