@@ -5,60 +5,6 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 #[test]
-fn temporary_user_string_case_equality_preserves_refusal() {
-    let payload = super::anonymous(
-        0,
-        &[
-            1_i32.to_le_bytes().as_slice(),
-            super::anonymous(
-                0,
-                &[
-                    super::utf16_bytes("$TEMP_OBJECT$"),
-                    super::utf16_bytes("temporary"),
-                ]
-                .concat(),
-            )
-            .as_slice(),
-        ]
-        .concat(),
-    );
-    let descriptors = [crate::objects::AttributeUserdataDescriptor::Known(
-        crate::objects::AttributeUserdata {
-            range: 0..payload.len(),
-            class_uuid: crate::objects::USER_STRING_LIST,
-            item_uuid: crate::objects::USER_STRING_LIST,
-            application_uuid: None,
-            writer_version: None,
-            payload_range: 0..payload.len(),
-        },
-    )];
-    cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        "Rhino temporary user string key case equality",
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-            let result = crate::presentation::first_user_string_records(
-                &ctx,
-                &payload,
-                ArchiveVersion::V8,
-                &[],
-                &descriptors,
-                0,
-                &mut Vec::new(),
-            )
-            .map(|_| ());
-            if let Err(CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
-        },
-    );
-}
-
-#[test]
 fn text_style_description_case_equality_preserves_refusal() {
     // Equal-length descriptions reach the admitted ASCII comparison scan.
     let mut bytes = vec![0x12];

@@ -16,7 +16,7 @@ use serde::Serialize;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{OpaqueRecord, Record, Table};
 use crate::objects::{
-    parse_class_wrapper_with_userdata, read_uuid_list, ClassUserdata, UserdataDescriptor,
+    parse_class_wrapper_with_userdata, skip_uuid_list, ClassUserdata, UserdataDescriptor,
 };
 use crate::wire::{finite, read_finite, uuid, Uuid};
 
@@ -759,7 +759,7 @@ pub(crate) struct LayerRecord {
 }
 
 /// A source-normalized per-viewport layer override.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct LayerPerViewportSettings {
     /// Viewport identity selected by the source entry.
     pub(crate) viewport_id: Uuid,
@@ -1091,7 +1091,7 @@ pub(crate) fn utf16_retained(
     decode_utf16_retained(ctx, bytes, reader.position(), operation)
 }
 
-fn decode_utf16_retained(
+pub(crate) fn decode_utf16_retained(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     error_offset: usize,
@@ -1116,12 +1116,11 @@ pub(crate) fn utf16_deferred<'a>(
 ) -> Result<DeferredUtf16<'a>, FramingError> {
     let bytes = utf16_payload(reader)?;
     let error_offset = reader.position();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len() / 2),
-        "validate Rhino deferred UTF-16",
-    )?;
     let mut view = View::over_retained(bytes);
-    for character in char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
+    let mut characters = char::decode_utf16(std::iter::from_fn(|| view.u16_le()));
+    while let Some(character) =
+        ctx.next_charged(&mut characters, "validate Rhino deferred UTF-16")?
+    {
         character.map_err(|_| {
             FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence")
         })?;
@@ -1191,6 +1190,7 @@ fn parse_layer_extensions(
     let mut values = Vec::new();
     ctx.reserve_capacity(&mut values, count, "Rhino layer extension capacity")?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino settings cursor traversal")?;
         let entry = chunk_at(
             data,
             outer_reader.position(),
@@ -1657,6 +1657,7 @@ fn parse_plugin_list(
         count_offset,
     )?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino settings cursor traversal")?;
         parse_plugin_reference(ctx, data, &mut reader, archive)?;
     }
     reader.skip_remaining()?;
@@ -1937,6 +1938,7 @@ pub(crate) fn parse_rendering_attributes(
         .collection_vec(count, "Rhino rendering material references")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino settings cursor traversal")?;
         let material =
             crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
         if material.typecode != ANONYMOUS || material.short() {
@@ -1967,6 +1969,7 @@ pub(crate) fn parse_rendering_attributes(
             .collection_vec(obsolete_mapping_count, "Rhino obsolete rendering mappings")
             .map_err(crate::chunks::FramingError::from)?;
         for _ in 0..obsolete_mapping_count {
+            ctx.charge_work(1, "Rhino settings cursor traversal")?;
             let mapping = crate::chunks::chunk_at(
                 data,
                 material_payload.position(),
@@ -2030,6 +2033,7 @@ pub(crate) fn parse_rendering_attributes(
             payload.position(),
         )?;
         for _ in 0..mapping_count {
+            ctx.charge_work(1, "Rhino settings cursor traversal")?;
             let mapping =
                 crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
             if mapping.typecode != ANONYMOUS || mapping.short() {
@@ -2060,6 +2064,7 @@ pub(crate) fn parse_rendering_attributes(
                 .collection_vec(channel_count, "Rhino rendering mapping channels")
                 .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..channel_count {
+                ctx.charge_work(1, "Rhino settings cursor traversal")?;
                 let channel = crate::chunks::chunk_at(
                     data,
                     mapping_payload.position(),
@@ -2181,7 +2186,10 @@ fn skip_model_attributes(
     Ok(chunk.range())
 }
 
-fn read_segments(payload: &mut BoundedReader<'_>) -> Result<(), FramingError> {
+fn read_segments(
+    ctx: &DecodeContext<'_>,
+    payload: &mut BoundedReader<'_>,
+) -> Result<(), FramingError> {
     let count = payload.i32()?;
     let bytes = crate::chunks::checked_count_bytes(
         count,
@@ -2192,6 +2200,7 @@ fn read_segments(payload: &mut BoundedReader<'_>) -> Result<(), FramingError> {
     )?;
     let mut segment_reader = payload.unread()?;
     for _ in 0..(bytes / 12) {
+        ctx.charge_work(1, "Rhino settings cursor traversal")?;
         let length = segment_reader.f64()?;
         if !length.is_finite() {
             return Err(FramingError::structural(
@@ -2226,7 +2235,7 @@ pub(crate) fn parse_direct_linetype<'a>(
     if version.0 == 1 {
         payload.i32()?;
         utf16_deferred(ctx, &mut payload)?;
-        read_segments(&mut payload)?;
+        read_segments(ctx, &mut payload)?;
         if version.1 >= 1 {
             uuid(&mut payload)?;
         }
@@ -2244,7 +2253,7 @@ pub(crate) fn parse_direct_linetype<'a>(
             archive,
             warnings,
         )?);
-        read_segments(&mut payload)?;
+        read_segments(ctx, &mut payload)?;
         if version.1 >= 1 {
             // ON_Linetype::Read() consumes extension IDs through an ordered
             // cascade. A duplicate, out-of-order, or future ID ends the
@@ -2672,7 +2681,7 @@ fn parse_layer(
         if item == 28 {
             push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
             layer.no_clipping_planes = Some(reader.bool_with_writer_version(writer_version)?);
-            read_uuid_list(ctx, &mut reader, archive)?;
+            skip_uuid_list(&mut reader, archive)?;
             item = reader.u8()?;
         }
         if version.1 > 10 {
@@ -2738,7 +2747,10 @@ fn parse_layer(
             }
             if item == 37 {
                 push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
-                let mut description = utf16_retained(ctx, &mut reader, "Rhino layer description")?;
+                let mut description_workspace =
+                    ctx.reserve_scoped(0, "Rhino layer description workspace")?;
+                let description = description_workspace
+                    .with_storage(|| utf16_retained(ctx, &mut reader, "Rhino layer description"))?;
                 let trim = |character: char| {
                     matches!(
                         u32::from(character),
@@ -2752,12 +2764,29 @@ fn parse_layer(
                             | 0x2066..=0x2069
                     )
                 };
-                let trimmed = description.trim_matches(trim);
-                let prefix = description.len() - description.trim_start_matches(trim).len();
-                let end = prefix + trimmed.len();
-                description.truncate(end);
-                description.drain(..prefix);
-                layer.description = (!description.is_empty()).then_some(description);
+                layer.description = match ctx.find_map(
+                    description.char_indices(),
+                    |(index, character)| Ok((!trim(character)).then_some(index)),
+                    "Rhino layer description prefix",
+                )? {
+                    None => None,
+                    Some(start) => {
+                        let end = ctx
+                            .find_map(
+                                description[start..].char_indices().rev(),
+                                |(index, character)| {
+                                    Ok((!trim(character))
+                                        .then_some(start + index + character.len_utf8()))
+                                },
+                                "Rhino layer description suffix",
+                            )?
+                            .unwrap_or(start);
+                        Some(ctx.copy_retained_text(
+                            &description[start..end],
+                            "Rhino layer trimmed description",
+                        )?)
+                    }
+                };
                 let _next_item = reader.u8()?;
             }
         }
@@ -3036,16 +3065,12 @@ fn report_layer_parent_references(
     let mut workspace = ctx.reserve_scoped(0, "Rhino layer parent workspace")?;
     for layer in ctx.admit_iter(layers, "Rhino report layer parent references traversal")? {
         if let Some(id) = layer.id.filter(|id| !id.is_nil()) {
-            if let Some(count) = id_counts.get_mut(&id) {
-                *count += 1;
-            } else {
-                workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                    Uuid,
-                    usize,
-                )>()))?;
-                ctx.reserve_map(&mut id_counts, 1, "Rhino layer parent counts")?;
-                id_counts.insert(id, 1);
-            }
+            let count = workspace
+                .with_storage(|| {
+                    ctx.entry_hash_map(&mut id_counts, id, "Rhino layer parent counts")
+                })?
+                .or_default();
+            *count += 1;
         }
     }
     for layer in ctx.admit_iter(layers, "Rhino report layer parent references traversal")? {
@@ -3056,7 +3081,7 @@ fn report_layer_parent_references(
         else {
             continue;
         };
-        match id_counts.get(&parent).copied() {
+        match ctx.get_hash_map(&id_counts, &parent, "Rhino layer parent lookup")?.copied() {
             None => warnings.push_admitted(ctx, format_args!(
                 "layer {} references missing parent UUID {parent}",
                 layer.index

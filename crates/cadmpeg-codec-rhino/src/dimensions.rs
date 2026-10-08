@@ -438,6 +438,7 @@ fn legacy_annotation_fields(
         .collection_vec(point_count, "Rhino legacy annotation points")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..point_count {
+        ctx.charge_work(1, "Rhino dimensions cursor traversal")?;
         let offset = annotation.position();
         points.push(scaled_point(point2(annotation)?, scale, offset)?);
     }
@@ -598,11 +599,11 @@ pub(crate) fn v2_annotation_direct(
     let kind = reader.i32()?;
     let plane_offset = reader.position();
     let raw_plane = plane(ctx, reader)?;
-    if ctx.any_by(
-        &(raw_plane.origin)[..],
-        |value| Ok(value.abs() > V2_REALLY_BIG_NUMBER),
-        "Rhino v2 annotation direct traversal",
-    )? {
+    if raw_plane
+        .origin
+        .iter()
+        .any(|value| value.abs() > V2_REALLY_BIG_NUMBER)
+    {
         return Err(FramingError::structural(
             plane_offset,
             "V2 annotation plane origin is outside the source bound",
@@ -622,13 +623,13 @@ pub(crate) fn v2_annotation_direct(
         .collection_vec(point_bytes / 16, "Rhino V2 annotation points")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..point_bytes / 16 {
+        ctx.charge_work(1, "Rhino dimensions cursor traversal")?;
         let point_offset = reader.position();
         let raw_point = point2(reader)?;
-        if ctx.any_by(
-            &raw_point[..],
-            |value| Ok(value.abs() > V2_REALLY_BIG_NUMBER),
-            "Rhino v2 annotation direct traversal",
-        )? {
+        if raw_point
+            .iter()
+            .any(|value| value.abs() > V2_REALLY_BIG_NUMBER)
+        {
             return Err(FramingError::structural(
                 point_offset,
                 "V2 annotation point is outside the source bound",
@@ -659,10 +660,24 @@ pub(crate) fn v2_effective_text(
     } else {
         &annotation.user_text
     };
-    ctx.copy_retained_text(
-        text.trim_matches(|character: char| character.is_whitespace() || character.is_control()),
-        "Rhino V2 effective text",
-    )
+    let Some((start, _)) = ctx.find_by(
+        text.char_indices(),
+        |(_, character)| Ok(!character.is_whitespace() && !character.is_control()),
+        "Rhino V2 effective text leading boundary",
+    )?
+    else {
+        return ctx.copy_retained_text("", "Rhino V2 effective text");
+    };
+    let end = ctx
+        .find_by(
+            text[start..].char_indices().rev(),
+            |(_, character)| Ok(!character.is_whitespace() && !character.is_control()),
+            "Rhino V2 effective text trailing boundary",
+        )?
+        .map_or(start, |(last, character)| {
+            start + last + character.len_utf8()
+        });
+    ctx.copy_retained_text(&text[start..end], "Rhino V2 effective text")
 }
 
 enum LegacyDimensionFields {
@@ -1432,32 +1447,34 @@ pub(crate) fn apply_userdata(
     Ok(())
 }
 
-/// Projects a decoded dimension into one measured semantic annotation.
-///
-/// `object` is the 3DM object-record identity (also used as `native_ref`).
-/// `order` must be a globally unique dense `u32`.
-///
-/// Returns the annotation and the codes for every reference the annotation could
-/// not carry.
-fn insert_dimension_property(
+fn insert_dimension_text(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     key: &'static str,
-    value: fmt::Arguments<'_>,
+    value: String,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let key = ctx.copy_retained_text(key, "Rhino dimension parameter key")?;
     let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
         .ok_or_else(|| {
         cadmpeg_core::CodecError::malformed("generated dimension key is blank")
     })?;
-    let value = ctx.format_retained(value, "Rhino dimension parameter value")?;
     ctx.insert_btree_map(parameters, key, value, "Rhino dimension parameter entries")?;
     Ok(())
 }
 
-struct CommaValues<'a>(&'a [f64]);
+fn insert_dimension_property(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parameters: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    key: &'static str,
+    value: fmt::Arguments<'_>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let value = ctx.format_retained(value, "Rhino dimension parameter value")?;
+    insert_dimension_text(ctx, parameters, key, value)
+}
 
-impl fmt::Display for CommaValues<'_> {
+struct CommaValues<'a, const N: usize>(&'a [f64; N]);
+
+impl<const N: usize> fmt::Display for CommaValues<'_, N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (index, value) in self.0.iter().enumerate() {
             if index > 0 {
@@ -1469,20 +1486,20 @@ impl fmt::Display for CommaValues<'_> {
     }
 }
 
-struct SemicolonPoints<'a>(&'a [FiniteVector<2>]);
-
-impl fmt::Display for SemicolonPoints<'_> {
+struct PointText<'a>(&'a FiniteVector<2>);
+impl fmt::Display for PointText<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (index, point) in self.0.iter().enumerate() {
-            if index > 0 {
-                f.write_str(";")?;
-            }
-            write!(f, "{},{}", point[0], point[1])?;
-        }
-        Ok(())
+        write!(f, "{},{}", self.0[0], self.0[1])
     }
 }
 
+/// Projects a decoded dimension into one measured semantic annotation.
+///
+/// `object` is the 3DM object-record identity (also used as `native_ref`).
+/// `order` must be a globally unique dense `u32`.
+///
+/// Returns the annotation and the codes for every reference the annotation could
+/// not carry.
 pub(crate) fn project(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     dimension: &Dimension,
@@ -1540,8 +1557,18 @@ pub(crate) fn project(
             "distance_scale",
             format_args!("{}", dimension.distance_scale.get())
         )?;
-        put!("rich_text", format_args!("{}", dimension.rich_text))?;
-        put!("user_text", format_args!("{}", dimension.user_text))?;
+        insert_dimension_text(
+            ctx,
+            &mut parameters,
+            "rich_text",
+            ctx.copy_retained_text(&dimension.rich_text, "Rhino dimension parameter value")?,
+        )?;
+        insert_dimension_text(
+            ctx,
+            &mut parameters,
+            "user_text",
+            ctx.copy_retained_text(&dimension.user_text, "Rhino dimension parameter value")?,
+        )?;
         put!(
             "use_default_text_point",
             format_args!("{}", dimension.use_default_text_point)
@@ -1567,27 +1594,27 @@ pub(crate) fn project(
         )?;
         put!(
             "plane_origin",
-            format_args!("{}", CommaValues(&dimension.plane.origin[..]))
+            format_args!("{}", CommaValues(&dimension.plane.origin.get()))
         )?;
         put!(
             "plane_x_axis",
-            format_args!("{}", CommaValues(&dimension.plane.xaxis[..]))
+            format_args!("{}", CommaValues(&dimension.plane.xaxis.get()))
         )?;
         put!(
             "plane_y_axis",
-            format_args!("{}", CommaValues(&dimension.plane.yaxis[..]))
+            format_args!("{}", CommaValues(&dimension.plane.yaxis.get()))
         )?;
         put!(
             "plane_z_axis",
-            format_args!("{}", CommaValues(&dimension.plane.zaxis[..]))
+            format_args!("{}", CommaValues(&dimension.plane.zaxis.get()))
         )?;
         put!(
             "plane_equation",
-            format_args!("{}", CommaValues(&dimension.plane.equation[..]))
+            format_args!("{}", CommaValues(&dimension.plane.equation.get()))
         )?;
         put!(
             "horizontal_direction",
-            format_args!("{}", CommaValues(&dimension.horizontal_direction[..]))
+            format_args!("{}", CommaValues(&dimension.horizontal_direction.get()))
         )?;
         match &dimension.family {
             DimensionFamily::Modern { dimstyle_id } => {
@@ -1609,8 +1636,18 @@ pub(crate) fn project(
                 points,
                 angular_radius,
             } => {
-                put!("v2_default_text", format_args!("{default_text}"))?;
-                put!("v2_points", format_args!("{}", SemicolonPoints(points)))?;
+                insert_dimension_text(
+                    ctx,
+                    &mut parameters,
+                    "v2_default_text",
+                    ctx.copy_retained_text(default_text, "Rhino dimension parameter value")?,
+                )?;
+                let points_text = ctx.join_display_retained(
+                    points.iter().map(PointText),
+                    ";",
+                    "Rhino dimension parameter value",
+                )?;
+                insert_dimension_text(ctx, &mut parameters, "v2_points", points_text)?;
                 if let Some(radius) = angular_radius {
                     let angle = dimension.measurement;
                     put!("v2_angle_radians", format_args!("{angle}"))?;
@@ -1707,7 +1744,12 @@ pub(crate) fn project(
         }
     }
     if let Some(name) = name {
-        insert_dimension_property(ctx, &mut parameters, "object_name", format_args!("{name}"))?;
+        insert_dimension_text(
+            ctx,
+            &mut parameters,
+            "object_name",
+            ctx.copy_retained_text(name, "Rhino dimension parameter value")?,
+        )?;
     }
 
     // Model-space text point via the dimension plane (stored UV, not world xyz).
@@ -1789,7 +1831,7 @@ pub(crate) fn project(
     )
     .or_else(|error| {
         Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
-            format_args!("{}", error),
+            format_args!("{error}"),
             "Rhino project text",
         )?))
     })?;
@@ -1799,7 +1841,7 @@ pub(crate) fn project(
     )?)
     .or_else(|error| {
         Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
-            format_args!("{}", error),
+            format_args!("{error}"),
             "Rhino project text",
         )?))
     })?;
@@ -1860,6 +1902,7 @@ pub(crate) fn semantic_json(
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod budget_repairs;
 
     #[test]
     fn dimension_point_reader_holds_finite_lanes_and_preserves_refusal_offset() {

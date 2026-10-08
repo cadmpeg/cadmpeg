@@ -575,6 +575,7 @@ fn scan_class_wrapper(
     let mut offset = data_chunk.next_offset();
     let mut end_seen = false;
     while offset < wrapper.body().end {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let item = chunk_at(bytes, offset, wrapper.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
@@ -719,13 +720,29 @@ pub(crate) fn parse_userdata(
     }))
 }
 
+/// Selects entries while validating every source string.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum UserStringSelection {
+    All,
+    ExcludeFirstTempObject,
+    ValidateOnly,
+}
+
+/// Output strings with scoped storage for their intermediate tuple vector.
+pub(crate) struct UserStrings<'ctx> {
+    pub(crate) entries: Vec<(String, String)>,
+    _workspace: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
 /// Reads the built-in `ON_UserStringList` payload from its outer userdata child.
-pub(crate) fn parse_user_string_list(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(crate) fn parse_user_string_list<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: Range<usize>,
     archive: ArchiveVersion,
-) -> Result<Vec<(String, String)>, FramingError> {
+    selection: UserStringSelection,
+) -> Result<UserStrings<'ctx>, FramingError> {
+    const TEMP_OBJECT_KEY: &[u8; 13] = b"$temp_object$";
     let list = chunk_at(
         bytes,
         payload_range.start,
@@ -745,10 +762,17 @@ pub(crate) fn parse_user_string_list(
     }
     let count = reader.i32()?;
     let count_bytes = bounded_count(&reader, count, 1)?;
-    let mut values = ctx
-        .collection_vec(count_bytes, "Rhino user-string entries")
-        .map_err(crate::chunks::FramingError::from)?;
+    let (mut values, mut workspace) = ctx.temporary_vec(
+        if matches!(selection, UserStringSelection::All) {
+            count_bytes
+        } else {
+            0
+        },
+        "Rhino user-string entries",
+    )?;
+    let mut omit_temporary = matches!(selection, UserStringSelection::ExcludeFirstTempObject);
     for _ in 0..count_bytes {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let entry = chunk_at(bytes, reader.position(), list.body().end, archive, false)?;
         require_long(&entry, ANONYMOUS)?;
         let mut entry_reader = BoundedReader::new(bytes, entry.body().start, entry.body().end)?;
@@ -760,17 +784,50 @@ pub(crate) fn parse_user_string_list(
                 "user-string entry version is unsupported",
             ));
         }
-        let key = settings::utf16_retained(ctx, &mut entry_reader, "Rhino user-string key")?;
-        let value = settings::utf16_retained(ctx, &mut entry_reader, "Rhino user-string value")?;
+        if matches!(selection, UserStringSelection::ValidateOnly) {
+            settings::utf16_deferred(ctx, &mut entry_reader)?;
+            settings::utf16_deferred(ctx, &mut entry_reader)?;
+        } else {
+            let key_bytes = settings::utf16_payload(&mut entry_reader)?;
+            let temporary = omit_temporary
+                && key_bytes.len() == TEMP_OBJECT_KEY.len() * 2
+                && TEMP_OBJECT_KEY.iter().enumerate().all(|(index, expected)| {
+                    cadmpeg_core::decode::View::u16_le_at(key_bytes, index * 2)
+                        .and_then(|unit| u8::try_from(unit).ok())
+                        .is_some_and(|unit| unit.eq_ignore_ascii_case(expected))
+                });
+            if temporary {
+                omit_temporary = false;
+                settings::utf16_deferred(ctx, &mut entry_reader)?;
+            } else {
+                let key = settings::decode_utf16_retained(
+                    ctx,
+                    key_bytes,
+                    entry_reader.position(),
+                    "Rhino user-string key",
+                )?;
+                let value =
+                    settings::utf16_retained(ctx, &mut entry_reader, "Rhino user-string value")?;
+                if !matches!(selection, UserStringSelection::All) {
+                    workspace.with_storage(|| {
+                        ctx.reserve_vec(&mut values, 1, "Rhino user-string entries")
+                    })?;
+                }
+                values.push((key, value));
+            }
+        }
         entry_reader.skip_remaining()?;
-        values.push((key, value));
         reader.skip(entry.next_offset() - reader.position())?;
     }
     reader.skip_remaining()?;
-    Ok(values)
+    Ok(UserStrings {
+        entries: values,
+        _workspace: workspace,
+    })
 }
 
 fn parse_history(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     wrapper: &crate::chunks::Chunk,
     archive: ArchiveVersion,
@@ -781,6 +838,7 @@ fn parse_history(
     let mut header_range = None;
     let mut data_range = None;
     while offset < wrapper.body().end {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let item = chunk_at(bytes, offset, wrapper.body().end, archive, false)?;
         match item.typecode {
             HISTORY_HEADER if header_range.is_none() && data_range.is_none() => {
@@ -1004,6 +1062,7 @@ pub(crate) fn parse_attributes(
                 .collection_vec(bytes / 4, "Rhino object groups")
                 .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..bytes / 4 {
+                ctx.charge_work(1, "Rhino objects cursor traversal")?;
                 values.push(reader.i32()?);
             }
             values
@@ -1022,6 +1081,7 @@ pub(crate) fn parse_attributes(
                 .collection_vec(bytes / 32, "Rhino object display materials")
                 .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..bytes / 32 {
+                ctx.charge_work(1, "Rhino objects cursor traversal")?;
                 values.push((uuid(&mut reader)?, uuid(&mut reader)?));
             }
             values
@@ -1049,6 +1109,7 @@ pub(crate) fn parse_attributes(
                 .collection_vec(bytes / 32, "Rhino object explicit display materials")
                 .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..bytes / 32 {
+                ctx.charge_work(1, "Rhino objects cursor traversal")?;
                 values.push((uuid(&mut reader)?, uuid(&mut reader)?));
             }
             (active_space, Uuid::nil(), values)
@@ -1212,6 +1273,7 @@ pub(crate) fn parse_attributes(
     };
     let mut last_item = None;
     while reader.remaining() > 0 {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let item = reader.u8()?;
         if item == 0 {
             reader.skip_remaining()?;
@@ -1282,6 +1344,7 @@ pub(crate) fn parse_attributes(
                     .collection_vec(bytes / 4, "Rhino object groups")
                     .map_err(crate::chunks::FramingError::from)?;
                 for _ in 0..bytes / 4 {
+                    ctx.charge_work(1, "Rhino objects cursor traversal")?;
                     attributes.groups.push(reader.i32()?);
                 }
             }
@@ -1294,6 +1357,7 @@ pub(crate) fn parse_attributes(
                     .collection_vec(bytes / 32, "Rhino object display materials")
                     .map_err(crate::chunks::FramingError::from)?;
                 for _ in 0..bytes / 32 {
+                    ctx.charge_work(1, "Rhino objects cursor traversal")?;
                     attributes
                         .display_materials
                         .push((uuid(&mut reader)?, uuid(&mut reader)?));
@@ -1375,11 +1439,10 @@ pub(crate) fn parse_attributes(
     ))
 }
 
-pub(crate) fn read_uuid_list(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    reader: &mut BoundedReader<'_>,
+fn uuid_list_payload<'a>(
+    reader: &BoundedReader<'a>,
     archive: ArchiveVersion,
-) -> Result<Vec<Uuid>, FramingError> {
+) -> Result<(BoundedReader<'a>, usize, usize), FramingError> {
     let chunk = chunk_at(
         reader.backing_bytes(),
         reader.position(),
@@ -1404,14 +1467,32 @@ pub(crate) fn read_uuid_list(
     }
     let count = payload.i32()?;
     let bytes = bounded_count(&payload, count, 16)?;
+    Ok((payload, bytes / 16, chunk.next_offset()))
+}
+
+pub(crate) fn skip_uuid_list(
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<(), FramingError> {
+    let (_, _, next) = uuid_list_payload(reader, archive)?;
+    reader.skip(next - reader.position())
+}
+
+pub(crate) fn read_uuid_list(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<Vec<Uuid>, FramingError> {
+    let (mut payload, count, next) = uuid_list_payload(reader, archive)?;
     let mut values = ctx
-        .collection_vec(bytes / 16, "Rhino UUID list")
+        .collection_vec(count, "Rhino UUID list")
         .map_err(crate::chunks::FramingError::from)?;
-    for _ in 0..bytes / 16 {
+    for _ in 0..count {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         values.push(uuid(&mut payload)?);
     }
     payload.skip_remaining()?;
-    reader.skip(chunk.next_offset() - reader.position())?;
+    reader.skip(next - reader.position())?;
     Ok(values)
 }
 
@@ -1425,6 +1506,7 @@ pub(crate) fn parse_attribute_userdata(
     let mut result = Vec::new();
     let mut offset = range.start;
     while offset < range.end {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let item = match chunk_at(bytes, offset, range.end, archive, false) {
             Ok(item) => item,
             Err(error) => {
@@ -1669,11 +1751,12 @@ fn resolve_identity(
     warnings: &mut Diagnostics,
     index: usize,
     seen_ids: &mut HashSet<Uuid>,
+    workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<SourceIdentity, cadmpeg_core::CodecError> {
     let attributes = descriptor.attributes.parsed();
     let object_id = attributes.map_or(Uuid::nil(), |value| value.object_id);
     let layer_index = attributes.map_or(-1, |value| value.layer_index);
-    let layer = match layers.resolve(layer_index) {
+    let layer = match layers.resolve(ctx, layer_index)? {
         LayerMatch::Unique(layer) => Some(layer),
         LayerMatch::Ambiguous => {
             if attributes.is_some() {
@@ -1744,7 +1827,9 @@ fn resolve_identity(
             ),
             "Rhino identity source ID",
         )?
-    } else if seen_ids.contains(&object_id) {
+    } else if !workspace
+        .with_storage(|| ctx.insert_hash_set(seen_ids, object_id, "Rhino identity seen UUIDs"))?
+    {
         warnings.push_admitted(ctx, format_args!("duplicate object UUID {object_id}"))?;
         ctx.format_retained(
             format_args!(
@@ -1754,8 +1839,6 @@ fn resolve_identity(
             "Rhino identity source ID",
         )?
     } else {
-        ctx.reserve_set(seen_ids, 1, "Rhino identity seen UUIDs")?;
-        seen_ids.insert(object_id);
         ctx.format_retained(
             format_args!("rhino:object:record#{object_id}"),
             "Rhino identity source ID",
@@ -1789,6 +1872,7 @@ fn resolve_identity(
 /// Parses one bounded object record and returns identity plus child ranges.
 pub(crate) fn parse_object_record(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     bytes: &[u8],
     record: &Record,
     archive: ArchiveVersion,
@@ -1837,6 +1921,7 @@ pub(crate) fn parse_object_record(
     let mut userdata = Vec::new();
     let mut class_end_seen = false;
     while offset < class.body().end {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let item = chunk_at(bytes, offset, class.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
@@ -1864,6 +1949,7 @@ pub(crate) fn parse_object_record(
     let mut phase = 0_u8;
     let mut object_end_seen = false;
     while offset < record.body().end {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let item = chunk_at(bytes, offset, record.body().end, archive, false)?;
         if item.typecode == OBJECT_RECORD_END {
             require_short_zero(&item, OBJECT_RECORD_END)?;
@@ -1890,7 +1976,7 @@ pub(crate) fn parse_object_record(
             }
             OBJECT_RECORD_HISTORY if phase <= 2 => {
                 require_long(&item, OBJECT_RECORD_HISTORY)?;
-                let descriptor = parse_history(bytes, &item, archive)?;
+                let descriptor = parse_history(ctx, bytes, &item, archive)?;
                 let checksum = match (&descriptor.header_range, &descriptor.data_range) {
                     (Some(header), Some(data)) => checksum_warning_excluding(
                         ctx,
@@ -1947,7 +2033,13 @@ pub(crate) fn parse_object_record(
             writer_version,
             &mut warnings,
         ) {
-            Ok(value) => AttributeState::Parsed(Box::new(value)),
+            Ok(value) => {
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectAttributes>()),
+                    "Rhino object attribute box",
+                )?;
+                AttributeState::Parsed(Box::new(value))
+            }
             Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
             Err(error) => {
                 warnings.push_admitted(
@@ -1991,6 +2083,12 @@ pub(crate) fn parse_object_record(
             &mut warnings,
         )?;
     }
+    workspace.with_storage(|| {
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectDescriptor<()>>()),
+            "Rhino framed object box",
+        )
+    })?;
     Ok(ObjectRecord::Framed(Box::new(ObjectDescriptor {
         range: record.range.clone(),
         object_type,
@@ -2037,11 +2135,15 @@ pub(crate) fn resolve_identities(
 ) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
     let mut seen_ids = HashSet::new();
     let mut layers = LayerLookup::new();
+    let mut workspace = ctx.reserve_scoped(0, "Rhino identity lookup workspace")?;
     for layer in ctx.admit_iter(&metadata.layers[..], "Rhino resolve identities traversal")? {
-        layers.insert(ctx, layer)?;
+        workspace.with_storage(|| layers.insert(ctx, layer))?;
     }
     let mut resolved = Vec::new();
-    for (index, object) in objects.into_iter().enumerate() {
+    for (index, object) in ctx
+        .admit_iter(objects, "Rhino resolve identities traversal")?
+        .enumerate()
+    {
         ctx.reserve_vec(&mut resolved, 1, "Rhino resolved object identities")?;
         resolved.push(match object {
             ObjectRecord::Degraded { range, warning } => ObjectRecord::Degraded { range, warning },
@@ -2054,6 +2156,7 @@ pub(crate) fn resolve_identities(
                     &mut local_warnings,
                     index,
                     &mut seen_ids,
+                    &mut workspace,
                 )?;
                 for warning in
                     ctx.admit_iter(&local_warnings[..], "Rhino resolve identities traversal")?
@@ -2065,6 +2168,10 @@ pub(crate) fn resolve_identities(
                     )?;
                 }
                 object.warnings.append_admitted(ctx, &mut local_warnings)?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectDescriptor>()),
+                    "Rhino resolved object box",
+                )?;
                 ObjectRecord::Framed(Box::new(ObjectDescriptor {
                     identity,
                     range: object.range,
@@ -2112,10 +2219,11 @@ impl<'a> LayerLookup<'a> {
         ctx: &DecodeContext<'_>,
         layer: &'a crate::settings::LayerRecord,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        if !self.entries.contains_key(&layer.index) {
-            ctx.reserve_map(&mut self.entries, 1, "Rhino identity layer lookup")?;
-        }
-        match self.entries.entry(layer.index) {
+        match ctx.entry_hash_map(
+            &mut self.entries,
+            layer.index,
+            "Rhino identity layer lookup",
+        )? {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(LayerEntry::Unique(layer));
             }
@@ -2126,12 +2234,18 @@ impl<'a> LayerLookup<'a> {
         Ok(())
     }
 
-    fn resolve(&self, index: i32) -> LayerMatch<'a> {
-        match self.entries.get(&index) {
-            None => LayerMatch::Missing,
-            Some(LayerEntry::Unique(layer)) => LayerMatch::Unique(layer),
-            Some(LayerEntry::Ambiguous) => LayerMatch::Ambiguous,
-        }
+    fn resolve(
+        &self,
+        ctx: &DecodeContext<'_>,
+        index: i32,
+    ) -> Result<LayerMatch<'a>, cadmpeg_core::CodecError> {
+        Ok(
+            match ctx.get_hash_map(&self.entries, &index, "Rhino identity layer query")? {
+                None => LayerMatch::Missing,
+                Some(LayerEntry::Unique(layer)) => LayerMatch::Unique(layer),
+                Some(LayerEntry::Ambiguous) => LayerMatch::Ambiguous,
+            },
+        )
     }
 }
 
