@@ -12,10 +12,42 @@ use crate::native::NativeRecord;
 use crate::validate::validate_neutral;
 
 #[test]
-fn native_conversion_error_admission_preserves_refusals_and_formats_once() {
-    use cadmpeg_core::decode::{
-        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+fn native_conversion_resource_accessor_borrows_the_original_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::native::NativeConvertError::Arena {
+        arena: "records".into(),
+        source: Box::new(crate::native::NativeConvertError::WriteRecord {
+            ordinal: 3,
+            source: Box::new(crate::native::NativeConvertError::Resource(
+                ctx.charge_work(1, "original borrowed refusal").unwrap_err(),
+            )),
+        }),
     };
+    let crate::native::NativeConvertError::Arena { source, .. } = &error else {
+        panic!("the fixture has an arena wrapper");
+    };
+    let crate::native::NativeConvertError::WriteRecord { source, .. } = source.as_ref() else {
+        panic!("the fixture has a record wrapper");
+    };
+    let crate::native::NativeConvertError::Resource(CodecError::ResourceLimit(stored)) =
+        source.as_ref()
+    else {
+        panic!("the zero-work policy must refuse");
+    };
+    assert!(std::ptr::eq(error.resource_limit().unwrap(), stored));
+    assert_eq!(stored.operation, "original borrowed refusal");
+    assert_eq!(ctx.resource_refusal().as_ref(), Some(stored));
+}
+
+#[test]
+fn native_conversion_error_admission_preserves_refusals_and_formats_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
     let arena = DecodeArena::new();

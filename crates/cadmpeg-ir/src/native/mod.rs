@@ -189,7 +189,7 @@ pub enum NativeConvertError {
 impl From<NativeConvertError> for cadmpeg_core::CodecError {
     fn from(error: NativeConvertError) -> Self {
         if let Some(limit) = error.resource_limit() {
-            Self::ResourceLimit(limit)
+            Self::ResourceLimit(*limit)
         } else {
             Self::Malformed(error.to_string())
         }
@@ -200,9 +200,9 @@ impl NativeConvertError {
     /// Returns the resource refusal carried by this error or one of its
     /// contextual wrappers.
     #[must_use]
-    pub fn resource_limit(&self) -> Option<cadmpeg_core::decode::ResourceLimit> {
+    pub fn resource_limit(&self) -> Option<&cadmpeg_core::decode::ResourceLimit> {
         match self {
-            Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)) => Some(*limit),
+            Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)) => Some(limit),
             Self::WriteRecord { source, .. } | Self::Arena { source, .. } => {
                 source.resource_limit()
             }
@@ -221,7 +221,7 @@ impl NativeConvertError {
             return cadmpeg_core::CodecError::ResourceLimit(limit);
         }
         if let Some(limit) = self.resource_limit() {
-            return cadmpeg_core::CodecError::ResourceLimit(limit);
+            return cadmpeg_core::CodecError::ResourceLimit(*limit);
         }
         match ctx.format_retained(format_args!("{self}"), operation) {
             Ok(message) => cadmpeg_core::CodecError::Malformed(message),
