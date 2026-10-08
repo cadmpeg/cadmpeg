@@ -1143,6 +1143,9 @@ fn native_circle_loop_geometry(
     model_curves: &[Curve],
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<Option<NativeCircleLoop>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let [first, second] = lp.half_edges() else {
         return Ok(None);
     };
@@ -1222,6 +1225,9 @@ fn ordered_two_edge_circle_loops<'a>(
     model_curves: &[Curve],
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if loops.len() < 2 || loops.len() != polygons.len() {
         return Ok(None);
     }
@@ -2412,6 +2418,9 @@ fn one_coedge_pcurve_use(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: Option<PcurveUse>,
 ) -> Result<Vec<PcurveUse>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut pcurves = Vec::new();
     if let Some(value) = value {
         ctx.reserve_vec(&mut pcurves, 1, "creo B-rep coedge pcurve uses")?;
