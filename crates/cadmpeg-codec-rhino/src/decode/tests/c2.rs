@@ -165,7 +165,7 @@ fn recursive_curve_walks_preserve_session_depth_refusal() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let _caller = ctx.enter_nested("recursive curve caller").unwrap();
+        let caller = ctx.enter_nested("recursive curve caller").unwrap();
         let error = if placement {
             super::super::transform_decoded_curve(
                 &ctx,
@@ -196,7 +196,7 @@ fn recursive_curve_walks_preserve_session_depth_refusal() {
             "Rhino C2 join nesting"
         });
         assert_eq!(ctx.resource_refusal(), Some(refusal));
-        drop(_caller);
+        drop(caller);
         assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == refusal));
     }
 }

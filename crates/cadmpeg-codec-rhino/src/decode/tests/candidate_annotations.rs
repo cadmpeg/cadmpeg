@@ -266,6 +266,7 @@ fn source_link_insertion_preserves_work_refusal_before_mutation() {
         "test:source:unknown#owner",
         &mut links,
         "test:model:point#earlier",
+        None,
     ) else {
         panic!("comparison work must refuse");
     };

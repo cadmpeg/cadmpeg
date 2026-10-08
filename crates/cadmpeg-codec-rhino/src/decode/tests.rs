@@ -6,7 +6,7 @@ use super::{
     commit_curve_tree, edge_param_range, edge_vertices, face_components, face_sense,
     hatch_loop_ids, hatch_plane_transform, hatch_source_links, region_shell_groups,
     region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
-    snapshot_instance_links, snapshot_instance_statuses, stage_brep, stage_curve_tree,
+    stage_brep, stage_curve_tree,
     stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
     with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
     CommittedExtrusionBoundary, CurveCommitSource, DecodeContext, GeometryOutcome,
@@ -1624,6 +1624,7 @@ fn unknown_record_link_insertion_refuses_collection_limit() {
             "rhino:object:unknown#0",
             record.links_mut(),
             "rhino:curve#1",
+            None,
         )
         .expect_err("one link exceeds the collection limit")
     });

@@ -229,7 +229,7 @@ fn transformed_instance_links_refuse_scoped_slots_before_copy() {
                 cadmpeg_ir::transform::Transform::identity(),
                 &mut scratch,
             )
-            .expect_err("link slot needs scoped storage");
+            .err().expect("link slot needs scoped storage");
         assert!(
             matches!(error, super::ReferenceFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
@@ -273,7 +273,7 @@ fn transformed_instance_identity_refuses_scoped_text_before_copy() {
                 cadmpeg_ir::transform::Transform::identity(),
                 &mut scratch,
             )
-            .expect_err("identity needs storage beyond its slot");
+            .err().expect("identity needs storage beyond its slot");
         assert!(
             matches!(error, super::ReferenceFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
@@ -307,7 +307,7 @@ fn transformed_instance_annotation_ids_refuse_scoped_slots_before_copy() {
                 cadmpeg_ir::transform::Transform::identity(),
                 &mut scratch,
             )
-            .expect_err("annotation identity slot needs scoped storage");
+            .err().expect("annotation identity slot needs scoped storage");
         assert!(
             matches!(error, super::ReferenceFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
