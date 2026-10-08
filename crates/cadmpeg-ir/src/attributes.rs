@@ -88,8 +88,6 @@ impl AttributeValue {
             .collect::<Option<Vec<_>>>()
             .map(Self::Vector)
     }
-
-
 }
 
 /// A linked source attribute record.
