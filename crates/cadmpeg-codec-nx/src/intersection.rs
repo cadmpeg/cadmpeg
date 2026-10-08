@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::FitTolerance;
@@ -112,6 +112,14 @@ impl SupportUvLane {
             Ok(lane) => lane,
             Err(never) => match never {},
         }
+    }
+
+    fn copy_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(Self(ctx.copy_slice(self.as_slice(), operation)?))
     }
 
     /// Ordered support parameter pairs.
@@ -508,44 +516,79 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
     graph: &topology::Graph,
 ) -> Result<CurveScan, CodecError> {
     let mut auxiliary_storage = ctx.reserve_scoped(0, "NX replacement auxiliary storage")?;
-    let (mut charts, mut terms, mut uv, mut bridges) = auxiliary_storage.with_storage(|| {
-        Ok::<_, CodecError>((
-            chart_records(ctx, base_stream, ChartPointLayout::Xyz3)?,
-            term_records(ctx, base_stream)?,
-            uv_records(ctx, base_stream)?,
-            blend_bound_records(ctx, base_stream)?,
-        ))
-    })?;
+    let mut chart_storage = BTreeMap::new();
+    let mut uv_storage = BTreeMap::new();
+    let mut charts = BTreeMap::new();
+    let mut uv = BTreeMap::new();
+    let mut terms = BTreeMap::new();
+    let mut bridges = BTreeMap::new();
+    {
+        let (base, _storage) = ctx.with_scoped_storage("NX base chart map scratch", || {
+            chart_records(ctx, base_stream, ChartPointLayout::Xyz3)
+        })?;
+        extend_scoped_payload_map(
+            ctx, &mut auxiliary_storage, &mut charts, &mut chart_storage, base,
+            |chart| copy_chart(ctx, chart),
+            ["NX replacement chart keys", "NX replacement chart payload keys"],
+        )?;
+    }
+    {
+        let (base, _storage) = ctx.with_scoped_storage("NX base UV map scratch", || {
+            uv_records(ctx, base_stream)
+        })?;
+        extend_scoped_payload_map(
+            ctx, &mut auxiliary_storage, &mut uv, &mut uv_storage, base,
+            |values| values.copy_charged(ctx, "NX replacement UV payload copy"),
+            ["NX replacement UV keys", "NX replacement UV payload keys"],
+        )?;
+    }
+    {
+        let (base, _storage) = ctx.with_scoped_storage("NX base term map scratch", || {
+            term_records(ctx, base_stream)
+        })?;
+        auxiliary_storage.with_storage(|| extend_replacement_map(ctx, &mut terms, base, "NX replacement term keys"))?;
+    }
+    {
+        let (base, _storage) = ctx.with_scoped_storage("NX base bridge map scratch", || {
+            blend_bound_records(ctx, base_stream)
+        })?;
+        auxiliary_storage.with_storage(|| extend_replacement_map(ctx, &mut bridges, base, "NX replacement bridge keys"))?;
+    }
     for replacement_stream in
         ctx.admit_iter(replacement_streams, "NX auxiliary replacement traversal")?
     {
-        auxiliary_storage.with_storage(|| {
-            extend_replacement_map(
-                ctx,
-                &mut charts,
-                chart_records(ctx, replacement_stream, ChartPointLayout::Ext11)?,
-                "NX replacement chart keys",
+        {
+            let (replacement, _storage) = ctx.with_scoped_storage("NX replacement chart map scratch", || {
+                chart_records(ctx, replacement_stream, ChartPointLayout::Ext11)
+            })?;
+            extend_scoped_payload_map(
+                ctx, &mut auxiliary_storage, &mut charts, &mut chart_storage, replacement,
+                |chart| copy_chart(ctx, chart),
+                ["NX replacement chart keys", "NX replacement chart payload keys"],
             )?;
-            extend_replacement_map(
-                ctx,
-                &mut terms,
-                term_records(ctx, replacement_stream)?,
-                "NX replacement term keys",
+        }
+        {
+            let (replacement, _storage) = ctx.with_scoped_storage("NX replacement term map scratch", || {
+                term_records(ctx, replacement_stream)
+            })?;
+            auxiliary_storage.with_storage(|| extend_replacement_map(ctx, &mut terms, replacement, "NX replacement term keys"))?;
+        }
+        {
+            let (replacement, _storage) = ctx.with_scoped_storage("NX replacement UV map scratch", || {
+                uv_records(ctx, replacement_stream)
+            })?;
+            extend_scoped_payload_map(
+                ctx, &mut auxiliary_storage, &mut uv, &mut uv_storage, replacement,
+                |values| values.copy_charged(ctx, "NX replacement UV payload copy"),
+                ["NX replacement UV keys", "NX replacement UV payload keys"],
             )?;
-            extend_replacement_map(
-                ctx,
-                &mut uv,
-                uv_records(ctx, replacement_stream)?,
-                "NX replacement UV keys",
-            )?;
-            extend_replacement_map(
-                ctx,
-                &mut bridges,
-                blend_bound_records(ctx, replacement_stream)?,
-                "NX replacement bridge keys",
-            )?;
-            Ok::<_, CodecError>(())
-        })?;
+        }
+        {
+            let (replacement, _storage) = ctx.with_scoped_storage("NX replacement bridge map scratch", || {
+                blend_bound_records(ctx, replacement_stream)
+            })?;
+            auxiliary_storage.with_storage(|| extend_replacement_map(ctx, &mut bridges, replacement, "NX replacement bridge keys"))?;
+        }
     }
     let (constructions, _construction_storage) = ctx.with_scoped_storage(
         "NX intersection construction scratch",
@@ -567,6 +610,40 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
         constructions,
         CrossFormCollision::PreferDeltaTwin,
     )
+}
+
+/// Copy heap payloads into per-key scopes; replacing a key releases its old scope.
+fn extend_scoped_payload_map<'ctx, T>(
+    ctx: &'ctx DecodeContext<'_>,
+    node_storage: &mut ScopedReservation<'_>,
+    target: &mut BTreeMap<u32, T>,
+    payload_storage: &mut BTreeMap<u32, ScopedReservation<'ctx>>,
+    replacement: BTreeMap<u32, T>,
+    copy: impl Fn(&T) -> Result<T, CodecError>,
+    operations: [&'static str; 2],
+) -> Result<(), CodecError> {
+    for (xmt, value) in ctx.admit_iter(replacement, operations[0])? {
+        let (copied, storage) = ctx.with_scoped_storage(operations[1], || copy(&value))?;
+        node_storage.with_storage(|| {
+            // Drop the replaced payload before releasing its reservation.
+            ctx.insert_btree_map(target, xmt, copied, operations[0])?;
+            ctx.insert_btree_map(payload_storage, xmt, storage, operations[1])?;
+            Ok::<_, CodecError>(())
+        })?;
+    }
+    Ok(())
+}
+
+fn copy_chart(ctx: &DecodeContext<'_>, chart: &Chart) -> Result<Chart, CodecError> {
+    let operation = "NX replacement chart payload copy";
+    Ok(Chart {
+        samples: chart.samples.clone_charged(ctx, operation)?,
+        fit_tolerance: chart.fit_tolerance,
+        ext_support_uv: [
+            chart.ext_support_uv[0].as_ref().map(|lane| lane.copy_charged(ctx, operation)).transpose()?,
+            chart.ext_support_uv[1].as_ref().map(|lane| lane.copy_charged(ctx, operation)).transpose()?,
+        ],
+    })
 }
 
 fn extend_replacement_map<T>(
@@ -809,26 +886,8 @@ fn enrich(
         None => [None, None],
     };
     let ext_support_uv = [
-        chart.ext_support_uv[0]
-            .as_ref()
-            .map(|lane| {
-                crate::intersection::SupportUvLane::from_checked(
-                    ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
-                    lane.as_slice().len(),
-                )
-                .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
-            })
-            .transpose()?,
-        chart.ext_support_uv[1]
-            .as_ref()
-            .map(|lane| {
-                crate::intersection::SupportUvLane::from_checked(
-                    ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
-                    lane.as_slice().len(),
-                )
-                .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
-            })
-            .transpose()?,
+        chart.ext_support_uv[0].as_ref().map(|lane| lane.copy_charged(ctx, "NX solved support-UV lane copy")).transpose()?,
+        chart.ext_support_uv[1].as_ref().map(|lane| lane.copy_charged(ctx, "NX solved support-UV lane copy")).transpose()?,
     ];
     Ok(IntersectionCurve {
         references: construction.references,
@@ -836,7 +895,7 @@ fn enrich(
         primary_support,
         secondary_support,
         pos: construction.pos,
-        samples: chart.samples.clone_charged(ctx)?,
+        samples: chart.samples.clone_charged(ctx, "NX solved chart sample copy")?,
         fit_tolerance: chart.fit_tolerance,
         support_uv,
         ext_support_uv,

@@ -126,6 +126,18 @@ impl SupportUvValues {
         }
     }
 
+    pub(super) fn copy_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            packing: self.packing,
+            values: ctx.copy_slice(&self.values, operation)?,
+            count: self.count,
+        })
+    }
+
     pub(crate) fn count(&self) -> u32 {
         self.count
     }

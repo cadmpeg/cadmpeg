@@ -1153,3 +1153,21 @@ fn cached_section_reader_vectors_are_scoped_and_reusable() {
         );
     }
 }
+
+#[test]
+fn external_reference_output_copy_refuses_at_its_named_work_boundary() {
+    let text = "A".repeat(1000);
+    let mut bytes = vec![1];
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.extend(1000_u16.to_le_bytes());
+    bytes.extend(text.as_bytes());
+    let container = external_reference_path_container(&bytes);
+    crate::test_support::with_decode_context(|ctx| {
+        let (paths, _storage) = container.external_reference_paths(ctx).unwrap();
+        assert_eq!(paths, [text]);
+    });
+    crate::test_support::resource_refusal_at(
+        &bytes, ResourceDimension::WorkUnits, "nx external reference string",
+        |ctx| container.external_reference_paths(ctx).map(|_| ()),
+    );
+}

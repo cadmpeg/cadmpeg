@@ -16,11 +16,11 @@ pub(crate) struct ChartSamples {
 }
 
 impl ChartSamples {
-    pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+    pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
         let values =
-            ctx.collect_vec(self.samples.iter().copied(), "NX solved chart sample copy")?;
+            ctx.collect_vec(self.samples.iter().copied(), operation)?;
         let samples = crate::om::nonempty::NonEmpty::from_admitted_vec(values)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX solved chart sample copy", 0, 0))?;
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 0))?;
         Ok(Self { samples })
     }
     fn from_xyz3_charged(
