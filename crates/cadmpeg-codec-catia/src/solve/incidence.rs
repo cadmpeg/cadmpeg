@@ -1738,12 +1738,12 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                     return Ok(false);
                 };
                 let values = if current.is_empty() {
-                    let Some(values) = coordinate_domains.implicit_edge_candidates(edge, None)
+                    let Some(mut values) = coordinate_domains.implicit_edge_candidates(edge, None)
                     else {
                         return Ok(false);
                     };
                     let mut collected = Vec::new();
-                    for value in values {
+                    while let Some(value) = values.next_with_context(ctx)? {
                         ctx.push_vec(&mut collected, value, "catia implicit face candidate pairs")?;
                     }
                     collected
@@ -1937,9 +1937,37 @@ fn prepare_face_configuration_domains(
     }))
 }
 
+impl IncidenceCandidatePairs<'_> {
+    fn next_with_context(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<[usize; 2]>, CodecError> {
+        match self {
+            Self::Options {
+                candidates,
+                required_point,
+                next_index,
+            } => {
+                let pairs = std::iter::from_fn(|| {
+                    let pair = candidates.get(*next_index).copied()?;
+                    *next_index += 1;
+                    Some(pair)
+                });
+                ctx.find_by(
+                    pairs,
+                    |pair| Ok(required_point.is_none_or(|point| pair.contains(&point))),
+                    "catia_incidence_candidate_scan",
+                )
+            }
+            Self::Implicit(candidates) => candidates.next_with_context(ctx),
+        }
+    }
+}
+
+// The reference degree-support oracle runs independently of the admitted search.
+#[cfg(test)]
 impl Iterator for IncidenceCandidatePairs<'_> {
     type Item = [usize; 2];
-
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::Options {
@@ -1955,19 +1983,25 @@ impl Iterator for IncidenceCandidatePairs<'_> {
                 }
                 None
             }
-            Self::Implicit(candidates) => candidates.next(),
+            Self::Implicit(candidates) => {
+                crate::test_support::with_service_context(|ctx| candidates.next_with_context(ctx))
+                    .expect("reference candidate budget")
+            }
         }
     }
 }
 
-impl Iterator for IncidenceBranch {
-    type Item = (usize, [usize; 2]);
-
-    fn next(&mut self) -> Option<Self::Item> {
+impl IncidenceBranch {
+    fn next_with_context(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<(usize, [usize; 2])>, CodecError> {
         match self {
-            Self::Options(options) => options.next(),
-            Self::Implicit { edge, candidates } => candidates.next().map(|pair| (*edge, pair)),
-            Self::Complete(_) => None,
+            Self::Options(options) => Ok(options.next()),
+            Self::Implicit { edge, candidates } => {
+                Ok(candidates.next_with_context(ctx)?.map(|pair| (*edge, pair)))
+            }
+            Self::Complete(_) => Ok(None),
         }
     }
 }
@@ -2742,7 +2776,10 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                         }
                         continue;
                     }
-                    for supporting_pair in self.candidate_pairs(supporting_edge, Some(point), None)
+                    let mut supporting_pairs =
+                        self.candidate_pairs(supporting_edge, Some(point), None);
+                    while let Some(supporting_pair) =
+                        supporting_pairs.next_with_context(self.ctx)?
                     {
                         if !self.degree_support_budget.charge() {
                             return Ok(true);
@@ -2992,7 +3029,8 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             .copied()
             .filter(|&edge| self.active[edge] && self.assignment[edge].is_none())
         {
-            for pair in self.candidate_pairs(edge, Some(point), coordinate_domains) {
+            let mut pairs = self.candidate_pairs(edge, Some(point), coordinate_domains);
+            while let Some(pair) = pairs.next_with_context(self.ctx)? {
                 let viable = if let Some(&viable) = viability.get(&(edge, pair)) {
                     viable
                 } else {
@@ -3923,10 +3961,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             }
             branch => branch,
         };
-        let Some(first_option) = options.next() else {
-            return Ok(());
-        };
-        for (edge, pair) in std::iter::once(first_option).chain(options) {
+        while let Some((edge, pair)) = options.next_with_context(self.ctx)? {
             if !self.budget.charge() {
                 self.state = IncidenceSearchState::Exhausted;
                 return Ok(());
