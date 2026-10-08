@@ -416,7 +416,7 @@ pub(crate) fn reference_names(
             continue;
         };
         let name_bytes = &payload[name_start..name_end];
-        if name_bytes.is_empty() || ctx.any_by(name_bytes, |byte| Ok(byte.is_ascii_control()), "creo reference name controls")? {
+        if name_bytes.is_empty() || name_bytes.iter().any(u8::is_ascii_control) {
             continue;
         }
         let (first_close, after_first_close) = psb::compact_int(payload, name_end + 1);
