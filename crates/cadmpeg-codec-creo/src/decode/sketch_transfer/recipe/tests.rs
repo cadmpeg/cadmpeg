@@ -266,3 +266,108 @@ fn sweep_conflict_discriminant_does_not_traverse_stored_kind_text() {
             .expect("one record visit and fixed variant tag"), expected);
     }
 }
+
+
+#[test]
+fn schema_roster_exhaustion_and_conflict_use_only_present_visits() {
+    use crate::feature::schema::SchemaClass::{Chamfer, Round};
+    for (rows, cap, expected) in [
+        (vec![], 0, None),
+        (vec![row(Round)], 1, Some(Round)),
+        (vec![row(Round), row(Round)], 2, Some(Round)),
+        (vec![row(Round), row(Chamfer)], 2, None),
+    ] {
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.features.rows = rows;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(feature_schema_class(&ctx, &scan, 40).expect("present visits"), expected);
+    }
+}
+
+#[test]
+fn schema_legacy_round_fallback_stops_at_first_match() {
+    let legacy = |feature_id| crate::legacy_feature::LegacyRoundFeature {
+        feature_id,
+        radius: crate::legacy_feature::LegacyRoundRadius::Ambiguous,
+        edge_ids: None,
+        offset: 0,
+    };
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.legacy_rounds = vec![legacy(11), legacy(40)];
+    scan.features.legacy_rounds.extend((0..64).map(|_| legacy(12)));
+    for cap in [1, 2] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = feature_schema_class(&ctx, &scan, 40);
+        if cap == 2 {
+            assert_eq!(result.expect("two visits"), Some(crate::feature::schema::SchemaClass::Round));
+        } else {
+            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::WorkUnits
+                    && refusal.operation == "creo legacy round schema rows"
+                    && refusal.used == 1 && refusal.additional == 1));
+        }
+    }
+    scan.features.legacy_rounds.truncate(1);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert_eq!(feature_schema_class(&ctx, &scan, 40).expect("one nonmatching visit"), None);
+}
+
+#[test]
+fn schema_fast_operation_class_preserves_original_refusal() {
+    let scan = crate::test_support::empty_container_scan();
+    let selected = operation(40);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert_eq!(super::feature_schema_class_with_operation(&ctx, &scan, 40, Some(&selected))
+        .expect("fixed class"), Some(crate::feature::schema::SchemaClass::Protrusion));
+    let original = ctx.charge_work_limit(1, "prior schema refusal").expect_err("seed refusal");
+    for selected in [None, Some(&selected)] {
+        assert!(matches!(super::feature_schema_class_with_operation(&ctx, &scan, 40, selected),
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
+    }
+}
+
+#[test]
+fn revolution_extent_search_keeps_first_match_and_free_exhaustion() {
+    let extent = |feature_id| crate::feature::rows::FeatureRevolutionExtent {
+        feature_id, offset: 0,
+    };
+    for count in 0..4 {
+        let records = vec![extent(11); count];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::try_from(count).expect("fixed test count");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(unique_feature_revolution_extent(&ctx, &records, 40)
+            .expect("only present records").is_none());
+    }
+    let mut records = vec![extent(40), extent(40)];
+    records.extend((0..64).map(|_| extent(11)));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let selected = unique_feature_revolution_extent(&ctx, &records, 40)
+        .expect("first match").expect("extent");
+    assert!(std::ptr::eq(selected, &records[0]));
+    let original = ctx.charge_work_limit(1, "prior extent refusal").expect_err("seed refusal");
+    assert!(matches!(unique_feature_revolution_extent(&ctx, &[], 40),
+        Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
+}
