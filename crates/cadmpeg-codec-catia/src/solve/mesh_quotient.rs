@@ -10286,7 +10286,7 @@ where
                 MeshCandidateRejection::InputStructure,
             )));
         };
-        let coordinate_gauge = build_mesh_coordinate_gauge(
+        let (coordinate_gauge, _coordinate_gauge_storage) = build_mesh_coordinate_gauge(
             ctx,
             vertex_points.len(),
             &edge_rows,

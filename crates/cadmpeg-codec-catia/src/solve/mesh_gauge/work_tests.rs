@@ -98,6 +98,7 @@ fn coordinate_gauge_refuses_unsearched_eight_point_class() {
             &candidates,
             &[false],
         )
+        .map(|(gauge, _storage)| gauge)
     });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.operation == "catia_gauge_permutation_limit"));
@@ -192,6 +193,7 @@ fn coordinate_gauge_membership_scans_refuse_before_search() {
             &[vec![[0, 1]]],
             &[false],
         )
+        .map(|(gauge, _storage)| gauge)
     });
     for operation in [
         "catia_gauge_group_point_scan",
@@ -252,6 +254,7 @@ fn coordinate_refinement_and_automorphism_comparisons_refuse_key_bytes() {
                 &[vec![[0, 1]]],
                 &[evidence],
             )
+            .map(|(gauge, _storage)| gauge)
         });
         for operation in [
             "catia_gauge_refinement_rounds",
@@ -344,7 +347,9 @@ fn coordinate_topology_candidate_comparison_refuses_before_selection() {
         coordinate_gauge: Some(&coordinate),
     };
     let operations = observed_work_refusals(|ctx| {
-        super::canonicalize_mesh_coordinate_gauges(ctx, topology.clone(), gauge)
+        let storage = ctx.reserve_scoped(0, "test topology storage")?;
+        super::canonicalize_mesh_coordinate_gauges(ctx, topology.clone(), storage, gauge)
+            .map(|value| value.map(|(topology, _storage)| topology))
     });
     assert!(operations.contains("catia_gauge_coordinate_topology_compare"));
 }
@@ -391,4 +396,84 @@ fn candidate_equivalence_refuses_each_variable_length_comparison() {
         super::mesh_candidates_equivalent_with_context(ctx, &candidate, &candidate, None)
     })
     .expect("service comparison work"));
+}
+
+#[test]
+fn gauge_factorial_refuses_only_after_the_visited_factors() {
+    let error =
+        crate::test_support::with_work_limit(2, |ctx| super::bounded_factorial(ctx, 10_000, 3))
+            .expect_err("factors two and three exceed the permutation cap");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "catia_gauge_permutation_limit"
+            && limit.used == 3 && limit.additional == 3));
+}
+
+#[test]
+fn empty_coordinate_gauge_does_no_refinement_work() {
+    crate::test_support::with_work_limit(0, |ctx| {
+        let (gauge, _storage) = super::build_mesh_coordinate_gauge(ctx, 0, &[], &[], &[], &[], &[])
+            .expect("empty gauge has no visited input");
+        assert!(gauge.components.is_empty());
+    });
+}
+
+#[test]
+fn coordinate_gauge_storage_is_scoped_and_released_between_calls() {
+    let rows = [
+        EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("nonempty row"),
+    ];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let (gauge, _storage) = super::build_mesh_coordinate_gauge(
+            ctx,
+            2,
+            &rows,
+            &[[0, 1]],
+            &[MeshEdgeGeometry::Line],
+            &[vec![[0, 1]]],
+            &[false],
+        )?;
+        assert_eq!(gauge.components, vec![vec![vec![0, 1], vec![1, 0]]]);
+        Ok::<_, CodecError>(())
+    };
+    crate::test_support::with_retained_limit(0, &run).expect("gauge is solver scratch");
+    crate::test_support::with_materialized_limit(32_768, |ctx| {
+        for _ in 0..128 {
+            run(ctx).expect("only one gauge and its scratch are live");
+        }
+    });
+}
+
+#[test]
+fn gauge_equivalence_keeps_no_retained_drafts() {
+    let topology = comparison_topology();
+    let candidate = (topology, vec![0, 1]);
+    crate::test_support::with_retained_limit(0, |ctx| {
+        assert!(
+            super::mesh_candidates_equivalent_with_context(ctx, &candidate, &candidate, None)
+                .expect("boolean comparison uses scoped drafts")
+        );
+    });
+}
+
+#[test]
+fn gauge_coedge_queries_stop_before_unvisited_faces() {
+    let topology = comparison_topology();
+    crate::test_support::with_work_limit(3, |ctx| {
+        let mut visits = 0;
+        assert!(
+            !super::visit_coedges(ctx, &topology, "test coedge visit", |_, _, _, _| {
+                visits += 1;
+                Ok(false)
+            })
+            .expect("one face, one boundary, one coedge")
+        );
+        assert_eq!(visits, 1);
+    });
+    crate::test_support::with_work_limit(3, |ctx| {
+        let mut topology = topology.clone();
+        assert!(
+            !super::rewrite_coedges(ctx, &mut topology, "test coedge rewrite", |_| false)
+                .expect("one face, one boundary, one coedge")
+        );
+    });
 }
