@@ -141,13 +141,14 @@ pub(crate) fn validate_native(
         &expected_arenas,
         "compare Inventor native arena names",
     )? {
+        // The expected names are the fixed arena list; walking its ordered
+        // set lists the missing ones in order.
         let mut missing = Vec::new();
-        for arena in ARENAS {
+        for arena in &expected_arenas {
             if !ctx.contains_btree_set(&actual_arenas, arena, "check missing Inventor arena")? {
                 missing.push(*arena);
             }
         }
-        missing.sort_unstable();
         let (unexpected, _unexpected_storage) =
             ctx.with_scoped_storage("collect unexpected Inventor arenas", || {
                 ctx.try_collect_vec(
