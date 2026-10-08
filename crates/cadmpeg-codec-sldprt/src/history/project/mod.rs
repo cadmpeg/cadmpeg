@@ -398,7 +398,7 @@ fn project_history<'c>(
         })?;
     }
     let mut by_native = HashMap::new();
-    let source_features = self::solid::SourceFeatures::new(ctx, &history.features)?;
+    let mut source_features = self::solid::SourceFeatures::new(ctx, &history.features)?;
     for ((feature, neutral), is_metadata) in ctx
         .admit_iter(&history.features, OPERATION)?
         .zip(&neutral_ids)
@@ -483,7 +483,7 @@ fn project_history<'c>(
                     feature,
                     &by_source,
                     &native_by_source,
-                    &source_features,
+                    &mut source_features,
                     &records,
                     &index,
                 )?,
@@ -1765,7 +1765,7 @@ fn project_definition(
     feature: &Feature,
     by_source: &NeutralByKey<'_, '_>,
     native_by_source: &HashMap<&str, &str>,
-    source_features: &self::solid::SourceFeatures<'_, '_>,
+    source_features: &mut self::solid::SourceFeatures<'_, '_>,
     records: &self::solid::RecordsById<'_>,
     index: &HistoryIndex<'_, '_>,
 ) -> Result<FeatureDefinition, CodecError> {
