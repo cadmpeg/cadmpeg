@@ -25,8 +25,13 @@ fn geometry_census_charges_each_namespace_pass() {
     let region = [0; 64];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Search admits the 64-byte haystack and the nine-byte namespace marker.
-    policy.limits.max_work_units = 64 + cadmpeg_core::decode::u64_from_index(b"srf_array".len());
+    let boundary = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::WorkUnits, "creo geometry census search", |ctx| {
+            read_array_count(ctx, &region, b"srf_array")?;
+            read_array_count(ctx, &region, b"crv_array")
+        });
+    let CodecError::ResourceLimit(boundary) = boundary else { panic!("resource boundary"); };
+    policy.limits.max_work_units = boundary.used.checked_add(boundary.additional).expect("work need") - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
         read_array_count(&ctx, &region, b"srf_array").expect("first scan"),
@@ -99,122 +104,6 @@ fn legacy_toc_count_prefix_refuses_work() {
     );
 }
 
-#[test]
-fn feature_identity_family_prefix_refuses_work() {
-    let row = crate::feature::rows::FeatureRow {
-        feature_id: 87,
-        root_schema_class: Some(crate::feature::schema::SchemaClass::DatumPlane),
-        stream_offset: 0,
-        body: vec![0; 2].try_into().expect("row body"),
-        body_offset: 0,
-        offset: 0,
-    };
-    let reference = crate::feature::operations::FeatureReferenceName {
-        feature_id: 87,
-        name_bytes: b"Datum Plane id 87".to_vec(),
-        own_reference_id: 10,
-        reference_type: 1,
-        offset: 0,
-    };
-    let structural = std::collections::BTreeSet::new();
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo feature identity family prefix",
-        |ctx| {
-            super::super::feature_row_has_model_identity(
-                ctx,
-                &row,
-                &structural,
-                &[],
-                std::slice::from_ref(&reference),
-            )
-        },
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo feature identity family prefix")
-    );
-}
-
-#[test]
-fn feature_identity_ordinal_prefix_refuses_work() {
-    let row = crate::feature::rows::FeatureRow {
-        feature_id: 87,
-        root_schema_class: Some(crate::feature::schema::SchemaClass::DatumPlane),
-        stream_offset: 0,
-        body: vec![0; 2].try_into().expect("row body"),
-        body_offset: 0,
-        offset: 0,
-    };
-    let reference = crate::feature::operations::FeatureReferenceName {
-        feature_id: 87,
-        name_bytes: b"Datum Plane id 87".to_vec(),
-        own_reference_id: 10,
-        reference_type: 1,
-        offset: 0,
-    };
-    let structural = std::collections::BTreeSet::new();
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo feature identity ordinal prefix",
-        |ctx| {
-            super::super::feature_row_has_model_identity(
-                ctx,
-                &row,
-                &structural,
-                &[],
-                std::slice::from_ref(&reference),
-            )
-        },
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo feature identity ordinal prefix")
-    );
-}
-
-#[test]
-fn feature_identity_datum_prefix_refuses_work() {
-    let row = crate::feature::rows::FeatureRow {
-        feature_id: 87,
-        root_schema_class: Some(crate::feature::schema::SchemaClass::DatumPlane),
-        stream_offset: 0,
-        body: vec![0; 2].try_into().expect("row body"),
-        body_offset: 0,
-        offset: 0,
-    };
-    let reference = crate::feature::operations::FeatureReferenceName {
-        feature_id: 87,
-        name_bytes: b"DTM87".to_vec(),
-        own_reference_id: 10,
-        reference_type: 1,
-        offset: 0,
-    };
-    let structural = std::collections::BTreeSet::new();
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo feature identity datum prefix",
-        |ctx| {
-            super::super::feature_row_has_model_identity(
-                ctx,
-                &row,
-                &structural,
-                &[],
-                std::slice::from_ref(&reference),
-            )
-        },
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo feature identity datum prefix")
-    );
-}
 
 #[test]
 fn loop_array_section_deduplication_refuses_work() {

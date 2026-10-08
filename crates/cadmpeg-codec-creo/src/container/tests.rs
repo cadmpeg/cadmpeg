@@ -1333,21 +1333,6 @@ fn legacy_toc_array_utf8_refuses_before_invalid_fields() {
 }
 
 #[test]
-fn cmnm_length_utf8_refuses_before_invalid_hexadecimal_text() {
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo UTF-8 validation",
-        |ctx| super::cmnm_model_name(ctx, b"#- CMNM 00\xffx"),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation")
-    );
-}
-
-#[test]
 fn native_model_name_utf8_refuses_before_invalid_name() {
     let payload = b"model_name\0\xff\0";
     let section =
@@ -1366,36 +1351,6 @@ fn native_model_name_utf8_refuses_before_invalid_name() {
     );
 }
 
-#[test]
-fn feature_reference_utf8_refuses_before_invalid_identity() {
-    let row = feature_row_for_aggregate(b"\xe0\x00");
-    let reference = crate::feature::operations::FeatureReferenceName {
-        feature_id: 7,
-        name_bytes: vec![0xff],
-        own_reference_id: 0,
-        reference_type: 0,
-        offset: 0,
-    };
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo UTF-8 validation",
-        |ctx| {
-            super::feature_row_has_model_identity(
-                ctx,
-                &row,
-                &std::collections::BTreeSet::new(),
-                &[],
-                std::slice::from_ref(&reference),
-            )
-        },
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation")
-    );
-}
 
 #[test]
 fn aggregate_pcurve_retain_refuses_work() {
@@ -1442,3 +1397,5 @@ fn version_line_trim_refuses_work() {
             && resource.operation == "creo version line trim")
     );
 }
+
+mod identity_index;
