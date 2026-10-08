@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -7,6 +7,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 #[derive(Debug, Clone, PartialEq)]
 struct FiniteScalarSlots(Vec<Option<f64>>);
 impl FiniteScalarSlots {
+    #[cfg(test)]
     fn new(values: Vec<Option<f64>>) -> Option<Self> {
         values
             .iter()
@@ -102,10 +103,12 @@ impl<Shape> Scalars<Shape> {
         if values.len() != extent.len {
             return Ok(None);
         }
-        ctx.charge_work(u64_from_index(values.len()), "creo scalar array validation")?;
-        Ok(FiniteScalarSlots::new(values).map(|values| Self {
+        if !ctx.all_by(&values, |value| Ok(value.is_none_or(|value| FiniteReal::new(value).is_some())), "creo scalar array validation")? {
+            return Ok(None);
+        }
+        Ok(Some(Self {
             shape: extent.shape,
-            values,
+            values: FiniteScalarSlots(values),
             tokens: None,
         }))
     }
@@ -117,17 +120,13 @@ impl<Shape> Scalars<Shape> {
         if slots.len() != extent.len {
             return Ok(None);
         }
-        ctx.charge_work(u64_from_index(slots.len()), "creo scalar array validation")?;
-        if slots
-            .iter()
-            .any(|(value, _)| value.is_some_and(|value| FiniteReal::new(value).is_none()))
+        if ctx.any_by(&slots, |(value, _)| Ok(value.is_some_and(|value| FiniteReal::new(value).is_none())), "creo scalar array validation")?
         {
             return Ok(None);
         }
         let mut values = ctx.collection_vec(slots.len(), "creo scalar array values")?;
         let mut tokens = ctx.collection_vec(slots.len(), "creo scalar array tokens")?;
-        ctx.charge_work(u64_from_index(slots.len()), "creo scalar array filling")?;
-        for (value, token) in slots {
+        for (value, token) in ctx.admit_iter(slots, "creo scalar array filling")? {
             values.push(value);
             tokens.push(token);
         }
