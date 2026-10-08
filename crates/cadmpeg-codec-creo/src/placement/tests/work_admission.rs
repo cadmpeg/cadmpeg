@@ -24,7 +24,7 @@ fn circular_entity_selection_stops_after_second_match() {
             super::super::SectionPlaneAxes {
                 plane: SignedPlaneEquation { normal: [0.0, 0.0, 1.0], offset: 0.0 },
                 u_axis: [1.0, 0.0, 0.0], v_axis: [0.0, 1.0, 0.0],
-            }, &sources, tables)
+            }, &mut super::super::PlacementLookup::new(ctx, &sources, &[])?, tables)
     };
     crate::test_support::assert_work_boundaries(
         &["creo circular profile entity table selection"], |ctx| run(ctx, &short));
@@ -90,7 +90,7 @@ fn carrier_index_reuses_queries_and_skips_unused_envelopes() {
             datums: &[], surface_rows: &rows, model_planes: &[], outline_planes: &outlines,
             plane_envelopes: envelopes, surface_parameters: &[], geometry_tables: &[], affected_ids: &[],
         };
-        let mut lookup = super::super::PlacementLookup::new(&ctx, &sources)?;
+        let mut lookup = super::super::PlacementLookup::new(&ctx, &sources, &[])?;
         let equation = lookup.generated_equation(7)?;
         assert_eq!(equation, Some(([0.0, 0.0, 1.0], 3.0)));
         if repeat {
@@ -124,10 +124,10 @@ fn duplicate_outline_blocks_generated_envelope_fallback() {
             datums: &[], surface_rows: &rows, model_planes: &[], outline_planes: &outlines,
             plane_envelopes: &envelopes, surface_parameters: &[], geometry_tables: &[], affected_ids: &[],
         };
-        let mut lookup = super::super::PlacementLookup::new(ctx, &sources)?;
+        let mut lookup = super::super::PlacementLookup::new(ctx, &sources, &[])?;
         assert_eq!(lookup.generated_equation(7)?, None);
         let absent_outlines = PlacementSources { outline_planes: &[], ..sources };
-        let mut lookup = super::super::PlacementLookup::new(ctx, &absent_outlines)?;
+        let mut lookup = super::super::PlacementLookup::new(ctx, &absent_outlines, &[])?;
         assert_eq!(lookup.generated_equation(7)?, Some(([1.0, 0.0, 0.0], 2.0)));
         Ok::<_, cadmpeg_core::CodecError>(())
     }).expect("generated plane fallback");
@@ -147,7 +147,7 @@ fn generated_parent_selection_keeps_equation_across_nonmatching_tail() {
         plane_envelopes: &[], surface_parameters: &[], geometry_tables: &tables, affected_ids: &parents,
     };
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        let mut lookup = super::super::PlacementLookup::new(ctx, &sources)?;
+        let mut lookup = super::super::PlacementLookup::new(ctx, &sources, &[])?;
         let equation = super::super::generated_datum_plane_equation(ctx, 42, 2, [1.0, 0.0, 0.0], &mut lookup)?;
         assert_eq!(equation, Some(SignedPlaneEquation { normal: [0.0, 1.0, 0.0], offset: 0.0 }));
         Ok::<_, cadmpeg_core::CodecError>(())
@@ -159,4 +159,41 @@ fn generated_parent_selection_keeps_equation_across_nonmatching_tail() {
         "creo generated datum parent membership", "creo generated datum other parent selection",
         "creo placement feature datum index traversal", "creo generated datum feature datum traversal",
     ], run);
+}
+
+#[test]
+fn generated_plane_index_ignores_same_id_nonplane_rows() {
+    let plane = SurfaceRow { id: 7, kind: SurfaceKind::Plane, feature_id: 42,
+        reversed: false, boundary_type: crate::surface::BoundaryType::Code01, next_surface: 0, offset: 1 };
+    let cylinder = SurfaceRow { kind: SurfaceKind::Cylinder, offset: 2, ..plane.clone() };
+    let rows = crate::surface::unique_rows::UniqueIdRows::from_rows(vec![plane, cylinder]);
+    assert!(rows.unique(7).is_none());
+    let sources = PlacementSources { datums: &[], surface_rows: &rows, model_planes: &[], outline_planes: &[],
+        plane_envelopes: &[], surface_parameters: &[], geometry_tables: &[], affected_ids: &[] };
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let mut lookup = super::super::PlacementLookup::new(ctx, &sources, &[])?;
+        assert_eq!(lookup.plane_row(7)?.map(|row| row.kind), Some(SurfaceKind::Plane));
+        assert_eq!(lookup.plane_row(7)?.map(|row| row.feature_id), Some(42));
+        Ok::<_, cadmpeg_core::CodecError>(())
+    }).expect("plane-only identity selection");
+}
+
+#[test]
+fn placement_transform_index_tracks_appended_owner_ambiguity() {
+    let rows = crate::surface::unique_rows::UniqueIdRows::from_rows(Vec::new());
+    let sources = PlacementSources { datums: &[], surface_rows: &rows, model_planes: &[], outline_planes: &[],
+        plane_envelopes: &[], surface_parameters: &[], geometry_tables: &[], affected_ids: &[] };
+    let frame = |feature_id, offset| FeatureSectionTransform::new(42, Some(feature_id), [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], offset).expect("valid frame");
+    let frames = [frame(42, 1), frame(42, 2), frame(43, 3)];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut lookup = super::super::PlacementLookup::new(ctx, &sources, &[])?;
+        assert_eq!(lookup.transform_position(42, &frames[..1])?, Some(0));
+        assert_eq!(lookup.transform_position(42, &frames[..1])?, Some(0));
+        assert_eq!(lookup.transform_position(42, &frames[..2])?, None);
+        assert_eq!(lookup.transform_position(43, &frames)?, Some(2));
+        assert_eq!(lookup.transform_position(42, &frames)?, None);
+        Ok::<_, cadmpeg_core::CodecError>(())
+    };
+    crate::decode::with_test_decode_ctx(run).expect("append-only transform index");
+    crate::test_support::assert_work_boundaries(&["creo placement transform index traversal"], run);
 }
