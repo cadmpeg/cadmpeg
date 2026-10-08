@@ -45,7 +45,12 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -91,7 +96,12 @@ fn remaining_equations_must_connect_equal_singleton_domains() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -130,7 +140,12 @@ fn remaining_equation_components_require_a_coordinate_matching() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: Vec::new(),
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -169,7 +184,12 @@ fn coordinate_matching_reserves_unavoidable_roots_per_component() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -210,7 +230,12 @@ fn completed_mesh_search_continues_to_check_uniqueness() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: Vec::new(),
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Solved((
             StandardTopologyDraft {
                 faces: Vec::new(),
@@ -264,7 +289,8 @@ fn completed_mesh_search_refuses_edge_and_point_collection_limits() {
             fixed_edge_orientations: Vec::new(),
             edge_has_fixed_direction: Vec::new(),
             selected: vec![Some((0, vec![vec![false]]))],
-            visited_states: HashSet::new(),
+            visited_states: std::collections::HashMap::new(),
+            memo_storage: RefCell::new((ctx).reserve_scoped(0, "catia_selection_memo_storage").expect("memo storage")),
             outcome: SearchOutcome::Open,
             face_equation_cache: RefCell::default(),
         };
@@ -322,7 +348,12 @@ fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: Vec::new(),
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -384,7 +415,12 @@ fn mesh_selection_finishes_the_active_face_component_first() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected,
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -437,7 +473,12 @@ fn forced_face_selection_does_not_exhaust_the_work_budget() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -496,7 +537,12 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -555,7 +601,12 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -628,7 +679,12 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -689,7 +745,12 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -757,7 +818,12 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };

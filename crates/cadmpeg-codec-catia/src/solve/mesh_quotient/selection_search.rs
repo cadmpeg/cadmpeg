@@ -9,12 +9,12 @@ use super::{
     distinct_domain_matching_with_budget, domain_contains, initial_mesh_quotient, least_rotation,
     mesh_candidates_equivalent_with_context, mesh_candidates_identical_with_context,
     orient_face_cycles, reconstruct_mesh_selection, same_unordered_pair, BTreeMap, BTreeSet,
-    BoundaryDraft, CodecError, CoedgeUse, DecodeContext, EdgeRow, FaceTopologyDraft, HashMap,
-    HashSet, MeshBoundaryEdgeCandidate, MeshCandidateFailure, MeshCandidateGauge,
-    MeshEndpointResolve, MeshFaceBoundaryAssignment, MeshFaceSelection, MeshFixedDirectionOption,
-    MeshQuotient, MeshQuotientSignature, MeshSelectionSearch, MeshSelectionStateSignature,
-    MeshSolve, Rc, SearchOutcome, StandardTopologyDraft, VecDeque, WorkBudget,
-    MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_SELECTION_STATE_MEMO_ENTRIES,
+    BoundaryDraft, CachedFaceEquations, CodecError, CoedgeUse, DecodeContext, EdgeRow,
+    FaceTopologyDraft, HashMap, HashSet, MeshBoundaryEdgeCandidate, MeshCandidateFailure,
+    MeshCandidateGauge, MeshEndpointResolve, MeshFaceBoundaryAssignment, MeshFaceSelection,
+    MeshFixedDirectionOption, MeshQuotient, MeshQuotientSignature, MeshSelectionSearch,
+    MeshSelectionStateSignature, MeshSolve, Rc, SearchOutcome, StandardTopologyDraft, VecDeque,
+    WorkBudget, MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_SELECTION_STATE_MEMO_ENTRIES,
 };
 
 #[cfg(test)]
@@ -289,16 +289,19 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         quotient: &mut MeshQuotient<'storage>,
     ) -> Result<MeshQuotientSignature, CodecError> {
         let ctx = self.ctx;
+        let mut root_storage = ctx.reserve_scoped(0, "catia_face_projection_roots")?;
         let mut roots = Vec::new();
         for assignment in ctx.admit_iter(&self.assignments[face], "catia_face_projection_roots")? {
             for boundary in ctx.admit_iter(&assignment.boundaries, "catia_face_projection_roots")? {
                 for use_ in ctx.admit_iter(boundary, "catia_face_projection_roots")? {
                     for node in [use_.edge * 2, use_.edge * 2 + 1] {
-                        ctx.push_vec(
-                            &mut roots,
-                            quotient.union.find(ctx, node)?,
-                            "catia_face_projection_roots",
-                        )?;
+                        root_storage.with_storage(|| {
+                            ctx.push_vec(
+                                &mut roots,
+                                quotient.union.find(ctx, node)?,
+                                "catia_face_projection_roots",
+                            )
+                        })?;
                     }
                 }
             }
@@ -313,8 +316,16 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         let mut signature =
             ctx.collection_vec(roots.len(), "catia_face_projection_signature_rows")?;
         for &root in ctx.admit_iter(&roots, "catia_face_projection_signature_rows")? {
+            let mut members =
+                ctx.copy_slice(quotient.members(root), "catia_face_projection_member_nodes")?;
+            ctx.sort_unstable_by(
+                &mut members,
+                |node| node,
+                Ord::cmp,
+                "catia_face_projection_member_order",
+            )?;
             signature.push((
-                ctx.copy_slice(quotient.members(root), "catia_face_projection_member_nodes")?,
+                members,
                 ctx.copy_slice(
                     &quotient.domains[root],
                     "catia_face_projection_domain_points",
@@ -372,71 +383,72 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         changed_edges: Option<&HashSet<usize>>,
         budget: &WorkBudget<'_>,
     ) -> Result<bool, CodecError> {
-        let mut queue = VecDeque::new();
-        let mut queued = HashSet::new();
-        for (face, selected) in self
+        let mut scratch = self
             .ctx
-            .admit_iter(&self.selected, "catia_forced_equation_queue")?
-            .enumerate()
-        {
-            if selected.is_none()
-                && changed_edges.map_or(Ok(true), |changed_edges| {
-                    self.face_uses_any_edge(face, changed_edges, "catia_forced_equation_queue")
-                })?
+            .reserve_scoped(0, "catia_forced_equation_scratch")?;
+        scratch.with_storage(|| {
+            let mut queue = VecDeque::new();
+            let mut queued = HashSet::new();
+            for (face, selected) in self
+                .ctx
+                .admit_iter(&self.selected, "catia_forced_equation_queue")?
+                .enumerate()
             {
-                self.ctx
-                    .push_back(&mut queue, face, "catia_forced_equation_queue")?;
-                self.ctx
-                    .insert_hash_set(&mut queued, face, "catia_forced_equation_queued")?;
-            }
-        }
-        while let Some(face) = self.ctx.next_charged(
-            &mut std::iter::from_fn(|| queue.pop_front()),
-            "catia_selection_search_iteration",
-        )? {
-            if !budget.charge() {
-                return Ok(true);
-            }
-            self.ctx
-                .remove_hash_set(&mut queued, &face, "catia_forced_equation_queued")?;
-            if self.selected[face].is_some() {
-                continue;
-            }
-            let before = quotient.clone_charged(self.ctx)?;
-            let mut changed = false;
-            let deterministic = self.assignments[face].len() == 1
-                && self.ctx.all_by(
-                    &self.assignments[face][0].boundaries,
-                    |boundary| {
-                        self.ctx.all_by(
-                            boundary,
-                            |use_| Ok(use_.reversed.is_some()),
-                            "catia_forced_deterministic_equations",
-                        )
-                    },
-                    "catia_forced_deterministic_equations",
-                )?;
-            let equations = if deterministic {
-                let [choice] = self.possible_face_choices[face].as_slice() else {
-                    return Ok(false);
-                };
-                self.ctx
-                    .copy_slice(choice, "catia_forced_deterministic_equations")?
-            } else {
-                let cache_key = (face, self.face_projection_signature(face, quotient)?);
-                let cached = {
-                    let cache = self.face_equation_cache.borrow();
+                if selected.is_none()
+                    && changed_edges.map_or(Ok(true), |changed_edges| {
+                        self.face_uses_any_edge(face, changed_edges, "catia_forced_equation_queue")
+                    })?
+                {
                     self.ctx
-                        .get_hash_map(&cache, &cache_key, "catia_forced_equation_cache")?
-                        .map(|equations| {
-                            self.ctx
-                                .copy_slice(equations, "catia_forced_cached_equations")
-                        })
-                        .transpose()?
-                };
-                if let Some(cached) = cached {
-                    cached
+                        .push_back(&mut queue, face, "catia_forced_equation_queue")?;
+                    self.ctx
+                        .insert_hash_set(&mut queued, face, "catia_forced_equation_queued")?;
+                }
+            }
+            while let Some(face) = self.ctx.next_charged(
+                &mut std::iter::from_fn(|| queue.pop_front()),
+                "catia_selection_search_iteration",
+            )? {
+                if !budget.charge() {
+                    return Ok(true);
+                }
+                self.ctx
+                    .remove_hash_set(&mut queued, &face, "catia_forced_equation_queued")?;
+                if self.selected[face].is_some() {
+                    continue;
+                }
+                let before = quotient.clone_charged(self.ctx)?;
+                let mut changed = false;
+                let deterministic = self.assignments[face].len() == 1
+                    && self.ctx.all_by(
+                        &self.assignments[face][0].boundaries,
+                        |boundary| {
+                            self.ctx.all_by(
+                                boundary,
+                                |use_| Ok(use_.reversed.is_some()),
+                                "catia_forced_deterministic_equations",
+                            )
+                        },
+                        "catia_forced_deterministic_equations",
+                    )?;
+                let key = if deterministic {
+                    None
                 } else {
+                    let (signature, storage) = self
+                        .ctx
+                        .with_scoped_storage("catia_face_projection_signature_rows", || {
+                            self.face_projection_signature(face, quotient)
+                        })?;
+                    Some(((face, signature), storage))
+                };
+                let cache = self.face_equation_cache.borrow();
+                let cached = if let Some((key, _)) = &key {
+                    self.ctx
+                        .get_hash_map(&cache, key, "catia_forced_equation_cache")?
+                } else {
+                    None
+                };
+                let common = if !deterministic && cached.is_none() {
                     let Some(common) = common_supported_corner_equations(
                         self.ctx,
                         quotient,
@@ -446,74 +458,98 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     else {
                         return Ok(budget.exhausted());
                     };
-                    let equations = common;
-                    let mut cache = self.face_equation_cache.borrow_mut();
-                    if cache.len() < MAX_FACE_EQUATION_CACHE_ENTRIES {
-                        let cached_equations = self
-                            .ctx
-                            .copy_slice(&equations, "catia_forced_cached_equation_copy")?;
-                        self.ctx.insert_hash_map(
-                            &mut cache,
-                            cache_key,
-                            cached_equations,
-                            "catia_forced_equation_cache",
-                        )?;
-                    }
-                    equations
-                }
-            };
-            for [left, right] in self
-                .ctx
-                .admit_iter(equations, "catia_forced_equation_merges")?
-            {
-                if quotient.union.find(self.ctx, left)? == quotient.union.find(self.ctx, right)? {
-                    continue;
-                }
-                let Some(root) = quotient.merge_charged(self.ctx, left, right)? else {
+                    Some(common)
+                } else {
+                    None
+                };
+                let equations = if deterministic {
+                    let [choice] = self.possible_face_choices[face].as_slice() else {
+                        return Ok(false);
+                    };
+                    choice.as_slice()
+                } else if let Some(cached) = cached {
+                    cached.equations.as_slice()
+                } else if let Some(common) = &common {
+                    common.as_slice()
+                } else {
                     return Ok(false);
                 };
-                if !quotient.propagate_component_edge_domains(
-                    self.ctx,
-                    root,
-                    self.edge_candidates,
-                    None,
-                )? {
-                    return Ok(false);
-                }
-                changed = true;
-            }
-            if !changed {
-                continue;
-            }
-            let changed_edges = changed_quotient_edges(self.ctx, &before, quotient)?;
-            for dependent in self
-                .ctx
-                .admit_iter(0..self.assignments.len(), "catia_forced_equation_queue")?
-            {
-                if self.selected[dependent].is_none()
-                    && dependent != face
-                    && !self.ctx.contains_hash_set(
-                        &queued,
-                        &dependent,
-                        "catia_forced_equation_queued",
-                    )?
-                    && self.face_uses_any_edge(
-                        dependent,
-                        &changed_edges,
-                        "catia_forced_equation_queue",
-                    )?
+                for &[left, right] in self
+                    .ctx
+                    .admit_iter(equations, "catia_forced_equation_merges")?
                 {
-                    self.ctx.insert_hash_set(
-                        &mut queued,
-                        dependent,
-                        "catia_forced_equation_queued",
-                    )?;
-                    self.ctx
-                        .push_back(&mut queue, dependent, "catia_forced_equation_queue")?;
+                    if quotient.union.find(self.ctx, left)?
+                        == quotient.union.find(self.ctx, right)?
+                    {
+                        continue;
+                    }
+                    let Some(root) = quotient.merge_charged(self.ctx, left, right)? else {
+                        return Ok(false);
+                    };
+                    if !quotient.propagate_component_edge_domains(
+                        self.ctx,
+                        root,
+                        self.edge_candidates,
+                        None,
+                    )? {
+                        return Ok(false);
+                    }
+                    changed = true;
+                }
+                drop(cache);
+                if let (Some((key, key_storage)), Some(equations)) = (key, common) {
+                    let mut cache = self.face_equation_cache.borrow_mut();
+                    if cache.len() < MAX_FACE_EQUATION_CACHE_ENTRIES {
+                        self.memo_storage.borrow_mut().with_storage(|| {
+                            self.ctx.insert_hash_map(
+                                &mut cache,
+                                key,
+                                CachedFaceEquations {
+                                    equations,
+                                    _key_storage: Some(key_storage),
+                                },
+                                "catia_forced_equation_cache",
+                            )
+                        })?;
+                    }
+                }
+                if !changed {
+                    continue;
+                }
+                let (changed_edges, _change_storage) = self
+                    .ctx
+                    .with_scoped_storage("catia_changed_quotient_edges", || {
+                        changed_quotient_edges(self.ctx, &before, quotient)
+                    })?;
+                for dependent in self
+                    .ctx
+                    .admit_iter(0..self.assignments.len(), "catia_forced_equation_queue")?
+                {
+                    if self.selected[dependent].is_none()
+                        && dependent != face
+                        && !self.ctx.contains_hash_set(
+                            &queued,
+                            &dependent,
+                            "catia_forced_equation_queued",
+                        )?
+                        && self.face_uses_any_edge(
+                            dependent,
+                            &changed_edges,
+                            "catia_forced_equation_queue",
+                        )?
+                    {
+                        self.ctx.insert_hash_set(
+                            &mut queued,
+                            dependent,
+                            "catia_forced_equation_queued",
+                        )?;
+                        self.ctx
+                            .push_back(&mut queue, dependent, "catia_forced_equation_queue")?;
+                    }
                 }
             }
-        }
-        Ok(true)
+            Ok(true)
+        })
     }
 
     pub(super) fn selection_orientable(
@@ -864,13 +900,23 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             return Ok(());
         }
         if self.visited_states.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
-            let signature = self.selection_state_signature(&measured, true)?;
-            if !self.ctx.insert_hash_set(
-                &mut self.visited_states,
-                signature,
-                "catia_selection_state_memo",
-            )? {
-                return Ok(());
+            let (signature, signature_storage) = self
+                .ctx
+                .with_scoped_storage("catia_selection_state_memo", || {
+                    self.selection_state_signature(&measured, true)
+                })?;
+            let entry = self.memo_storage.borrow_mut().with_storage(|| {
+                self.ctx.entry_hash_map(
+                    &mut self.visited_states,
+                    signature,
+                    "catia_selection_state_memo",
+                )
+            })?;
+            match entry {
+                std::collections::hash_map::Entry::Occupied(_) => return Ok(()),
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(signature_storage);
+                }
             }
         }
         let selected_edges = self.selected_edges()?;
@@ -1111,13 +1157,23 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             return Ok(());
         }
         if self.visited_states.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
-            let signature = self.selection_state_signature(quotient, prepared)?;
-            if !self.ctx.insert_hash_set(
-                &mut self.visited_states,
-                signature,
-                "catia_selection_state_memo",
-            )? {
-                return Ok(());
+            let (signature, signature_storage) = self
+                .ctx
+                .with_scoped_storage("catia_selection_state_memo", || {
+                    self.selection_state_signature(quotient, prepared)
+                })?;
+            let entry = self.memo_storage.borrow_mut().with_storage(|| {
+                self.ctx.entry_hash_map(
+                    &mut self.visited_states,
+                    signature,
+                    "catia_selection_state_memo",
+                )
+            })?;
+            match entry {
+                std::collections::hash_map::Entry::Occupied(_) => return Ok(()),
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(signature_storage);
+                }
             }
         }
         self.search_state(quotient, prepared, budget, propagation_budget)

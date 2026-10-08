@@ -85,7 +85,12 @@ fn mesh_selection_orientation_refuses_constraint_collection_limit() {
             fixed_edge_orientations: Vec::new(),
             edge_has_fixed_direction: Vec::new(),
             selected: vec![Some((0, vec![vec![false]]))],
-            visited_states: HashSet::new(),
+            visited_states: std::collections::HashMap::new(),
+            memo_storage: RefCell::new(
+                (ctx)
+                    .reserve_scoped(0, "catia_selection_memo_storage")
+                    .expect("memo storage"),
+            ),
             outcome: SearchOutcome::Open,
             face_equation_cache: RefCell::default(),
         };
@@ -139,6 +144,11 @@ fn mesh_selection_completion_refuses_collection_limit() {
     }]];
     let equations =
         possible_face_equations(&service_ctx, &assignments).expect("service resource budget");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
     let mut search = MeshSelectionSearch {
         ctx: &service_ctx,
         assignments: &assignments,
@@ -154,7 +164,12 @@ fn mesh_selection_completion_refuses_collection_limit() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&service_ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -162,11 +177,6 @@ fn mesh_selection_completion_refuses_collection_limit() {
         .fixed_remaining_faces_are_orientable()
         .expect("service decode"));
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
     search.ctx = &ctx;
     let error = search
         .fixed_remaining_faces_are_orientable()
@@ -204,7 +214,12 @@ fn mesh_selection_completion_refuses_existing_nested_direction_copies() {
             fixed_edge_orientations: Vec::new(),
             edge_has_fixed_direction: Vec::new(),
             selected: vec![Some((0, vec![vec![false]]))],
-            visited_states: HashSet::new(),
+            visited_states: std::collections::HashMap::new(),
+            memo_storage: RefCell::new(
+                (ctx)
+                    .reserve_scoped(0, "catia_selection_memo_storage")
+                    .expect("memo storage"),
+            ),
             outcome: SearchOutcome::Open,
             face_equation_cache: RefCell::default(),
         };
@@ -253,7 +268,12 @@ fn mesh_selection_selected_edges_refuse_before_set_growth() {
             fixed_edge_orientations: Vec::new(),
             edge_has_fixed_direction: Vec::new(),
             selected: vec![Some((0, vec![vec![false]]))],
-            visited_states: HashSet::new(),
+            visited_states: std::collections::HashMap::new(),
+            memo_storage: RefCell::new(
+                (ctx)
+                    .reserve_scoped(0, "catia_selection_memo_storage")
+                    .expect("memo storage"),
+            ),
             outcome: SearchOutcome::Open,
             face_equation_cache: RefCell::default(),
         };
