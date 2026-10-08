@@ -156,3 +156,38 @@ fn source_sequence_getters_refuse_their_tree_searches() {
         assert_eq!(sequences.point(&point, &ctx).unwrap(), Some(1));
     });
 }
+
+#[test]
+fn conflicting_affine_constraints_stop_after_the_first_origin() {
+    const COUNT: usize = 2_000;
+    let mut values = vec![0.0; COUNT];
+    values[2] = 1.0;
+    let uncertainties = vec![0.0; COUNT];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // One finite-value pass and its end probe, one origin, and two pairs.
+    policy.limits.max_work_units = u64::try_from(COUNT).unwrap() + 4;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(!super::super::declared_affine_progression(&values, &uncertainties, &ctx).unwrap());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn free_geometry_body_name_refuses_retained_bytes() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+
+    let bytes = crate::test_support::test_curves_and_surfaces::line_file(0);
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes, "iges free geometry body name", |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            crate::IgesCodec.decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions {
+                policy, ..DecodeOptions::default()
+            }).map_err(|error| match error {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("{other:?}"),
+            })
+        },
+    );
+}

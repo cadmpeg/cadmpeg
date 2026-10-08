@@ -130,14 +130,15 @@ fn has_forbidden_form_63_duplicate(
     {
         if cell_size <= 0.0 {
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
-            storage.with_storage(|| {
-                ctx.admit_hash_map_entry(
+            let previous = storage.with_storage(|| {
+                ctx.insert_hash_map(
                     exact_points,
-                    &exact_key(point),
+                    exact_key(point),
+                    index,
                     "iges copious exact-point index",
                 )
             })?;
-            if let Some(previous) = exact_points.insert(exact_key(point), index) {
+            if let Some(previous) = previous {
                 if !allowed_endpoint_pair(previous, index) {
                     return Ok(true);
                 }
@@ -154,14 +155,15 @@ fn has_forbidden_form_63_duplicate(
             .map(|((x, y), z)| (x, y, z))
         else {
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
-            storage.with_storage(|| {
-                ctx.admit_hash_map_entry(
+            let previous = storage.with_storage(|| {
+                ctx.insert_hash_map(
                     exact_points,
-                    &exact_key(point),
+                    exact_key(point),
+                    index,
                     "iges copious exact-point index",
                 )
             })?;
-            if let Some(previous) = exact_points.insert(exact_key(point), index) {
+            if let Some(previous) = previous {
                 if !allowed_endpoint_pair(previous, index) {
                     return Ok(true);
                 }
@@ -179,7 +181,9 @@ fn has_forbidden_form_63_duplicate(
                     else {
                         continue;
                     };
-                    let Some(&(previous, previous_point)) = cells.get(&neighbor) else {
+                    let Some(&(previous, previous_point)) = ctx.get_hash_map(
+                        &cells, &neighbor, "iges copious proximity lookup",
+                    )? else {
                         continue;
                     };
                     if points_coincident(point, previous_point, resolution)
@@ -191,9 +195,8 @@ fn has_forbidden_form_63_duplicate(
             }
         }
         storage.with_storage(|| {
-            ctx.admit_hash_map_entry(&mut cells, &(x, y, z), "iges copious proximity cells")
-        })?;
-        cells.entry((x, y, z)).or_insert((index, point));
+            ctx.entry_hash_map(&mut cells, (x, y, z), "iges copious proximity cells")
+        })?.or_insert((index, point));
     }
     Ok(false)
 }
@@ -240,7 +243,8 @@ pub(super) fn project(
             continue;
         }
         let factor = global.length_factor_mm();
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = ctx.get_btree_map(records, &entry.sequence,
+            "iges copious parameter lookup")?.copied() else {
             push_copious_loss(
                 ctx,
                 &mut losses,
