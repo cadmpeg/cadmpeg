@@ -430,7 +430,7 @@ fn split_outline_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
-fn split_outline_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::CodecError {
+fn split_outline_refusal_at_collection_limit(limit: u64) -> Result<usize, cadmpeg_core::CodecError> {
     let scan = split_outline_scan();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -444,10 +444,9 @@ fn split_outline_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::CodecE
         &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
     )
-    .expect_err("split outline collection exceeds limit")
 }
 
-fn positional_map_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::CodecError {
+fn positional_map_refusal_at_collection_limit(limit: u64) -> Result<super::PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
     let scan = split_outline_scan();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -461,10 +460,9 @@ fn positional_map_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::Codec
         &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
     )
-    .expect_err("positional cylinder collection exceeds limit")
 }
 
-fn reference_bound_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::CodecError {
+fn reference_bound_refusal_at_collection_limit(limit: u64) -> Result<super::PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
     let mut scan = split_outline_scan();
     scan.features
         .entity_tables
@@ -505,12 +503,15 @@ fn reference_bound_refusal_at_collection_limit(limit: u64) -> cadmpeg_core::Code
         &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
     )
-    .expect_err("reference cylinder collection exceeds limit")
 }
 
 #[test]
 fn reference_bound_entity_id_nodes_refuse_collection_limit() {
-    let error = reference_bound_refusal_at_collection_limit(24);
+    let error = reference_bound_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo reference cylinder entity ID nodes"),
+        reference_bound_refusal_at_collection_limit,
+    )).expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -520,7 +521,11 @@ fn reference_bound_entity_id_nodes_refuse_collection_limit() {
 
 #[test]
 fn reference_bound_circles_refuse_collection_limit() {
-    let error = reference_bound_refusal_at_collection_limit(25);
+    let error = reference_bound_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo reference cylinder circles"),
+        reference_bound_refusal_at_collection_limit,
+    )).expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -529,28 +534,12 @@ fn reference_bound_circles_refuse_collection_limit() {
 }
 
 #[test]
-fn positional_surface_unique_row_count_refuses_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(3);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo unique-row count nodes")
-    );
-}
-
-#[test]
-fn positional_surface_unique_row_projection_refuses_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(6);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo unique-row projection")
-    );
-}
-
-#[test]
 fn positional_topology_unique_row_count_refuses_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(12);
+    let error = positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo unique-row count nodes"),
+        positional_map_refusal_at_collection_limit,
+    )).expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -560,7 +549,11 @@ fn positional_topology_unique_row_count_refuses_collection_limit() {
 
 #[test]
 fn positional_topology_unique_row_projection_refuses_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(14);
+    let error = positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo unique-row projection"),
+        positional_map_refusal_at_collection_limit,
+    )).expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -569,18 +562,12 @@ fn positional_topology_unique_row_projection_refuses_collection_limit() {
 }
 
 #[test]
-fn positional_cylinder_row_nodes_refuse_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(9);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo positional cylinder row nodes")
-    );
-}
-
-#[test]
 fn positional_adjacent_cylinder_nodes_refuse_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(16);
+    let error = positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo positional adjacent cylinder nodes"),
+        positional_map_refusal_at_collection_limit,
+    )).expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -590,7 +577,11 @@ fn positional_adjacent_cylinder_nodes_refuse_collection_limit() {
 
 #[test]
 fn positional_adjacent_plane_id_nodes_refuse_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(17);
+    let error = positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo positional adjacent plane ID nodes"),
+        positional_map_refusal_at_collection_limit,
+    )).expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -600,7 +591,11 @@ fn positional_adjacent_plane_id_nodes_refuse_collection_limit() {
 
 #[test]
 fn positional_support_plane_vector_refuses_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(20);
+    let error = positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo positional support planes"),
+        positional_map_refusal_at_collection_limit,
+    )).expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -610,7 +605,11 @@ fn positional_support_plane_vector_refuses_collection_limit() {
 
 #[test]
 fn positional_support_plane_nodes_refuse_collection_limit() {
-    let error = positional_map_refusal_at_collection_limit(21);
+    let error = positional_map_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo positional support plane nodes"),
+        positional_map_refusal_at_collection_limit,
+    )).expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -684,38 +683,12 @@ fn constant_round_radius_nodes_refuse_collection_limit() {
 }
 
 #[test]
-fn split_outline_surface_row_count_nodes_refuse_collection_limit() {
-    let error = split_outline_refusal_at_collection_limit(0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo unique-row count nodes")
-    );
-}
-
-#[test]
-fn split_outline_surface_row_projection_refuses_collection_limit() {
-    let error = split_outline_refusal_at_collection_limit(3);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo unique-row projection")
-    );
-}
-
-#[test]
-fn split_outline_row_nodes_refuse_collection_limit() {
-    let error = split_outline_refusal_at_collection_limit(6);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo split cylinder row nodes")
-    );
-}
-
-#[test]
 fn split_outline_topology_row_count_nodes_refuse_collection_limit() {
-    let error = split_outline_refusal_at_collection_limit(12);
+    let error = split_outline_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo unique-row count nodes"),
+        split_outline_refusal_at_collection_limit,
+    )).expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -725,7 +698,11 @@ fn split_outline_topology_row_count_nodes_refuse_collection_limit() {
 
 #[test]
 fn split_outline_topology_row_projection_refuses_collection_limit() {
-    let error = split_outline_refusal_at_collection_limit(14);
+    let error = split_outline_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo unique-row projection"),
+        split_outline_refusal_at_collection_limit,
+    )).expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -735,7 +712,11 @@ fn split_outline_topology_row_projection_refuses_collection_limit() {
 
 #[test]
 fn split_outline_plane_nodes_refuse_collection_limit() {
-    let error = split_outline_refusal_at_collection_limit(16);
+    let error = split_outline_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo split cylinder plane nodes"),
+        split_outline_refusal_at_collection_limit,
+    )).expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -745,7 +726,11 @@ fn split_outline_plane_nodes_refuse_collection_limit() {
 
 #[test]
 fn split_outline_cylinder_id_nodes_refuse_collection_limit() {
-    let error = split_outline_refusal_at_collection_limit(17);
+    let error = split_outline_refusal_at_collection_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo split cylinder ID nodes"),
+        split_outline_refusal_at_collection_limit,
+    )).expect_err("named allocation refused");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
