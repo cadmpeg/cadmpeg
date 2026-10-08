@@ -21,7 +21,7 @@ use super::axes::revolution_axis_for_transfer;
 use super::draft::feature_allows_linear_extrusion;
 use super::link::{
     insert_ordered_family_surface_binding, ordered_analytic_surface_id_for_feature,
-    ordered_family_surface_bindings_for_feature, profile_segment_ids,
+    ordered_family_surface_bindings_for_feature, profile_segment_ids, SurfaceBindingSource,
 };
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::identity::visit_semantic_saved_section_entities;
@@ -228,12 +228,14 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                             if let Some(external_id) = external_id {
                                 if !insert_ordered_family_surface_binding(
                                     ctx,
-                                    &scan.surfaces.rows,
-                                    feature_id,
-                                    &scan.features.entity_tables,
-                                    order,
+                                    &SurfaceBindingSource {
+                                        surface_rows: &scan.surfaces.rows,
+                                        feature_id,
+                                        tables: &scan.features.entity_tables,
+                                        order,
+                                        expected_kind: crate::surface::SurfaceKind::Spline,
+                                    },
                                     external_id,
-                                    crate::surface::SurfaceKind::Spline,
                                     &mut bindings,
                                     &mut bound_surfaces,
                                 )? {
@@ -278,7 +280,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     }
                 }
                 crate::feature::definitions::FeatureSegmentKind::Arc(_) => {
-                    arc_bindings.get(&segment.external_id).copied()
+                    ctx.get_btree_map(&arc_bindings, &segment.external_id, "creo revolution arc binding lookup")?.copied()
                 }
                 crate::feature::definitions::FeatureSegmentKind::Point(_) => None,
             };

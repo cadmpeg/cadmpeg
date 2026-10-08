@@ -311,10 +311,11 @@ pub(in super::super) fn feature_dimension_parameter_layout(
     Option<impl ExactSizeIterator<Item = (u32, String, Option<usize>)> + std::fmt::Debug>,
     cadmpeg_core::CodecError,
 > {
+    let mut scratch = ctx.reserve_scoped(0, "creo dimension layout scratch")?;
     let mut local_counts = BTreeMap::<(&SketchId, u32), usize>::new();
     for (sketch, external_id) in ctx.admit_iter(keys, "creo dimension layout keys")? {
         let key = (sketch, *external_id);
-        *ctx.entry_btree_map(&mut local_counts, key, "creo dimension layout count nodes")?
+        *scratch.with_storage(|| ctx.entry_btree_map(&mut local_counts, key, "creo dimension layout count nodes"))?
             .or_insert(0) += 1;
     }
     let mut next_ordinals = BTreeMap::<&SketchId, u32>::new();
@@ -322,12 +323,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
     let mut layout = Vec::new();
     ctx.reserve_vec(&mut layout, keys.len(), "creo dimension parameter layout")?;
     for (sketch, external_id) in ctx.admit_iter(keys, "creo dimension layout entries")? {
-        let ordinal = ctx
-            .entry_btree_map(
-                &mut next_ordinals,
-                sketch,
-                "creo dimension layout ordinal nodes",
-            )?
+        let ordinal = scratch.with_storage(|| ctx.entry_btree_map(&mut next_ordinals, sketch, "creo dimension layout ordinal nodes"))?
             .or_default();
         let assigned = *ordinal;
         let Some(next) = ordinal.checked_add(1) else {
@@ -335,13 +331,9 @@ pub(in super::super) fn feature_dimension_parameter_layout(
         };
         *ordinal = next;
         let key = (sketch, *external_id);
-        let occurrence = if local_counts[&key] > 1 {
-            let next = ctx
-                .entry_btree_map(
-                    &mut local_occurrences,
-                    key,
-                    "creo dimension layout occurrence nodes",
-                )?
+        let count = ctx.get_btree_map(&local_counts, &key, "creo dimension layout count lookup")?.copied().unwrap_or_default();
+        let occurrence = if count > 1 {
+            let next = scratch.with_storage(|| ctx.entry_btree_map(&mut local_occurrences, key, "creo dimension layout occurrence nodes"))?
                 .or_insert(0);
             let assigned = *next;
             *next += 1;
@@ -349,7 +341,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
         } else {
             None
         };
-        let name = if local_counts[&key] == 1 {
+        let name = if count == 1 {
             ctx.format_retained(
                 format_args!("d{external_id}"),
                 "creo dimension parameter name",
@@ -476,7 +468,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         else {
             continue;
         };
-        if unique_external_ids[&dimension.external_id] == 1 {
+        if ctx.get_btree_map(&unique_external_ids, &dimension.external_id, "creo unique dimension external ID lookup")? == Some(&1) {
             ctx.insert_btree_map(
                 &mut relation_parameters,
                 ctx.format_retained(

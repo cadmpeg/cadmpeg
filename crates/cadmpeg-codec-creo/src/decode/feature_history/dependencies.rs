@@ -33,8 +33,7 @@ pub(in super::super) fn feature_dependencies(
             &scan.surfaces.rows,
             (
                 feature_id,
-                prototype_dependencies
-                    .get(&feature_id)
+                ctx.get_btree_map(prototype_dependencies, &feature_id, "creo prototype dependency lookup")?
                     .map_or(&[], Vec::as_slice),
             ),
         )
@@ -170,7 +169,7 @@ pub(in super::super) fn feature_output_surface_dependencies(
             continue;
         }
         for entry in ctx.admit_iter(&table.entries, "creo output surface dependency entries")? {
-            if !owned_entities.contains(&entry.entity_id) {
+            if !ctx.contains_btree_set(&owned_entities, &entry.entity_id, "creo owned dependency entity lookup")? {
                 continue;
             }
             let Some(row) = crate::surface::unique_surface_row(surface_rows, entry.class_id())
@@ -620,8 +619,7 @@ pub(in super::super) fn reconcile_feature_links(
                 &scan.surfaces.rows,
                 (
                     feature_id,
-                    prototype_dependencies
-                        .get(&feature_id)
+                    ctx.get_btree_map(prototype_dependencies, &feature_id, "creo prototype dependency lookup")?
                         .map_or(&[], Vec::as_slice),
                 ),
             )

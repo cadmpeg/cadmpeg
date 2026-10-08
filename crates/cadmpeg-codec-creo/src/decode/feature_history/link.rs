@@ -380,17 +380,22 @@ pub(in super::super) fn analytic_surface_id_for_feature(
     Ok((row.feature_id == feature_id && row.kind.same_family(expected_kind)).then_some(surface_id))
 }
 
-pub(in super::super) fn insert_ordered_family_surface_binding(
+pub(super) struct SurfaceBindingSource<'a> {
+    pub(super) surface_rows: &'a crate::surface::SurfaceRows,
+    pub(super) feature_id: u32,
+    pub(super) tables: &'a [crate::feature::entity::FeatureEntityTable],
+    pub(super) order: &'a crate::feature::definitions::FeatureOrderTable,
+    pub(super) expected_kind: crate::surface::SurfaceKind,
+}
+
+pub(super) fn insert_ordered_family_surface_binding(
     ctx: &DecodeContext<'_>,
-    surface_rows: &crate::surface::SurfaceRows,
-    feature_id: u32,
-    tables: &[crate::feature::entity::FeatureEntityTable],
-    order: &crate::feature::definitions::FeatureOrderTable,
+    source: &SurfaceBindingSource<'_>,
     external_id: u32,
-    expected_kind: crate::surface::SurfaceKind,
     bindings: &mut BTreeMap<u32, u32>,
     bound_surfaces: &mut BTreeSet<u32>,
 ) -> Result<bool, CodecError> {
+    let SurfaceBindingSource { surface_rows, feature_id, tables, order, expected_kind } = *source;
     if order.internal_id(external_id).is_none() {
         return Ok(false);
     }
@@ -400,7 +405,7 @@ pub(in super::super) fn insert_ordered_family_surface_binding(
     };
     if !crate::surface::unique_surface_row(surface_rows, surface_id)
         .is_some_and(|row| row.feature_id == feature_id && row.kind.same_family(expected_kind))
-        || bound_surfaces.contains(&surface_id)
+        || ctx.contains_btree_set(bound_surfaces, &surface_id, "creo bound generated surface lookup")?
     {
         return Ok(false);
     }
@@ -432,12 +437,8 @@ pub(in super::super) fn ordered_family_surface_bindings_for_feature(
     for external_id in external_ids {
         if !insert_ordered_family_surface_binding(
             ctx,
-            surface_rows,
-            feature_id,
-            tables,
-            order,
+            &SurfaceBindingSource { surface_rows, feature_id, tables, order, expected_kind },
             external_id,
-            expected_kind,
             &mut bindings,
             &mut bound_surfaces,
         )? {
