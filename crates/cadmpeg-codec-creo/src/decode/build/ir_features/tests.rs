@@ -49,16 +49,26 @@ fn regeneration_edge_refuses_each_storage_boundary() {
     let child = FeatureId::mint("creo:model:feature#41").expect("identity grammar");
     let parent = FeatureId::mint("creo:model:feature#40").expect("identity grammar");
     for (dimension, operation) in [
-        (ResourceDimension::CollectionItems, "creo regeneration edges"),
-        (ResourceDimension::RetainedBytes, "creo regeneration child identity"),
-        (ResourceDimension::RetainedBytes, "creo regeneration parent identity"),
+        (
+            ResourceDimension::CollectionItems,
+            "creo regeneration edges",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "creo regeneration child identity",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "creo regeneration parent identity",
+        ),
     ] {
-        let error = crate::test_support::last_refusal_at(
-            &[], dimension, operation,
-            |ctx| append_regeneration_edge(ctx, &mut Vec::new(), &child, &parent),
+        let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+            append_regeneration_edge(ctx, &mut Vec::new(), &child, &parent)
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == dimension && resource.operation == operation)
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == dimension && resource.operation == operation));
     }
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -138,8 +148,15 @@ fn feature_output_refresh_refuses_before_update_rows() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(feature_for_output_refresh());
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::CollectionItems, "creo feature output update rows",
-        |ctx| { let mut trial = ir.clone(); let result = refresh_feature_outputs(ctx, &scan, &mut trial); assert_eq!(trial.model.features[0].ordinal, 3); result },
+        &[],
+        ResourceDimension::CollectionItems,
+        "creo feature output update rows",
+        |ctx| {
+            let mut trial = ir.clone();
+            let result = refresh_feature_outputs(ctx, &scan, &mut trial);
+            assert_eq!(trial.model.features[0].ordinal, 3);
+            result
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -210,25 +227,38 @@ fn existing_feature_property_merge_keeps_order_and_replacement() {
 #[test]
 fn existing_feature_property_staging_nodes_are_scoped_before_retained_destination() {
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::RetainedBytes, "creo IR Feature source property nodes",
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo IR Feature source property nodes",
         |ctx| {
             let mut source_nodes = ctx.reserve_scoped(0, "creo feature source property nodes")?;
             let mut source = BTreeMap::new();
-            crate::decode::feature_history::outputs::insert_feature_source_property(ctx, &mut source_nodes, &mut source, "recipe", "Extrude")?;
+            crate::decode::feature_history::outputs::insert_feature_source_property(
+                ctx,
+                &mut source_nodes,
+                &mut source,
+                "recipe",
+                "Extrude",
+            )?;
             let mut incoming_nodes = ctx.reserve_scoped(0, "named entry map nodes")?;
             let incoming = incoming_nodes.with_storage(|| {
-                cadmpeg_core::text::named_entries_for_decode(ctx, "feature", source).map_err(cadmpeg_core::CodecError::from)
+                cadmpeg_core::text::named_entries_for_decode(ctx, "feature", source)
+                    .map_err(cadmpeg_core::CodecError::from)
             })?;
             drop(source_nodes);
             let mut target = BTreeMap::new();
             let result = merge_feature_source_properties(ctx, &mut target, incoming);
-            if result.is_err() { assert!(target.is_empty()); }
+            if result.is_err() {
+                assert!(target.is_empty());
+            }
             drop(incoming_nodes);
             result
         },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == "creo IR Feature source property nodes"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == "creo IR Feature source property nodes")
+    );
 }
 
 #[test]
@@ -403,15 +433,23 @@ fn native_row_feature_refuses_kind_retained_limit() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(one_feature_row());
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::RetainedBytes, "creo native row Feature kind",
-        |ctx| emit_model_features(
-            ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty(),
-            &mut cadmpeg_ir::AnnotationBuilder::new(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        ),
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo native row Feature kind",
+        |ctx| {
+            emit_model_features(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == "creo native row Feature kind"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == "creo native row Feature kind")
+    );
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -438,15 +476,23 @@ fn native_row_feature_refuses_name_retained_limit() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(one_feature_row());
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::RetainedBytes, "creo row Feature name",
-        |ctx| emit_model_features(
-            ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty(),
-            &mut cadmpeg_ir::AnnotationBuilder::new(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        ),
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo row Feature name",
+        |ctx| {
+            emit_model_features(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == "creo row Feature name"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == "creo row Feature name")
+    );
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -560,15 +606,23 @@ fn recipe_source_tag_refuses_retained_limit() {
             state_offset: 0,
         });
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::RetainedBytes, "creo Feature source tag",
-        |ctx| emit_model_features(
-            ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty(),
-            &mut cadmpeg_ir::AnnotationBuilder::new(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        ),
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo Feature source tag",
+        |ctx| {
+            emit_model_features(
+                ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == "creo Feature source tag"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == "creo Feature source tag")
+    );
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -618,7 +672,8 @@ fn row_feature_ids_preserve_first_source_order() {
 
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| ordered_row_feature_ids(ctx, &rows))
-            .expect("row IDs fit service limits").order,
+            .expect("row IDs fit service limits")
+            .order,
         vec![40, 12]
     );
 }
@@ -655,11 +710,14 @@ fn feature_row_id_refuses_before_vec_growth() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-        ResourceDimension::CollectionItems, Some("creo feature row IDs"), |cap| {
+        ResourceDimension::CollectionItems,
+        Some("creo feature row IDs"),
+        |cap| {
             let trial_arena = DecodeArena::new();
             let mut trial_policy = DecodePolicy::service();
             trial_policy.limits.max_collection_items = cap;
-            let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+            let (trial_ctx, _) =
+                DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
             ordered_row_feature_ids(&trial_ctx, &[one_feature_row()])
         },
     );
@@ -771,14 +829,22 @@ fn feature_row_index_preserves_order_and_selects_the_lowest_source_offset() {
     let mut second = one_feature_row();
     second.feature_id = 12;
     let last = one_feature_row();
-    let index = crate::decode::with_test_decode_ctx(|ctx| ordered_row_feature_ids(ctx, &[first, second, last])).expect("row index");
+    let index = crate::decode::with_test_decode_ctx(|ctx| {
+        ordered_row_feature_ids(ctx, &[first, second, last])
+    })
+    .expect("row index");
     assert_eq!(index.order, vec![40, 12]);
     assert_eq!(index.offsets[&40], 20);
 }
 
 #[test]
 fn model_feature_index_accepts_only_the_composed_numeric_identity() {
-        for (identity, number) in [("creo:model:feature#40", Some(40)), ("creo:model:feature#0040", None), ("other:model:feature#40", None), ("creo:model:feature#4294967296", None)] {
-            assert_eq!(super::model_feature_number(identity), number);
-        }
+    for (identity, number) in [
+        ("creo:model:feature#40", Some(40)),
+        ("creo:model:feature#0040", None),
+        ("other:model:feature#40", None),
+        ("creo:model:feature#4294967296", None),
+    ] {
+        assert_eq!(super::model_feature_number(identity), number);
+    }
 }

@@ -274,11 +274,17 @@ mod carrier_rejection;
 #[test]
 fn detection_reads_fixed_magic_with_zero_work_budget() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    for (bytes, confidence) in [(b"#UGC:2 trailing data".as_slice(), Confidence::High), (b"unrelated trailing data".as_slice(), Confidence::No)] {
+    for (bytes, confidence) in [
+        (b"#UGC:2 trailing data".as_slice(), Confidence::High),
+        (b"unrelated trailing data".as_slice(), Confidence::No),
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, view) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("root");
-        assert_eq!(CreoCodec.detect(&ctx, view).expect("fixed magic"), confidence);
+        assert_eq!(
+            CreoCodec.detect(&ctx, view).expect("fixed magic"),
+            confidence
+        );
     }
 }

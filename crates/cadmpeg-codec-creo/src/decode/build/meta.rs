@@ -312,11 +312,16 @@ pub(super) fn source_meta(
                  record|
                  -> Result<_, CodecError> {
                     let (element_count, encoding_count) = match &record.payload {
-                        crate::legacy::StringPayload::Scalar { value } => (1usize, value.undecoded_encoding_count()),
+                        crate::legacy::StringPayload::Scalar { value } => {
+                            (1usize, value.undecoded_encoding_count())
+                        }
                         crate::legacy::StringPayload::Array { values, .. } => {
                             let mut elements = 0usize;
                             let mut encodings = 0usize;
-                            for value in ctx.admit_iter(values, "creo legacy string element count")?.filter_map(|value| value.as_ref().ok()) {
+                            for value in ctx
+                                .admit_iter(values, "creo legacy string element count")?
+                                .filter_map(|value| value.as_ref().ok())
+                            {
                                 elements += 1;
                                 encodings += value.undecoded_encoding_count();
                             }
@@ -334,15 +339,13 @@ pub(super) fn source_meta(
                                 record.payload,
                                 crate::legacy::StringPayload::Array { .. }
                             )),
-                        elements
-                            .checked_add(element_count)
-                            .ok_or_else(|| {
-                                ctx.refuse_codec_limit(
-                                    "creo legacy string element count",
-                                    u64::MAX,
-                                    u64::MAX,
-                                )
-                            })?,
+                        elements.checked_add(element_count).ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "creo legacy string element count",
+                                u64::MAX,
+                                u64::MAX,
+                            )
+                        })?,
                         undecoded_encodings
                             .checked_add(encoding_count)
                             .ok_or_else(|| {
@@ -867,37 +870,121 @@ pub(super) fn source_meta(
     let mut saved_entity_count = 0usize;
     let mut saved_conic_count = 0usize;
     let mut segment_counts = [0usize; 7];
-    for definition in ctx.admit_iter(&scan.features.definitions, "creo feature definition coverage traversal")? {
-        let mut resolver_storage = ctx.reserve_scoped(0, "creo definition coverage resolver storage")?;
-        let placement_count = crate::feature::definitions::placement_instructions(ctx, definition)?.count();
-        placement_instruction_count = placement_instruction_count.checked_add(placement_count).ok_or_else(|| CodecError::malformed("Creo placement instruction count overflow"))?;
+    for definition in ctx.admit_iter(
+        &scan.features.definitions,
+        "creo feature definition coverage traversal",
+    )? {
+        let mut resolver_storage =
+            ctx.reserve_scoped(0, "creo definition coverage resolver storage")?;
+        let placement_count =
+            crate::feature::definitions::placement_instructions(ctx, definition)?.count();
+        placement_instruction_count = placement_instruction_count
+            .checked_add(placement_count)
+            .ok_or_else(|| CodecError::malformed("Creo placement instruction count overflow"))?;
         outline_count += definition.outlines.len();
         if let Some(variables) = &definition.variables {
-            let crate::feature::definitions::ReconciledPoints { points, ambiguous } = resolver_storage.with_storage(|| variables.reconciled_points(ctx))?;
+            let crate::feature::definitions::ReconciledPoints { points, ambiguous } =
+                resolver_storage.with_storage(|| variables.reconciled_points(ctx))?;
             section_point_count += points.len() + ambiguous.len();
             solver_variable_count += variables.rows.len();
-            let declared_count = usize::try_from(variables.declared_count).map_err(|_| CodecError::malformed("feature solver variable count does not fit the host index type"))?;
-            missing_feature_solver_variable_count += declared_count.checked_sub(variables.rows.len()).ok_or_else(|| CodecError::malformed("feature solver variable rows exceed the declared variable count"))?;
-            let resolved_coordinates = resolver_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
-            let resolved_radii = resolver_storage.with_storage(|| resolved_section_radii(ctx, definition))?;
-            let resolved_scalars = resolver_storage.with_storage(|| resolved_section_scalar_values(ctx, definition))?;
-            for row in ctx.admit_iter(&variables.rows, "creo dimension-driven variable coverage traversal")? {
-                decoded_dimension_driven_guess_count = decoded_dimension_driven_guess_count.checked_add(usize::from(row.guess == ScalarLane::DimensionDriven)).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo dimension-driven guess count", u64::MAX, u64::MAX))?;
-                if row.value != ScalarLane::DimensionDriven { continue; }
+            let declared_count = usize::try_from(variables.declared_count).map_err(|_| {
+                CodecError::malformed(
+                    "feature solver variable count does not fit the host index type",
+                )
+            })?;
+            missing_feature_solver_variable_count += declared_count
+                .checked_sub(variables.rows.len())
+                .ok_or_else(|| {
+                    CodecError::malformed(
+                        "feature solver variable rows exceed the declared variable count",
+                    )
+                })?;
+            let resolved_coordinates =
+                resolver_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
+            let resolved_radii =
+                resolver_storage.with_storage(|| resolved_section_radii(ctx, definition))?;
+            let resolved_scalars = resolver_storage
+                .with_storage(|| resolved_section_scalar_values(ctx, definition))?;
+            for row in ctx.admit_iter(
+                &variables.rows,
+                "creo dimension-driven variable coverage traversal",
+            )? {
+                decoded_dimension_driven_guess_count = decoded_dimension_driven_guess_count
+                    .checked_add(usize::from(row.guess == ScalarLane::DimensionDriven))
+                    .ok_or_else(|| {
+                        cadmpeg_core::decode::refuse_local_limit(
+                            "creo dimension-driven guess count",
+                            u64::MAX,
+                            u64::MAX,
+                        )
+                    })?;
+                if row.value != ScalarLane::DimensionDriven {
+                    continue;
+                }
                 let coordinate = matches!(row.variable_type, VariableType::U | VariableType::V);
-                decoded_dimension_driven_variable_count = decoded_dimension_driven_variable_count.checked_add(1).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo dimension-driven coverage count", u64::MAX, u64::MAX))?;
-                decoded_dimension_driven_coordinate_variable_count = decoded_dimension_driven_coordinate_variable_count.checked_add(usize::from(coordinate)).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo dimension-driven coverage count", u64::MAX, u64::MAX))?;
+                decoded_dimension_driven_variable_count = decoded_dimension_driven_variable_count
+                    .checked_add(1)
+                    .ok_or_else(|| {
+                        cadmpeg_core::decode::refuse_local_limit(
+                            "creo dimension-driven coverage count",
+                            u64::MAX,
+                            u64::MAX,
+                        )
+                    })?;
+                decoded_dimension_driven_coordinate_variable_count =
+                    decoded_dimension_driven_coordinate_variable_count
+                        .checked_add(usize::from(coordinate))
+                        .ok_or_else(|| {
+                            cadmpeg_core::decode::refuse_local_limit(
+                                "creo dimension-driven coverage count",
+                                u64::MAX,
+                                u64::MAX,
+                            )
+                        })?;
                 let resolved = match row.variable_type {
-                    VariableType::U | VariableType::V => ctx.get_btree_map(&resolved_coordinates, &row.key, "creo resolved coordinate coverage lookup")?.and_then(|point| point[usize::from(row.variable_type == VariableType::V)]),
-                    VariableType::Radius => ctx.get_btree_map(&resolved_radii, &row.key, "creo resolved radius coverage lookup")?.copied(),
-                    _ => ctx.get_btree_map(&resolved_scalars, &(row.variable_type, row.key), "creo resolved scalar coverage lookup")?.copied(),
+                    VariableType::U | VariableType::V => ctx
+                        .get_btree_map(
+                            &resolved_coordinates,
+                            &row.key,
+                            "creo resolved coordinate coverage lookup",
+                        )?
+                        .and_then(|point| point[usize::from(row.variable_type == VariableType::V)]),
+                    VariableType::Radius => ctx
+                        .get_btree_map(
+                            &resolved_radii,
+                            &row.key,
+                            "creo resolved radius coverage lookup",
+                        )?
+                        .copied(),
+                    _ => ctx
+                        .get_btree_map(
+                            &resolved_scalars,
+                            &(row.variable_type, row.key),
+                            "creo resolved scalar coverage lookup",
+                        )?
+                        .copied(),
                 };
                 for (total, counted) in [
-                    (&mut resolved_dimension_driven_variable_count, resolved.is_some()),
-                    (&mut resolved_dimension_driven_coordinate_variable_count, coordinate && resolved.is_some()),
-                    (&mut resolved_dimension_driven_other_variable_count, !coordinate && resolved.is_some()),
+                    (
+                        &mut resolved_dimension_driven_variable_count,
+                        resolved.is_some(),
+                    ),
+                    (
+                        &mut resolved_dimension_driven_coordinate_variable_count,
+                        coordinate && resolved.is_some(),
+                    ),
+                    (
+                        &mut resolved_dimension_driven_other_variable_count,
+                        !coordinate && resolved.is_some(),
+                    ),
                 ] {
-                    *total = total.checked_add(usize::from(counted)).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo resolved dimension-driven count", u64::MAX, u64::MAX))?;
+                    *total = total.checked_add(usize::from(counted)).ok_or_else(|| {
+                        cadmpeg_core::decode::refuse_local_limit(
+                            "creo resolved dimension-driven count",
+                            u64::MAX,
+                            u64::MAX,
+                        )
+                    })?;
                 }
             }
         }
@@ -912,63 +999,259 @@ pub(super) fn source_meta(
                     SegmentRow::BoundedCurve(_) => Some(4),
                     SegmentRow::Conic(_) => Some(5),
                     SegmentRow::Opaque(_) => Some(6),
-                    _ => None,
+                    SegmentRow::Ordinary(_) => None,
                 };
                 if let Some(index) = family {
-                    segment_counts[index] = segment_counts[index].checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo segment coverage count", u64::MAX, u64::MAX))?;
+                    segment_counts[index] =
+                        segment_counts[index].checked_add(1).ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "creo segment coverage count",
+                                u64::MAX,
+                                u64::MAX,
+                            )
+                        })?;
                 }
             }
         }
-        trim_entity_count += definition.trim_entities.as_ref().map_or(0, |table| table.rows.len());
-        trim_vertex_count += definition.trim_vertices.as_ref().map_or(0, |table| table.rows.len());
-        order_entry_count += definition.order_table.as_ref().map_or(0, |table| table.rows.len());
-        dimension_count += definition.dimensions.as_ref().map_or(0, |table| table.rows.len());
-        relation_count += definition.relations.as_ref().map_or(0, |table| table.rows.len());
+        trim_entity_count += definition
+            .trim_entities
+            .as_ref()
+            .map_or(0, |table| table.rows.len());
+        trim_vertex_count += definition
+            .trim_vertices
+            .as_ref()
+            .map_or(0, |table| table.rows.len());
+        order_entry_count += definition
+            .order_table
+            .as_ref()
+            .map_or(0, |table| table.rows.len());
+        dimension_count += definition
+            .dimensions
+            .as_ref()
+            .map_or(0, |table| table.rows.len());
+        relation_count += definition
+            .relations
+            .as_ref()
+            .map_or(0, |table| table.rows.len());
         let mut equation_storage = ctx.reserve_scoped(0, "creo equation coverage table storage")?;
-        if let Some(equations) = equation_storage.with_storage(|| crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len()))? {
+        if let Some(equations) = equation_storage.with_storage(|| {
+            crate::feature::definitions::equation_table(
+                ctx,
+                &definition.body,
+                0,
+                definition.body.len(),
+            )
+        })? {
             equation_table_count += 1;
             equation_count += equations.rows.len();
         }
         if let Some(saved) = &definition.saved_section {
             saved_entity_count += saved.entities.len();
-            let count = ctx.admit_iter(&saved.entities, "creo saved conic coverage traversal")?.filter(|entity| matches!(entity, crate::feature::definitions::FeatureSavedEntity::Conic(_))).count();
-            saved_conic_count = saved_conic_count.checked_add(count).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo saved conic coverage count", u64::MAX, u64::MAX))?;
+            let count = ctx
+                .admit_iter(&saved.entities, "creo saved conic coverage traversal")?
+                .filter(|entity| {
+                    matches!(
+                        entity,
+                        crate::feature::definitions::FeatureSavedEntity::Conic(_)
+                    )
+                })
+                .count();
+            saved_conic_count = saved_conic_count.checked_add(count).ok_or_else(|| {
+                cadmpeg_core::decode::refuse_local_limit(
+                    "creo saved conic coverage count",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })?;
         }
     }
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_PLACEMENT_INSTRUCTION_COUNT, placement_instruction_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_OPERATION_STATE_COUNT, scan.features.operation_states.len())?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_OPERATION_COUNT, scan.features.operations.len())?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_OUTLINE_COUNT, outline_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_SECTION_POINT_COUNT, section_point_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT, solver_variable_count)?;
-    coverage.record(ctx, crate::coverage::MISSING_FEATURE_SOLVER_VARIABLE_COUNT, missing_feature_solver_variable_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT, decoded_dimension_driven_variable_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT, decoded_dimension_driven_coordinate_variable_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT, decoded_dimension_driven_variable_count.checked_sub(decoded_dimension_driven_coordinate_variable_count).ok_or_else(|| CodecError::malformed("resolved dimension count exceeds decoded count"))?)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT, decoded_dimension_driven_guess_count)?;
-    coverage.record(ctx, crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT, resolved_dimension_driven_variable_count)?;
-    coverage.record(ctx, crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT, resolved_dimension_driven_coordinate_variable_count)?;
-    coverage.record(ctx, crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT, resolved_dimension_driven_other_variable_count)?;
-    coverage.record(ctx, crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT, decoded_dimension_driven_variable_count.checked_sub(resolved_dimension_driven_variable_count).ok_or_else(|| CodecError::malformed("resolved dimension count exceeds decoded count"))?)?;
-    coverage.record(ctx, crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT, decoded_dimension_driven_coordinate_variable_count.checked_sub(resolved_dimension_driven_coordinate_variable_count).ok_or_else(|| CodecError::malformed("resolved dimension count exceeds decoded count"))?)?;
-    coverage.record(ctx, crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT, decoded_dimension_driven_variable_count.checked_sub(decoded_dimension_driven_coordinate_variable_count).and_then(|count| count.checked_sub(resolved_dimension_driven_other_variable_count)).ok_or_else(|| CodecError::malformed("resolved dimension count exceeds decoded count"))?)?;
-    coverage.record(ctx, crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT, decoded_dimension_driven_guess_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_CIRCLE_SEGMENT_COUNT, segment_counts[0])?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_POINT_SEGMENT_COUNT, segment_counts[1])?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_CENTERED_LINE_SEGMENT_COUNT, segment_counts[2])?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_REFERENCE_LINE_SEGMENT_COUNT, segment_counts[3])?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_BOUNDED_CURVE_SEGMENT_COUNT, segment_counts[4])?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_CONIC_SEGMENT_COUNT, segment_counts[5])?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_OPAQUE_SEGMENT_COUNT, segment_counts[6])?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_TRIM_ENTITY_COUNT, trim_entity_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_TRIM_VERTEX_COUNT, trim_vertex_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_ORDER_ENTRY_COUNT, order_entry_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_DIMENSION_COUNT, dimension_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_RELATION_COUNT, relation_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_EQUATION_TABLE_COUNT, equation_table_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_EQUATION_COUNT, equation_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_SAVED_ENTITY_COUNT, saved_entity_count)?;
-    coverage.record(ctx, crate::coverage::DECODED_FEATURE_SAVED_CONIC_COUNT, saved_conic_count)?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_PLACEMENT_INSTRUCTION_COUNT,
+        placement_instruction_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_OPERATION_STATE_COUNT,
+        scan.features.operation_states.len(),
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_OPERATION_COUNT,
+        scan.features.operations.len(),
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_OUTLINE_COUNT,
+        outline_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_SECTION_POINT_COUNT,
+        section_point_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT,
+        solver_variable_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::MISSING_FEATURE_SOLVER_VARIABLE_COUNT,
+        missing_feature_solver_variable_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
+        decoded_dimension_driven_variable_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
+        decoded_dimension_driven_coordinate_variable_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
+        decoded_dimension_driven_variable_count
+            .checked_sub(decoded_dimension_driven_coordinate_variable_count)
+            .ok_or_else(|| {
+                CodecError::malformed("resolved dimension count exceeds decoded count")
+            })?,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT,
+        decoded_dimension_driven_guess_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
+        resolved_dimension_driven_variable_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
+        resolved_dimension_driven_coordinate_variable_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
+        resolved_dimension_driven_other_variable_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
+        decoded_dimension_driven_variable_count
+            .checked_sub(resolved_dimension_driven_variable_count)
+            .ok_or_else(|| {
+                CodecError::malformed("resolved dimension count exceeds decoded count")
+            })?,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
+        decoded_dimension_driven_coordinate_variable_count
+            .checked_sub(resolved_dimension_driven_coordinate_variable_count)
+            .ok_or_else(|| {
+                CodecError::malformed("resolved dimension count exceeds decoded count")
+            })?,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
+        decoded_dimension_driven_variable_count
+            .checked_sub(decoded_dimension_driven_coordinate_variable_count)
+            .and_then(|count| count.checked_sub(resolved_dimension_driven_other_variable_count))
+            .ok_or_else(|| {
+                CodecError::malformed("resolved dimension count exceeds decoded count")
+            })?,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT,
+        decoded_dimension_driven_guess_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_CIRCLE_SEGMENT_COUNT,
+        segment_counts[0],
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_POINT_SEGMENT_COUNT,
+        segment_counts[1],
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_CENTERED_LINE_SEGMENT_COUNT,
+        segment_counts[2],
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_REFERENCE_LINE_SEGMENT_COUNT,
+        segment_counts[3],
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_BOUNDED_CURVE_SEGMENT_COUNT,
+        segment_counts[4],
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_CONIC_SEGMENT_COUNT,
+        segment_counts[5],
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_OPAQUE_SEGMENT_COUNT,
+        segment_counts[6],
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_TRIM_ENTITY_COUNT,
+        trim_entity_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_TRIM_VERTEX_COUNT,
+        trim_vertex_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_ORDER_ENTRY_COUNT,
+        order_entry_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_DIMENSION_COUNT,
+        dimension_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_RELATION_COUNT,
+        relation_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_EQUATION_TABLE_COUNT,
+        equation_table_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_EQUATION_COUNT,
+        equation_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_SAVED_ENTITY_COUNT,
+        saved_entity_count,
+    )?;
+    coverage.record(
+        ctx,
+        crate::coverage::DECODED_FEATURE_SAVED_CONIC_COUNT,
+        saved_conic_count,
+    )?;
     coverage.record(
         ctx,
         crate::coverage::DECODED_FEATURE_ENTITY_COUNT,
@@ -1112,17 +1395,29 @@ mod tests {
     #[test]
     fn principal_unit_attribute_refuses_before_retaining_token() {
         let error = crate::test_support::last_refusal_at(
-            &[], ResourceDimension::RetainedBytes, "Creo source attribute value",
+            &[],
+            ResourceDimension::RetainedBytes,
+            "Creo source attribute value",
             |ctx| {
                 let mut node_storage = ctx.reserve_scoped(0, "Creo source attribute map nodes")?;
                 let mut attributes = BTreeMap::new();
-                let result = insert_source_attribute(ctx, &mut node_storage, &mut attributes, "principal_unit", "unknown:7");
-                if result.is_err() { assert!(attributes.is_empty()); }
+                let result = insert_source_attribute(
+                    ctx,
+                    &mut node_storage,
+                    &mut attributes,
+                    "principal_unit",
+                    "unknown:7",
+                );
+                if result.is_err() {
+                    assert!(attributes.is_empty());
+                }
                 result
             },
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "Creo source attribute value"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "Creo source attribute value")
+        );
     }
 
     #[test]
@@ -1149,16 +1444,21 @@ mod tests {
     #[test]
     fn source_attribute_named_output_node_remains_retained() {
         let error = crate::test_support::last_refusal_at(
-            &[], ResourceDimension::RetainedBytes, "named entry map nodes",
+            &[],
+            ResourceDimension::RetainedBytes,
+            "named entry map nodes",
             |ctx| {
                 let mut node_storage = ctx.reserve_scoped(0, "Creo source attribute map nodes")?;
                 let mut attributes = BTreeMap::new();
                 insert_source_attribute(ctx, &mut node_storage, &mut attributes, "file_size", 12)?;
-                cadmpeg_core::text::named_entries_for_decode(ctx, "source", attributes).map_err(cadmpeg_core::CodecError::from)
+                cadmpeg_core::text::named_entries_for_decode(ctx, "source", attributes)
+                    .map_err(cadmpeg_core::CodecError::from)
             },
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == "named entry map nodes"));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == "named entry map nodes")
+        );
     }
 
     #[test]
@@ -1228,10 +1528,9 @@ mod tests {
         let classification =
             crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
                 .expect("classified source");
-        crate::test_support::assert_work_boundaries(
-            &["creo segment coverage rows"],
-            |ctx| super::source_meta(ctx, &scan, &classification),
-        );
+        crate::test_support::assert_work_boundaries(&["creo segment coverage rows"], |ctx| {
+            super::source_meta(ctx, &scan, &classification)
+        });
         let rows = &scan.features.definitions[0]
             .segments
             .as_ref()
