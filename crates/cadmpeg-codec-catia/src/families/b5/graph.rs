@@ -2249,287 +2249,296 @@ fn parse_a8_class21_pcurve(
     object_id: u32,
     payload: &[u8],
 ) -> Result<Option<B5Pcurve>, CodecError> {
-    (|| -> Option<Result<B5Pcurve, CodecError>> {
-        (payload.first() == Some(&0x81)).then_some(())?;
-        let mut position = 1;
-        let surface = wire::tokens::object_ref(payload, &mut position, true)?;
-        (payload.get(position) == Some(&0x01)).then_some(())?;
-        position += 1;
-        let degree = wire::tokens::compact_uint(payload, &mut position)?;
-        (degree == 5 && payload.get(position..position + 2) == Some(&[0x01, 0x01])).then_some(())?;
-        position += 2;
-        let knot_count =
-            usize::try_from(wire::tokens::compact_uint(payload, &mut position)?).ok()?;
-        (knot_count >= 2).then_some(())?;
-        matches!(payload.get(position), Some(0x01 | 0x11 | 0x19)).then_some(())?;
-        position += 1;
-        let scalar_bytes = knot_count.checked_mul(8)?;
-        let minimum_known_bytes = scalar_bytes
-            .checked_mul(7)?
-            .checked_add(knot_count)?
-            .checked_add(36)?;
-        if position.checked_add(minimum_known_bytes)? > payload.len() {
-            return None;
-        }
-        let Some(scalar_width) = NonZeroUsize::new(8) else {
-            return None;
-        };
-        let read_values = |position: &mut usize, values: &mut Vec<FiniteReal>| {
-            let Some(end) = (*position).checked_add(scalar_bytes) else {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "catia_b5_a8_class21_scalar_lane_bytes",
-                    u64::MAX,
-                    u64::MAX,
-                )));
-            };
-            let lane = payload.get(*position..end)?;
-            let mut chunks = match ctx.admit_iter(lane, "catia_b5_a8_class21_scalar_lane_bytes") {
-                Ok(admitted) => admitted.chunks(scalar_width),
-                Err(error) => return Some(Err(error.into())),
-            };
-            for chunk in &mut chunks {
-                if let Err(error) =
-                    ctx.push_vec(values, f64_le(chunk, 0)?, "catia B5 pcurve distinct knots")
-                {
-                    return Some(Err(error));
-                }
+    let (parsed, output_storage) = ctx.with_scoped_storage("catia_b5_a8_class21_output", || {
+        (|| -> Option<Result<B5Pcurve, CodecError>> {
+            (payload.first() == Some(&0x81)).then_some(())?;
+            let mut position = 1;
+            let surface = wire::tokens::object_ref(payload, &mut position, true)?;
+            (payload.get(position) == Some(&0x01)).then_some(())?;
+            position += 1;
+            let degree = wire::tokens::compact_uint(payload, &mut position)?;
+            (degree == 5 && payload.get(position..position + 2) == Some(&[0x01, 0x01]))
+                .then_some(())?;
+            position += 2;
+            let knot_count =
+                usize::try_from(wire::tokens::compact_uint(payload, &mut position)?).ok()?;
+            (knot_count >= 2).then_some(())?;
+            matches!(payload.get(position), Some(0x01 | 0x11 | 0x19)).then_some(())?;
+            position += 1;
+            let scalar_bytes = knot_count.checked_mul(8)?;
+            let minimum_known_bytes = scalar_bytes
+                .checked_mul(7)?
+                .checked_add(knot_count)?
+                .checked_add(36)?;
+            if position.checked_add(minimum_known_bytes)? > payload.len() {
+                return None;
             }
-            *position = end;
-            Some(Ok(()))
-        };
-        let mut distinct_knots = Vec::new();
-        if let Err(error) = ctx.reserve_capacity(
-            &mut distinct_knots,
-            knot_count,
-            "catia B5 pcurve distinct knots",
-        ) {
-            return Some(Err(error));
-        }
-        match read_values(&mut position, &mut distinct_knots) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Some(Err(error)),
-            None => return None,
-        }
-        // The knot and jet lanes are scratch for the B-spline fit.
-        let mut scratch = match ctx.reserve_scoped(0, "catia_b5_a8_class21_jet_lanes") {
-            Ok(scratch) => scratch,
-            Err(error) => return Some(Err(error)),
-        };
-        let knot_values = match scratch.with_storage(|| {
-            ctx.collect_vec(
-                distinct_knots.iter().copied().map(FiniteReal::get),
-                "catia B5 pcurve knot values",
-            )
-        }) {
-            Ok(values) => values,
-            Err(error) => return Some(Err(error)),
-        };
-        match knots_strictly_increasing(&knot_values, |count| {
-            ctx.charge_work(count, "IR strict knot order")
-        }) {
-            Ok(true) => {}
-            Ok(false) => return None,
-            Err(error) => return Some(Err(error)),
-        }
-        let mut multiplicities_valid = true;
-        let multiplicity_indices =
-            match ctx.admit_iter(&(0..knot_count), "catia_b5_a8_class21_multiplicity_scan") {
-                Ok(indices) => indices,
-                Err(error) => return Some(Err(error.into())),
+            let Some(scalar_width) = NonZeroUsize::new(8) else {
+                return None;
             };
-        for index in multiplicity_indices {
-            let multiplicity = wire::tokens::compact_uint(payload, &mut position)?;
-            multiplicities_valid &= multiplicity
-                == if index == 0 || index + 1 == knot_count {
-                    degree + 1
-                } else {
-                    3
+            let read_values = |position: &mut usize, values: &mut Vec<FiniteReal>| {
+                let Some(end) = (*position).checked_add(scalar_bytes) else {
+                    return Some(Err(ctx.refuse_codec_limit(
+                        "catia_b5_a8_class21_scalar_lane_bytes",
+                        u64::MAX,
+                        u64::MAX,
+                    )));
                 };
-        }
-        multiplicities_valid.then_some(())?;
-        let read_lane = |position: &mut usize, values: &mut Vec<f64>| {
-            let Some(end) = (*position).checked_add(scalar_bytes) else {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "catia_b5_a8_class21_scalar_lane_bytes",
-                    u64::MAX,
-                    u64::MAX,
-                )));
+                let lane = payload.get(*position..end)?;
+                let mut chunks = match ctx.admit_iter(lane, "catia_b5_a8_class21_scalar_lane_bytes")
+                {
+                    Ok(admitted) => admitted.chunks(scalar_width),
+                    Err(error) => return Some(Err(error.into())),
+                };
+                for chunk in &mut chunks {
+                    if let Err(error) =
+                        ctx.push_vec(values, f64_le(chunk, 0)?, "catia B5 pcurve distinct knots")
+                    {
+                        return Some(Err(error));
+                    }
+                }
+                *position = end;
+                Some(Ok(()))
             };
-            let lane = payload.get(*position..end)?;
-            let mut chunks = match ctx.admit_iter(lane, "catia_b5_a8_class21_scalar_lane_bytes") {
-                Ok(admitted) => admitted.chunks(scalar_width),
-                Err(error) => return Some(Err(error.into())),
-            };
-            for chunk in &mut chunks {
-                values.push(f64_le(chunk, 0)?.get());
+            let mut distinct_knots = Vec::new();
+            if let Err(error) = ctx.reserve_capacity(
+                &mut distinct_knots,
+                knot_count,
+                "catia B5 pcurve distinct knots",
+            ) {
+                return Some(Err(error));
             }
-            *position = end;
-            Some(Ok(()))
-        };
-        let mut u = Vec::new();
-        if let Err(error) =
-            ctx.reserve_scoped_vec(&mut scratch, &mut u, knot_count, "catia B5 pcurve u jet")
-        {
-            return Some(Err(error));
-        }
-        match read_lane(&mut position, &mut u) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Some(Err(error)),
-            None => return None,
-        }
-        let mut v = Vec::new();
-        if let Err(error) =
-            ctx.reserve_scoped_vec(&mut scratch, &mut v, knot_count, "catia B5 pcurve v jet")
-        {
-            return Some(Err(error));
-        }
-        match read_lane(&mut position, &mut v) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Some(Err(error)),
-            None => return None,
-        }
-        let mut du = Vec::new();
-        if let Err(error) =
-            ctx.reserve_scoped_vec(&mut scratch, &mut du, knot_count, "catia B5 pcurve du jet")
-        {
-            return Some(Err(error));
-        }
-        match read_lane(&mut position, &mut du) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Some(Err(error)),
-            None => return None,
-        }
-        let mut dv = Vec::new();
-        if let Err(error) =
-            ctx.reserve_scoped_vec(&mut scratch, &mut dv, knot_count, "catia B5 pcurve dv jet")
-        {
-            return Some(Err(error));
-        }
-        match read_lane(&mut position, &mut dv) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Some(Err(error)),
-            None => return None,
-        }
-        let mut ddu = Vec::new();
-        if let Err(error) = ctx.reserve_scoped_vec(
-            &mut scratch,
-            &mut ddu,
-            knot_count,
-            "catia B5 pcurve ddu jet",
-        ) {
-            return Some(Err(error));
-        }
-        match read_lane(&mut position, &mut ddu) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Some(Err(error)),
-            None => return None,
-        }
-        let mut ddv = Vec::new();
-        if let Err(error) = ctx.reserve_scoped_vec(
-            &mut scratch,
-            &mut ddv,
-            knot_count,
-            "catia B5 pcurve ddv jet",
-        ) {
-            return Some(Err(error));
-        }
-        match read_lane(&mut position, &mut ddv) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Some(Err(error)),
-            None => return None,
-        }
-        let mut points = Vec::new();
-        if let Err(error) = ctx.reserve_scoped_vec(
-            &mut scratch,
-            &mut points,
-            knot_count,
-            "catia B5 pcurve point jets",
-        ) {
-            return Some(Err(error));
-        }
-        for (u, v) in match ctx.admit_iter(u, "catia_b5_point_jet_projection") {
-            Ok(values) => values.zip(v),
-            Err(error) => return Some(Err(error.into())),
-        } {
-            points.push([u, v]);
-        }
-        let mut first = Vec::new();
-        if let Err(error) = ctx.reserve_scoped_vec(
-            &mut scratch,
-            &mut first,
-            knot_count,
-            "catia B5 pcurve first jets",
-        ) {
-            return Some(Err(error));
-        }
-        for (u, v) in match ctx.admit_iter(du, "catia_b5_first_jet_projection") {
-            Ok(values) => values.zip(dv),
-            Err(error) => return Some(Err(error.into())),
-        } {
-            first.push([u, v]);
-        }
-        let mut second = Vec::new();
-        if let Err(error) = ctx.reserve_scoped_vec(
-            &mut scratch,
-            &mut second,
-            knot_count,
-            "catia B5 pcurve second jets",
-        ) {
-            return Some(Err(error));
-        }
-        for (u, v) in match ctx.admit_iter(ddu, "catia_b5_second_jet_projection") {
-            Ok(values) => values.zip(ddv),
-            Err(error) => return Some(Err(error.into())),
-        } {
-            second.push([u, v]);
-        }
-        let control_points = match crate::nurbs::quintic_jet_controls(
-            ctx,
-            degree,
-            &knot_values,
-            &points,
-            &first,
-            &second,
-            cadmpeg_ir::units::FiniteVector::new,
-        ) {
-            Ok(Some(curve)) => curve,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        let tail = payload.get(position..)?;
-        let tail_control = tail.get(..2);
-        let extension_control = tail.get(34..36);
-        (matches!(tail.len(), 36 | 38)
-            && (tail_control == Some(&[0x05, 0x05]) || tail_control == Some(&[0x05, 0x11]))
-            && f64_le(tail, 2)?.get() == 0.0
-            && f64_le(tail, 18)?.get() == 1.0
-            && f64_le(tail, 26)?.get() == 0.0
-            && (tail.len() == 36
-                || extension_control == Some(&[0x01, 0x11])
-                || extension_control == Some(&[0x01, 0x19]))
-            && tail.get(tail.len() - 2..) == Some(&[0x00, 0x07]))
-        .then_some(())?;
-        let parameter_range = [*distinct_knots.first()?, *distinct_knots.last()?];
-        let multiplicities =
-            match ctx.alloc_filled(knot_count, degree + 1, "catia B5 pcurve multiplicities") {
-                Ok(multiplicities) => multiplicities,
+            match read_values(&mut position, &mut distinct_knots) {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+            // The knot and jet lanes are scratch for the B-spline fit.
+            let mut scratch = match ctx.reserve_scoped(0, "catia_b5_a8_class21_jet_lanes") {
+                Ok(scratch) => scratch,
                 Err(error) => return Some(Err(error)),
             };
-        Some(Ok(B5Pcurve {
-            object_id,
-            surface,
-            degree,
-            distinct_knots,
-            multiplicities,
-            control_points,
-            weights: None,
-            parameter_range: Some(parameter_range),
-            parameterization: B5PcurveParameterization::Native,
-            class_21_suffix_scalar: Some(PositiveReal::new(f64_le(tail, 10)?.get())?),
-            lifted_endpoints: None,
-        }))
-    })()
-    .transpose()
+            let knot_values = match scratch.with_storage(|| {
+                ctx.collect_vec(
+                    distinct_knots.iter().copied().map(FiniteReal::get),
+                    "catia B5 pcurve knot values",
+                )
+            }) {
+                Ok(values) => values,
+                Err(error) => return Some(Err(error)),
+            };
+            match knots_strictly_increasing(&knot_values, |count| {
+                ctx.charge_work(count, "IR strict knot order")
+            }) {
+                Ok(true) => {}
+                Ok(false) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+            let mut multiplicities_valid = true;
+            let multiplicity_indices =
+                match ctx.admit_iter(&(0..knot_count), "catia_b5_a8_class21_multiplicity_scan") {
+                    Ok(indices) => indices,
+                    Err(error) => return Some(Err(error.into())),
+                };
+            for index in multiplicity_indices {
+                let multiplicity = wire::tokens::compact_uint(payload, &mut position)?;
+                multiplicities_valid &= multiplicity
+                    == if index == 0 || index + 1 == knot_count {
+                        degree + 1
+                    } else {
+                        3
+                    };
+            }
+            multiplicities_valid.then_some(())?;
+            let read_lane = |position: &mut usize, values: &mut Vec<f64>| {
+                let Some(end) = (*position).checked_add(scalar_bytes) else {
+                    return Some(Err(ctx.refuse_codec_limit(
+                        "catia_b5_a8_class21_scalar_lane_bytes",
+                        u64::MAX,
+                        u64::MAX,
+                    )));
+                };
+                let lane = payload.get(*position..end)?;
+                let mut chunks = match ctx.admit_iter(lane, "catia_b5_a8_class21_scalar_lane_bytes")
+                {
+                    Ok(admitted) => admitted.chunks(scalar_width),
+                    Err(error) => return Some(Err(error.into())),
+                };
+                for chunk in &mut chunks {
+                    values.push(f64_le(chunk, 0)?.get());
+                }
+                *position = end;
+                Some(Ok(()))
+            };
+            let mut u = Vec::new();
+            if let Err(error) =
+                ctx.reserve_scoped_vec(&mut scratch, &mut u, knot_count, "catia B5 pcurve u jet")
+            {
+                return Some(Err(error));
+            }
+            match read_lane(&mut position, &mut u) {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+            let mut v = Vec::new();
+            if let Err(error) =
+                ctx.reserve_scoped_vec(&mut scratch, &mut v, knot_count, "catia B5 pcurve v jet")
+            {
+                return Some(Err(error));
+            }
+            match read_lane(&mut position, &mut v) {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+            let mut du = Vec::new();
+            if let Err(error) =
+                ctx.reserve_scoped_vec(&mut scratch, &mut du, knot_count, "catia B5 pcurve du jet")
+            {
+                return Some(Err(error));
+            }
+            match read_lane(&mut position, &mut du) {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+            let mut dv = Vec::new();
+            if let Err(error) =
+                ctx.reserve_scoped_vec(&mut scratch, &mut dv, knot_count, "catia B5 pcurve dv jet")
+            {
+                return Some(Err(error));
+            }
+            match read_lane(&mut position, &mut dv) {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+            let mut ddu = Vec::new();
+            if let Err(error) = ctx.reserve_scoped_vec(
+                &mut scratch,
+                &mut ddu,
+                knot_count,
+                "catia B5 pcurve ddu jet",
+            ) {
+                return Some(Err(error));
+            }
+            match read_lane(&mut position, &mut ddu) {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+            let mut ddv = Vec::new();
+            if let Err(error) = ctx.reserve_scoped_vec(
+                &mut scratch,
+                &mut ddv,
+                knot_count,
+                "catia B5 pcurve ddv jet",
+            ) {
+                return Some(Err(error));
+            }
+            match read_lane(&mut position, &mut ddv) {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+            let mut points = Vec::new();
+            if let Err(error) = ctx.reserve_scoped_vec(
+                &mut scratch,
+                &mut points,
+                knot_count,
+                "catia B5 pcurve point jets",
+            ) {
+                return Some(Err(error));
+            }
+            for (u, v) in match ctx.admit_iter(u, "catia_b5_point_jet_projection") {
+                Ok(values) => values.zip(v),
+                Err(error) => return Some(Err(error.into())),
+            } {
+                points.push([u, v]);
+            }
+            let mut first = Vec::new();
+            if let Err(error) = ctx.reserve_scoped_vec(
+                &mut scratch,
+                &mut first,
+                knot_count,
+                "catia B5 pcurve first jets",
+            ) {
+                return Some(Err(error));
+            }
+            for (u, v) in match ctx.admit_iter(du, "catia_b5_first_jet_projection") {
+                Ok(values) => values.zip(dv),
+                Err(error) => return Some(Err(error.into())),
+            } {
+                first.push([u, v]);
+            }
+            let mut second = Vec::new();
+            if let Err(error) = ctx.reserve_scoped_vec(
+                &mut scratch,
+                &mut second,
+                knot_count,
+                "catia B5 pcurve second jets",
+            ) {
+                return Some(Err(error));
+            }
+            for (u, v) in match ctx.admit_iter(ddu, "catia_b5_second_jet_projection") {
+                Ok(values) => values.zip(ddv),
+                Err(error) => return Some(Err(error.into())),
+            } {
+                second.push([u, v]);
+            }
+            let control_points = match crate::nurbs::quintic_jet_controls(
+                ctx,
+                degree,
+                &knot_values,
+                &points,
+                &first,
+                &second,
+                cadmpeg_ir::units::FiniteVector::new,
+            ) {
+                Ok(Some(curve)) => curve,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+            let tail = payload.get(position..)?;
+            let tail_control = tail.get(..2);
+            let extension_control = tail.get(34..36);
+            (matches!(tail.len(), 36 | 38)
+                && (tail_control == Some(&[0x05, 0x05]) || tail_control == Some(&[0x05, 0x11]))
+                && f64_le(tail, 2)?.get() == 0.0
+                && f64_le(tail, 18)?.get() == 1.0
+                && f64_le(tail, 26)?.get() == 0.0
+                && (tail.len() == 36
+                    || extension_control == Some(&[0x01, 0x11])
+                    || extension_control == Some(&[0x01, 0x19]))
+                && tail.get(tail.len() - 2..) == Some(&[0x00, 0x07]))
+            .then_some(())?;
+            let parameter_range = [*distinct_knots.first()?, *distinct_knots.last()?];
+            let multiplicities =
+                match ctx.alloc_filled(knot_count, degree + 1, "catia B5 pcurve multiplicities") {
+                    Ok(multiplicities) => multiplicities,
+                    Err(error) => return Some(Err(error)),
+                };
+            Some(Ok(B5Pcurve {
+                object_id,
+                surface,
+                degree,
+                distinct_knots,
+                multiplicities,
+                control_points,
+                weights: None,
+                parameter_range: Some(parameter_range),
+                parameterization: B5PcurveParameterization::Native,
+                class_21_suffix_scalar: Some(PositiveReal::new(f64_le(tail, 10)?.get())?),
+                lifted_endpoints: None,
+            }))
+        })()
+        .transpose()
+    })?;
+    if parsed.is_some() {
+        output_storage.commit()?;
+    }
+    Ok(parsed)
 }
 
 /// Return native start/end vertex identities for every framed `b5 03 5e`

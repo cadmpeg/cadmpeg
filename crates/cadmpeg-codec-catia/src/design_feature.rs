@@ -1181,7 +1181,11 @@ fn transfer_sketch(
         feature_id.try_clone_for_decode(ctx, "catia_design_sketch_feature_map_id")
     })?;
     let feature_ref = ctx.copy_retained_text(&object.id, "catia_design_sketch_feature_ref")?;
-    let source_tag = ctx.copy_retained_text("Sketch", "catia_design_sketch_feature_tag")?;
+    let source_tag = {
+        let mut text = ctx.retained_string(6, "catia_design_sketch_feature_tag")?;
+        text.push_str("Sketch");
+        text
+    };
     ctx.push_vec(
         &mut ir.model.features,
         Feature {

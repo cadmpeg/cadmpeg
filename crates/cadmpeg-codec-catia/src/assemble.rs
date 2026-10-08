@@ -1100,13 +1100,9 @@ pub(crate) fn rational_pcurve_arc(
                 "catia_rational_arc_controls",
             )
         })?;
-        input_storage.with_storage(|| {
-            ctx.extend_from_slice(
-                &mut weights,
-                &[middle_weight, 1.0],
-                "catia_rational_arc_weights",
-            )
-        })?;
+        input_storage
+            .with_storage(|| ctx.reserve_vec(&mut weights, 2, "catia_rational_arc_weights"))?;
+        weights.extend([middle_weight, 1.0]);
         if index + 1 < segment_count {
             knots.extend([end; 2]);
         }
