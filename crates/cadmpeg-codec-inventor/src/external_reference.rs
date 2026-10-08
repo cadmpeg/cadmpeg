@@ -1120,8 +1120,8 @@ mod tests {
     use crate::test_support::test_fixtures::push_u32;
     use crate::test_support::test_fixtures::push_utf16;
     use cadmpeg_container::compound::CompoundStreamId;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
     use super::{
         parse_embedded_references, parse_occurrence_item_value, parse_occurrence_value,
@@ -1183,9 +1183,7 @@ mod tests {
         assert_first_step_refusal(
             &bytes,
             "admit UFRxDoc section-version entries",
-            |ctx, root| {
-                parse_stream(ctx, root, id, &DocumentKind::Assembly).map(|_| ())
-            },
+            |ctx, root| parse_stream(ctx, root, id, &DocumentKind::Assembly).map(|_| ()),
         );
 
         let lod_table_offset = 4 + 46 + 32 + 18 + 32 + 36 + 30 + 2;
@@ -1199,11 +1197,9 @@ mod tests {
             push_u16(&mut lod_entries, 0);
         }
         drop(bytes.splice(lod_table_offset + 4..lod_table_offset + 4, lod_entries));
-        assert_first_step_refusal(
-            &bytes,
-            "admit UFRxDoc LOD table entries",
-            |ctx, root| parse_stream(ctx, root, id, &DocumentKind::Assembly).map(|_| ()),
-        );
+        assert_first_step_refusal(&bytes, "admit UFRxDoc LOD table entries", |ctx, root| {
+            parse_stream(ctx, root, id, &DocumentKind::Assembly).map(|_| ())
+        });
 
         let (mut bytes, _) = fixture(11);
         let pair_count_offset = lod_table_offset + 4;
@@ -1214,37 +1210,22 @@ mod tests {
             push_u32(&mut pairs, 0);
         }
         drop(bytes.splice(pair_count_offset + 4..pair_count_offset + 4, pairs));
-        assert_first_step_refusal(
-            &bytes,
-            "admit UFRxDoc header pairs",
-            |ctx, root| parse_stream(ctx, root, id, &DocumentKind::Assembly).map(|_| ()),
-        );
+        assert_first_step_refusal(&bytes, "admit UFRxDoc header pairs", |ctx, root| {
+            parse_stream(ctx, root, id, &DocumentKind::Assembly).map(|_| ())
+        });
 
         let (mut bytes, invariant_offset) = fixture(11);
         let reference_count_offset = invariant_offset + 2 + 4 + 4 + 4;
         bytes[reference_count_offset..reference_count_offset + 4]
             .copy_from_slice(&2_u32.to_le_bytes());
         bytes.resize(bytes.len() + 2 * super::MIN_REFERENCE_BYTES, 0);
-        assert_first_step_refusal(
-            &bytes,
-            "admit Inventor external references",
-            |ctx, root| parse_stream(ctx, root, id, &DocumentKind::Assembly).map(|_| ()),
-        );
+        assert_first_step_refusal(&bytes, "admit Inventor external references", |ctx, root| {
+            parse_stream(ctx, root, id, &DocumentKind::Assembly).map(|_| ())
+        });
 
         let (mut bytes, invariant_offset) = fixture(11);
-        let state_group_count_offset = invariant_offset
-            + 2
-            + 4
-            + 4
-            + 4
-            + 4
-            + 24
-            + 4
-            + 48
-            + 4
-            + 18
-            + 2
-            + 22;
+        let state_group_count_offset =
+            invariant_offset + 2 + 4 + 4 + 4 + 4 + 24 + 4 + 48 + 4 + 18 + 2 + 22;
         bytes[state_group_count_offset..state_group_count_offset + 4]
             .copy_from_slice(&2_u32.to_le_bytes());
         assert_first_step_refusal(
@@ -1268,13 +1249,9 @@ mod tests {
 
         let mut bytes = 2_u32.to_le_bytes().to_vec();
         bytes.resize(4 + 2 * super::MIN_EMBEDDED_REFERENCE_BYTES, 0);
-        assert_first_step_refusal(
-            &bytes,
-            "admit UFRxDoc embedded references",
-            |ctx, root| {
-                parse_embedded_references(ctx, root, &mut Cursor::new(root), 0).map(|_| ())
-            },
-        );
+        assert_first_step_refusal(&bytes, "admit UFRxDoc embedded references", |ctx, root| {
+            parse_embedded_references(ctx, root, &mut Cursor::new(root), 0).map(|_| ())
+        });
 
         let mut bytes = 2_u32.to_le_bytes().to_vec();
         bytes.resize(4 + 2 * super::MIN_OCCURRENCE_BYTES, 0);
@@ -1293,21 +1270,17 @@ mod tests {
 
         let mut bytes = 2_u32.to_le_bytes().to_vec();
         bytes.resize(4 + 2 * super::MIN_OCCURRENCE_SETTING_BYTES, 0);
-        assert_first_step_refusal(
-            &bytes,
-            "admit UFRxDoc occurrence settings",
-            |ctx, root| super::parse_occurrence_settings(ctx, &mut Cursor::new(root)),
-        );
+        assert_first_step_refusal(&bytes, "admit UFRxDoc occurrence settings", |ctx, root| {
+            super::parse_occurrence_settings(ctx, &mut Cursor::new(root))
+        });
 
         let mut bytes = vec![0; 10];
         push_u32(&mut bytes, 2);
         push_u32(&mut bytes, 0);
         bytes.resize(18 + 2 * super::MIN_OCCURRENCE_EXPORT_BYTES, 0);
-        assert_first_step_refusal(
-            &bytes,
-            "admit UFRxDoc occurrence exports",
-            |ctx, root| super::parse_occurrence_export(ctx, &mut Cursor::new(root), 0),
-        );
+        assert_first_step_refusal(&bytes, "admit UFRxDoc occurrence exports", |ctx, root| {
+            super::parse_occurrence_export(ctx, &mut Cursor::new(root), 0)
+        });
 
         let mut bytes = 2_u32.to_le_bytes().to_vec();
         push_u32(&mut bytes, 2);
@@ -1344,9 +1317,7 @@ mod tests {
         assert_first_step_refusal(
             &bytes,
             "admit UFRxDoc model-state parameters",
-            |ctx, root| {
-                super::parse_model_states(ctx, root, &mut Cursor::new(root), 1).map(|_| ())
-            },
+            |ctx, root| super::parse_model_states(ctx, root, &mut Cursor::new(root), 1).map(|_| ()),
         );
     }
 
@@ -1385,8 +1356,10 @@ mod tests {
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.used, 6);
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+        assert_eq!(ctx.resource_refusal(), Some(original));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+        );
     }
 
     #[test]
@@ -1419,8 +1392,10 @@ mod tests {
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.used, 1);
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+        assert_eq!(ctx.resource_refusal(), Some(original));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+        );
     }
 
     #[test]
@@ -1528,12 +1503,8 @@ mod tests {
         push_u32(&mut bytes, 1);
         bytes.resize(8 + 11, 0);
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &DecodePolicy::service(),
-        )
-        .expect("property header context");
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("property header context");
         assert!(matches!(
             super::parse_occurrence_section(&ctx, &mut Cursor::new(root)),
             Err(CodecError::NotImplemented(detail))
@@ -1562,12 +1533,8 @@ mod tests {
         push_u32(&mut bytes, 0);
         bytes.push(0xff);
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &DecodePolicy::service(),
-        )
-        .expect("unsupported property context");
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("unsupported property context");
         assert!(matches!(
             super::parse_occurrence_section(&ctx, &mut Cursor::new(root)),
             Err(CodecError::NotImplemented(detail))
@@ -1605,12 +1572,8 @@ mod tests {
         push_u32(&mut bytes, 1);
         bytes.resize(8 + 9, 0);
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &DecodePolicy::service(),
-        )
-        .expect("item header context");
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("item header context");
         assert!(matches!(
             super::parse_occurrence_items(&ctx, &mut Cursor::new(root)),
             Err(CodecError::Truncated {
@@ -1638,12 +1601,8 @@ mod tests {
         push_u32(&mut bytes, 0);
         push_u32(&mut bytes, 0);
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &DecodePolicy::service(),
-        )
-        .expect("unsupported export item context");
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("unsupported export item context");
         super::parse_occurrence_items(&ctx, &mut Cursor::new(root))
             .expect("an empty unsupported item has no value tag to reject");
     }
@@ -1656,12 +1615,8 @@ mod tests {
         push_u32(&mut bytes, 1);
         bytes.push(0xff);
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &DecodePolicy::service(),
-        )
-        .expect("unsupported export item context");
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("unsupported export item context");
         assert!(matches!(
             super::parse_occurrence_items(&ctx, &mut Cursor::new(root)),
             Err(CodecError::NotImplemented(detail))
@@ -1677,12 +1632,8 @@ mod tests {
         push_u32(&mut bytes, 1);
         bytes.push(0);
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &DecodePolicy::service(),
-        )
-        .expect("mismatched export item context");
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("mismatched export item context");
         assert!(matches!(
             super::parse_occurrence_items(&ctx, &mut Cursor::new(root)),
             Err(CodecError::Malformed(detail))
@@ -1697,12 +1648,8 @@ mod tests {
         bytes.extend_from_slice(&[0, 0xff]);
         push_u32(&mut bytes, 1);
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &DecodePolicy::service(),
-        )
-        .expect("truncated export item context");
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("truncated export item context");
         assert!(matches!(
             super::parse_occurrence_items(&ctx, &mut Cursor::new(root)),
             Err(CodecError::Malformed(detail))
@@ -1718,12 +1665,8 @@ mod tests {
         push_u32(&mut bytes, 3);
         bytes.extend_from_slice(&[0; 4]);
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &DecodePolicy::service(),
-        )
-        .expect("export value context");
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("export value context");
         assert!(matches!(
             super::parse_occurrence_items(&ctx, &mut Cursor::new(root)),
             Err(CodecError::Malformed(detail))
@@ -1845,8 +1788,10 @@ mod tests {
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.used, 5);
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+        assert_eq!(ctx.resource_refusal(), Some(original));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+        );
     }
 
     #[test]
@@ -2004,8 +1949,10 @@ mod tests {
         assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(original.used, 0);
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+        assert_eq!(ctx.resource_refusal(), Some(original));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+        );
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("service context");
         assert!(matches!(

@@ -783,8 +783,10 @@ mod tests {
                         && limit.additional == 32
                         && Some(limit) == ctx.resource_refusal()));
             } else {
-                assert_eq!(result.expect("fixed formatting has no input-sized work"),
-                    "afafafafafafafafafafafafafafafaf");
+                assert_eq!(
+                    result.expect("fixed formatting has no input-sized work"),
+                    "afafafafafafafafafafafafafafafaf"
+                );
             }
         }
     }
@@ -792,16 +794,17 @@ mod tests {
     #[test]
     fn paired_reference_copy_does_not_charge_fixed_metadata_work() {
         let references = vec![super::PmDcReference::from_packed(1)];
-        let list = super::PmDcPairedReferenceList::new(Some([7_u16, 9]), references)
-            .expect("paired list");
+        let list =
+            super::PmDcPairedReferenceList::new(Some([7_u16, 9]), references).expect("paired list");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         // copy_slice visits the one reference. Copying the two metadata
         // words has a fixed extent and needs no source traversal charge.
         policy.limits.max_work_units = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("paired copy context");
-        let copy = list.try_clone_for_decode(&ctx, "copy paired references")
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("paired copy context");
+        let copy = list
+            .try_clone_for_decode(&ctx, "copy paired references")
             .expect("only reference-sized work");
         assert_eq!(copy.metadata(), Some(&[7_u16, 9]));
         assert_eq!(copy.references(), list.references());
@@ -943,7 +946,10 @@ mod tests {
             bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
             bytes.extend_from_slice(&count.to_le_bytes());
             bytes.extend_from_slice(&[0; 8]);
-            bytes.resize(bytes.len() + usize::try_from(count).expect("fixture count") * 4, 0);
+            bytes.resize(
+                bytes.len() + usize::try_from(count).expect("fixture count") * 4,
+                0,
+            );
             for integers in [false, true] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
@@ -961,8 +967,10 @@ mod tests {
                         && limit.operation == "visit Inventor PmDc list entries"
                         && limit.used == 0
                         && limit.additional == 1));
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
-                    if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+                    if matches!(&error, CodecError::ResourceLimit(original) if original == &limit))
+                );
             }
         }
     }
@@ -977,7 +985,10 @@ mod tests {
             if count != 0 {
                 bytes.extend_from_slice(&[0; 8]);
             }
-            bytes.resize(bytes.len() + usize::try_from(count).expect("fixture count") * 4, 0);
+            bytes.resize(
+                bytes.len() + usize::try_from(count).expect("fixture count") * 4,
+                0,
+            );
             for integers in [false, true] {
                 for end_probe in [0_u64, 1] {
                     let arena = DecodeArena::new();
@@ -1001,10 +1012,15 @@ mod tests {
                                 && limit.operation == "visit Inventor PmDc list entries"
                                 && limit.used == u64::from(count)
                                 && limit.additional == 1));
-                        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
-                            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
+                        assert!(
+                            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+                            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit))
+                        );
                     } else {
-                        assert_eq!(result.expect("items and end probe fit"), usize::try_from(count).expect("fixture count"));
+                        assert_eq!(
+                            result.expect("items and end probe fit"),
+                            usize::try_from(count).expect("fixture count")
+                        );
                         cursor.finish("test list").expect("all list bytes consumed");
                         ctx.finish_session().expect("list work fits exactly");
                     }

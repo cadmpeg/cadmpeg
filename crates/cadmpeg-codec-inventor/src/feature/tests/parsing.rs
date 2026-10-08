@@ -22,8 +22,8 @@ fn feature_inventory_empty_record_table_requires_its_terminal_visit() {
     // The segment step and both fixed enum operands use three work units.
     // The empty record slice still needs one terminal visit.
     policy.limits.max_work_units = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("limited inventory context");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited inventory context");
     let Err(CodecError::ResourceLimit(limit)) = inventory(&ctx, &container.rse) else {
         panic!("the empty record source must admit its terminal visit");
     };
@@ -329,8 +329,8 @@ fn pattern_feature_property_slots_refuse_collection_limit_before_allocation() {
         // Two participants, property slots, and extension slots precede the final property push.
         policy.limits.max_collection_items = collection_limit;
         let arena = DecodeArena::new();
-        let (ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("pattern feature view");
+        let (ctx, source) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("pattern feature view");
         assert!(matches!(
             parse_pattern_feature(&ctx, source, version, family),
             Err(CodecError::ResourceLimit(limit))
@@ -358,9 +358,8 @@ fn pattern_feature_extension_values_refuse_collection_limit_before_allocation() 
                 && limit.operation == "admit Inventor pattern feature extension values"
                 && limit.used == 18
     ));
-    let (ctx, source) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("pattern feature view");
+    let (ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("pattern feature view");
     assert_eq!(
         parse_pattern_feature(&ctx, source, 21, PmDcPatternFamily::Mirror)
             .expect("pattern feature is admitted")

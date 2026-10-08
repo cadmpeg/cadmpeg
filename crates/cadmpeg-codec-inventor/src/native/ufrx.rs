@@ -254,28 +254,30 @@ impl UfrxRepresentationRecordWire {
         self,
         ctx: &DecodeContext<'_>,
     ) -> Result<UfrxRepresentationRecord, CodecError> {
-        let active_representation = match (
-            self.active_representation,
-            self.active_representation_kind,
-        ) {
-            (None, None) => None,
-            (Some(name), Some(kind)) => {
-                let name = required(
-                    NonBlankString::for_decode(ctx, name, "validate active_representation")?,
-                    "active_representation must not be empty",
-                )?;
-                let kind = required(
-                    NonBlankString::for_decode(ctx, kind, "validate active_representation_kind")?,
-                    "active_representation_kind must not be empty",
-                )?;
-                Some((name, kind))
-            }
-            _ => {
-                return Err(CodecError::malformed(
+        let active_representation =
+            match (self.active_representation, self.active_representation_kind) {
+                (None, None) => None,
+                (Some(name), Some(kind)) => {
+                    let name = required(
+                        NonBlankString::for_decode(ctx, name, "validate active_representation")?,
+                        "active_representation must not be empty",
+                    )?;
+                    let kind = required(
+                        NonBlankString::for_decode(
+                            ctx,
+                            kind,
+                            "validate active_representation_kind",
+                        )?,
+                        "active_representation_kind must not be empty",
+                    )?;
+                    Some((name, kind))
+                }
+                _ => {
+                    return Err(CodecError::malformed(
                     "active_representation and active_representation_kind must be present together",
                 ));
-            }
-        };
+                }
+            };
         let active_model_state = required(
             NonBlankString::for_decode(
                 ctx,
@@ -848,10 +850,8 @@ impl ExternalReferenceRecord {
             ExternalReferenceIdentity::DocumentId(document_id) => ExternalDocument::DocumentId {
                 document_id: {
                     let text = document_id.as_str();
-                    let mut copy = ctx.retained_string(
-                        text.len(),
-                        "copy Inventor UFRx external document ID",
-                    )?;
+                    let mut copy =
+                        ctx.retained_string(text.len(), "copy Inventor UFRx external document ID")?;
                     copy.push_str(text);
                     NonBlankString::from_ascii_leading(copy).ok_or_else(|| {
                         CodecError::malformed("identifier must contain 32 hexadecimal digits")
@@ -1534,7 +1534,9 @@ mod tests {
         policy.limits.max_retained_bytes = 32;
         policy.limits.max_materialized_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let document = reference.document(&ctx).expect("fixed output fits storage cap");
+        let document = reference
+            .document(&ctx)
+            .expect("fixed output fits storage cap");
         assert!(
             matches!(document, cadmpeg_ir::products::ExternalDocument::DocumentId { document_id }
             if document_id.as_str() == id)

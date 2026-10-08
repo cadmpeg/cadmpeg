@@ -104,7 +104,8 @@ pub(super) fn project(
                 default_state: style.default_state,
                 value: style.value,
                 name_reference: style.name_reference,
-                name: ctx.copy_retained_text(&style.name, "retain Inventor rendering style text")?,
+                name: ctx
+                    .copy_retained_text(&style.name, "retain Inventor rendering style text")?,
                 comment: ctx
                     .copy_retained_text(&style.comment, "retain Inventor rendering style text")?,
                 long_name: ctx

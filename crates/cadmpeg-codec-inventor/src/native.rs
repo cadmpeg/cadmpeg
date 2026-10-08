@@ -491,9 +491,9 @@ impl AssemblyPlacementRecord {
             object_reference,
             suffix,
         } = placement;
-        let Some(suffix_len) = std::num::NonZeroU64::new(cadmpeg_core::decode::u64_from_index(
-            suffix.window().len(),
-        )) else {
+        let Some(suffix_len) =
+            std::num::NonZeroU64::new(cadmpeg_core::decode::u64_from_index(suffix.window().len()))
+        else {
             return Err(AssemblyPlacementRecordConversionError {
                 segment_token,
                 record_ordinal,
@@ -501,11 +501,7 @@ impl AssemblyPlacementRecord {
             });
         };
         let id = match ctx.format_retained(
-            format_args!(
-                "inventor:assembly:placement#{}-{}",
-                segment_token,
-                record_ordinal
-            ),
+            format_args!("inventor:assembly:placement#{segment_token}-{record_ordinal}"),
             "retain Inventor assembly placement id",
         ) {
             Ok(id) => id,
@@ -1776,7 +1772,7 @@ impl ActiveCarrierRecord {
                 "active_carrier",
                 "read Inventor active carrier cardinality",
             )?
-            .map_or(0, |records| records.len());
+            .map_or(0, Vec::len);
         if record_count != 1 {
             return Err(<serde_json::Error as serde::de::Error>::custom(format!(
                 "active_carrier must contain exactly one record; found {record_count}"
@@ -1843,8 +1839,7 @@ mod tests {
     fn rendering_style(value: serde_json::Value) -> Result<PmAppRenderingStyleRecord, String> {
         let wire = serde_json::from_value::<PmAppRenderingStyleRecordWire>(value)
             .map_err(|error| error.to_string())?;
-        wire.into_record()
-            .map_err(|error| error.to_string())
+        wire.into_record().map_err(|error| error.to_string())
     }
 
     fn assembly_placement(value: serde_json::Value) -> Result<AssemblyPlacementRecord, String> {
@@ -1877,7 +1872,8 @@ mod tests {
                 if matches!(&failure.error, CodecError::Malformed(detail)
                     if detail == "suffix_len must not be zero")
         ));
-        ctx.finish_session().expect("fixed placement error uses no budget");
+        ctx.finish_session()
+            .expect("fixed placement error uses no budget");
     }
 
     #[test]
@@ -1895,11 +1891,9 @@ mod tests {
             attribute_reference: 0,
             state: 0,
             transform_prefix: false,
-            transform: crate::compact_matrix::CompactMatrix::try_new(
-                0,
-                0,
-                |_| Ok(cadmpeg_ir::scalar::FiniteReal::ZERO),
-            )
+            transform: crate::compact_matrix::CompactMatrix::try_new(0, 0, |_| {
+                Ok(cadmpeg_ir::scalar::FiniteReal::ZERO)
+            })
             .expect("finite matrix"),
             branch: 0,
             graphics_state: 0,
@@ -1912,8 +1906,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         // Preserve the old cap: the moved token removes its former copy work,
         // so this cap now admits the same digest output.
-        let source_prior =
-            2 * "inventor:assembly:placement#segment-1".len() + suffix.len();
+        let source_prior = 2 * "inventor:assembly:placement#segment-1".len() + suffix.len();
         let old_prior =
             2 * "inventor:assembly:placement#segment-1".len() + "segment".len() + suffix.len();
         policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(old_prior + 63);
@@ -1926,7 +1919,8 @@ mod tests {
         );
 
         policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(source_prior + 63);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
         assert!(matches!(
             AssemblyPlacementRecord::from_placement(&ctx, placement()),
             Err(failure)
@@ -2218,7 +2212,8 @@ mod tests {
             ActiveCarrierRecord::from_state(&ctx, &state).expect("exact storage admitted"),
             ActiveCarrierRecord::NotApplicable { id: id.to_owned() }
         );
-        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "probe active-carrier ID work")
+        let Err(CodecError::ResourceLimit(limit)) =
+            ctx.charge_work(1, "probe active-carrier ID work")
         else {
             panic!("fixed active-carrier ID copy must admit with zero work");
         };

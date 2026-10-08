@@ -67,8 +67,7 @@ fn transform_payload_streams_flat_matrix_under_retained_limit() {
             source_index: 1,
         },
         prefix_present: true,
-        matrix: CompactMatrix::try_from_rows(0, 0, [[2.0; 4]; 4])
-            .expect("finite compact matrix"),
+        matrix: CompactMatrix::try_from_rows(0, 0, [[2.0; 4]; 4]).expect("finite compact matrix"),
     };
     let wire = PmDcTransformPayloadWire::from(transform.clone());
     assert_eq!(
@@ -128,11 +127,9 @@ fn transform_prefix_error_needs_no_retained_text() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert!(matches!(
-        wire.into_payload(),
-        Err(CodecError::Malformed(_))
-    ));
-    ctx.finish_session().expect("fixed prefix error needs no budget");
+    assert!(matches!(wire.into_payload(), Err(CodecError::Malformed(_))));
+    ctx.finish_session()
+        .expect("fixed prefix error needs no budget");
 }
 
 #[test]

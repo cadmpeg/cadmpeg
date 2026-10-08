@@ -220,7 +220,10 @@ pub(crate) fn parse_registry(
     cursor.fits(count, SEGMENT_ENTRY_MIN_BYTES, "segment count")?;
     let mut entries = ctx.vector_storage(count, "admit Inventor segment registry entries")?;
     let mut steps = 0..count;
-    while ctx.next_charged(&mut steps, "visit Inventor database table records")?.is_some() {
+    while ctx
+        .next_charged(&mut steps, "visit Inventor database table records")?
+        .is_some()
+    {
         let display_name = cursor.utf16(ctx, "segment display name", 4_096)?;
         let segment_id = cursor.array("segment id")?;
         let revision_id = cursor.array("segment revision id")?;
@@ -237,7 +240,10 @@ pub(crate) fn parse_registry(
             ctx.vector_storage(object_count, "admit Inventor segment registry objects")?;
         let mut node_count = None;
         let mut steps = 0..object_count;
-        while ctx.next_charged(&mut steps, "visit Inventor segment objects")?.is_some() {
+        while ctx
+            .next_charged(&mut steps, "visit Inventor segment objects")?
+            .is_some()
+        {
             let object = SegmentObject {
                 revision_id: cursor.array("object revision id")?,
                 state: cursor.array("object state")?,
@@ -267,7 +273,10 @@ pub(crate) fn parse_registry(
 
         let mut nodes = ctx.vector_storage(node_count, "admit Inventor segment registry nodes")?;
         let mut steps = 0..node_count;
-        while ctx.next_charged(&mut steps, "visit Inventor segment nodes")?.is_some() {
+        while ctx
+            .next_charged(&mut steps, "visit Inventor segment nodes")?
+            .is_some()
+        {
             ctx.push_vec(
                 &mut nodes,
                 SegmentNode {
@@ -326,7 +335,10 @@ pub(crate) fn parse_revisions(
     cursor.fits(count, REVISION_ENTRY_MIN_BYTES, "revision count")?;
     let mut entries = ctx.vector_storage(count, "admit Inventor revision entries")?;
     let mut steps = 0..count;
-    while ctx.next_charged(&mut steps, "visit Inventor database table records")?.is_some() {
+    while ctx
+        .next_charged(&mut steps, "visit Inventor database table records")?
+        .is_some()
+    {
         let id = cursor.array("revision id")?;
         let flags = cursor.u32("revision flags")?;
         let kind = cursor.u16("revision kind")?;
@@ -484,7 +496,10 @@ impl<'a> Cursor<'a> {
         self.fits(count, 16, field)?;
         let mut ids = ctx.vector_storage(count, "admit Inventor registry identifier list")?;
         let mut steps = 0..count;
-        while ctx.next_charged(&mut steps, "visit Inventor database table records")?.is_some() {
+        while ctx
+            .next_charged(&mut steps, "visit Inventor database table records")?
+            .is_some()
+        {
             ctx.push_vec(
                 &mut ids,
                 self.array(field)?,
@@ -526,7 +541,10 @@ mod tests {
             let mut bytes = Vec::new();
             bytes.extend_from_slice(&count.to_le_bytes());
             bytes.extend_from_slice(&4_097_u32.to_le_bytes());
-            bytes.resize(4 + usize::try_from(count).expect("test count") * super::SEGMENT_ENTRY_MIN_BYTES, 0);
+            bytes.resize(
+                4 + usize::try_from(count).expect("test count") * super::SEGMENT_ENTRY_MIN_BYTES,
+                0,
+            );
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             // The first range step runs. Its display-name count exceeds4096,
@@ -537,7 +555,8 @@ mod tests {
             assert!(matches!(super::parse_registry(&ctx, &bytes),
                 Err(cadmpeg_core::CodecError::Malformed(detail))
                     if detail.contains("segment display name")));
-            ctx.finish_session().expect("unread registry entries use no work");
+            ctx.finish_session()
+                .expect("unread registry entries use no work");
         }
     }
 

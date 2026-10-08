@@ -81,10 +81,8 @@ fn parse_kernel_header(
     match parsed {
         Some(header) => Ok(Ok(header)),
         None => {
-            let mut detail = ctx.retained_string(
-                absent.len(),
-                "retain Inventor absent kernel header detail",
-            )?;
+            let mut detail =
+                ctx.retained_string(absent.len(), "retain Inventor absent kernel header detail")?;
             detail.push_str(absent);
             Ok(Err(detail))
         }
@@ -192,8 +190,10 @@ pub(crate) fn select_active_carrier<'a>(
     };
     let SegmentBulkState::Framed(bulk) = &segment.bulk else {
         let detail_text = "PmBRep bulk stream is unavailable";
-        let mut detail =
-            ctx.retained_string(detail_text.len(), "retain Inventor carrier unavailable detail")?;
+        let mut detail = ctx.retained_string(
+            detail_text.len(),
+            "retain Inventor carrier unavailable detail",
+        )?;
         detail.push_str(detail_text);
         return Ok(ActiveCarrierState::Unavailable(detail));
     };
@@ -236,8 +236,10 @@ pub(crate) fn select_active_carrier<'a>(
     };
     let Some(version) = segment.registry.map(|join| join.version_major) else {
         let detail_text = "PmBRep segment version is unavailable from the registry";
-        let mut detail =
-            ctx.retained_string(detail_text.len(), "retain Inventor carrier unavailable detail")?;
+        let mut detail = ctx.retained_string(
+            detail_text.len(),
+            "retain Inventor carrier unavailable detail",
+        )?;
         detail.push_str(detail_text);
         return Ok(ActiveCarrierState::Unavailable(detail));
     };
@@ -431,7 +433,11 @@ mod tests {
             RefWidth::Four => {
                 let mut stream = b"ASM BinaryFile4".to_vec();
                 stream.extend_from_slice(
-                    &header.metadata.save_format_version.unwrap_or_default().to_le_bytes(),
+                    &header
+                        .metadata
+                        .save_format_version
+                        .unwrap_or_default()
+                        .to_le_bytes(),
                 );
                 stream.extend_from_slice(&0_u32.to_le_bytes());
                 stream.extend_from_slice(
@@ -449,11 +455,19 @@ mod tests {
             RefWidth::Eight => {
                 let mut stream = b"ASM BinaryFile8".to_vec();
                 stream.extend_from_slice(
-                    &header.metadata.save_format_version.unwrap_or_default().to_le_bytes(),
+                    &header
+                        .metadata
+                        .save_format_version
+                        .unwrap_or_default()
+                        .to_le_bytes(),
                 );
                 stream.extend_from_slice(&[0; 12]);
                 stream.extend_from_slice(
-                    &header.metadata.entity_count.unwrap_or_default().to_le_bytes(),
+                    &header
+                        .metadata
+                        .entity_count
+                        .unwrap_or_default()
+                        .to_le_bytes(),
                 );
                 stream.extend_from_slice(&header.metadata.flags.unwrap_or_default().to_le_bytes());
                 stream
@@ -487,19 +501,23 @@ mod tests {
         let original_header = header.clone();
         let bytes = empty_asm_carrier_for_header(&header);
         let arena = DecodeArena::new();
-        let (service, view) = DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &DecodePolicy::service(),
+        let (service, view) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("service context");
+        let carrier = parse_carrier(
+            &service,
+            view,
+            &cadmpeg_ir::identity_key!("token"),
+            7,
+            100,
+            23,
         )
-        .expect("service context");
-        let carrier = parse_carrier(&service, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23)
-            .expect("carrier parses");
+        .expect("carrier parses");
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 17;
         policy.limits.max_work_units = 17;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("limited context");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         let decoded = decode_kernel_carrier(&ctx, &carrier, &header)
             .expect("empty ASM carrier decodes with both allowances");
         assert!(decoded.bodies.is_empty());
@@ -551,19 +569,22 @@ mod tests {
         let bytes = empty_asm_carrier_for_header(&header);
         for retained in [0, 16] {
             let arena = DecodeArena::new();
-            let (service, view) = DecodeContext::from_root_bytes(
-                &bytes,
-                &arena,
-                &DecodePolicy::service(),
+            let (service, view) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                    .expect("service context");
+            let carrier = parse_carrier(
+                &service,
+                view,
+                &cadmpeg_ir::identity_key!("token"),
+                7,
+                100,
+                23,
             )
-            .expect("service context");
-            let carrier =
-                parse_carrier(&service, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23)
-                    .expect("carrier parses");
+            .expect("carrier parses");
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = retained;
-            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("limited context");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
             let decoded = decode_kernel_carrier(&ctx, &carrier, &header)
                 .expect("empty ASM carrier decodes without retaining header text");
             assert!(decoded.bodies.is_empty());
@@ -591,21 +612,25 @@ mod tests {
         let original_header = header.clone();
         let bytes = empty_asm_carrier_for_header(&header);
         let arena = DecodeArena::new();
-        let (service, view) = DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &DecodePolicy::service(),
+        let (service, view) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("service context");
+        let carrier = parse_carrier(
+            &service,
+            view,
+            &cadmpeg_ir::identity_key!("token"),
+            7,
+            100,
+            23,
         )
-        .expect("service context");
-        let carrier = parse_carrier(&service, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23)
-            .expect("carrier parses");
+        .expect("carrier parses");
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("zero-work context");
-        let refusal = decode_kernel_carrier(&ctx, &carrier, &header)
-            .err()
-            .expect("empty ASM reachability still probes the iterator end");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("zero-work context");
+        let Err(refusal) = decode_kernel_carrier(&ctx, &carrier, &header) else {
+            panic!("empty ASM reachability still probes the iterator end");
+        };
         let CodecError::ResourceLimit(refusal) = refusal else {
             panic!("zero work must refuse the first charged ASM operation");
         };
@@ -619,12 +644,8 @@ mod tests {
         ));
         assert_eq!(header, original_header);
 
-        let (service, _) = DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &DecodePolicy::service(),
-        )
-        .expect("service context");
+        let (service, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("service context");
         let decoded = decode_kernel_carrier(&service, &carrier, &header)
             .expect("empty ASM carrier decodes under the service work budget");
         assert!(decoded.bodies.is_empty());
@@ -640,14 +661,18 @@ mod tests {
         let original_header = header.clone();
         let bytes = empty_asm_carrier_for_header(&header);
         let arena = DecodeArena::new();
-        let (service, view) = DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &DecodePolicy::service(),
+        let (service, view) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("service context");
+        let carrier = parse_carrier(
+            &service,
+            view,
+            &cadmpeg_ir::identity_key!("token"),
+            7,
+            100,
+            23,
         )
-        .expect("service context");
-        let carrier = parse_carrier(&service, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23)
-            .expect("carrier parses");
+        .expect("carrier parses");
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_work_units = 0;
@@ -821,13 +846,11 @@ mod tests {
         policy.limits.max_work_units = 0;
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        let refusal = select_active_carrier(
-            &limited_ctx,
-            &inventory.segments,
-            &DocumentKind::Part,
-        )
-        .err()
-        .expect("zero work refuses the first segment iterator step");
+        let Err(refusal) =
+            select_active_carrier(&limited_ctx, &inventory.segments, &DocumentKind::Part)
+        else {
+            panic!("zero work refuses the first segment iterator step");
+        };
         let CodecError::ResourceLimit(refusal) = refusal else {
             panic!("segment scan refusal must be a resource limit");
         };
@@ -843,13 +866,11 @@ mod tests {
         policy.limits.max_work_units = segment_work;
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        let refusal = select_active_carrier(
-            &limited_ctx,
-            &inventory.segments,
-            &DocumentKind::Part,
-        )
-        .err()
-        .expect("the segment iterator end probe exceeds the exact n-unit cap");
+        let Err(refusal) =
+            select_active_carrier(&limited_ctx, &inventory.segments, &DocumentKind::Part)
+        else {
+            panic!("the segment iterator end probe exceeds the exact n-unit cap");
+        };
         let CodecError::ResourceLimit(refusal) = refusal else {
             panic!("segment end probe refusal must be a resource limit");
         };
@@ -868,18 +889,19 @@ mod tests {
         policy.limits.max_work_units = record_scan_limit;
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        let refusal = select_active_carrier(
-            &limited_ctx,
-            &inventory.segments,
-            &DocumentKind::Part,
-        )
-        .err()
-        .expect("record scan refuses before its first iterator step");
+        let Err(refusal) =
+            select_active_carrier(&limited_ctx, &inventory.segments, &DocumentKind::Part)
+        else {
+            panic!("record scan refuses before its first iterator step");
+        };
         let CodecError::ResourceLimit(refusal) = refusal else {
             panic!("record scan refusal must be a resource limit");
         };
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(refusal.operation, "scan Inventor typed kernel carrier records");
+        assert_eq!(
+            refusal.operation,
+            "scan Inventor typed kernel carrier records"
+        );
         assert_eq!(refusal.used, record_scan_limit);
         assert_eq!(refusal.additional, 1);
         assert!(matches!(
@@ -893,18 +915,19 @@ mod tests {
         policy.limits.max_work_units = record_end_limit;
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        let refusal = select_active_carrier(
-            &limited_ctx,
-            &inventory.segments,
-            &DocumentKind::Part,
-        )
-        .err()
-        .expect("the record iterator end probe exceeds its exact count cap");
+        let Err(refusal) =
+            select_active_carrier(&limited_ctx, &inventory.segments, &DocumentKind::Part)
+        else {
+            panic!("the record iterator end probe exceeds its exact count cap");
+        };
         let CodecError::ResourceLimit(refusal) = refusal else {
             panic!("record end probe refusal must be a resource limit");
         };
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(refusal.operation, "scan Inventor typed kernel carrier records");
+        assert_eq!(
+            refusal.operation,
+            "scan Inventor typed kernel carrier records"
+        );
         assert_eq!(refusal.used, record_end_limit);
         assert_eq!(refusal.additional, 1);
         assert!(matches!(
@@ -1017,10 +1040,7 @@ mod tests {
 
         assert_eq!(header.width.bytes(), 4);
         assert_eq!(header.metadata.save_format_version, Some(700));
-        assert_eq!(
-            header.metadata.product_family.as_deref(),
-            Some("Inventor")
-        );
+        assert_eq!(header.metadata.product_family.as_deref(), Some("Inventor"));
         assert!(decoded.bodies.is_empty());
         assert!(decoded.unknowns.is_empty());
     }
@@ -1040,10 +1060,7 @@ mod tests {
         assert_eq!(carrier.family, KernelFamily::Acis);
         assert_eq!(header.width.bytes(), 4);
         assert_eq!(header.metadata.save_format_version, Some(21_800));
-        assert_eq!(
-            header.metadata.product_family.as_deref(),
-            Some("Inventor")
-        );
+        assert_eq!(header.metadata.product_family.as_deref(), Some("Inventor"));
         assert!(decoded.bodies.is_empty());
         assert!(decoded.unknowns.is_empty());
     }
@@ -1078,9 +1095,11 @@ mod tests {
         limited
             .charge_retained(8 + 8 + 10, "retain the remaining kernel header allowance")
             .expect("the original 26-byte allowance remains after decode");
-        assert!(matches!(limited.charge_retained(1, "probe kernel retained allowance"),
+        assert!(
+            matches!(limited.charge_retained(1, "probe kernel retained allowance"),
             Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 26));
+                if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 26)
+        );
         assert!(decode_test_carrier(&service, &carrier).is_ok());
     }
 
@@ -1108,11 +1127,16 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(decode_test_carrier(&limited, &carrier).is_ok());
         limited
-            .charge_retained(8 + 8 + 10 - 1, "retain the remaining kernel header allowance")
+            .charge_retained(
+                8 + 8 + 10 - 1,
+                "retain the remaining kernel header allowance",
+            )
             .expect("the original 25-byte allowance remains after decode");
-        assert!(matches!(limited.charge_retained(1, "probe kernel retained allowance"),
+        assert!(
+            matches!(limited.charge_retained(1, "probe kernel retained allowance"),
             Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 25));
+                if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 25)
+        );
         assert!(decode_test_carrier(&service, &carrier).is_ok());
     }
 
@@ -1170,24 +1194,17 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
         let decoded =
             decode_test_carrier(&ctx, &carrier).expect("header text is borrowed from the carrier");
-        assert_eq!(
-            header.metadata.product_family.as_deref(),
-            Some("Inventor")
-        );
-        assert_eq!(
-            header.metadata.product_version.as_deref(),
-            Some("ASM test")
-        );
-        assert_eq!(
-            header.metadata.save_date.as_deref(),
-            Some("2000-01-01")
-        );
+        assert_eq!(header.metadata.product_family.as_deref(), Some("Inventor"));
+        assert_eq!(header.metadata.product_version.as_deref(), Some("ASM test"));
+        assert_eq!(header.metadata.save_date.as_deref(), Some("2000-01-01"));
         assert!(decoded.bodies.is_empty());
         ctx.charge_retained(8 + 8 + 10, "retain the remaining kernel header allowance")
             .expect("the original 26-byte allowance remains after decode");
-        assert!(matches!(ctx.charge_retained(1, "probe kernel retained allowance"),
+        assert!(
+            matches!(ctx.charge_retained(1, "probe kernel retained allowance"),
             Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 26));
+                if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 26)
+        );
     }
 
     #[test]
@@ -1241,9 +1258,11 @@ mod tests {
                 "retain the remaining kernel header allowance",
             )
             .expect("the original 7-byte allowance remains after decode");
-        assert!(matches!(limited.charge_retained(1, "probe kernel retained allowance"),
+        assert!(
+            matches!(limited.charge_retained(1, "probe kernel retained allowance"),
             Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 7));
+                if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 7)
+        );
         assert!(decode_test_carrier(&service, &carrier).is_ok());
     }
 

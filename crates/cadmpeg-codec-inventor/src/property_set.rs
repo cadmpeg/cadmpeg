@@ -127,8 +127,9 @@ impl PropertyValue<'_> {
             Self::String { value, .. } => {
                 ctx.copy_retained_text(value, "retain OLE scalar text")?
             }
-            Self::Guid { value, .. } =>
-                crate::pmdc::fixed_hex(ctx, value, "retain OLE scalar text")?,
+            Self::Guid { value, .. } => {
+                crate::pmdc::fixed_hex(ctx, value, "retain OLE scalar text")?
+            }
             Self::Empty { .. }
             | Self::Float { .. }
             | Self::Binary { .. }
@@ -241,7 +242,10 @@ pub(crate) fn parse_property_set_stream<'a>(
     let mut fmtids = BTreeSet::new();
     let mut fmtids_storage = ctx.reserve_scoped(0, "admit OLE section FMTIDs")?;
     let mut entries = 0..section_count;
-    while ctx.next_charged(&mut entries, "admit OLE section directories")?.is_some() {
+    while ctx
+        .next_charged(&mut entries, "admit OLE section directories")?
+        .is_some()
+    {
         let fmtid = cursor.array("section FMTID")?;
         if !fmtids_storage
             .with_storage(|| ctx.insert_btree_set(&mut fmtids, fmtid, "admit OLE section FMTIDs"))?
@@ -269,7 +273,9 @@ pub(crate) fn parse_property_set_stream<'a>(
     let mut previous_end = header_end;
     let mut sections = ctx.vector_storage(section_count, "admit OLE property-set sections")?;
     let mut entries = directories.iter();
-    while let Some(&(fmtid, offset)) = ctx.next_charged(&mut entries, "scan OLE section directories")? {
+    while let Some(&(fmtid, offset)) =
+        ctx.next_charged(&mut entries, "scan OLE section directories")?
+    {
         if offset < previous_end || offset % 4 != 0 {
             return Err(CodecError::Malformed(
                 "OLE property-set section ranges overlap or are not aligned".into(),
@@ -340,7 +346,10 @@ fn parse_section<'a>(
     let mut directory = Vec::new();
     let mut directory_storage = ctx.reserve_scoped(0, "admit OLE property directory")?;
     let mut entries = 0..property_count;
-    while ctx.next_charged(&mut entries, "admit OLE property directory")?.is_some() {
+    while ctx
+        .next_charged(&mut entries, "admit OLE property directory")?
+        .is_some()
+    {
         let id = cursor.u32("property id")?;
         if !ids_storage
             .with_storage(|| ctx.insert_btree_set(&mut ids, id, "admit OLE property IDs"))?
@@ -444,11 +453,9 @@ fn parse_section<'a>(
         } else {
             parse_typed_value(ctx, raw, code_page)?
         };
-        let name = if let Some(name) = ctx.get_btree_map(
-            &names,
-            &id,
-            "find OLE property dictionary name",
-        )? {
+        let name = if let Some(name) =
+            ctx.get_btree_map(&names, &id, "find OLE property dictionary name")?
+        {
             Some(ctx.copy_retained_text(name, "retain OLE property name")?)
         } else {
             None
@@ -521,7 +528,10 @@ fn parse_dictionary(
     let mut folded_names_storage = ctx.reserve_scoped(0, "admit OLE folded dictionary names")?;
     let mut folded_names = BTreeSet::new();
     let mut entries = 0..count;
-    while ctx.next_charged(&mut entries, "admit OLE property dictionary entries")?.is_some() {
+    while ctx
+        .next_charged(&mut entries, "admit OLE property dictionary entries")?
+        .is_some()
+    {
         let id = cursor.u32("entry id")?;
         let size = cursor.count("entry string size", MAX_STREAM_SIZE)?;
         let name = names_storage
@@ -604,7 +614,10 @@ fn parse_vector<'a>(
     let count = cursor.count("vector element count", MAX_PROPERTIES)?;
     let mut values = ctx.vector_storage(count, "admit OLE property vector elements")?;
     let mut entries = 0..count;
-    while ctx.next_charged(&mut entries, "admit OLE property vector elements")?.is_some() {
+    while ctx
+        .next_charged(&mut entries, "admit OLE property vector elements")?
+        .is_some()
+    {
         if element_type == VT_VARIANT {
             let nested_type = cursor.u16("variant type")?;
             if cursor.u16("variant type padding")? != 0 {
@@ -1125,8 +1138,8 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
     use cadmpeg_container::compound::CompoundSnapshot;
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
     use crate::test_support::truncation::located_truncation;
@@ -1152,9 +1165,12 @@ mod tests {
             policy.limits.max_work_units = 1;
             let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                 .expect("truncated vector context");
-            assert!(matches!(super::parse_typed_value(&ctx, view, None),
-                Err(CodecError::Truncated { .. })));
-            ctx.finish_session().expect("unread elements consume no work");
+            assert!(matches!(
+                super::parse_typed_value(&ctx, view, None),
+                Err(CodecError::Truncated { .. })
+            ));
+            ctx.finish_session()
+                .expect("unread elements consume no work");
         }
     }
 
@@ -1181,11 +1197,11 @@ mod tests {
         bytes.extend_from_slice(&0_u16.to_le_bytes());
         bytes.extend_from_slice(&42_i32.to_le_bytes());
         let arena = DecodeArena::new();
-        let (service, view) = DecodeContext::from_root_bytes(
-            &bytes, &arena, &DecodePolicy::service(),
-        ).expect("property section context");
-        let section = super::parse_section(&service, view, [0; 16])
-            .expect("property dictionary section");
+        let (service, view) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("property section context");
+        let section =
+            super::parse_section(&service, view, [0; 16]).expect("property dictionary section");
         assert_eq!(section.dictionary_entries, 1);
         assert_eq!(section.properties[2].id, 2);
         assert_eq!(section.properties[2].name.as_deref(), Some("abc"));
@@ -1195,9 +1211,12 @@ mod tests {
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("lookup refusal context");
         let probe = RefusalProbe::arm(
-            ResourceDimension::WorkUnits, "find OLE property dictionary name", None,
+            ResourceDimension::WorkUnits,
+            "find OLE property dictionary name",
+            None,
         );
-        let Err(CodecError::ResourceLimit(limit)) = super::parse_section(&ctx, view, [0; 16]) else {
+        let Err(CodecError::ResourceLimit(limit)) = super::parse_section(&ctx, view, [0; 16])
+        else {
             panic!("dictionary lookup must use the owning tree operation");
         };
         drop(probe);
@@ -1215,11 +1234,15 @@ mod tests {
         policy.limits.max_work_units = 0;
         policy.limits.max_retained_bytes = 32;
         policy.limits.max_materialized_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("GUID context");
-        let value = PropertyValue::Guid { type_code: 0x48, value: [0xaf; 16] };
-        assert_eq!(value.scalar_text(&ctx).expect("fixed GUID text"),
-            Some("afafafafafafafafafafafafafafafaf".to_owned()));
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("GUID context");
+        let value = PropertyValue::Guid {
+            type_code: 0x48,
+            value: [0xaf; 16],
+        };
+        assert_eq!(
+            value.scalar_text(&ctx).expect("fixed GUID text"),
+            Some("afafafafafafafafafafafafafafafaf".to_owned())
+        );
     }
 
     #[test]
@@ -1275,15 +1298,10 @@ mod tests {
             .reserve_scoped(0, "admit OLE property dictionary entries")
             .expect("dictionary name storage reservation");
         assert_eq!(
-            parse_dictionary(
-                &service,
-                root,
-                Some(1200),
-                &mut names_storage,
-            )
-            .expect("dictionary admitted")
-            .get(&2)
-            .map(String::as_str),
+            parse_dictionary(&service, root, Some(1200), &mut names_storage,)
+                .expect("dictionary admitted")
+                .get(&2)
+                .map(String::as_str),
             Some("abc")
         );
         // The decoded name holds 4 bytes until its terminator is removed. Its
@@ -1368,8 +1386,8 @@ mod tests {
         for inserted in 1..=property_count {
             let ids_bytes = tree_nodes(inserted) * tree_node_bytes::<u32, ()>();
             let current_directory_bytes = prior_directory_capacity * directory_entry_size;
-            id_directory_growth_peak = id_directory_growth_peak
-                .max(ids_bytes + current_directory_bytes);
+            id_directory_growth_peak =
+                id_directory_growth_peak.max(ids_bytes + current_directory_bytes);
             if inserted > prior_directory_capacity {
                 let next_directory_capacity = prior_directory_capacity
                     .checked_mul(2)
@@ -1385,9 +1403,7 @@ mod tests {
 
         // At the 17th range, the 16-tuple allocation overlaps its 32-tuple
         // replacement while the 32-entry directory remains live.
-        let range_growth_peak = directory_bytes
-            + (range_capacity / 2) * range_size
-            + range_bytes;
+        let range_growth_peak = directory_bytes + (range_capacity / 2) * range_size + range_bytes;
         let dictionary_peak = range_bytes
             + ("abc".len() + 1)
             + "abc".to_uppercase().len()

@@ -118,8 +118,7 @@ fn scalar_map_formats_its_index_only_for_a_nonfinite_error() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 0;
-        let (ctx, view) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
         let result = super::super::reference_scalar_map(&ctx, &mut crate::pmdc::Cursor::new(view));
         if value.is_finite() {
             assert_eq!(
@@ -150,14 +149,15 @@ fn nonfinite_first_scalar_map_value_does_not_prepay_the_tail() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 1;
-        let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("scalar map context");
+        let (ctx, view) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("scalar map context");
         assert!(matches!(
             super::super::reference_scalar_map(&ctx, &mut crate::pmdc::Cursor::new(view)),
             Err(CodecError::Malformed(detail))
                 if detail == "Inventor PmDc constraint scalar-map value 0 is not finite"
         ));
-        ctx.finish_session().expect("unread scalar-map values use no work");
+        ctx.finish_session()
+            .expect("unread scalar-map values use no work");
     }
 }
 
@@ -179,20 +179,24 @@ fn reference_maps_admit_each_pair_and_the_end_probe() {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_work_units =
-                cadmpeg_core::decode::u64_from_index(count) + end_probe;
+            policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(count) + end_probe;
             let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                 .expect("reference map context");
-            let result = super::super::reference_pair_map(&ctx, &mut crate::pmdc::Cursor::new(view));
+            let result =
+                super::super::reference_pair_map(&ctx, &mut crate::pmdc::Cursor::new(view));
             if end_probe == 0 {
-                let error = result.err().expect("pair-map end probe refuses");
+                let Err(error) = result else {
+                    panic!("pair-map end probe refuses");
+                };
                 assert!(matches!(&error, CodecError::ResourceLimit(limit)
                     if limit.dimension == ResourceDimension::WorkUnits
                         && limit.operation == "read Inventor sketch constraint reference map"
                         && limit.used == cadmpeg_core::decode::u64_from_index(count)
                         && limit.additional == 1));
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
-                    if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+                    if matches!(&error, CodecError::ResourceLimit(original) if original == &limit))
+                );
             } else {
                 let map = result.expect("pairs and end probe fit");
                 assert_eq!(map.entries().len(), count);
@@ -204,7 +208,8 @@ fn reference_maps_admit_each_pair_and_the_end_probe() {
                         assert!(!pair.1.qualified());
                     }
                 }
-                ctx.finish_session().expect("reference-map work fits exactly");
+                ctx.finish_session()
+                    .expect("reference-map work fits exactly");
             }
         }
     }
@@ -221,8 +226,7 @@ fn planar_geometry_uses_static_diagnostic_fields() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 0;
-        let (ctx, view) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
         assert!(parse_entity(&ctx, tag, view, 22).is_ok());
     }
     let mut bytes = content(0);
@@ -232,7 +236,8 @@ fn planar_geometry_uses_static_diagnostic_fields() {
     policy.limits.max_materialized_bytes = 0;
     let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
     assert!(parse_direction(view, 22).is_ok());
-    ctx.finish_session().expect("fixed direction needs no scratch");
+    ctx.finish_session()
+        .expect("fixed direction needs no scratch");
 }
 
 #[test]

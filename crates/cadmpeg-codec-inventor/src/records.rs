@@ -542,7 +542,10 @@ fn parse_extended_record_trailer(
     // skipped, not collected.
     cursor.fits(property_count, 8, "record trailer property count")?;
     let mut entries = 0..property_count;
-    while ctx.next_charged(&mut entries, "visit Inventor RSe table entries")?.is_some() {
+    while ctx
+        .next_charged(&mut entries, "visit Inventor RSe table entries")?
+        .is_some()
+    {
         cursor.sized_bytes(65_536, "record trailer property name")?;
         match cursor.u32("record trailer property type")? {
             1 => cursor.skip(3, "record trailer property")?,
@@ -586,7 +589,10 @@ fn parse_extended_record_trailer(
         // A reference is at least its name length and value words.
         cursor.fits(reference_count, 8, "record trailer reference count")?;
         let mut entries = 0..reference_count;
-        while ctx.next_charged(&mut entries, "visit Inventor RSe table entries")?.is_some() {
+        while ctx
+            .next_charged(&mut entries, "visit Inventor RSe table entries")?
+            .is_some()
+        {
             cursor.sized_bytes(65_536, "record trailer reference name")?;
             cursor.skip(4, "record trailer reference value")?;
         }
@@ -763,14 +769,18 @@ mod tests {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_work_units = 0;
-            let (ctx, view) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &bytes, &arena, &policy,
-            ).expect("record trailer context");
+            let (ctx, view) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("record trailer context");
             let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-                super::parse_extended_record_trailer(&ctx, &mut super::Cursor::new(view)) else {
+                super::parse_extended_record_trailer(&ctx, &mut super::Cursor::new(view))
+            else {
                 panic!("first property step must refuse before reading");
             };
-            assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+            assert_eq!(
+                limit.dimension,
+                cadmpeg_core::decode::ResourceDimension::WorkUnits
+            );
             assert_eq!(limit.operation, "visit Inventor RSe table entries");
             assert_eq!(limit.used, 0);
             assert_eq!(limit.additional, 1);

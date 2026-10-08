@@ -128,9 +128,8 @@ fn presentation_projection_stops_before_unvisited_default_style_on_entity_refusa
     policy.limits.max_work_units = 1;
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    let error = match presentation_native_projection::project(&ctx, &mut inventory) {
-        Ok(_) => panic!("first default style exceeds the entity cap"),
-        Err(error) => error,
+    let Err(error) = presentation_native_projection::project(&ctx, &mut inventory) else {
+        panic!("first default style exceeds the entity cap");
     };
     let CodecError::ResourceLimit(refusal) = error else {
         panic!("default-style entity admission must refuse");
@@ -405,8 +404,7 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
         .as_str()
         .len();
     let issue_vector_bytes = 4 * std::mem::size_of::<crate::record_issue::RecordIssue>();
-    let issue_prefix =
-        u64::try_from(issue_vector_bytes + token_len).expect("issue prefix fits");
+    let issue_prefix = u64::try_from(issue_vector_bytes + token_len).expect("issue prefix fits");
     let issue_detail_bytes = u64::try_from(issue.len()).expect("issue detail fits");
     let mut policy = DecodePolicy::service();
     // The rejected candidate retains only its issue: four initial slots, token, and detail.
@@ -501,7 +499,10 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
         };
         assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(refusal.operation, operation);
-        assert_eq!(refusal.limit, u64::try_from(retained_needed).expect("issue budget fits"));
+        assert_eq!(
+            refusal.limit,
+            u64::try_from(retained_needed).expect("issue budget fits")
+        );
         assert_eq!(refusal.used, refusal.limit);
         assert_eq!(refusal.additional, u64::MAX);
         drop(probe);

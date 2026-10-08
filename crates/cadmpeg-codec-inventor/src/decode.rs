@@ -1710,7 +1710,8 @@ fn project_preview_asset(
     let mut name = ctx.retained_string("document preview".len(), "retain Inventor preview name")?;
     name.push_str("document preview");
     let media_text = media_type.as_str();
-    let mut media_type = ctx.retained_string(media_text.len(), "retain Inventor preview media type")?;
+    let mut media_type =
+        ctx.retained_string(media_text.len(), "retain Inventor preview media type")?;
     media_type.push_str(media_text);
     let data = ctx.copy_retained(bytes, "retain Inventor preview asset")?;
     let asset = Asset::try_new(

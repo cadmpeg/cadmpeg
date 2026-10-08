@@ -1446,13 +1446,12 @@ fn flat_color_index_stops_before_unvisited_tail_on_projection_refusal() {
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let projected = std::cell::Cell::new(0);
-    let error = match index_colors(&ctx, &entries, operation, |entry| {
+    let Err(error) = index_colors(&ctx, &entries, operation, |entry| {
         projected.set(projected.get() + 1);
         ctx.charge_entities(1, "project Inventor test color")?;
         Ok(Some(*entry))
-    }) {
-        Ok(_) => panic!("first projected entry exceeds the entity cap"),
-        Err(error) => error,
+    }) else {
+        panic!("first projected entry exceeds the entity cap");
     };
     let CodecError::ResourceLimit(refusal) = error else {
         panic!("projection entity admission must refuse");

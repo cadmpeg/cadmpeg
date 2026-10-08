@@ -12,16 +12,20 @@ fn sketch_inventory_refuses_before_first_segment_step() {
     let container = InventorContainer::open(&setup, view).expect("sketch fixture container");
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("sketch scan context");
-    let error = inventory(&ctx, &container.rse).err().expect("first segment step refuses");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("sketch scan context");
+    let Err(error) = inventory(&ctx, &container.rse) else {
+        panic!("first segment step refuses");
+    };
     assert!(matches!(&error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "visit Inventor sketch items"
             && limit.used == 0
             && limit.additional == 1));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
-        if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+        if matches!(&error, CodecError::ResourceLimit(original) if original == &limit))
+    );
 }
 
 fn inventory_with_record(

@@ -167,8 +167,7 @@ fn decode_instances_from(
         }
         let instance = archive.open(ctx, &entry.name)?;
         let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, instance.window())?;
-        let outcome =
-            cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, frames.frames())?;
+        let outcome = cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, frames.frames())?;
         ctx.push_vec(
             &mut instances,
             ProteinInstanceRecords {
@@ -468,29 +467,35 @@ mod tests {
             ];
             entries.extend(names.iter().map(|name| (name.as_str(), &b"bad"[..])));
             let zip = zip_entries(&entries);
-            let mut bytes = u32::try_from(zip.len()).expect("fixture length")
-                .to_le_bytes().to_vec();
+            let mut bytes = u32::try_from(zip.len())
+                .expect("fixture length")
+                .to_le_bytes()
+                .to_vec();
             bytes.extend_from_slice(&zip);
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = u64::MAX;
             let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                 .expect("Protein scan context");
-            let ParsedProtein::Package { archive, payload, .. } =
-                parse_stream(&ctx, root).expect("Protein scan package")
+            let ParsedProtein::Package {
+                archive, payload, ..
+            } = parse_stream(&ctx, root).expect("Protein scan package")
             else {
                 panic!("package state");
             };
             let probe = RefusalProbe::arm(
                 ResourceDimension::WorkUnits,
                 "collect Inventor Protein instance streams",
-                Some(cadmpeg_core::decode::u64_from_index(archive.entries().len())),
+                Some(cadmpeg_core::decode::u64_from_index(
+                    archive.entries().len(),
+                )),
             );
             assert!(matches!(decode_instances_from(&ctx, &archive, payload),
                 Err(cadmpeg_core::CodecError::Malformed(detail))
                     if detail == "Protein page stream is shorter than its header and one page"));
             drop(probe);
-ctx.finish_session().expect("instance-stream pass stops at the first malformed frame");
+            ctx.finish_session()
+                .expect("instance-stream pass stops at the first malformed frame");
         }
     }
 
@@ -530,7 +535,10 @@ ctx.finish_session().expect("instance-stream pass stops at the first malformed f
             // active-set/path/closure4 + resolved schema1 + property1 =293.
             // Removing the selected-entry Vec removes one actual slot. The
             // original cap now fits the final result; one less refuses its push.
-            for cap in [RESULT_COLLECTION_PRIOR_ITEMS, RESULT_COLLECTION_PRIOR_ITEMS - 1] {
+            for cap in [
+                RESULT_COLLECTION_PRIOR_ITEMS,
+                RESULT_COLLECTION_PRIOR_ITEMS - 1,
+            ] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
@@ -538,8 +546,15 @@ ctx.finish_session().expect("instance-stream pass stops at the first malformed f
                     .expect("synthetic Protein input fits policy");
                 let result = decode_instances_from(&limited, &archive, payload);
                 if cap == RESULT_COLLECTION_PRIOR_ITEMS {
-                    assert_eq!(result.expect("original cap fits after removing the entry slot").len(), 1);
-                    limited.finish_session().expect("only actual result storage is charged");
+                    assert_eq!(
+                        result
+                            .expect("original cap fits after removing the entry slot")
+                            .len(),
+                        1
+                    );
+                    limited
+                        .finish_session()
+                        .expect("only actual result storage is charged");
                 } else {
                     let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
                         panic!("result collection must refuse before its own push");
@@ -817,7 +832,8 @@ ctx.finish_session().expect("instance-stream pass stops at the first malformed f
         // Validation and the streaming decoder each visit every source entry
         // and one terminal probe. There is no selected-entry Vec or second
         // traversal over its two records.
-        let archive_entry_work = 2 * (cadmpeg_core::decode::u64_from_index(archive_entry_count) + 1);
+        let archive_entry_work =
+            2 * (cadmpeg_core::decode::u64_from_index(archive_entry_count) + 1);
         // Counts the outer ZIP snapshot/name checks, one catalog load and both frame/decode paths, instance CRCs/lookups/name copies, and archive traversals/collections.
         let common_work = inventory_work
             + archive_snapshot_work
@@ -841,11 +857,13 @@ ctx.finish_session().expect("instance-stream pass stops at the first malformed f
         else {
             panic!("package state");
         };
-        let original_instances = decode_instances_from(
-            &original_ctx, &original_archive, original_payload,
-        ).expect("the original allowance fits after removing both temporary traversals");
+        let original_instances =
+            decode_instances_from(&original_ctx, &original_archive, original_payload)
+                .expect("the original allowance fits after removing both temporary traversals");
         assert_eq!(original_instances.len(), 2);
-        assert!(original_instances.iter().all(|instance| instance.records.len() == 1));
+        assert!(original_instances
+            .iter()
+            .all(|instance| instance.records.len() == 1));
         let remaining = original_archive_entry_work - archive_entry_work;
         let Err(cadmpeg_core::CodecError::ResourceLimit(original_limit)) =
             original_ctx.charge_work(remaining + 1, "probe remaining original Protein work")
@@ -853,7 +871,10 @@ ctx.finish_session().expect("instance-stream pass stops at the first malformed f
             panic!("the removed traversals leave exactly their original allowance");
         };
         assert_eq!(original_limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original_limit.operation, "probe remaining original Protein work");
+        assert_eq!(
+            original_limit.operation,
+            "probe remaining original Protein work"
+        );
         assert_eq!(original_limit.used, common_work + archive_entry_work);
         assert_eq!(original_limit.additional, remaining + 1);
         assert!(matches!(

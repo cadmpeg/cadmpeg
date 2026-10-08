@@ -646,9 +646,10 @@ fn close_parameter_graph(
     })?;
     let mut ready = VecDeque::new();
     let mut parameter_inputs = parameters.iter().enumerate();
-    while let Some((index, parameter)) =
-        ctx.next_charged(&mut parameter_inputs, "visit Inventor parameter closure inputs")?
-    {
+    while let Some((index, parameter)) = ctx.next_charged(
+        &mut parameter_inputs,
+        "visit Inventor parameter closure inputs",
+    )? {
         let mut parameter_dependencies = parameter.dependencies.as_slice().iter();
         while let Some(dependency) =
             ctx.next_charged(&mut parameter_dependencies, "index Inventor parameter edge")?
@@ -1025,9 +1026,7 @@ fn rendered_operand<'a>(
     };
     ctx.get_hash_map(rendered, &ordinal, "access Inventor rendered expression")?
         .map(String::as_str)
-        .ok_or_else(|| {
-            CodecError::Malformed("Inventor expression operand was not rendered".into())
-        })
+        .ok_or_else(|| CodecError::Malformed("Inventor expression operand was not rendered".into()))
 }
 
 struct ExpressionRenderPlan<'a, 'b> {
@@ -1061,11 +1060,10 @@ impl ExpressionRenderPlan<'_, '_> {
         let Some(ordinal) = reference.checked_sub(1) else {
             return Ok(None);
         };
-        match self.ctx.get_hash_map(
-            &self.shapes,
-            &ordinal,
-            "access Inventor expression shape",
-        )? {
+        match self
+            .ctx
+            .get_hash_map(&self.shapes, &ordinal, "access Inventor expression shape")?
+        {
             Some(Some(measured)) => return Ok(Some(measured.length)),
             Some(None) => {
                 return Err(CodecError::Malformed(
@@ -1495,7 +1493,10 @@ impl Cursor<'_> {
         let mut references = ctx.vector_storage(count, "admit Inventor PmDc unit references")?;
         let mut reference_indices = 0..count;
         while ctx
-            .next_charged(&mut reference_indices, "admit Inventor PmDc unit references")?
+            .next_charged(
+                &mut reference_indices,
+                "admit Inventor PmDc unit references",
+            )?
             .is_some()
         {
             ctx.push_vec(
@@ -1759,8 +1760,7 @@ mod tests {
 
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
         assert!(matches!(
             inventory(&ctx, &container.rse),
             Err(CodecError::ResourceLimit(limit))
@@ -2746,9 +2746,7 @@ mod tests {
             pmi: None,
             native_ref: None,
         };
-        let parameters = || {
-            vec![make("c", Some("b")), make("b", Some("a")), make("a", None)]
-        };
+        let parameters = || vec![make("c", Some("b")), make("b", Some("a")), make("a", None)];
         let id_bytes =
             u64::try_from(id("c").as_str().len()).expect("identity byte length fits u64");
         // The index table's growth bound is four buckets of (&ParameterId, usize) slots with
@@ -2761,11 +2759,8 @@ mod tests {
                 .expect("table bytes fit u64");
         let index_work = index_table + (4 + 6 * id_bytes);
         let original_budget = index_work + 3 + 3 + (3 + 2 + 2 * id_bytes) + 3 + 1;
-        let work_before_closure_flags = index_work
-            + 3
-            + 3
-            + (3 + 1)
-            + ((1 + 1) + (1 + 1) + 1 + 2 * id_bytes);
+        let work_before_closure_flags =
+            index_work + 3 + 3 + (3 + 1) + ((1 + 1) + (1 + 1) + 1 + 2 * id_bytes);
         assert_eq!(work_before_closure_flags, original_budget);
         // The closure-flag fill and first queue visit use four units before the first reverse
         // edge step.
@@ -2774,9 +2769,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut original_policy = DecodePolicy::service();
         original_policy.limits.max_work_units = original_budget;
-        let (original_ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &original_policy)
-                .expect("empty fixture view");
+        let (original_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &original_policy)
+            .expect("empty fixture view");
         let CodecError::ResourceLimit(original_limit) =
             close_parameter_graph(&original_ctx, parameters())
                 .expect_err("the original work cap refuses before closure flags")
@@ -3138,8 +3132,8 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty fixture view");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
         assert!(matches!(
             super::rendered_operand(&ctx, &rendered, reference(1, false)),
             Err(CodecError::ResourceLimit(limit))

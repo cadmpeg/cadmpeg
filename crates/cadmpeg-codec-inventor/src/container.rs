@@ -74,7 +74,9 @@ impl<'a> InventorContainer<'a> {
             )
         })?;
         let mut segment_steps = self.rse.segments.iter();
-        while let Some(segment) = ctx.next_charged(&mut segment_steps, "visit Inventor summary segments")? {
+        while let Some(segment) =
+            ctx.next_charged(&mut segment_steps, "visit Inventor summary segments")?
+        {
             let Some(entry) = summary_entry(
                 ctx,
                 &by_directory,
@@ -206,17 +208,22 @@ fn summary_note(
     segment_count: usize,
     database_count: usize,
 ) -> Result<String, CodecError> {
-    let major_digits = usize::try_from(major.max(1).ilog10()).map_err(|_| {
-        CodecError::malformed("Inventor numeric value exceeds target range")
-    })? + 1;
-    let segment_digits = usize::try_from(segment_count.max(1).ilog10()).map_err(|_| {
-        CodecError::malformed("Inventor numeric value exceeds target range")
-    })? + 1;
-    let database_digits = usize::try_from(database_count.max(1).ilog10()).map_err(|_| {
-        CodecError::malformed("Inventor numeric value exceeds target range")
-    })? + 1;
-    let length = "CFB v".len() + " with ".len() + " RSe segment pair(s) and ".len()
-        + " versioned database(s)".len() + major_digits + segment_digits + database_digits;
+    let major_digits = usize::try_from(major.max(1).ilog10())
+        .map_err(|_| CodecError::malformed("Inventor numeric value exceeds target range"))?
+        + 1;
+    let segment_digits = usize::try_from(segment_count.max(1).ilog10())
+        .map_err(|_| CodecError::malformed("Inventor numeric value exceeds target range"))?
+        + 1;
+    let database_digits = usize::try_from(database_count.max(1).ilog10())
+        .map_err(|_| CodecError::malformed("Inventor numeric value exceeds target range"))?
+        + 1;
+    let length = "CFB v".len()
+        + " with ".len()
+        + " RSe segment pair(s) and ".len()
+        + " versioned database(s)".len()
+        + major_digits
+        + segment_digits
+        + database_digits;
     let mut note = ctx.retained_string(length, "retain Inventor summary note")?;
     std::fmt::write(
         &mut note, format_args!(

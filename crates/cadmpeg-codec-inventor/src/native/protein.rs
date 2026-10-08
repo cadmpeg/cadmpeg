@@ -125,7 +125,7 @@ impl ProteinRecord {
                 "protein",
                 "read Inventor Protein state cardinality",
             )?
-            .map_or(0, |records| records.len());
+            .map_or(0, Vec::len);
         if state_count != 1 {
             return Err(NativeConvertError::ConversionMessage(format!(
                 "Inventor native data has {state_count} Protein state records"

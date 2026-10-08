@@ -3,22 +3,22 @@ use super::{
     parse_entity_style_link, parse_feature, parse_fillet_edge_selection, parse_fillet_edge_set,
     parse_label, parse_part_operation, parse_pattern_feature, parse_placement,
     parse_profile_selection, parse_rdx_variable, parse_surface_body, parse_terminator,
-    project_chamfer, project_extrusion, project_fillet, project_hole, ClassId,
-    PmDcEntityStyleLink, PmDcEntityStyleLinkPayload, PmDcFeature, PmDcFeatureEnumFamily,
-    PmDcFeatureLabel, PmDcFeatureLabelPayload, PmDcFeatureLabelPayloadWire, PmDcFeaturePayload,
-    PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload,
-    PmDcFeatureReferenceFamily, PmDcLinkedHeader, PmDcPatternFamily, ProjectionIndex,
-    BOOLEAN_TYPE, CHAMFER_CLASS_ID, END_OF_FEATURES_TYPE, ENTITY_STYLE_LINK_TYPE,
-    EXTRUSION_CLASS_ID, FEATURE_LABEL_TYPE, FEATURE_TYPE, FILLET_CLASS_ID, HOLE_CLASS_ID,
-    MIRROR_FEATURE_TYPE, RECTANGULAR_PATTERN_FEATURE_TYPE,
+    project_chamfer, project_extrusion, project_fillet, project_hole, ClassId, PmDcEntityStyleLink,
+    PmDcEntityStyleLinkPayload, PmDcFeature, PmDcFeatureEnumFamily, PmDcFeatureLabel,
+    PmDcFeatureLabelPayload, PmDcFeatureLabelPayloadWire, PmDcFeaturePayload, PmDcFeatureProperty,
+    PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload, PmDcFeatureReferenceFamily,
+    PmDcLinkedHeader, PmDcPatternFamily, ProjectionIndex, BOOLEAN_TYPE, CHAMFER_CLASS_ID,
+    END_OF_FEATURES_TYPE, ENTITY_STYLE_LINK_TYPE, EXTRUSION_CLASS_ID, FEATURE_LABEL_TYPE,
+    FEATURE_TYPE, FILLET_CLASS_ID, HOLE_CLASS_ID, MIRROR_FEATURE_TYPE,
+    RECTANGULAR_PATTERN_FEATURE_TYPE,
 };
 use crate::container::InventorContainer;
 use crate::pmdc::{PmDcContentHeader, PmDcReferenceList, PmDcU32List};
 use crate::record_identity::Located;
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
 use crate::test_support::test_fixtures::{content, parse, primary_envelope_fixture};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     edge_treatments::{ChamferSpec, RadiusSpec},
@@ -104,8 +104,7 @@ fn utf16(value: &str) -> Vec<u8> {
 }
 
 fn reference(index: u32) -> crate::pmdc::PmDcReference {
-    crate::pmdc::PmDcReference::new(index, index != 0)
-        .expect("test reference index fits 31 bits")
+    crate::pmdc::PmDcReference::new(index, index != 0).expect("test reference index fits 31 bits")
 }
 
 fn reference_list(values: &[u32]) -> PmDcReferenceList {
@@ -150,11 +149,7 @@ fn test_property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatureProp
     )
 }
 
-pub(super) fn test_feature(
-    ordinal: u32,
-    slot_count: usize,
-    slots: &[(usize, u32)],
-) -> PmDcFeature {
+pub(super) fn test_feature(ordinal: u32, slot_count: usize, slots: &[(usize, u32)]) -> PmDcFeature {
     let mut references = vec![reference(0); slot_count];
     for (slot, record_ordinal) in slots {
         references[*slot] = reference(record_ordinal + 1);
@@ -288,10 +283,7 @@ fn raw_parameter(ordinal: u32) -> crate::design::PmDcParameter {
     )
 }
 
-fn neutral_parameter(
-    raw: &crate::design::PmDcParameter,
-    value: ParameterValue,
-) -> DesignParameter {
+fn neutral_parameter(raw: &crate::design::PmDcParameter, value: ParameterValue) -> DesignParameter {
     let ctx = cadmpeg_test_support::service_decode_context();
     DesignParameter {
         id: ParameterId::mint(format!(
@@ -459,13 +451,15 @@ fn feature_label_bytes() -> Vec<u8> {
     label
 }
 
-fn generated_extrusion(
-    selections: &[u32],
-    policy: DecodePolicy,
-) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+type FeatureProjection = Option<Result<(Feature, FeatureResultTopology), CodecError>>;
+
+fn generated_extrusion(selections: &[u32], policy: DecodePolicy) -> FeatureProjection {
     let (projection, _, session) = generated_extrusion_with_work(selections, policy, false);
     if projection.is_none() {
-        assert!(session.is_ok(), "a skipped projection leaves the session clean");
+        assert!(
+            session.is_ok(),
+            "a skipped projection leaves the session clean"
+        );
     }
     projection
 }
@@ -474,11 +468,7 @@ fn generated_extrusion_with_work(
     selections: &[u32],
     policy: DecodePolicy,
     measure_work: bool,
-) -> (
-    Option<Result<(Feature, FeatureResultTopology), CodecError>>,
-    Option<u64>,
-    Result<(), CodecError>,
-) {
+) -> (FeatureProjection, Option<u64>, Result<(), CodecError>) {
     let raw_length = raw_parameter(70);
     let raw_taper = raw_parameter(71);
     let neutral_parameters = vec![
@@ -678,7 +668,10 @@ fn generated_extrusion_with_work(
     let projection = project_extrusion(&ctx, &feature, &label, &index);
     let used = measure_work.then(|| {
         let refusal = ctx
-            .charge_work_limit(policy.limits.max_work_units, "measure Inventor extrusion prefix")
+            .charge_work_limit(
+                policy.limits.max_work_units,
+                "measure Inventor extrusion prefix",
+            )
             .expect_err("the probe exceeds the remaining work allowance");
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
         refusal.used

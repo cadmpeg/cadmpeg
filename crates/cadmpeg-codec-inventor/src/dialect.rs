@@ -175,7 +175,9 @@ impl DialectRecovery {
     ) -> Result<Self, CodecError> {
         let mut schemas = Vec::new();
         let mut database_steps = container.rse.databases.iter();
-        while let Some(descriptor) = ctx.next_charged(&mut database_steps, "visit Inventor dialect items")? {
+        while let Some(descriptor) =
+            ctx.next_charged(&mut database_steps, "visit Inventor dialect items")?
+        {
             if let Some(schema) = DatabaseDescriptor::declared_schema(descriptor) {
                 ctx.push_vec(&mut schemas, schema, "collect Inventor dialect schemas")?;
             }
@@ -189,7 +191,9 @@ impl DialectRecovery {
         ctx.dedup_vec(&mut schemas, "deduplicate Inventor dialect declarations")?;
         let mut unframed_schemas = Vec::new();
         let mut database_steps = container.rse.databases.iter();
-        while let Some(descriptor) = ctx.next_charged(&mut database_steps, "visit Inventor dialect items")? {
+        while let Some(descriptor) =
+            ctx.next_charged(&mut database_steps, "visit Inventor dialect items")?
+        {
             if let DatabaseState::Unframed { schema, .. } = &descriptor.state {
                 ctx.push_vec(
                     &mut unframed_schemas,
@@ -210,7 +214,9 @@ impl DialectRecovery {
         )?;
         let mut meta_streams = Vec::new();
         let mut segment_steps = container.rse.segments.iter();
-        while let Some(segment) = ctx.next_charged(&mut segment_steps, "visit Inventor dialect items")? {
+        while let Some(segment) =
+            ctx.next_charged(&mut segment_steps, "visit Inventor dialect items")?
+        {
             if let Some(declaration) = segment.meta.declaration(ctx)? {
                 ctx.push_vec(
                     &mut meta_streams,
@@ -231,7 +237,9 @@ impl DialectRecovery {
         )?;
         let mut unframed_meta_streams = Vec::new();
         let mut segment_steps = container.rse.segments.iter();
-        while let Some(segment) = ctx.next_charged(&mut segment_steps, "visit Inventor dialect items")? {
+        while let Some(segment) =
+            ctx.next_charged(&mut segment_steps, "visit Inventor dialect items")?
+        {
             if let crate::rse::SegmentMetaState::Malformed {
                 declared: Some(declared),
                 ..
