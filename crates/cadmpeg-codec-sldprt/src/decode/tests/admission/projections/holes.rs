@@ -103,6 +103,15 @@ fn bore_backed_position_source() -> Vec<u8> {
     hole_body[..2].copy_from_slice(&[0x00, 0xc0]);
     hole_body[2..6].copy_from_slice(&9u32.to_le_bytes());
     resolved.splice(hole_trailer + 16..hole_trailer + 16, hole_body);
+
+    // The Position object has a horizontal relation and no geometry markers.
+    // Marker projection leaves it unbound; bore projection supplies its frame
+    // and point from the matched cylinder and plane.
+    resolved.extend(crate::test_support::history::resolved_features_payload_with_names(
+        &[4],
+        &[],
+    ));
+
     source.extend(make_block(
         0x45,
         "Contents/Config-0-ResolvedFeatures",
@@ -521,4 +530,88 @@ fn geometry_bore_backed_position_projection_refuses_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
     assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn geometry_bore_backed_position_projection_binds_axis_and_sketch_point() {
+    use cadmpeg_ir::features::holes::HolePlacement;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SketchFeatureBinding};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(bore_backed_position_source()),
+            &DecodeOptions::default(),
+        )
+        .expect("supported cylinder, plane, and resolved Position source decode");
+    let ir = decoded.ir();
+
+    let hole = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Hole"))
+        .expect("Hole feature from the source tree");
+    let FeatureDefinition::Operation(FeatureOperation::Hole {
+        placements: Some(placements),
+        ..
+    }) = hole.evaluation.definition()
+    else {
+        panic!("the matched reversed cylinder supplies a Hole axis placement");
+    };
+    let [HolePlacement::Axis { origin, axis }] = placements.as_slice() else {
+        panic!("one reversed cylindrical carrier supplies one unoriented axis");
+    };
+    assert_eq!(origin.get(), Point3::new(0.0, 0.0, 0.0));
+    let axis = axis.get();
+    assert_eq!((axis.x, axis.y), (0.0, 0.0));
+    assert_eq!(axis.z.abs(), 1.0);
+
+    let position_feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Position"))
+        .expect("Position feature linked by the Hole source record");
+    let FeatureDefinition::Operation(FeatureOperation::Sketch {
+        sketch: SketchFeatureBinding::Planar(Some(sketch_id)),
+    }) = position_feature.evaluation.definition()
+    else {
+        panic!("the bore axis projects the linked Position feature to a planar sketch");
+    };
+    let sketch = ir
+        .model
+        .sketches
+        .iter()
+        .find(|sketch| &sketch.id == sketch_id)
+        .expect("projected Position sketch");
+    let lane_key = sketch
+        .native_ref
+        .as_deref()
+        .and_then(|native_ref| native_ref.rsplit_once('#').map(|(_, key)| key))
+        .expect("the bore projection retains its owning feature-input lane");
+    let bore_sketch_prefix = format!("sldprt:model:sketch#bore:{lane_key}:");
+    assert!(sketch.id.as_str().starts_with(&bore_sketch_prefix));
+    let (origin, normal, u_axis) = sketch
+        .resolved_placement()
+        .expect("the bore projection resolves the Position sketch frame");
+    assert_eq!(origin.get(), Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(normal.get(), Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(u_axis.get(), Vector3::new(1.0, 0.0, 0.0));
+
+    let mut entities = ir
+        .model
+        .sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch_id);
+    let entity = entities
+        .next()
+        .expect("the Hole axis projects to one Position point entity");
+    assert_eq!(entity.id().as_str(), format!("{}:entity:0", sketch_id.as_str()));
+    assert!(entities.next().is_none());
+    let SketchGeometryDefinition::Point { position } = entity.geometry.definition() else {
+        panic!("the projected hole location is a planar point");
+    };
+    assert_eq!(position.get(), Point2::new(0.0, 0.0));
 }
