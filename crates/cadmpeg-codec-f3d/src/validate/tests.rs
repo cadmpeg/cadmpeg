@@ -26,6 +26,7 @@ use crate::F3dCodec;
 
 mod act_limits;
 mod arithmetic;
+mod audit_indexes;
 mod body_recipe_limits;
 mod construction_group_limits;
 mod construction_identity_limits;

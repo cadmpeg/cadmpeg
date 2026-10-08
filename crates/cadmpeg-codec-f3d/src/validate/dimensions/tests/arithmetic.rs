@@ -115,9 +115,16 @@ fn locus_findings(group: DesignDimensionLocusGroup) -> Vec<cadmpeg_ir::report::c
         let mut native = crate::native::F3dNative::default();
         native.design_dimension_locus_groups.push(group);
         let mut ctx = crate::validate::Ctx::new(&ir, &native, decode).unwrap();
-        let stream = crate::validate::design_stream(&native.design_dimension_locus_groups[0].id);
-        ctx.parameters_by_index.insert((stream, 7), &parameter);
-        ctx.owners_by_index.insert((stream, 6), &owner);
+        let stream =
+            crate::validate::design_stream(decode, &native.design_dimension_locus_groups[0].id)
+                .unwrap();
+        ctx.parameters().unwrap();
+        ctx.parameter_groups
+            .get_mut()
+            .unwrap()
+            .0
+            .insert((stream, 7), vec![&parameter]);
+        ctx.owner_groups.insert((stream, 6), vec![&owner]);
         ctx.companions_by_index.insert((stream, 8), &companion);
         ctx.entities_by_suffix.insert((stream, 4), &entity);
         ctx.sketch_geometry_indices.insert((stream, 10));
@@ -301,10 +308,18 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         .unwrap();
         native.design_dimension_annotation_frames.push(frame);
         let mut ctx = crate::validate::Ctx::new(&ir, &native, decode).unwrap();
-        let stream =
-            crate::validate::design_stream(&native.design_dimension_annotation_frames[0].id);
-        ctx.parameters_by_index.insert((stream, 7), &parameter);
-        ctx.owners_by_index.insert((stream, 6), &owner);
+        let stream = crate::validate::design_stream(
+            decode,
+            &native.design_dimension_annotation_frames[0].id,
+        )
+        .unwrap();
+        ctx.parameters().unwrap();
+        ctx.parameter_groups
+            .get_mut()
+            .unwrap()
+            .0
+            .insert((stream, 7), vec![&parameter]);
+        ctx.owner_groups.insert((stream, 6), vec![&owner]);
         ctx.companions_by_index.insert((stream, 8), &companion);
         ctx.entities_by_suffix.insert((stream, 4), &entity);
         ctx.sketch_geometry_indices

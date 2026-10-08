@@ -1610,7 +1610,9 @@ fn resolved_body_binding_with_sources(
 
 #[test]
 fn body_binding_unnamed_source_skips_text_comparison() {
-    crate::test_support::with_decode_context(|decode| {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |decode| {
         let (ir, native) = resolved_body_binding_with_sources(false);
         let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
@@ -1622,6 +1624,18 @@ fn body_binding_unnamed_source_skips_text_comparison() {
         super::super::validate_body_bindings(&ctx, &mut findings).unwrap();
         assert!(findings.is_empty());
         assert!(decode.resource_refusal().is_none());
+        let error = decode
+            .equal(
+                "positive control",
+                "positive control",
+                "compare F3D body source name",
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "compare F3D body source name")
+        );
     });
 }
 
