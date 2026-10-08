@@ -1318,8 +1318,7 @@ fn ordered_native_parameter_face_loops<'a>(
     }
 }
 
-#[cfg(test)]
-mod tests;
+
 
 fn push_native_pcurve_candidate(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -3542,3 +3541,6 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
