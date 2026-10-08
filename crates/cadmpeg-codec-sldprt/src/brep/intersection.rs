@@ -436,15 +436,16 @@ fn solved_curve(
     record_attr: u16,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<(CurveGeometry, Vec<f64>, bool)>, CodecError> {
+    let mut geometry_storage = ctx.reserve_scoped(0, "retain Parasolid intersection candidate")?;
     let mut parameter = chart.base_parameter;
     let point_count = chart.interior_points.len() + 2;
-    let mut parameters =
-        ctx.vector_storage(point_count, "construct intersection chart parameters")?;
-    ctx.push_vec(
+    let mut parameters = geometry_storage.with_storage(||
+        ctx.vector_storage(point_count, "construct intersection chart parameters"))?;
+    geometry_storage.with_storage(|| ctx.push_vec(
         &mut (parameters),
         parameter,
         "construct intersection chart parameters",
-    )?;
+    ))?;
     let mut previous = chart.endpoints[0];
     for &point in ctx
         .admit_iter(
@@ -454,11 +455,11 @@ fn solved_curve(
         .chain(std::iter::once(&chart.endpoints[1]))
     {
         parameter += distance(previous, point) * chart.base_scale;
-        ctx.push_vec(
+        geometry_storage.with_storage(|| ctx.push_vec(
             &mut (parameters),
             parameter,
             "construct intersection chart parameters",
-        )?;
+        ))?;
         previous = point;
     }
     let mut point_storage = ctx.reserve_scoped(0, "hold intersection chart points")?;
@@ -497,23 +498,31 @@ fn solved_curve(
     } else {
         (chart.base_parameter, parameter)
     };
-    let mut knots = ctx.vector_storage(point_count + 2, "construct intersection chart knots")?;
-    ctx.push_vec(&mut (knots), first, "construct intersection chart knots")?;
-    ctx.extend_from_slice(
+    let mut knots = geometry_storage.with_storage(||
+        ctx.vector_storage(point_count + 2, "construct intersection chart knots"))?;
+    geometry_storage.with_storage(||
+        ctx.push_vec(&mut (knots), first, "construct intersection chart knots"))?;
+    geometry_storage.with_storage(|| ctx.extend_from_slice(
         &mut knots,
         &parameters,
         "construct intersection chart knots",
-    )?;
-    ctx.push_vec(&mut (knots), last, "construct intersection chart knots")?;
-    let controls = ctx.collect_vec(
+    ))?;
+    geometry_storage.with_storage(||
+        ctx.push_vec(&mut (knots), last, "construct intersection chart knots"))?;
+    let mut control_storage = ctx.reserve_scoped(0, "hold intersection curve controls")?;
+    let controls = control_storage.with_storage(|| ctx.collect_vec(
         points
             .iter()
             .map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM)),
         "construct intersection curve controls",
-    )?;
-    let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+    ))?;
+    drop(points);
+    drop(point_storage);
+    let nurbs = geometry_storage.with_storage(|| cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         ctx, 1, knots, controls, None, false,
-    )? {
+    ))?;
+    drop(control_storage);
+    let nurbs = match nurbs {
         Ok(nurbs) => nurbs,
         Err(error) => {
             refusal.note(
@@ -524,6 +533,7 @@ fn solved_curve(
             return Ok(None);
         }
     };
+    geometry_storage.commit()?;
     Ok(Some((
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
         parameters,
@@ -1540,3 +1550,6 @@ mod tests {
             .is_empty());
     }
 }
+
+#[cfg(test)]
+mod candidate_tests;
