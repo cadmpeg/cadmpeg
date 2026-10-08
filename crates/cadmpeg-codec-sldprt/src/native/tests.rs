@@ -1950,3 +1950,5 @@ fn native_identity_vectors_drop_before_lane_validation() {
         u64::try_from(4 * std::mem::size_of::<crate::records::FeatureInputLane>()).unwrap()
     );
 }
+
+mod ownership;
