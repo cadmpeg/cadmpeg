@@ -21,7 +21,12 @@ pub fn deltas(data: &[u8]) {
     let arena = DecodeArena::new();
     let policy = fuzz_policy();
     if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) {
-        drop(crate::deltas::census::walk(&ctx, data));
+        if matches!(
+            crate::deltas::census::walk(&ctx, data),
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ) {
+            return;
+        }
         let mid = data.len() / 2;
         drop(crate::deltas::unmatched_terminal_tombstones(
             &ctx,
@@ -46,19 +51,26 @@ pub fn om(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         // wrapper passes through: the lookup does not run for them and nothing
         // stands in for the text they do not state. The walkers below still
         // see the whole input.
-        std::str::from_utf8(data)
+        ctx.validate_utf8(data, "NX fuzz token UTF-8")?
             .ok()
             .map(|token| crate::om_tokens::unit_for(&ctx, token))
             .transpose()?,
     );
     let mut at = 0;
-    while let Some(token) = crate::om::compact::NullableCompactIndex::read(data, at) {
+    loop {
+        ctx.charge_work(1, "NX fuzz compact tokens")?;
+        let Some(token) = crate::om::compact::NullableCompactIndex::read(data, at) else {
+            break;
+        };
         at += token.raw().len();
     }
-    for section in crate::om::indexed_sections(&ctx, data)? {
+    for section in ctx.admit_iter(
+        crate::om::indexed_sections(&ctx, data)?,
+        "NX fuzz indexed sections",
+    )? {
         drop(section.numeric_expressions(&ctx)?);
     }
-    for section in crate::om::sections(&ctx, data)? {
+    for section in ctx.admit_iter(crate::om::sections(&ctx, data)?, "NX fuzz framed sections")? {
         drop(section.operation_body_references(&ctx)?);
     }
     Ok(())
@@ -96,6 +108,9 @@ pub fn intersection(data: &[u8]) {
     if let Ok(curves) =
         crate::intersection::curves(&ctx, data, crate::intersection::ChartPointLayout::Xyz3)
     {
+        let Ok(curves) = ctx.admit_iter(curves, "NX fuzz intersection curves") else {
+            return;
+        };
         for curve in curves {
             // discarded-value: fuzz decoded curve fields without using their values.
             let _ = (curve.references, curve.pos);
@@ -128,9 +143,17 @@ pub fn topology(data: &[u8]) {
     let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) else {
         return;
     };
-    if let Ok(graph) = crate::topology::Graph::parse(&ctx, data) {
+    let graph = match crate::topology::Graph::parse(&ctx, data) {
+        Err(cadmpeg_core::CodecError::ResourceLimit(_)) => return,
+        result => result,
+    };
+    if let Ok(graph) = graph {
         {
-            for node in graph.of_kind(NodeKind::Body) {
+            let Ok(nodes) = ctx.admit_iter(graph.of_kind(NodeKind::Body), "NX fuzz body nodes")
+            else {
+                return;
+            };
+            for node in nodes {
                 // discarded-value: fuzz this bounded node read without using its value.
                 let _ = node.byte_at(0);
                 // discarded-value: fuzz this bounded scalar read without using its value.
@@ -138,11 +161,36 @@ pub fn topology(data: &[u8]) {
             }
         }
     }
-    drop(crate::topology::composite_curves(&ctx, data));
-    drop(crate::topology::intersection_data_curves(&ctx, data));
-    drop(crate::topology::blend_surfaces(&ctx, data));
-    drop(crate::topology::offset_surfaces(&ctx, data));
-    drop(crate::topology::surface_curves(&ctx, data));
+    if matches!(
+        crate::topology::composite_curves(&ctx, data),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ) {
+        return;
+    }
+    if matches!(
+        crate::topology::intersection_data_curves(&ctx, data),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ) {
+        return;
+    }
+    if matches!(
+        crate::topology::blend_surfaces(&ctx, data),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ) {
+        return;
+    }
+    if matches!(
+        crate::topology::offset_surfaces(&ctx, data),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ) {
+        return;
+    }
+    if matches!(
+        crate::topology::surface_curves(&ctx, data),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ) {
+        return;
+    }
     drop(crate::topology::trimmed_curves(&ctx, data));
 }
 
@@ -152,10 +200,13 @@ pub fn parasolid(data: &[u8]) {
     let Ok((ctx, root)) = DecodeContext::from_root_bytes(data, &arena, &fuzz_policy()) else {
         return;
     };
-    let Ok(container) = crate::container::scan_bytes(&ctx, data.to_vec()) else {
+    let Ok(container) = crate::container::scan_bytes(&ctx, data) else {
         return;
     };
     if let Ok(streams) = crate::parasolid::extract_streams(&ctx, root, &container) {
+        let Ok(streams) = ctx.admit_iter(streams, "NX fuzz stream fields") else {
+            return;
+        };
         for stream in streams {
             let _ = stream.consumed;
         }

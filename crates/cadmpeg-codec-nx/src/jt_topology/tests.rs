@@ -233,7 +233,7 @@ fn jt_active_face_window_admits_large_unchanged_frontier() {
     let mut decoder = active_frontier(10_000);
     crate::test_support::with_decode_context_over(
         &[],
-        |policy| policy.limits.max_work_units = 17,
+        |policy| policy.limits.max_work_units = 1,
         |ctx| {
             assert_eq!(decoder.next_active_face(ctx).unwrap(), Some(9_999));
             assert_eq!(decoder.active.len(), 10_000);
@@ -266,7 +266,7 @@ fn jt_active_shift_refuses_before_moving_the_lane() {
     decoder.removed[1] = true;
     crate::test_support::with_decode_context_over(
         &[],
-        |policy| policy.limits.max_work_units = 3,
+        |policy| policy.limits.max_work_units = 1,
         |ctx| {
             let error = decoder.next_active_face(ctx).unwrap_err();
             assert!(
@@ -276,5 +276,78 @@ fn jt_active_shift_refuses_before_moving_the_lane() {
             );
             assert_eq!(decoder.active, [0, 1, 2]);
         },
+    );
+}
+
+#[test]
+fn jt_active_face_window_charges_before_visiting_variable_tail() {
+    let mut decoder = active_frontier(64);
+    decoder.removed[..63].fill(true);
+    crate::test_support::with_decode_context_over(
+        &[],
+        // One suffix probe, 63 single-element shifts, and 48 visits beyond 16.
+        |policy| policy.limits.max_work_units = 1 + 63 + 48,
+        |ctx| {
+            assert_eq!(decoder.next_active_face(ctx).unwrap(), Some(63));
+            assert_eq!(decoder.active, [63]);
+        },
+    );
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan JT variable active frontier",
+        |ctx| {
+            let mut decoder = active_frontier(64);
+            decoder.removed[..63].fill(true);
+            // The first variable visit must be admitted before this invalid face.
+            decoder.active[47] = usize::MAX;
+            let result = decoder.next_active_face(ctx);
+            if matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "scan JT variable active frontier")
+            {
+                assert_eq!(decoder.active.len(), 49);
+                assert!(decoder.active[..47].iter().copied().eq(0..47));
+                assert_eq!(decoder.active[47..], [usize::MAX, 63]);
+            }
+            result
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "scan JT variable active frontier"
+            && limit.additional == 1)
+    );
+}
+
+#[test]
+fn jt_reconstruction_refuses_unfilled_slot_search_before_visit() {
+    // Admit reconstruction before the first unfilled-slot search.
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan JT unfilled face slots",
+        |ctx| {
+            super::decode(
+                ctx,
+                [&[3, 3, 3], &[3], &[], &[], &[], &[], &[], &[]],
+                &[3, 3, 3, 3],
+                &[10, 12, 11, 13],
+                &[0; 4],
+                super::SplitLanes {
+                    faces: &[],
+                    positions: &[],
+                },
+                super::AttributeMaskLanes {
+                    small: [&[], &[1; 4], &[], &[], &[], &[], &[], &[]],
+                    context_7_next_30: &[],
+                    context_7_upper_4: &[],
+                    large_words: &[],
+                },
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "scan JT unfilled face slots" && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
