@@ -151,8 +151,8 @@ fn invalid_extrusion_direction_does_not_retain_face_selection() {
     property(&mut source, "Face", "face-a".into());
     property(&mut source, "Direction", "0,0,0".into());
     assert!(without_retained_storage(|ctx| {
-        let sources = super::solid::SourceFeatures::new(ctx, &[])?;
-        super::solid::project_extrude(ctx, &source, &HashMap::new(), &sources)
+        let mut sources = super::solid::SourceFeatures::new(ctx, &[])?;
+        super::solid::project_extrude(ctx, &source, &HashMap::new(), &mut sources)
     })
     .unwrap()
     .is_none());
@@ -205,8 +205,8 @@ fn ambiguous_extrusion_children_need_only_the_next_nonblank_character() {
         format!(" , first ,\u{2003},x{}", "x".repeat(100_000)),
     );
     let definition = limited(|ctx| {
-        let index = super::solid::SourceFeatures::new(ctx, &[])?;
-        super::solid::project_extrude(ctx, &source, &HashMap::new(), &index)
+        let mut index = super::solid::SourceFeatures::new(ctx, &[])?;
+        super::solid::project_extrude(ctx, &source, &HashMap::new(), &mut index)
     })
     .unwrap();
     assert!(matches!(
@@ -225,8 +225,8 @@ fn authoritative_cut_class_does_not_read_the_kind_token() {
     source.kind = "x".repeat(100_000);
     property(&mut source, "EndCondition", "ThroughAll".into());
     let definition = limited(|ctx| {
-        let index = super::solid::SourceFeatures::new(ctx, &[])?;
-        super::solid::project_extrude(ctx, &source, &HashMap::new(), &index)
+        let mut index = super::solid::SourceFeatures::new(ctx, &[])?;
+        super::solid::project_extrude(ctx, &source, &HashMap::new(), &mut index)
     })
     .unwrap();
     assert!(matches!(
