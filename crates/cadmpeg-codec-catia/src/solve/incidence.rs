@@ -11,14 +11,17 @@ use crate::families::standard::topology::{
     incidence_cycles, reconstruct_incidence, solve_boundary_orientation_constraints, EdgeRow,
     StandardTopologyDraft,
 };
+use crate::solve::mesh_quotient::coordinate_assignment::{
+    MeshCoordinateRootDomains, MeshEndpointCandidates, MeshImplicitEdgeCandidates,
+    MeshIncidenceBoundary,
+};
 use crate::solve::mesh_quotient::{
     initial_mesh_quotient, mesh_assignment_endpoint_cycle_support_by,
     mesh_assignment_endpoint_cycles_viable_by, mesh_assignment_endpoint_cycles_viable_where,
-    mesh_face_endpoint_configurations, AssignmentOrder, MeshCandidateFailure,
-    MeshCoordinateRootDomains, MeshEndpointCandidates, MeshEndpointPair,
-    MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations, MeshImplicitEdgeCandidates,
-    MeshIncidenceBoundary, MeshPartialEndpointConstraint, MeshQuotient, MeshQuotientGaugeState,
-    MeshSolve, MAX_FACE_ENDPOINT_CONFIGURATION_WORK, MAX_MESH_CONSTRAINT_OPERATIONS,
+    mesh_face_endpoint_configurations, AssignmentOrder, MeshCandidateFailure, MeshEndpointPair,
+    MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations, MeshPartialEndpointConstraint,
+    MeshQuotient, MeshQuotientGaugeState, MeshSolve, MAX_FACE_ENDPOINT_CONFIGURATION_WORK,
+    MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     propagate_edge_port_points, same_unordered_pair, MeshBoundaryEdgeCandidate,

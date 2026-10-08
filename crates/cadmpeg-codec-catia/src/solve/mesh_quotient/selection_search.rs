@@ -19,11 +19,13 @@ use super::{
 };
 
 #[cfg(test)]
+use crate::solve::matching::domains_have_distinct_matching;
+
+#[cfg(test)]
 use super::{
-    deduplicate_mesh_quotient_assignments, domains_have_distinct_matching, largest_fbb_run,
-    parse_edge_tables, parse_vertex_table, required_component_roots,
-    resolve_standard_mesh_endpoint_candidates, standard_mesh_boundary_assignments, NonZeroUsize,
-    UnionFind, MAX_MESH_CONSTRAINT_OPERATIONS,
+    deduplicate_mesh_quotient_assignments, largest_fbb_run, parse_edge_tables, parse_vertex_table,
+    required_component_roots, resolve_standard_mesh_endpoint_candidates,
+    standard_mesh_boundary_assignments, NonZeroUsize, UnionFind, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 
 impl<'storage> MeshSelectionSearch<'storage, '_> {

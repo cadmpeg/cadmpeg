@@ -4,12 +4,12 @@ use crate::families::standard::topology::reconstruct_incidence;
 use crate::families::standard::topology::EdgeBoundaryLayout;
 use crate::families::standard::topology::EdgeRow;
 use crate::solve::matching::unique_coordinate_bijection;
+use crate::solve::mesh_quotient::coordinate_assignment::MeshIncidenceBoundary;
 use crate::solve::mesh_quotient::mesh_assignment_endpoint_cycles_viable;
 use crate::solve::mesh_quotient::mesh_face_endpoint_configurations;
 use crate::solve::mesh_quotient::prune_mesh_endpoint_pair_support;
 use crate::solve::mesh_quotient::prune_mesh_endpoint_pair_support_with_limit;
 use crate::solve::mesh_quotient::selection_search::mesh_edge_points_compatible;
-use crate::solve::mesh_quotient::MeshIncidenceBoundary;
 use crate::solve::mesh_quotient::MeshQuotient;
 use crate::solve::missing_edge::bind_edge_port_candidates;
 use crate::solve::missing_edge::expand_deferred_edge_port_components;
@@ -1206,7 +1206,7 @@ fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
         |edge| {
             candidates
                 .get(edge)
-                .map(|values| crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values))
+                .map(|values| crate::solve::mesh_quotient::coordinate_assignment::MeshEndpointCandidates::Explicit(values))
         },
         |_, _| true,
     )
@@ -1239,7 +1239,7 @@ fn layered_endpoint_relations_and_support_maps_refuse_before_growth() {
             None,
             |edge| {
                 candidates.get(edge).map(|values| {
-                    crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values)
+                    crate::solve::mesh_quotient::coordinate_assignment::MeshEndpointCandidates::Explicit(values)
                 })
             },
             |_, _| true,
@@ -1298,7 +1298,7 @@ fn mesh_assignment_endpoint_cycle_support_requires_one_complete_traversal() {
         |edge| {
             candidates
                 .get(edge)
-                .map(|values| crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values))
+                .map(|values| crate::solve::mesh_quotient::coordinate_assignment::MeshEndpointCandidates::Explicit(values))
         },
         |_, _| true,
     )
@@ -1329,7 +1329,7 @@ fn mesh_assignment_endpoint_cycle_support_refuses_suffix_collection_limit() {
             None,
             |edge| {
                 candidates.get(edge).map(|values| {
-                    crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values)
+                    crate::solve::mesh_quotient::coordinate_assignment::MeshEndpointCandidates::Explicit(values)
                 })
             },
             |_, _| true,

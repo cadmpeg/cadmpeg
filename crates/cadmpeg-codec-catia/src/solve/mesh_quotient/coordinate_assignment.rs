@@ -3,16 +3,2183 @@
 
 use super::{
     compact_boundary_domain_viable, deferred_boundary_cycle_matches,
-    distinct_domain_matching_with_budget, domain_contains, domains_disjoint,
-    enforce_edge_arc_consistency, enforce_sparse_endpoint_membership, incidence_cycles,
-    same_unordered_pair, BTreeMap, BTreeSet, Cell, HashMap, HashSet, MatchingEdgeConstraint,
-    MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain, MeshQuotient,
-    PointAssignmentOutcome, ScopedValue, UnionFind, WorkBudget,
+    distinct_domain_matching_with_budget, domain_contains, domains_disjoint, incidence_cycles,
+    same_unordered_pair, BTreeMap, BTreeSet, Cell, HashMap, HashSet, MeshBoundaryEdgeCandidate,
+    MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain, MeshQuotient, PointAssignmentOutcome,
+    ScopedValue, UnionFind, VecDeque, WorkBudget,
 };
+
+use super::{
+    CoordinateRootClosure, MeshCandidateFailure, MeshSolve, PointDomain,
+    MAX_MESH_CONSTRAINT_OPERATIONS,
+};
+use crate::solve::matching::{
+    domains_have_distinct_matching, repair_distinct_domain_matching_with_budget,
+    retain_distinct_matching_supports, MatchingEdgeConstraint,
+};
+use std::{ops::ControlFlow, rc::Rc};
 
 use cadmpeg_core::decode::work_units;
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
+fn edge_point_supports(
+    ctx: &DecodeContext<'_>,
+    candidates: &[[usize; 2]],
+    operation: &'static str,
+) -> Result<Vec<[usize; 2]>, CodecError> {
+    let capacity = candidates
+        .len()
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let mut supports = ctx.collection_vec(capacity, operation)?;
+    for &[left, right] in ctx.admit_iter(candidates, operation)? {
+        supports.push([left, right]);
+        supports.push([right, left]);
+    }
+    ctx.sort_unstable_by(&mut supports, |pair| pair, Ord::cmp, operation)?;
+    ctx.dedup_vec(&mut supports, operation)?;
+    Ok(supports)
+}
+
+/// The run of `supports` whose first point is `point`.
+pub(super) fn point_support_run<'supports>(
+    ctx: &DecodeContext<'_>,
+    supports: &'supports [[usize; 2]],
+    point: usize,
+    operation: &'static str,
+) -> Result<&'supports [[usize; 2]], CodecError> {
+    let start = ctx.partition_point(supports, |pair| Ok(pair[0] < point), operation)?;
+    let tail = &supports[start..];
+    let length = ctx.partition_point(tail, |pair| Ok(pair[0] == point), operation)?;
+    Ok(&tail[..length])
+}
+
+/// Drops the points of `root`'s domain that no support pairs with a point of
+/// `other`'s domain. `units` is the search allowance one kept or dropped point
+/// consumes; a refused allowance drops the point and leaves the budget
+/// exhausted. Returns whether the domain changed.
+fn revise_root_domain(
+    ctx: &DecodeContext<'_>,
+    domains: &mut [Vec<usize>],
+    [root, other]: [usize; 2],
+    supports: &[[usize; 2]],
+    budget: Option<&WorkBudget<'_>>,
+    units: impl Fn(&[[usize; 2]]) -> Option<usize>,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "catia_revise_root_domain_scratch")?;
+    scratch.with_storage(|| {
+        let mut domain = std::mem::take(&mut domains[root]);
+        let snapshot = if root == other {
+            Some(ctx.copy_slice(&domain, operation)?)
+        } else {
+            None
+        };
+        let other_domain = snapshot.as_deref().unwrap_or(&domains[other]);
+        let before = domain.len();
+        ctx.retain_vec(
+            &mut domain,
+            |point| {
+                let neighbors = point_support_run(ctx, supports, *point, operation)?;
+                let Some(units) = units(neighbors) else {
+                    return Ok(false);
+                };
+                if budget.is_some_and(|budget| !budget.charge_by(units)) {
+                    return Ok(false);
+                }
+                ctx.any_by(
+                    neighbors,
+                    |pair| domain_contains(ctx, other_domain, pair[1], operation),
+                    operation,
+                )
+            },
+            operation,
+        )?;
+        let changed = domain.len() != before;
+        domains[root] = domain;
+        Ok(changed)
+    })
+}
+
+pub(super) fn enforce_edge_arc_consistency(
+    ctx: &DecodeContext<'_>,
+    domains: &mut [Vec<usize>],
+    edges: &[[usize; 2]],
+    edge_ids: &[usize],
+    root_edges: &[Vec<usize>],
+    edge_candidates: &[Vec<[usize; 2]>],
+    budget: Option<&WorkBudget<'_>>,
+) -> Result<bool, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "catia_enforce_edge_arc_consistency_scratch")?;
+    scratch.with_storage(|| {
+        let Some(support_work) = ctx.fold(
+            edge_ids,
+            Some(0usize),
+            |work, edge| {
+                Ok(work.and_then(|work| {
+                    work.checked_add(edge_candidates[*edge].len().checked_mul(2)?)
+                }))
+            },
+            "catia_arc_support_work",
+        )?
+        else {
+            return Ok(false);
+        };
+        if support_work > 0 && budget.is_some_and(|budget| !budget.charge_by(support_work)) {
+            return Ok(false);
+        }
+        let mut supports = Vec::new();
+        for &edge in ctx.admit_iter(edge_ids, "catia_arc_support_edges")? {
+            let edge_supports =
+                edge_point_supports(ctx, &edge_candidates[edge], "catia_arc_supports")?;
+            ctx.push_vec(&mut supports, edge_supports, "catia_arc_support_edges")?;
+        }
+        let mut queued = ctx.alloc_filled(edges.len(), [true; 2], "catia_arc_queued")?;
+        let mut queue = VecDeque::new();
+        for edge in ctx.admit_iter(0..edges.len(), "catia_arc_queue")? {
+            for side in 0..2 {
+                ctx.push_back(&mut queue, (edge, side), "catia_arc_queue")?;
+            }
+        }
+        while let Some((edge, side)) = ctx.next_charged(
+            &mut std::iter::from_fn(|| queue.pop_front()),
+            "catia_mesh_quotient_iteration",
+        )? {
+            queued[edge][side] = false;
+            if supports[edge].is_empty() {
+                continue;
+            }
+            let root = edges[edge][side];
+            let other = edges[edge][1 - side];
+            let changed = revise_root_domain(
+                ctx,
+                domains,
+                [root, other],
+                &supports[edge],
+                budget,
+                |neighbors| (!neighbors.is_empty()).then(|| work_units(neighbors.len())),
+                "catia_arc_revision",
+            )?;
+            if budget.is_some_and(WorkBudget::exhausted) || domains[root].is_empty() {
+                return Ok(false);
+            }
+            if !changed {
+                continue;
+            }
+            for &neighbor in ctx.admit_iter(&root_edges[root], "catia_arc_requeue")? {
+                let neighbor_side = usize::from(edges[neighbor][1] == root);
+                let revised_side = 1 - neighbor_side;
+                if !queued[neighbor][revised_side] {
+                    queued[neighbor][revised_side] = true;
+                    ctx.push_back(&mut queue, (neighbor, revised_side), "catia_arc_queue")?;
+                }
+            }
+        }
+        Ok(true)
+    })
+}
+
+pub(super) fn enforce_edge_arc_consistency_from(
+    ctx: &DecodeContext<'_>,
+    domains: &mut [Vec<usize>],
+    edges: &[[usize; 2]],
+    root_edges: &[Vec<usize>],
+    edge_candidates: &[Vec<[usize; 2]>],
+    initial_edges: &[usize],
+    budget: Option<&WorkBudget<'_>>,
+) -> Result<bool, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "catia_enforce_edge_arc_consistency_from_scratch")?;
+    scratch.with_storage(|| {
+        let mut queued = ctx.alloc_filled(edges.len(), [false; 2], "catia_arc_from_queued")?;
+        let mut queue = VecDeque::new();
+        for &edge in ctx.admit_iter(initial_edges, "catia_arc_from_queue")? {
+            queued[edge] = [true; 2];
+            for side in 0..2 {
+                ctx.push_back(&mut queue, (edge, side), "catia_arc_from_queue")?;
+            }
+        }
+        // An edge's supports are indexed the first time one of its sides is revised.
+        let mut supports =
+            ctx.collect_indexed_vec(edges.len(), "catia_arc_from_support_edges", |_| Ok(None))?;
+        while let Some((edge, side)) = ctx.next_charged(
+            &mut std::iter::from_fn(|| queue.pop_front()),
+            "catia_mesh_quotient_iteration",
+        )? {
+            queued[edge][side] = false;
+            let candidates = &edge_candidates[edge];
+            if candidates.is_empty() {
+                continue;
+            }
+            let edge_supports = match &mut supports[edge] {
+                Some(edge_supports) => edge_supports,
+                slot @ None => slot.insert(edge_point_supports(
+                    ctx,
+                    candidates,
+                    "catia_arc_from_supports",
+                )?),
+            };
+            let root = edges[edge][side];
+            let other = edges[edge][1 - side];
+            let changed = revise_root_domain(
+                ctx,
+                domains,
+                [root, other],
+                edge_supports,
+                budget,
+                |_| Some(work_units(candidates.len())),
+                "catia_arc_from_revision",
+            )?;
+            if budget.is_some_and(WorkBudget::exhausted) || domains[root].is_empty() {
+                return Ok(false);
+            }
+            if !changed {
+                continue;
+            }
+            for &neighbor in ctx.admit_iter(&root_edges[root], "catia_arc_from_requeue")? {
+                let neighbor_side = usize::from(edges[neighbor][1] == root);
+                let revised_side = 1 - neighbor_side;
+                if !queued[neighbor][revised_side] {
+                    queued[neighbor][revised_side] = true;
+                    ctx.push_back(&mut queue, (neighbor, revised_side), "catia_arc_from_queue")?;
+                }
+            }
+        }
+        Ok(true)
+    })
+}
+
+pub(super) fn enforce_sparse_endpoint_membership(
+    ctx: &DecodeContext<'_>,
+    domains: &mut [Vec<usize>],
+    edges: &[[usize; 2]],
+    edge_ids: &[usize],
+    edge_candidates: &[Vec<[usize; 2]>],
+    budget: Option<&WorkBudget<'_>>,
+) -> Result<bool, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "catia_enforce_sparse_endpoint_membership_scratch")?;
+    scratch.with_storage(|| {
+        let mut ordered = ctx.collect_vec(0..edges.len(), "catia_sparse_ordered_edges")?;
+        ctx.sort_unstable_by_key(
+            &mut ordered,
+            |value| edge_candidates[edge_ids[*value]].len(),
+            Ord::cmp,
+            "catia_sparse_ordered_edges_sort",
+        )?;
+        for edge in ctx.admit_iter(ordered, "catia_sparse_ordered_edges")? {
+            let candidates = &edge_candidates[edge_ids[edge]];
+            if candidates.is_empty() {
+                continue;
+            }
+            let [left, right] = edges[edge];
+            let Some(domain_work) = domains[left].len().checked_add(if right == left {
+                0
+            } else {
+                domains[right].len()
+            }) else {
+                continue;
+            };
+            let Some(support_work) = candidates.len().checked_mul(2) else {
+                continue;
+            };
+            if support_work >= domain_work {
+                continue;
+            }
+            let Some(work) = support_work.checked_add(domain_work) else {
+                continue;
+            };
+            if budget.is_some_and(|budget| work > budget.remaining()) {
+                continue;
+            }
+            if budget.is_some_and(|budget| !budget.charge_by(work)) {
+                return Ok(false);
+            }
+            let (allowed, _allowed_storage) =
+                ctx.with_scoped_storage("catia_sparse_allowed_points", || {
+                    let mut allowed = ctx.collect_vec(
+                        candidates.iter().flatten().copied(),
+                        "catia_sparse_allowed_points",
+                    )?;
+                    ctx.sort_unstable_by(
+                        &mut allowed,
+                        |point| point,
+                        Ord::cmp,
+                        "catia_sparse_allowed_points",
+                    )?;
+                    Ok::<_, CodecError>(allowed)
+                })?;
+            let roots = if right == left {
+                &[left][..]
+            } else {
+                &[left, right][..]
+            };
+            for &root in roots {
+                ctx.retain_vec(
+                    &mut domains[root],
+                    |point| domain_contains(ctx, &allowed, *point, "catia_sparse_membership"),
+                    "catia_sparse_membership",
+                )?;
+            }
+            if domains[left].is_empty() || domains[right].is_empty() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    })
+}
+
+#[derive(Clone)]
+pub(in crate::solve) struct MeshCoordinateRootDomains<'storage> {
+    pub(super) domains: Rc<ScopedValue<'storage, Vec<Vec<usize>>>>,
+    pub(super) edges: Rc<ScopedValue<'storage, Vec<[usize; 2]>>>,
+    pub(super) root_edges: Rc<ScopedValue<'storage, Vec<Vec<usize>>>>,
+    pub(super) edge_candidates: Rc<ScopedValue<'storage, Vec<Vec<[usize; 2]>>>>,
+    pub(super) coverage_matching: Rc<ScopedValue<'storage, Vec<usize>>>,
+    pub(super) point_count: usize,
+}
+
+pub(super) struct RefinedCoordinateDomains<'storage> {
+    pub(super) domains: ScopedValue<'storage, Vec<Vec<usize>>>,
+    pub(super) coverage_matching: ScopedValue<'storage, Vec<usize>>,
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::solve) struct MeshIncidenceBoundary<'a> {
+    pub(in crate::solve) edge_faces: &'a [[usize; 2]],
+    pub(in crate::solve) face_count: usize,
+    pub(in crate::solve) domains: &'a [MeshFaceBoundaryDomain],
+}
+
+#[derive(Clone)]
+pub(in crate::solve) struct MeshImplicitEdgeCandidates<'storage> {
+    pub(super) source: MeshImplicitEdgeCandidateSource<'storage>,
+}
+
+#[derive(Clone)]
+pub(super) enum MeshImplicitEdgeCandidateSource<'storage> {
+    Cartesian {
+        domains: Rc<ScopedValue<'storage, Vec<Vec<usize>>>>,
+        left_root: usize,
+        right_root: usize,
+        left_index: usize,
+        right_index: usize,
+        same_root: bool,
+    },
+    Required {
+        domains: Rc<ScopedValue<'storage, Vec<Vec<usize>>>>,
+        roots: [usize; 2],
+        plan: Cell<Option<([Option<usize>; 2], bool)>>,
+        indexes: [usize; 2],
+        required: usize,
+    },
+}
+
+/// Resolves which domains supply partners for the required point. The domains
+/// are immutable, so a completed plan remains valid across candidate clones.
+fn required_candidate_plan(
+    ctx: &DecodeContext<'_>,
+    domains: &[Vec<usize>],
+    [left, right]: [usize; 2],
+    required: usize,
+    plan: &Cell<Option<([Option<usize>; 2], bool)>>,
+) -> Result<([Option<usize>; 2], bool), CodecError> {
+    if let Some(resolved) = plan.get() {
+        return Ok(resolved);
+    }
+    let required_in_left = domain_contains(
+        ctx,
+        &domains[left],
+        required,
+        "catia_implicit_required_domain",
+    )?;
+    let required_in_right = if left == right {
+        required_in_left
+    } else {
+        domain_contains(
+            ctx,
+            &domains[right],
+            required,
+            "catia_implicit_required_domain",
+        )?
+    };
+    let resolved = match (required_in_left, required_in_right) {
+        (true, false) => ([Some(right), None], false),
+        (false, true) => ([Some(left), None], false),
+        (false, false) => ([None, None], false),
+        (true, true) if left == right => ([Some(left), None], false),
+        (true, true) => ([Some(left), Some(right)], true),
+    };
+    plan.set(Some(resolved));
+    Ok(resolved)
+}
+
+impl MeshImplicitEdgeCandidates<'_> {
+    pub(in crate::solve) fn width_upper_bound(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<usize, CodecError> {
+        match &self.source {
+            MeshImplicitEdgeCandidateSource::Cartesian {
+                domains,
+                left_root,
+                right_root,
+                ..
+            } => domains[*left_root]
+                .len()
+                .checked_mul(domains[*right_root].len())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("catia_implicit_edge_width", u64::MAX, u64::MAX)
+                }),
+            MeshImplicitEdgeCandidateSource::Required {
+                domains,
+                roots,
+                plan,
+                required,
+                ..
+            } => {
+                let (roots, skip_required) =
+                    required_candidate_plan(ctx, domains, *roots, *required, plan)?;
+                match roots {
+                    [Some(left), Some(right)] => {
+                        let (short, long) = if domains[left].len() <= domains[right].len() {
+                            (&domains[left], &domains[right])
+                        } else {
+                            (&domains[right], &domains[left])
+                        };
+                        let shared = ctx.fold(
+                            short,
+                            0usize,
+                            |shared, &point| {
+                                Ok(shared
+                                    + usize::from(domain_contains(
+                                        ctx,
+                                        long,
+                                        point,
+                                        "catia_implicit_edge_width",
+                                    )?))
+                            },
+                            "catia_implicit_edge_width",
+                        )?;
+                        domains[left]
+                            .len()
+                            .checked_add(domains[right].len())
+                            .and_then(|width| {
+                                width.checked_sub(shared + usize::from(skip_required))
+                            })
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(
+                                    "catia_implicit_edge_width",
+                                    u64::MAX,
+                                    u64::MAX,
+                                )
+                            })
+                    }
+                    [Some(root), None] | [None, Some(root)] => Ok(domains[root].len()),
+                    [None, None] => Ok(0),
+                }
+            }
+        }
+    }
+
+    /// Examines raw pairs one at a time. Rejected pairs and duplicate checks
+    /// consume work before the next pair is examined.
+    pub(in crate::solve) fn next_with_context(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<[usize; 2]>, CodecError> {
+        match &mut self.source {
+            MeshImplicitEdgeCandidateSource::Required {
+                domains,
+                roots,
+                plan,
+                indexes,
+                required,
+            } => {
+                let (roots, skip_required) =
+                    required_candidate_plan(ctx, domains, *roots, *required, plan)?;
+                let points = std::iter::from_fn(|| {
+                    let left = roots[0]
+                        .and_then(|root| domains[root].get(indexes[0]))
+                        .copied();
+                    let right = roots[1]
+                        .and_then(|root| domains[root].get(indexes[1]))
+                        .copied();
+                    match (left, right) {
+                        (Some(left), Some(right)) if left < right => {
+                            indexes[0] += 1;
+                            Some(left)
+                        }
+                        (Some(left), Some(right)) if right < left => {
+                            indexes[1] += 1;
+                            Some(right)
+                        }
+                        (Some(left), Some(_)) => {
+                            indexes[0] += 1;
+                            indexes[1] += 1;
+                            Some(left)
+                        }
+                        (Some(left), None) => {
+                            indexes[0] += 1;
+                            Some(left)
+                        }
+                        (None, Some(right)) => {
+                            indexes[1] += 1;
+                            Some(right)
+                        }
+                        (None, None) => None,
+                    }
+                });
+                ctx.find_map(
+                    points,
+                    |point| {
+                        Ok((!skip_required || point != *required)
+                            .then(|| [(*required).min(point), (*required).max(point)]))
+                    },
+                    "catia_implicit_candidate_scan",
+                )
+            }
+            MeshImplicitEdgeCandidateSource::Cartesian {
+                domains,
+                left_root,
+                right_root,
+                left_index,
+                right_index,
+                same_root,
+            } => {
+                let left = &domains[*left_root];
+                let right = &domains[*right_root];
+                let pairs = std::iter::from_fn(|| {
+                    let &left_point = left.get(*left_index)?;
+                    let &right_point = right.get(*right_index)?;
+                    *right_index += 1;
+                    if *right_index == right.len() {
+                        *left_index += 1;
+                        *right_index = 0;
+                    }
+                    Some([left_point, right_point])
+                });
+                ctx.find_map(
+                    pairs,
+                    |[left_point, right_point]| {
+                        if !*same_root && left_point == right_point {
+                            return Ok(None);
+                        }
+                        if left_point > right_point
+                            && domain_contains(
+                                ctx,
+                                left,
+                                right_point,
+                                "catia_implicit_candidate_duplicate",
+                            )?
+                            && domain_contains(
+                                ctx,
+                                right,
+                                left_point,
+                                "catia_implicit_candidate_duplicate",
+                            )?
+                        {
+                            return Ok(None);
+                        }
+                        Ok(Some([
+                            left_point.min(right_point),
+                            left_point.max(right_point),
+                        ]))
+                    },
+                    "catia_implicit_candidate_scan",
+                )
+            }
+        }
+    }
+}
+
+pub(in crate::solve) enum MeshEndpointCandidates<'a> {
+    Explicit(&'a [[usize; 2]]),
+    Implicit(MeshImplicitEdgeCandidates<'a>),
+    Selected([usize; 2]),
+}
+
+impl<'storage> MeshCoordinateRootDomains<'storage> {
+    pub(in crate::solve) fn edge_candidates(&self) -> &[Vec<[usize; 2]>] {
+        &self.edge_candidates
+    }
+
+    pub(in crate::solve) fn supports_edge_candidate(
+        &self,
+        ctx: &DecodeContext<'_>,
+        edge: usize,
+        pair: [usize; 2],
+    ) -> Result<bool, CodecError> {
+        const OPERATION: &str = "catia_coordinate_candidate_support";
+        let Some(&[left, right]) = self.edges.get(edge) else {
+            return Ok(false);
+        };
+        if left != right && pair[0] == pair[1] {
+            return Ok(false);
+        }
+        let contains =
+            |root: usize, point: usize| domain_contains(ctx, &self.domains[root], point, OPERATION);
+        Ok((contains(left, pair[0])? && contains(right, pair[1])?)
+            || (contains(left, pair[1])? && contains(right, pair[0])?))
+    }
+
+    pub(in crate::solve) fn edge_candidate_points(
+        &self,
+        ctx: &DecodeContext<'_>,
+        edge: usize,
+    ) -> Result<Option<Vec<usize>>, CodecError> {
+        let Some(candidates) = self.edge_candidates.get(edge) else {
+            return Ok(None);
+        };
+        if !candidates.is_empty() {
+            let mut points = ctx.collect_vec(
+                candidates.iter().flatten().copied(),
+                "catia_coordinate_edge_candidate_points",
+            )?;
+            ctx.sort_unstable_by(
+                &mut points,
+                |value| value,
+                Ord::cmp,
+                "catia_coordinate_edge_candidate_points_sort",
+            )?;
+            ctx.dedup_vec(&mut points, "catia_coordinate_edge_candidate_points_dedup")?;
+            return Ok(Some(points));
+        }
+        let Some(&[left, right]) = self.edges.get(edge) else {
+            return Ok(None);
+        };
+        let mut points =
+            ctx.copy_slice(&self.domains[left], "catia_coordinate_edge_points_left")?;
+        if right != left {
+            ctx.extend_from_slice(
+                &mut points,
+                &self.domains[right],
+                "catia_coordinate_edge_points_right",
+            )?;
+            ctx.sort_unstable_by(
+                &mut points,
+                |value| value,
+                Ord::cmp,
+                "catia_coordinate_edge_points_sort",
+            )?;
+            ctx.dedup_vec(&mut points, "catia_coordinate_edge_points_dedup")?;
+        }
+        Ok(Some(points))
+    }
+
+    pub(in crate::solve) fn implicit_edge_candidates(
+        &self,
+        edge: usize,
+        required_point: Option<usize>,
+    ) -> Option<MeshImplicitEdgeCandidates<'storage>> {
+        self.edge_candidates.get(edge)?.is_empty().then_some(())?;
+        let &[left, right] = self.edges.get(edge)?;
+        if let Some(required) = required_point {
+            return Some(MeshImplicitEdgeCandidates {
+                source: MeshImplicitEdgeCandidateSource::Required {
+                    domains: Rc::clone(&self.domains),
+                    roots: [left, right],
+                    plan: Cell::new(None),
+                    indexes: [0, 0],
+                    required,
+                },
+            });
+        }
+        Some(MeshImplicitEdgeCandidates {
+            source: MeshImplicitEdgeCandidateSource::Cartesian {
+                domains: Rc::clone(&self.domains),
+                left_root: left,
+                right_root: right,
+                left_index: 0,
+                right_index: 0,
+                same_root: left == right,
+            },
+        })
+    }
+
+    /// Finds the first implicit pair of `edge` that contains `required` and
+    /// passes `valid`. Each examined pair consumes one unit of `budget`; an
+    /// exhausted budget ends the search without a pair.
+    pub(in crate::solve) fn implicit_edge_candidate_with_point(
+        &self,
+        ctx: &DecodeContext<'_>,
+        edge: usize,
+        required: usize,
+        budget: Option<&WorkBudget<'_>>,
+        mut valid: impl FnMut([usize; 2]) -> bool,
+    ) -> Result<Option<[usize; 2]>, CodecError> {
+        const OPERATION: &str = "catia_coordinate_required_pair";
+        if self
+            .edge_candidates
+            .get(edge)
+            .is_none_or(|candidates| !candidates.is_empty())
+        {
+            return Ok(None);
+        }
+        let Some(&[left, right]) = self.edges.get(edge) else {
+            return Ok(None);
+        };
+        let pair = |point| {
+            if required <= point {
+                [required, point]
+            } else {
+                [point, required]
+            }
+        };
+        let required_in_left = domain_contains(ctx, &self.domains[left], required, OPERATION)?;
+        let required_in_right = if left == right {
+            required_in_left
+        } else {
+            domain_contains(ctx, &self.domains[right], required, OPERATION)?
+        };
+        // The right domain pairs with a required left endpoint; the left domain
+        // then pairs with a required right endpoint, skipping the points the
+        // first pass already paired.
+        let passes = [
+            (required_in_left, right, false),
+            (required_in_right && left != right, left, required_in_left),
+        ];
+        for (active, root, skip_right_points) in passes {
+            if !active {
+                continue;
+            }
+            let found = ctx.find_map(
+                self.domains[root].iter().copied(),
+                |point| {
+                    if (left != right && point == required)
+                        || (skip_right_points
+                            && domain_contains(ctx, &self.domains[right], point, OPERATION)?)
+                    {
+                        return Ok(None);
+                    }
+                    if budget.is_some_and(|budget| !budget.charge()) {
+                        return Ok(Some(None));
+                    }
+                    Ok(valid(pair(point)).then_some(Some(pair(point))))
+                },
+                OPERATION,
+            )?;
+            if let Some(found) = found {
+                return Ok(found);
+            }
+        }
+        Ok(None)
+    }
+
+    /// The roots whose domain holds each point, ascending for every point.
+    fn roots_by_point(
+        ctx: &DecodeContext<'_>,
+        domains: &[Vec<usize>],
+        point_count: usize,
+        rows_operation: &'static str,
+        entries_operation: &'static str,
+    ) -> Result<Vec<Vec<usize>>, CodecError> {
+        let mut roots_by_point =
+            ctx.collect_indexed_vec(point_count, rows_operation, |_| Ok(Vec::new()))?;
+        for (root, domain) in ctx.admit_iter(domains, rows_operation)?.enumerate() {
+            for &point in ctx.admit_iter(domain, entries_operation)? {
+                ctx.push_vec(&mut roots_by_point[point], root, entries_operation)?;
+            }
+        }
+        Ok(roots_by_point)
+    }
+
+    pub(super) fn coverage_matching(
+        ctx: &DecodeContext<'_>,
+        domains: &[Vec<usize>],
+        point_count: usize,
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Result<Option<Vec<usize>>, CodecError> {
+        let (roots_by_point, _roots_storage) =
+            ctx.with_scoped_storage("catia_quotient_roots_by_point", || {
+                Self::roots_by_point(
+                    ctx,
+                    domains,
+                    point_count,
+                    "catia_quotient_roots_by_point",
+                    "catia_quotient_roots_by_point_entries",
+                )
+            })?;
+        if ctx.any_by(
+            &roots_by_point,
+            |roots| Ok(roots.is_empty()),
+            "catia_quotient_uncovered_points",
+        )? {
+            return Ok(None);
+        }
+        distinct_domain_matching_with_budget(
+            ctx,
+            roots_by_point.iter().map(Vec::as_slice),
+            domains.len(),
+            budget,
+            None,
+        )
+    }
+
+    pub(super) fn refine_domains<'next>(
+        &self,
+        ctx: &'next DecodeContext<'_>,
+        mut domains: ScopedValue<'next, Vec<Vec<usize>>>,
+        edge_candidates: &[Vec<[usize; 2]>],
+        initial_edges: &[usize],
+        mut propagate_all_different: bool,
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Result<Option<RefinedCoordinateDomains<'next>>, CodecError> {
+        let (value, storage) = ctx
+            .with_scoped_storage("catia_quotient_refine_initial_edges", || {
+                ctx.copy_slice(initial_edges, "catia_quotient_refine_initial_edges")
+            })?;
+        let mut affected_edges = ScopedValue {
+            value,
+            storage: Some(storage),
+        };
+        let (value, storage) =
+            ctx.with_scoped_storage("catia_quotient_refine_coverage_matching", || {
+                ctx.copy_slice(
+                    &self.coverage_matching,
+                    "catia_quotient_refine_coverage_matching",
+                )
+            })?;
+        let mut coverage_matching = ScopedValue {
+            value,
+            storage: Some(storage),
+        };
+        let propagate_globally = propagate_all_different;
+        loop {
+            let mut scratch = ctx.reserve_scoped(0, "catia_quotient_refine_scratch")?;
+            let step = scratch.with_storage(|| -> Result<_, CodecError> {
+                ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
+                let domain_lengths = ctx.collect_vec(
+                    domains.iter().map(Vec::len),
+                    "catia_quotient_refine_domain_lengths",
+                )?;
+                if !enforce_edge_arc_consistency_from(
+                    ctx,
+                    &mut domains,
+                    &self.edges,
+                    &self.root_edges,
+                    edge_candidates,
+                    &affected_edges,
+                    budget,
+                )? {
+                    return Ok(ControlFlow::Break(None));
+                }
+                let mut roots_by_point = Self::roots_by_point(
+                    ctx,
+                    &domains,
+                    self.point_count,
+                    "catia_quotient_refine_roots",
+                    "catia_quotient_refine_root_entries",
+                )?;
+                let (repaired_matching, matching_storage) =
+                    ctx.with_scoped_storage("catia_quotient_refine_matching", || {
+                        repair_distinct_domain_matching_with_budget(
+                            ctx,
+                            roots_by_point.iter().map(Vec::as_slice),
+                            domains.len(),
+                            &coverage_matching,
+                            budget,
+                        )
+                    })?;
+                let Some(repaired_matching) = repaired_matching else {
+                    return Ok(ControlFlow::Break(None));
+                };
+                propagate_all_different |= repaired_matching.len() != coverage_matching.len()
+                    || !ctx.equal(
+                        &repaired_matching[..],
+                        &coverage_matching[..],
+                        "catia_quotient_refine_matching_change",
+                    )?;
+                coverage_matching = ScopedValue {
+                    value: repaired_matching,
+                    storage: Some(matching_storage),
+                };
+                if !propagate_all_different {
+                    return Ok(ControlFlow::Break(Some(RefinedCoordinateDomains {
+                        domains: std::mem::take(&mut domains),
+                        coverage_matching: std::mem::take(&mut coverage_matching),
+                    })));
+                }
+                let mut changed_roots = Vec::new();
+                for (root, (domain, before)) in ctx
+                    .admit_iter(domains.as_slice(), "catia_quotient_refine_changed_roots")?
+                    .zip(&domain_lengths)
+                    .enumerate()
+                {
+                    if domain.len() != *before {
+                        ctx.push_vec(
+                            &mut changed_roots,
+                            root,
+                            "catia_quotient_refine_changed_roots",
+                        )?;
+                    }
+                }
+                let affected_points = if propagate_globally {
+                    ctx.collect_vec(0..self.point_count, "catia_quotient_refine_all_points")?
+                } else {
+                    if changed_roots.is_empty() {
+                        return Ok(ControlFlow::Break(Some(RefinedCoordinateDomains {
+                            domains: std::mem::take(&mut domains),
+                            coverage_matching: std::mem::take(&mut coverage_matching),
+                        })));
+                    }
+                    let mut reached_roots =
+                        ctx.alloc_filled(domains.len(), false, "catia_quotient_reached_roots")?;
+                    let mut reached_points =
+                        ctx.alloc_filled(self.point_count, false, "catia_quotient_reached_points")?;
+                    let mut root_queue = VecDeque::new();
+                    for root in ctx.admit_iter(changed_roots, "catia_quotient_refine_root_queue")? {
+                        ctx.push_back(&mut root_queue, root, "catia_quotient_refine_root_queue")?;
+                    }
+                    while let Some(root) = ctx.next_charged(
+                        &mut std::iter::from_fn(|| root_queue.pop_front()),
+                        "catia_mesh_quotient_iteration",
+                    )? {
+                        if reached_roots[root] {
+                            continue;
+                        }
+                        reached_roots[root] = true;
+                        for &point in
+                            ctx.admit_iter(&domains[root], "catia_quotient_refine_reach")?
+                        {
+                            if reached_points[point] {
+                                continue;
+                            }
+                            reached_points[point] = true;
+                            for &neighbor in ctx
+                                .admit_iter(&roots_by_point[point], "catia_quotient_refine_reach")?
+                            {
+                                if !reached_roots[neighbor] {
+                                    ctx.push_back(
+                                        &mut root_queue,
+                                        neighbor,
+                                        "catia_quotient_refine_root_queue",
+                                    )?;
+                                }
+                            }
+                        }
+                    }
+                    let mut points = Vec::new();
+                    for (point, reached) in ctx
+                        .admit_iter(reached_points, "catia_quotient_refine_reached_points_list")?
+                        .enumerate()
+                    {
+                        if reached {
+                            ctx.push_vec(
+                                &mut points,
+                                point,
+                                "catia_quotient_refine_reached_points_list",
+                            )?;
+                        }
+                    }
+                    points
+                };
+                let mut affected_domains = Vec::new();
+                let mut affected_matching = Vec::new();
+                for &point in ctx.admit_iter(&affected_points, "catia_quotient_refine_affected")? {
+                    let domain = ctx.copy_slice(
+                        &roots_by_point[point],
+                        "catia_quotient_refine_affected_domain_roots",
+                    )?;
+                    ctx.push_vec(
+                        &mut affected_domains,
+                        domain,
+                        "catia_quotient_refine_affected_domains",
+                    )?;
+                    ctx.push_vec(
+                        &mut affected_matching,
+                        coverage_matching[point],
+                        "catia_quotient_refine_affected_matching",
+                    )?;
+                }
+                let support_count = ctx.fold(
+                    &affected_domains,
+                    Some(0usize),
+                    |total, roots| Ok(total.and_then(|total| total.checked_add(roots.len()))),
+                    "catia_quotient_refine_support_count",
+                )?;
+                let Some(propagation_work) = support_count.and_then(|count| count.checked_mul(4))
+                else {
+                    return Ok(ControlFlow::Break(Some(RefinedCoordinateDomains {
+                        domains: std::mem::take(&mut domains),
+                        coverage_matching: std::mem::take(&mut coverage_matching),
+                    })));
+                };
+                if budget.is_some_and(|budget| propagation_work > budget.remaining()) {
+                    return Ok(ControlFlow::Break(Some(RefinedCoordinateDomains {
+                        domains: std::mem::take(&mut domains),
+                        coverage_matching: std::mem::take(&mut coverage_matching),
+                    })));
+                }
+                let Some(_) = retain_distinct_matching_supports(
+                    ctx,
+                    &mut affected_domains,
+                    domains.len(),
+                    &affected_matching,
+                    budget,
+                )?
+                else {
+                    return Ok(ControlFlow::Break(None));
+                };
+                for (point, supported) in ctx
+                    .admit_iter(affected_points, "catia_quotient_refine_supported_roots")?
+                    .zip(affected_domains)
+                {
+                    roots_by_point[point] = supported;
+                }
+                let mut affected_roots = Vec::new();
+                for (root, domain) in ctx
+                    .admit_iter(
+                        domains.as_mut_slice(),
+                        "catia_quotient_refine_root_supports",
+                    )?
+                    .enumerate()
+                {
+                    let before = domain.len();
+                    ctx.retain_vec(
+                        domain,
+                        |point| {
+                            Ok(ctx
+                                .binary_search(
+                                    &roots_by_point[*point],
+                                    &root,
+                                    "catia_quotient_refine_root_supports",
+                                )?
+                                .is_ok())
+                        },
+                        "catia_quotient_refine_root_supports",
+                    )?;
+                    if domain.is_empty() {
+                        return Ok(ControlFlow::Break(None));
+                    }
+                    if domain.len() != before {
+                        ctx.push_vec(
+                            &mut affected_roots,
+                            root,
+                            "catia_quotient_refine_affected_roots",
+                        )?;
+                    }
+                }
+                if affected_roots.is_empty() {
+                    return Ok(ControlFlow::Break(Some(RefinedCoordinateDomains {
+                        domains: std::mem::take(&mut domains),
+                        coverage_matching: std::mem::take(&mut coverage_matching),
+                    })));
+                }
+                let (value, storage) =
+                    ctx.with_scoped_storage("catia_quotient_refine_affected_edges", || {
+                        let mut affected_edges = Vec::new();
+                        for root in
+                            ctx.admit_iter(affected_roots, "catia_quotient_refine_affected_edges")?
+                        {
+                            for &edge in ctx.admit_iter(
+                                &self.root_edges[root],
+                                "catia_quotient_refine_affected_edges",
+                            )? {
+                                ctx.push_vec(
+                                    &mut affected_edges,
+                                    edge,
+                                    "catia_quotient_refine_affected_edges",
+                                )?;
+                            }
+                        }
+                        ctx.sort_unstable_by(
+                            &mut affected_edges,
+                            |value| value,
+                            Ord::cmp,
+                            "catia_quotient_refine_affected_edges_sort",
+                        )?;
+                        ctx.dedup_vec(
+                            &mut affected_edges,
+                            "catia_quotient_refine_affected_edges_dedup",
+                        )?;
+                        Ok::<_, CodecError>(affected_edges)
+                    })?;
+                Ok(ControlFlow::Continue(ScopedValue {
+                    value,
+                    storage: Some(storage),
+                }))
+            })?;
+            match step {
+                ControlFlow::Break(result) => return Ok(result),
+                ControlFlow::Continue(next_edges) => affected_edges = next_edges,
+            }
+        }
+    }
+
+    pub(in crate::solve) fn refine_edge_candidate_arc<'next>(
+        &self,
+        ctx: &'next DecodeContext<'_>,
+        edge: usize,
+        pair: [usize; 2],
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Result<Option<MeshCoordinateRootDomains<'next>>, CodecError>
+    where
+        'storage: 'next,
+    {
+        let Some(candidates) = self.edge_candidates.get(edge) else {
+            return Ok(None);
+        };
+        if candidates.as_slice() == [pair] {
+            return Ok(Some(self.clone()));
+        }
+        if !candidates.is_empty()
+            && !ctx.contains(
+                candidates,
+                &pair,
+                "catia_coordinate_refine_candidate_lookup",
+            )?
+        {
+            return Ok(None);
+        }
+        if candidates.is_empty() && !self.supports_edge_candidate(ctx, edge, pair)? {
+            return Ok(None);
+        }
+        let (edge_candidates, candidate_storage) =
+            ctx.with_scoped_storage("catia_coordinate_refine_candidate_rows", || {
+                ctx.collect_indexed_vec(
+                    self.edge_candidates.len(),
+                    "catia_coordinate_refine_candidate_rows",
+                    |index| {
+                        if index == edge {
+                            let mut selected =
+                                ctx.collection_vec(1, "catia_coordinate_refine_selected_pair")?;
+                            selected.push(pair);
+                            Ok(selected)
+                        } else {
+                            ctx.copy_slice(
+                                &self.edge_candidates[index],
+                                "catia_coordinate_refine_candidate_pairs",
+                            )
+                        }
+                    },
+                )
+            })?;
+        let (value, storage) =
+            ctx.with_scoped_storage("catia_coordinate_refine_domain_rows", || {
+                ctx.copy_retained_rows(
+                    &self.domains,
+                    "catia_coordinate_refine_domain_rows",
+                    "catia_coordinate_refine_domain_points",
+                )
+            })?;
+        let input_domains = ScopedValue {
+            value,
+            storage: Some(storage),
+        };
+        let Some(RefinedCoordinateDomains {
+            domains,
+            coverage_matching,
+        }) = self.refine_domains(ctx, input_domains, &edge_candidates, &[edge], false, budget)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(MeshCoordinateRootDomains {
+            domains: Rc::new(domains),
+            edges: Rc::clone(&self.edges),
+            root_edges: Rc::clone(&self.root_edges),
+            edge_candidates: Rc::new(ScopedValue {
+                value: edge_candidates,
+                storage: Some(candidate_storage),
+            }),
+            coverage_matching: Rc::new(coverage_matching),
+            point_count: self.point_count,
+        }))
+    }
+
+    pub(in crate::solve) fn refine_candidates<'next>(
+        &self,
+        ctx: &'next DecodeContext<'_>,
+        edge_candidates: &[Vec<[usize; 2]>],
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Result<Option<MeshCoordinateRootDomains<'next>>, CodecError>
+    where
+        'storage: 'next,
+    {
+        if edge_candidates.len() != self.edge_candidates.len() {
+            return Ok(None);
+        }
+        let mut scratch = ctx.reserve_scoped(0, "catia_coordinate_refine_changed_edges")?;
+        let mut changed = Vec::new();
+        scratch.with_storage(|| {
+            for (edge, (current, base)) in ctx
+                .admit_iter(edge_candidates, "catia_coordinate_refine_changed_edges")?
+                .zip(self.edge_candidates.iter())
+                .enumerate()
+            {
+                if current.len() != base.len()
+                    || !ctx.equal(current, base, "catia_coordinate_refine_changed_edges")?
+                {
+                    ctx.push_vec(&mut changed, edge, "catia_coordinate_refine_changed_edges")?;
+                }
+            }
+            Ok::<_, CodecError>(())
+        })?;
+        if changed.is_empty() {
+            return Ok(Some(self.clone()));
+        }
+        let (value, storage) =
+            ctx.with_scoped_storage("catia_coordinate_refine_domain_rows", || {
+                ctx.copy_retained_rows(
+                    &self.domains,
+                    "catia_coordinate_refine_domain_rows",
+                    "catia_coordinate_refine_domain_points",
+                )
+            })?;
+        let input_domains = ScopedValue {
+            value,
+            storage: Some(storage),
+        };
+        let Some(RefinedCoordinateDomains {
+            domains,
+            coverage_matching,
+        }) = self.refine_domains(ctx, input_domains, edge_candidates, &changed, false, budget)?
+        else {
+            return Ok(None);
+        };
+        let (value, storage) =
+            ctx.with_scoped_storage("catia_coordinate_refine_candidate_rows", || {
+                ctx.copy_retained_rows(
+                    edge_candidates,
+                    "catia_coordinate_refine_candidate_rows",
+                    "catia_coordinate_refine_candidate_pairs",
+                )
+            })?;
+        Ok(Some(MeshCoordinateRootDomains {
+            domains: Rc::new(domains),
+            edges: Rc::clone(&self.edges),
+            root_edges: Rc::clone(&self.root_edges),
+            edge_candidates: Rc::new(ScopedValue {
+                value,
+                storage: Some(storage),
+            }),
+            coverage_matching: Rc::new(coverage_matching),
+            point_count: self.point_count,
+        }))
+    }
+}
+
+impl<'storage> MeshQuotient<'storage> {
+    pub(in crate::solve) fn coordinate_domain_preparation_limit(
+        &self,
+        ctx: &DecodeContext<'_>,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+    ) -> Result<Option<usize>, CodecError> {
+        if Some(self.union.len()) != edge_candidates.len().checked_mul(2) {
+            return Ok(None);
+        }
+        let mut root_count = 0usize;
+        let mut root_supports = Some(0usize);
+        for node in ctx.admit_iter(0..self.union.len(), "catia_quotient_preparation_roots")? {
+            if self.union.root(ctx, node)? != node {
+                continue;
+            }
+            root_count += 1;
+            let supported = ctx.partition_point(
+                &self.domains[node],
+                |point| Ok(*point < point_count),
+                "catia_quotient_preparation_supports",
+            )?;
+            root_supports = root_supports.and_then(|total| total.checked_add(supported));
+        }
+        let explicit_pair_supports = ctx.fold(
+            edge_candidates,
+            Some(0usize),
+            |total, candidates| Ok(total.and_then(|total| total.checked_add(candidates.len()))),
+            "catia_quotient_preparation_pairs",
+        )?;
+        Ok((|| {
+            let matching_phase_bound = root_count
+                .checked_add(point_count)?
+                .isqrt()
+                .checked_add(1)?;
+            let traversal_bound = matching_phase_bound.checked_add(8)?;
+            Some(
+                root_supports?
+                    .checked_add(explicit_pair_supports?)?
+                    .checked_mul(traversal_bound)?
+                    .max(MAX_MESH_CONSTRAINT_OPERATIONS),
+            )
+        })())
+    }
+
+    pub(in crate::solve) fn prepare_coordinate_root_domains(
+        &mut self,
+        ctx: &'storage DecodeContext<'_>,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Result<Option<MeshCoordinateRootDomains<'storage>>, CodecError> {
+        let mut scratch = ctx.reserve_scoped(0, "catia_quotient_preparation_scratch")?;
+        scratch.with_storage(|| {
+            if edge_candidates.len().checked_mul(2) != Some(self.union.len()) {
+                return Ok(None);
+            }
+            let mut roots = Vec::new();
+            let mut root_indices =
+                ctx.alloc_filled(self.union.len(), None, "catia_quotient_root_indices")?;
+            for node in ctx.admit_iter(0..self.union.len(), "catia_quotient_roots")? {
+                if self.union.find(ctx, node)? == node {
+                    root_indices[node] = Some(roots.len());
+                    ctx.push_vec(&mut roots, node, "catia_quotient_roots")?;
+                }
+            }
+            if roots.len() < point_count {
+                return Ok(None);
+            }
+            let (edges, edge_storage) = ctx.with_scoped_storage("catia_quotient_edges", || {
+                let mut edges = Vec::new();
+                for edge in ctx.admit_iter(0..edge_candidates.len(), "catia_quotient_edges")? {
+                    let Some(left) = root_indices[self.union.find(ctx, edge * 2)?] else {
+                        return Ok(None);
+                    };
+                    let Some(right) = root_indices[self.union.find(ctx, edge * 2 + 1)?] else {
+                        return Ok(None);
+                    };
+                    ctx.push_vec(&mut edges, [left, right], "catia_quotient_edges")?;
+                }
+                Ok::<_, CodecError>(Some(edges))
+            })?;
+            let Some(edges) = edges else {
+                return Ok(None);
+            };
+            let (domains, domain_storage) =
+                ctx.with_scoped_storage("catia_quotient_domains", || {
+                    let mut domains = Vec::new();
+                    for &root in ctx.admit_iter(&roots, "catia_quotient_domains")? {
+                        // Domains ascend, so the points below `point_count` are a prefix.
+                        let supported = ctx.partition_point(
+                            &self.domains[root],
+                            |point| Ok(*point < point_count),
+                            "catia_quotient_domain_points",
+                        )?;
+                        if supported == 0 {
+                            return Ok(None);
+                        }
+                        let domain = ctx.copy_slice(
+                            &self.domains[root][..supported],
+                            "catia_quotient_domain_points",
+                        )?;
+                        ctx.push_vec(&mut domains, domain, "catia_quotient_domains")?;
+                    }
+                    Ok::<_, CodecError>(Some(domains))
+                })?;
+            let Some(mut domains) = domains else {
+                return Ok(None);
+            };
+            let edge_ids = ctx.collect_vec(0..edges.len(), "catia_quotient_edge_ids")?;
+            let (root_edges, root_edge_storage) =
+                ctx.with_scoped_storage("catia_quotient_root_edges", || {
+                    let mut root_edges =
+                        ctx.collect_indexed_vec(roots.len(), "catia_quotient_root_edges", |_| {
+                            Ok(Vec::new())
+                        })?;
+                    for (edge, &[left, right]) in ctx
+                        .admit_iter(&edges, "catia_quotient_root_edge_entries")?
+                        .enumerate()
+                    {
+                        ctx.push_vec(
+                            &mut root_edges[left],
+                            edge,
+                            "catia_quotient_root_edge_entries",
+                        )?;
+                        if right != left {
+                            ctx.push_vec(
+                                &mut root_edges[right],
+                                edge,
+                                "catia_quotient_root_edge_entries",
+                            )?;
+                        }
+                    }
+                    Ok::<_, CodecError>(root_edges)
+                })?;
+            if !enforce_sparse_endpoint_membership(
+                ctx,
+                &mut domains,
+                &edges,
+                &edge_ids,
+                edge_candidates,
+                budget,
+            )? {
+                return Ok(None);
+            }
+            if !enforce_edge_arc_consistency(
+                ctx,
+                &mut domains,
+                &edges,
+                &edge_ids,
+                &root_edges,
+                edge_candidates,
+                budget,
+            )? {
+                return Ok(None);
+            }
+            let (mut supported_candidates, candidate_storage) =
+                ctx.with_scoped_storage("catia_quotient_supported_candidate_rows", || {
+                    ctx.copy_retained_rows(
+                        edge_candidates,
+                        "catia_quotient_supported_candidate_rows",
+                        "catia_quotient_supported_candidate_pairs",
+                    )
+                })?;
+            loop {
+                ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
+                let mut changed_storage = ctx.reserve_scoped(0, "catia_quotient_changed_edges")?;
+                let mut changed = Vec::new();
+                for (edge, candidates) in ctx
+                    .admit_iter(
+                        &mut supported_candidates,
+                        "catia_quotient_supported_candidates",
+                    )?
+                    .enumerate()
+                {
+                    if candidates.is_empty() {
+                        continue;
+                    }
+                    let [left, right] = edges[edge];
+                    let before = candidates.len();
+                    if budget.is_some_and(|budget| !budget.charge_by(before)) {
+                        ctx.charge_work(0, "catia quotient domain preparation")?;
+                        return Err(ctx.refuse_codec_limit(
+                            "catia quotient domain preparation",
+                            0,
+                            1,
+                        ));
+                    }
+                    let contains = |root: usize, point: usize| {
+                        domain_contains(
+                            ctx,
+                            &domains[root],
+                            point,
+                            "catia_quotient_supported_candidates",
+                        )
+                    };
+                    ctx.retain_vec(
+                        candidates,
+                        |pair| {
+                            Ok((contains(left, pair[0])? && contains(right, pair[1])?)
+                                || (contains(left, pair[1])? && contains(right, pair[0])?))
+                        },
+                        "catia_quotient_supported_candidates",
+                    )?;
+                    if candidates.is_empty() {
+                        return Ok(None);
+                    }
+                    if candidates.len() != before {
+                        changed_storage.with_storage(|| {
+                            ctx.push_vec(&mut changed, edge, "catia_quotient_changed_edges")
+                        })?;
+                    }
+                }
+                if changed.is_empty() {
+                    break;
+                }
+                if !enforce_edge_arc_consistency_from(
+                    ctx,
+                    &mut domains,
+                    &edges,
+                    &root_edges,
+                    &supported_candidates,
+                    &changed,
+                    budget,
+                )? {
+                    return Ok(None);
+                }
+            }
+            let (coverage_matching, matching_storage) = ctx
+                .with_scoped_storage("catia_quotient_coverage_matching", || {
+                    MeshCoordinateRootDomains::coverage_matching(ctx, &domains, point_count, budget)
+                })?;
+            let Some(coverage_matching) = coverage_matching else {
+                return Ok(None);
+            };
+            let coordinate_domains = MeshCoordinateRootDomains {
+                domains: Rc::new(ScopedValue {
+                    value: domains,
+                    storage: Some(domain_storage),
+                }),
+                edges: Rc::new(ScopedValue {
+                    value: edges,
+                    storage: Some(edge_storage),
+                }),
+                root_edges: Rc::new(ScopedValue {
+                    value: root_edges,
+                    storage: Some(root_edge_storage),
+                }),
+                edge_candidates: Rc::new(ScopedValue {
+                    value: supported_candidates,
+                    storage: Some(candidate_storage),
+                }),
+                coverage_matching: Rc::new(ScopedValue {
+                    value: coverage_matching,
+                    storage: Some(matching_storage),
+                }),
+                point_count,
+            };
+            let (value, storage) =
+                ctx.with_scoped_storage("catia_quotient_refine_domain_copy", || {
+                    ctx.copy_retained_rows(
+                        &coordinate_domains.domains,
+                        "catia_quotient_refine_domain_copy",
+                        "catia_quotient_refine_domain_points",
+                    )
+                })?;
+            let input_domains = ScopedValue {
+                value,
+                storage: Some(storage),
+            };
+            let Some(RefinedCoordinateDomains {
+                domains,
+                coverage_matching,
+            }) = coordinate_domains.refine_domains(
+                ctx,
+                input_domains,
+                &coordinate_domains.edge_candidates,
+                // The full edge set already reached arc consistency above. This pass
+                // starts with Hall support and only revisits edges narrowed by it.
+                &[],
+                true,
+                budget,
+            )?
+            else {
+                return Ok(None);
+            };
+            Ok(Some(MeshCoordinateRootDomains {
+                domains: Rc::new(domains),
+                coverage_matching: Rc::new(coverage_matching),
+                ..coordinate_domains
+            }))
+        })
+    }
+
+    pub(in crate::solve) fn merge_singleton_coordinate_roots(
+        &mut self,
+        ctx: &'storage DecodeContext<'_>,
+        edge_candidates: &[Vec<[usize; 2]>],
+    ) -> Result<bool, CodecError> {
+        loop {
+            ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
+            let mut storage = ctx.reserve_scoped(0, "catia_singleton_points")?;
+            // Singleton roots, keyed by their point; ascending nodes keep each
+            // point's roots ascending.
+            let mut singletons = Vec::new();
+            for node in ctx.admit_iter(0..self.union.len(), "catia_singleton_points")? {
+                let root = self.union.find(ctx, node)?;
+                if root != node || self.domains[root].len() != 1 {
+                    continue;
+                }
+                let point = self.domains[root][0];
+                storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut singletons,
+                        (point, root),
+                        "catia_singleton_point_roots",
+                    )
+                })?;
+            }
+            ctx.sort_unstable_by(
+                &mut singletons,
+                |entry| entry,
+                Ord::cmp,
+                "catia_singleton_points_sort",
+            )?;
+            let mut changed = false;
+            let mut affected_edges = Vec::new();
+            for (index, &(point, root)) in ctx
+                .admit_iter(&singletons, "catia_singleton_merges")?
+                .enumerate()
+            {
+                let Some(&(first_point, first)) = index
+                    .checked_sub(1)
+                    .and_then(|previous| singletons.get(previous))
+                else {
+                    continue;
+                };
+                if first_point != point {
+                    continue;
+                }
+                // Earlier roots of this point already merged into the first
+                // root of the run, whose class keeps that root.
+                let first = self.union.find(ctx, first)?;
+                storage.with_storage(|| {
+                    self.push_component_edges(
+                        ctx,
+                        first,
+                        edge_candidates,
+                        &mut affected_edges,
+                        "catia_singleton_affected_edges",
+                    )?;
+                    self.push_component_edges(
+                        ctx,
+                        root,
+                        edge_candidates,
+                        &mut affected_edges,
+                        "catia_singleton_affected_edges",
+                    )
+                })?;
+                if self.merge_charged(ctx, first, root)?.is_none() {
+                    return Ok(false);
+                }
+                changed = true;
+            }
+            if !changed {
+                return Ok(true);
+            }
+            if !self.propagate_edge_domains(ctx, &affected_edges, edge_candidates, None)? {
+                return Ok(false);
+            }
+        }
+    }
+
+    pub(in crate::solve) fn close_coordinate_roots(
+        &mut self,
+        ctx: &'storage DecodeContext<'_>,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Result<Option<HashMap<usize, usize>>, CodecError> {
+        Ok(self
+            .coordinate_root_closure_outcome(ctx, point_count, edge_candidates, None, budget)?
+            .into_option())
+    }
+
+    #[cfg(test)]
+    pub(in crate::solve) fn close_coordinate_roots_for_incidence_with_budget(
+        &mut self,
+        ctx: &'storage DecodeContext<'_>,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        incidence: MeshIncidenceBoundary<'_>,
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Result<Option<HashMap<usize, usize>>, CodecError> {
+        let MeshIncidenceBoundary {
+            edge_faces,
+            face_count,
+            domains: boundary_domains,
+        } = incidence;
+        if !(edge_faces.len() == edge_candidates.len()
+            && edge_faces.iter().flatten().all(|face| *face < face_count)
+            && boundary_domains.len() == face_count)
+        {
+            return Ok(None);
+        }
+        Ok(self
+            .coordinate_root_closure_outcome(
+                ctx,
+                point_count,
+                edge_candidates,
+                Some((edge_faces, boundary_domains)),
+                budget,
+            )?
+            .into_option())
+    }
+
+    pub(in crate::solve) fn coordinate_root_closure_outcome_for_incidence(
+        &mut self,
+        ctx: &'storage DecodeContext<'_>,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        incidence: MeshIncidenceBoundary<'_>,
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Result<CoordinateRootClosure, CodecError> {
+        let MeshIncidenceBoundary {
+            edge_faces,
+            face_count,
+            domains: boundary_domains,
+        } = incidence;
+        if edge_faces.len() != edge_candidates.len()
+            || ctx.any_by(
+                edge_faces.iter().flatten(),
+                |face| Ok(*face >= face_count),
+                "catia_coordinate_incidence_faces",
+            )?
+            || boundary_domains.len() != face_count
+        {
+            return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
+        }
+        self.coordinate_root_closure_outcome_with_component_budget(
+            ctx,
+            point_count,
+            edge_candidates,
+            Some((edge_faces, boundary_domains)),
+            budget,
+            Some(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
+    }
+
+    pub(super) fn coordinate_root_closure_outcome(
+        &mut self,
+        ctx: &'storage DecodeContext<'_>,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        incidence: Option<(&[[usize; 2]], &[MeshFaceBoundaryDomain])>,
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Result<CoordinateRootClosure, CodecError> {
+        self.coordinate_root_closure_outcome_with_component_budget(
+            ctx,
+            point_count,
+            edge_candidates,
+            incidence,
+            budget,
+            None,
+        )
+    }
+
+    fn coordinate_root_closure_outcome_with_component_budget(
+        &mut self,
+        ctx: &'storage DecodeContext<'_>,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        incidence: Option<(&[[usize; 2]], &[MeshFaceBoundaryDomain])>,
+        budget: Option<&WorkBudget<'_>>,
+        component_search_budget: Option<usize>,
+    ) -> Result<CoordinateRootClosure, CodecError> {
+        let ambiguous = Cell::new(false);
+        let exhausted = Cell::new(false);
+        let result = close_coordinate_roots_with_incidence(
+            ctx,
+            CloseCoordinateRootsWithIncidenceInputs {
+                quotient: self,
+                point_count,
+                edge_candidates,
+                incidence,
+                budget,
+                component_search_budget,
+                ambiguous: &ambiguous,
+                exhausted: &exhausted,
+            },
+        )?;
+        Ok(match result {
+            Some(assignment) => MeshSolve::Solved(assignment),
+            None if exhausted.get() || budget.is_some_and(WorkBudget::exhausted) => {
+                MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))
+            }
+            None if ambiguous.get() => MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())),
+            None => MeshSolve::Failed(MeshCandidateFailure::Rejected(())),
+        })
+    }
+
+    pub(crate) fn point_assignment(
+        &mut self,
+        ctx: &'storage DecodeContext<'_>,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Result<Option<HashMap<usize, usize>>, CodecError> {
+        Ok(
+            match self.point_assignments_with_budget(
+                ctx,
+                point_count,
+                edge_candidates,
+                2,
+                budget,
+            )? {
+                PointAssignmentOutcome::Complete(mut solutions) => {
+                    (solutions.len() == 1).then(|| solutions.remove(0))
+                }
+                PointAssignmentOutcome::Exhausted => None,
+            },
+        )
+    }
+
+    pub(in crate::solve) fn point_assignment_exists(
+        &mut self,
+        ctx: &'storage DecodeContext<'_>,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Result<bool, CodecError> {
+        let mut scratch = ctx.reserve_scoped(0, "catia_point_assignment_exists_scratch")?;
+        scratch.with_storage(|| {
+            Ok(matches!(
+                self.point_assignments_with_budget(ctx, point_count, edge_candidates, 1, budget)?,
+                PointAssignmentOutcome::Complete(solutions) if !solutions.is_empty()
+            ))
+        })
+    }
+
+    pub(super) fn point_assignments_with_budget(
+        &mut self,
+        ctx: &'storage DecodeContext<'_>,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        solution_limit: usize,
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Result<PointAssignmentOutcome, CodecError> {
+        const OPERATION: &str = "catia_point_assignment";
+        let (prepared, _search_storage) =
+            ctx.with_scoped_storage("catia_point_assignment_search_storage", || {
+                let mut roots = Vec::new();
+                let mut root_indices = ctx.alloc_filled(
+                    self.union.len(),
+                    None,
+                    "catia_point_assignment_root_indices",
+                )?;
+                for node in ctx.admit_iter(0..self.union.len(), "catia_point_assignment_roots")? {
+                    let root = self.union.find(ctx, node)?;
+                    if root == node {
+                        root_indices[node] = Some(roots.len());
+                        ctx.push_vec(&mut roots, root, "catia_point_assignment_roots")?;
+                    }
+                }
+                if roots.len() != point_count {
+                    return Ok(ControlFlow::Break(PointAssignmentOutcome::Complete(
+                        Vec::new(),
+                    )));
+                }
+                let domains = ctx.collect_vec(
+                    roots.iter().map(|&root| Rc::clone(&self.domains[root])),
+                    "catia_point_assignment_domains",
+                )?;
+                let mut edge_roots =
+                    ctx.collection_vec(edge_candidates.len(), "catia_point_assignment_edge_roots")?;
+                for edge in ctx.admit_iter(
+                    0..edge_candidates.len(),
+                    "catia_point_assignment_edge_roots",
+                )? {
+                    let (Some(left), Some(right)) = (
+                        root_indices[self.union.find(ctx, edge * 2)?],
+                        root_indices[self.union.find(ctx, edge * 2 + 1)?],
+                    ) else {
+                        return Ok(ControlFlow::Break(PointAssignmentOutcome::Complete(
+                            Vec::new(),
+                        )));
+                    };
+                    edge_roots.push([left, right]);
+                }
+                let mut root_edges = ctx.collect_indexed_vec(
+                    roots.len(),
+                    "catia point assignment root edges",
+                    |_| Ok(Vec::new()),
+                )?;
+                for (edge_index, edge) in ctx
+                    .admit_iter(&edge_roots, "catia_point_root_edge_entries")?
+                    .enumerate()
+                {
+                    ctx.push_vec(
+                        &mut root_edges[edge[0]],
+                        edge_index,
+                        "catia_point_root_edge_entries",
+                    )?;
+                    if edge[1] != edge[0] {
+                        ctx.push_vec(
+                            &mut root_edges[edge[1]],
+                            edge_index,
+                            "catia_point_root_edge_entries",
+                        )?;
+                    }
+                }
+                let mut edge_supports = ctx.collection_vec(
+                    edge_candidates.len(),
+                    "catia_point_assignment_neighbor_rows",
+                )?;
+                for candidates in
+                    ctx.admit_iter(edge_candidates, "catia_point_assignment_neighbor_rows")?
+                {
+                    edge_supports.push(edge_point_supports(
+                        ctx,
+                        candidates,
+                        "catia_point_assignment_neighbor_points",
+                    )?);
+                }
+                let search = PointAssignmentSearch {
+                    domains: &domains,
+                    edge_roots: &edge_roots,
+                    root_edges: &root_edges,
+                    edge_candidates,
+                    edge_supports: &edge_supports,
+                    solution_limit,
+                    budget,
+                };
+                let mut solutions = Vec::new();
+                let mut assigned =
+                    ctx.alloc_filled(domains.len(), None, "catia point assignment slots")?;
+                let mut used = HashSet::new();
+                search.walk(ctx, &mut assigned, &mut used, &mut solutions)?;
+                if budget.is_some_and(WorkBudget::exhausted) {
+                    return Ok(ControlFlow::Break(PointAssignmentOutcome::Exhausted));
+                }
+                Ok::<_, CodecError>(ControlFlow::Continue((roots, solutions)))
+            })?;
+        let (roots, solutions) = match prepared {
+            ControlFlow::Break(outcome) => return Ok(outcome),
+            ControlFlow::Continue(prepared) => prepared,
+        };
+        let mut completed =
+            ctx.collection_vec(solutions.len(), "catia_point_assignment_completed")?;
+        for solution in ctx.admit_iter(solutions, OPERATION)? {
+            let mut pairs = HashMap::new();
+            for (root, point) in ctx.admit_iter(&roots, OPERATION)?.copied().zip(solution) {
+                ctx.insert_hash_map(
+                    &mut pairs,
+                    root,
+                    point,
+                    "catia_point_assignment_completed_pairs",
+                )?;
+            }
+            completed.push(pairs);
+        }
+        Ok(PointAssignmentOutcome::Complete(completed))
+    }
+}
+
+/// Backtracking search for distinct coordinate points, one per quotient root,
+/// that every edge's candidate pairs admit.
+struct PointAssignmentSearch<'a> {
+    domains: &'a [PointDomain<'a>],
+    edge_roots: &'a [[usize; 2]],
+    root_edges: &'a [Vec<usize>],
+    edge_candidates: &'a [Vec<[usize; 2]>],
+    /// Both orientations of each edge's candidate pairs, ascending.
+    edge_supports: &'a [Vec<[usize; 2]>],
+    solution_limit: usize,
+    budget: Option<&'a WorkBudget<'a>>,
+}
+
+impl PointAssignmentSearch<'_> {
+    const OPERATION: &'static str = "catia_point_assignment";
+
+    /// Tests whether `edge` has a candidate pair joining `point` to `other`.
+    fn pair_supported(
+        &self,
+        ctx: &DecodeContext<'_>,
+        edge: usize,
+        point: usize,
+        other: usize,
+    ) -> Result<bool, CodecError> {
+        let run = point_support_run(ctx, &self.edge_supports[edge], point, Self::OPERATION)?;
+        Ok(ctx
+            .binary_search_by(run, |pair| Ok(pair[1].cmp(&other)), Self::OPERATION)?
+            .is_ok())
+    }
+
+    /// Tests whether assigning `point` to `root` leaves every incident edge
+    /// satisfiable by the current partial assignment.
+    fn value_viable(
+        &self,
+        ctx: &DecodeContext<'_>,
+        root: usize,
+        point: usize,
+        assigned: &[Option<usize>],
+        used: &HashSet<usize>,
+    ) -> Result<bool, CodecError> {
+        let unused = |other_point: usize| -> Result<bool, CodecError> {
+            Ok(other_point != point
+                && !ctx.contains_hash_set(used, &other_point, Self::OPERATION)?)
+        };
+        ctx.all_by(
+            &self.root_edges[root],
+            |&edge_index| {
+                let edge = self.edge_roots[edge_index];
+                let unconstrained = self.edge_candidates[edge_index].is_empty();
+                let other = if edge[0] == root {
+                    edge[1]
+                } else if edge[1] == root {
+                    edge[0]
+                } else {
+                    return Ok(true);
+                };
+                if other == root {
+                    return Ok(unconstrained || self.pair_supported(ctx, edge_index, point, point)?);
+                }
+                if let Some(other_point) = assigned[other] {
+                    return Ok(unconstrained
+                        || self.pair_supported(ctx, edge_index, point, other_point)?);
+                }
+                if unconstrained {
+                    return ctx.any_by(
+                        &self.domains[other][..],
+                        |&other_point| unused(other_point),
+                        Self::OPERATION,
+                    );
+                }
+                let run = point_support_run(
+                    ctx,
+                    &self.edge_supports[edge_index],
+                    point,
+                    Self::OPERATION,
+                )?;
+                ctx.any_by(
+                    run,
+                    |pair| {
+                        Ok(unused(pair[1])?
+                            && domain_contains(
+                                ctx,
+                                &self.domains[other],
+                                pair[1],
+                                Self::OPERATION,
+                            )?)
+                    },
+                    Self::OPERATION,
+                )
+            },
+            Self::OPERATION,
+        )
+    }
+
+    /// The unused points of `root`'s domain that keep its edges satisfiable.
+    fn values_for(
+        &self,
+        ctx: &DecodeContext<'_>,
+        root: usize,
+        assigned: &[Option<usize>],
+        used: &HashSet<usize>,
+    ) -> Result<Vec<usize>, CodecError> {
+        let mut values = Vec::new();
+        for &point in ctx.admit_iter(&self.domains[root][..], Self::OPERATION)? {
+            if !ctx.contains_hash_set(used, &point, Self::OPERATION)?
+                && self.value_viable(ctx, root, point, assigned, used)?
+            {
+                ctx.push_vec(&mut values, point, "catia_point_assignment_values")?;
+            }
+        }
+        Ok(values)
+    }
+
+    fn rollback(
+        ctx: &DecodeContext<'_>,
+        assigned: &mut [Option<usize>],
+        used: &mut HashSet<usize>,
+        propagated: Vec<(usize, usize)>,
+    ) -> Result<(), CodecError> {
+        for (root, point) in ctx.admit_iter(propagated, Self::OPERATION)?.rev() {
+            assigned[root] = None;
+            ctx.remove_hash_set(used, &point, Self::OPERATION)?;
+        }
+        Ok(())
+    }
+
+    /// Assigns forced roots, then branches on the root with the fewest
+    /// viable points, recording complete assignments up to the limit.
+    fn walk(
+        &self,
+        ctx: &DecodeContext<'_>,
+        assigned: &mut [Option<usize>],
+        used: &mut HashSet<usize>,
+        solutions: &mut Vec<Vec<usize>>,
+    ) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("catia_point_assignment_walk")?;
+        if solutions.len() >= self.solution_limit {
+            return Ok(());
+        }
+        if self.budget.is_some_and(|budget| !budget.charge()) {
+            return Ok(());
+        }
+        let mut propagated_storage = ctx.reserve_scoped(0, "catia_point_assignment_propagated")?;
+        let mut propagated = Vec::new();
+        let branch = loop {
+            ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
+            let (mut values, value_storage) =
+                ctx.with_scoped_storage("catia_point_assignment_values", || {
+                    let mut values = Vec::new();
+                    for (root, slot) in ctx.admit_iter(&*assigned, Self::OPERATION)?.enumerate() {
+                        if slot.is_none() {
+                            let candidates = self.values_for(ctx, root, assigned, used)?;
+                            ctx.push_vec(
+                                &mut values,
+                                (root, candidates),
+                                "catia_point_assignment_value_rows",
+                            )?;
+                        }
+                    }
+                    Ok::<_, CodecError>(values)
+                })?;
+            if values.is_empty() {
+                break Some(None);
+            }
+            if ctx.any_by(
+                &values,
+                |(_, values)| Ok(values.is_empty()),
+                Self::OPERATION,
+            )? || !domains_have_distinct_matching(
+                ctx,
+                values.iter().map(|(_, values)| values.as_slice()),
+                assigned.len(),
+            )? {
+                break None;
+            }
+            let mut dead = false;
+            let mut progress = false;
+            let mut rows = values.iter_mut();
+            while let Some((root, candidates)) = ctx.next_charged(&mut rows, Self::OPERATION)? {
+                let root = *root;
+                if progress {
+                    ctx.retain_vec(
+                        candidates,
+                        |point| {
+                            Ok(!ctx.contains_hash_set(used, point, Self::OPERATION)?
+                                && self.value_viable(ctx, root, *point, assigned, used)?)
+                        },
+                        Self::OPERATION,
+                    )?;
+                }
+                let Some(&point) = candidates.first() else {
+                    dead = true;
+                    break;
+                };
+                if candidates.len() != 1 {
+                    continue;
+                }
+                if !ctx.insert_hash_set(used, point, "catia_point_assignment_used")? {
+                    dead = true;
+                    break;
+                }
+                assigned[root] = Some(point);
+                propagated_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut propagated,
+                        (root, point),
+                        "catia_point_assignment_propagated",
+                    )
+                })?;
+                progress = true;
+            }
+            if dead {
+                break None;
+            }
+            if !progress {
+                let Some(&(root, _)) = ctx.min_by_key(
+                    &values,
+                    |(root, values)| Ok((values.len(), *root)),
+                    |left, right| Ok(left.cmp(right)),
+                    Self::OPERATION,
+                )?
+                else {
+                    break Some(None);
+                };
+                let index = ctx
+                    .binary_search_by_key(&values, &root, |(root, _)| Ok(*root), Self::OPERATION)?
+                    .map_err(|_| CodecError::malformed("point assignment branch row is missing"))?;
+                break Some(Some((values.swap_remove(index), value_storage)));
+            }
+        };
+        let Some(branch) = branch else {
+            return Self::rollback(ctx, assigned, used, propagated);
+        };
+        let Some(((root, values), _value_storage)) = branch else {
+            if ctx.all_by(&*assigned, |slot| Ok(slot.is_some()), Self::OPERATION)? {
+                let solution = ctx.collect_vec(
+                    assigned.iter().flatten().copied(),
+                    "catia_point_assignment_solution",
+                )?;
+                ctx.push_vec(solutions, solution, "catia_point_assignment_solutions")?;
+            }
+            return Self::rollback(ctx, assigned, used, propagated);
+        };
+        let mut points = values.into_iter();
+        while let Some(point) = ctx.next_charged(&mut points, Self::OPERATION)? {
+            assigned[root] = Some(point);
+            ctx.insert_hash_set(used, point, "catia_point_assignment_used")?;
+            self.walk(ctx, assigned, used, solutions)?;
+            ctx.remove_hash_set(used, &point, Self::OPERATION)?;
+            assigned[root] = None;
+            if solutions.len() >= self.solution_limit {
+                break;
+            }
+        }
+        Self::rollback(ctx, assigned, used, propagated)
+    }
+}
+
 #[derive(Clone, Copy)]
 struct PartialCompactAssignmentViableInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5> {
     domain: &'input0 MeshFaceBoundaryDomain,
