@@ -29,6 +29,7 @@ fn mesh_per_buffer_ceiling_fuses_and_propagates_resource_refusal() {
             &mut Diagnostics::new(),
             &mut MeshBudget::new(),
             ArchiveVersion::V5,
+            None,
         )
         .unwrap_err();
         let GeometryError::Codec(CodecError::ResourceLimit(limit)) = error else {
@@ -82,6 +83,7 @@ fn document_mesh_ceiling_refuses_before_copy_and_preserves_usage() {
             &mut Diagnostics::new(),
             &mut budget,
             ArchiveVersion::V5,
+            None,
         )
         .unwrap();
         assert_eq!(budget.used(), 4);
@@ -96,6 +98,7 @@ fn document_mesh_ceiling_refuses_before_copy_and_preserves_usage() {
             &mut Diagnostics::new(),
             &mut budget,
             ArchiveVersion::V5,
+            None,
         )
         .unwrap_err();
         let GeometryError::Codec(CodecError::ResourceLimit(limit)) = error else {
@@ -131,6 +134,7 @@ fn independent_mesh_channels_each_use_the_per_expansion_ceiling() {
                     &mut Diagnostics::new(),
                     &mut budget,
                     ArchiveVersion::V5,
+                    None,
                 )
                 .unwrap()
                 .unwrap();
