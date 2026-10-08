@@ -119,6 +119,7 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
                     .unwrap(),
                 )
                 .unwrap(),
+                None,
             );
             result
         }

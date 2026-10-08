@@ -400,6 +400,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
     geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    curve_markers: Option<&super::typed_relations::CurveMarkers<'_, 'a, '_>>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT curve endpoint roster";
     let Some(offset) = usize::try_from(curve.offset()).ok() else {
@@ -516,8 +517,10 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             return Ok(endpoints);
         }
     }
-    if let Some(offsets) = current_reverse_incidence_endpoint_offsets(ctx, payload, curve, markers)?
-    {
+    if let Some(offsets) = match curve_markers {
+        Some(index) => index.reverse_endpoint_offsets(ctx, payload, curve)?,
+        None => current_reverse_incidence_endpoint_offsets(ctx, payload, curve, markers)?,
+    } {
         let (endpoints, endpoints_storage) = ctx.with_scoped_storage(OPERATION, || {
             let mut endpoints = Vec::new();
             for offset in offsets {
