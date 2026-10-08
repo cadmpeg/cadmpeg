@@ -449,25 +449,17 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             limits: options.limits,
         };
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, false)?;
-        let result = self.inspect_impl(&ctx, root).and_then(|result| {
-            if !ctx.equal_bytes(
-                result.format().as_bytes(),
-                C::FORMAT.as_str().as_bytes(),
-                "inspect format comparison",
-            )? {
-                return Err(CodecError::WrongFormat(ctx.format_retained(
-                    format_args!(
-                        "codec {:?} inspected a {:?} container",
-                        C::FORMAT.as_str(),
-                        result.format()
-                    ),
-                    "inspect format refusal",
-                )?));
-            }
-            Ok(result)
-        });
+        let result = self.inspect_impl(&ctx, root);
         ctx.finish_session()?;
-        result
+        let result = result?;
+        if result.format() != C::FORMAT.as_str() {
+            return Err(CodecError::WrongFormat(format!(
+                "codec {:?} inspected a {:?} container",
+                C::FORMAT.as_str(),
+                result.format()
+            )));
+        }
+        Ok(result)
     }
 
     fn decode(
@@ -491,11 +483,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
     ) -> Result<DecodeResult, DecodeFailure> {
         let decoded = self.decode_impl(ctx, root)?;
         let result = DecodeResult::new(decoded, C::FORMAT, options.container_only, ctx)?;
-        if !ctx.equal_bytes(
-            result.report().format().as_bytes(),
-            C::FORMAT.as_str().as_bytes(),
-            "decode format comparison",
-        )? {
+        if result.report().format() != C::FORMAT.as_str() {
             return Err(CodecError::WrongFormat(ctx.format_retained(
                 format_args!(
                     "codec {:?} decoded a {:?} document",
