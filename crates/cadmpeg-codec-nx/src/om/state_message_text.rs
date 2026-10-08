@@ -51,11 +51,9 @@ impl StateMessageText<&str> {
         self,
         ctx: &DecodeContext<'_>,
     ) -> Result<StateMessageText<String>, CodecError> {
-        let text = self.as_str();
-        let mut owned = String::new();
-        ctx.append_retained(&mut owned, text, "NX state message text")?;
         Ok(StateMessageText(
-            PrintableString::from_wire(ctx, owned)?.map_err(CodecError::malformed)?,
+            self.0
+                .try_into_owned_for_decode(ctx, "NX state message text")?,
             self.1,
         ))
     }
@@ -93,19 +91,15 @@ mod tests {
     use super::StateMessageText;
 
     #[test]
-    fn retained_state_message_text_iteration_refusal_propagates() {
+    fn retained_state_message_text_copy_does_not_repeat_printable_validation() {
         let text = StateMessageText::new("NX").unwrap();
         crate::test_support::with_decode_context_over(
             &[],
-            // The append reads two bytes before the constructor validates them.
             |policy| policy.limits.max_work_units = 2,
             |ctx| {
-                let error = text.into_owned(ctx).unwrap_err();
-                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                    panic!("text validation must refuse");
-                };
-                assert_eq!(limit.operation, "NX printable string syntax");
-                assert_eq!(ctx.resource_refusal(), Some(limit));
+                let owned = text.into_owned(ctx).unwrap();
+                assert_eq!(owned.as_str(), "NX");
+                assert_eq!(ctx.resource_refusal(), None);
             },
         );
     }

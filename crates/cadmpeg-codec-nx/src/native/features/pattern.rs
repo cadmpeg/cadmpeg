@@ -1199,10 +1199,9 @@ pub(in crate::native) fn feature_pattern_construction_strings(
             let ordinal_u32 = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX pattern string ordinal", 0, 1))?;
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
-            let value = ctx
-                .copy_retained_text(value.value.as_str(), "NX pattern construction string value")?;
-            let value = PrintableString::from_wire(ctx, value)?
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            let value = value
+                .value
+                .try_into_owned_for_decode(ctx, "NX pattern construction string value")?;
             let operation_label = ctx.copy_retained_text(
                 &payload.operation_label,
                 "NX pattern construction string label",

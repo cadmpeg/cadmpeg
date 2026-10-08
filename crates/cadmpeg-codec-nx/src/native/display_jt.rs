@@ -366,13 +366,7 @@ impl TryFrom<DisplayJtDocumentWire> for DisplayJtDocument {
         if wire.byte_order != 0 {
             return Err("DisplayJtDocument.byte_order must be 0");
         }
-        let version =
-            match JtVersionField::new(wire.version_field, Ok::<_, Infallible>, |text, _| {
-                Ok(text.parse())
-            }) {
-                Ok(version) => version?,
-                Err(error) => match error {},
-            };
+        let version = JtVersionField::new(&wire.version_field)?;
         if wire.format_major != version.major() || wire.format_minor != version.minor() {
             return Err("DisplayJtDocument.format_major/format_minor disagree with version_field");
         }
@@ -2728,13 +2722,18 @@ fn parse_jt9_partition_node_body(
             Err(CodecError::Malformed(_)) => return None,
             Err(error) => return Some(Err(error)),
         };
-        let mut characters =
-            match ctx.admit_iter(file_name.as_str(), "validate DisplayJT partition name") {
-                Ok(characters) => characters,
-                Err(error) => return Some(Err(CodecError::ResourceLimit(error))),
-            };
-        if file_name.is_empty() || characters.any(char::is_control) {
+        if file_name.is_empty() {
             return None;
+        }
+        let mut characters = file_name.chars();
+        while !characters.as_str().is_empty() {
+            let character = match ctx.next_charged(&mut characters, "validate DisplayJT partition name") {
+                Ok(character) => character?,
+                Err(error) => return Some(Err(error)),
+            };
+            if character.is_control() {
+                return None;
+            }
         }
         let name_end = view.position();
         let f32_at = |offset: usize| FiniteBinary32::new(View::f32_le_at(family, offset)?);
@@ -2810,15 +2809,15 @@ fn parse_jt_f32_vector(
         let count = view.u32_le()?;
         let count = view.counted(u64::from(count), 4)?.get();
         let operation = "decode DisplayJT range values";
-        let ordinals = match ctx.admit_iter(&(0..count), operation) {
-            Ok(ordinals) => ordinals,
-            Err(error) => return Some(Err(CodecError::ResourceLimit(error))),
-        };
+        let mut ordinals = 0..count;
         let mut values = match ctx.vector_storage(count, operation) {
             Ok(values) => values,
             Err(error) => return Some(Err(error)),
         };
-        for _ in ordinals {
+        while ordinals.len() != 0 {
+            if let Err(error) = ctx.next_charged(&mut ordinals, operation) {
+                return Some(Err(error));
+            }
             let value = FiniteBinary32::new(view.f32_le()?)?;
             if let Err(error) = ctx.push_vec(&mut values, value, operation) {
                 return Some(Err(error));
@@ -3044,7 +3043,11 @@ pub(super) fn display_jt_indices(
             let mut rows = Vec::new();
             ctx.reserve_capacity(&mut rows, row_count, "retain DisplayJT index rows")?;
             let mut previous_header_offset = None;
-            for ordinal in ctx.admit_iter(&(0..row_count), "scan DisplayJT index rows")? {
+            let mut ordinals = 0..row_count;
+            while ordinals.len() != 0 {
+                let Some(ordinal) = ctx.next_charged(&mut ordinals, "scan DisplayJT index rows")? else {
+                    break;
+                };
                 let row_offset = 8 + ordinal * 16;
                 let Some(value) = payload
                     .get(row_offset..row_offset + 8)
@@ -3137,13 +3140,18 @@ pub(super) fn display_jt_documents(
         return Ok(Vec::new());
     };
     let mut documents = Vec::new();
-    let mut rows = index.rows.iter().peekable();
-    while let Some(row) = rows.next() {
-        ctx.charge_work(1, "scan DisplayJT document")?;
+    let mut row_ordinals = 0..index.rows.len();
+    while row_ordinals.len() != 0 {
+        let Some(ordinal) = ctx.next_charged(&mut row_ordinals, "scan DisplayJT document")? else {
+            break;
+        };
+        let Some(row) = index.rows.get(ordinal) else {
+            break;
+        };
         let Ok(document_start) = usize::try_from(row.header_offset) else {
             return Ok(Vec::new());
         };
-        let document_end = rows.peek().map_or(stream.len(), |next| {
+        let document_end = index.rows.get(ordinal + 1).map_or(stream.len(), |next| {
             cadmpeg_core::decode::index_from_u32(next.header_offset)
         });
         let Some(document) = stream.get(document_start..document_end) else {
@@ -3155,11 +3163,7 @@ pub(super) fn display_jt_documents(
         let Some(version_field) = std::str::from_utf8(version_bytes).ok() else {
             return Ok(Vec::new());
         };
-        let Ok(version) = JtVersionField::new(
-            version_field,
-            |field| ctx.copy_retained_text(field, "retain DisplayJT version text"),
-            |text, operation| ctx.parse_text(text, operation),
-        )?
+        let Ok(version) = JtVersionField::new(version_field)
         else {
             return Ok(Vec::new());
         };
@@ -3202,10 +3206,12 @@ pub(super) fn display_jt_documents(
         let document_key = ctx
             .rsplit_once(&row.id, "#", "key DisplayJT document")?
             .map_or(row.id.as_str(), |(_, key)| key);
-        let toc_ordinals =
-            ctx.admit_iter(&(0..toc_count_usize), "scan DisplayJT table of contents")?;
+        let mut toc_ordinals = 0..toc_count_usize;
         let mut toc_entries = ctx.vector_storage(toc_count_usize, "admit DisplayJT toc entries")?;
-        for ordinal in toc_ordinals {
+        while toc_ordinals.len() != 0 {
+            let Some(ordinal) = ctx.next_charged(&mut toc_ordinals, "scan DisplayJT table of contents")? else {
+                break;
+            };
             let offset = toc_start + 4 + ordinal * jt_toc::LEN;
             let Some(bytes) = View::over_retained(&document[offset..offset + jt_toc::LEN])
                 .array::<{ jt_toc::LEN }>()
@@ -3281,7 +3287,11 @@ pub(super) fn display_jt_segments(
     documents: &[DisplayJtDocument],
 ) -> Result<Vec<DisplayJtSegment>, CodecError> {
     let mut segments = Vec::new();
-    for document in ctx.admit_iter(documents, "scan DisplayJT segment documents")? {
+    let mut remaining_documents = documents.iter();
+    while !remaining_documents.as_slice().is_empty() {
+        let Some(document) = ctx.next_charged(&mut remaining_documents, "scan DisplayJT segment documents")? else {
+            break;
+        };
         let document_key = ctx
             .split_once(&document.id, "#", "key DisplayJT segment document")?
             .map_or(document.id.as_str(), |(_, key)| key);
@@ -3293,7 +3303,11 @@ pub(super) fn display_jt_segments(
         else {
             return Ok(Vec::new());
         };
-        for entry in ctx.admit_iter(&document.toc_entries, "scan DisplayJT segments")? {
+        let mut remaining_entries = document.toc_entries.iter();
+        while !remaining_entries.as_slice().is_empty() {
+            let Some(entry) = ctx.next_charged(&mut remaining_entries, "scan DisplayJT segments")? else {
+                break;
+            };
             let (Ok(segment_start), Ok(segment_len)) = (
                 usize::try_from(entry.segment_offset),
                 usize::try_from(entry.segment_byte_len),
@@ -3413,10 +3427,14 @@ pub(super) fn display_jt_shape_lod_elements(
 ) -> Result<Vec<DisplayJtShapeLodElement>, CodecError> {
     const SEGMENT_TAIL: [u8; 6] = [1, 0, 0, 0, 0, 0];
     let mut elements = Vec::new();
-    for segment in ctx
-        .admit_iter(segments, "scan DisplayJT shape LOD segments")?
-        .filter(|segment| segment.segment_type == 7)
-    {
+    let mut remaining_segments = segments.iter();
+    while !remaining_segments.as_slice().is_empty() {
+        let Some(segment) = ctx.next_charged(&mut remaining_segments, "scan DisplayJT shape LOD segments")? else {
+            break;
+        };
+        if segment.segment_type != 7 {
+            continue;
+        }
         let Some(bytes) = container.bounded_entry_bytes(
             ctx,
             segment.source_offset,
@@ -3435,10 +3453,11 @@ pub(super) fn display_jt_shape_lod_elements(
         if payload.get(framed_end..) != Some(SEGMENT_TAIL.as_slice()) {
             return Ok(Vec::new());
         }
-        for (ordinal, element) in ctx
-            .admit_iter(&parsed, "store DisplayJT shape element")?
-            .enumerate()
-        {
+        let mut remaining_elements = parsed.iter().enumerate();
+        while remaining_elements.len() != 0 {
+            let Some((ordinal, element)) = ctx.next_charged(&mut remaining_elements, "store DisplayJT shape element")? else {
+                break;
+            };
             if element.object_base_type != 4 {
                 return Ok(Vec::new());
             }
@@ -3569,10 +3588,16 @@ pub(super) fn display_jt_initial_face_degree_symbols(
         0x97,
     ];
     let mut vectors = Vec::new();
-    for element in ctx
-        .admit_iter(elements, "scan DisplayJT face degree packets")?
-        .filter(|element| element.object_type_id == TRI_STRIP_LOD_TYPE)
-    {
+    let mut remaining_elements = elements.iter();
+    while !remaining_elements.as_slice().is_empty() {
+        let Some(element) =
+            ctx.next_charged(&mut remaining_elements, "scan DisplayJT face degree packets")?
+        else {
+            break;
+        };
+        if element.object_type_id != TRI_STRIP_LOD_TYPE {
+            continue;
+        }
         let Some(body_start) = element.source_offset.checked_add(25) else {
             return Ok(Vec::new());
         };
@@ -3645,10 +3670,16 @@ pub(super) fn display_jt_topology_packet_sequences(
     let mut sequences = Vec::new();
     let mut headers = Vec::new();
     let mut coordinate_headers = Vec::new();
-    for element in ctx
-        .admit_iter(elements, "scan DisplayJT topology packets")?
-        .filter(|element| element.object_type_id == TRI_STRIP_LOD_TYPE)
-    {
+    let mut remaining_elements = elements.iter();
+    while !remaining_elements.as_slice().is_empty() {
+        let Some(element) =
+            ctx.next_charged(&mut remaining_elements, "scan DisplayJT topology packets")?
+        else {
+            break;
+        };
+        if element.object_type_id != TRI_STRIP_LOD_TYPE {
+            continue;
+        }
         let Some(body_start) = element.source_offset.checked_add(25) else {
             return Ok(DisplayJtTopologyArrays::default());
         };
@@ -3693,10 +3724,12 @@ pub(super) fn display_jt_topology_packet_sequences(
             ]);
         let mut packets = ctx.vector_storage(role_count, "nx JT topology packets")?;
         let mut roles = roles;
-        for _ in ctx.admit_iter(&(0..role_count), "nx JT topology packets")? {
-            let Some(role) = roles.next() else {
+        let mut roles_remaining = role_count;
+        while roles_remaining != 0 {
+            let Some(role) = ctx.next_charged(&mut roles, "nx JT topology packets")? else {
                 break;
             };
+            roles_remaining -= 1;
             let Some(remaining) = representation.get(cursor..) else {
                 return Ok(DisplayJtTopologyArrays::default());
             };
@@ -3917,7 +3950,13 @@ pub(super) fn display_jt_vertex_coordinates(
     headers: &[DisplayJtVertexCoordinateArrayHeader],
 ) -> Result<Vec<DisplayJtVertexCoordinates>, CodecError> {
     let mut arrays = Vec::new();
-    for header in ctx.admit_iter(headers, "scan DisplayJT coordinate headers")? {
+    let mut remaining_headers = headers.iter();
+    while !remaining_headers.as_slice().is_empty() {
+        let Some(header) =
+            ctx.next_charged(&mut remaining_headers, "scan DisplayJT coordinate headers")?
+        else {
+            break;
+        };
         let Some(start) = header.source_offset.checked_add(32) else {
             return Ok(Vec::new());
         };
@@ -3986,7 +4025,13 @@ pub(super) fn display_jt_polygon_meshes(
         "index DisplayJT coordinate headers",
     )?;
     let mut meshes = Vec::new();
-    for sequence in ctx.admit_iter(sequences, "scan DisplayJT topology sequences")? {
+    let mut remaining_sequences = sequences.iter();
+    while !remaining_sequences.as_slice().is_empty() {
+        let Some(sequence) =
+            ctx.next_charged(&mut remaining_sequences, "scan DisplayJT topology sequences")?
+        else {
+            break;
+        };
         let values = |role: TopologyPacketRole| -> Result<Option<&[i32]>, CodecError> {
             Ok(ctx
                 .find_by(
@@ -4037,15 +4082,19 @@ pub(super) fn display_jt_polygon_meshes(
         let mut large_lanes = Vec::new();
         let mut large_lane_storage = ctx.reserve_scoped(0, "nx JT large mask lanes")?;
         let mut large_word_count = 0usize;
-        for packet in ctx
-            .admit_iter(&sequence.packets, "nx JT large mask lanes")?
-            .filter(|packet| {
-                matches!(
-                    packet.role,
-                    TopologyPacketRole::HighDegreeFaceAttributeMasks(_)
-                )
-            })
-        {
+        let mut remaining_packets = sequence.packets.iter();
+        while !remaining_packets.as_slice().is_empty() {
+            let Some(packet) =
+                ctx.next_charged(&mut remaining_packets, "nx JT large mask lanes")?
+            else {
+                break;
+            };
+            if !matches!(
+                packet.role,
+                TopologyPacketRole::HighDegreeFaceAttributeMasks(_)
+            ) {
+                continue;
+            }
             let Some(lane) = packet.values.as_deref() else {
                 return Ok(Vec::new());
             };
@@ -4312,7 +4361,13 @@ pub(super) fn display_jt_vertex_normals(
 ) -> Result<Vec<DisplayJtVertexNormals>, CodecError> {
     let index = JtVertexArrayIndex::new(ctx, coordinate_headers, coordinates, &[], &[], &[])?;
     let mut arrays = Vec::new();
-    for vertex_header in ctx.admit_iter(vertex_headers, "scan DisplayJT normal headers")? {
+    let mut remaining_headers = vertex_headers.iter();
+    while !remaining_headers.as_slice().is_empty() {
+        let Some(vertex_header) =
+            ctx.next_charged(&mut remaining_headers, "scan DisplayJT normal headers")?
+        else {
+            break;
+        };
         if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x8 == 0 {
             continue;
         }
@@ -4374,7 +4429,13 @@ pub(super) fn display_jt_vertex_colors(
 ) -> Result<Vec<DisplayJtVertexColors>, CodecError> {
     let index = JtVertexArrayIndex::new(ctx, coordinate_headers, coordinates, normals, &[], &[])?;
     let mut arrays = Vec::new();
-    for vertex_header in ctx.admit_iter(vertex_headers, "scan DisplayJT color headers")? {
+    let mut remaining_headers = vertex_headers.iter();
+    while !remaining_headers.as_slice().is_empty() {
+        let Some(vertex_header) =
+            ctx.next_charged(&mut remaining_headers, "scan DisplayJT color headers")?
+        else {
+            break;
+        };
         if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x30 == 0 {
             continue;
         }
@@ -4452,7 +4513,13 @@ pub(super) fn display_jt_vertex_texture_coordinates(
     let index =
         JtVertexArrayIndex::new(ctx, coordinate_headers, coordinates, normals, colors, &[])?;
     let mut arrays = Vec::new();
-    for vertex_header in ctx.admit_iter(vertex_headers, "scan DisplayJT texture headers")? {
+    let mut remaining_headers = vertex_headers.iter();
+    while !remaining_headers.as_slice().is_empty() {
+        let Some(vertex_header) =
+            ctx.next_charged(&mut remaining_headers, "scan DisplayJT texture headers")?
+        else {
+            break;
+        };
         if !(0..8_u8)
             .any(|channel| jt_texture_channel_bound(vertex_header.vertex_bindings, channel))
         {
@@ -4556,7 +4623,13 @@ pub(super) fn display_jt_vertex_flags(
         texture_coordinates,
     )?;
     let mut arrays = Vec::new();
-    for vertex_header in ctx.admit_iter(vertex_headers, "scan DisplayJT flag headers")? {
+    let mut remaining_headers = vertex_headers.iter();
+    while !remaining_headers.as_slice().is_empty() {
+        let Some(vertex_header) =
+            ctx.next_charged(&mut remaining_headers, "scan DisplayJT flag headers")?
+        else {
+            break;
+        };
         if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x40 == 0 {
             continue;
         }
@@ -4680,10 +4753,16 @@ pub(super) fn display_jt_compressed_element_sequences(
 > {
     let mut elements = Vec::new();
     let mut sequences = Vec::new();
-    for segment in ctx
-        .admit_iter(segments, "scan DisplayJT compressed segments")?
-        .filter(|segment| segment.compression.is_some())
-    {
+    let mut remaining_segments = segments.iter();
+    while !remaining_segments.as_slice().is_empty() {
+        let Some(segment) =
+            ctx.next_charged(&mut remaining_segments, "scan DisplayJT compressed segments")?
+        else {
+            break;
+        };
+        if segment.compression.is_none() {
+            continue;
+        }
         let Some((inflated, _inflated_storage)) =
             inflate_display_jt_segment(ctx, container, segment)?
         else {
@@ -4705,10 +4784,13 @@ pub(super) fn display_jt_compressed_element_sequences(
             parsed.len(),
             "retain DisplayJT compressed elements",
         )?;
-        for (ordinal, element) in ctx
-            .admit_iter(&parsed, "store DisplayJT compressed elements")?
-            .enumerate()
-        {
+        let mut remaining_elements = parsed.iter().enumerate();
+        while remaining_elements.len() != 0 {
+            let Some((ordinal, element)) =
+                ctx.next_charged(&mut remaining_elements, "store DisplayJT compressed elements")?
+            else {
+                break;
+            };
             ctx.reserve_vec(&mut element_ids, 1, "store DisplayJT element ids")?;
             ctx.reserve_vec(&mut elements, 1, "store DisplayJT compressed elements")?;
             let fields = "retain DisplayJT compressed element fields";
@@ -4798,10 +4880,16 @@ pub(super) fn display_jt_string_property_atoms(
         0x97,
     ];
     let mut atoms = Vec::new();
-    for segment in ctx
-        .admit_iter(segments, "scan DisplayJT property segments")?
-        .filter(|segment| segment.segment_type == 31)
-    {
+    let mut remaining_segments = segments.iter();
+    while !remaining_segments.as_slice().is_empty() {
+        let Some(segment) =
+            ctx.next_charged(&mut remaining_segments, "scan DisplayJT property segments")?
+        else {
+            break;
+        };
+        if segment.segment_type != 31 {
+            continue;
+        }
         if segment.compression.is_none() {
             return Ok(Vec::new());
         }
@@ -4815,10 +4903,14 @@ pub(super) fn display_jt_string_property_atoms(
         else {
             return Ok(Vec::new());
         };
-        for (ordinal, element) in ctx
-            .admit_iter(&elements, "store DisplayJT string property atom")?
-            .enumerate()
-        {
+        let mut remaining_elements = elements.iter().enumerate();
+        while remaining_elements.len() != 0 {
+            let Some((ordinal, element)) = ctx.next_charged(
+                &mut remaining_elements,
+                "store DisplayJT string property atom",
+            )? else {
+                break;
+            };
             if element.object_type_id != STRING_PROPERTY_ATOM_TYPE || element.object_base_type != 5
             {
                 return Ok(Vec::new());
@@ -4882,10 +4974,16 @@ pub(super) fn display_jt_shape_lod_bindings(
         "index DisplayJT binding targets",
     )?;
     let mut bindings = Vec::new();
-    for scene_segment in ctx
-        .admit_iter(segments, "scan DisplayJT binding segments")?
-        .filter(|segment| segment.segment_type == 1)
-    {
+    let mut remaining_segments = segments.iter();
+    while !remaining_segments.as_slice().is_empty() {
+        let Some(scene_segment) =
+            ctx.next_charged(&mut remaining_segments, "scan DisplayJT binding segments")?
+        else {
+            break;
+        };
+        if scene_segment.segment_type != 1 {
+            continue;
+        }
         let Some((inflated, _inflated_storage)) =
             inflate_display_jt_segment(ctx, container, scene_segment)?
         else {
@@ -4905,7 +5003,13 @@ pub(super) fn display_jt_shape_lod_bindings(
         let mut strings = HashMap::new();
         let mut late_loaded = HashMap::<u32, JtLateLoadedProperty>::new();
         let mut property_storage = ctx.reserve_scoped(0, "store DisplayJT property atoms")?;
-        for atom in ctx.admit_iter(&property_atoms, "scan DisplayJT property atoms")? {
+        let mut remaining_atoms = property_atoms.iter();
+        while !remaining_atoms.as_slice().is_empty() {
+            let Some(atom) =
+                ctx.next_charged(&mut remaining_atoms, "scan DisplayJT property atoms")?
+            else {
+                break;
+            };
             if atom.object_type_id == STRING_PROPERTY_ATOM_TYPE && atom.object_base_type == 5 {
                 let Some(value) = property_storage
                     .with_storage(|| parse_jt_string_property_atom_body(ctx, atom.body))?
@@ -4975,10 +5079,13 @@ pub(super) fn display_jt_shape_lod_bindings(
         else {
             return Ok(Vec::new());
         };
-        for table_ordinal in ctx.admit_iter(
-            &(0..table_count.get()),
-            "scan DisplayJT shape LOD property tables",
-        )? {
+        let mut table_ordinals = 0..table_count.get();
+        while table_ordinals.len() != 0 {
+            let Some(table_ordinal) =
+                ctx.next_charged(&mut table_ordinals, "scan DisplayJT shape LOD property tables")?
+            else {
+                break;
+            };
             let Some(shape_node_object_id) = table_view.u32_le() else {
                 return Ok(Vec::new());
             };
@@ -5112,10 +5219,16 @@ pub(super) fn display_jt_scene_nodes(
     let mut partition_nodes = Some(Vec::new());
     let mut range_lod_nodes = Some(Vec::new());
     let mut tri_strip_shape_nodes = Some(Vec::new());
-    for segment in ctx
-        .admit_iter(segments, "scan DisplayJT scene segments")?
-        .filter(|segment| segment.segment_type == 1)
-    {
+    let mut remaining_segments = segments.iter();
+    while !remaining_segments.as_slice().is_empty() {
+        let Some(segment) =
+            ctx.next_charged(&mut remaining_segments, "scan DisplayJT scene segments")?
+        else {
+            break;
+        };
+        if segment.segment_type != 1 {
+            continue;
+        }
         let Some(&Some(document)) = ctx.get_hash_map(
             &documents_by_id,
             segment.document.as_str(),
@@ -5914,7 +6027,12 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
     ) -> Result<Option<Self>, CodecError> {
         let mut storage = ctx.reserve_scoped(0, "nx JT scene graph")?;
         let mut by_object = BTreeMap::new();
-        for base in ctx.admit_iter(inputs.base_nodes, "nx JT scoped base nodes")? {
+        let mut remaining_bases = inputs.base_nodes.iter();
+        while !remaining_bases.as_slice().is_empty() {
+            let Some(base) = ctx.next_charged(&mut remaining_bases, "nx JT scoped base nodes")?
+            else {
+                break;
+            };
             if !index.in_scene(ctx, &base.element, scene_segment)? {
                 continue;
             }
@@ -5952,7 +6070,12 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
             }
         }
         let mut instance_ids = HashMap::new();
-        for node in ctx.admit_iter(inputs.instance_nodes, "nx JT instance index")? {
+        let mut remaining_instances = inputs.instance_nodes.iter();
+        while !remaining_instances.as_slice().is_empty() {
+            let Some(node) = ctx.next_charged(&mut remaining_instances, "nx JT instance index")?
+            else {
+                break;
+            };
             let Some(base) = index.base_node(ctx, &node.base_node)? else {
                 continue;
             };
@@ -5974,7 +6097,13 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
             })?;
         }
         let mut parents = HashMap::new();
-        for (&object_id, base) in ctx.admit_iter(&by_object, "nx JT parent index")? {
+        let mut remaining_base_nodes = by_object.iter();
+        while remaining_base_nodes.len() != 0 {
+            let Some((&object_id, base)) =
+                ctx.next_charged(&mut remaining_base_nodes, "nx JT parent index")?
+            else {
+                break;
+            };
             let group = ctx.get_hash_map(
                 &index.group_children,
                 base.id.as_str(),
@@ -5993,7 +6122,13 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
                 | (None, Some(JtKeyed::Unique(children))) => *children,
                 (None, None) => &[],
             };
-            for &child in ctx.admit_iter(children, "nx JT parent references")? {
+            let mut remaining_children = children.iter();
+            while !remaining_children.as_slice().is_empty() {
+                let Some(&child) =
+                    ctx.next_charged(&mut remaining_children, "nx JT parent references")?
+                else {
+                    break;
+                };
                 if !ctx.contains_key_btree_map(&by_object, &child, "nx JT parent index")? {
                     return Ok(None);
                 }
@@ -6067,7 +6202,13 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
             .with_storage(|| ctx.insert_btree_set(visiting, object_id, "nx JT visiting nodes"))?;
         let mut parent_states = Vec::new();
         if let Some(ids) = ctx.get_hash_map(&self.parents, &object_id, "nx JT parent index")? {
-            for &id in ctx.admit_iter(ids, "resolve JT parent paths")? {
+            let mut remaining_ids = ids.iter();
+            while !remaining_ids.as_slice().is_empty() {
+                let Some(&id) =
+                    ctx.next_charged(&mut remaining_ids, "resolve JT parent paths")?
+                else {
+                    break;
+                };
                 let Some(paths) =
                     self.resolve(ctx, id, visiting, visiting_storage, paths_storage)?
                 else {
@@ -6102,10 +6243,20 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
         let instance_id =
             ctx.get_hash_map(&self.instance_ids, &object_id, "nx JT instance index")?;
         let mut results = Vec::new();
-        for mut path in ctx.admit_iter(parent_states, "resolve JT path states")? {
-            for attribute_id in
-                ctx.admit_iter(&base.attribute_object_ids, "resolve JT path attributes")?
-            {
+        let mut remaining_parent_states = parent_states.into_iter();
+        while remaining_parent_states.len() != 0 {
+            let Some(mut path) =
+                ctx.next_charged(&mut remaining_parent_states, "resolve JT path states")?
+            else {
+                break;
+            };
+            let mut remaining_attributes = base.attribute_object_ids.iter();
+            while !remaining_attributes.as_slice().is_empty() {
+                let Some(attribute_id) =
+                    ctx.next_charged(&mut remaining_attributes, "resolve JT path attributes")?
+                else {
+                    break;
+                };
                 let transform =
                     ctx.get_hash_map(&self.transforms, attribute_id, "resolve JT path attributes")?;
                 let material =
@@ -6341,7 +6492,12 @@ fn display_jt_tessellation_rows(
     let mut scenes = BTreeMap::<&str, Option<JtSceneGraph<'_, '_>>>::new();
     let mut scene_storage = ctx.reserve_scoped(0, "nx JT scene graphs")?;
     let mut tessellations = Vec::new();
-    for mesh in ctx.admit_iter(meshes, "nx JT tessellation meshes")? {
+    let mut remaining_meshes = meshes.iter();
+    while !remaining_meshes.as_slice().is_empty() {
+        let Some(mesh) = ctx.next_charged(&mut remaining_meshes, "nx JT tessellation meshes")?
+        else {
+            break;
+        };
         let coordinate_header = required!(ctx
             .get_hash_map(
                 &mesh_index.coordinate_headers,
@@ -6414,7 +6570,13 @@ fn display_jt_tessellation_rows(
             .count();
         let (mut rendered, mut render_storage) =
             ctx.scoped_vector_storage(render_count, "nx JT rendered triangles")?;
-        for polygon in ctx.admit_iter(&mesh.polygons, "nx JT rendered triangles")? {
+        let mut remaining_polygons = mesh.polygons.iter();
+        while !remaining_polygons.as_slice().is_empty() {
+            let Some(polygon) =
+                ctx.next_charged(&mut remaining_polygons, "nx JT rendered triangles")?
+            else {
+                break;
+            };
             if polygon.group < 0 {
                 continue;
             }
@@ -6479,7 +6641,12 @@ fn display_jt_tessellation_rows(
         } else {
             None
         };
-        for path in ctx.admit_iter(paths, "nx JT tessellation paths")? {
+        let mut remaining_paths = paths.into_iter();
+        while remaining_paths.len() != 0 {
+            let Some(path) = ctx.next_charged(&mut remaining_paths, "nx JT tessellation paths")?
+            else {
+                break;
+            };
             let transform = path.matrix;
             let color = if color_array.is_none() || path.override_vertex_colors == Some(true) {
                 display_jt_path_color(&path)
@@ -6525,7 +6692,14 @@ fn display_jt_tessellation_rows(
                         texture_arrays.len(),
                         "nx JT texture component counts",
                     )?;
-                for array in ctx.admit_iter(&texture_arrays, "nx JT texture component counts")? {
+                let mut remaining_texture_arrays = texture_arrays.iter();
+                while !remaining_texture_arrays.as_slice().is_empty() {
+                    let Some(array) = ctx.next_charged(
+                        &mut remaining_texture_arrays,
+                        "nx JT texture component counts",
+                    )? else {
+                        break;
+                    };
                     let count = required!(array.values.first()).len();
                     if !(1..=4).contains(&count)
                         || !ctx.all_by(
@@ -6548,10 +6722,14 @@ fn display_jt_tessellation_rows(
                     texture_component_counts.len(),
                     "nx JT tessellation texture buffers",
                 )?;
-                for &component_count in ctx.admit_iter(
-                    &texture_component_counts,
-                    "nx JT tessellation texture bytes",
-                )? {
+                let mut remaining_component_counts = texture_component_counts.iter();
+                while !remaining_component_counts.as_slice().is_empty() {
+                    let Some(&component_count) = ctx.next_charged(
+                        &mut remaining_component_counts,
+                        "nx JT tessellation texture bytes",
+                    )? else {
+                        break;
+                    };
                     let byte_count = required!(triangle_vertex_count
                         .checked_mul(component_count)
                         .and_then(|count| count.checked_mul(4)));
@@ -6572,10 +6750,14 @@ fn display_jt_tessellation_rows(
                     )?,
                     None => Vec::new(),
                 };
-                for (triangle, attributes) in ctx
-                    .admit_iter(&rendered, "nx JT tessellation triangles")?
-                    .copied()
-                {
+                let mut remaining_rendered = rendered.iter().copied();
+                while remaining_rendered.len() != 0 {
+                    let Some((triangle, attributes)) = ctx.next_charged(
+                        &mut remaining_rendered,
+                        "nx JT tessellation triangles",
+                    )? else {
+                        break;
+                    };
                     let base = required!(u32::try_from(vertices.len()).ok());
                     for (coordinate, attribute) in triangle.into_iter().zip(attributes) {
                         ctx.reserve_vec(&mut vertices, 1, "nx JT tessellation vertices")?;
@@ -6599,15 +6781,24 @@ fn display_jt_tessellation_rows(
                                 )?;
                             }
                         }
-                        for (index, array) in ctx
-                            .admit_iter(&texture_arrays, "nx JT tessellation texture bytes")?
-                            .enumerate()
-                        {
-                            let data = required!(texture_data.get_mut(index));
-                            for component in ctx.admit_iter(
-                                required!(array.values.get(attribute)),
+                        let mut remaining_texture_arrays = texture_arrays.iter().enumerate();
+                        while remaining_texture_arrays.len() != 0 {
+                            let Some((index, array)) = ctx.next_charged(
+                                &mut remaining_texture_arrays,
                                 "nx JT tessellation texture bytes",
-                            )? {
+                            )? else {
+                                break;
+                            };
+                            let data = required!(texture_data.get_mut(index));
+                            let mut remaining_components =
+                                required!(array.values.get(attribute)).iter();
+                            while !remaining_components.as_slice().is_empty() {
+                                let Some(component) = ctx.next_charged(
+                                    &mut remaining_components,
+                                    "nx JT tessellation texture bytes",
+                                )? else {
+                                    break;
+                                };
                                 ctx.extend_from_slice(
                                     data,
                                     &component.get().to_le_bytes(),
@@ -6653,10 +6844,14 @@ fn display_jt_tessellation_rows(
                 }
                 let mut component_counts = texture_component_counts.into_iter();
                 let mut data_buffers = texture_data.into_iter();
-                for (array, ordinal) in ctx
-                    .admit_iter(&texture_arrays, "nx JT tessellation channels")?
-                    .zip(0_u32..)
-                {
+                let mut remaining_channels = texture_arrays.iter().enumerate();
+                while remaining_channels.len() != 0 {
+                    let Some((ordinal, array)) = ctx.next_charged(
+                        &mut remaining_channels,
+                        "nx JT tessellation channels",
+                    )? else {
+                        break;
+                    };
                     let (Some(component_count), Some(data)) =
                         (component_counts.next(), data_buffers.next())
                     else {
@@ -6670,7 +6865,9 @@ fn display_jt_tessellation_rows(
                                 required!(
                                     u32::try_from(required!(component_count.checked_mul(4))).ok()
                                 ),
-                                required!(DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)),
+                                required!(DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(required!(
+                                    u32::try_from(ordinal).ok()
+                                ))),
                                 u32::from(array.channel)
                                     | required!(u32::try_from(
                                         (vertex_header.vertex_bindings >> (8 + 4 * array.channel))
@@ -6703,10 +6900,13 @@ fn display_jt_tessellation_rows(
             } else {
                 let mut vertices =
                     ctx.vector_storage(coordinates.points_m.len(), "nx JT tessellation vertices")?;
-                for index in ctx.admit_iter(
-                    &(0..coordinates.points_m.len()),
-                    "nx JT tessellation vertices",
-                )? {
+                let mut point_indices = 0..coordinates.points_m.len();
+                while point_indices.len() != 0 {
+                    let Some(index) =
+                        ctx.next_charged(&mut point_indices, "nx JT tessellation vertices")?
+                    else {
+                        break;
+                    };
                     ctx.reserve_vec(&mut vertices, 1, "nx JT tessellation vertices")?;
                     vertices.push(required!(convert_point(required!(
                         u32::try_from(index).ok()

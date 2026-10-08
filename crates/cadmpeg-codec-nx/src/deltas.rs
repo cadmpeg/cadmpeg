@@ -2318,7 +2318,7 @@ fn merge_records(
         }
         Ok((merged, reservation))
     };
-    if !graph.body_shape_shells(ctx)?.is_empty() {
+    if graph.has_body_shape_shell(ctx)? {
         let (merged, reservation) = build(false)?;
         reservation.commit()?;
         return Ok(merged);

@@ -121,6 +121,73 @@ pub(crate) fn external_reference_stream() -> Vec<u8> {
     p
 }
 
+/// Raw `EXTREFSTREAM` bytes with multiple valid handle-set records.
+pub(crate) fn external_reference_handle_sets(record_count: usize) -> Vec<u8> {
+    assert!(record_count != 0);
+    const HEADER_LEN: usize = 25;
+    const DIRECTORY_ROW_LEN: usize = 8;
+    const HANDLE_RECORD_LEN: usize = 31;
+
+    let directory_len = DIRECTORY_ROW_LEN
+        .checked_mul(record_count)
+        .expect("directory length fits usize");
+    let records_byte_len = HANDLE_RECORD_LEN
+        .checked_mul(record_count)
+        .expect("record data length fits usize");
+    let records_start = HEADER_LEN
+        .checked_add(directory_len)
+        .and_then(|offset| offset.checked_add(4))
+        .expect("record start fits usize");
+    let records_end = records_start
+        .checked_add(records_byte_len)
+        .expect("record end fits usize");
+    let mut payload = b"EXTREFSTREAM".to_vec();
+    payload.extend_from_slice(&[0u8; 13]);
+    for ordinal in 0..record_count {
+        let record_id = u32::try_from(ordinal)
+            .expect("record ordinal fits u32")
+            .checked_add(1)
+            .expect("record id fits u32");
+        let offset = records_start
+            .checked_add(
+                HANDLE_RECORD_LEN
+                    .checked_mul(ordinal)
+                    .expect("record offset fits usize"),
+            )
+            .and_then(|offset| u32::try_from(offset).ok())
+            .expect("record offset fits u32");
+        payload.extend_from_slice(&record_id.to_le_bytes());
+        payload.extend_from_slice(&offset.to_le_bytes());
+    }
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    assert_eq!(payload.len(), records_start);
+
+    for ordinal in 0..record_count {
+        payload.extend_from_slice(&[1, 0, 0, 0]);
+        payload.extend_from_slice(&1u16.to_be_bytes());
+        payload.push(1);
+        for slot in [0u32, 1, 2, 3] {
+            payload.extend_from_slice(&slot.to_le_bytes());
+        }
+        payload.push(1);
+        payload.push(2);
+        payload.push(0xe0);
+        let handle = u32::try_from(ordinal)
+            .expect("handle ordinal fits u32")
+            .checked_add(1)
+            .expect("handle fits u32");
+        payload.extend_from_slice(&handle.to_be_bytes());
+        payload.push(2);
+    }
+    assert_eq!(payload.len(), records_end);
+
+    payload.push(1);
+    payload.extend_from_slice(&1u32.to_le_bytes());
+    payload.extend_from_slice(&1u16.to_le_bytes());
+    payload.push(b'x');
+    payload
+}
+
 /// Raw bytes for a `/Root/UG_PART/DisplayJT` container entry: a one-row outer
 /// index pointing at a single embedded JT 9.4 document whose table of contents
 /// declares one compressed segment. Decoding walks

@@ -192,14 +192,7 @@ fn scene_node_families_reject_elements_independently() {
         compression: Some(compression),
         source_offset: 0,
     };
-    let version = match JtVersionField::new(
-        format!("{:<80}", "Version 9.4 JT"),
-        Ok::<_, std::convert::Infallible>,
-        |text, _| Ok(text.parse()),
-    ) {
-        Ok(version) => version.unwrap(),
-        Err(error) => match error {},
-    };
+    let version = JtVersionField::new(&format!("{:<80}", "Version 9.4 JT")).unwrap();
     let document = DisplayJtDocument {
         id: "nx:jt:document#0".into(),
         index_row: "nx:jt:row#0".into(),

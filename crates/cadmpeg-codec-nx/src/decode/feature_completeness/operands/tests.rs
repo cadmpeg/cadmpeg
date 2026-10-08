@@ -16,7 +16,7 @@ use super::{
 #[test]
 fn selection_completeness_detects_nonadjacent_duplicate_ids() {
     assert!(crate::decode::feature_completeness::decode_check(|ctx| {
-        selection_ids_are_incomplete::<_, u32>(ctx, &[])
+        selection_ids_are_incomplete::<u32>(ctx, &[])
     }));
     assert!(!crate::decode::feature_completeness::decode_check(|ctx| {
         selection_ids_are_incomplete(ctx, &[2, 1, 3])
@@ -24,6 +24,34 @@ fn selection_completeness_detects_nonadjacent_duplicate_ids() {
     assert!(crate::decode::feature_completeness::decode_check(|ctx| {
         selection_ids_are_incomplete(ctx, &[2, 1, 2])
     }));
+}
+
+#[test]
+fn selection_duplicate_returns_before_charging_the_suffix() {
+    let alignment = std::mem::align_of::<&u32>()
+        .max(std::mem::align_of::<()>())
+        .max(std::mem::align_of::<usize>());
+    let node_pass_bytes = u64::try_from(
+        (std::mem::size_of::<&u32>() + std::mem::size_of::<()>()) * 11
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * alignment,
+    )
+    .expect("B-tree node bound fits work units");
+    // One visited member and three B-tree insertion passes, then the duplicate
+    // visit and its one four-byte identity lookup. The trailing member needs
+    // one more work unit and must remain unread after the duplicate is found.
+    let duplicate_lookup_bytes = u64::try_from(std::mem::size_of::<u32>())
+        .expect("identity size fits work units");
+    let prefix_work = 1 + 3 * node_pass_bytes + 1 + duplicate_lookup_bytes;
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = prefix_work,
+        |ctx| {
+            assert!(selection_ids_are_incomplete(ctx, &[7_u32, 7, 8])
+                .expect("the duplicate is found within the admitted prefix"));
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
 }
 
 #[test]
@@ -553,21 +581,15 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
         PlanarProfileRef,
     };
 
-    assert!(crate::decode::feature_completeness::decode_check(|ctx| {
-        body_selection_is_incomplete(ctx, &BodySelection::Bodies(Default::default()))
-    }));
-    assert!(!crate::decode::feature_completeness::decode_check(|ctx| {
-        body_selection_is_incomplete(
-            ctx,
-            &BodySelection::local(
-                vec!["nx:om-body-object#12".into()],
-                "nx:om-object-index#12".into(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("body selection admission")
-            .unwrap(),
-        )
-    }));
+    assert!(body_selection_is_incomplete(&BodySelection::Bodies(Default::default())));
+    let local = BodySelection::local(
+        vec!["nx:om-body-object#12".into()],
+        "nx:om-object-index#12".into(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("body selection admission")
+    .unwrap();
+    assert!(!body_selection_is_incomplete(&local));
     assert!(BodySelection::local(
         vec!["nx:om-body-object#12".into(), "nx:om-body-object#12".into()],
         "nx:om-object-indices#12,13".into(),
@@ -881,7 +903,5 @@ fn nx_body_operation_completeness_requires_distinct_members() {
         &cadmpeg_test_support::service_decode_context()
     )
     .is_err());
-    assert!(!crate::decode::feature_completeness::decode_check(|ctx| {
-        body_selection_is_incomplete(ctx, &target)
-    }));
+    assert!(!body_selection_is_incomplete(&target));
 }

@@ -428,7 +428,12 @@ fn walk_saved_toggle_stream<'a>(
     if count > (bytes.len() - 9) / 37 {
         return Ok(None);
     }
-    for ordinal in ctx.admit_iter(&(0..count), "walk NX saved toggle members")? {
+    let mut ordinals = 0..count;
+    while ordinals.len() != 0 {
+        let Some(ordinal) = ctx.next_charged(&mut ordinals, "walk NX saved toggle members")?
+        else {
+            break;
+        };
         let member_offset = view.position();
         let Some(raw_byte_len) = view.array::<2>() else {
             return Ok(None);
@@ -998,6 +1003,30 @@ mod tests {
                 && limit.operation == "retain NX stable toggle identity")
                 );
                 assert!(parse_service(&bytes, 0).is_some());
+            },
+        );
+    }
+
+    #[test]
+    fn saved_toggle_walk_returns_first_malformed_member_before_suffix_work() {
+        let mut bytes = stream(
+            &[
+                "0123456789abcdef0123456789abcdef:On",
+                "fedcba9876543210fedcba9876543210:Off",
+            ],
+            [0; 4],
+        );
+        // The first value begins after the version, count, and member length.
+        bytes[1 + 4 + 2 + 32] = b';';
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 1,
+            |ctx| {
+                assert!(super::parse_saved_toggle_stream(ctx, &bytes, 0)
+                    .unwrap()
+                    .is_none());
+                assert_eq!(ctx.resource_refusal(), None);
             },
         );
     }

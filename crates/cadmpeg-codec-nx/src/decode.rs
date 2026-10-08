@@ -223,13 +223,13 @@ pub(super) fn offset_store_control_counts(
             continue;
         };
         total += 1;
-        if crate::om::offset_store_control_form(
+        if let Some((form, storage)) = crate::om::offset_store_control_form(
             ctx,
             control.bytes,
             records.first().map(|record| record.bytes),
-        )?
-        .is_some()
-        {
+        )? {
+            drop(form);
+            drop(storage);
             classified += 1;
         }
     }

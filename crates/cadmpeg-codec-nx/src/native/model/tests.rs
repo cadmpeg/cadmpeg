@@ -254,3 +254,109 @@ fn terminal_body_selection_refuses_status_iteration_work_limit() {
         },
     );
 }
+
+#[test]
+fn terminal_body_selection_stops_at_duplicate_status_before_suffix_work() {
+    let key = "binding#duplicate";
+    let statuses = [
+        SegmentBodyLineageStatus {
+            id: "status#0".into(),
+            segment_body_binding: key.into(),
+            body_object_index: 10,
+            body_alias_object_index: 20,
+            terminal: true,
+            source_offset: 0,
+        },
+        SegmentBodyLineageStatus {
+            id: "status#1".into(),
+            segment_body_binding: key.into(),
+            body_object_index: 11,
+            body_alias_object_index: 21,
+            terminal: true,
+            source_offset: 1,
+        },
+        SegmentBodyLineageStatus {
+            id: "status#2".into(),
+            segment_body_binding: "binding#suffix".into(),
+            body_object_index: 12,
+            body_alias_object_index: 22,
+            terminal: true,
+            source_offset: 2,
+        },
+    ];
+    let first = statuses[0].clone();
+    let refusal = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "nx terminal body status index",
+        |ctx| terminal_feature_body_ids(ctx, &BTreeSet::new(), &[], std::slice::from_ref(&first)),
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = refusal else {
+        panic!("the first status insertion must have a work refusal boundary");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "nx terminal body status index");
+    let key_len = u64::try_from(key.len()).expect("fixture length fits u64");
+    // The one-row probe admits its insertion; the duplicate adds one visit and
+    // one key comparison. The third status remains outside the admitted prefix.
+    let work = limit.used + limit.additional + 1 + key_len;
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = work,
+        |ctx| {
+            assert!(terminal_feature_body_ids(ctx, &BTreeSet::new(), &[], &statuses)
+                .unwrap()
+                .is_none());
+            assert_eq!(ctx.resource_refusal(), None);
+        },
+    );
+}
+
+#[test]
+fn terminal_body_selection_returns_first_missing_binding_before_suffix_work() {
+    let bindings = [
+        SegmentBodyBinding {
+            id: "binding#missing".into(),
+            stream_link: "link#0".into(),
+            stream_ordinal: 0,
+            stream_kind: StreamKind::Partition,
+            body_object_index: 10,
+            body_alias_object_index: 20,
+            stream_role: 0,
+            source_offset: 0,
+        },
+        SegmentBodyBinding {
+            id: "binding#suffix".into(),
+            stream_link: "link#1".into(),
+            stream_ordinal: 1,
+            stream_kind: StreamKind::Partition,
+            body_object_index: 11,
+            body_alias_object_index: 21,
+            stream_role: 0,
+            source_offset: 1,
+        },
+    ];
+    let refusal = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "nx terminal body status index",
+        |ctx| terminal_feature_body_ids(ctx, &BTreeSet::new(), &bindings[..1], &[]),
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = refusal else {
+        panic!("the first status lookup must have a work refusal boundary");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "nx terminal body status index");
+    let prefix_work = limit.used + limit.additional;
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = prefix_work,
+        |ctx| {
+            assert!(terminal_feature_body_ids(ctx, &BTreeSet::new(), &bindings, &[])
+                .unwrap()
+                .is_none());
+            assert_eq!(ctx.resource_refusal(), None);
+        },
+    );
+}

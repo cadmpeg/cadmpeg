@@ -68,27 +68,43 @@ pub fn om(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         crate::om::indexed_sections(&ctx, data)?,
         "NX fuzz indexed sections",
     )? {
-        drop(section.numeric_expressions(&ctx)?);
+        drop(ctx.with_scoped_storage("NX fuzz numeric expressions", || {
+            section.numeric_expressions(&ctx)
+        })?);
     }
     for section in ctx.admit_iter(crate::om::sections(&ctx, data)?, "NX fuzz framed sections")? {
-        drop(section.operation_body_references(&ctx)?);
+        drop(ctx.with_scoped_storage("NX fuzz operation body references", || {
+            section.operation_body_references(&ctx)
+        })?);
     }
     Ok(())
 }
 
 /// Exercise NX analytic point extraction.
 pub fn geometry_points(data: &[u8]) {
-    with_geometry_context(data, |ctx| drop(crate::geometry::points(ctx, data)));
+    with_geometry_context(data, |ctx| {
+        drop(ctx.with_scoped_storage("NX fuzz geometry points", || {
+            crate::geometry::points(ctx, data)
+        }));
+    });
 }
 
 /// Exercise NX analytic curve extraction.
 pub fn geometry_curves(data: &[u8]) {
-    with_geometry_context(data, |ctx| drop(crate::geometry::curves(ctx, data)));
+    with_geometry_context(data, |ctx| {
+        drop(ctx.with_scoped_storage("NX fuzz geometry curves", || {
+            crate::geometry::curves(ctx, data)
+        }));
+    });
 }
 
 /// Exercise NX analytic surface extraction.
 pub fn geometry_surfaces(data: &[u8]) {
-    with_geometry_context(data, |ctx| drop(crate::geometry::surfaces(ctx, data)));
+    with_geometry_context(data, |ctx| {
+        drop(ctx.with_scoped_storage("NX fuzz geometry surfaces", || {
+            crate::geometry::surfaces(ctx, data)
+        }));
+    });
 }
 
 fn with_geometry_context(data: &[u8], parse: impl FnOnce(&DecodeContext<'_>)) {
@@ -105,10 +121,10 @@ pub fn intersection(data: &[u8]) {
     let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) else {
         return;
     };
-    if let Ok(curves) =
-        crate::intersection::curves(&ctx, data, crate::intersection::ChartPointLayout::Xyz3)
+    if let Ok(scan) =
+        crate::intersection::scan(&ctx, data, crate::intersection::ChartPointLayout::Xyz3)
     {
-        let Ok(curves) = ctx.admit_iter(curves, "NX fuzz intersection curves") else {
+        let Ok(curves) = ctx.admit_iter(scan.curves, "NX fuzz intersection curves") else {
             return;
         };
         for curve in curves {

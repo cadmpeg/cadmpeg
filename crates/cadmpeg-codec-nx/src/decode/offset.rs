@@ -6,7 +6,7 @@ use super::blend::{
 };
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
-use super::geometry_work::{same_text, GeometryWorkBudget};
+use super::geometry_work::GeometryWorkBudget;
 use super::support_uv::{linear_knots, missing_support_parameter};
 use crate::framing::node_kind::NodeKind;
 use crate::topology::Graph;
@@ -2262,10 +2262,9 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
     if chart.len() < 2 || !fit_tolerance.is_finite() || fit_tolerance <= 0.0 {
         return Ok(None);
     }
-    if same_text(
-        geometry_budget.charges,
-        surfaces[0].as_str(),
-        surfaces[1].as_str(),
+    if geometry_budget.charges.equal_bytes_limit(
+        surfaces[0].as_str().as_bytes(),
+        surfaces[1].as_str().as_bytes(),
         "nx intersection support identity comparison",
     )? {
         return Ok(None);

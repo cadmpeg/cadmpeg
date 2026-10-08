@@ -6,51 +6,70 @@ use crate::container;
 use crate::test_support::test_om::{offset_only_indexed_om_section, offset_only_indexed_om_section_with_control, offset_only_indexed_om_section_with_index_values};
 use crate::test_support::test_prt::prt_with_named_payloads;
 
+fn control_form_matches(
+    control: &[u8],
+    first_record: Option<&[u8]>,
+    expected: Option<crate::om::OffsetStoreControlForm>,
+) -> bool {
+    crate::test_support::with_decode_context(|ctx| -> Result<bool, cadmpeg_core::CodecError> {
+        match crate::om::offset_store_control_form(ctx, control, first_record)? {
+            Some((form, storage)) => {
+                let matches = expected.as_ref() == Some(&form);
+                drop(form);
+                drop(storage);
+                Ok(matches)
+            }
+            None => Ok(expected.is_none()),
+        }
+    })
+    .unwrap()
+}
+
+fn warm_indexed_sections(container: &crate::container::Container) {
+    crate::test_support::with_decode_context(|ctx| {
+        let (sections, storage) = container.indexed_om_sections(ctx)?;
+        drop(sections);
+        drop(storage);
+        Ok::<(), cadmpeg_core::CodecError>(())
+    })
+    .expect("cached indexed sections");
+}
+
 #[test]
 fn om_offset_store_values_precede_unique_product_anchor() {
     let mut bytes = vec![0, 0];
     bytes.extend_from_slice(&7u32.to_le_bytes());
     bytes.extend_from_slice(&0x1020u32.to_le_bytes());
     bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_form(
-            ctx, &bytes, None
-        ))
-        .unwrap(),
+    assert!(control_form_matches(
+        &bytes,
+        None,
         Some(crate::om::OffsetStoreControlForm::ProductAnchored {
             leading_value: Some(
                 crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()
             ),
             values: crate::om::nonempty::NonEmpty::new([7, 0x1020]).unwrap(),
-        })
-    );
+        }),
+    ));
 
     let mut nonzero_leading = vec![0x34, 0x12, 0x00];
     nonzero_leading.extend_from_slice(&7u32.to_le_bytes());
     nonzero_leading.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_form(
-            ctx,
-            &nonzero_leading,
-            None
-        ))
-        .unwrap(),
+    assert!(control_form_matches(
+        &nonzero_leading,
+        None,
         Some(crate::om::OffsetStoreControlForm::ProductAnchored {
             leading_value: Some(
                 crate::om::control_leading_value::ControlLeadingValue::from_wire(3, 0x1234)
                     .unwrap()
             ),
             values: crate::om::nonempty::NonEmpty::new([7]).unwrap(),
-        })
-    );
+        }),
+    ));
 
     let mut duplicate = bytes;
     duplicate.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::om::offset_store_control_form(ctx, &duplicate, None)
-    })
-    .unwrap()
-    .is_none());
+    assert!(control_form_matches(&duplicate, None, None));
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| native_om::control_index_data_block(
             ctx, 2, 700, 496
@@ -77,12 +96,7 @@ fn control_form_route_refusal(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("control form fixture");
-    crate::test_support::with_decode_context(|ctx| {
-        container
-            .indexed_om_sections(ctx)
-            .map(|(sections, _storage)| sections)
-    })
-    .expect("cached control form section");
+    warm_indexed_sections(&container);
     let forms = crate::test_support::with_decode_context(|ctx| {
         native_om::data_block_control_forms(ctx, &container)
     })
@@ -266,12 +280,7 @@ fn control_reference_route_refusal(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("control reference fixture");
-    crate::test_support::with_decode_context(|ctx| {
-        container
-            .indexed_om_sections(ctx)
-            .map(|(sections, _storage)| sections)
-    })
-    .expect("cached control reference section");
+    warm_indexed_sections(&container);
     let references = crate::test_support::with_decode_context(|ctx| {
         native_om::data_block_control_references(ctx, &container)
     })
@@ -387,12 +396,7 @@ fn control_value_route_refusal(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("offset-store control fixture");
-    crate::test_support::with_decode_context(|ctx| {
-        container
-            .indexed_om_sections(ctx)
-            .map(|(sections, _storage)| sections)
-    })
-    .expect("cached offset-store section");
+    warm_indexed_sections(&container);
     let values = crate::test_support::with_decode_context(|ctx| {
         native_om::data_block_control_values(ctx, &container)
     })
@@ -530,6 +534,28 @@ fn data_block_control_value_route_refuses_work_limit() {
 }
 
 #[test]
+fn control_value_projection_charges_each_value_once() {
+    let file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("control value fixture");
+    warm_indexed_sections(&container);
+
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX control value projection",
+        |ctx| native_om::data_block_control_values(ctx, &container),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX control value projection"
+            && limit.additional == 1));
+}
+
+#[test]
 fn control_form_wire_checks_nonempty_counts_and_derived_length() {
     let json = r#"{"id":"c","data_block":"b","kind":"zero_prefixed","value_count":2,"byte_len":8,"source_offset":0}"#;
     let value: native_om::DataBlockControlForm = serde_json::from_str(json).unwrap();
@@ -587,12 +613,7 @@ fn control_index_value_route_refusal(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("product-anchored control fixture");
-    crate::test_support::with_decode_context(|ctx| {
-        container
-            .indexed_om_sections(ctx)
-            .map(|(sections, _storage)| sections)
-    })
-    .expect("cached product-anchored section");
+    warm_indexed_sections(&container);
     let values = crate::test_support::with_decode_context(|ctx| {
         native_om::data_block_control_index_values(ctx, &container)
     })
@@ -727,6 +748,30 @@ fn data_block_control_index_value_route_refuses_work_limit() {
 }
 
 #[test]
+fn control_index_projection_charges_each_value_once() {
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        offset_only_indexed_om_section_with_index_values(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("control index fixture");
+    warm_indexed_sections(&container);
+
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX control index value projection",
+        |ctx| native_om::data_block_control_index_values(ctx, &container),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX control index value projection"
+            && limit.additional == 1));
+}
+
+#[test]
 fn data_block_control_index_value_target_refuses_retained_limit() {
     let mut section = offset_only_indexed_om_section_with_index_values();
     let control = [0, 0, 7, 0, 0, 0, 0x20, 0x10, 0, 0];
@@ -740,12 +785,7 @@ fn data_block_control_index_value_target_refuses_retained_limit() {
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("in-range control target fixture");
-    crate::test_support::with_decode_context(|ctx| {
-        container
-            .indexed_om_sections(ctx)
-            .map(|(sections, _storage)| sections)
-    })
-    .expect("cached in-range section");
+    warm_indexed_sections(&container);
     let values = crate::test_support::with_decode_context(|ctx| {
         native_om::data_block_control_index_values(ctx, &container)
     })

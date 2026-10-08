@@ -39,10 +39,10 @@ impl ProductText<&str> {
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<ProductText<String>, cadmpeg_core::CodecError> {
-        let value = self.as_str();
-        let owned = ctx.copy_retained_text(value, "retain NX store version")?;
-        ProductText::from_wire(ctx, owned)?
-            .map_err(|_| ctx.refuse_codec_limit("validate NX store version", 0, 1))
+        Ok(ProductText(
+            self.0
+                .try_into_owned_for_decode(ctx, "retain NX store version")?,
+        ))
     }
 }
 
@@ -143,21 +143,37 @@ mod tests {
     }
 
     #[test]
-    fn retained_product_text_iteration_refusal_propagates() {
+    fn retained_product_text_copy_does_not_repeat_printable_validation() {
         let text = ProductText::new("NX ").unwrap();
         crate::test_support::with_decode_context_over(
             &[],
-            // The append reads three bytes before the constructor validates them.
             |policy| policy.limits.max_work_units = 3,
             |ctx| {
-                let error = text.try_into_owned_for_decode(ctx).unwrap_err();
-                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                    panic!("text validation must refuse");
-                };
-                assert_eq!(limit.operation, "NX printable string syntax");
-                assert_eq!(ctx.resource_refusal(), Some(limit));
+                let owned = text.try_into_owned_for_decode(ctx).unwrap();
+                assert_eq!(owned.as_str(), "NX ");
+                assert_eq!(ctx.resource_refusal(), None);
             },
         );
+    }
+
+    #[test]
+    fn retained_product_text_copy_preserves_copy_refusals() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+
+        let text = ProductText::new("NX ").unwrap();
+        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
+            let error = crate::test_support::resource_refusal_at(
+                &[],
+                dimension,
+                "retain NX store version",
+                |ctx| text.try_into_owned_for_decode(ctx),
+            );
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.dimension == dimension
+                    && limit.operation == "retain NX store version"
+                    && limit.additional == 3));
+        }
     }
 
     #[test]

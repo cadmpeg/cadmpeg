@@ -422,6 +422,29 @@ fn native_external_record_route_refuses_retained_limit() {
     );
 }
 
+#[test]
+fn native_external_record_route_charges_each_parser_tuple_visit() {
+    let payload = crate::test_support::test_streams::external_reference_handle_sets(9);
+    let file = prt_with_named_payloads(&[("/Root/ExternalReferences", payload)]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("multi-record external-reference container");
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "nx native external reference records",
+        |ctx| {
+            super::super::external_reference_records(ctx, &container).map(|_| ())
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("native record projection must refuse at a tuple visit");
+    };
+    assert_eq!(limit.operation, "nx native external reference records");
+    assert_eq!(limit.additional, 1);
+}
+
 fn native_external_indexed_result(
     configure: impl FnOnce(&mut DecodePolicy),
 ) -> Result<Vec<super::super::ExternalReferenceIndexedRecord>, CodecError> {
@@ -506,6 +529,29 @@ fn native_external_indexed_route_refuses_work_limit() {
     );
 }
 
+#[test]
+fn native_external_indexed_route_charges_each_parser_tuple_visit() {
+    let payload = crate::test_support::test_streams::external_reference_handle_sets(9);
+    let file = prt_with_named_payloads(&[("/Root/ExternalReferences", payload)]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("multi-record external-reference container");
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "NX OM parsed visits",
+        |ctx| {
+            super::super::external_reference_indexed_records(ctx, &container, &[]).map(|_| ())
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("native indexed projection must refuse at a tuple visit");
+    };
+    assert_eq!(limit.operation, "NX OM parsed visits");
+    assert_eq!(limit.additional, 1);
+}
+
 fn native_external_empty_result(
     configure: impl FnOnce(&mut DecodePolicy),
 ) -> Result<Vec<super::super::ExternalReferenceEmptyRecord>, CodecError> {
@@ -541,6 +587,36 @@ fn native_external_empty_route_preserves_record() {
         "nx:external-reference-empty-record:/Root/ExternalReferences#7"
     );
     assert!(!records[0].closing_marker);
+}
+
+#[test]
+fn native_external_empty_route_charges_each_indexed_visit() {
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        crate::test_support::test_streams::external_reference_stream(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let indexed = crate::test_support::with_decode_context(|ctx| -> Result<_, CodecError> {
+        let records = super::super::external_reference_records(ctx, &container)?;
+        super::super::external_reference_indexed_records(ctx, &container, &records)
+    })
+    .expect("native indexed records");
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "NX external reference indexed records",
+        |ctx| {
+            super::super::external_reference_empty_records(ctx, &container, &indexed).map(|_| ())
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("native empty projection must refuse at an indexed visit");
+    };
+    assert_eq!(limit.operation, "NX external reference indexed records");
+    assert_eq!(limit.additional, 1);
 }
 
 #[test]
@@ -601,6 +677,73 @@ fn native_external_tail_route_preserves_pair() {
 }
 
 #[test]
+fn native_external_tail_route_charges_each_record_visit() {
+    let payload = crate::test_support::test_streams::external_reference_handle_sets(9);
+    let file = prt_with_named_payloads(&[("/Root/ExternalReferences", payload)]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("multi-record external-reference container");
+    let records = crate::test_support::with_decode_context(|ctx| {
+        super::super::external_reference_records(ctx, &container)
+    })
+    .expect("multi-record handle-set records");
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "NX external reference records",
+        |ctx| {
+            super::super::external_reference_tail_reference_pairs(ctx, &container, &records)
+                .map(|_| ())
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("native tail-pair projection must refuse at a record visit");
+    };
+    assert_eq!(limit.operation, "NX external reference records");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn native_external_tail_route_charges_each_pair_visit() {
+    let mut stream = crate::test_support::test_streams::external_reference_stream();
+    // Insert another valid pair before the end-anchored string table.
+    stream.splice(96..96, [0xe0, 0, 0, 0, 6, 0xc0, 0, 0, 2]);
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        stream,
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let records = crate::test_support::with_decode_context(|ctx| {
+        super::super::external_reference_records(ctx, &container)
+    })
+    .expect("handle-set record");
+    let pair_count = crate::test_support::with_decode_context(|ctx| {
+        super::super::external_reference_tail_reference_pairs(ctx, &container, &records)
+            .map(|pairs| pairs.len())
+    })
+    .expect("two external-reference tail pairs");
+    assert_eq!(pair_count, 2);
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "nx native external reference tail pairs",
+        |ctx| {
+            super::super::external_reference_tail_reference_pairs(ctx, &container, &records)
+                .map(|_| ())
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("native tail-pair projection must refuse at a pair visit");
+    };
+    assert_eq!(limit.operation, "nx native external reference tail pairs");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
 fn native_external_tail_route_refuses_collection_limit() {
     let error = native_external_tail_result(|policy| policy.limits.max_collection_items = 1)
         .expect_err("native pair exceeds parsed collection budget");
@@ -618,7 +761,20 @@ fn native_external_tail_route_refuses_retained_limit() {
         .expect_err("external pair exceeds retained budget");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes),
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "nx native external reference tail pairs"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_external_tail_route_refuses_materialized_scratch_limit() {
+    let error = native_external_tail_result(|policy| policy.limits.max_materialized_bytes = 0)
+        .expect_err("parsed tail pairs exceed the scratch budget");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "nx external reference tail pairs"),
         "{error:?}"
     );
 }

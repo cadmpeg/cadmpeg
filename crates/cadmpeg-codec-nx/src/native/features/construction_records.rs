@@ -311,10 +311,9 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
             )?;
             let construction_payload =
                 ctx.copy_retained_text(&payload.id, "NX projected curve string payload")?;
-            let text =
-                ctx.copy_retained_text(value.value.as_str(), "NX projected curve string value")?;
-            let value = crate::printable_string::PrintableString::from_wire(ctx, text)?
-                .map_err(CodecError::malformed)?;
+            let value = value
+                .value
+                .try_into_owned_for_decode(ctx, "NX projected curve string value")?;
             ctx.reserve_vec(&mut strings, 1, "NX projected curve strings")?;
             strings.push(FeatureProjectedCurveConstructionString {
                 id,
@@ -862,10 +861,9 @@ pub(in crate::native) fn feature_surface_construction_strings(
                 ctx.refuse_codec_limit("nx surface payload string ordinal", 0, u64::MAX)
             })?;
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
-            let text =
-                ctx.copy_retained_text(value.value.as_str(), "NX surface payload string text")?;
-            let value = crate::payload_text::PayloadText::from_wire(ctx, text)?
-                .map_err(CodecError::malformed)?;
+            let value = value
+                .value
+                .try_into_owned_for_decode(ctx, "NX surface payload string text")?;
             ctx.reserve_vec(&mut strings, 1, "NX surface payload strings")?;
             strings.push(FeatureSurfaceConstructionString {
                 id,

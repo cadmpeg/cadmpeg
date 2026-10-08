@@ -733,7 +733,7 @@ pub(crate) fn append_design_intent_losses(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies })
                 if !is_exact_empty_base
                     && !snapshot
-                    && body_selection_is_incomplete(ctx, bodies)? =>
+                    && body_selection_is_incomplete(bodies) =>
             {
                 "base feature"
             }
@@ -797,7 +797,7 @@ pub(crate) fn append_design_intent_losses(
                 "datum coordinate system"
             }
             FeatureDefinition::Operation(FeatureOperation::ExtractBody { source })
-                if body_selection_is_incomplete(ctx, source)? =>
+                if body_selection_is_incomplete(source) =>
             {
                 "extract body"
             }
@@ -899,12 +899,12 @@ pub(crate) fn append_design_intent_losses(
                 "shell"
             }
             FeatureDefinition::Operation(FeatureOperation::SewBodies { .. })
-                if sew_bodies_definition_is_incomplete(ctx, feature)? =>
+                if sew_bodies_definition_is_incomplete(feature) =>
             {
                 "sew bodies"
             }
             FeatureDefinition::Operation(FeatureOperation::TrimBodies { .. })
-                if trim_bodies_definition_is_incomplete(ctx, feature)? =>
+                if trim_bodies_definition_is_incomplete(feature) =>
             {
                 "trim bodies"
             }
@@ -946,19 +946,19 @@ pub(crate) fn append_design_intent_losses(
             FeatureDefinition::Operation(FeatureOperation::SectionShape {
                 operands,
                 approximate,
-            }) if body_selection_is_incomplete(ctx, operands.first())?
-                || body_selection_is_incomplete(ctx, operands.second())?
+            }) if body_selection_is_incomplete(operands.first())
+                || body_selection_is_incomplete(operands.second())
                 || approximate.is_none() =>
             {
                 "section"
             }
             FeatureDefinition::Operation(FeatureOperation::Combine { .. })
-                if combine_definition_is_incomplete(ctx, feature)? =>
+                if combine_definition_is_incomplete(feature) =>
             {
                 "body combine"
             }
             FeatureDefinition::Operation(FeatureOperation::DeleteBody { .. })
-                if delete_body_definition_is_incomplete(ctx, feature)? =>
+                if delete_body_definition_is_incomplete(feature) =>
             {
                 "delete body"
             }

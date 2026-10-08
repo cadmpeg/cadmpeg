@@ -30,28 +30,12 @@ pub(super) const MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK: usize = 8_000_000;
 /// surface-intersection support lanes for one decoded model.
 pub(super) const MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
 
-/// Compare two identity texts on a resource-only refusal channel. Texts of
-/// unequal length differ without a byte comparison; equal lengths charge the
-/// compared bytes first.
-pub(super) fn same_text(
-    ctx: &DecodeContext<'_>,
-    first: &str,
-    second: &str,
-    operation: &'static str,
-) -> Result<bool, ResourceLimit> {
-    if first.len() != second.len() {
-        return Ok(false);
-    }
-    ctx.charge_work_limit(cadmpeg_core::decode::u64_from_index(first.len()), operation)?;
-    Ok(first == second)
-}
-
 /// Geometry work accounting plus the cache of successful blend-geometry
 /// certificates earned within the same accounting scope.
 pub(super) struct GeometryWorkBudget<'a> {
     work: WorkBudget<'a>,
     pub(super) charges: &'a DecodeContext<'a>,
-    blend_frame_cache: Rc<RefCell<super::blend::BlendSurfaceFrameCache>>,
+    blend_frame_cache: Rc<RefCell<super::blend::BlendSurfaceFrameCache<'a>>>,
 }
 
 impl<'a> GeometryWorkBudget<'a> {
@@ -82,7 +66,7 @@ impl<'a> GeometryWorkBudget<'a> {
         self.resource_refusal().is_some()
     }
 
-    pub(super) fn child_slice(&self, limit: usize) -> GeometryWorkBudget<'_> {
+    pub(super) fn child_slice(&self, limit: usize) -> GeometryWorkBudget<'a> {
         GeometryWorkBudget {
             work: self.work.session_child_slice(limit),
             charges: self.charges,
@@ -94,7 +78,7 @@ impl<'a> GeometryWorkBudget<'a> {
         self.blend_frame_cache.borrow_mut().clear();
     }
 
-    pub(super) fn blend_frame_cache(&self) -> &RefCell<super::blend::BlendSurfaceFrameCache> {
+    pub(super) fn blend_frame_cache(&self) -> &RefCell<super::blend::BlendSurfaceFrameCache<'a>> {
         self.blend_frame_cache.as_ref()
     }
 }

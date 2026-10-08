@@ -111,7 +111,8 @@ fn intersection_solved_route_refuses_retained_limit() {
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "NX solved chart sample copy",
         |ctx| {
-            crate::intersection::curves(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)
+            crate::intersection::scan(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)
+                .map(|scan| scan.curves)
         },
     );
     assert!(
@@ -780,12 +781,11 @@ fn intersection_chart_rejects_nonfinite_millimeter_tolerance() {
         .expect("chart record");
     put_f64(&mut stream, chart + 28, f64::MAX);
     assert!(
-        crate::test_support::with_decode_context(|ctx| crate::intersection::curves(
-            ctx,
-            &stream,
-            crate::intersection::ChartPointLayout::Xyz3
-        ))
+        crate::test_support::with_decode_context(|ctx| {
+            crate::intersection::scan(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)
+        })
         .unwrap()
+        .curves
         .is_empty()
     );
 }

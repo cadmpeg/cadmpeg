@@ -124,12 +124,21 @@ fn one_multi_instance_output_payload() -> Vec<u8> {
     b"\x3a\x00\x00\x01\x00\x00\x00\x00\x25\x01\x02\x26\x27\x01\x02\x65\x01\x02\x07\x28\x02\x02\x00\x3b\x09\x01\x02".to_vec()
 }
 
-fn offset_store_control_form(
+fn offset_store_control_form_matches(
     control: &[u8],
     first_record: Option<&[u8]>,
-) -> Option<crate::om::OffsetStoreControlForm> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::om::offset_store_control_form(ctx, control, first_record)
+    expected: Option<crate::om::OffsetStoreControlForm>,
+) -> bool {
+    crate::test_support::with_decode_context(|ctx| -> Result<bool, cadmpeg_core::CodecError> {
+        match crate::om::offset_store_control_form(ctx, control, first_record)? {
+            Some((form, storage)) => {
+                let matches = expected.as_ref() == Some(&form);
+                drop(form);
+                drop(storage);
+                Ok(matches)
+            }
+            None => Ok(expected.is_none()),
+        }
     })
     .unwrap()
 }
@@ -1644,34 +1653,36 @@ fn om_offset_store_control_values_require_complete_zero_prefixed_words() {
 
 #[test]
 fn om_offset_store_control_form_requires_one_complete_grammar() {
-    assert_eq!(
-        offset_store_control_form(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff], None),
+    assert!(offset_store_control_form_matches(
+        &[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff],
+        None,
         Some(OffsetStoreControlForm::ZeroPrefixed {
             values: crate::om::nonempty::NonEmpty::new(
                 [0x1234, 0x00ff_ffff]
                     .map(|value| crate::om::control_word::ControlWord24::try_from(value).unwrap())
             )
             .unwrap(),
-        })
-    );
+        }),
+    ));
 
     let mut product = vec![0, 0];
     product.extend_from_slice(&7u32.to_le_bytes());
     product.extend_from_slice(&0x1020u32.to_le_bytes());
     product.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
-    assert_eq!(
-        offset_store_control_form(&product, None),
+    assert!(offset_store_control_form_matches(
+        &product,
+        None,
         Some(OffsetStoreControlForm::ProductAnchored {
             leading_value: Some(
                 crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()
             ),
             values: crate::om::nonempty::NonEmpty::new([7, 0x1020]).unwrap(),
-        })
-    );
+        }),
+    ));
 
     product.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
-    assert!(offset_store_control_form(&product, None).is_none());
-    assert!(offset_store_control_form(&[1, 2, 3, 4], None).is_none());
+    assert!(offset_store_control_form_matches(&product, None, None));
+    assert!(offset_store_control_form_matches(&[1, 2, 3, 4], None, None));
 }
 
 #[test]

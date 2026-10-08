@@ -14,7 +14,7 @@ use super::blend::{
     CircularBlendDefinition,
 };
 use super::emit::procedural_curve_owners;
-use super::geometry_work::{same_text, GeometryWorkBudget};
+use super::geometry_work::GeometryWorkBudget;
 use super::offset::{
     coarse_model_surface_parameters,
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache,
@@ -2575,10 +2575,9 @@ pub(super) fn parameterization_equivalent_surfaces_with_index(
         second: &'a SurfaceId,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Step<'a>, cadmpeg_core::decode::ResourceLimit> {
-        if same_text(
-            ctx,
-            first.as_str(),
-            second.as_str(),
+        if ctx.equal_bytes_limit(
+            first.as_str().as_bytes(),
+            second.as_str().as_bytes(),
             "NX equivalent surface identity comparison",
         )? {
             return Ok(Step::Equal);
@@ -2650,15 +2649,13 @@ pub(super) fn parameterization_equivalent_surfaces_with_index(
                 Step::Follow(first, second) => (first, second),
             };
         }
-        if same_text(
-            ctx,
-            slow.0.as_str(),
-            fast.0.as_str(),
+        if ctx.equal_bytes_limit(
+            slow.0.as_str().as_bytes(),
+            fast.0.as_str().as_bytes(),
             "NX equivalent surface cycle comparison",
-        )? && same_text(
-            ctx,
-            slow.1.as_str(),
-            fast.1.as_str(),
+        )? && ctx.equal_bytes_limit(
+            slow.1.as_str().as_bytes(),
+            fast.1.as_str().as_bytes(),
             "NX equivalent surface cycle comparison",
         )? {
             return Ok(false);

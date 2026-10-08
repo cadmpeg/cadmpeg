@@ -69,11 +69,11 @@ pub(super) struct TopologyStream<'inputs> {
     pub(super) procedural_start: usize,
 }
 
-pub(super) struct TopologyBudgets<'inputs> {
-    pub(super) exact_transfer: &'inputs TransferBudget<'inputs>,
-    pub(super) completion_transfer: &'inputs TransferBudget<'inputs>,
-    pub(super) adaptive_geometry: &'inputs GeometryWorkBudget<'inputs>,
-    pub(super) completion_geometry: &'inputs GeometryWorkBudget<'inputs>,
+pub(super) struct TopologyBudgets<'inputs, 'ctx> {
+    pub(super) exact_transfer: &'inputs TransferBudget<'ctx>,
+    pub(super) completion_transfer: &'inputs TransferBudget<'ctx>,
+    pub(super) adaptive_geometry: &'inputs GeometryWorkBudget<'ctx>,
+    pub(super) completion_geometry: &'inputs GeometryWorkBudget<'ctx>,
 }
 
 pub(super) fn emit_topology(
@@ -82,7 +82,7 @@ pub(super) fn emit_topology(
     topology_stream: &TopologyStream<'_>,
     annotations: &mut AnnotationBuilder,
     intersection_index: &mut IntersectionIncidenceIndex,
-    topology_budgets: &TopologyBudgets<'_>,
+    topology_budgets: &TopologyBudgets<'_, '_>,
     topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<EndpointWitnesses, CodecError> {
     let &TopologyBudgets {
