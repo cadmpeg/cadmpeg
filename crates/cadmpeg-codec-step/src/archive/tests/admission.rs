@@ -27,3 +27,29 @@ fn missing_first_member_does_not_admit_later_references() {
     };
     assert_eq!(work(1), work(1024));
 }
+
+#[test]
+fn invalid_first_archive_name_does_not_admit_later_entries() {
+    let work = |count| {
+        let names = (1..count).map(|id| format!("part-{id}.p21")).collect::<Vec<_>>();
+        let mut entries = vec![("../bad", b"".as_slice(), CompressionMethod::Stored)];
+        entries.extend(names.iter().map(|name| (name.as_str(), b"".as_slice(), CompressionMethod::Stored)));
+        let bytes = super::step_zip(&entries);
+        let measured = |validate| crate::test_support::with_service_context(&bytes, |source, ctx| {
+            let view = cadmpeg_core::decode::View::over_retained(source);
+            if validate {
+                assert!(matches!(crate::archive::open_root(ctx, view), Err(CodecError::Malformed(message))
+                    if message.contains("unsafe STEP ZIP entry path")));
+            } else {
+                cadmpeg_container::ArchiveSnapshot::new(ctx, view).expect("archive index is valid");
+            }
+            let CodecError::ResourceLimit(refusal) = ctx.charge_work(u64::MAX, "test archive validation work")
+                .expect_err("work probe refuses") else { panic!("work refusal required"); };
+            refusal.used
+        });
+        // Both routes build the same archive index. The difference is the
+        // first entry visit, its name validation, and its error text.
+        measured(true) - measured(false)
+    };
+    assert_eq!(work(1), work(1024));
+}

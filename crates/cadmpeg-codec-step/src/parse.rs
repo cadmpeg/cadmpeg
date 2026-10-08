@@ -482,10 +482,12 @@ impl Exchange {
             }
         }
         let (ids, storage) = EntityIndex::ordered_ids(&lists, ctx)?;
-        Ok(ids.into_iter().map(move |id| {
+        let mut ids = ids.into_iter();
+        Ok(std::iter::from_fn(move || {
             let _live_storage = &storage;
-            ctx.charge_work(1, "STEP indexed entity identifier traversal")?;
-            Ok(id)
+            if ids.len() == 0 { return None; }
+            Some(ctx.next_charged(&mut ids, "STEP indexed entity identifier traversal")
+                .and_then(|id| id.ok_or_else(|| CodecError::malformed("entity union ended before its bound"))))
         }))
     }
 
@@ -533,13 +535,18 @@ impl Exchange {
             }
         }
         let (ids, storage) = EntityIndex::ordered_ids(&lists, ctx)?;
-        Ok(ids.into_iter().map(move |id| {
+        let mut ids = ids.into_iter();
+        Ok(std::iter::from_fn(move || {
             let _live_storage = &storage;
-            ctx.charge_work(1, "STEP indexed entity identifier traversal")?;
-            let record = ctx
-                .get_btree_map(&self.records, &id, "STEP indexed entity record lookup")?
-                .ok_or_else(|| CodecError::malformed("entity name index names no record"))?;
-            Ok((id, record))
+            if ids.len() == 0 { return None; }
+            Some((|| {
+                let id = ctx.next_charged(&mut ids, "STEP indexed entity identifier traversal")?
+                    .ok_or_else(|| CodecError::malformed("entity union ended before its bound"))?;
+                let record = ctx
+                    .get_btree_map(&self.records, &id, "STEP indexed entity record lookup")?
+                    .ok_or_else(|| CodecError::malformed("entity name index names no record"))?;
+                Ok((id, record))
+            })())
         }))
     }
 }
