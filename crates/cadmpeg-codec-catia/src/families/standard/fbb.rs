@@ -23,7 +23,7 @@ use crate::solve::missing_edge::{expand_deferred_edge_port_components, motif_por
 use crate::solve::union_find::UnionFind;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroUsize;
-use std::sync::Arc;
+use std::rc::Rc;
 
 pub(super) const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const VERTEX_RECORD_BYTES: usize = 3 + 3 * size_of::<f32>();
@@ -476,7 +476,7 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
         .enumerate()
     {
         let domain = if is_deferred(edge) {
-            Arc::clone(&all_points)
+            Rc::clone(&all_points)
         } else {
             point_domain(
                 ctx,

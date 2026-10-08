@@ -8,12 +8,12 @@ use super::{
     copy_mesh_assignment, copy_mesh_boundary_directions, copy_mesh_edge_rows,
     distinct_domain_matching_with_budget, domain_contains, initial_mesh_quotient, least_rotation,
     mesh_candidates_equivalent_with_context, mesh_candidates_identical_with_context,
-    orient_face_cycles, reconstruct_mesh_selection, same_unordered_pair, Arc, BTreeMap, BTreeSet,
+    orient_face_cycles, reconstruct_mesh_selection, same_unordered_pair, BTreeMap, BTreeSet,
     BoundaryDraft, CodecError, CoedgeUse, DecodeContext, EdgeRow, FaceTopologyDraft, HashMap,
     HashSet, MeshBoundaryEdgeCandidate, MeshCandidateFailure, MeshCandidateGauge,
     MeshEndpointResolve, MeshFaceBoundaryAssignment, MeshFaceSelection, MeshFixedDirectionOption,
     MeshQuotient, MeshQuotientSignature, MeshSelectionSearch, MeshSelectionStateSignature,
-    MeshSolve, SearchOutcome, StandardTopologyDraft, VecDeque, WorkBudget,
+    MeshSolve, Rc, SearchOutcome, StandardTopologyDraft, VecDeque, WorkBudget,
     MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_SELECTION_STATE_MEMO_ENTRIES,
 };
 
@@ -2295,7 +2295,7 @@ pub(super) fn resolve_singleton_mesh_selection(
             return Ok(None);
         }
         for root in [left_root, right_root] {
-            let current = Arc::clone(&quotient.domains[root]);
+            let current = Rc::clone(&quotient.domains[root]);
             let domain = quotient.new_domain("catia_singleton_root_domain_copy", || {
                 let mut domain = Vec::new();
                 for point in [left_point.min(right_point), left_point.max(right_point)] {

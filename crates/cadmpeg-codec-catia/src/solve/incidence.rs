@@ -29,7 +29,7 @@ use crate::solve::union_find::UnionFind;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::ops::ControlFlow;
-use std::sync::Arc;
+use std::rc::Rc;
 
 type MeshEndpointSolutionVisitor<'a> =
     &'a mut dyn FnMut(&[MeshEndpointPair]) -> Result<ControlFlow<()>, CodecError>;
@@ -917,7 +917,7 @@ struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) face_edges: &'a [Vec<usize>],
     pub(crate) mesh_assignments: Option<&'a [MeshFaceBoundaryDomain]>,
     pub(crate) face_configuration_domains: Option<PreparedFaceFactors>,
-    pub(crate) coordinate_domains: Option<&'a MeshCoordinateRootDomains>,
+    pub(crate) coordinate_domains: Option<&'a MeshCoordinateRootDomains<'a>>,
     pub(crate) active: Vec<bool>,
     pub(crate) edges: &'a [usize],
     pub(crate) constraints: Vec<(usize, usize)>,
@@ -936,11 +936,11 @@ struct IncidenceComponentSearch<'a, 'v> {
     search_storage: RefCell<cadmpeg_core::decode::ScopedReservation<'a>>,
 }
 
-enum IncidenceBranch {
+enum IncidenceBranch<'storage> {
     Options(std::vec::IntoIter<(usize, [usize; 2])>),
     Implicit {
         edge: usize,
-        candidates: MeshImplicitEdgeCandidates,
+        candidates: MeshImplicitEdgeCandidates<'storage>,
     },
     Complete(Vec<(usize, [usize; 2])>),
 }
@@ -951,7 +951,7 @@ enum IncidenceCandidatePairs<'a> {
         required_point: Option<usize>,
         next_index: usize,
     },
-    Implicit(MeshImplicitEdgeCandidates),
+    Implicit(MeshImplicitEdgeCandidates<'a>),
 }
 
 enum IncidenceConstraintOptions {
@@ -961,10 +961,10 @@ enum IncidenceConstraintOptions {
     Exact(Vec<MeshEndpointPair>),
 }
 
-struct AppliedFaceConfiguration {
+struct AppliedFaceConfiguration<'storage> {
     assigned: Vec<(usize, [usize; 2], IncidenceDegreeUndo)>,
     affected_faces: Vec<usize>,
-    coordinate_domains: Option<Arc<MeshCoordinateRootDomains>>,
+    coordinate_domains: Option<Rc<MeshCoordinateRootDomains<'storage>>>,
     factor_checkpoint: Option<FaceFactorCheckpoint>,
 }
 
@@ -1991,7 +1991,7 @@ impl Iterator for IncidenceCandidatePairs<'_> {
     }
 }
 
-impl IncidenceBranch {
+impl IncidenceBranch<'_> {
     fn next_with_context(
         &mut self,
         ctx: &DecodeContext<'_>,
@@ -2540,7 +2540,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &self,
         edge: usize,
         required_point: Option<usize>,
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
     ) -> IncidenceCandidatePairs<'_> {
         if let Some(candidates) = coordinate_domains
             .filter(|_| self.choices[edge].is_empty())
@@ -2566,19 +2566,19 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
 
     fn refine_coordinate_domains(
         &self,
-        domains: &Arc<MeshCoordinateRootDomains>,
+        domains: &Rc<MeshCoordinateRootDomains<'storage>>,
         edge: usize,
         pair: [usize; 2],
-    ) -> Result<Option<Arc<MeshCoordinateRootDomains>>, CodecError> {
+    ) -> Result<Option<Rc<MeshCoordinateRootDomains<'storage>>>, CodecError> {
         if self.coordinate_propagation_budget.exhausted() {
-            return Ok(Some(Arc::clone(domains)));
+            return Ok(Some(Rc::clone(domains)));
         }
         if domains
             .edge_candidates()
             .get(edge)
             .is_some_and(|candidates| candidates.as_slice() == [pair])
         {
-            return Ok(Some(Arc::clone(domains)));
+            return Ok(Some(Rc::clone(domains)));
         }
         let refined = domains.refine_edge_candidate_arc(
             self.ctx,
@@ -2586,10 +2586,10 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             pair,
             Some(self.coordinate_propagation_budget),
         )?;
-        Ok(refined.map(Arc::new).or_else(|| {
+        Ok(refined.map(Rc::new).or_else(|| {
             self.coordinate_propagation_budget
                 .exhausted()
-                .then(|| Arc::clone(domains))
+                .then(|| Rc::clone(domains))
         }))
     }
 
@@ -2662,7 +2662,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &self,
         faces: &[usize],
         selected: Option<(usize, [usize; 2])>,
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
     ) -> Result<bool, CodecError> {
         let selected_degree = |face: usize, point: usize| {
             selected.map_or(0, |(edge, pair)| {
@@ -2809,7 +2809,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &self,
         edge: usize,
         pair: [usize; 2],
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
     ) -> Result<bool, CodecError> {
         let mut faces = self.edge_faces[edge];
         self.ctx.sort_unstable_by(
@@ -2839,7 +2839,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &self,
         edge: usize,
         pair: [usize; 2],
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
     ) -> bool {
         let selected_faces = self.edge_faces[edge];
         let selected_degree = |face: usize, point: usize| {
@@ -2911,7 +2911,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &self,
         edge: usize,
         pair: [usize; 2],
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
     ) -> Result<bool, CodecError> {
         if let Some(mesh_assignments) = self.mesh_assignments {
             let mut faces = self.edge_faces[edge];
@@ -3018,7 +3018,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &self,
         face: usize,
         point: usize,
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
         limit: Option<usize>,
         viability: &mut HashMap<MeshEndpointPair, bool>,
     ) -> Result<IncidenceConstraintOptions, CodecError> {
@@ -3094,8 +3094,8 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
     fn narrowest_edge_branch(
         &self,
         edges: impl IntoIterator<Item = usize>,
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
-    ) -> Result<IncidenceBranch, CodecError> {
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
+    ) -> Result<IncidenceBranch<'storage>, CodecError> {
         let viable = |edge, pair| -> Result<bool, CodecError> {
             Ok(self.candidate_fits_in(edge, pair, coordinate_domains)?
                 && coordinate_domains.map_or(Ok(true), |domains| {
@@ -3179,8 +3179,8 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
 
     fn branch(
         &self,
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
-    ) -> Result<Option<IncidenceBranch>, CodecError> {
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
+    ) -> Result<Option<IncidenceBranch<'storage>>, CodecError> {
         let mut constrained = None::<Vec<(usize, [usize; 2])>>;
         let mut viability = HashMap::new();
         for &(face, point) in &self.constraints {
@@ -3603,7 +3603,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &mut self,
         mut options: MeshFaceEndpointConfigurations,
         quotient_states: &[MeshQuotientGaugeState<'storage>],
-        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
+        coordinate_domains: Option<&Rc<MeshCoordinateRootDomains<'storage>>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
         if options.len() == 1 {
@@ -3645,8 +3645,8 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
     fn apply_face_configuration(
         &mut self,
         option: Vec<(usize, [usize; 2])>,
-        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
-    ) -> Result<Option<AppliedFaceConfiguration>, CodecError> {
+        coordinate_domains: Option<&Rc<MeshCoordinateRootDomains<'storage>>>,
+    ) -> Result<Option<AppliedFaceConfiguration<'storage>>, CodecError> {
         let mut assigned = Vec::new();
         let mut affected_faces = Vec::new();
         let mut next_coordinate_domains = coordinate_domains.cloned();
@@ -3766,7 +3766,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &mut self,
         mut option: Vec<(usize, [usize; 2])>,
         quotient_states: &[MeshQuotientGaugeState<'storage>],
-        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
+        coordinate_domains: Option<&Rc<MeshCoordinateRootDomains<'storage>>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
         let mut assigned = Vec::new();
@@ -3840,8 +3840,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         let component_faces = self.component_faces()?;
         let coordinate_domains = self
             .coordinate_domains
-            .map(|domains| domains.clone_charged(self.ctx).map(Arc::new))
-            .transpose()?;
+            .map(|domains| Rc::new(domains.clone()));
         self.search_with_quotient(
             &quotient_states,
             coordinate_domains.as_ref(),
@@ -3856,7 +3855,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
     fn search_with_quotient(
         &mut self,
         quotient_states: &[MeshQuotientGaugeState<'storage>],
-        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
+        coordinate_domains: Option<&Rc<MeshCoordinateRootDomains<'storage>>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
         if self.state != IncidenceSearchState::Open {
@@ -3895,7 +3894,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
     fn search_state(
         &mut self,
         quotient_states: &[MeshQuotientGaugeState<'storage>],
-        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
+        coordinate_domains: Option<&Rc<MeshCoordinateRootDomains<'storage>>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
         const MAX_SOLUTIONS: usize = 256;
@@ -3928,10 +3927,10 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
     fn search_edge_state(
         &mut self,
         quotient_states: &[MeshQuotientGaugeState<'storage>],
-        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
+        coordinate_domains: Option<&Rc<MeshCoordinateRootDomains<'storage>>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
-        let branch = self.branch(coordinate_domains.map(Arc::as_ref))?;
+        let branch = self.branch(coordinate_domains.map(Rc::as_ref))?;
         if self.budget.exhausted() {
             self.state = IncidenceSearchState::Exhausted;
             return Ok(());
@@ -3969,7 +3968,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             if self.assignment[edge].is_some() {
                 continue;
             }
-            if !self.candidate_fits_in(edge, pair, coordinate_domains.map(Arc::as_ref))? {
+            if !self.candidate_fits_in(edge, pair, coordinate_domains.map(Rc::as_ref))? {
                 if self.budget.exhausted() {
                     self.state = IncidenceSearchState::Exhausted;
                     return Ok(());
@@ -4968,7 +4967,7 @@ where
         edge_faces: &'input2 [[usize; 2]],
         face_edges: &'input3 [Vec<usize>],
         mesh_assignments: Option<&'input4 [MeshFaceBoundaryDomain]>,
-        coordinate_domains: Option<&'input5 MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&'input5 MeshCoordinateRootDomains<'input5>>,
         partial_solution_valid: Option<MeshPartialEndpointConstraint<'input6>>,
         assignment: &'input7 [Option<[usize; 2]>],
         degrees: &'input8 [BTreeMap<usize, u8>],
@@ -5263,7 +5262,7 @@ where
         face_edges: &'input2 [Vec<usize>],
         mesh_assignments: Option<&'input3 [MeshFaceBoundaryDomain]>,
         mesh_quotient: Option<&'input4 MeshQuotient<'storage>>,
-        coordinate_domains: Option<&'input5 MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&'input5 MeshCoordinateRootDomains<'input5>>,
         coordinate_root_policy: CoordinateRootPolicy,
         partial_solution_valid: Option<MeshPartialEndpointConstraint<'input6>>,
         solution_valid: &'input7 F,
