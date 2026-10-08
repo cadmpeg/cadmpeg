@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Blend-surface evaluation, spine inversion, and closest-pcurve search.
 
-use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
+use super::geometry_work::{same_text, GeometryWorkBudget};
 use super::offset::offset_surface_parameters_with_tolerance_with_index_and_budget;
 use super::offset::{
     coarse_model_surface_parameters, parameter_derivative_step,
@@ -149,7 +149,7 @@ mod tests {
     }
 
     use super::{
-        BlendContactSeed, BlendContactSeedCache, BlendSectionDomain, BlendSurfaceFrameCache,
+        BlendContactSeedCache, BlendSectionDomain, BlendSurfaceFrameCache,
         BLEND_SECTION_BOUNDARY_EPSILON, MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES,
         MAX_BLEND_CONTACT_SEEDS, MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES,
     };
@@ -186,7 +186,12 @@ mod tests {
                     .expect("cache allocation succeeds");
             }
             let first = SurfaceId::mint("test:model:entity#surface-0").expect("identity grammar");
-            assert_eq!(cache.get(&first, 0.0, false), Some(frame));
+            let get = |cache: &BlendSurfaceFrameCache, surface, parameter| {
+                cache
+                    .get(geometry_ctx, surface, parameter, false)
+                    .expect("cache lookup fits the service profile")
+            };
+            assert_eq!(get(&cache, &first, 0.0), Some(frame));
 
             let newest =
                 SurfaceId::mint("test:model:entity#surface-newest").expect("identity grammar");
@@ -202,9 +207,9 @@ mod tests {
                     ),
                 )
                 .expect("cache allocation succeeds");
-            assert!(cache.get(&first, 0.0, false).is_none());
-            assert_eq!(cache.get(&newest, 0.0, false), Some(frame));
-            assert!(cache.get(&newest, -0.0, false).is_none());
+            assert!(get(&cache, &first, 0.0).is_none());
+            assert_eq!(get(&cache, &newest, 0.0), Some(frame));
+            assert!(get(&cache, &newest, -0.0).is_none());
         });
     }
 
@@ -234,7 +239,12 @@ mod tests {
 
             let first =
                 SurfaceId::mint("test:model:entity#boundary-surface-0").expect("identity grammar");
-            assert_eq!(cache.get_boundary_point(&first, 0.0, 0), Some(point));
+            let get = |cache: &BlendSurfaceFrameCache, surface, parameter, boundary| {
+                cache
+                    .get_boundary_point(geometry_ctx, surface, parameter, boundary)
+                    .expect("cache lookup fits the service profile")
+            };
+            assert_eq!(get(&cache, &first, 0.0, 0), Some(point));
 
             let newest = SurfaceId::mint("test:model:entity#boundary-surface-newest")
                 .expect("identity grammar");
@@ -250,10 +260,10 @@ mod tests {
                     ),
                 )
                 .expect("cache allocation succeeds");
-            assert!(cache.get_boundary_point(&first, 0.0, 0).is_none());
-            assert_eq!(cache.get_boundary_point(&newest, 0.0, 1), Some(point));
-            assert!(cache.get_boundary_point(&newest, 0.0, 0).is_none());
-            assert!(cache.get_boundary_point(&newest, -0.0, 1).is_none());
+            assert!(get(&cache, &first, 0.0, 0).is_none());
+            assert_eq!(get(&cache, &newest, 0.0, 1), Some(point));
+            assert!(get(&cache, &newest, 0.0, 0).is_none());
+            assert!(get(&cache, &newest, -0.0, 1).is_none());
         });
     }
 
@@ -358,13 +368,9 @@ mod tests {
                     .expect("fixture integer is exactly representable");
                 cache
                     .remember(
-                        BlendContactSeed {
-                            support: support.as_str().to_owned(),
-                            spine: spine.as_str().to_owned(),
-                            parameter,
-                            offset_surface: offset_surface.as_str().to_owned(),
-                            parameters: Point2::new(parameter, -parameter),
-                        },
+                        (&support, &spine, &offset_surface),
+                        parameter,
+                        Point2::new(parameter, -parameter),
                         &GeometryWorkBudget::from_context(
                             geometry_ctx,
                             cadmpeg_core::decode::u64_from_index(100),
@@ -375,9 +381,68 @@ mod tests {
 
             assert_eq!(cache.entries.len(), MAX_BLEND_CONTACT_SEEDS);
             assert_eq!(
-                cache.seed_for(&support, &spine, 7.1, &offset_surface),
+                cache
+                    .seed_for(geometry_ctx, &support, &spine, 7.1, &offset_surface)
+                    .expect("seed lookup fits the service profile"),
                 Some(Point2::new(7.0, -7.0))
             );
+        });
+    }
+
+    #[test]
+    fn blend_contact_seed_cache_retains_no_identity_text() {
+        let support =
+            SurfaceId::mint("test:model:entity#synthetic:seed-support").expect("identity grammar");
+        let spine =
+            CurveId::mint("test:model:entity#synthetic:seed-spine").expect("identity grammar");
+        let offset_surface =
+            SurfaceId::mint("test:model:entity#synthetic:seed-offset").expect("identity grammar");
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_retained_bytes = 0,
+            |ctx| {
+                let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
+                let mut cache = BlendContactSeedCache::default();
+                for parameter in 0..(MAX_BLEND_CONTACT_SEEDS + 4) {
+                    let parameter = cadmpeg_core::convert::f64_from_index(parameter)
+                        .expect("fixture integer is exactly representable");
+                    cache
+                        .remember(
+                            (&support, &spine, &offset_surface),
+                            parameter,
+                            Point2::new(parameter, -parameter),
+                            &geometry_budget,
+                        )
+                        .expect("a seed retains no storage");
+                }
+                assert_eq!(cache.entries.len(), MAX_BLEND_CONTACT_SEEDS);
+            },
+        );
+    }
+
+    #[test]
+    fn de_casteljau_work_charges_every_combination_and_refuses_overflow() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        const OPERATION: &str = "test de Casteljau work";
+        for (count, pairs) in [(2, 1), (4, 6), (5, 10)] {
+            let error = crate::test_support::resource_refusal_at(
+                &[],
+                ResourceDimension::WorkUnits,
+                OPERATION,
+                |ctx| super::charge_de_casteljau_work(ctx, count, OPERATION).map_err(Into::into),
+            );
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.additional == pairs
+            ));
+        }
+        crate::test_support::with_decode_context(|ctx| {
+            let limit = super::charge_de_casteljau_work(ctx, usize::MAX, OPERATION)
+                .expect_err("work beyond usize is refused");
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, OPERATION);
         });
     }
 
@@ -567,6 +632,35 @@ mod tests {
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });
     }
+
+    #[test]
+    fn bezier_root_interval_end_probe_refuses_session_work_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        // The interval probe is one unit of the adaptive geometry budget; the
+        // control copy and scan before it charge the session directly.
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "work_budget",
+            |ctx| {
+                let geometry_budget = super::GeometryWorkBudget::from_context(ctx, 100);
+                let span = super::ScalarBezierSpan {
+                    domain: [0.0, 1.0],
+                    controls: super::ScopedValues::copy_of(ctx, &[1.0, 1.0], "test controls")?,
+                };
+                super::scalar_bezier_roots_with_budget(span, &geometry_budget)
+                    .map(|_| ())
+                    .map_err(Into::into)
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "work_budget"
+        ));
+    }
 }
 
 pub(super) fn decoded_surface_point_inner_with_budget(
@@ -696,7 +790,102 @@ pub(super) enum BlendParameterGrid<'a> {
     #[cfg(test)]
     Build,
     Disabled,
-    Provided(&'a [(Point2, Point3)]),
+    Provided(&'a BlendSurfaceGrid),
+}
+
+/// Spine parameters a blend parameter grid samples.
+const BLEND_GRID_SPINE_SAMPLES: usize = 9;
+
+/// Section parameters a blend parameter grid samples at each spine parameter.
+const BLEND_GRID_SECTION_SAMPLES: usize = 5;
+
+/// The most samples a blend parameter grid holds.
+const BLEND_GRID_SAMPLES: usize = BLEND_GRID_SPINE_SAMPLES * BLEND_GRID_SECTION_SAMPLES;
+
+/// A fixed lattice of blend parameters and their surface points that seeds a
+/// blend parameter inversion. Samples whose point does not evaluate are left
+/// out, so the grid holds a prefix of its fixed slots.
+#[derive(Clone, Copy)]
+pub(super) struct BlendSurfaceGrid {
+    samples: [(Point2, Point3); BLEND_GRID_SAMPLES],
+    len: usize,
+}
+
+impl BlendSurfaceGrid {
+    /// The parameters of the sample nearest `point`.
+    fn closest_parameters(&self, point: Point3) -> Option<Point2> {
+        self.samples
+            .iter()
+            .take(self.len)
+            .min_by(|(_, first), (_, second)| {
+                Point3::distance(*first, point).total_cmp(&Point3::distance(*second, point))
+            })
+            .map(|(parameters, _)| *parameters)
+    }
+
+    #[cfg(test)]
+    pub(super) fn samples(&self) -> &[(Point2, Point3)] {
+        &self.samples[..self.len]
+    }
+}
+
+/// Blend parameter grids by blend surface identity. A grid is built on its
+/// surface's first request, and a surface whose grid does not build keeps that
+/// answer. The table is held under one scoped reservation until the cache is
+/// dropped.
+pub(super) struct BlendParameterGridCache<'k, 'ctx> {
+    grids: std::collections::BTreeMap<&'k str, Option<BlendSurfaceGrid>>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'k, 'ctx> BlendParameterGridCache<'k, 'ctx> {
+    pub(super) fn new(
+        ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            grids: std::collections::BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "nx blend parameter grid cache")?,
+        })
+    }
+
+    /// The grid of `surface`, built on the surface's first request.
+    pub(super) fn grid(
+        &mut self,
+        index: &cadmpeg_ir::index::ModelIndex<'_>,
+        surface: &'k SurfaceId,
+        geometry_budget: &GeometryWorkBudget<'_>,
+    ) -> Result<BlendParameterGrid<'_>, cadmpeg_core::CodecError> {
+        let ctx = geometry_budget.charges;
+        if !ctx.contains_key_btree_map(
+            &self.grids,
+            surface.as_str(),
+            "nx blend parameter grid lookup",
+        )? {
+            let grid = blend_surface_parameter_grid_with_index_and_budget(
+                index,
+                surface,
+                0,
+                geometry_budget,
+            )?;
+            let grids = &mut self.grids;
+            self.storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    grids,
+                    surface.as_str(),
+                    grid,
+                    "nx blend parameter grid cache",
+                )
+            })?;
+        }
+        Ok(ctx
+            .get_btree_map(
+                &self.grids,
+                surface.as_str(),
+                "nx blend parameter grid lookup",
+            )?
+            .and_then(Option::as_ref)
+            .map_or(BlendParameterGrid::Disabled, BlendParameterGrid::Provided))
+    }
 }
 
 #[cfg(test)]
@@ -1022,7 +1211,7 @@ fn blend_surface_parameters_inner(
             geometry_budget,
         )?,
         BlendParameterGrid::Disabled => None,
-        BlendParameterGrid::Provided(grid) => closest_blend_surface_grid_parameters(grid, point),
+        BlendParameterGrid::Provided(grid) => grid.closest_parameters(point),
     };
     if let Some(initial) = initial {
         let parameters = refine_blend_surface_parameters_with_section_domain_and_budget(
@@ -1131,7 +1320,7 @@ fn coarse_blend_surface_parameters_with_index_and_budget(
     else {
         return Ok(None);
     };
-    Ok(closest_blend_surface_grid_parameters(&grid, point))
+    Ok(grid.closest_parameters(point))
 }
 
 pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
@@ -1139,7 +1328,7 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
     surface: &SurfaceId,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<Vec<(Point2, Point3)>>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<BlendSurfaceGrid>, cadmpeg_core::decode::ResourceLimit> {
     if depth >= 32 {
         return Ok(None);
     }
@@ -1165,12 +1354,10 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
     if !domain.into_iter().all(f64::is_finite) || domain[0] >= domain[1] {
         return Ok(None);
     }
-    let mut grid = Vec::new();
-    let _grid_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut grid,
-        9 * 5,
-        "nx blend parameter grid",
-    )?;
+    let mut grid = BlendSurfaceGrid {
+        samples: [(Point2::new(0.0, 0.0), Point3::new(0.0, 0.0, 0.0)); BLEND_GRID_SAMPLES],
+        len: 0,
+    };
     for u_index in 0..=8 {
         let Some(u) = cadmpeg_ir::math::interpolate(domain[0], domain[1], f64::from(u_index) / 8.0)
         else {
@@ -1208,21 +1395,12 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
             let Some(point) = point else {
                 continue;
             };
-            grid.push((parameters, point));
+            // The nine spine and five section samples fill at most every slot.
+            grid.samples[grid.len] = (parameters, point);
+            grid.len += 1;
         }
     }
-    Ok((!grid.is_empty()).then_some(grid))
-}
-
-fn closest_blend_surface_grid_parameters(
-    grid: &[(Point2, Point3)],
-    point: Point3,
-) -> Option<Point2> {
-    grid.iter()
-        .min_by(|(_, first), (_, second)| {
-            Point3::distance(*first, point).total_cmp(&Point3::distance(*second, point))
-        })
-        .map(|(parameters, _)| *parameters)
+    Ok((grid.len != 0).then_some(grid))
 }
 
 pub(super) fn blend_surface_parameters_from_grid_for_fit_and_budget(
@@ -1230,7 +1408,7 @@ pub(super) fn blend_surface_parameters_from_grid_for_fit_and_budget(
     surface: &SurfaceId,
     point: Point3,
     fit_tolerance: f64,
-    grid: &[(Point2, Point3)],
+    grid: &BlendSurfaceGrid,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
@@ -1249,7 +1427,7 @@ pub(super) fn blend_surface_parameters_from_grid_for_fit_with_source_continuatio
     surface: &SurfaceId,
     point: Point3,
     fit_tolerance: f64,
-    grid: &[(Point2, Point3)],
+    grid: &BlendSurfaceGrid,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
@@ -1268,11 +1446,11 @@ fn blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
     surface: &SurfaceId,
     point: Point3,
     fit_tolerance: f64,
-    grid: &[(Point2, Point3)],
+    grid: &BlendSurfaceGrid,
     section_domain: BlendSectionDomain,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(initial) = closest_blend_surface_grid_parameters(grid, point) else {
+    let Some(initial) = grid.closest_parameters(point) else {
         return Ok(None);
     };
     let parameters = refine_blend_surface_parameters_with_section_domain_and_budget(
@@ -1612,21 +1790,44 @@ impl Default for BlendSurfaceFrameCache {
     }
 }
 
+// Each cache holds at most its fixed entry bound, so a scan visits a bounded
+// number of entries. An entry's fixed fields are tested before its identity
+// text, and only an identity comparison is input-sized work.
 impl BlendSurfaceFrameCache {
-    fn get(
+    fn position(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         surface: &SurfaceId,
         parameter: f64,
         allow_offset_contact: bool,
-    ) -> Option<BlendSurfaceFrame> {
-        self.entries
-            .iter()
-            .find(|entry| {
-                entry.surface == surface.as_str()
-                    && entry.parameter_bits == parameter.to_bits()
-                    && entry.allow_offset_contact == allow_offset_contact
-            })
-            .map(|entry| entry.frame)
+    ) -> Result<Option<usize>, cadmpeg_core::decode::ResourceLimit> {
+        for (index, entry) in self.entries.iter().enumerate() {
+            if entry.parameter_bits == parameter.to_bits()
+                && entry.allow_offset_contact == allow_offset_contact
+                && same_text(
+                    ctx,
+                    &entry.surface,
+                    surface.as_str(),
+                    "nx blend frame cache lookup",
+                )?
+            {
+                return Ok(Some(index));
+            }
+        }
+        Ok(None)
+    }
+
+    fn get(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        surface: &SurfaceId,
+        parameter: f64,
+        allow_offset_contact: bool,
+    ) -> Result<Option<BlendSurfaceFrame>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(self
+            .position(ctx, surface, parameter, allow_offset_contact)?
+            .and_then(|index| self.entries.get(index))
+            .map(|entry| entry.frame))
     }
 
     fn remember(
@@ -1637,11 +1838,15 @@ impl BlendSurfaceFrameCache {
         frame: BlendSurfaceFrame,
         geometry_budget: &GeometryWorkBudget<'_>,
     ) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
-        if let Some(entry) = self.entries.iter_mut().find(|entry| {
-            entry.surface == surface.as_str()
-                && entry.parameter_bits == parameter.to_bits()
-                && entry.allow_offset_contact == allow_offset_contact
-        }) {
+        if let Some(entry) = self
+            .position(
+                geometry_budget.charges,
+                surface,
+                parameter,
+                allow_offset_contact,
+            )?
+            .and_then(|index| self.entries.get_mut(index))
+        {
             entry.frame = frame;
             return Ok(());
         }
@@ -1664,20 +1869,40 @@ impl BlendSurfaceFrameCache {
         Ok(())
     }
 
-    fn get_boundary_point(
+    fn boundary_position(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         surface: &SurfaceId,
         parameter: f64,
         boundary: usize,
-    ) -> Option<Point3> {
-        self.boundary_points
-            .iter()
-            .find(|entry| {
-                entry.surface == surface.as_str()
-                    && entry.parameter_bits == parameter.to_bits()
-                    && entry.boundary == boundary
-            })
-            .map(|entry| entry.point)
+    ) -> Result<Option<usize>, cadmpeg_core::decode::ResourceLimit> {
+        for (index, entry) in self.boundary_points.iter().enumerate() {
+            if entry.parameter_bits == parameter.to_bits()
+                && entry.boundary == boundary
+                && same_text(
+                    ctx,
+                    &entry.surface,
+                    surface.as_str(),
+                    "nx blend boundary cache lookup",
+                )?
+            {
+                return Ok(Some(index));
+            }
+        }
+        Ok(None)
+    }
+
+    fn get_boundary_point(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        surface: &SurfaceId,
+        parameter: f64,
+        boundary: usize,
+    ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+        Ok(self
+            .boundary_position(ctx, surface, parameter, boundary)?
+            .and_then(|index| self.boundary_points.get(index))
+            .map(|entry| entry.point))
     }
 
     fn remember_boundary_point(
@@ -1688,11 +1913,10 @@ impl BlendSurfaceFrameCache {
         point: Point3,
         geometry_budget: &GeometryWorkBudget<'_>,
     ) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
-        if let Some(entry) = self.boundary_points.iter_mut().find(|entry| {
-            entry.surface == surface.as_str()
-                && entry.parameter_bits == parameter.to_bits()
-                && entry.boundary == boundary
-        }) {
+        if let Some(entry) = self
+            .boundary_position(geometry_budget.charges, surface, parameter, boundary)?
+            .and_then(|index| self.boundary_points.get_mut(index))
+        {
             entry.point = point;
             return Ok(());
         }
@@ -1724,11 +1948,11 @@ impl BlendSurfaceFrameCache {
 
 const MAX_BLEND_CONTACT_SEEDS: usize = 8;
 
-struct BlendContactSeed {
-    support: String,
-    spine: String,
+struct BlendContactSeed<'k> {
+    support: &'k SurfaceId,
+    spine: &'k CurveId,
     parameter: f64,
-    offset_surface: String,
+    offset_surface: &'k SurfaceId,
     parameters: Point2,
 }
 
@@ -1737,73 +1961,107 @@ struct BlendContactSeed {
 /// Seeds are scoped by the target support, its spine, and the offset carrier.
 /// Keeping a small nearest-parameter set makes adaptive endpoint and midpoint
 /// sampling local without allowing a model-wide cache to select a branch from
-/// an unrelated intersection.
+/// an unrelated intersection. A seed borrows its chart identities for the
+/// cache's lifetime, so the cache holds no identity text of its own.
 #[derive(Default)]
-pub(super) struct BlendContactSeedCache {
-    entries: Vec<BlendContactSeed>,
+pub(super) struct BlendContactSeedCache<'k> {
+    entries: Vec<BlendContactSeed<'k>>,
 }
 
-impl BlendContactSeedCache {
+impl<'k> BlendContactSeedCache<'k> {
+    /// Whether `seed` belongs to the chart of `support`, `spine` and
+    /// `offset_surface`.
+    fn same_chart(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        seed: &BlendContactSeed<'_>,
+        support: &SurfaceId,
+        spine: &CurveId,
+        offset_surface: &SurfaceId,
+    ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+        const OPERATION: &str = "nx blend contact seed lookup";
+        Ok(
+            same_text(ctx, seed.support.as_str(), support.as_str(), OPERATION)?
+                && same_text(ctx, seed.spine.as_str(), spine.as_str(), OPERATION)?
+                && same_text(
+                    ctx,
+                    seed.offset_surface.as_str(),
+                    offset_surface.as_str(),
+                    OPERATION,
+                )?,
+        )
+    }
+
+    /// The parameters of the chart seed nearest `parameter`; the first of
+    /// equally near seeds.
     fn seed_for(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         support: &SurfaceId,
         spine: &CurveId,
         parameter: f64,
         offset_surface: &SurfaceId,
-    ) -> Option<Point2> {
-        self.entries
-            .iter()
-            .filter(|seed| {
-                seed.support == support.as_str()
-                    && seed.spine == spine.as_str()
-                    && seed.offset_surface == offset_surface.as_str()
-                    && seed.parameter.is_finite()
-            })
-            .min_by(|first, second| {
-                (first.parameter - parameter)
+    ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+        let mut nearest: Option<&BlendContactSeed<'_>> = None;
+        for seed in &self.entries {
+            if !seed.parameter.is_finite()
+                || !Self::same_chart(ctx, seed, support, spine, offset_surface)?
+            {
+                continue;
+            }
+            let closer = nearest.is_none_or(|nearest| {
+                (seed.parameter - parameter)
                     .abs()
-                    .total_cmp(&(second.parameter - parameter).abs())
-            })
-            .map(|seed| seed.parameters)
+                    .total_cmp(&(nearest.parameter - parameter).abs())
+                    .is_lt()
+            });
+            if closer {
+                nearest = Some(seed);
+            }
+        }
+        Ok(nearest.map(|seed| seed.parameters))
     }
 
+    /// Record the chart parameters at `parameter`. A seed already recorded
+    /// at the same parameter is updated in place; a full cache replaces the
+    /// last of its seeds farthest from `parameter`.
     fn remember(
         &mut self,
-        seed: BlendContactSeed,
+        (support, spine, offset_surface): (&'k SurfaceId, &'k CurveId, &'k SurfaceId),
+        parameter: f64,
+        parameters: Point2,
         geometry_budget: &GeometryWorkBudget<'_>,
     ) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
-        if let Some(existing) = self.entries.iter_mut().find(|existing| {
-            existing.support == seed.support
-                && existing.spine == seed.spine
-                && existing.offset_surface == seed.offset_surface
-                && existing.parameter.to_bits() == seed.parameter.to_bits()
-        }) {
-            *existing = seed;
-            return Ok(());
+        let ctx = geometry_budget.charges;
+        for existing in &mut self.entries {
+            if existing.parameter.to_bits() == parameter.to_bits()
+                && Self::same_chart(ctx, existing, support, spine, offset_surface)?
+            {
+                existing.parameters = parameters;
+                return Ok(());
+            }
         }
+        let seed = BlendContactSeed {
+            support,
+            spine,
+            parameter,
+            offset_surface,
+            parameters,
+        };
         if self.entries.len() < MAX_BLEND_CONTACT_SEEDS {
-            let _entry_reservation = geometry_budget.charges.reserve_temporary_vec(
-                &mut self.entries,
-                1,
-                "nx blend contact seed cache entries",
-            )?;
+            // The cache holds at most its fixed seed bound.
             self.entries.push(seed);
             return Ok(());
         }
-        let Some(replacement) = self
-            .entries
-            .iter()
-            .enumerate()
-            .max_by(|(_, first), (_, second)| {
-                (first.parameter - seed.parameter)
-                    .abs()
-                    .total_cmp(&(second.parameter - seed.parameter).abs())
-            })
-            .map(|(index, _)| index)
-        else {
-            return Ok(());
-        };
-        self.entries[replacement] = seed;
+        let mut farthest: Option<(usize, f64)> = None;
+        for (index, existing) in self.entries.iter().enumerate() {
+            let distance = (existing.parameter - parameter).abs();
+            if farthest.is_none_or(|(_, farthest)| !distance.total_cmp(&farthest).is_lt()) {
+                farthest = Some((index, distance));
+            }
+        }
+        if let Some((index, _)) = farthest {
+            self.entries[index] = seed;
+        }
         Ok(())
     }
 }
@@ -2097,25 +2355,26 @@ fn blend_surface_frame_with_index_and_budget(
     )
 }
 
-fn blend_surface_frame_with_index_and_budget_and_options(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
+fn blend_surface_frame_with_index_and_budget_and_options<'k>(
+    index: &'k cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     u: f64,
     depth: usize,
     allow_offset_contact: bool,
-    contact_seeds: &mut BlendContactSeedCache,
+    contact_seeds: &mut BlendContactSeedCache<'k>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<BlendSurfaceFrame>, cadmpeg_core::decode::ResourceLimit> {
     if depth >= 32 {
         return Ok(None);
     }
     if !allow_offset_contact {
-        if let Some(frame) =
-            geometry_budget
-                .blend_frame_cache()
-                .borrow()
-                .get(surface, u, allow_offset_contact)
-        {
+        let cached = geometry_budget.blend_frame_cache().borrow().get(
+            geometry_budget.charges,
+            surface,
+            u,
+            allow_offset_contact,
+        )?;
+        if let Some(frame) = cached {
             if !geometry_budget.charge() {
                 return geometry_budget.resource_refusal().map_or(Ok(None), Err);
             }
@@ -2223,13 +2482,13 @@ struct SpineContactLocation<'inputs> {
     radius: f64,
 }
 
-fn spine_contact_direction_with_index_and_budget_and_options(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    spine_contact_location: &SpineContactLocation<'_>,
+fn spine_contact_direction_with_index_and_budget_and_options<'k>(
+    index: &'k cadmpeg_ir::index::ModelIndex<'_>,
+    spine_contact_location: &SpineContactLocation<'k>,
     center: Point3,
     depth: usize,
     allow_offset_contact: bool,
-    contact_seeds: &mut BlendContactSeedCache,
+    contact_seeds: &mut BlendContactSeedCache<'k>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
     let Some(contact) = spine_contact_point_with_index_and_budget_and_options(
@@ -2265,7 +2524,7 @@ fn blend_boundary_point_with_index_and_budget(
     let cached = geometry_budget
         .blend_frame_cache()
         .borrow()
-        .get_boundary_point(surface, parameter, boundary);
+        .get_boundary_point(geometry_budget.charges, surface, parameter, boundary)?;
     if let Some(point) = cached {
         if !geometry_budget.charge() {
             return geometry_budget.resource_refusal().map_or(Ok(None), Err);
@@ -2554,11 +2813,13 @@ pub(super) struct SourcePcurveSample<'inputs> {
 /// analytic and offset supports, the serialized spine contact chart remains
 /// the fast path, with a bounded 3D closest-point fallback.  Every result is
 /// certified by reproducing the source sample on the target support.
-pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
+pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache<
+    'k,
+>(
+    index: &'k cadmpeg_ir::index::ModelIndex<'_>,
     source_pcurve_sample: &SourcePcurveSample<'_>,
     target: BoundaryInverseTarget,
-    contact_seeds: &mut BlendContactSeedCache,
+    contact_seeds: &mut BlendContactSeedCache<'k>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let &SourcePcurveSample {
@@ -2669,13 +2930,13 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
     certify(parameter)
 }
 
-pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
+pub(super) fn blend_surface_parameters_from_point_with_index_and_budget<'k>(
+    index: &'k cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: f64,
-    contact_seeds: &mut BlendContactSeedCache,
+    contact_seeds: &mut BlendContactSeedCache<'k>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     // A circular blend sample can lie on the finite continuation of either
@@ -2722,7 +2983,9 @@ pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
         return Ok(None);
     }
     let theta = signed_angle(first, radial, tangent);
-    let mut candidates = Vec::new();
+    // Two section domains by five turns state at most ten candidates; the
+    // first nearest one is kept.
+    let mut best: Option<(Point2, f64, f64)> = None;
     for section_domain in [
         BlendSectionDomain::Canonical,
         BlendSectionDomain::SourceContinuation,
@@ -2736,23 +2999,25 @@ pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
                 blend_surface_point_from_frame((center, tangent, first, second, radius), v);
             let distance = Point3::distance(candidate, point);
             if distance.is_finite() && distance <= fit_tolerance {
-                candidates.push((
+                let candidate = (
                     Point2::new(parameter, v),
                     seed.map_or(v.abs(), |seed| (v - seed.v).abs()),
                     distance,
-                ));
+                );
+                let nearer = best.is_none_or(|best| {
+                    candidate
+                        .2
+                        .total_cmp(&best.2)
+                        .then_with(|| candidate.1.total_cmp(&best.1))
+                        .is_lt()
+                });
+                if nearer {
+                    best = Some(candidate);
+                }
             }
         }
     }
-    Ok(candidates
-        .into_iter()
-        .min_by(|first, second| {
-            first
-                .2
-                .total_cmp(&second.2)
-                .then_with(|| first.1.total_cmp(&second.1))
-        })
-        .map(|(parameters, _, _)| parameters))
+    Ok(best.map(|(parameters, _, _)| parameters))
 }
 
 fn closest_contact_pcurve_parameter_with_geometry_and_budget(
@@ -2944,8 +3209,8 @@ fn closest_pcurve_parameter_from_coarse_grid(
         return Ok(None);
     };
     let mut closest = None;
+    // A fixed count of samples; each evaluation charges its own work.
     for index in 0..=COARSE_PCURVE_SEARCH_INTERVALS {
-        ctx.charge_work_limit(1, "nx pcurve coarse sample")?;
         let Some(parameter) = cadmpeg_ir::math::interpolate(
             domain[0],
             domain[1],
@@ -3004,8 +3269,8 @@ fn closest_pcurve_parameter_from_seed(
     } else {
         seed.clamp(domain[0], domain[1])
     };
+    // A fixed count of steps; each evaluation charges its own work.
     for _ in 0..LOCAL_PCURVE_SEARCH_STEPS {
-        ctx.charge_work_limit(1, "nx pcurve local step")?;
         let Some(candidate) =
             cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
@@ -3108,7 +3373,7 @@ pub(super) fn closest_pcurve_parameters(
         else {
             return Ok(None);
         };
-        closest_parameter_candidates(candidates, search_seed, &geometry_budget)?
+        closest_parameter_candidates(&candidates, search_seed, &geometry_budget)?
     } else {
         let candidates = nurbs
             .control_points()
@@ -3143,10 +3408,12 @@ pub(super) fn closest_pcurve_parameters(
                 ))
             })
             .collect::<Vec<_>>();
-        closest_parameter_candidates(candidates, search_seed, &geometry_budget)?
+        closest_parameter_candidates(&candidates, search_seed, &geometry_budget)?
     };
     candidates
-        .map(|candidates| lift_periodic_parameters(ctx, candidates, domain, nurbs.periodic(), seed))
+        .map(|candidates| {
+            lift_periodic_parameters(ctx, candidates.to_vec(), domain, nurbs.periodic(), seed)
+        })
         .transpose()
 }
 
@@ -3217,13 +3484,71 @@ fn homogeneous_pcurve_spans<'ctx>(
     }))
 }
 
-fn stationary_rational_distance_candidates<const DIMENSION: usize>(
+/// Temporary values whose storage stays reserved until they are dropped.
+pub(super) struct ScopedValues<'ctx, T> {
+    values: Vec<T>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx, T> ScopedValues<'ctx, T> {
+    /// Empty values with storage reserved for `count` of them.
+    pub(super) fn with_capacity(
+        ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::decode::ResourceLimit> {
+        let mut values = Vec::new();
+        let storage = ctx.reserve_temporary_vec(&mut values, count, operation)?;
+        Ok(Self { values, storage })
+    }
+
+    /// Append one value, reserving its storage first.
+    fn push(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
+        ctx.reserve_scoped_vec_limit(&mut self.storage, &mut self.values, 1, operation)?;
+        self.values.push(value);
+        Ok(())
+    }
+}
+
+impl<'ctx, T: Copy> ScopedValues<'ctx, T> {
+    /// A temporary copy of `values`.
+    pub(super) fn copy_of(
+        ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+        values: &[T],
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::decode::ResourceLimit> {
+        let (values, storage) = ctx.copy_temporary_slice(values, operation)?;
+        Ok(Self { values, storage })
+    }
+}
+
+impl<T> std::ops::Deref for ScopedValues<'_, T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
+
+impl<T> std::ops::DerefMut for ScopedValues<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.values
+    }
+}
+
+fn stationary_rational_distance_candidates<'ctx, const DIMENSION: usize>(
     homogeneous: &HomogeneousCurveSpans<'_, DIMENSION>,
     seed: Option<f64>,
-    geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<Vec<(f64, f64)>>, cadmpeg_core::decode::ResourceLimit> {
-    let mut candidates = Vec::new();
-    for span in homogeneous.extraction.iter() {
+    geometry_budget: &GeometryWorkBudget<'ctx>,
+) -> Result<Option<ScopedValues<'ctx, (f64, f64)>>, cadmpeg_core::decode::ResourceLimit> {
+    let ctx = geometry_budget.charges;
+    let mut candidates = ScopedValues::with_capacity(ctx, 0, "nx stationary candidates")?;
+    for span in ctx.admit_iter(&*homogeneous.extraction, "nx stationary span traversal")? {
         let Some(derivative) =
             rational_squared_distance_derivative(&span.controls, geometry_budget)?
         else {
@@ -3239,83 +3564,68 @@ fn stationary_rational_distance_candidates<const DIMENSION: usize>(
         else {
             return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         };
-        let root_count = match &roots {
-            ScalarBezierRoots::Constant => usize::from(seed.is_some()),
-            ScalarBezierRoots::Isolated(roots) => roots.len(),
+        // The span's ends, then its stationary parameters.
+        let constant_seed = seed.filter(|seed| (span.domain[0]..=span.domain[1]).contains(seed));
+        let roots: &[f64] = match &roots {
+            ScalarBezierRoots::Constant => constant_seed.as_slice(),
+            ScalarBezierRoots::Isolated(roots) => roots,
         };
-        let parameter_count =
-            root_count
-                .checked_add(2)
-                .ok_or_else(|| cadmpeg_core::decode::ResourceLimit {
-                    dimension: cadmpeg_core::decode::ResourceDimension::Codec(
-                        "nx stationary parameters",
-                    ),
-                    reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
-                    limit: 0,
-                    used: 0,
-                    additional: cadmpeg_core::decode::u64_from_index(root_count),
-                    operation: "nx stationary parameters",
-                })?;
-        let mut parameters = Vec::new();
-        let _reservation = geometry_budget.charges.reserve_temporary_vec(
-            &mut parameters,
-            parameter_count,
-            "nx stationary parameters",
-        )?;
-        parameters.extend([span.domain[0], span.domain[1]]);
-        match roots {
-            ScalarBezierRoots::Constant => parameters
-                .extend(seed.filter(|seed| (span.domain[0]..=span.domain[1]).contains(seed))),
-            ScalarBezierRoots::Isolated(roots) => parameters.extend(roots),
-        }
-        let _candidate_reservation = geometry_budget.charges.reserve_temporary_vec(
-            &mut candidates,
-            parameter_count,
-            "nx stationary candidates",
-        )?;
-        for parameter in parameters {
+        for &parameter in [span.domain[0], span.domain[1]]
+            .iter()
+            .chain(ctx.admit_iter(roots, "nx stationary parameters")?)
+        {
             let distance = homogeneous_residual_distance(
                 &span.controls,
                 parameter,
                 span.domain,
                 geometry_budget,
             )?;
-            candidates.push((
-                parameter,
-                if distance <= homogeneous.coordinate_tolerance {
-                    0.0
-                } else {
-                    distance * distance
-                },
-            ));
+            candidates.push(
+                ctx,
+                (
+                    parameter,
+                    if distance <= homogeneous.coordinate_tolerance {
+                        0.0
+                    } else {
+                        distance * distance
+                    },
+                ),
+                "nx stationary candidates",
+            )?;
         }
     }
     Ok(Some(candidates))
 }
 
-fn rational_squared_distance_derivative<const DIMENSION: usize>(
+fn rational_squared_distance_derivative<'ctx, const DIMENSION: usize>(
     controls: &[[f64; DIMENSION]],
-    geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
+    geometry_budget: &GeometryWorkBudget<'ctx>,
+) -> Result<Option<ScopedValues<'ctx, f64>>, cadmpeg_core::decode::ResourceLimit> {
+    let ctx = geometry_budget.charges;
     // For residual R/W, half the squared-distance derivative has numerator
     // ((R·R')W - (R·R)W'). Positive weights make its roots exactly the finite
     // stationary parameters of the rational span.
     // A common homogeneous factor cannot change stationary parameters.
-    let Some(scale) = controls.iter().flatten().try_fold(0.0_f64, |scale, value| {
-        value.is_finite().then_some(scale.max(value.abs()))
-    }) else {
-        return Ok(None);
-    };
+    let mut scale = 0.0_f64;
+    for control in ctx.admit_iter(controls, "nx rational derivative scale")? {
+        for value in control {
+            if !value.is_finite() {
+                return Ok(None);
+            }
+            scale = scale.max(value.abs());
+        }
+    }
     let Some(exponent) = cadmpeg_ir::math::power_of_two_bound(scale) else {
         return Ok(None);
     };
-    let mut normalized_controls = Vec::new();
-    let _normalized_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut normalized_controls,
+    let mut normalized_controls = ScopedValues::with_capacity(
+        ctx,
         controls.len(),
         "nx rational derivative normalized controls",
     )?;
-    for control in controls {
+    let mut weight =
+        ScopedValues::with_capacity(ctx, controls.len(), "nx rational derivative weights")?;
+    for control in ctx.admit_iter(controls, "nx rational derivative normalization")? {
         let mut normalized = *control;
         for value in &mut normalized {
             let Some(scaled) = cadmpeg_ir::math::scale_power_of_two(*value, -exponent) else {
@@ -3323,44 +3633,31 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
             };
             *value = scaled.get();
         }
-        normalized_controls.push(normalized);
+        normalized_controls.values.push(normalized);
+        weight.values.push(normalized[DIMENSION - 1]);
     }
-    let mut weight = Vec::new();
-    let _weight_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut weight,
-        controls.len(),
-        "nx rational derivative weights",
-    )?;
-    for control in &normalized_controls {
-        weight.push(control[DIMENSION - 1]);
-    }
-    let weight_derivative = difference_controls(&weight, geometry_budget)?;
-    let mut residual_squared = None;
-    let mut residual_derivative = None;
+    let weight_derivative = difference_controls(ctx, &weight)?;
+    let mut residual_squared: Option<ScopedValues<'ctx, f64>> = None;
+    let mut residual_derivative: Option<ScopedValues<'ctx, f64>> = None;
     for axis in 0..DIMENSION - 1 {
-        let mut residual = Vec::new();
-        let _residual_reservation = geometry_budget.charges.reserve_temporary_vec(
-            &mut residual,
-            controls.len(),
-            "nx rational derivative residuals",
-        )?;
-        for control in &normalized_controls {
-            residual.push(control[axis]);
+        let mut residual =
+            ScopedValues::with_capacity(ctx, controls.len(), "nx rational derivative residuals")?;
+        for control in ctx.admit_iter(&*normalized_controls, "nx rational derivative residuals")? {
+            residual.values.push(control[axis]);
         }
-        let derivative = difference_controls(&residual, geometry_budget)?;
-        let Some(squared) = bernstein_product(&residual, &residual, geometry_budget)? else {
+        let derivative = difference_controls(ctx, &residual)?;
+        let Some(squared) = bernstein_product(ctx, &residual, &residual)? else {
             return Ok(None);
         };
-        let Some(differentiated) = bernstein_product(&residual, &derivative, geometry_budget)?
-        else {
+        let Some(differentiated) = bernstein_product(ctx, &residual, &derivative)? else {
             return Ok(None);
         };
         residual_squared = match residual_squared {
-            Some(accumulated) => add_bernstein_polynomials(accumulated, squared),
+            Some(accumulated) => add_bernstein_polynomials(ctx, accumulated, &squared)?,
             None => Some(squared),
         };
         residual_derivative = match residual_derivative {
-            Some(accumulated) => add_bernstein_polynomials(accumulated, differentiated),
+            Some(accumulated) => add_bernstein_polynomials(ctx, accumulated, &differentiated)?,
             None => Some(differentiated),
         };
         if residual_squared.is_none() || residual_derivative.is_none() {
@@ -3372,42 +3669,60 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
     else {
         return Ok(None);
     };
-    let Some(first) = bernstein_product(&residual_derivative, &weight, geometry_budget)? else {
+    let Some(first) = bernstein_product(ctx, &residual_derivative, &weight)? else {
         return Ok(None);
     };
-    let Some(second) = bernstein_product(&residual_squared, &weight_derivative, geometry_budget)?
-    else {
+    let Some(second) = bernstein_product(ctx, &residual_squared, &weight_derivative)? else {
         return Ok(None);
     };
-    Ok(subtract_bernstein_polynomials(first, second))
+    subtract_bernstein_polynomials(ctx, first, &second)
 }
 
-fn difference_controls(
+fn difference_controls<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     values: &[f64],
-    geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit> {
-    let mut differences = Vec::new();
+) -> Result<ScopedValues<'ctx, f64>, cadmpeg_core::decode::ResourceLimit> {
     let count = if values.is_empty() {
         0
     } else {
         values.len() - 1
     };
-    let _reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut differences,
-        count,
-        "nx rational derivative differences",
-    )?;
-    for pair in values.windows(2) {
-        differences.push(pair[1] - pair[0]);
+    let mut differences =
+        ScopedValues::with_capacity(ctx, count, "nx rational derivative differences")?;
+    for next in ctx.admit_iter(&(1..values.len()), "nx rational derivative differences")? {
+        differences.values.push(values[next] - values[next - 1]);
     }
     Ok(differences)
 }
 
-fn bernstein_product(
+/// The binomial coefficients of `degree`, one per index.
+fn binomial_row<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    degree: usize,
+) -> Result<Option<ScopedValues<'ctx, f64>>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(count) = degree.checked_add(1) else {
+        return Ok(None);
+    };
+    let mut row = ScopedValues::with_capacity(ctx, count, "nx binomial coefficients")?;
+    for index in ctx.admit_iter(&(0..=degree), "nx binomial coefficients")? {
+        // The coefficient multiplies the smaller of its two factor counts.
+        ctx.charge_work_limit(
+            cadmpeg_core::decode::u64_from_index(index.min(degree - index)),
+            "nx binomial coefficient factors",
+        )?;
+        let Some(coefficient) = binomial_coefficient(degree, index) else {
+            return Ok(None);
+        };
+        row.values.push(coefficient);
+    }
+    Ok(Some(row))
+}
+
+fn bernstein_product<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     first: &[f64],
     second: &[f64],
-    geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<ScopedValues<'ctx, f64>>, cadmpeg_core::decode::ResourceLimit> {
     let (Some(first_degree), Some(second_degree)) =
         (first.len().checked_sub(1), second.len().checked_sub(1))
     else {
@@ -3419,35 +3734,38 @@ fn bernstein_product(
     let Some(count) = degree.checked_add(1) else {
         return Ok(None);
     };
-    let mut product = Vec::new();
-    let _reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut product,
-        count,
-        "nx Bernstein product",
-    )?;
-    for index in 0..=degree {
-        let value = (|| {
-            let denominator = binomial_coefficient(degree, index)?;
-            let lower = index - index.min(second_degree);
-            let upper = index.min(first_degree);
-            (lower..=upper)
-                .map(|first_index| {
-                    let second_index = index - first_index;
-                    Some(
-                        first[first_index]
-                            * second[second_index]
-                            * binomial_coefficient(first_degree, first_index)?
-                            * binomial_coefficient(second_degree, second_index)?
-                            / denominator,
-                    )
-                })
-                .sum::<Option<f64>>()
-                .filter(|value| value.is_finite())
-        })();
-        let Some(value) = value else {
+    // Every coefficient of the three rows enters some product term, so each
+    // row is formed once.
+    let (Some(first_row), Some(second_row), Some(product_row)) = (
+        binomial_row(ctx, first_degree)?,
+        binomial_row(ctx, second_degree)?,
+        binomial_row(ctx, degree)?,
+    ) else {
+        return Ok(None);
+    };
+    let mut product = ScopedValues::with_capacity(ctx, count, "nx Bernstein product")?;
+    for index in ctx.admit_iter(&(0..=degree), "nx Bernstein product")? {
+        let denominator = product_row[index];
+        let lower = index - index.min(second_degree);
+        let upper = index.min(first_degree);
+        let Some(value) = ctx
+            .admit_iter(&(lower..=upper), "nx Bernstein product terms")?
+            .map(|first_index| {
+                let second_index = index - first_index;
+                Some(
+                    first[first_index]
+                        * second[second_index]
+                        * first_row[first_index]
+                        * second_row[second_index]
+                        / denominator,
+                )
+            })
+            .sum::<Option<f64>>()
+            .filter(|value| value.is_finite())
+        else {
             return Ok(None);
         };
-        product.push(value);
+        product.values.push(value);
     }
     Ok(Some(product))
 }
@@ -3470,92 +3788,90 @@ fn binomial_coefficient(n: usize, k: usize) -> Option<f64> {
     })
 }
 
-fn add_bernstein_polynomials(first: Vec<f64>, second: Vec<f64>) -> Option<Vec<f64>> {
-    (first.len() == second.len()).then_some(())?;
-    let mut result = first;
-    for (value, addend) in result.iter_mut().zip(second) {
-        *value += addend;
+fn add_bernstein_polynomials<'ctx>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    mut first: ScopedValues<'ctx, f64>,
+    second: &[f64],
+) -> Result<Option<ScopedValues<'ctx, f64>>, cadmpeg_core::decode::ResourceLimit> {
+    if first.len() != second.len() {
+        return Ok(None);
     }
-    result
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(result)
+    for index in ctx.admit_iter(&(0..second.len()), "nx Bernstein sum")? {
+        first.values[index] += second[index];
+        if !first.values[index].is_finite() {
+            return Ok(None);
+        }
+    }
+    Ok(Some(first))
 }
 
-fn subtract_bernstein_polynomials(first: Vec<f64>, second: Vec<f64>) -> Option<Vec<f64>> {
-    (first.len() == second.len()).then_some(())?;
-    let mut result = first;
-    for (value, subtrahend) in result.iter_mut().zip(second) {
-        *value -= subtrahend;
+fn subtract_bernstein_polynomials<'ctx>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    mut first: ScopedValues<'ctx, f64>,
+    second: &[f64],
+) -> Result<Option<ScopedValues<'ctx, f64>>, cadmpeg_core::decode::ResourceLimit> {
+    if first.len() != second.len() {
+        return Ok(None);
     }
-    result
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(result)
+    for index in ctx.admit_iter(&(0..second.len()), "nx Bernstein difference")? {
+        first.values[index] -= second[index];
+        if !first.values[index].is_finite() {
+            return Ok(None);
+        }
+    }
+    Ok(Some(first))
 }
 
-pub(in crate::decode) enum ScalarBezierRoots {
+pub(in crate::decode) enum ScalarBezierRoots<'ctx> {
     Constant,
-    Isolated(Vec<f64>),
+    Isolated(ScopedValues<'ctx, f64>),
 }
 
-#[derive(Clone)]
-pub(super) struct ScalarBezierSpan {
+pub(super) struct ScalarBezierSpan<'ctx> {
     pub(super) domain: [f64; 2],
-    pub(super) controls: Vec<f64>,
+    pub(super) controls: ScopedValues<'ctx, f64>,
 }
 
-pub(super) fn scalar_bezier_roots_with_budget(
-    span: ScalarBezierSpan,
-    geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<ScalarBezierRoots>, cadmpeg_core::decode::ResourceLimit> {
-    let scale = span
-        .controls
-        .iter()
-        .fold(1.0_f64, |scale, value| scale.max(value.abs()));
+pub(super) fn scalar_bezier_roots_with_budget<'ctx>(
+    span: ScalarBezierSpan<'ctx>,
+    geometry_budget: &GeometryWorkBudget<'ctx>,
+) -> Result<Option<ScalarBezierRoots<'ctx>>, cadmpeg_core::decode::ResourceLimit> {
+    let ctx = geometry_budget.charges;
+    let mut scale = 1.0_f64;
+    let mut constant = true;
+    for value in ctx.admit_iter(&*span.controls, "nx Bezier root scale")? {
+        scale = scale.max(value.abs());
+        constant &= *value == 0.0;
+    }
     let tolerance = 64.0 * f64::EPSILON * scale;
-    let constant = span.controls.iter().all(|value| *value == 0.0);
     if constant {
         return Ok(Some(ScalarBezierRoots::Constant));
     }
-    let mut parameters = Vec::new();
+    let mut parameters = ScopedValues::with_capacity(ctx, 0, "nx Bezier root parameters")?;
     if span
         .controls
         .first()
         .is_some_and(|value| value.abs() <= tolerance)
     {
-        let _reservation = geometry_budget.charges.reserve_temporary_vec(
-            &mut parameters,
-            1,
-            "nx Bezier root parameters",
-        )?;
-        parameters.push(span.domain[0]);
+        parameters.push(ctx, span.domain[0], "nx Bezier root parameters")?;
     }
     if span
         .controls
         .last()
         .is_some_and(|value| value.abs() <= tolerance)
     {
-        let _reservation = geometry_budget.charges.reserve_temporary_vec(
-            &mut parameters,
-            1,
-            "nx Bezier root parameters",
-        )?;
-        parameters.push(span.domain[1]);
+        parameters.push(ctx, span.domain[1], "nx Bezier root parameters")?;
     }
     let domain = span.domain;
-    let mut intervals = Vec::new();
-    let _interval_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut intervals,
-        1,
-        "nx Bezier root intervals",
-    )?;
-    intervals.push(span);
-    while let Some(span) = intervals.pop() {
+    let mut intervals = ScopedValues::with_capacity(ctx, 1, "nx Bezier root intervals")?;
+    intervals.values.push(span);
+    // Each probed interval is one unit of the adaptive geometry budget, which
+    // draws on the session work allowance.
+    while let Some(span) = intervals.values.pop() {
         if !geometry_budget.charge() {
             return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         }
-        if scalar_bernstein_sign_variations(&span.controls) == 0 {
+        if scalar_bernstein_sign_variations(ctx, &span.controls)? == 0 {
             continue;
         }
         let Some(middle) = cadmpeg_ir::math::interpolate(span.domain[0], span.domain[1], 0.5)
@@ -3576,34 +3892,18 @@ pub(super) fn scalar_bezier_roots_with_budget(
                 (span.domain[1], second_value)
             };
             if value <= tolerance {
-                let _reservation = geometry_budget.charges.reserve_temporary_vec(
-                    &mut parameters,
-                    1,
-                    "nx Bezier root parameters",
-                )?;
-                parameters.push(parameter);
+                parameters.push(ctx, parameter, "nx Bezier root parameters")?;
             }
             continue;
         }
         let (first, second) = subdivide_scalar_bezier_span(span, middle, geometry_budget)?;
         if first.controls.last().is_some_and(|value| *value == 0.0) {
-            let _reservation = geometry_budget.charges.reserve_temporary_vec(
-                &mut parameters,
-                1,
-                "nx Bezier root parameters",
-            )?;
-            parameters.push(middle);
+            parameters.push(ctx, middle, "nx Bezier root parameters")?;
         }
-        let _reservation = geometry_budget.charges.reserve_temporary_vec(
-            &mut intervals,
-            2,
-            "nx Bezier root intervals",
-        )?;
-        intervals.push(second);
-        intervals.push(first);
+        intervals.push(ctx, second, "nx Bezier root intervals")?;
+        intervals.push(ctx, first, "nx Bezier root intervals")?;
     }
-    if geometry_budget
-        .charges
+    if ctx
         .stable_sort_by(
             &mut parameters,
             |value| value,
@@ -3614,7 +3914,11 @@ pub(super) fn scalar_bezier_roots_with_budget(
     {
         return geometry_budget.resource_refusal().map_or(Ok(None), Err);
     }
-    parameters.dedup_by(|first, second| {
+    ctx.charge_work_limit(
+        cadmpeg_core::decode::u64_from_index(parameters.len()),
+        "nx Bezier root parameters dedup",
+    )?;
+    parameters.values.dedup_by(|first, second| {
         let first = cadmpeg_ir::math::parameter_fraction(*first, domain[0], domain[1]);
         let second = cadmpeg_ir::math::parameter_fraction(*second, domain[0], domain[1]);
         first.zip(second).is_some_and(|(first, second)| {
@@ -3624,11 +3928,14 @@ pub(super) fn scalar_bezier_roots_with_budget(
     Ok(Some(ScalarBezierRoots::Isolated(parameters)))
 }
 
-fn scalar_bernstein_sign_variations(controls: &[f64]) -> usize {
+fn scalar_bernstein_sign_variations(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    controls: &[f64],
+) -> Result<usize, cadmpeg_core::decode::ResourceLimit> {
     // Bernstein-form Descartes variation bounds the roots in the open span.
     // Exact zero controls do not contribute a sign.
-    controls
-        .iter()
+    Ok(ctx
+        .admit_iter(controls, "nx Bernstein sign variations")?
         .copied()
         .filter(|value| *value != 0.0)
         .map(f64::is_sign_positive)
@@ -3638,36 +3945,52 @@ fn scalar_bernstein_sign_variations(controls: &[f64]) -> usize {
                 variations + usize::from(previous.is_some_and(|previous| previous != positive)),
             )
         })
-        .1
+        .1)
 }
 
-fn subdivide_scalar_bezier_span(
-    span: ScalarBezierSpan,
+/// Charge the de Casteljau work of `count` controls: one level of
+/// `count - 1` combinations, then one fewer at each further level, for
+/// `count * (count - 1) / 2` in all. Work beyond `usize` is charged as
+/// `u64::MAX`, which no finite work limit admits.
+fn charge_de_casteljau_work(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
+    let pairs = if count.is_multiple_of(2) {
+        (count / 2).checked_mul(count.saturating_sub(1))
+    } else {
+        count.checked_mul(count / 2)
+    };
+    ctx.charge_work_limit(
+        pairs.map_or(u64::MAX, cadmpeg_core::decode::u64_from_index),
+        operation,
+    )
+}
+
+fn subdivide_scalar_bezier_span<'ctx>(
+    span: ScalarBezierSpan<'ctx>,
     middle: f64,
-    geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<(ScalarBezierSpan, ScalarBezierSpan), cadmpeg_core::decode::ResourceLimit> {
+    geometry_budget: &GeometryWorkBudget<'ctx>,
+) -> Result<(ScalarBezierSpan<'ctx>, ScalarBezierSpan<'ctx>), cadmpeg_core::decode::ResourceLimit> {
+    let ctx = geometry_budget.charges;
     let count = span.controls.len();
     let mut levels = span.controls;
-    let mut first = Vec::new();
-    let _first_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut first,
-        count,
-        "nx first Bezier subdivision",
-    )?;
-    let mut second = Vec::new();
-    let _second_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut second,
-        count,
-        "nx second Bezier subdivision",
-    )?;
-    for level in 0..count {
-        first.push(levels[0]);
-        second.push(levels[count - level - 1]);
+    let mut first = ScopedValues::with_capacity(ctx, count, "nx first Bezier subdivision")?;
+    let mut second = ScopedValues::with_capacity(ctx, count, "nx second Bezier subdivision")?;
+    charge_de_casteljau_work(ctx, count, "nx Bezier subdivision")?;
+    for level in ctx.admit_iter(&(0..count), "nx Bezier subdivision levels")? {
+        first.values.push(levels[0]);
+        second.values.push(levels[count - level - 1]);
         for index in 0..count - level - 1 {
             levels[index] = levels[index].midpoint(levels[index + 1]);
         }
     }
-    second.reverse();
+    ctx.charge_work_limit(
+        cadmpeg_core::decode::u64_from_index(second.len()),
+        "nx second Bezier subdivision reversal",
+    )?;
+    second.values.reverse();
     Ok((
         ScalarBezierSpan {
             domain: [span.domain[0], middle],
@@ -3686,15 +4009,11 @@ fn scalar_bezier_value(
     domain: [f64; 2],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<f64, cadmpeg_core::decode::ResourceLimit> {
+    let ctx = geometry_budget.charges;
     let fraction = cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
-    let mut values = Vec::new();
-    let _reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut values,
-        controls.len(),
-        "nx scalar Bezier evaluation",
-    )?;
-    values.extend_from_slice(controls);
+    let mut values = ScopedValues::copy_of(ctx, controls, "nx scalar Bezier evaluation")?;
+    charge_de_casteljau_work(ctx, values.len(), "nx scalar Bezier evaluation")?;
     for level in 1..values.len() {
         for index in 0..values.len() - level {
             values[index] = (1.0 - fraction) * values[index] + fraction * values[index + 1];
@@ -3709,15 +4028,11 @@ pub(super) fn homogeneous_residual_distance<const DIMENSION: usize>(
     domain: [f64; 2],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<f64, cadmpeg_core::decode::ResourceLimit> {
+    let ctx = geometry_budget.charges;
     let fraction = cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
-    let mut values = Vec::new();
-    let _reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut values,
-        controls.len(),
-        "nx rational Bezier evaluation",
-    )?;
-    values.extend_from_slice(controls);
+    let mut values = ScopedValues::copy_of(ctx, controls, "nx rational Bezier evaluation")?;
+    charge_de_casteljau_work(ctx, values.len(), "nx rational Bezier evaluation")?;
     for level in 1..values.len() {
         for index in 0..values.len() - level {
             values[index] = std::array::from_fn(|axis| {
@@ -3731,45 +4046,32 @@ pub(super) fn homogeneous_residual_distance<const DIMENSION: usize>(
         .fold(0.0, f64::hypot))
 }
 
-fn closest_parameter_candidates(
-    candidates: impl IntoIterator<Item = (f64, f64)>,
+/// The parameters of the least-distance candidates, nearest `seed` first.
+fn closest_parameter_candidates<'ctx>(
+    candidates: &[(f64, f64)],
     seed: Option<f64>,
-    geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
-    let mut candidates_copy = Vec::new();
-    for candidate in candidates {
-        let _reservation = geometry_budget.charges.reserve_temporary_vec(
-            &mut candidates_copy,
-            1,
-            "nx closest parameter candidates",
-        )?;
-        candidates_copy.push(candidate);
-    }
-    let Some(minimum_distance) = candidates_copy
-        .iter()
+    geometry_budget: &GeometryWorkBudget<'ctx>,
+) -> Result<Option<ScopedValues<'ctx, f64>>, cadmpeg_core::decode::ResourceLimit> {
+    let ctx = geometry_budget.charges;
+    let Some(minimum_distance) = ctx
+        .admit_iter(candidates, "nx closest parameter minimum")?
         .map(|candidate| candidate.1)
         .min_by(f64::total_cmp)
     else {
         return Ok(None);
     };
-    let mut nearest = Vec::new();
-    for candidate in candidates_copy {
+    let mut nearest = ScopedValues::with_capacity(ctx, 0, "nx closest parameter minima")?;
+    for candidate in ctx.admit_iter(candidates, "nx closest parameter minima")? {
         let scale = candidate
             .1
             .abs()
             .max(minimum_distance.abs())
             .max(f64::MIN_POSITIVE);
         if (candidate.1 - minimum_distance).abs() <= 128.0 * f64::EPSILON * scale {
-            let _reservation = geometry_budget.charges.reserve_temporary_vec(
-                &mut nearest,
-                1,
-                "nx closest parameter minima",
-            )?;
-            nearest.push(candidate.0);
+            nearest.push(ctx, candidate.0, "nx closest parameter minima")?;
         }
     }
-    if geometry_budget
-        .charges
+    if ctx
         .stable_sort_by(
             &mut nearest,
             |value| value,
@@ -3790,7 +4092,13 @@ fn closest_parameter_candidates(
     {
         return geometry_budget.resource_refusal().map_or(Ok(None), Err);
     }
-    nearest.dedup_by(|first, second| first.to_bits() == second.to_bits());
+    ctx.charge_work_limit(
+        cadmpeg_core::decode::u64_from_index(nearest.len()),
+        "nx closest parameter minima dedup",
+    )?;
+    nearest
+        .values
+        .dedup_by(|first, second| first.to_bits() == second.to_bits());
     Ok((!nearest.is_empty()).then_some(nearest))
 }
 
@@ -3802,6 +4110,51 @@ fn canonical_periodic_parameter(domain: [f64; 2], periodic: bool, parameter: f64
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get)
 }
 
+/// Lift `parameter` to the period of `domain` nearest `seed`.
+fn lift_periodic_parameter_in_domain(parameter: f64, domain: [f64; 2], seed: f64) -> f64 {
+    let period = domain[1] - domain[0];
+    if period.is_finite() {
+        return super::offset::lift_periodic_parameter(parameter, seed, period);
+    }
+    let half_period = domain[1] * 0.5 - domain[0] * 0.5;
+    let shifted = [
+        parameter,
+        (parameter + half_period) + half_period,
+        (parameter - half_period) - half_period,
+    ];
+    shifted
+        .into_iter()
+        .filter(|candidate| candidate.is_finite())
+        .min_by(|left, right| {
+            (left * 0.5 - seed * 0.5)
+                .abs()
+                .total_cmp(&(right * 0.5 - seed * 0.5).abs())
+        })
+        .unwrap_or(parameter)
+}
+
+/// The order lifted parameters take: nearest `seed` first, then ascending.
+fn lifted_parameter_order(
+    domain: [f64; 2],
+    seed: f64,
+) -> impl Fn(&f64, &f64) -> std::cmp::Ordering {
+    let period = domain[1] - domain[0];
+    move |first, second| {
+        if period.is_finite() {
+            (first - seed)
+                .abs()
+                .total_cmp(&(second - seed).abs())
+                .then_with(|| first.total_cmp(second))
+        } else {
+            (first * 0.5 - seed * 0.5)
+                .abs()
+                .total_cmp(&(second * 0.5 - seed * 0.5).abs())
+                .then_with(|| first.total_cmp(second))
+        }
+    }
+}
+
+#[cfg(test)]
 fn lift_periodic_parameters(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     mut parameters: Vec<f64>,
@@ -3812,50 +4165,37 @@ fn lift_periodic_parameters(
     let Some(seed) = seed.filter(|_| periodic) else {
         return Ok(parameters);
     };
-    let period = domain[1] - domain[0];
     for parameter in &mut parameters {
-        *parameter = if period.is_finite() {
-            super::offset::lift_periodic_parameter(*parameter, seed, period)
-        } else {
-            let half_period = domain[1] * 0.5 - domain[0] * 0.5;
-            let shifted = [
-                *parameter,
-                (*parameter + half_period) + half_period,
-                (*parameter - half_period) - half_period,
-            ];
-            match shifted
-                .into_iter()
-                .filter(|candidate| candidate.is_finite())
-                .min_by(|left, right| {
-                    (left * 0.5 - seed * 0.5)
-                        .abs()
-                        .total_cmp(&(right * 0.5 - seed * 0.5).abs())
-                }) {
-                Some(best) => best,
-                None => *parameter,
-            }
-        };
+        *parameter = lift_periodic_parameter_in_domain(*parameter, domain, seed);
     }
     ctx.stable_sort_by(
         &mut parameters,
         |value| value,
-        |first, second| {
-            if period.is_finite() {
-                (first - seed)
-                    .abs()
-                    .total_cmp(&(second - seed).abs())
-                    .then_with(|| first.total_cmp(second))
-            } else {
-                (first * 0.5 - seed * 0.5)
-                    .abs()
-                    .total_cmp(&(second * 0.5 - seed * 0.5).abs())
-                    .then_with(|| first.total_cmp(second))
-            }
-        },
+        lifted_parameter_order(domain, seed),
         "nx lifted periodic parameters sort",
     )?;
     parameters.dedup_by(|first, second| first.to_bits() == second.to_bits());
     Ok(parameters)
+}
+
+/// The first of `parameters` once each is lifted to the period nearest
+/// `seed` and they are ordered nearest the seed first; the first parameter
+/// when no periodic seed applies.
+fn nearest_lifted_periodic_parameter(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parameters: &[f64],
+    domain: [f64; 2],
+    periodic: bool,
+    seed: Option<f64>,
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(seed) = seed.filter(|_| periodic) else {
+        return Ok(parameters.first().copied());
+    };
+    let order = lifted_parameter_order(domain, seed);
+    Ok(ctx
+        .admit_iter(parameters, "nx lifted periodic parameters")?
+        .map(|parameter| lift_periodic_parameter_in_domain(*parameter, domain, seed))
+        .min_by(|first, second| order(first, second)))
 }
 
 fn spine_contact_point_with_index_and_budget(
@@ -3885,12 +4225,12 @@ fn spine_contact_point_with_index_and_budget(
 
 // Keep the support relation, recursion policy, bounded seed cache, and work
 // slice together so nested contact evaluation cannot hide an allocation.
-fn spine_contact_point_with_index_and_budget_and_options(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    spine_contact_location: &SpineContactLocation<'_>,
+fn spine_contact_point_with_index_and_budget_and_options<'k>(
+    index: &'k cadmpeg_ir::index::ModelIndex<'_>,
+    spine_contact_location: &SpineContactLocation<'k>,
     depth: usize,
     allow_offset_contact: bool,
-    contact_seeds: &mut BlendContactSeedCache,
+    contact_seeds: &mut BlendContactSeedCache<'k>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     let &SpineContactLocation {
@@ -3978,11 +4318,11 @@ fn spine_contact_point_with_index_and_budget_and_options(
     .transpose()
 }
 
-fn spine_contact_point_from_offset_side_with_index_and_budget(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    spine_contact_location: &SpineContactLocation<'_>,
+fn spine_contact_point_from_offset_side_with_index_and_budget<'k>(
+    index: &'k cadmpeg_ir::index::ModelIndex<'_>,
+    spine_contact_location: &SpineContactLocation<'k>,
     depth: usize,
-    contact_seeds: &mut BlendContactSeedCache,
+    contact_seeds: &mut BlendContactSeedCache<'k>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     let &SpineContactLocation {
@@ -4060,7 +4400,10 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
                 *slot = Some((surface, distance.abs()));
             }
         }
-        let mut candidates = Vec::new();
+        // Two sides by at most two offset carriers state at most four
+        // candidates; exactly one is admitted.
+        let mut candidate = None;
+        let mut candidate_count = 0_usize;
         for side in context.sides() {
             let (Some(side_surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
                 continue;
@@ -4087,7 +4430,16 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
                 Err(limit) => return Some(Err(limit)),
             };
             for (offset_surface, offset_distance) in offset_surfaces.iter().flatten() {
-                let cached_seed = contact_seeds.seed_for(support, spine, parameter, offset_surface);
+                let cached_seed = match contact_seeds.seed_for(
+                    geometry_budget.charges,
+                    support,
+                    spine,
+                    parameter,
+                    offset_surface,
+                ) {
+                    Ok(seed) => seed,
+                    Err(limit) => return Some(Err(limit)),
+                };
                 let inverse_seed = if cached_seed.is_some() {
                     cached_seed
                 } else if let Some(domain) = match surface_parameter_domain_with_index(
@@ -4184,41 +4536,23 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
                 if radial.dot(tangent).abs() > angular_tolerance {
                     continue;
                 }
-                candidates.push((reproduced, (*offset_surface, parameters)));
+                if candidate_count == 0 {
+                    candidate = Some((reproduced, (*offset_surface, parameters)));
+                }
+                candidate_count += 1;
             }
         }
-        let [(candidate, (offset_surface, parameters))] = candidates.as_slice() else {
-            return None;
-        };
-        let contact_seed = BlendContactSeed {
-            support: match geometry_budget
-                .charges
-                .copy_retained_text_limit(support.as_str(), "nx blend contact support identity")
-            {
-                Ok(value) => value,
-                Err(limit) => return Some(Err(limit)),
-            },
-            spine: match geometry_budget
-                .charges
-                .copy_retained_text_limit(spine.as_str(), "nx blend contact spine identity")
-            {
-                Ok(value) => value,
-                Err(limit) => return Some(Err(limit)),
-            },
+        let (candidate, (offset_surface, parameters)) =
+            candidate.filter(|_| candidate_count == 1)?;
+        if let Err(limit) = contact_seeds.remember(
+            (support, spine, offset_surface),
             parameter,
-            offset_surface: match geometry_budget.charges.copy_retained_text_limit(
-                offset_surface.as_str(),
-                "nx blend contact offset identity",
-            ) {
-                Ok(value) => value,
-                Err(limit) => return Some(Err(limit)),
-            },
-            parameters: *parameters,
-        };
-        if let Err(limit) = contact_seeds.remember(contact_seed, geometry_budget) {
+            parameters,
+            geometry_budget,
+        ) {
             return Some(Err(limit));
         }
-        Some(Ok(*candidate))
+        Some(Ok(candidate))
     })()
     .transpose()
 }
@@ -4312,7 +4646,12 @@ fn constant_surface_offset_between_with_index(
     else {
         return Ok(None);
     };
-    if support_base == offset_base {
+    if same_text(
+        ctx,
+        support_base.as_str(),
+        offset_base.as_str(),
+        "NX constant surface offset base comparison",
+    )? {
         return Ok(Some(offset_distance - support_offset));
     }
     let Some(support_carrier) = index.surfaces(support_base.as_str(), ctx)? else {
@@ -4360,7 +4699,12 @@ fn blend_surface_offset_with_index(
     else {
         return Ok(None);
     };
-    if support_spine != offset_spine {
+    if !same_text(
+        ctx,
+        support_spine.as_str(),
+        offset_spine.as_str(),
+        "NX blend surface offset spine comparison",
+    )? {
         return Ok(None);
     }
     let distance = offset_radius - support_radius;
@@ -5031,10 +5375,8 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
         minor_radius * y,
     ];
     let constant_distance = coefficients.iter().all(|coefficient| *coefficient == 0.0);
-    let roots = match real_polynomial_roots(geometry_budget.charges, &coefficients) {
-        Ok(Some(roots)) => roots,
-        Ok(None) => return Ok(None),
-        Err(_) => return geometry_budget.resource_refusal().map_or(Ok(None), Err),
+    let Some(roots) = real_polynomial_roots(&coefficients) else {
+        return Ok(None);
     };
     let parameters = roots
         .into_iter()
@@ -5045,66 +5387,55 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
             parameter
                 + ((anchor - parameter) / std::f64::consts::TAU).round() * std::f64::consts::TAU
         });
+    // The quartic's root solver states a degree-bounded number of roots, so
+    // the candidates, with the two ends and the anchor, have a fixed bound.
     let mut candidates = Vec::new();
     for parameter in parameters {
         if !geometry_budget.charge() {
             return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         }
-        let _reservation = geometry_budget.charges.reserve_temporary_vec(
-            &mut candidates,
-            1,
-            "nx analytic inverse candidates",
-        )?;
         candidates.push((
             parameter,
             (major_radius * parameter.cos() - x).hypot(minor_radius * parameter.sin() - y),
         ));
     }
     Ok(
-        closest_parameter_candidates(candidates, Some(anchor), geometry_budget)?
-            .and_then(|parameters| parameters.into_iter().next()),
+        closest_parameter_candidates(&candidates, Some(anchor), geometry_budget)?
+            .and_then(|parameters| parameters.first().copied()),
     )
 }
 
-pub(super) fn real_polynomial_roots(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    coefficients: &[f64],
-) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+/// The real roots of the quartic `coefficients`, lowest power first. A
+/// quartic states a fixed amount of work: its roots, the roots of its
+/// derivatives and their bisection steps are bounded by its degree, so the
+/// solver takes no context.
+pub(super) fn real_polynomial_roots(coefficients: &[f64; 5]) -> Option<Vec<f64>> {
     if coefficients
         .iter()
         .any(|coefficient| !coefficient.is_finite())
     {
-        return Ok(None);
+        return None;
     }
-    let Some(mut roots) = polynomial_roots_in_unit_interval(ctx, coefficients)? else {
-        return Ok(None);
-    };
-    let reversed = coefficients.iter().rev().copied().collect::<Vec<_>>();
-    let Some(reversed_roots) = polynomial_roots_in_unit_interval(ctx, &reversed)? else {
-        return Ok(None);
-    };
+    let mut roots = polynomial_roots_in_unit_interval(coefficients)?;
+    let mut reversed = *coefficients;
+    reversed.reverse();
+    let reversed_roots = polynomial_roots_in_unit_interval(&reversed)?;
     roots.extend(
         reversed_roots
             .into_iter()
             .filter(|root| *root != 0.0)
             .map(f64::recip),
     );
-    ctx.stable_sort_by(
-        &mut roots,
-        |value| value,
-        f64::total_cmp,
-        "nx polynomial real roots sort",
-    )?;
+    roots.sort_by(f64::total_cmp);
     roots.dedup_by(|first, second| {
         (*first - *second).abs() <= 256.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
-    Ok(Some(roots))
+    Some(roots)
 }
 
-fn polynomial_roots_in_unit_interval(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    coefficients: &[f64],
-) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+/// The roots in `[-1, 1]` of a polynomial of at most degree four, lowest
+/// power first.
+fn polynomial_roots_in_unit_interval(coefficients: &[f64]) -> Option<Vec<f64>> {
     let mut coefficients = coefficients.to_vec();
     while coefficients
         .last()
@@ -5113,53 +5444,41 @@ fn polynomial_roots_in_unit_interval(
         coefficients.pop();
     }
     if coefficients.is_empty() {
-        return Ok(Some(Vec::new()));
+        return Some(Vec::new());
     }
-    let Some(degree) = coefficients.len().checked_sub(1) else {
-        return Ok(None);
-    };
+    let degree = coefficients.len().checked_sub(1)?;
     if degree == 0 {
-        return Ok(Some(Vec::new()));
+        return Some(Vec::new());
     }
     let scale = coefficients
         .iter()
         .fold(0.0_f64, |scale, coefficient| scale.max(coefficient.abs()));
     if !scale.is_finite() || scale == 0.0 {
-        return Ok(Some(Vec::new()));
+        return Some(Vec::new());
     }
     for coefficient in &mut coefficients {
         *coefficient /= scale;
     }
     if degree == 1 {
         let root = -coefficients[0] / coefficients[1];
-        return Ok(root.is_finite().then(|| {
+        return root.is_finite().then(|| {
             if (-1.0..=1.0).contains(&root) {
                 vec![root]
             } else {
                 Vec::new()
             }
-        }));
+        });
     }
-    let Some(derivative) = coefficients
+    let derivative = coefficients
         .iter()
         .enumerate()
         .skip(1)
         .map(|(degree, coefficient)| {
             Some(*coefficient * cadmpeg_core::convert::f64_from_index(degree)?)
         })
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
-    let Some(mut critical) = polynomial_roots_in_unit_interval(ctx, &derivative)? else {
-        return Ok(None);
-    };
-    ctx.stable_sort_by(
-        &mut critical,
-        |value| value,
-        f64::total_cmp,
-        "nx polynomial critical points sort",
-    )?;
+        .collect::<Option<Vec<_>>>()?;
+    let mut critical = polynomial_roots_in_unit_interval(&derivative)?;
+    critical.sort_by(f64::total_cmp);
     critical.dedup_by(|first, second| {
         (*first - *second).abs() <= 64.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
@@ -5216,16 +5535,11 @@ fn polynomial_roots_in_unit_interval(
         }
         roots.push(lower + (upper - lower) * 0.5);
     }
-    ctx.stable_sort_by(
-        &mut roots,
-        |value| value,
-        f64::total_cmp,
-        "nx polynomial unit interval roots sort",
-    )?;
+    roots.sort_by(f64::total_cmp);
     roots.dedup_by(|first, second| {
         (*first - *second).abs() <= 256.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
-    Ok(Some(roots))
+    Some(roots)
 }
 
 fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
@@ -5255,50 +5569,43 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
     if domain[0] >= domain[1] || seed.is_some_and(|seed| !seed.is_finite()) {
         return Ok(None);
     }
+    let ctx = geometry_budget.charges;
     let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, curve.periodic(), seed));
-    let mut weights = Vec::new();
-    let _weight_reservation = if curve.pole_rows().weight_at(0).is_some() {
-        let reservation = geometry_budget.charges.reserve_temporary_vec(
-            &mut weights,
-            count,
-            "nx spine NURBS weights",
-        )?;
-        for index in 0..count {
-            let Some(weight) = curve.pole_rows().weight_at(index) else {
+    let poles = curve.pole_rows();
+    let rational = poles.weight_at(0).is_some();
+    let mut weights = ScopedValues::with_capacity(
+        ctx,
+        if rational { count } else { 0 },
+        "nx spine NURBS weights",
+    )?;
+    let mut residuals = ScopedValues::with_capacity(ctx, count, "nx spine NURBS residuals")?;
+    let mut coordinate_scale = [point.x, point.y, point.z]
+        .into_iter()
+        .fold(1.0_f64, |scale, value| scale.max(value.abs()));
+    // One pass reads each pole's weight and position in place.
+    for index in ctx.admit_iter(&(0..count), "nx spine NURBS poles")? {
+        if rational {
+            let Some(weight) = poles.weight_at(index).filter(|weight| *weight > 0.0) else {
                 return Ok(None);
             };
-            weights.push(weight);
+            weights.values.push(weight);
         }
-        if weights.iter().any(|weight| *weight <= 0.0) {
+        let Some(control) = poles.point_at(index) else {
             return Ok(None);
-        }
-        Some(reservation)
-    } else {
-        None
-    };
-    let coordinate_scale = curve
-        .control_points()
-        .iter()
-        .flat_map(|control| [control.x, control.y, control.z])
-        .chain([point.x, point.y, point.z])
-        .fold(1.0_f64, |scale, value| scale.max(value.abs()));
-    let mut residuals = Vec::new();
-    let _residual_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut residuals,
-        count,
-        "nx spine NURBS residuals",
-    )?;
-    for control in curve.control_points() {
-        residuals.push(Point3::new(
+        };
+        coordinate_scale = [control.x, control.y, control.z]
+            .into_iter()
+            .fold(coordinate_scale, |scale, value| scale.max(value.abs()));
+        residuals.values.push(Point3::new(
             control.x - point.x,
             control.y - point.y,
             control.z - point.z,
         ));
     }
     let Some(controls) = positive_controls(
-        geometry_budget.charges,
+        ctx,
         &residuals,
-        (!weights.is_empty()).then_some(weights.as_slice()),
+        rational.then_some(&*weights),
         "nx spine positive controls",
     )?
     else {
@@ -5317,20 +5624,11 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
     else {
         return geometry_budget.resource_refusal().map_or(Ok(None), Err);
     };
-    let Some(parameters) = closest_parameter_candidates(candidates, search_seed, geometry_budget)?
+    let Some(parameters) = closest_parameter_candidates(&candidates, search_seed, geometry_budget)?
     else {
         return geometry_budget.resource_refusal().map_or(Ok(None), Err);
     };
-    let Ok(parameters) = lift_periodic_parameters(
-        geometry_budget.charges,
-        parameters,
-        domain,
-        curve.periodic(),
-        seed,
-    ) else {
-        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
-    };
-    Ok(parameters.into_iter().next())
+    nearest_lifted_periodic_parameter(ctx, &parameters, domain, curve.periodic(), seed)
 }
 
 fn signed_angle(first: Vector3, second: Vector3, axis: Vector3) -> f64 {

@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
@@ -25,12 +25,45 @@ pub(super) struct BodyWriterHistory {
 }
 
 impl BodyWriterHistory {
-    pub(super) fn native_writer(&self, body: u32) -> Option<&FeatureId> {
-        self.native.get(&body)
+    pub(super) fn native_writer(
+        &self,
+        ctx: &DecodeContext<'_>,
+        body: u32,
+    ) -> Result<Option<&FeatureId>, CodecError> {
+        ctx.get_btree_map(&self.native, &body, "NX native body writer history")
     }
 
-    pub(super) fn offset_store_writer(&self, data_block: &str) -> Option<&FeatureId> {
-        self.offset_store.get(data_block)
+    pub(super) fn offset_store_writer(
+        &self,
+        ctx: &DecodeContext<'_>,
+        data_block: &str,
+    ) -> Result<Option<&FeatureId>, CodecError> {
+        ctx.get_btree_map(
+            &self.offset_store,
+            data_block,
+            "NX offset-store writer history",
+        )
+    }
+
+    /// The feature writing one neutral output, unless it is the provisional
+    /// retained-history input.
+    fn output_writer(
+        &self,
+        ctx: &DecodeContext<'_>,
+        provisional_feature: Option<&FeatureId>,
+        output: &BodyId,
+    ) -> Result<Option<&FeatureId>, CodecError> {
+        let Some(writer) =
+            ctx.get_btree_map(&self.outputs, output, "NX neutral body writer history")?
+        else {
+            return Ok(None);
+        };
+        if let Some(provisional) = provisional_feature {
+            if ctx.equal(writer, provisional, "NX provisional body writer")? {
+                return Ok(None);
+            }
+        }
+        Ok(Some(writer))
     }
 
     /// Return whether a retained history feature already writes one of the
@@ -39,17 +72,32 @@ impl BodyWriterHistory {
     /// not feature writers.
     pub(super) fn has_preceding_writer(
         &self,
+        ctx: &DecodeContext<'_>,
         provisional_feature: Option<&FeatureId>,
         native_body: Option<u32>,
         offset_store_body: Option<&str>,
         outputs: &[BodyId],
-    ) -> bool {
-        outputs.iter().any(|output| {
-            self.outputs
-                .get(output)
-                .is_some_and(|writer| Some(writer) != provisional_feature)
-        }) || native_body.is_some_and(|body| self.native.contains_key(&body))
-            || offset_store_body.is_some_and(|body| self.offset_store.contains_key(body))
+    ) -> Result<bool, CodecError> {
+        if ctx.any_by(
+            outputs,
+            |output| {
+                Ok(self
+                    .output_writer(ctx, provisional_feature, output)?
+                    .is_some())
+            },
+            "NX neutral body writer history",
+        )? {
+            return Ok(true);
+        }
+        if let Some(body) = native_body {
+            if self.native_writer(ctx, body)?.is_some() {
+                return Ok(true);
+            }
+        }
+        match offset_store_body {
+            Some(body) => Ok(self.offset_store_writer(ctx, body)?.is_some()),
+            None => Ok(false),
+        }
     }
 
     pub(super) fn extend_primary_dependencies(
@@ -62,7 +110,7 @@ impl BodyWriterHistory {
         dependencies: &mut Vec<FeatureId>,
     ) -> Result<(), CodecError> {
         let mut append = |writer: &FeatureId| -> Result<(), CodecError> {
-            if !dependencies.contains(writer) {
+            if !ctx.contains(dependencies, writer, "NX primary writer dependencies")? {
                 ctx.push_vec(
                     dependencies,
                     writer.try_clone_for_decode(ctx, "NX primary writer dependencies")?,
@@ -72,21 +120,23 @@ impl BodyWriterHistory {
             Ok(())
         };
         let mut has_output_writer = false;
-        for output in outputs {
-            if let Some(writer) = self.outputs.get(output) {
-                if Some(writer) == provisional_feature {
-                    continue;
-                }
+        for output in ctx.admit_iter(outputs, "NX neutral body writer history")? {
+            if let Some(writer) = self.output_writer(ctx, provisional_feature, output)? {
                 has_output_writer = true;
                 append(writer)?;
             }
         }
-        if !has_output_writer {
-            if let Some(writer) = native_body.and_then(|body| self.native.get(&body)) {
-                append(writer)?;
-            } else if let Some(writer) =
-                offset_store_body.and_then(|body| self.offset_store.get(body))
-            {
+        if has_output_writer {
+            return Ok(());
+        }
+        let native = match native_body {
+            Some(body) => self.native_writer(ctx, body)?,
+            None => None,
+        };
+        if let Some(writer) = native {
+            append(writer)?;
+        } else if let Some(body) = offset_store_body {
+            if let Some(writer) = self.offset_store_writer(ctx, body)? {
                 append(writer)?;
             }
         }
@@ -102,12 +152,6 @@ impl BodyWriterHistory {
         feature: &FeatureId,
     ) -> Result<(), CodecError> {
         if let Some(body) = native_body {
-            if !self.native.contains_key(&body) {
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<(u32, FeatureId)>()),
-                    "NX native body writer history",
-                )?;
-            }
             ctx.insert_btree_map(
                 &mut self.native,
                 body,
@@ -116,12 +160,6 @@ impl BodyWriterHistory {
             )?;
         }
         if let Some(data_block) = offset_store_body {
-            if !self.offset_store.contains_key(data_block) {
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<(String, FeatureId)>()),
-                    "NX offset-store writer history",
-                )?;
-            }
             ctx.insert_btree_map(
                 &mut self.offset_store,
                 ctx.copy_retained_text(data_block, "NX offset-store writer history")?,
@@ -129,13 +167,7 @@ impl BodyWriterHistory {
                 "NX offset-store writer history",
             )?;
         }
-        for output in outputs {
-            if !self.outputs.contains_key(output) {
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<(BodyId, FeatureId)>()),
-                    "NX neutral body writer history",
-                )?;
-            }
+        for output in ctx.admit_iter(outputs, "NX neutral body writer history")? {
             ctx.insert_btree_map(
                 &mut self.outputs,
                 output.try_clone_for_decode(ctx, "NX neutral body writer history")?,
@@ -148,12 +180,23 @@ impl BodyWriterHistory {
 
     /// Retract provisional output ownership when a later construction record
     /// proves that the body did not exist at the start of retained replay.
-    pub(super) fn retract_outputs(&mut self, feature: &FeatureId, outputs: &[BodyId]) {
-        for output in outputs {
-            if self.outputs.get(output) == Some(feature) {
-                self.outputs.remove(output);
+    pub(super) fn retract_outputs(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        feature: &FeatureId,
+        outputs: &[BodyId],
+    ) -> Result<(), CodecError> {
+        for output in ctx.admit_iter(outputs, "NX retracted body writers")? {
+            let Some(writer) =
+                ctx.get_btree_map(&self.outputs, output, "NX retracted body writers")?
+            else {
+                continue;
+            };
+            if ctx.equal(writer, feature, "NX retracted body writers")? {
+                ctx.remove_btree_map(&mut self.outputs, output, "NX retracted body writers")?;
             }
         }
+        Ok(())
     }
 }
 
@@ -198,162 +241,29 @@ impl ActiveFeatureClosureRejection {
 /// The closure exists only when feature identities are unique, every
 /// dependency names an earlier feature, at least one feature writes a selected
 /// body or has an admitted native primary-body relation, and no member is
-/// explicitly suppressed.
+/// explicitly suppressed. Lookup tables are decode scratch; the returned
+/// identities are charged as retained storage, so a caller that drops them
+/// before decode returns runs the call under its own scoped storage.
 pub(crate) fn active_feature_closure(
-    ir: &CadIr,
-    bodies: &[BodyId],
-) -> Result<BTreeMap<FeatureId, usize>, ActiveFeatureClosureRejection> {
-    let mut features = BTreeMap::new();
-    for (index, feature) in ir.model.features.iter().enumerate() {
-        if features
-            .insert(feature.id.clone(), (index, feature))
-            .is_some()
-        {
-            return Err(ActiveFeatureClosureRejection::DuplicateFeatureIdentity {
-                feature: feature.id.clone(),
-            });
-        }
-    }
-
-    let active_bodies = bodies.iter().collect::<BTreeSet<_>>();
-    let mut active_features = features
-        .iter()
-        .filter(|(_, (_, feature))| {
-            feature
-                .evaluation
-                .outputs()
-                .iter()
-                .any(|output| active_bodies.contains(output))
-        })
-        .map(|(id, &resolved)| (id.clone(), resolved))
-        .collect::<BTreeMap<_, _>>();
-    let has_neutral_body_writer = active_features.values().any(|(_, feature)| {
-        !matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-        )
-    });
-    let has_native_body_witness = active_features.values().any(|(_, feature)| {
-        matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-        ) && feature.evaluation.outputs().len() == active_bodies.len()
-            && feature.evaluation.outputs().iter().collect::<BTreeSet<_>>() == active_bodies
-            && feature
-                .source_properties
-                .contains_key(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
-    });
-    let has_retained_history_input = active_features.values().any(|(_, feature)| {
-        matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-        ) && feature
-            .source_properties
-            .keys()
-            .any(|key| key.as_str().starts_with("segment_body_binding."))
-    });
-    if !has_neutral_body_writer && has_retained_history_input && !has_native_body_witness {
-        return Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter);
-    }
-    if !has_neutral_body_writer && has_native_body_witness {
-        active_features.extend(
-            features
-                .iter()
-                .filter(|(_, (_, feature))| {
-                    feature.native_ref.is_some()
-                        && feature.source_tag.is_some()
-                        && feature
-                            .source_properties
-                            .get(NATIVE_PRIMARY_BODY_OBJECT_INDEX)
-                            .is_some_and(|reference| !reference.is_empty())
-                })
-                .map(|(id, &resolved)| (id.clone(), resolved)),
-        );
-    }
-    if active_features.is_empty() {
-        return Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter);
-    }
-
-    let mut pending = active_features.values().copied().collect::<Vec<_>>();
-    while let Some((_, feature)) = pending.pop() {
-        for dependency in &feature.dependencies {
-            let Some(&(index, dependency_feature)) = features.get(dependency) else {
-                return Err(ActiveFeatureClosureRejection::MissingDependency {
-                    feature: feature.id.clone(),
-                    dependency: dependency.clone(),
-                });
-            };
-            if dependency_feature.ordinal >= feature.ordinal {
-                return Err(ActiveFeatureClosureRejection::DependencyNotEarlier {
-                    feature: feature.id.clone(),
-                    feature_ordinal: feature.ordinal,
-                    dependency: dependency.clone(),
-                    dependency_ordinal: dependency_feature.ordinal,
-                });
-            }
-            if active_features
-                .insert(dependency.clone(), (index, dependency_feature))
-                .is_none()
-            {
-                pending.push((index, dependency_feature));
-            }
-        }
-    }
-    if let Some((_, feature)) = active_features
-        .values()
-        .find(|(_, feature)| feature.suppressed == Some(true))
-    {
-        return Err(ActiveFeatureClosureRejection::ExplicitlySuppressed {
-            feature: feature.id.clone(),
-        });
-    }
-    Ok(active_features
-        .into_iter()
-        .map(|(id, (index, _))| (id, index))
-        .collect())
-}
-
-/// Resolve the active feature closure while accounting for decode scratch and
-/// the returned identities. The CADIR evaluator uses the context-free form.
-pub(crate) fn active_feature_closure_for_decode(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     bodies: &[BodyId],
 ) -> Result<Result<BTreeMap<FeatureId, usize>, ActiveFeatureClosureRejection>, CodecError> {
-    let feature_count = ir.model.features.len();
-    let scratch_nodes = feature_count
-        .checked_mul(
-            std::mem::size_of::<(&FeatureId, (usize, &cadmpeg_ir::features::Feature))>() * 8,
-        )
-        .and_then(|bytes| {
-            feature_count
-                .checked_mul(std::mem::size_of::<(usize, &cadmpeg_ir::features::Feature)>())
-                .and_then(|more| bytes.checked_add(more))
-        })
-        .and_then(|bytes| {
-            bodies
-                .len()
-                .checked_mul(std::mem::size_of::<&BodyId>() * 4)
-                .and_then(|more| bytes.checked_add(more))
-        })
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX active feature closure scratch",
-                0,
-                u64_from_index(feature_count),
+    let mut scratch = ctx.reserve_scoped(0, "NX active feature closure scratch")?;
+    let mut features = BTreeMap::new();
+    for (index, feature) in ctx
+        .admit_iter(&ir.model.features, "NX active feature identity index")?
+        .enumerate()
+    {
+        let previous = scratch.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut features,
+                &feature.id,
+                (index, feature),
+                "NX active feature identity index",
             )
         })?;
-    let _scratch = ctx.reserve_scoped(
-        u64_from_index(scratch_nodes),
-        "NX active feature closure scratch",
-    )?;
-    let mut features = BTreeMap::new();
-    for (index, feature) in ir.model.features.iter().enumerate() {
-        ctx.charge_work(
-            u64_from_index(features.len()),
-            "NX active feature identity lookup",
-        )?;
-        if features.contains_key(&feature.id) {
+        if previous.is_some() {
             return Ok(Err(
                 ActiveFeatureClosureRejection::DuplicateFeatureIdentity {
                     feature: feature
@@ -362,88 +272,99 @@ pub(crate) fn active_feature_closure_for_decode(
                 },
             ));
         }
-        ctx.insert_btree_map(
-            &mut features,
-            &feature.id,
-            (index, feature),
-            "NX active feature identity index",
-        )?;
     }
     let mut active_bodies = BTreeSet::new();
-    for body in bodies {
-        ctx.charge_work(u64_from_index(active_bodies.len()), "NX active body lookup")?;
-        ctx.insert_btree_set(&mut active_bodies, body, "NX active bodies")?;
+    for body in ctx.admit_iter(bodies, "NX active bodies")? {
+        scratch
+            .with_storage(|| ctx.insert_btree_set(&mut active_bodies, body, "NX active bodies"))?;
     }
+    let is_active_body =
+        |body: &BodyId| ctx.contains_btree_set(&active_bodies, body, "NX active body lookup");
     let mut active_features = BTreeMap::new();
-    for (id, &resolved) in &features {
-        ctx.charge_work(
-            u64_from_index(resolved.1.evaluation.outputs().len()),
+    for (&id, &resolved) in ctx.admit_iter(&features, "NX active body writer lookup")? {
+        if ctx.any_by(
+            resolved.1.evaluation.outputs(),
+            is_active_body,
             "NX active body writer lookup",
-        )?;
-        if resolved
-            .1
-            .evaluation
-            .outputs()
-            .iter()
-            .any(|body| active_bodies.contains(body))
-        {
-            ctx.insert_btree_map(
-                &mut active_features,
-                *id,
-                resolved,
-                "NX active feature writers",
-            )?;
+        )? {
+            scratch.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut active_features,
+                    id,
+                    resolved,
+                    "NX active feature writers",
+                )
+            })?;
         }
     }
-    let has_neutral_body_writer = active_features.values().any(|(_, feature)| {
-        !matches!(
+    let mut has_neutral_body_writer = false;
+    let mut has_native_body_witness = false;
+    let mut has_retained_history_input = false;
+    for &(_, feature) in ctx
+        .admit_iter(&active_features, "NX active feature writer roles")?
+        .map(|(_, resolved)| resolved)
+    {
+        if !matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-        )
-    });
-    let has_native_body_witness = active_features.values().any(|(_, feature)| {
-        matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-        ) && feature.evaluation.outputs().len() == active_bodies.len()
-            && feature
-                .evaluation
-                .outputs()
-                .iter()
-                .all(|body| active_bodies.contains(body))
-            && feature
-                .source_properties
-                .contains_key(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
-    });
-    let has_retained_history_input = active_features.values().any(|(_, feature)| {
-        matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-        ) && feature
-            .source_properties
-            .keys()
-            .any(|key| key.as_str().starts_with("segment_body_binding."))
-    });
+        ) {
+            has_neutral_body_writer = true;
+            continue;
+        }
+        let outputs = feature.evaluation.outputs();
+        has_native_body_witness = has_native_body_witness
+            || (outputs.len() == active_bodies.len()
+                && ctx.all_by(outputs, is_active_body, "NX active body lookup")?
+                && ctx.contains_key_btree_map(
+                    &feature.source_properties,
+                    NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
+                    "NX native body closure witness",
+                )?);
+        if !has_retained_history_input {
+            for key in feature.source_properties.keys() {
+                ctx.charge_work(1, "NX retained history input")?;
+                if ctx.starts_with(
+                    key.as_str(),
+                    "segment_body_binding.",
+                    "NX retained history input",
+                )? {
+                    has_retained_history_input = true;
+                    break;
+                }
+            }
+        }
+    }
     if !has_neutral_body_writer && has_retained_history_input && !has_native_body_witness {
         return Ok(Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter));
     }
     if !has_neutral_body_writer && has_native_body_witness {
-        for (id, &resolved) in &features {
+        for (&id, &resolved) in ctx.admit_iter(&features, "NX native active feature witnesses")? {
             let feature = resolved.1;
-            if feature.native_ref.is_some()
-                && feature.source_tag.is_some()
-                && feature
-                    .source_properties
-                    .get(NATIVE_PRIMARY_BODY_OBJECT_INDEX)
-                    .is_some_and(|reference| !reference.is_empty())
-                && !active_features.contains_key(id)
-            {
-                ctx.insert_btree_map(
-                    &mut active_features,
-                    *id,
-                    resolved,
+            if feature.native_ref.is_none() || feature.source_tag.is_none() {
+                continue;
+            }
+            let has_primary_body = ctx
+                .get_btree_map(
+                    &feature.source_properties,
+                    NATIVE_PRIMARY_BODY_OBJECT_INDEX,
                     "NX native active feature witnesses",
-                )?;
+                )?
+                .is_some_and(|reference| !reference.is_empty());
+            if has_primary_body
+                && !ctx.contains_key_btree_map(
+                    &active_features,
+                    id,
+                    "NX native active feature witnesses",
+                )?
+            {
+                scratch.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut active_features,
+                        id,
+                        resolved,
+                        "NX native active feature witnesses",
+                    )
+                })?;
             }
         }
     }
@@ -451,18 +372,28 @@ pub(crate) fn active_feature_closure_for_decode(
         return Ok(Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter));
     }
     let mut pending = Vec::new();
-    for &resolved in active_features.values() {
-        ctx.reserve_vec(&mut pending, 1, "NX pending active features")?;
-        pending.push(resolved);
+    for &resolved in ctx
+        .admit_iter(&active_features, "NX pending active features")?
+        .map(|(_, resolved)| resolved)
+    {
+        scratch
+            .with_storage(|| ctx.push_vec(&mut pending, resolved, "NX pending active features"))?;
     }
-    while let Some((_, feature)) = pending.pop() {
-        for dependency in &feature.dependencies {
-            ctx.charge_work(
-                u64_from_index(features.len()),
-                "NX active feature dependency lookup",
-            )?;
-            let Some((&dependency_id, &(index, dependency_feature))) =
-                features.get_key_value(dependency)
+    loop {
+        ctx.charge_work(1, "NX active feature closure traversal")?;
+        let Some((_, feature)) = pending.pop() else {
+            break;
+        };
+        for dependency in ctx.admit_iter(
+            feature.dependencies.as_slice(),
+            "NX active feature dependency lookup",
+        )? {
+            let Some((&dependency_id, &(index, dependency_feature))) = ctx
+                .get_key_value_btree_map(
+                    &features,
+                    dependency,
+                    "NX active feature dependency lookup",
+                )?
             else {
                 return Ok(Err(ActiveFeatureClosureRejection::MissingDependency {
                     feature: feature
@@ -483,40 +414,41 @@ pub(crate) fn active_feature_closure_for_decode(
                     dependency_ordinal: dependency_feature.ordinal,
                 }));
             }
-            if !active_features.contains_key(dependency_id) {
-                ctx.insert_btree_map(
-                    &mut active_features,
-                    dependency_id,
-                    (index, dependency_feature),
-                    "NX active feature dependencies",
-                )?;
-                ctx.reserve_vec(&mut pending, 1, "NX pending active features")?;
-                pending.push((index, dependency_feature));
+            if !ctx.contains_key_btree_map(
+                &active_features,
+                dependency_id,
+                "NX active feature dependencies",
+            )? {
+                scratch.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut active_features,
+                        dependency_id,
+                        (index, dependency_feature),
+                        "NX active feature dependencies",
+                    )?;
+                    ctx.push_vec(
+                        &mut pending,
+                        (index, dependency_feature),
+                        "NX pending active features",
+                    )
+                })?;
             }
         }
     }
-    if let Some((_, feature)) = active_features
-        .values()
-        .find(|(_, feature)| feature.suppressed == Some(true))
-    {
-        return Ok(Err(ActiveFeatureClosureRejection::ExplicitlySuppressed {
-            feature: feature
-                .id
-                .try_clone_for_decode(ctx, "NX active feature closure identity")?,
-        }));
+    for &(_, feature) in active_features.values() {
+        ctx.charge_work(1, "NX suppressed active features")?;
+        if feature.suppressed == Some(true) {
+            return Ok(Err(ActiveFeatureClosureRejection::ExplicitlySuppressed {
+                feature: feature
+                    .id
+                    .try_clone_for_decode(ctx, "NX active feature closure identity")?,
+            }));
+        }
     }
     let mut result = BTreeMap::new();
-    for (id, (index, _)) in active_features {
-        let bytes = std::mem::size_of::<(FeatureId, usize)>()
-            .checked_mul(4)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX active feature closure result",
-                    0,
-                    u64_from_index(id.as_str().len()),
-                )
-            })?;
-        ctx.charge_retained(u64_from_index(bytes), "NX active feature closure result")?;
+    for (&id, &(index, _)) in
+        ctx.admit_iter(&active_features, "NX active feature closure result")?
+    {
         ctx.insert_btree_map(
             &mut result,
             id.try_clone_for_decode(ctx, "NX active feature closure result")?,
@@ -530,8 +462,8 @@ pub(crate) fn active_feature_closure_for_decode(
 #[cfg(test)]
 mod tests {
     use super::{
-        active_feature_closure, active_feature_closure_for_decode, ActiveFeatureClosureRejection,
-        BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS, NATIVE_PRIMARY_BODY_OBJECT_INDEX,
+        active_feature_closure, ActiveFeatureClosureRejection, BodyWriterHistory,
+        NATIVE_PRIMARY_BODY_CLOSURE_WITNESS, NATIVE_PRIMARY_BODY_OBJECT_INDEX,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::FeatureDefinition;
@@ -655,6 +587,14 @@ mod tests {
         (ir, body)
     }
 
+    fn closure(
+        ir: &CadIr,
+        bodies: &[BodyId],
+    ) -> Result<BTreeMap<FeatureId, usize>, ActiveFeatureClosureRejection> {
+        crate::test_support::with_decode_context(|ctx| active_feature_closure(ctx, ir, bodies))
+            .expect("the closure stays within the service budget")
+    }
+
     fn closure_refusal_for_limit(dimension: ResourceDimension) -> CodecError {
         let (ir, body) = closure_ir(vec![history_feature(
             "synthetic:test:id#writer",
@@ -681,7 +621,7 @@ mod tests {
             _ => unreachable!("test only covers four closure dimensions"),
         };
         crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
-            active_feature_closure_for_decode(ctx, &ir, &[body]).expect_err("closure must refuse")
+            active_feature_closure(ctx, &ir, &[body]).expect_err("closure must refuse")
         })
     }
 
@@ -714,6 +654,34 @@ mod tests {
     }
 
     #[test]
+    fn active_feature_closure_refuses_work_limit_at_pending_pop() {
+        let body = BodyId::mint("test:model:entity#body").unwrap();
+        let mut ir = CadIr::empty();
+        ir.model.features.push(history_feature(
+            "synthetic:test:id#writer",
+            0,
+            Vec::new(),
+            vec![body.clone()],
+            BTreeMap::new(),
+            false,
+        ));
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX active feature closure traversal",
+            |ctx| active_feature_closure(ctx, &ir, std::slice::from_ref(&body)),
+        );
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "NX active feature closure traversal"
+                    && limit.used == limit.limit
+                    && limit.additional == 1
+        ));
+    }
+
+    #[test]
     fn active_feature_closure_retains_arena_positions_instead_of_identity_order() {
         let body = BodyId::mint("test:model:entity#body").unwrap();
         let earlier = history_feature(
@@ -734,7 +702,7 @@ mod tests {
         );
         let expected = BTreeMap::from([(earlier.id.clone(), 1), (later.id.clone(), 0)]);
         let (ir, _) = closure_ir(vec![later, earlier]);
-        assert_eq!(active_feature_closure(&ir, &[body]), Ok(expected));
+        assert_eq!(closure(&ir, &[body]), Ok(expected));
     }
 
     #[test]
@@ -752,7 +720,7 @@ mod tests {
 
         let (ir, body) = closure_ir(vec![writer(), writer()]);
         assert_eq!(
-            active_feature_closure(&ir, &[body]),
+            closure(&ir, &[body]),
             Err(ActiveFeatureClosureRejection::DuplicateFeatureIdentity {
                 feature: FeatureId::mint("synthetic:test:id#writer").expect("identity grammar")
             })
@@ -766,7 +734,7 @@ mod tests {
         .unwrap();
         let (ir, body) = closure_ir(vec![missing]);
         assert_eq!(
-            active_feature_closure(&ir, &[body]),
+            closure(&ir, &[body]),
             Err(ActiveFeatureClosureRejection::MissingDependency {
                 feature: FeatureId::mint("synthetic:test:id#writer").expect("identity grammar"),
                 dependency: FeatureId::mint("synthetic:test:id#missing").expect("identity grammar")
@@ -790,7 +758,7 @@ mod tests {
         );
         let (ir, body) = closure_ir(vec![dependency, out_of_order]);
         assert_eq!(
-            active_feature_closure(&ir, &[body]),
+            closure(&ir, &[body]),
             Err(ActiveFeatureClosureRejection::DependencyNotEarlier {
                 feature: FeatureId::mint("synthetic:test:id#writer").expect("identity grammar"),
                 feature_ordinal: 1,
@@ -803,7 +771,7 @@ mod tests {
         let mut suppressed = writer();
         suppressed.suppressed = Some(true);
         let (ir, body) = closure_ir(vec![suppressed]);
-        let rejection = active_feature_closure(&ir, &[body]);
+        let rejection = closure(&ir, &[body]);
         assert_eq!(
             rejection,
             Err(ActiveFeatureClosureRejection::ExplicitlySuppressed {
@@ -837,11 +805,19 @@ mod tests {
                 .expect("admitted writer history");
 
             assert_eq!(dependencies, [first]);
-            assert!(history.native_writer(8).is_none());
+            assert!(history
+                .native_writer(ctx, 8)
+                .expect("admitted writer lookup")
+                .is_none());
             history
                 .record_writer(ctx, Some(8), None, std::slice::from_ref(&body), &second)
                 .expect("admitted writer history");
-            assert_eq!(history.native_writer(8), Some(&second));
+            assert_eq!(
+                history
+                    .native_writer(ctx, 8)
+                    .expect("admitted writer lookup"),
+                Some(&second)
+            );
             dependencies.clear();
             history
                 .extend_primary_dependencies(ctx, None, Some(7), None, &[body], &mut dependencies)
@@ -887,18 +863,24 @@ mod tests {
                 )
                 .expect("admitted writer history");
 
-            assert!(!history.has_preceding_writer(
-                Some(&provisional),
-                None,
-                None,
-                std::slice::from_ref(&created)
-            ));
-            assert!(history.has_preceding_writer(
-                Some(&provisional),
-                Some(7),
-                None,
-                std::slice::from_ref(&existing)
-            ));
+            assert!(!history
+                .has_preceding_writer(
+                    ctx,
+                    Some(&provisional),
+                    None,
+                    None,
+                    std::slice::from_ref(&created)
+                )
+                .expect("admitted writer lookup"));
+            assert!(history
+                .has_preceding_writer(
+                    ctx,
+                    Some(&provisional),
+                    Some(7),
+                    None,
+                    std::slice::from_ref(&existing)
+                )
+                .expect("admitted writer lookup"));
 
             let mut dependencies = Vec::new();
             history
@@ -929,10 +911,16 @@ mod tests {
                 [FeatureId::mint("synthetic:test:id#retained").expect("identity grammar")]
             );
 
-            history.retract_outputs(&provisional, &[created.clone(), existing.clone()]);
+            history
+                .retract_outputs(ctx, &provisional, &[created.clone(), existing.clone()])
+                .expect("admitted writer retraction");
 
-            assert!(!history.has_preceding_writer(Some(&provisional), None, None, &[created]));
-            assert!(history.has_preceding_writer(Some(&provisional), Some(7), None, &[existing]));
+            assert!(!history
+                .has_preceding_writer(ctx, Some(&provisional), None, None, &[created])
+                .expect("admitted writer lookup"));
+            assert!(history
+                .has_preceding_writer(ctx, Some(&provisional), Some(7), None, &[existing])
+                .expect("admitted writer lookup"));
         });
     }
 
@@ -975,7 +963,9 @@ mod tests {
                 .record_writer(ctx, None, Some("store-a:block#7"), &[], &second)
                 .expect("admitted writer history");
             assert_eq!(
-                history.offset_store_writer("store-a:block#7"),
+                history
+                    .offset_store_writer(ctx, "store-a:block#7")
+                    .expect("admitted writer lookup"),
                 Some(&second)
             );
             dependencies.clear();
@@ -1070,7 +1060,7 @@ mod tests {
         );
 
         assert_eq!(
-            active_feature_closure(&ir, &[body]),
+            closure(&ir, &[body]),
             Ok(BTreeMap::from([
                 (
                     FeatureId::mint("synthetic:test:id#base").expect("identity grammar"),
@@ -1081,7 +1071,7 @@ mod tests {
             ]))
         );
         assert_eq!(
-            active_feature_closure(
+            closure(
                 &ir,
                 &[BodyId::mint("test:model:entity#other").expect("identity grammar")]
             ),
@@ -1127,7 +1117,7 @@ mod tests {
         }]);
 
         assert_eq!(
-            active_feature_closure(&ir, &[body]),
+            closure(&ir, &[body]),
             Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter)
         );
     }
