@@ -1456,11 +1456,7 @@ pub(crate) fn bind_profile_revolution_axes(
             }),
         INDEX,
     )?;
-    let mut lane_markers = Vec::new();
-    for lane in ctx.admit_iter(lanes, INDEX)? {
-        let markers = LaneMarkerIndex::new(ctx, lane.sketch_entities.iter())?;
-        storage.with_storage(|| ctx.push_vec(&mut lane_markers, markers, INDEX))?;
-    }
+    let mut lane_markers = None;
     let mut assignments = Vec::<(usize, cadmpeg_ir::features::RevolutionAxis)>::new();
 
     for (feature_index, feature) in ctx.admit_iter(&*model_features, INDEX)?.enumerate() {
@@ -1521,6 +1517,17 @@ pub(crate) fn bind_profile_revolution_axes(
         let Some(sketch) = ctx.get_hash_map(&sketch_by_id, sketch_id, INDEX)?.copied() else {
             continue;
         };
+        let lane_markers = match &mut lane_markers {
+            Some(markers) => markers,
+            slot @ None => slot.insert(storage.with_storage(|| {
+                ctx.try_collect_vec(
+                    lanes
+                        .iter()
+                        .map(|lane| LaneMarkerIndex::new(ctx, lane.sketch_entities.iter())),
+                    INDEX,
+                )
+            })?),
+        };
         let generated_axis_surfaces = if matches!(
             construction.extent(),
             Some(cadmpeg_ir::features::RevolveExtent::OneSided {
@@ -1535,7 +1542,7 @@ pub(crate) fn bind_profile_revolution_axes(
         let mut candidates = Vec::new();
         for (lane, markers) in ctx
             .admit_iter(lanes, "scan SLDPRT revolution axis lanes")?
-            .zip(&lane_markers)
+            .zip(lane_markers.iter())
         {
             if let Some(axis) = profile_roster_construction_axis_in(
                 ctx,
