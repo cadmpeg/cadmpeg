@@ -74,8 +74,8 @@ holds its temporary storage until it is dropped.
 The `protein` argument is a ZIP archive containing schema XML entries. A schema
 entry is a file whose path begins with `Schemas/` or contains `/Schemas/` and
 ends with `Schema.xml`. Every schema declares its identifier in the root
-`UID` element. Duplicate ZIP entry names and duplicate schema identifiers are
-malformed.
+`UID` element. The `DecodeContext` route rejects duplicate ZIP entry names.
+Both admission routes reject duplicate schema identifiers.
 
 The `instance` argument has a 16-byte stream header followed by fixed 136-byte
 pages. The first header word is the page size (`0x88`); the remaining header
