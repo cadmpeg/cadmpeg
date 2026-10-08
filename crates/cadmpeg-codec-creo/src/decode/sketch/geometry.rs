@@ -319,6 +319,7 @@ pub(in crate::decode) fn saved_section_line_geometry(
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo saved section line geometry scratch")?;
     if !matches!(
         segment.kind,
         crate::feature::definitions::FeatureSegmentKind::Line(_)
@@ -348,16 +349,18 @@ pub(in crate::decode) fn saved_section_line_geometry(
                 },
                 "creo saved line segment position rows",
             )? {
-                let mut previous = None;
-                for row in
-                    ctx.admit_iter(&rows[..position], "creo saved line previous segment rows")?
-                {
-                    if let SegmentRow::Ordinary(candidate) = row {
-                        if let Some(id) = order_table.internal_id(candidate.external_id) {
-                            previous = Some(id);
-                        }
-                    }
-                }
+                let previous = ctx.find_map(
+                    rows[..position].iter().rev(),
+                    |row| {
+                        Ok(match row {
+                            SegmentRow::Ordinary(candidate) => {
+                                order_table.internal_id(candidate.external_id)
+                            }
+                            _ => None,
+                        })
+                    },
+                    "creo saved line previous segment rows",
+                )?;
                 if let Some(previous) = previous {
                     let next = ctx.find_map(
                         &rows[position + 1..],
@@ -412,15 +415,35 @@ pub(in crate::decode) fn saved_section_line_geometry(
                 .as_ref()
                 .filter(|table| table.is_complete()),
         ) {
+            let mut ordered_external_ids = std::collections::HashSet::new();
+            let mut ordered_internal_ids = std::collections::HashSet::new();
+            for row in ctx.admit_iter(order_table.rows.as_slice(), "creo saved line order rows")? {
+                scratch.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut ordered_external_ids,
+                        row.external_id,
+                        "creo saved line ordered external IDs",
+                    )
+                })?;
+                scratch.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut ordered_internal_ids,
+                        row.internal_id,
+                        "creo saved line ordered internal IDs",
+                    )
+                })?;
+            }
             let mut trimmed_ids = BTreeSet::new();
             for id in ctx
                 .admit_iter(
-                    trim_segment_ids(ctx, definition)?,
+                    scratch.with_storage(|| trim_segment_ids(ctx, definition))?,
                     "creo saved line trim rows",
                 )?
                 .flatten()
             {
-                ctx.insert_btree_set(&mut trimmed_ids, id, "creo saved line trim nodes")?;
+                scratch.with_storage(|| {
+                    ctx.insert_btree_set(&mut trimmed_ids, id, "creo saved line trim nodes")
+                })?;
             }
             // The one trimmed line the order table leaves out, if exactly one.
             let missing = crate::decode::uniqueness::exactly_one_by(
@@ -441,12 +464,7 @@ pub(in crate::decode) fn saved_section_line_geometry(
                         &candidate.external_id,
                         "creo saved line trim lookup",
                     )?;
-                    Ok(is_trimmed
-                        && !ctx.any_by(
-                            &order_table.rows,
-                            |row| Ok(row.external_id == candidate.external_id),
-                            "creo saved line order rows",
-                        )?)
+                    Ok(is_trimmed && !ordered_external_ids.contains(&candidate.external_id))
                 },
                 "creo saved line candidate segment rows",
             )?;
@@ -459,11 +477,7 @@ pub(in crate::decode) fn saved_section_line_geometry(
                         else {
                             return Ok(ControlFlow::Continue(()));
                         };
-                        let already_ordered = ctx.any_by(
-                            &order_table.rows,
-                            |row| Ok(row.internal_id == line.entity_id),
-                            "creo saved line order rows",
-                        )?;
+                        let already_ordered = ordered_internal_ids.contains(&line.entity_id);
                         if !already_ordered {
                             if candidate_internal_id.is_some() {
                                 return Ok(ControlFlow::Break(()));
@@ -705,11 +719,13 @@ pub(in crate::decode) fn saved_section_arc(
     }))
 }
 
+pub(in crate::decode) type SavedSegmentPointCoordinates = [Option<(u32, [f64; 2])>; 3];
+
 pub(in crate::decode) fn saved_section_segment_point_coordinates(
     ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Result<Option<[Option<(u32, [f64; 2])>; 3]>, CodecError> {
+) -> Result<Option<SavedSegmentPointCoordinates>, CodecError> {
     let coordinates = match segment.kind {
         crate::feature::definitions::FeatureSegmentKind::Line(_) => {
             let Some(geometry) = saved_section_line_geometry(ctx, definition, segment)? else {
@@ -883,7 +899,7 @@ pub(in crate::decode) fn saved_section_entity_geometry(
         None
     };
 
-    (|| match entity {
+    match entity {
         crate::feature::definitions::FeatureSavedEntity::Line(line) => {
             let [[Some(start_u), Some(start_v), _], [Some(end_u), Some(end_v), _]] = line.endpoints
             else {
@@ -900,9 +916,7 @@ pub(in crate::decode) fn saved_section_entity_geometry(
             ))
         }
         crate::feature::definitions::FeatureSavedEntity::Arc(arc) => {
-            let Some((center_u, center_v, radius, start_angle, end_angle)) = arc_angles else {
-                return None;
-            };
+            let (center_u, center_v, radius, start_angle, end_angle) = arc_angles?;
             Some((
                 arc.entity_id,
                 SketchGeometry::try_from(SketchGeometryDefinition::Arc {
@@ -933,17 +947,14 @@ pub(in crate::decode) fn saved_section_entity_geometry(
             ))
         }
         crate::feature::definitions::FeatureSavedEntity::Conic(conic) => {
-            let Some((
+            let (
                 frame,
                 major_axis,
                 major_radius,
                 minor_radius,
                 parameter_shift,
                 coincident_endpoints,
-            )) = conic_facts
-            else {
-                return None;
-            };
+            ) = conic_facts?;
             let bounds = match conic.parameters {
                 [Some(start), Some(end)]
                     if start.is_finite()
@@ -983,7 +994,7 @@ pub(in crate::decode) fn saved_section_entity_geometry(
         }
         crate::feature::definitions::FeatureSavedEntity::Spline(_)
         | crate::feature::definitions::FeatureSavedEntity::Dummy(_) => None,
-    })()
+    }
 }
 
 pub(in crate::decode) fn is_full_circle_geometry(geometry: &SketchGeometry) -> bool {
@@ -1038,6 +1049,7 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<Option<(usize, SketchGeometry)>, cadmpeg_core::CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo saved section missing line geometry scratch")?;
     let Some(order) = definition.order_table.as_ref() else {
         return Ok(None);
     };
@@ -1059,16 +1071,18 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
     let mut trimmed_external_ids = BTreeSet::new();
     for id in ctx
         .admit_iter(
-            trim_segment_ids(ctx, definition)?,
+            scratch.with_storage(|| trim_segment_ids(ctx, definition))?,
             "creo missing-line trim rows",
         )?
         .flatten()
     {
-        ctx.insert_btree_set(
-            &mut trimmed_external_ids,
-            id,
-            "creo missing-line trimmed ID nodes",
-        )?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut trimmed_external_ids,
+                id,
+                "creo missing-line trimmed ID nodes",
+            )
+        })?;
     }
     let Some(SegmentRow::Ordinary(missing)) = crate::decode::uniqueness::exactly_one_by(
         ctx,
@@ -1099,6 +1113,16 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
         return Ok(None);
     };
 
+    let mut ordered_ids = BTreeSet::new();
+    for row in ctx.admit_iter(order.rows.as_slice(), "creo missing-line ordered rows")? {
+        scratch.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut ordered_ids,
+                row.internal_id,
+                "creo missing-line ordered ID nodes",
+            )
+        })?;
+    }
     let mut geometries = Vec::new();
     let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
         std::convert::Infallible,
@@ -1106,31 +1130,23 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
         let Some(geometry) = saved_section_entity_geometry(entity) else {
             return Ok(ControlFlow::Continue(()));
         };
-        if ctx.any_by(
-            &order.rows,
-            |row| Ok(row.internal_id == geometry.0),
-            "creo missing-line order lookup",
-        )? {
-            ctx.reserve_vec(&mut geometries, 1, "creo missing-line saved geometries")?;
+        if ctx.contains_btree_set(&ordered_ids, &geometry.0, "creo missing-line order lookup")? {
+            scratch.with_storage(|| {
+                ctx.reserve_vec(&mut geometries, 1, "creo missing-line saved geometries")
+            })?;
             geometries.push(geometry);
         }
         Ok(ControlFlow::Continue(()))
     })?;
-    let mut ordered_ids = BTreeSet::new();
-    for row in ctx.admit_iter(order.rows.as_slice(), "creo missing-line ordered rows")? {
-        ctx.insert_btree_set(
-            &mut ordered_ids,
-            row.internal_id,
-            "creo missing-line ordered ID nodes",
-        )?;
-    }
     let mut geometry_ids = BTreeSet::new();
     for (internal_id, _, _) in ctx.admit_iter(&geometries, "creo missing-line geometry IDs")? {
-        ctx.insert_btree_set(
-            &mut geometry_ids,
-            *internal_id,
-            "creo missing-line geometry ID nodes",
-        )?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut geometry_ids,
+                *internal_id,
+                "creo missing-line geometry ID nodes",
+            )
+        })?;
     }
     if ordered_ids.len() != order.rows.len()
         || geometry_ids.len() != geometries.len()
@@ -1146,7 +1162,9 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
     let mut endpoints = Vec::new();
     for (_, geometry, _) in ctx.admit_iter(&geometries, "creo missing-line geometries")? {
         if let Some([start, end]) = saved_geometry_endpoints(geometry) {
-            ctx.reserve_vec(&mut endpoints, 2, "creo missing-line endpoints")?;
+            scratch.with_storage(|| {
+                ctx.reserve_vec(&mut endpoints, 2, "creo missing-line endpoints")
+            })?;
             endpoints.push(start);
             endpoints.push(end);
         }
@@ -1158,25 +1176,20 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
         return Ok(None);
     }
     let mut open = [None, None];
-    for (index, endpoint) in ctx
-        .admit_iter(&endpoints, "creo missing-line endpoints")?
-        .enumerate()
+    let mut endpoint_rows = endpoints.iter().enumerate();
+    while let Some((index, endpoint)) =
+        ctx.next_charged(&mut endpoint_rows, "creo missing-line endpoints")?
     {
         let mut first_mate = None;
-        let mut has_multiple_mates = false;
-        for (candidate_index, candidate) in ctx
-            .admit_iter(&endpoints, "creo missing-line endpoint candidates")?
-            .enumerate()
-        {
-            if candidate_index == index {
-                continue;
-            }
-            if saved_points_coincide(*endpoint, *candidate)
-                && first_mate.replace(candidate_index).is_some()
-            {
-                has_multiple_mates = true;
-            }
-        }
+        let has_multiple_mates = ctx.any_by(
+            endpoints.iter().enumerate(),
+            |(candidate_index, candidate)| {
+                Ok(candidate_index != index
+                    && saved_points_coincide(*endpoint, *candidate)
+                    && first_mate.replace(candidate_index).is_some())
+            },
+            "creo missing-line endpoint candidates",
+        )?;
         if has_multiple_mates {
             return Ok(None);
         }
@@ -1228,6 +1241,7 @@ pub(in crate::decode) fn saved_profile_chains(
     sketch: &SketchId,
     geometries: &[(u32, SketchGeometry)],
 ) -> Result<Vec<Vec<SketchEntityUse>>, cadmpeg_core::CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo saved profile chains scratch")?;
     let mut profiles = Vec::new();
     for (external_id, geometry) in ctx.admit_iter(geometries, "creo saved profile geometries")? {
         if !is_full_circle_geometry(geometry) {
@@ -1246,15 +1260,16 @@ pub(in crate::decode) fn saved_profile_chains(
         ctx.reserve_vec(&mut profiles, 1, "creo saved profile rows")?;
         profiles.push(uses);
     }
-    let row_count = ctx
-        .admit_iter(geometries, "creo saved profile endpoint count")?
-        .filter(|(_, geometry)| saved_geometry_endpoints(geometry).is_some())
-        .count();
-    let mut mates = ctx.alloc_filled(row_count, [None; 2], "creo saved profile endpoint mates")?;
     let mut rows = Vec::new();
+    let mut mates = Vec::new();
     for (external_id, geometry) in ctx.admit_iter(geometries, "creo saved profile endpoint rows")? {
         if let Some(endpoints) = saved_geometry_endpoints(geometry) {
-            ctx.reserve_vec(&mut rows, 1, "creo saved profile endpoint rows")?;
+            scratch.with_storage(|| {
+                ctx.push_vec(&mut mates, [None; 2], "creo saved profile endpoint mates")
+            })?;
+            scratch.with_storage(|| {
+                ctx.reserve_vec(&mut rows, 1, "creo saved profile endpoint rows")
+            })?;
             rows.push((*external_id, endpoints));
         }
     }
@@ -1270,12 +1285,10 @@ pub(in crate::decode) fn saved_profile_chains(
             'candidate_rows: while let Some((candidate_row, (_, candidate_endpoints))) =
                 ctx.next_charged(&mut candidates, "creo saved profile endpoint candidates")?
             {
-                for candidate_endpoint in 0..2 {
+                for (candidate_endpoint, candidate_point) in candidate_endpoints.iter().enumerate()
+                {
                     if (candidate_row != row_index || candidate_endpoint != endpoint_index)
-                        && saved_points_coincide(
-                            endpoints[endpoint_index],
-                            candidate_endpoints[candidate_endpoint],
-                        )
+                        && saved_points_coincide(endpoints[endpoint_index], *candidate_point)
                         && mate.replace((candidate_row, candidate_endpoint)).is_some()
                     {
                         has_second_mate = true;
@@ -1291,7 +1304,7 @@ pub(in crate::decode) fn saved_profile_chains(
     // Seeds in external identifier order, then row order: each component
     // starts from the smallest identifier not taken by an earlier component.
     let mut seeds = Vec::new();
-    ctx.reserve_vec(&mut seeds, rows.len(), "creo saved profile seeds")?;
+    scratch.with_storage(|| ctx.reserve_vec(&mut seeds, rows.len(), "creo saved profile seeds"))?;
     for (index, _) in ctx
         .admit_iter(&rows, "creo saved profile seeds")?
         .enumerate()
@@ -1312,7 +1325,9 @@ pub(in crate::decode) fn saved_profile_chains(
         if mates[seed].iter().any(Option::is_none) {
             continue;
         }
+        let mut chain_storage = ctx.reserve_scoped(0, "creo saved profile chain scratch")?;
         let mut uses = Vec::new();
+        let mut visited_storage = ctx.reserve_scoped(0, "creo saved profile visited scratch")?;
         let mut used = BTreeSet::new();
         let mut row = seed;
         let mut reversed = false;
@@ -1321,11 +1336,16 @@ pub(in crate::decode) fn saved_profile_chains(
             if ctx.contains_btree_set(&used, &row, "creo saved profile visited lookup")? {
                 break;
             }
-            ctx.insert_btree_set(&mut used, row, "creo saved profile visited nodes")?;
-            let Some(entity) = sketch_entity_id_admitted(ctx, sketch, rows[row].0)? else {
+            visited_storage.with_storage(|| {
+                ctx.insert_btree_set(&mut used, row, "creo saved profile visited nodes")
+            })?;
+            let Some(entity) = chain_storage
+                .with_storage(|| sketch_entity_id_admitted(ctx, sketch, rows[row].0))?
+            else {
                 continue;
             };
-            ctx.reserve_vec(&mut uses, 1, "creo saved profile uses")?;
+            chain_storage
+                .with_storage(|| ctx.reserve_vec(&mut uses, 1, "creo saved profile uses"))?;
             uses.push(SketchEntityUse { entity, reversed });
             let outgoing = usize::from(!reversed);
             let Some((next_row, next_endpoint)) = mates[row][outgoing] else {
@@ -1336,13 +1356,16 @@ pub(in crate::decode) fn saved_profile_chains(
             if row == seed {
                 if !reversed {
                     ctx.reserve_vec(&mut profiles, 1, "creo saved profile rows")?;
+                    chain_storage.commit()?;
                     profiles.push(uses);
                 }
                 break;
             }
         }
         for &row in ctx.admit_iter(&used, "creo saved profile visited rows")? {
-            ctx.insert_btree_set(&mut taken, row, "creo saved profile taken nodes")?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(&mut taken, row, "creo saved profile taken nodes")
+            })?;
         }
     }
     Ok(profiles)
