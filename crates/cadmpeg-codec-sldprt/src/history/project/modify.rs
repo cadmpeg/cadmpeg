@@ -623,18 +623,26 @@ pub(super) fn project_flex(
             }
         }
         Some(FlexForm::Tapering) => {
-            let factor = match ctx.get_btree_map(&feature.parameters, "Factor", super::FEATURE_LITERAL)? {
-                Some(value) => ctx.parse_text::<f64>(
-                    ctx.trim_text(value, super::FEATURE_LITERAL)?,
-                    super::FEATURE_LITERAL,
-                )?.ok().and_then(cadmpeg_ir::scalar::PositiveReal::new),
-                None => None,
-            };
-            factor.map_or(FlexMode::Unresolved { form }, |factor| FlexMode::Tapering { factor })
+            let factor =
+                match ctx.get_btree_map(&feature.parameters, "Factor", super::FEATURE_LITERAL)? {
+                    Some(value) => ctx
+                        .parse_text::<f64>(
+                            ctx.trim_text(value, super::FEATURE_LITERAL)?,
+                            super::FEATURE_LITERAL,
+                        )?
+                        .ok()
+                        .and_then(cadmpeg_ir::scalar::PositiveReal::new),
+                    None => None,
+                };
+            factor.map_or(FlexMode::Unresolved { form }, |factor| FlexMode::Tapering {
+                factor,
+            })
         }
         Some(FlexForm::Stretching) => parameter_literal(ctx, feature, "Distance")?
             .and_then(parse_length_mm)
-            .map_or(FlexMode::Unresolved { form }, |distance| FlexMode::Stretching { distance }),
+            .map_or(FlexMode::Unresolved { form }, |distance| {
+                FlexMode::Stretching { distance }
+            }),
         None => FlexMode::Unresolved { form },
     };
     Ok(FeatureDefinition::Operation(FeatureOperation::Flex {
@@ -818,3 +826,6 @@ pub(super) fn project_chamfer(
         flip_direction: false,
     }))
 }
+
+#[cfg(test)]
+mod tests;

@@ -12,7 +12,7 @@ use cadmpeg_ir::features::{
 };
 use std::collections::{BTreeMap, HashMap};
 
-fn limited<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+pub(super) fn limited<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 10_000;
@@ -45,7 +45,7 @@ fn retained_refusal_at<T>(
     );
 }
 
-fn property(feature: &mut Feature, key: &'static str, value: String) {
+pub(super) fn property(feature: &mut Feature, key: &'static str, value: String) {
     feature.properties.insert(
         cadmpeg_core::text::NonBlankString::try_from(key).unwrap(),
         value,
@@ -460,90 +460,6 @@ fn accepted_equation_curve_refuses_expression_retention_limit() {
     });
 }
 
-#[test]
-fn invalid_composite_closed_flag_stops_at_first_nonblank_character() {
-    let mut source = feature("composite", None, 0);
-    property(&mut source, "Segments", format!("; \u{2003};{};second", "x".repeat(100_000)));
-    property(&mut source, "Closed", "invalid".into());
-    assert!(limited(|ctx| super::datum::project_composite_curve(ctx, &source, &HashMap::new())).unwrap().is_none());
-    crate::test_support::work_refusal_at("project SLDPRT composite curve segments", |ctx| {
-        super::datum::project_composite_curve(ctx, &source, &HashMap::new())
-    });
-}
-
-#[test]
-fn composite_segments_preserve_unicode_trimming_and_source_order() {
-    let mut source = feature("composite", None, 0);
-    property(&mut source, "Segments", "; \u{2003};first\u{2003} ; second ;".into());
-    property(&mut source, "Closed", "true".into());
-    let definition = super::datum::project_composite_curve(&cadmpeg_test_support::service_decode_context(), &source, &HashMap::from([("first", "native-first")])).unwrap();
-    let Some(FeatureDefinition::Operation(FeatureOperation::CompositeCurve { segments, closed })) = definition else {
-        panic!("expected composite curve");
-    };
-    assert!(closed);
-    assert_eq!(segments.as_slice(), [cadmpeg_ir::features::PathRef::Native("native-first".into()), cadmpeg_ir::features::PathRef::Native("second".into())]);
-}
-
-#[test]
-fn empty_composite_segments_do_not_read_closed_flag() {
-    let mut source = feature("composite", None, 0);
-    property(&mut source, "Segments", "; \u{2003}; \t;".into());
-    property(&mut source, "Closed", "x".repeat(100_000));
-    assert!(limited(|ctx| super::datum::project_composite_curve(ctx, &source, &HashMap::new())).unwrap().is_none());
-}
-
-#[test]
-fn missing_fillet_position_leaves_remaining_radii_pass_unpaid() {
-    let mut source = feature("fillet", None, 0);
-    source.kind = "VarFillet".into();
-    source.parameters.insert(cadmpeg_core::nonblank_literal!("Radius0"), "2mm".into());
-    for index in 0..12_000 {
-        source.parameters.insert(format!("z{index:05}").try_into().unwrap(), "unused".into());
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 20_000;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let definition = super::modify::project_fillet(&ctx, &source).unwrap();
-    assert!(matches!(definition, FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) if matches!(groups[0].radius, cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) })));
-    crate::test_support::work_refusal_at("scan SLDPRT variable fillet radii", |ctx| super::modify::project_fillet(ctx, &source));
-}
-
-#[test]
-fn flex_reads_only_the_operand_of_its_selected_form() {
-    use cadmpeg_ir::features::{FlexForm, FlexMode};
-    for (mode, required, value, form) in [
-        ("bending", "Angle", "1rad", Some(FlexForm::Bending)),
-        ("twisting", "Angle", "1rad", Some(FlexForm::Twisting)),
-        ("tapering", "Factor", "2", Some(FlexForm::Tapering)),
-        ("stretching", "Distance", "1mm", Some(FlexForm::Stretching)),
-        ("invalid", "", "", None),
-    ] {
-        let mut source = feature("flex", None, 0);
-        property(&mut source, "Mode", mode.into());
-        for name in ["Angle", "Factor", "Distance"] {
-            source.parameters.insert(name.try_into().unwrap(), if name == required { value.into() } else { "x".repeat(100_000) });
-        }
-        let definition = limited(|ctx| super::modify::project_flex(ctx, &source)).unwrap();
-        let FeatureDefinition::Operation(FeatureOperation::Flex { mode, .. }) = definition else {
-            panic!("expected flex");
-        };
-        match (form, mode) {
-            (Some(FlexForm::Bending), FlexMode::Bending { angle }) | (Some(FlexForm::Twisting), FlexMode::Twisting { angle }) => assert_eq!(angle.get(), 1.0),
-            (Some(FlexForm::Tapering), FlexMode::Tapering { factor }) => assert_eq!(factor.get(), 2.0),
-            (Some(FlexForm::Stretching), FlexMode::Stretching { distance }) => assert_eq!(distance.get(), 1.0),
-            (None, FlexMode::Unresolved { form: None }) => {},
-            (_, mode) => panic!("unexpected flex mode: {mode:?}"),
-        }
-        if let Some(form) = form {
-            source.parameters.remove(required);
-            assert!(matches!(limited(|ctx| super::modify::project_flex(ctx, &source)).unwrap(), FeatureDefinition::Operation(FeatureOperation::Flex { mode: FlexMode::Unresolved { form: Some(actual) }, .. }) if actual == form));
-            source.parameters.insert(required.try_into().unwrap(), "invalid".into());
-            assert!(matches!(limited(|ctx| super::modify::project_flex(ctx, &source)).unwrap(), FeatureDefinition::Operation(FeatureOperation::Flex { mode: FlexMode::Unresolved { form: Some(actual) }, .. }) if actual == form));
-        }
-    }
-}
-
 fn projected_plane(ordinal: u64, operation: FeatureOperation) -> cadmpeg_ir::features::Feature {
     cadmpeg_ir::features::Feature {
         id: FeatureId::mint(format!("synthetic:test:feature#plane-{ordinal}")).unwrap(),
@@ -555,7 +471,9 @@ fn projected_plane(ordinal: u64, operation: FeatureOperation) -> cadmpeg_ir::fea
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(FeatureDefinition::Operation(operation)),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(operation),
+        ),
         native_ref: Some(format!("synthetic:history:plane-{ordinal}")),
     }
 }
@@ -563,39 +481,103 @@ fn projected_plane(ordinal: u64, operation: FeatureOperation) -> cadmpeg_ir::fea
 #[test]
 fn offset_candidate_index_is_not_built_without_a_search() {
     use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
-    use cadmpeg_ir::{features::{DatumPlaneReference, PrincipalPlane}, scalar::Length};
-    let base = projected_plane(0, FeatureOperation::DatumPrincipalPlane { plane: PrincipalPlane::Top });
-    for offsets in [Vec::new(), vec![projected_plane(1, FeatureOperation::DatumOffsetPlane { reference: Some(DatumPlaneReference::Feature { feature: base.id.clone() }), distance: Length::new(1.0).unwrap() })], vec![projected_plane(1, FeatureOperation::DatumOffsetPlane { reference: None, distance: Length::new(1.0).unwrap() })]] {
+    use cadmpeg_ir::{
+        features::{DatumPlaneReference, PrincipalPlane},
+        scalar::Length,
+    };
+    let base = projected_plane(
+        0,
+        FeatureOperation::DatumPrincipalPlane {
+            plane: PrincipalPlane::Top,
+        },
+    );
+    for offsets in [
+        Vec::new(),
+        vec![projected_plane(
+            1,
+            FeatureOperation::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature {
+                    feature: base.id.clone(),
+                }),
+                distance: Length::new(1.0).unwrap(),
+            },
+        )],
+        vec![projected_plane(
+            1,
+            FeatureOperation::DatumOffsetPlane {
+                reference: None,
+                distance: Length::new(1.0).unwrap(),
+            },
+        )],
+    ] {
         let mut features = vec![base.clone()];
         features.extend(offsets);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "index SLDPRT offset plane candidates", None);
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "index SLDPRT offset plane candidates",
+            None,
+        );
         super::bind_offset_plane_references(&ctx, &mut features).unwrap();
         assert!(ctx.resource_refusal().is_none());
-        assert!(matches!(features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane: PrincipalPlane::Top })));
+        assert!(matches!(
+            features[0].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
+                plane: PrincipalPlane::Top
+            })
+        ));
         if let Some(offset) = features.get(1) {
-            assert!(matches!(offset.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })));
+            assert!(matches!(
+                offset.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })
+            ));
         }
     }
 }
 
 #[test]
 fn offset_candidate_index_refuses_at_first_search_and_binds_same_plane() {
-    use cadmpeg_ir::{features::{DatumPlaneReference, PrincipalPlane}, scalar::Length};
-    let base = projected_plane(0, FeatureOperation::DatumPrincipalPlane { plane: PrincipalPlane::Top });
-    let mut offset = projected_plane(1, FeatureOperation::DatumOffsetPlane { reference: None, distance: Length::new(1.0).unwrap() });
-    for (name, value) in [("Origin", "0mm,0mm,1mm"), ("Normal", "0,0,1"), ("UAxis", "1,0,0")] {
-        offset.source_properties.insert(name.try_into().unwrap(), value.into());
+    use cadmpeg_ir::{
+        features::{DatumPlaneReference, PrincipalPlane},
+        scalar::Length,
+    };
+    let base = projected_plane(
+        0,
+        FeatureOperation::DatumPrincipalPlane {
+            plane: PrincipalPlane::Top,
+        },
+    );
+    let mut offset = projected_plane(
+        1,
+        FeatureOperation::DatumOffsetPlane {
+            reference: None,
+            distance: Length::new(1.0).unwrap(),
+        },
+    );
+    for (name, value) in [
+        ("Origin", "0mm,0mm,1mm"),
+        ("Normal", "0,0,1"),
+        ("UAxis", "1,0,0"),
+    ] {
+        offset
+            .source_properties
+            .insert(name.try_into().unwrap(), value.into());
     }
     crate::test_support::work_refusal_at("index SLDPRT offset plane candidates", |ctx| {
         let mut features = [base.clone(), offset.clone()];
         super::bind_offset_plane_references(ctx, &mut features)
     });
     let mut features = [base.clone(), offset];
-    super::bind_offset_plane_references(&cadmpeg_test_support::service_decode_context(), &mut features).unwrap();
-    assert!(matches!(features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { reference: Some(DatumPlaneReference::Feature { feature }), distance }) if feature == &base.id && distance.get() == 1.0));
+    super::bind_offset_plane_references(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut features,
+    )
+    .unwrap();
+    assert!(
+        matches!(features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { reference: Some(DatumPlaneReference::Feature { feature }), distance }) if feature == &base.id && distance.get() == 1.0)
+    );
     assert_eq!(features[1].dependencies.as_slice(), [base.id]);
 }
