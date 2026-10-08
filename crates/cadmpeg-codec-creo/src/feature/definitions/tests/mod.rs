@@ -1,13 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-
-
 #[test]
 fn resolved_trim_scalar_preserves_missing_duplicate_and_conflict_rules() {
-    use super::{
-        FeatureVariableRow, FeatureVariableTable, ScalarLane,
-        VariableType,
-    };
+    use super::{FeatureVariableRow, FeatureVariableTable, ScalarLane, VariableType};
 
     let row = |value| FeatureVariableRow {
         variable_type: VariableType::Radius,
@@ -27,7 +22,14 @@ fn resolved_trim_scalar_preserves_missing_duplicate_and_conflict_rules() {
         rows,
         offset: 0,
     };
-    let resolve = |rows| crate::decode::with_test_decode_ctx(|ctx| table(rows).reconciled_trim_geometry(ctx).map(|geometry| geometry.radius(7))).expect("radius budget");
+    let resolve = |rows| {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            table(rows)
+                .reconciled_trim_geometry(ctx)
+                .map(|geometry| geometry.radius(7))
+        })
+        .expect("radius budget")
+    };
     assert_eq!(resolve(Vec::new()), Ok(None));
     assert_eq!(resolve(vec![row(ScalarLane::Undefined)]), Ok(None));
     assert_eq!(resolve(vec![row(ScalarLane::DimensionDriven)]), Ok(None));
@@ -71,11 +73,21 @@ fn assert_definition_limit(
     parse: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
 ) {
     use cadmpeg_core::decode::ResourceDimension;
-    assert!(crate::decode::with_test_decode_ctx(|ctx| parse(ctx)).is_ok(), "service input should parse");
-    let dimension = if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems };
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| parse(ctx)).is_ok(),
+        "service input should parse"
+    );
+    let dimension = if retained {
+        ResourceDimension::RetainedBytes
+    } else {
+        ResourceDimension::CollectionItems
+    };
     let error = crate::test_support::last_refusal_at(payload, dimension, operation, parse);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-        if refusal.dimension == dimension && refusal.operation == operation), "expected a refusal at {operation}");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+        if refusal.dimension == dimension && refusal.operation == operation),
+        "expected a refusal at {operation}"
+    );
 }
 
 #[test]
@@ -91,12 +103,18 @@ fn contextual_definition_start_vec_refuses_before_growth() {
     let payload = b"feat_defs_1\0\xe0\x01feat_id\0\x2a\xe0\x00ref_model_info\0";
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let error = crate::test_support::last_refusal_at(payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo feature definition starts", |ctx| super::definition_starts(ctx, payload));
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+    let error = crate::test_support::last_refusal_at(
+        payload,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo feature definition starts",
+        |ctx| super::definition_starts(ctx, payload),
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("resource refusal");
+    };
     policy.limits.max_collection_items = limit.limit;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
-            .expect("definition input admitted");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("definition input admitted");
     assert!(matches!(super::definition_starts(&ctx, payload),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
             if refusal.operation == "creo feature definition starts"));
@@ -174,7 +192,7 @@ fn parsed_definition_vec_refuses_before_growth() {
                 owner_override: None,
                 positional: false,
             }],
-        None,
+            None,
         )
         .map(|_| ())
     });
@@ -193,7 +211,7 @@ fn definition_scalar_cache_refuses_before_unique_image_insertion() {
                 owner_override: None,
                 positional: false,
             }],
-        None,
+            None,
         )
         .map(|_| ())
     });
@@ -212,7 +230,7 @@ fn definition_body_refuses_before_retained_copy() {
                 owner_override: None,
                 positional: false,
             }],
-        None,
+            None,
         )
         .map(|_| ())
     });
@@ -231,7 +249,7 @@ fn feature_parameter_frame_vec_refuses_before_growth() {
                 owner_override: None,
                 positional: false,
             }],
-        None,
+            None,
         )
         .map(|_| ())
     });
@@ -250,7 +268,7 @@ fn feature_parameter_frame_body_refuses_before_retained_copy() {
                 owner_override: None,
                 positional: false,
             }],
-        None,
+            None,
         )
         .map(|_| ())
     });
@@ -269,7 +287,7 @@ fn feature_outline_vec_refuses_before_growth() {
                 owner_override: None,
                 positional: false,
             }],
-        None,
+            None,
         )
         .map(|_| ())
     });
@@ -288,17 +306,11 @@ fn feature_outline_scalar_refuses_before_retained_copy() {
                 owner_override: None,
                 positional: false,
             }],
-        None,
+            None,
         )
         .map(|_| ())
     });
 }
-
-
-
-
-
-
 
 use super::{
     order_table, positional_order_table, segment_table_body, PrototypeRow, RelationBodyRows,
@@ -343,8 +355,7 @@ fn segment_body_copy_refuses_before_retention() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    let error =
-        one_segment_with_limits(u64::MAX, 0).expect_err("row body needs retained bytes");
+    let error = one_segment_with_limits(u64::MAX, 0).expect_err("row body needs retained bytes");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo segment row body"));
@@ -470,11 +481,7 @@ fn positional_order_table_refuses_a_zero_declared_count_with_a_prototype_row() {
             positional_order_table(ctx, &two, 0, two.len(), 66)
         })
         .expect("positional order table admitted")
-        .map(|table| (
-            table.declared_count,
-            table.has_prototype,
-            table.rows.len()
-        )),
+        .map(|table| (table.declared_count, table.has_prototype, table.rows.len())),
         Some((2, true, 1))
     );
 }
@@ -631,14 +638,24 @@ fn unresolved_guess_search_stops_at_the_first_delimiter() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let short = [0x00, 0x55, 0x01, 0x02, 0x03, 0xe2];
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits,
-        "creo variable guess delimiter", |ctx| super::unresolved_variable_guess_end(ctx, &short, 0, short.len()));
-    let CodecError::ResourceLimit(limit) = error else { panic!("work refusal"); };
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo variable guess delimiter",
+        |ctx| super::unresolved_variable_guess_end(ctx, &short, 0, short.len()),
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal");
+    };
     let mut long = short.to_vec();
     long.resize(65_536, 0x55);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = limit.used.checked_add(limit.additional).expect("work need");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(super::unresolved_variable_guess_end(&ctx, &long, 0, long.len()).expect("first delimiter scan"), Some(2));
+    assert_eq!(
+        super::unresolved_variable_guess_end(&ctx, &long, 0, long.len())
+            .expect("first delimiter scan"),
+        Some(2)
+    );
 }

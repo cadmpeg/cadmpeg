@@ -36,4 +36,3 @@ fn placement_instruction_projection_refuses_before_byte_traversal() {
     assert_eq!(rows[0].offset, 1029);
     assert_eq!(rows[0].geometry1_id, Some(2));
 }
-

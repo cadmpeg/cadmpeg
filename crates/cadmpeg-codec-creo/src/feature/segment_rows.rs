@@ -259,7 +259,11 @@ impl SegmentRows {
         self.select(Some)
     }
 
-    pub(crate) fn add_offset(&mut self, ctx: &DecodeContext<'_>, base: usize) -> Result<(), CodecError> {
+    pub(crate) fn add_offset(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        base: usize,
+    ) -> Result<(), CodecError> {
         for row in ctx.admit_iter(&mut self.rows, "creo segment offset traversal")? {
             row.add_offset(base);
         }
@@ -375,7 +379,8 @@ mod tests {
             [(2, 10), (7, 9)]
         );
 
-        crate::decode::with_test_decode_ctx(|ctx| rows.add_offset(ctx, 200)).expect("offset admission");
+        crate::decode::with_test_decode_ctx(|ctx| rows.add_offset(ctx, 200))
+            .expect("offset admission");
         assert_eq!(
             rows.points().map(|row| row.offset).collect::<Vec<_>>(),
             [500, 400, 201, 300]

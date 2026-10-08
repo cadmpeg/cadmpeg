@@ -316,4 +316,3 @@ fn model_reference_entry_joins_feature_name_to_feature_id() {
     );
     assert_eq!(names[0].name(), "Datum Plane id 41");
 }
-

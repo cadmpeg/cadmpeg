@@ -900,7 +900,10 @@ pub(in super::super) fn feature_parameters<'ctx>(
         )?
         .filter(|table| table.feature_id == feature_id)
     {
-        for entry in ctx.admit_iter(table.entries.as_slice(), "creo feature parameter entity entries")? {
+        for entry in ctx.admit_iter(
+            table.entries.as_slice(),
+            "creo feature parameter entity entries",
+        )? {
             let Some(source_entity_id) = entry.source_entity_id() else {
                 continue;
             };

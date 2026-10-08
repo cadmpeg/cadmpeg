@@ -11,11 +11,14 @@ Err(CodecError::ResourceLimit(limit))
             && limit.operation == "creo saved line body")
     );
     assert_eq!(
-        saved_line_with_limits(u64::MAX, crate::test_support::allocation_limit_at(
+        saved_line_with_limits(
+            u64::MAX,
+            crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 None,
                 |cap| saved_line_with_limits(u64::MAX, cap)
-            ))
+            )
+        )
         .expect("saved line admitted")
         .len(),
         1
@@ -124,4 +127,3 @@ fn saved_line_retains_its_identity_and_coordinate_prefix() {
         [[Some(0.0), Some(0.0), Some(0.0)], [None; 3]]
     );
 }
-

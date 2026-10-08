@@ -8,8 +8,8 @@ use cadmpeg_core::CodecError;
 
 use crate::psb;
 
-use super::rows::row_spans;
 use super::entity_rows::EntityRows;
+use super::rows::row_spans;
 
 /// One `AllFeatur` mixed generated-entity table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -345,7 +345,11 @@ pub(super) fn generated_class_200_source_entity_ids(
     table: &FeatureEntityTable,
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut ids = BTreeSet::new();
-    for id in ctx.admit_iter(table.entries.as_slice(), "creo generated source entry traversal")?
+    for id in ctx
+        .admit_iter(
+            table.entries.as_slice(),
+            "creo generated source entry traversal",
+        )?
         .filter_map(FeatureEntityTableEntry::source_entity_id)
     {
         ctx.insert_btree_set(&mut ids, id, "creo generated source entity ID nodes")?;
@@ -367,26 +371,54 @@ pub(crate) fn entity_graph(
     let mut source = None;
     let mut offset = 0;
     while offset < payload.len() {
-        ctx.next_charged(&mut (offset..payload.len()), "creo feature entity token traversal")?;
+        ctx.next_charged(
+            &mut (offset..payload.len()),
+            "creo feature entity token traversal",
+        )?;
         if payload[offset] == psb::token::NAMED_RECORD {
-            let Some(rest) = payload.get(offset + 2..) else { break; };
-            let Some(name_len) = ctx.position_by(rest, |byte| Ok(*byte == 0), "creo feature entity name terminator")? else { break; };
+            let Some(rest) = payload.get(offset + 2..) else {
+                break;
+            };
+            let Some(name_len) = ctx.position_by(
+                rest,
+                |byte| Ok(*byte == 0),
+                "creo feature entity name terminator",
+            )?
+            else {
+                break;
+            };
             let entity_id = u32::try_from(entities.len())
                 .map_err(|_| CodecError::malformed("creo feature entity id exceeds u32"))?;
             ctx.reserve_vec(&mut entities, 1, "creo feature entity graph nodes")?;
-            let name = ctx.copy_retained_lossy_utf8(&rest[..name_len], "creo feature entity name")?;
-            entities.push(FeatureEntity { entity_id, type_byte: payload[offset + 1], name, offset });
+            let name =
+                ctx.copy_retained_lossy_utf8(&rest[..name_len], "creo feature entity name")?;
+            entities.push(FeatureEntity {
+                entity_id,
+                type_byte: payload[offset + 1],
+                name,
+                offset,
+            });
             source = Some(entity_id);
             offset += name_len + 3;
             continue;
         }
-        let Some(token) = psb::token_at(payload, offset) else { break; };
+        let Some(token) = psb::token_at(payload, offset) else {
+            break;
+        };
         offset += token.length;
         if token.kind == psb::TokenKind::EntityReference {
-            let Ok((target_entity_id, _)) = psb::reference_id(payload, token.offset + 1) else { continue; };
-            ctx.push_vec(&mut references, FeatureEntityReference {
-                source_entity_id: source, target_entity_id, offset: token.offset,
-            }, "creo feature entity graph references")?;
+            let Ok((target_entity_id, _)) = psb::reference_id(payload, token.offset + 1) else {
+                continue;
+            };
+            ctx.push_vec(
+                &mut references,
+                FeatureEntityReference {
+                    source_entity_id: source,
+                    target_entity_id,
+                    offset: token.offset,
+                },
+                "creo feature entity graph references",
+            )?;
         }
     }
     Ok((entities, references))
@@ -412,21 +444,51 @@ pub(super) fn read_entries(
     let mut cursor = body_start;
     let mut indices = 0..count;
     while let Some(index) = ctx.next_charged(&mut indices, "creo feature entry traversal")? {
-        let Some(EntryPrefix { id, payload: entry_payload, prefixed, offset, body_start, terminal_state }) = entry_prefix(payload, cursor, index) else { return Ok(None); };
+        let Some(EntryPrefix {
+            id,
+            payload: entry_payload,
+            prefixed,
+            offset,
+            body_start,
+            terminal_state,
+        }) = entry_prefix(payload, cursor, index)
+        else {
+            return Ok(None);
+        };
         let terminal_table_separator = (index + 1 == count
             && terminal_state.is_some()
-            && payload.get(body_start + 1..body_start + 3) == Some(&[0xf2, psb::token::ENTITY_REF]))
-            .then_some(body_start + 1);
+            && payload.get(body_start + 1..body_start + 3)
+                == Some(&[0xf2, psb::token::ENTITY_REF]))
+        .then_some(body_start + 1);
         let end_offset = if let Some(end_offset) = terminal_table_separator {
             end_offset
         } else {
-            let Some(rest) = payload.get(body_start..) else { return Ok(None); };
-            let Some(relative) = ctx.position_by(rest, |byte| Ok(*byte == 0xe3), "creo feature entry terminator")? else { return Ok(None); };
+            let Some(rest) = payload.get(body_start..) else {
+                return Ok(None);
+            };
+            let Some(relative) = ctx.position_by(
+                rest,
+                |byte| Ok(*byte == 0xe3),
+                "creo feature entry terminator",
+            )?
+            else {
+                return Ok(None);
+            };
             body_start + relative + 1
         };
-        storage.with_storage(|| ctx.push_vec(&mut entries, FeatureEntityTableEntry {
-            entity_id: id, payload: entry_payload, prefixed, offset, end_offset,
-        }, "creo feature table entries"))?;
+        storage.with_storage(|| {
+            ctx.push_vec(
+                &mut entries,
+                FeatureEntityTableEntry {
+                    entity_id: id,
+                    payload: entry_payload,
+                    prefixed,
+                    offset,
+                    end_offset,
+                },
+                "creo feature table entries",
+            )
+        })?;
         cursor = end_offset;
     }
     storage.commit()?;
@@ -505,7 +567,14 @@ fn entry_prefix(payload: &[u8], mut cursor: usize, index: usize) -> Option<Entry
         EntryPayload::Related(related) => Some(related.state.as_u8()),
         EntryPayload::Plain { .. } => None,
     };
-    Some(EntryPrefix { id, payload: entry_payload, prefixed, offset, body_start, terminal_state })
+    Some(EntryPrefix {
+        id,
+        payload: entry_payload,
+        prefixed,
+        offset,
+        body_start,
+        terminal_state,
+    })
 }
 
 /// Decode valid `AllFeatur` mixed generated-entity tables.
@@ -541,7 +610,9 @@ pub(crate) fn entity_tables(
         while span.is_some_and(|(_, end, _)| offset >= *end) {
             span = ctx.next_charged(&mut span_rows, "creo generated entity span traversal")?;
         }
-        let Some(&(_, row_end, feature_id)) = span.filter(|(start, _, _)| *start <= offset) else { continue; };
+        let Some(&(_, row_end, feature_id)) = span.filter(|(start, _, _)| *start <= offset) else {
+            continue;
+        };
         let Some(entries) = read_entries(ctx, &payload[..row_end], after_table_class + 2, count)?
         else {
             continue;
@@ -628,7 +699,15 @@ mod tests {
             run(u64::MAX, u64::MAX).expect("graph admitted"),
             (2, 1, "N\u{fffd}".into())
         );
-        let error = run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo feature entity graph nodes"), |cap| run(cap, u64::MAX)), u64::MAX).expect_err("root node needs a Vec item");
+        let error = run(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo feature entity graph nodes"),
+                |cap| run(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .expect_err("root node needs a Vec item");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo feature entity graph nodes"));
@@ -636,7 +715,15 @@ mod tests {
 
     #[test]
     fn entity_graph_references_refuse_before_vec_growth() {
-        let error = run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo feature entity graph references"), |cap| run(cap, u64::MAX)), u64::MAX).expect_err("reference needs a Vec item");
+        let error = run(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo feature entity graph references"),
+                |cap| run(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .expect_err("reference needs a Vec item");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo feature entity graph references"));
@@ -676,7 +763,12 @@ mod tests {
                 .len(),
             2
         );
-        let error = run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo feature table entries"), run)).expect_err("entry growth exceeds its boundary");
+        let error = run(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo feature table entries"),
+            run,
+        ))
+        .expect_err("entry growth exceeds its boundary");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo feature table entries"));
@@ -704,8 +796,16 @@ mod tests {
 
     #[test]
     fn feature_table_surface_ids_refuse_before_btree_insert() {
-        assert_eq!(limited_tables(u64::MAX).expect("one table admitted").len(), 1);
-        let error = limited_tables(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo feature table surface ids"), limited_tables)).expect_err("surface id node exceeds limit");
+        assert_eq!(
+            limited_tables(u64::MAX).expect("one table admitted").len(),
+            1
+        );
+        let error = limited_tables(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo feature table surface ids"),
+            limited_tables,
+        ))
+        .expect_err("surface id node exceeds limit");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo feature table surface ids"));
@@ -713,29 +813,42 @@ mod tests {
 
     #[test]
     fn feature_entity_tables_refuse_before_vec_growth() {
-        let error = limited_tables(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo feature entity tables"), limited_tables)).expect_err("table Vec item exceeds limit");
+        let error = limited_tables(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo feature entity tables"),
+            limited_tables,
+        ))
+        .expect_err("table Vec item exceeds limit");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo feature entity tables"));
     }
     #[test]
     fn entity_graph_lossy_name_refuses_copy_work() {
-        let (entities, references) = crate::test_support::assert_work_boundaries(
-            &["creo feature entity name"],
-            |ctx| entity_graph(ctx, GRAPH),
-        );
+        let (entities, references) =
+            crate::test_support::assert_work_boundaries(&["creo feature entity name"], |ctx| {
+                entity_graph(ctx, GRAPH)
+            });
         assert_eq!((entities.len(), references.len()), (2, 1));
         assert_eq!(entities[1].name, "N\u{fffd}");
     }
     #[test]
     fn entity_scans_refuse_at_work_boundaries() {
-        crate::test_support::assert_work_boundaries(&[
-            "creo feature entity token traversal", "creo feature entity name terminator", "creo feature entity name",
-        ], |ctx| entity_graph(ctx, GRAPH));
+        crate::test_support::assert_work_boundaries(
+            &[
+                "creo feature entity token traversal",
+                "creo feature entity name terminator",
+                "creo feature entity name",
+            ],
+            |ctx| entity_graph(ctx, GRAPH),
+        );
         let payload = [10, 0x80, 200, 4, 0, 0xe3, 11, 0x80, 200, 7, 1, 0xf2, 0xf7];
-        crate::test_support::assert_work_boundaries(&[
-            "creo feature entry traversal", "creo feature entry terminator",
-        ], |ctx| read_entries(ctx, &payload, 0, 2));
+        crate::test_support::assert_work_boundaries(
+            &[
+                "creo feature entry traversal",
+                "creo feature entry terminator",
+            ],
+            |ctx| read_entries(ctx, &payload, 0, 2),
+        );
     }
-
 }

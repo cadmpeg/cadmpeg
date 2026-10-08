@@ -11,11 +11,14 @@ Err(CodecError::ResourceLimit(limit))
             && limit.operation == "creo saved generated arc body")
     );
     assert_eq!(
-        generated_arc_with_limits(u64::MAX, crate::test_support::allocation_limit_at(
+        generated_arc_with_limits(
+            u64::MAX,
+            crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 None,
                 |cap| generated_arc_with_limits(u64::MAX, cap)
-            ))
+            )
+        )
         .expect("generated arc admitted")
         .len(),
         1
@@ -30,11 +33,14 @@ Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo saved generated line body")
     );
-    let entities = generated_line_with_limits(u64::MAX, crate::test_support::allocation_limit_at(
+    let entities = generated_line_with_limits(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             None,
             |cap| generated_line_with_limits(u64::MAX, cap),
-        ))
+        ),
+    )
     .expect("generated line admitted");
     let [FeatureSavedEntity::Line(line)] = entities.as_slice() else {
         panic!("generated line");
@@ -51,11 +57,14 @@ Err(CodecError::ResourceLimit(limit))
             && limit.operation == "creo saved arc body")
     );
     assert_eq!(
-        saved_circular_with_limits(u64::MAX, crate::test_support::allocation_limit_at(
+        saved_circular_with_limits(
+            u64::MAX,
+            crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 None,
                 |cap| saved_circular_with_limits(u64::MAX, cap)
-            ))
+            )
+        )
         .expect("arc and circle admitted")
         .len(),
         2
@@ -71,11 +80,14 @@ Err(CodecError::ResourceLimit(limit))
             && limit.operation == "creo saved circle body")
     );
     assert_eq!(
-        saved_circular_with_limits(u64::MAX, crate::test_support::allocation_limit_at(
+        saved_circular_with_limits(
+            u64::MAX,
+            crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 None,
                 |cap| saved_circular_with_limits(u64::MAX, cap)
-            ))
+            )
+        )
         .expect("arc and circle admitted")
         .len(),
         2
@@ -84,9 +96,14 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn saved_circular_entities_refuse_before_each_append() {
-    crate::test_support::assert_refusal_order(ResourceDimension::CollectionItems,
-        &["creo saved circular entities", "creo saved circular entities"],
-        |cap| saved_circular_with_limits(cap, u64::MAX));
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &[
+            "creo saved circular entities",
+            "creo saved circular entities",
+        ],
+        |cap| saved_circular_with_limits(cap, u64::MAX),
+    );
     assert_eq!(
         saved_circular_with_limits(u64::MAX, u64::MAX)
             .expect("arc and circle admitted")
@@ -108,16 +125,13 @@ fn saved_conic_body_refuses_before_retained_copy() {
             )
         })
     };
-    assert!(matches!(run(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo saved conic body"), |cap| run(u64::MAX, cap))),
+    assert!(
+        matches!(run(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo saved conic body"), |cap| run(u64::MAX, cap))),
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved conic body"));
-    assert_eq!(
-        run(u64::MAX, u64::MAX)
-        .expect("conic admitted")
-        .len(),
-        1
+            && limit.operation == "creo saved conic body")
     );
+    assert_eq!(run(u64::MAX, u64::MAX).expect("conic admitted").len(), 1);
 }
 
 #[test]
@@ -490,4 +504,3 @@ fn saved_generated_line_requires_its_orientation_invariant() {
     assert_eq!(line.endpoints[1], [Some(1.0), Some(0.0), Some(0.0)]);
     assert_eq!(line.body, payload[1..payload.len() - 1]);
 }
-

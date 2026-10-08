@@ -38,11 +38,20 @@ fn retained(error: &CodecError, operation: &'static str) {
 #[test]
 fn recipe_binding_refuses_before_vec_growth() {
     item(
-        &run(BINDING, crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo recipe bindings"), |cap| run(BINDING, cap, u64::MAX, |ctx| { 
-            super::super::recipe_bindings(ctx, BINDING)
-         })), u64::MAX, |ctx| { 
-            super::super::recipe_bindings(ctx, BINDING)
-         })
+        &run(
+            BINDING,
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo recipe bindings"),
+                |cap| {
+                    run(BINDING, cap, u64::MAX, |ctx| {
+                        super::super::recipe_bindings(ctx, BINDING)
+                    })
+                },
+            ),
+            u64::MAX,
+            |ctx| super::super::recipe_bindings(ctx, BINDING),
+        )
         .expect_err("one recipe binding needs an item"),
         "creo recipe bindings",
     );
@@ -51,11 +60,20 @@ fn recipe_binding_refuses_before_vec_growth() {
 #[test]
 fn recipe_binding_count_refuses_before_btree_insertion() {
     item(
-        &run(BINDING, crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo recipe binding counts"), |cap| run(BINDING, cap, u64::MAX, |ctx| { 
-            super::super::operation_states(ctx, BINDING)
-         })), u64::MAX, |ctx| { 
-            super::super::operation_states(ctx, BINDING)
-         })
+        &run(
+            BINDING,
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo recipe binding counts"),
+                |cap| {
+                    run(BINDING, cap, u64::MAX, |ctx| {
+                        super::super::operation_states(ctx, BINDING)
+                    })
+                },
+            ),
+            u64::MAX,
+            |ctx| super::super::operation_states(ctx, BINDING),
+        )
         .expect_err("binding count node needs admission"),
         "creo recipe binding counts",
     );
@@ -64,11 +82,20 @@ fn recipe_binding_count_refuses_before_btree_insertion() {
 #[test]
 fn operation_family_refuses_before_retained_text_copy() {
     retained(
-        &run(DISPLAY, u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo operation family name"), |cap| run(DISPLAY, u64::MAX, cap, |ctx| { 
-            super::super::operation_states(ctx, DISPLAY)
-         })), |ctx| { 
-            super::super::operation_states(ctx, DISPLAY)
-         })
+        &run(
+            DISPLAY,
+            u64::MAX,
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::RetainedBytes,
+                Some("creo operation family name"),
+                |cap| {
+                    run(DISPLAY, u64::MAX, cap, |ctx| {
+                        super::super::operation_states(ctx, DISPLAY)
+                    })
+                },
+            ),
+            |ctx| super::super::operation_states(ctx, DISPLAY),
+        )
         .expect_err("family text needs retained bytes"),
         "creo operation family name",
     );
@@ -77,11 +104,20 @@ fn operation_family_refuses_before_retained_text_copy() {
 #[test]
 fn operation_stored_name_refuses_before_retained_byte_copy() {
     retained(
-        &run(DISPLAY, u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo operation stored name bytes"), |cap| run(DISPLAY, u64::MAX, cap, |ctx| { 
-            super::super::operation_states(ctx, DISPLAY)
-         })), |ctx| { 
-            super::super::operation_states(ctx, DISPLAY)
-         })
+        &run(
+            DISPLAY,
+            u64::MAX,
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::RetainedBytes,
+                Some("creo operation stored name bytes"),
+                |cap| {
+                    run(DISPLAY, u64::MAX, cap, |ctx| {
+                        super::super::operation_states(ctx, DISPLAY)
+                    })
+                },
+            ),
+            |ctx| super::super::operation_states(ctx, DISPLAY),
+        )
         .expect_err("stored name bytes need retained admission"),
         "creo operation stored name bytes",
     );
@@ -90,11 +126,20 @@ fn operation_stored_name_refuses_before_retained_byte_copy() {
 #[test]
 fn operation_state_refuses_before_vec_growth() {
     item(
-        &run(DISPLAY, crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo feature operation states"), |cap| run(DISPLAY, cap, u64::MAX, |ctx| { 
-            super::super::operation_states(ctx, DISPLAY)
-         })), u64::MAX, |ctx| { 
-            super::super::operation_states(ctx, DISPLAY)
-         })
+        &run(
+            DISPLAY,
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo feature operation states"),
+                |cap| {
+                    run(DISPLAY, cap, u64::MAX, |ctx| {
+                        super::super::operation_states(ctx, DISPLAY)
+                    })
+                },
+            ),
+            u64::MAX,
+            |ctx| super::super::operation_states(ctx, DISPLAY),
+        )
         .expect_err("one state needs a vector item"),
         "creo feature operation states",
     );
@@ -103,11 +148,20 @@ fn operation_state_refuses_before_vec_growth() {
 #[test]
 fn operation_display_count_refuses_before_btree_insertion() {
     item(
-        &run(DISPLAY, crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo operation display counts"), |cap| run(DISPLAY, cap, u64::MAX, |ctx| { 
-            super::super::operation_states(ctx, DISPLAY)
-         })), u64::MAX, |ctx| { 
-            super::super::operation_states(ctx, DISPLAY)
-         })
+        &run(
+            DISPLAY,
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo operation display counts"),
+                |cap| {
+                    run(DISPLAY, cap, u64::MAX, |ctx| {
+                        super::super::operation_states(ctx, DISPLAY)
+                    })
+                },
+            ),
+            u64::MAX,
+            |ctx| super::super::operation_states(ctx, DISPLAY),
+        )
         .expect_err("one display count needs a map node"),
         "creo operation display counts",
     );
@@ -116,11 +170,20 @@ fn operation_display_count_refuses_before_btree_insertion() {
 #[test]
 fn operation_feature_node_refuses_before_btree_insertion() {
     item(
-        &run(DISPLAY, crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo operation feature nodes"), |cap| run(DISPLAY, cap, u64::MAX, |ctx| { 
-            super::super::operations(ctx, DISPLAY)
-         })), u64::MAX, |ctx| { 
-            super::super::operations(ctx, DISPLAY)
-         })
+        &run(
+            DISPLAY,
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo operation feature nodes"),
+                |cap| {
+                    run(DISPLAY, cap, u64::MAX, |ctx| {
+                        super::super::operations(ctx, DISPLAY)
+                    })
+                },
+            ),
+            u64::MAX,
+            |ctx| super::super::operations(ctx, DISPLAY),
+        )
         .expect_err("operation map needs a node"),
         "creo operation feature nodes",
     );
@@ -129,11 +192,20 @@ fn operation_feature_node_refuses_before_btree_insertion() {
 #[test]
 fn operation_feature_state_refuses_before_inner_vec_growth() {
     item(
-        &run(DISPLAY, crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo operation feature states"), |cap| run(DISPLAY, cap, u64::MAX, |ctx| { 
-            super::super::operations(ctx, DISPLAY)
-         })), u64::MAX, |ctx| { 
-            super::super::operations(ctx, DISPLAY)
-         })
+        &run(
+            DISPLAY,
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo operation feature states"),
+                |cap| {
+                    run(DISPLAY, cap, u64::MAX, |ctx| {
+                        super::super::operations(ctx, DISPLAY)
+                    })
+                },
+            ),
+            u64::MAX,
+            |ctx| super::super::operations(ctx, DISPLAY),
+        )
         .expect_err("inner state vector needs one item"),
         "creo operation feature states",
     );
@@ -142,21 +214,37 @@ fn operation_feature_state_refuses_before_inner_vec_growth() {
 #[test]
 fn current_operation_projection_refuses_before_vec_growth() {
     assert_eq!(
-        run(DISPLAY, crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, |cap| run(DISPLAY, cap, u64::MAX, |ctx| { 
-            super::super::operations(ctx, DISPLAY)
-         })), u64::MAX, |ctx| { 
-            super::super::operations(ctx, DISPLAY)
-         })
+        run(
+            DISPLAY,
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                None,
+                |cap| run(DISPLAY, cap, u64::MAX, |ctx| {
+                    super::super::operations(ctx, DISPLAY)
+                })
+            ),
+            u64::MAX,
+            |ctx| { super::super::operations(ctx, DISPLAY) }
+        )
         .expect("one operation admitted")
         .len(),
         1
     );
     item(
-        &run(DISPLAY, crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo current operation projections"), |cap| run(DISPLAY, cap, u64::MAX, |ctx| { 
-            super::super::operations(ctx, DISPLAY)
-         })), u64::MAX, |ctx| { 
-            super::super::operations(ctx, DISPLAY)
-         })
+        &run(
+            DISPLAY,
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo current operation projections"),
+                |cap| {
+                    run(DISPLAY, cap, u64::MAX, |ctx| {
+                        super::super::operations(ctx, DISPLAY)
+                    })
+                },
+            ),
+            u64::MAX,
+            |ctx| super::super::operations(ctx, DISPLAY),
+        )
         .expect_err("current projection needs one item"),
         "creo current operation projections",
     );
@@ -225,11 +313,17 @@ fn operation_scans_refuse_at_work_boundaries() {
 
 #[test]
 fn operation_projection_retains_only_the_selected_family() {
-    let cap = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, None,
-        |cap| run(DISPLAY, u64::MAX, cap, |ctx| super::super::operations(ctx, DISPLAY)));
+    let cap =
+        crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, None, |cap| {
+            run(DISPLAY, u64::MAX, cap, |ctx| {
+                super::super::operations(ctx, DISPLAY)
+            })
+        });
     let repeated = DISPLAY.repeat(2_000);
-    let operations = run(&repeated, u64::MAX, cap, |ctx| super::super::operations(ctx, &repeated))
-        .expect("discarded display names need no retained bytes");
+    let operations = run(&repeated, u64::MAX, cap, |ctx| {
+        super::super::operations(ctx, &repeated)
+    })
+    .expect("discarded display names need no retained bytes");
     assert_eq!(operations.len(), 1);
     assert_eq!(operations[0].feature_id, 7);
     assert_eq!(operations[0].kind.as_str(), "Extrude");

@@ -11,11 +11,14 @@ Err(CodecError::ResourceLimit(limit))
             && limit.operation == "creo dimension value body")
     );
     assert_eq!(
-        named_dimension_with_limits(u64::MAX, crate::test_support::allocation_limit_at(
+        named_dimension_with_limits(
+            u64::MAX,
+            crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 None,
                 |cap| named_dimension_with_limits(u64::MAX, cap)
-            ))
+            )
+        )
         .expect("dimension admitted")
         .expect("dimension present")
         .rows
@@ -33,11 +36,14 @@ Err(CodecError::ResourceLimit(limit))
             && limit.operation == "creo dimension auxiliary body")
     );
     assert_eq!(
-        named_dimension_with_limits(u64::MAX, crate::test_support::allocation_limit_at(
+        named_dimension_with_limits(
+            u64::MAX,
+            crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 None,
                 |cap| named_dimension_with_limits(u64::MAX, cap)
-            ))
+            )
+        )
         .expect("dimension admitted")
         .expect("dimension present")
         .rows
@@ -59,10 +65,12 @@ fn positional_dimension_unresolved_token_refuses_before_copy() {
             )
         })
     };
-    assert!(matches!(run(crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo dimension unresolved token"), run)),
+    assert!(
+        matches!(run(crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo dimension unresolved token"), run)),
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo dimension unresolved token"));
+            && limit.operation == "creo dimension unresolved token")
+    );
     assert_eq!(
         run(u64::MAX)
             .expect("dimension admitted")
@@ -75,8 +83,11 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn positional_dimension_rows_refuse_before_each_append() {
-    crate::test_support::assert_refusal_order(ResourceDimension::CollectionItems,
-        &["creo dimension rows", "creo dimension rows"], positional_dimension_table_with_limit);
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &["creo dimension rows", "creo dimension rows"],
+        positional_dimension_table_with_limit,
+    );
     let table = positional_dimension_table_with_limit(u64::MAX)
         .expect("dimension table admitted")
         .expect("table present");
@@ -87,24 +98,28 @@ fn positional_dimension_rows_refuse_before_each_append() {
 
 #[test]
 fn positional_dimension_value_body_refuses_before_copy() {
-    assert!(matches!(crate::test_support::last_refusal_at(POSITIONAL_DIMENSION_LIMIT_INPUT, ResourceDimension::RetainedBytes, "creo dimension value body", |ctx| {
+    assert!(
+        matches!(crate::test_support::last_refusal_at(POSITIONAL_DIMENSION_LIMIT_INPUT, ResourceDimension::RetainedBytes, "creo dimension value body", |ctx| {
             parse_positional_dimension(ctx, POSITIONAL_DIMENSION_LIMIT_INPUT, 0,
                 POSITIONAL_DIMENSION_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
         }),
 CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo dimension value body"));
+            && limit.operation == "creo dimension value body")
+    );
 }
 
 #[test]
 fn positional_dimension_auxiliary_body_refuses_before_copy() {
-    assert!(matches!(crate::test_support::last_refusal_at(POSITIONAL_DIMENSION_LIMIT_INPUT, ResourceDimension::RetainedBytes, "creo dimension auxiliary body", |ctx| {
+    assert!(
+        matches!(crate::test_support::last_refusal_at(POSITIONAL_DIMENSION_LIMIT_INPUT, ResourceDimension::RetainedBytes, "creo dimension auxiliary body", |ctx| {
             parse_positional_dimension(ctx, POSITIONAL_DIMENSION_LIMIT_INPUT, 0,
                 POSITIONAL_DIMENSION_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
         }),
 CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo dimension auxiliary body"));
+            && limit.operation == "creo dimension auxiliary body")
+    );
 }
 
 #[test]
@@ -119,10 +134,12 @@ fn named_section_dimension_id_refuses_before_vec_growth() {
             )
         })
     };
-    assert!(matches!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo section dimension IDs"), run)),
+    assert!(
+        matches!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo section dimension IDs"), run)),
 Err(CodecError::ResourceLimit(refusal))
         if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "creo section dimension IDs"));
+            && refusal.operation == "creo section dimension IDs")
+    );
     assert_eq!(
         run(u64::MAX)
             .expect("section admitted")
@@ -362,4 +379,3 @@ fn positional_definition_inherits_the_labeled_dimension_table_class() {
     assert_eq!(dimensions.rows[0].value.resolved(), Some(3.0));
     assert_eq!(dimensions.rows[0].external_id, 43);
 }
-

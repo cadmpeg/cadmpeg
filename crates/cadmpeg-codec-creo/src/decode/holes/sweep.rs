@@ -109,7 +109,10 @@ fn has_exact_materialized_surface_roster(
         .admit_iter(expected_ids, "creo expected surface roster count")?
         .count();
     let actual_count = ctx
-        .admit_iter(table.entries.as_slice(), "creo materialized surface roster count")?
+        .admit_iter(
+            table.entries.as_slice(),
+            "creo materialized surface roster count",
+        )?
         .filter(|entry| table.contains_surface_id(entry.entity_id))
         .count();
     if actual_count != expected_count || table.unique_surface_ids().len() != expected_count {

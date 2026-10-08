@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::feature::definitions::test_support::{reconciled_points, with_trim_limits};
 use super::entity_intersection as parse_entity_intersection;
+use crate::feature::definitions::test_support::with_points;
+use crate::feature::definitions::test_support::{reconciled_points, with_trim_limits};
 use crate::feature::definitions::trim::positional_trim_entity_table as parse_positional_trim_entity_table;
 use crate::feature::definitions::trim::positional_trim_vertex_table as parse_positional_trim_vertex_table;
-use crate::feature::definitions::test_support::with_points;
 use crate::feature::definitions::trim::trim_buckets as parse_trim_buckets;
 use crate::feature::definitions::trim::trim_vertex_entry as parse_trim_vertex_entry;
-use crate::feature::definitions::{
-    FeatureSectionPoint, FeatureSegment, FeatureSegmentKind,
-    FeatureSegmentTable, FeatureVariableRow, FeatureVariableTable, ScalarLane, TrimEntityKind,
-    VariableType,
+use crate::feature::definitions::trim::{
+    trim_table_header, TrimEntryKind, TrimTableClasses, TrimTableHeader,
 };
-use crate::feature::definitions::trim::{trim_table_header, TrimEntryKind, TrimTableClasses, TrimTableHeader};
+use crate::feature::definitions::{
+    FeatureSectionPoint, FeatureSegment, FeatureSegmentKind, FeatureSegmentTable,
+    FeatureVariableRow, FeatureVariableTable, ScalarLane, TrimEntityKind, VariableType,
+};
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 
@@ -26,7 +27,6 @@ fn entity_intersection(
     })
     .expect("test trim intersection")
 }
-
 
 fn trim_bucket_with_limits(
     collection_limit: u64,
@@ -115,7 +115,11 @@ macro_rules! trim_bucket_collection_limit_test {
 
 #[test]
 fn trim_bucket_entry_work_refuses_before_scan() {
-    let cap = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, Some("creo trim bucket entry scan"), |cap| trim_bucket_with_limits(u64::MAX, cap));
+    let cap = crate::test_support::allocation_limit_at(
+        ResourceDimension::WorkUnits,
+        Some("creo trim bucket entry scan"),
+        |cap| trim_bucket_with_limits(u64::MAX, cap),
+    );
     let error = trim_bucket_with_limits(u64::MAX, cap).expect_err("entry work refusal");
     let refused: Result<Vec<super::super::FeatureTrimBucket>, _> = Err(error);
     assert!(matches!(refused,
@@ -142,7 +146,11 @@ macro_rules! trim_entity_collection_limit_test {
 
 #[test]
 fn trim_vertex_entities_refuse_before_vec_growth() {
-    let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo trim vertex entities"), trim_vertex_with_limit);
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo trim vertex entities"),
+        trim_vertex_with_limit,
+    );
     assert!(matches!(trim_vertex_with_limit(limit),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
@@ -159,7 +167,11 @@ fn trim_vertex_entities_refuse_before_vec_growth() {
 
 #[test]
 fn trim_vertex_rows_refuse_before_vec_growth() {
-    let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo trim vertex rows"), trim_vertex_with_limit);
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo trim vertex rows"),
+        trim_vertex_with_limit,
+    );
     assert!(matches!(trim_vertex_with_limit(limit),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
@@ -210,14 +222,6 @@ fn trim_vertex_entry(payload: &[u8], offset: usize, end: usize) -> Option<(Vec<u
     crate::decode::with_test_decode_ctx(|ctx| parse_trim_vertex_entry(ctx, payload, offset, end))
         .expect("trim vertex entities admitted")
 }
-
-
-
-
-
-
-
-
 
 #[test]
 fn positional_trim_entity_table_decodes_without_segments() {
@@ -292,14 +296,6 @@ fn positional_trim_entity_table_withholds_rows_without_the_entry_class() {
     assert!(entities.rows.is_empty());
     assert!(entities.solved_external_ids.is_empty());
 }
-
-
-
-
-
-
-
-
 
 #[test]
 fn positional_trim_vertex_table_is_independent_of_entity_rows() {
@@ -493,14 +489,20 @@ fn trim_intersection_refuses_before_entity_node() {
         }],
     );
     let error = crate::test_support::last_refusal_at(
-        &[0], ResourceDimension::CollectionItems, "creo trim intersection entity nodes",
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo trim intersection entity nodes",
         |ctx| parse_entity_intersection(ctx, &[9, 10], Some(&segments), Some(&variables)),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo trim intersection entity nodes"));
     crate::test_support::assert_work_boundaries(
-        &["creo trim intersection entities", "creo point variable traversal", "creo trim common point"],
+        &[
+            "creo trim intersection entities",
+            "creo point variable traversal",
+            "creo trim common point",
+        ],
         |ctx| parse_entity_intersection(ctx, &[9, 10], Some(&segments), Some(&variables)),
     );
     assert_eq!(
@@ -939,15 +941,35 @@ trim_entity_collection_limit_test!(
 fn trim_parser_scans_refuse_at_work_boundaries() {
     let payload = b"noise\xf8\x02\xf7\x42\xfb\xe2\xf7\x43\x00\xe3\x09\x00\x03\x04\xf6\x00";
     let table = crate::test_support::assert_work_boundaries(
-        &["creo positional trim table", "creo positional trim entity class", "creo trim row traversal", "creo trim solved ID traversal"],
-        |ctx| parse_positional_trim_entity_table(ctx, payload, 0, payload.len(), TrimTableClasses { table: 66, bucket: 67, entry: 67 }, None),
-    ).expect("trim entity table");
+        &[
+            "creo positional trim table",
+            "creo positional trim entity class",
+            "creo trim row traversal",
+            "creo trim solved ID traversal",
+        ],
+        |ctx| {
+            parse_positional_trim_entity_table(
+                ctx,
+                payload,
+                0,
+                payload.len(),
+                TrimTableClasses {
+                    table: 66,
+                    bucket: 67,
+                    entry: 67,
+                },
+                None,
+            )
+        },
+    )
+    .expect("trim entity table");
     assert_eq!(table.solved_external_ids, [9]);
     let payload = b"\xf8\x02\x09\x0a\x03\x00";
     let entry = crate::test_support::assert_work_boundaries(
         &["creo trim vertex entity traversal"],
         |ctx| parse_trim_vertex_entry(ctx, payload, 0, payload.len()),
-    ).expect("trim vertex");
+    )
+    .expect("trim vertex");
     assert_eq!(entry, (vec![9, 10], 3, payload.len()));
 }
 

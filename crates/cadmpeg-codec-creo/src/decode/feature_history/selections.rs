@@ -33,7 +33,8 @@ pub(in super::super) fn feature_edge_selection(
     ir: &CadIr,
     feature_id: u32,
 ) -> Result<Option<EdgeSelection>, CodecError> {
-    let (ids, native) = if let Some(ids) = agreed_feature_affected_ids(ctx,
+    let (ids, native) = if let Some(ids) = agreed_feature_affected_ids(
+        ctx,
         &scan.features.affected_ids,
         feature_id,
         crate::feature::rows::AffectedIdKind::Edges,
@@ -338,7 +339,8 @@ pub(in super::super) fn agreed_feature_geometry_ids<'a>(
     replay_affected_ids: &'a [crate::feature::rows::FeatureReplayAffectedIds],
     feature_id: u32,
 ) -> Result<Option<&'a [u32]>, CodecError> {
-    let named = agreed_feature_affected_ids(ctx,
+    let named = agreed_feature_affected_ids(
+        ctx,
         affected_ids,
         feature_id,
         crate::feature::rows::AffectedIdKind::Geometry,

@@ -14,9 +14,17 @@ fn positional_section_reference_planes_refuse_before_each_row() {
             )
         })
     };
-    crate::test_support::assert_refusal_order(ResourceDimension::CollectionItems,
-        &["creo positional section reference planes", "creo positional section reference planes"], run);
-    let section = run(u64::MAX).expect("section admitted").expect("section present");
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &[
+            "creo positional section reference planes",
+            "creo positional section reference planes",
+        ],
+        run,
+    );
+    let section = run(u64::MAX)
+        .expect("section admitted")
+        .expect("section present");
     assert_eq!(
         section.reference_planes.entity_ids().collect::<Vec<_>>(),
         [6, 7]
@@ -35,10 +43,12 @@ fn named_section_reference_plane_refuses_before_vec_growth() {
             )
         })
     };
-    assert!(matches!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo named section reference planes"), run)),
+    assert!(
+        matches!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo named section reference planes"), run)),
 Err(CodecError::ResourceLimit(refusal))
         if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "creo named section reference planes"));
+            && refusal.operation == "creo named section reference planes")
+    );
     assert_eq!(
         run(u64::MAX)
             .expect("section admitted")
@@ -143,7 +153,7 @@ fn named_gsec3d_uses_the_outer_plane_id_before_reference_rows() {
                 owner_override: None,
                 positional: false,
             }],
-        None,
+            None,
         )
     })
     .expect("definitions admitted");
@@ -153,4 +163,3 @@ fn named_gsec3d_uses_the_outer_plane_id_before_reference_rows() {
     assert_eq!(section.reference_plane_datum_geometry_id, Some(6));
     assert_eq!(section.sketch_plane_flip, None);
 }
-

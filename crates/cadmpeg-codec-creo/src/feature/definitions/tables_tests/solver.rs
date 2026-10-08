@@ -10,11 +10,14 @@ Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo relation operands")
     );
-    let table = positional_relation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(
+    let table = positional_relation_with_limits(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             None,
             |cap| positional_relation_with_limits(u64::MAX, cap),
-        ))
+        ),
+    )
     .expect("relation admitted")
     .expect("table present");
     assert_eq!(table.rows[0].operands.len(), 12);
@@ -28,11 +31,14 @@ Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo relation row body")
     );
-    let table = positional_relation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(
+    let table = positional_relation_with_limits(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             None,
             |cap| positional_relation_with_limits(u64::MAX, cap),
-        ))
+        ),
+    )
     .expect("relation admitted")
     .expect("table present");
     assert_eq!(table.rows[0].body.len(), 17);
@@ -47,11 +53,14 @@ Err(CodecError::ResourceLimit(limit))
             && limit.operation == "creo relation rows")
     );
     assert_eq!(
-        positional_relation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(
+        positional_relation_with_limits(
+            u64::MAX,
+            crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 None,
                 |cap| positional_relation_with_limits(u64::MAX, cap)
-            ))
+            )
+        )
         .expect("relation admitted")
         .expect("table present")
         .rows
@@ -212,11 +221,14 @@ Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo equation rows")
     );
-    let table = equation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(
+    let table = equation_with_limits(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             None,
             |cap| equation_with_limits(u64::MAX, cap),
-        ))
+        ),
+    )
     .expect("equation admitted")
     .expect("table present");
     assert_eq!(table.rows[0].arguments, [Some(17), Some(18)]);
@@ -433,8 +445,15 @@ fn positional_skamp_items_refuse_before_vec_growth() {
             \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    let error = crate::test_support::last_refusal_at(payload, ResourceDimension::CollectionItems, "creo skamp items", |ctx| parse_positional_feature_skamps(ctx, payload, 0, payload.len(), 88));
-    let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal"); };
+    let error = crate::test_support::last_refusal_at(
+        payload,
+        ResourceDimension::CollectionItems,
+        "creo skamp items",
+        |ctx| parse_positional_feature_skamps(ctx, payload, 0, payload.len(), 88),
+    );
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("resource refusal");
+    };
     policy.limits.max_collection_items = refusal.limit;
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
     assert!(
@@ -450,8 +469,15 @@ fn positional_skamp_rows_refuse_before_vec_growth() {
             \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    let error = crate::test_support::last_refusal_at(payload, ResourceDimension::CollectionItems, "creo skamp rows", |ctx| parse_positional_feature_skamps(ctx, payload, 0, payload.len(), 88));
-    let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal"); };
+    let error = crate::test_support::last_refusal_at(
+        payload,
+        ResourceDimension::CollectionItems,
+        "creo skamp rows",
+        |ctx| parse_positional_feature_skamps(ctx, payload, 0, payload.len(), 88),
+    );
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("resource refusal");
+    };
     policy.limits.max_collection_items = refusal.limit;
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
     assert!(
@@ -474,8 +500,15 @@ fn named_skamp_prototype_items_refuse_before_vec_growth() {
             \xf3\xf7\x6b\xe2";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    let error = crate::test_support::last_refusal_at(payload, ResourceDimension::CollectionItems, "creo skamp prototype items", |ctx| parse_feature_skamps(ctx, payload, 0, payload.len()));
-    let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal"); };
+    let error = crate::test_support::last_refusal_at(
+        payload,
+        ResourceDimension::CollectionItems,
+        "creo skamp prototype items",
+        |ctx| parse_feature_skamps(ctx, payload, 0, payload.len()),
+    );
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("resource refusal");
+    };
     policy.limits.max_collection_items = refusal.limit;
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
     assert!(
@@ -494,8 +527,15 @@ fn named_skamp_rows_refuse_before_vec_growth() {
             \xf3\xf7\x6b\xe2";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    let error = crate::test_support::last_refusal_at(payload, ResourceDimension::CollectionItems, "creo skamp rows", |ctx| parse_feature_skamps(ctx, payload, 0, payload.len()));
-    let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal"); };
+    let error = crate::test_support::last_refusal_at(
+        payload,
+        ResourceDimension::CollectionItems,
+        "creo skamp rows",
+        |ctx| parse_feature_skamps(ctx, payload, 0, payload.len()),
+    );
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("resource refusal");
+    };
     policy.limits.max_collection_items = refusal.limit;
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
     assert!(
@@ -512,8 +552,15 @@ fn named_relation_triples_refuse_before_vec_growth() {
             \xe0\x01skamp_id\0\x05\xf1\xf7\x6d\xe2";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    let error = crate::test_support::last_refusal_at(payload, ResourceDimension::CollectionItems, "creo relation triples", |ctx| parse_feature_relation_triples(ctx, payload, 0, payload.len()));
-    let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal"); };
+    let error = crate::test_support::last_refusal_at(
+        payload,
+        ResourceDimension::CollectionItems,
+        "creo relation triples",
+        |ctx| parse_feature_relation_triples(ctx, payload, 0, payload.len()),
+    );
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("resource refusal");
+    };
     policy.limits.max_collection_items = refusal.limit;
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
     assert!(
@@ -528,8 +575,15 @@ fn positional_relation_triples_refuse_before_vec_growth() {
     let payload = b"\xf8\x01\xf7\x64\xfb\xe2\xf7\x65\x01\xf6\x04";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    let error = crate::test_support::last_refusal_at(payload, ResourceDimension::CollectionItems, "creo relation triples", |ctx| parse_positional_relation_triples(ctx, payload, 0, payload.len(), 100));
-    let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal"); };
+    let error = crate::test_support::last_refusal_at(
+        payload,
+        ResourceDimension::CollectionItems,
+        "creo relation triples",
+        |ctx| parse_positional_relation_triples(ctx, payload, 0, payload.len(), 100),
+    );
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("resource refusal");
+    };
     policy.limits.max_collection_items = refusal.limit;
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
     assert!(
@@ -561,8 +615,15 @@ fn optional_solver_header_propagates_the_search_refusal() {
     let payload = b"skamp_ptr\0opaque\xf8\x02\xf7\x58\xfb\xe2";
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let error = crate::test_support::last_refusal_at(payload, ResourceDimension::WorkUnits, "find Creo solver table", |ctx| named_solver_table_header(ctx, payload, b"skamp_ptr\0", 0, payload.len()));
-    let CodecError::ResourceLimit(refusal) = error else { panic!("resource refusal"); };
+    let error = crate::test_support::last_refusal_at(
+        payload,
+        ResourceDimension::WorkUnits,
+        "find Creo solver table",
+        |ctx| named_solver_table_header(ctx, payload, b"skamp_ptr\0", 0, payload.len()),
+    );
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("resource refusal");
+    };
     policy.limits.max_work_units = refusal.limit;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("root admitted");
@@ -675,7 +736,7 @@ fn positional_definition_preserves_its_named_solver_tables() {
                     positional: true,
                 },
             ],
-        None,
+            None,
         )
     })
     .expect("definitions admitted");
@@ -721,4 +782,3 @@ fn positional_triples_replay_nullable_relation_joins() {
     assert_eq!(triples[1].relation_id, Some(2));
     assert_eq!(triples[1].skamp_id, Some(5));
 }
-

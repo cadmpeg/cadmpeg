@@ -118,7 +118,11 @@ impl OrderRows {
     }
 
     /// Shift every row's source offset by a section base.
-    pub(crate) fn add_offset(&mut self, ctx: &DecodeContext<'_>, base: usize) -> Result<(), CodecError> {
+    pub(crate) fn add_offset(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        base: usize,
+    ) -> Result<(), CodecError> {
         for row in ctx.admit_iter(&mut self.rows, "creo order offset traversal")? {
             row.offset += base;
         }

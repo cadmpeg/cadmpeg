@@ -156,4 +156,3 @@ fn decodes_saved_spline_chord_parameter_lane() {
     }
     assert_eq!(cursor, body.len());
 }
-
