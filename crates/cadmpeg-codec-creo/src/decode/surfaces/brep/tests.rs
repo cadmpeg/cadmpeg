@@ -1245,18 +1245,15 @@ fn legacy_brep_admission_excludes_nonvisible_face_references() {
         });
 
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 5))
-            .expect("service face reference")
+        is_neutral_face_reference(&scan, 5)
     );
     assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 7))
-            .expect("service face reference")
+        !is_neutral_face_reference(&scan, 7)
     );
 
     scan.framing.layout = crate::container::Layout::Nd;
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 7))
-            .expect("service face reference")
+        is_neutral_face_reference(&scan, 7)
     );
 }
 
@@ -1923,32 +1920,3 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     assert_eq!(ir.model.shells[0].wire_edges().len(), 3);
 }
 
-#[test]
-fn legacy_neutral_face_search_refuses_work_and_preserves_nd_short_circuit() {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.framing.layout = crate::test_support::legacy_layout();
-    scan.surfaces.rows.push(crate::surface::SurfaceRow {
-        id: 5,
-        kind: crate::surface::SurfaceKind::Plane,
-        feature_id: 0,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: 0,
-    });
-    assert!(crate::test_support::assert_work_boundaries(
-        &["creo neutral face reference surface search"],
-        |ctx| is_neutral_face_reference(ctx, &scan, 5),
-    ));
-    assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| is_neutral_face_reference(ctx, &scan, 7))
-            .expect("service legacy search")
-    );
-    scan.framing.layout = crate::container::Layout::Nd;
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(is_neutral_face_reference(&ctx, &scan, 7).expect("ND has no surface search"));
-    assert!(ctx.resource_refusal().is_none());
-}

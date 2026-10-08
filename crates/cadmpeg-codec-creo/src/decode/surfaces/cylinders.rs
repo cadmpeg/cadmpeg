@@ -88,12 +88,7 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
         {
             continue;
         }
-        let rowless_present = ctx.any_by(
-            &**rows,
-            |row| Ok(row.id == rowless.entity_id),
-            "creo rowless round surface ID search",
-        )?;
-        if rowless_present {
+        if rows.contains_id(rowless.entity_id) {
             continue;
         }
         if !crate::surface::unique_surface_row(rows, cylinder.entity_id).is_some_and(|row| {
@@ -591,12 +586,6 @@ pub(in super::super) fn transfer_split_outline_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let mut rows = BTreeMap::new();
-    let unique_rows =
-        crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?;
-    for row in ctx.admit_iter(&unique_rows, "creo split outline unique surface rows")? {
-        ctx.insert_btree_map(&mut rows, row.id, row, "creo split cylinder row nodes")?;
-    }
     let local_planes = placed_planes(ctx, scan)?;
     let mut cylinders_by_plane = BTreeMap::<(u32, u32), BTreeSet<u32>>::new();
     let unique_topologies = crate::identity::uniquely_identified_rows_checked(
@@ -612,7 +601,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             continue;
         };
         let (left, right) = (left.get(), right.get());
-        let pair = match (rows.get(&left), rows.get(&right)) {
+        let pair = match (scan.surfaces.rows.unique(left), scan.surfaces.rows.unique(right)) {
             (Some(plane), Some(cylinder))
                 if plane.kind == crate::surface::SurfaceKind::Plane
                     && cylinder.kind == crate::surface::SurfaceKind::Cylinder =>
@@ -713,7 +702,9 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             if surface_exists {
                 continue;
             }
-            let row = rows[&cylinder_id];
+            let Some(row) = scan.surfaces.rows.unique(cylinder_id) else {
+                continue;
+            };
             annotate(
                 ctx,
                 annotations,
@@ -1203,17 +1194,6 @@ pub(in super::super) fn transfer_positional_cylinders(
         }
     }
     let local_planes = placed_planes(ctx, scan)?;
-    let mut unique_rows = BTreeMap::new();
-    let unique_surface_rows =
-        crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?;
-    for row in ctx.admit_iter(&unique_surface_rows, "creo positional unique surface rows")? {
-        ctx.insert_btree_map(
-            &mut unique_rows,
-            row.id,
-            row,
-            "creo positional cylinder row nodes",
-        )?;
-    }
     let mut adjacent_plane_ids = BTreeMap::<u32, BTreeSet<u32>>::new();
     let unique_topologies = crate::identity::uniquely_identified_rows_checked(
         ctx,
@@ -1226,11 +1206,11 @@ pub(in super::super) fn transfer_positional_cylinders(
         };
         let (left, right) = (left.get(), right.get());
         for (surface_id, other_id) in [(left, right), (right, left)] {
-            if unique_rows
-                .get(&surface_id)
+            if scan.surfaces.rows
+                .unique(surface_id)
                 .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
-                && unique_rows
-                    .get(&other_id)
+                && scan.surfaces.rows
+                    .unique(other_id)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
             {
                 let plane_ids = match ctx.entry_btree_map(
@@ -1537,43 +1517,21 @@ pub(in super::super) fn transfer_positional_cylinders(
         }
         if surface_exists {
             if row_local_frame_selected {
-                let mut duplicate_count = 0_usize;
-                for surface in ctx.admit_iter(
+                let mut surface_index = None;
+                let mut ambiguous = false;
+                for (index, surface) in ctx.admit_iter(
                     &ir.model.surfaces,
                     "creo positional duplicate cylinder count",
-                )? {
-                    if ctx.equal(
-                        &surface.id,
-                        &id,
-                        "creo positional cylinder duplicate comparison",
-                    )? {
-                        duplicate_count = duplicate_count.checked_add(1).ok_or_else(|| {
-                            ctx.refuse_codec_limit(
-                                "creo positional duplicate cylinder count",
-                                u64::MAX,
-                                1,
-                            )
-                        })?;
-                    }
-                }
-                if duplicate_count == 1 {
-                    let mut surface_index = None;
-                    for (index, surface) in ctx
-                        .admit_iter(
-                            &ir.model.surfaces,
-                            "creo positional cylinder replacement search",
-                        )?
-                        .enumerate()
-                    {
-                        if ctx.equal(
-                            &surface.id,
-                            &id,
-                            "creo positional cylinder replacement comparison",
-                        )? {
-                            surface_index = Some(index);
+                )?.enumerate() {
+                    if ctx.equal(&surface.id, &id, "creo positional cylinder duplicate comparison")? {
+                        if surface_index.is_some() {
+                            ambiguous = true;
                             break;
                         }
+                        surface_index = Some(index);
                     }
+                }
+                if !ambiguous {
                     if let Some(surface) =
                         surface_index.and_then(|index| ir.model.surfaces.get_mut(index))
                     {

@@ -774,19 +774,9 @@ fn admitted_face_components<'a>(
 /// model body. Their analytic carriers remain available as native geometry,
 /// but admitting their references here would manufacture disconnected body
 /// components and make body ownership appear ambiguous.
-fn is_neutral_face_reference(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scan: &ContainerScan,
-    face_id: u32,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(!matches!(
-        scan.framing.layout,
-        crate::container::Layout::LegacyAscii(_)
-    ) || ctx.any_by(
-        &*scan.surfaces.rows,
-        |row| Ok(row.id == face_id),
-        "creo neutral face reference surface search",
-    )?)
+fn is_neutral_face_reference(scan: &ContainerScan, face_id: u32) -> bool {
+    !matches!(scan.framing.layout, crate::container::Layout::LegacyAscii(_))
+        || scan.surfaces.rows.contains_id(face_id)
 }
 
 fn merge_body_components(
@@ -1515,7 +1505,7 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
             &topology_face_reference_ids,
             "creo B-rep nonvisible reference count",
         )? {
-            if !is_neutral_face_reference(ctx, scan, *face_id)? {
+            if !is_neutral_face_reference(scan, *face_id) {
                 legacy_nonvisible_face_reference_count = legacy_nonvisible_face_reference_count
                     .checked_add(1)
                     .ok_or_else(|| {
@@ -1527,22 +1517,11 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
                     })?;
             }
         }
-        let mut face_reference_refusal = None;
-        loops_by_face.retain(|face_id, _| {
-            if face_reference_refusal.is_some() {
-                return true;
-            }
-            match is_neutral_face_reference(ctx, scan, *face_id) {
-                Ok(keep) => keep,
-                Err(error) => {
-                    face_reference_refusal = Some(error);
-                    true
-                }
-            }
-        });
-        if let Some(error) = face_reference_refusal {
-            return Err(error);
-        }
+        ctx.retain_btree_map(
+            &mut loops_by_face,
+            |face_id, _| Ok(is_neutral_face_reference(scan, *face_id)),
+            "creo B-rep neutral loop faces",
+        )?;
         let mut candidate_face_ids = BTreeSet::new();
         for component in ctx.admit_iter(
             &scan.topology.face_components,
@@ -1555,7 +1534,7 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
                 )?
                 .copied()
             {
-                if is_neutral_face_reference(ctx, scan, face_id)? {
+                if is_neutral_face_reference(scan, face_id) {
                     ctx.insert_btree_set(
                         &mut candidate_face_ids,
                         face_id,
@@ -1567,7 +1546,7 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
         for (face_id, _) in
             ctx.admit_iter(&loops_by_face, "creo B-rep candidate loop face traversal")?
         {
-            if is_neutral_face_reference(ctx, scan, *face_id)? {
+            if is_neutral_face_reference(scan, *face_id) {
                 ctx.insert_btree_set(
                     &mut candidate_face_ids,
                     *face_id,
