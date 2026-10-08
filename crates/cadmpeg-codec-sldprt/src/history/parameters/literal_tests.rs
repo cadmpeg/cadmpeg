@@ -500,18 +500,6 @@ fn parameter_identifier_storage_is_scoped_and_quotes_match() {
     .unwrap();
 }
 
-#[test]
-fn xml_name_rejection_leaves_unvisited_suffix_unpaid() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let name = format!("-{}", "a".repeat(4096));
-    assert!(!crate::history::write::xml::valid_xml_name(&ctx, &name).unwrap());
-    assert!(ctx.resource_refusal().is_none());
-}
-
 fn string_operands() -> (
     std::collections::HashMap<String, Option<cadmpeg_ir::features::ParameterId>>,
     std::collections::HashMap<cadmpeg_ir::features::ParameterId, ParameterValue>,

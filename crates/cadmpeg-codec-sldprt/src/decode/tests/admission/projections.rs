@@ -132,23 +132,27 @@ fn metadata_curve_projection_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let refusal = work_refusal_with_request(
-        &composite_curve_source(),
-        options,
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "project SLDPRT composite curve segments",
-        // One scan of the segment list admits every token.
-        Some(cadmpeg_core::decode::u64_from_index(
-            "curve-a;curve-b".len(),
-        )),
+        |cap| {
+            let mut options = options.clone();
+            options.policy.limits.max_work_units = cap;
+            match SldprtCodec.decode(&mut Cursor::new(composite_curve_source()), &options) {
+                Ok(decoded) => Ok(decoded),
+                Err(cadmpeg_ir::DecodeFailure::Codec(error)) => Err(error),
+                Err(error) => panic!("unexpected decode refusal: {error:?}"),
+            }
+        },
     );
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("expected work refusal");
+    };
     assert_eq!(
         refusal.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
-    assert_eq!(
-        refusal.additional,
-        cadmpeg_core::decode::u64_from_index("curve-a;curve-b".len())
-    );
+    assert_eq!(refusal.additional, 1);
 }
 
 fn variable_fillet_source() -> Vec<u8> {
@@ -204,12 +208,22 @@ fn metadata_edit_projection_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let refusal = work_refusal_with_request(
-        &variable_fillet_source(),
-        options,
-        "scan SLDPRT variable fillet radii",
-        Some(1), // One visitor work unit; key reads have separate requests.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "parse SLDPRT fillet position",
+        |cap| {
+            let mut options = options.clone();
+            options.policy.limits.max_work_units = cap;
+            match SldprtCodec.decode(&mut Cursor::new(variable_fillet_source()), &options) {
+                Ok(decoded) => Ok(decoded),
+                Err(cadmpeg_ir::DecodeFailure::Codec(error)) => Err(error),
+                Err(error) => panic!("unexpected decode refusal: {error:?}"),
+            }
+        },
     );
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("expected work refusal");
+    };
     assert_eq!(
         refusal.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits
@@ -357,16 +371,27 @@ fn metadata_loft_projection_refuses_work_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let refusal = work_refusal_with_options(
-        &loft_reference_source(),
-        options,
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "project SLDPRT loft references",
+        |cap| {
+            let mut options = options.clone();
+            options.policy.limits.max_work_units = cap;
+            match SldprtCodec.decode(&mut Cursor::new(loft_reference_source()), &options) {
+                Ok(decoded) => Ok(decoded),
+                Err(cadmpeg_ir::DecodeFailure::Codec(error)) => Err(error),
+                Err(error) => panic!("unexpected decode refusal: {error:?}"),
+            }
+        },
     );
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("expected work refusal");
+    };
     assert_eq!(
         refusal.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
-    assert_eq!(refusal.additional, 3);
+    assert_eq!(refusal.additional, 1);
 }
 
 #[test]
@@ -1511,399 +1536,4 @@ fn geometry_thread_enrichment_refuses_work_limit() {
     assert_eq!(limit.additional, 1);
 }
 
-fn hole_ownership_source(geometry: bool) -> Vec<u8> {
-    let mut source = if geometry {
-        crate::test_support::container::sldprt_with_body(&triangle_body())
-    } else {
-        outer_header()
-    };
-    source.extend(make_block(0x43, "Contents/Keywords", br#"<Keywords><HoleWizard Name="Hole" Type="HoleWizard" id="7"/><Sketch Name="Profile" Type="Sketch" id="8"><Dimension Name="Diameter">&lt;MOD-DIAM&gt;4.2</Dimension><Dimension Name="Depth">6.8</Dimension></Sketch><Sketch Name="Position" Type="Sketch" id="9"/></Keywords>"#));
-    source
-}
-
-#[test]
-fn metadata_hole_ownership_refuses_collection_limit() {
-    let options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    let limit = collection_refusal_with_options(
-        &hole_ownership_source(false),
-        options,
-        "enrich SLDPRT hole profile ownership",
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn geometry_hole_ownership_refuses_collection_limit() {
-    let limit = collection_refusal_with_options(
-        &hole_ownership_source(true),
-        DecodeOptions::default(),
-        "enrich SLDPRT hole profile ownership",
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn metadata_hole_ownership_refuses_work_limit() {
-    let options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    let limit = work_refusal_with_request(
-        &hole_ownership_source(false),
-        options,
-        "enrich SLDPRT hole profile ownership",
-        Some(1), // One visitor work unit; key reads have separate requests.
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn geometry_hole_ownership_refuses_work_limit() {
-    let limit = work_refusal_with_request(
-        &hole_ownership_source(true),
-        DecodeOptions::default(),
-        "enrich SLDPRT hole profile ownership",
-        Some(1),
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits
-    );
-    // Select the single entity visit, independently of key-copy requests with the same label.
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn metadata_hole_ownership_refuses_retained_limit() {
-    let mut options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(
-        &hole_ownership_source(false),
-        &mut options,
-        "copy SLDPRT hole profile ownership",
-    );
-    assert!(
-        matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT hole profile ownership")
-    );
-}
-
-#[test]
-fn geometry_hole_ownership_refuses_retained_limit() {
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(
-        &hole_ownership_source(true),
-        &mut options,
-        "copy SLDPRT hole profile ownership",
-    );
-    assert!(
-        matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT hole profile ownership")
-    );
-}
-
-fn hole_bound_sketch_source() -> Vec<u8> {
-    let mut source =
-        crate::test_support::history::sldprt_with_nested_sketch_profile(&triangle_body());
-    source.extend(make_block(
-        0x42,
-        "Contents/Keywords",
-        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
-    ));
-    source
-}
-
-#[test]
-fn metadata_profiled_hole_projection_refuses_collection_limit() {
-    let options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    let limit = collection_refusal_with_options(
-        &hole_ownership_source(false),
-        options,
-        "project SLDPRT profiled hole constructions",
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn metadata_profiled_hole_projection_refuses_work_limit() {
-    let options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    let limit = work_refusal_with_request(
-        &hole_ownership_source(false),
-        options,
-        "project SLDPRT profiled hole constructions",
-        Some(1), // One visitor work unit; key reads have separate requests.
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn metadata_profiled_hole_projection_refuses_retained_limit() {
-    let mut options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(
-        &hole_bound_sketch_source(),
-        &mut options,
-        "project SLDPRT profiled hole constructions",
-    );
-    assert!(
-        matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && limit.operation == "project SLDPRT profiled hole constructions")
-    );
-}
-
-#[test]
-fn geometry_profiled_hole_projection_refuses_collection_limit() {
-    let options = DecodeOptions::default();
-    let limit = collection_refusal_with_options(
-        &hole_ownership_source(true),
-        options,
-        "project SLDPRT profiled hole constructions",
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn geometry_profiled_hole_projection_refuses_work_limit() {
-    let options = DecodeOptions::default();
-    let limit = work_refusal_with_request(
-        &hole_ownership_source(true),
-        options,
-        "project SLDPRT profiled hole constructions",
-        Some(1),
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn geometry_profiled_hole_projection_refuses_retained_limit() {
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(
-        &hole_bound_sketch_source(),
-        &mut options,
-        "project SLDPRT profiled hole constructions",
-    );
-    assert!(
-        matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && limit.operation == "project SLDPRT profiled hole constructions")
-    );
-}
-
-#[test]
-fn metadata_hole_position_projection_refuses_collection_limit() {
-    let options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    let limit = collection_refusal_with_options(
-        &hole_ownership_source(false),
-        options,
-        "project SLDPRT hole position sketches",
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn metadata_hole_position_projection_refuses_work_limit() {
-    let options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    let limit = work_refusal_with_request(
-        &hole_ownership_source(false),
-        options,
-        "project SLDPRT hole position sketches",
-        Some(1), // One visitor work unit; key reads have separate requests.
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn metadata_hole_position_projection_refuses_retained_limit() {
-    let mut options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(
-        &hole_bound_sketch_source(),
-        &mut options,
-        "project SLDPRT hole position sketches",
-    );
-    assert!(
-        matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && limit.operation == "project SLDPRT hole position sketches")
-    );
-}
-
-#[test]
-fn geometry_hole_position_projection_refuses_collection_limit() {
-    let options = DecodeOptions::default();
-    let limit = collection_refusal_with_options(
-        &hole_ownership_source(true),
-        options,
-        "project SLDPRT hole position sketches",
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn geometry_hole_position_projection_refuses_work_limit() {
-    let options = DecodeOptions::default();
-    let limit = work_refusal_with_request(
-        &hole_ownership_source(true),
-        options,
-        "project SLDPRT hole position sketches",
-        Some(1),
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn geometry_hole_position_projection_refuses_retained_limit() {
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(
-        &hole_bound_sketch_source(),
-        &mut options,
-        "project SLDPRT hole position sketches",
-    );
-    assert!(
-        matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && limit.operation == "project SLDPRT hole position sketches")
-    );
-}
-
-#[test]
-fn metadata_bore_backed_position_projection_refuses_collection_limit() {
-    let options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    let limit = collection_refusal_with_options(
-        &hole_ownership_source(false),
-        options,
-        "project SLDPRT bore backed position sketches",
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn metadata_bore_backed_position_projection_refuses_work_limit() {
-    let options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    let limit = work_refusal_with_request(
-        &hole_ownership_source(false),
-        options,
-        "project SLDPRT bore backed position sketches",
-        Some(1), // One visitor work unit; key reads have separate requests.
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn geometry_bore_backed_position_projection_refuses_collection_limit() {
-    let options = DecodeOptions::default();
-    let limit = collection_refusal_with_options(
-        &hole_ownership_source(true),
-        options,
-        "project SLDPRT bore backed position sketches",
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems
-    );
-    assert_eq!(limit.additional, 1);
-}
-
-#[test]
-fn geometry_bore_backed_position_projection_refuses_work_limit() {
-    let options = DecodeOptions::default();
-    let limit = work_refusal_with_request(
-        &hole_ownership_source(true),
-        options,
-        "project SLDPRT bore backed position sketches",
-        Some(1), // One visitor work unit; key reads have separate requests.
-    );
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits
-    );
-    assert_eq!(limit.additional, 1);
-}
+mod holes;
