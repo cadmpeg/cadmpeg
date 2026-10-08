@@ -1246,32 +1246,52 @@ fn order_surface_candidates(
 }
 
 struct OperationSurfaceClasses<'identities, 'ctx> {
+    ctx: &'ctx DecodeContext<'ctx>,
     identities: &'identities [crate::records::FeatureInputGeneratedSurfaceIdentity],
-    surfaces: ClassObjects<'ctx>,
+    surfaces: std::cell::OnceCell<ClassObjects<'ctx>>,
     faces: ClassObjects<'ctx>,
-    split_classes: bool,
+    split_classes: std::cell::OnceCell<bool>,
 }
 
 impl<'identities, 'ctx> OperationSurfaceClasses<'identities, 'ctx> {
     fn new(
-        ctx: &'ctx DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'ctx>,
         lane: &FeatureInputLane,
         identities: &'identities [crate::records::FeatureInputGeneratedSurfaceIdentity],
     ) -> Result<Self, CodecError> {
+        Ok(Self {
+            ctx,
+            surfaces: std::cell::OnceCell::new(),
+            faces: ClassObjects::new(ctx, lane, "moCompFace_c")?,
+            split_classes: std::cell::OnceCell::new(),
+            identities,
+        })
+    }
+
+    fn surfaces(&self, lane: &FeatureInputLane) -> Result<&ClassObjects<'ctx>, CodecError> {
+        if let Some(surfaces) = self.surfaces.get() {
+            return Ok(surfaces);
+        }
+        let surfaces = ClassObjects::new(self.ctx, lane, "moCompSurfaceBody_c")?;
+        Ok(self.surfaces.get_or_init(|| surfaces))
+    }
+
+    fn has_split_classes(&self, lane: &FeatureInputLane) -> Result<bool, CodecError> {
         const OPERATION: &str = "index SLDPRT operation surface classes";
-        let mut split_classes = true;
+        if let Some(present) = self.split_classes.get() {
+            return Ok(*present);
+        }
+        let mut present = true;
         for required in ["moPLineProjIdRep_c", "moPLineSurfIdRep_c"] {
-            if !ctx.any_by(&lane.classes, |class| Ok(class.name == required), OPERATION)? {
-                split_classes = false;
+            if !self
+                .ctx
+                .any_by(&lane.classes, |class| Ok(class.name == required), OPERATION)?
+            {
+                present = false;
                 break;
             }
         }
-        Ok(Self {
-            surfaces: ClassObjects::new(ctx, lane, "moCompSurfaceBody_c")?,
-            faces: ClassObjects::new(ctx, lane, "moCompFace_c")?,
-            split_classes,
-            identities,
-        })
+        Ok(*self.split_classes.get_or_init(|| present))
     }
 }
 
@@ -1327,12 +1347,12 @@ fn operation_surface_selection_candidates(
     if operation == FeatureClass::SplitFace {
         const OPERATION: &str = "project SLDPRT split surface identity paths";
 
-        if !classes.split_classes {
-            return Ok(Vec::new());
-        }
         let Some(object_source) = object_source else {
             return Ok(Vec::new());
         };
+        if !classes.has_split_classes(lane)? {
+            return Ok(Vec::new());
+        }
         let mut candidates = Vec::new();
         for identity in ctx.admit_iter(classes.identities, OPERATION)? {
             let (Some(first), Some(last)) =
@@ -1370,7 +1390,7 @@ fn operation_surface_selection_candidates(
         return Ok(Vec::new());
     }
 
-    let mut candidates = match classes.surfaces.in_interval(ctx, start, end)? {
+    let mut candidates = match classes.surfaces(lane)?.in_interval(ctx, start, end)? {
         [offset] => compact_surface_selection_candidates_for_class(
             ctx,
             &lane.native_payload,
@@ -1561,31 +1581,15 @@ fn cosmetic_thread_cylinder_references(
     diameter_index: &CosmeticDiameterIndex<'_, '_>,
 ) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
     const OPERATION: &str = "decode SLDPRT cosmetic cylinder references";
-    let diameter_tail = diameter_index.tail(ctx, feature)?;
-    let ranges = match diameter_tail {
-        Some(tail)
-            if object_start < object_end
-                && tail.start <= object_end
-                && object_start <= tail.end =>
-        {
-            [
-                Some(object_start.min(tail.start)..object_end.max(tail.end)),
-                None,
-            ]
-        }
-        tail => [Some(object_start..object_end), tail],
-    };
-    let mut scan_storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut offsets = Vec::new();
-    for range in ranges.into_iter().flatten() {
-        for offset in ctx.admit_iter(range, OPERATION)? {
-            if let Some(token) = View::u16_le_at(&lane.native_payload, offset) {
-                if ctx.contains_hash_set(cylinder_reference_tokens, &token, OPERATION)? {
-                    scan_storage.with_storage(|| ctx.push_vec(&mut offsets, offset, OPERATION))?;
-                }
-            }
-        }
-    }
+    let (mut offsets, scan_storage) = cosmetic_thread_cylinder_offsets(
+        ctx,
+        &lane.native_payload,
+        object_start..object_end,
+        diameter_index.tail(ctx, feature)?,
+        cylinder_reference_tokens,
+        Some,
+        OPERATION,
+    )?;
     ctx.sort_unstable_by(
         &mut offsets,
         |value| value,
@@ -1596,12 +1600,14 @@ fn cosmetic_thread_cylinder_references(
         &mut offsets,
         "deduplicate SLDPRT cosmetic thread cylinder offsets",
     )?;
-    let mut references = Vec::new();
-    if let Some(reference) = ctx.find_map(
+    let reference = ctx.find_map(
         offsets,
         |offset| cosmetic_thread_cylinder_reference_at(ctx, &lane.native_payload, offset),
         OPERATION,
-    )? {
+    )?;
+    drop(scan_storage);
+    let mut references = Vec::new();
+    if let Some(reference) = reference {
         ctx.push_vec(&mut references, reference, OPERATION)?;
     }
     Ok(references)
@@ -1843,38 +1849,15 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
     diameter_index: &CosmeticDiameterIndex<'_, '_>,
 ) -> Result<Vec<CylinderMarkerReference>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "collect SLDPRT cosmetic thread cylinder markers";
-    let diameter_tail = diameter_index.tail(ctx, feature)?;
-    let ranges = match diameter_tail {
-        Some(tail)
-            if object_start < object_end
-                && tail.start <= object_end
-                && object_start <= tail.end =>
-        {
-            [
-                Some(object_start.min(tail.start)..object_end.max(tail.end)),
-                None,
-            ]
-        }
-        tail => [Some(object_start..object_end), tail],
-    };
-    let mut scan_storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut markers = Vec::new();
-    for range in ranges.into_iter().flatten() {
-        for body in ctx.admit_iter(range, OPERATION)? {
-            let Some(token) = View::u16_le_at(&lane.native_payload, body) else {
-                continue;
-            };
-            if !ctx.contains_hash_set(cylinder_reference_tokens, &token, OPERATION)? {
-                continue;
-            }
-            let Some(marker) =
-                cosmetic_thread_cylinder_reference_marker_layout_at(&lane.native_payload, body)
-            else {
-                continue;
-            };
-            scan_storage.with_storage(|| ctx.push_vec(&mut markers, marker, OPERATION))?;
-        }
-    }
+    let (mut markers, scan_storage) = cosmetic_thread_cylinder_offsets(
+        ctx,
+        &lane.native_payload,
+        object_start..object_end,
+        diameter_index.tail(ctx, feature)?,
+        cylinder_reference_tokens,
+        |body| cosmetic_thread_cylinder_reference_marker_layout_at(&lane.native_payload, body),
+        OPERATION,
+    )?;
     ctx.sort_unstable_by(
         &mut markers,
         |value| value,
@@ -1886,20 +1869,57 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
         "deduplicate SLDPRT cosmetic thread cylinder markers",
     )?;
     let mut references = Vec::new();
-    ctx.reserve_vec(&mut references, markers.len(), OPERATION)?;
     for marker in ctx.admit_iter(markers, OPERATION)? {
-        let path =
-            match compact_sketch_surface_component_path_at(ctx, &lane.native_payload, marker)? {
-                Some(path) => Some(path),
-                None => compact_termination_reference_path_at(ctx, &lane.native_payload, marker)?,
-            };
-        let components = match path {
-            Some(components) => Some(components),
-            None => compact_edge_component_path_at(ctx, &lane.native_payload, marker)?,
-        };
-        references.push(CylinderMarkerReference(marker, components));
+        let components = cosmetic_thread_cylinder_components_at(ctx, &lane.native_payload, marker)?;
+        ctx.push_vec(
+            &mut references,
+            CylinderMarkerReference(marker, components),
+            OPERATION,
+        )?;
     }
+    drop(scan_storage);
     Ok(references)
+}
+
+/// Scans the union of object and diameter ranges once, retaining projected cylinder offsets.
+fn cosmetic_thread_cylinder_offsets<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    payload: &[u8],
+    object: Range<usize>,
+    diameter_tail: Option<Range<usize>>,
+    tokens: &HashSet<u16>,
+    mut project_offset: impl FnMut(usize) -> Option<usize>,
+    operation: &'static str,
+) -> Result<(Vec<usize>, ScopedReservation<'ctx>), CodecError> {
+    let ranges = match diameter_tail {
+        Some(tail)
+            if object.start < object.end
+                && tail.start <= object.end
+                && object.start <= tail.end =>
+        {
+            [
+                Some(object.start.min(tail.start)..object.end.max(tail.end)),
+                None,
+            ]
+        }
+        tail => [Some(object), tail],
+    };
+    let mut storage = ctx.reserve_scoped(0, operation)?;
+    let mut offsets = Vec::new();
+    for range in ranges.into_iter().flatten() {
+        for body in ctx.admit_iter(range, operation)? {
+            let Some(token) = View::u16_le_at(payload, body) else {
+                continue;
+            };
+            if !ctx.contains_hash_set(tokens, &token, operation)? {
+                continue;
+            }
+            if let Some(offset) = project_offset(body) {
+                storage.with_storage(|| ctx.push_vec(&mut offsets, offset, operation))?;
+            }
+        }
+    }
+    Ok((offsets, storage))
 }
 
 fn cosmetic_thread_cylinder_reference_at(
@@ -1911,15 +1931,25 @@ fn cosmetic_thread_cylinder_reference_at(
     else {
         return Ok(None);
     };
-    let path = match compact_sketch_surface_component_path_at(ctx, payload, marker)? {
-        Some(path) => Some(path),
-        None => compact_termination_reference_path_at(ctx, payload, marker)?,
-    };
-    let components = match path {
-        Some(components) => Some(components),
-        None => compact_edge_component_path_at(ctx, payload, marker)?,
-    };
-    Ok(components.map(|components| (marker, components)))
+    Ok(
+        cosmetic_thread_cylinder_components_at(ctx, payload, marker)?
+            .map(|components| (marker, components)),
+    )
+}
+
+/// Decodes the surface, termination or edge path carried by one cylinder marker.
+fn cosmetic_thread_cylinder_components_at(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    marker: usize,
+) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
+    if let Some(path) = compact_sketch_surface_component_path_at(ctx, payload, marker)? {
+        return Ok(Some(path));
+    }
+    if let Some(path) = compact_termination_reference_path_at(ctx, payload, marker)? {
+        return Ok(Some(path));
+    }
+    compact_edge_component_path_at(ctx, payload, marker)
 }
 
 fn cosmetic_thread_cylinder_reference_marker_layout_at(
@@ -4212,7 +4242,6 @@ fn compact_u16_edge_ids(
                 return Ok(None);
             };
             let mut ids = Vec::new();
-            ctx.reserve_vec(&mut ids, count, OPERATION)?;
 
             let mut view = View::over_retained(bytes);
             for _ in ctx.admit_iter(0..count, OPERATION)? {
@@ -4450,7 +4479,6 @@ pub(super) fn component_reference_curve_path_at(
                 return Ok(None);
             };
             let mut components = Vec::new();
-            ctx.reserve_vec(&mut components, count, OPERATION)?;
             let mut indices = 0..count;
             while let Some(index) = ctx.next_charged(&mut indices, OPERATION)? {
                 if payload.get(cursor + 4..cursor + 16) != Some(signature.as_slice()) {

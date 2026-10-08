@@ -181,3 +181,166 @@ fn rejected_sketch_surface_trailer_releases_component_storage() {
         );
     }
 }
+
+#[test]
+fn short_edge_ids_admit_each_output_item_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut payload = vec![1, 0, 2, 0];
+    payload.extend([0; 16]);
+    payload.extend([0xff, 0xfe, 0xff]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        super::super::compact_u16_edge_ids(&ctx, &payload, 0, 2).unwrap(),
+        Some(vec![1, 2])
+    );
+}
+
+#[test]
+fn curve_path_admits_each_output_item_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut payload = vec![0; 70];
+    payload[..4].copy_from_slice(&2u32.to_le_bytes());
+    payload[4..8].copy_from_slice(&[4, 2, 0, 0]);
+    payload[12..28].copy_from_slice(&super::super::COMPACT_EDGE_VECTOR_MARKER);
+    let signature = [0x38, 0x80, 0x3b, 0, 20, 0, 0, 0, 100, 0, 0, 0];
+    for (cursor, local_id) in [(30, 7u32), (50, 8)] {
+        payload[cursor..cursor + 2].copy_from_slice(&0x8130u16.to_le_bytes());
+        payload[cursor + 4..cursor + 16].copy_from_slice(&signature);
+        payload[cursor + 16..cursor + 20].copy_from_slice(&local_id.to_le_bytes());
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let components = super::super::component_reference_curve_path_at(&ctx, &payload, 12)
+        .unwrap()
+        .expect("two curve components");
+    assert_eq!(
+        components,
+        vec![
+            crate::records::FeatureInputComponentPathEntry {
+                instance: Some(0x8130),
+                type_signature: signature,
+                local_id: Some(7),
+            },
+            crate::records::FeatureInputComponentPathEntry {
+                instance: Some(0x8130),
+                type_signature: signature,
+                local_id: Some(8),
+            },
+        ]
+    );
+}
+
+#[test]
+fn surface_metadata_is_built_only_by_its_consuming_operation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let lane = crate::records::FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: vec![0; 128],
+        classes: [
+            "moCompSurfaceBody_c",
+            "moPLineProjIdRep_c",
+            "moPLineSurfIdRep_c",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, name)| crate::records::FeatureInputClass {
+            id: name.into(),
+            parent: "lane".into(),
+            ordinal: u32::try_from(ordinal).unwrap(),
+            offset: 0,
+            name: name.into(),
+        })
+        .collect(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "index SLDPRT operation surface classes",
+            None,
+        );
+        assert!(
+            super::super::compact_surface_selections(&ctx, &[], &[], &lane, &[])
+                .unwrap()
+                .is_empty()
+        );
+        let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[]).unwrap();
+        assert!(classes.surfaces.get().is_none());
+        assert!(classes.split_classes.get().is_none());
+        assert!(super::super::operation_surface_selection_candidates(
+            &ctx,
+            crate::classification::FeatureClass::CutWithSurface,
+            &lane,
+            &classes,
+            0,
+            0,
+            None,
+        )
+        .unwrap()
+        .is_empty());
+        assert!(classes.surfaces.get().is_none());
+        assert!(classes.split_classes.get().is_none());
+    }
+    let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[]).unwrap();
+    assert!(classes.has_split_classes(&lane).unwrap());
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT operation surface classes",
+        None,
+    );
+    assert!(classes.has_split_classes(&lane).unwrap());
+    assert!(classes.surfaces.get().is_none());
+}
+
+#[test]
+fn split_object_without_source_does_not_search_split_classes() {
+    let lane = crate::records::FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[]).unwrap();
+    assert!(super::super::operation_surface_selection_candidates(
+        &ctx,
+        crate::classification::FeatureClass::SplitFace,
+        &lane,
+        &classes,
+        0,
+        0,
+        None,
+    )
+    .unwrap()
+    .is_empty());
+    assert!(classes.split_classes.get().is_none());
+}
