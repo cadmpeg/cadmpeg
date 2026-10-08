@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+mod numeric_text;
 use super::{
     bounded_pcurve_range, close_radial_rings, connected_components, edge_endpoint_uses,
     is_identity, normalize_occt_curve_range, normalize_pcurve_parameter_range, occurrence_label,

@@ -935,17 +935,20 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                 1,
                 "FreeCAD tessellations records",
             )?;
+            let ordinal_result = self.ctx.format_scoped(
+                format_args!("{index}"), "FreeCAD unowned triangulation ordinal",
+            )?;
+            let ordinal_storage = ordinal_result.1;
+            let ordinal = ordinal_result.0;
+            let id = cadmpeg_ir::tessellation::TessellationId::mint(
+                crate::native::model_id_charged(
+                    self.ctx, "tessellation", &self.payload.id, &ordinal,
+                )?,
+            ).map_err(|error| CodecError::malformed(error.to_string()))?;
+            drop((ordinal, ordinal_storage));
             ir.model.tessellations.push(
                 Tessellation::from_parts(
-                    cadmpeg_ir::tessellation::TessellationId::mint(
-                        crate::native::model_id_charged(
-                            self.ctx,
-                            "tessellation",
-                            &self.payload.id,
-                            &index.to_string(),
-                        )?,
-                    )
-                    .map_err(|error| CodecError::malformed(error.to_string()))?,
+                    id,
                     cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         self.ctx.copy_slice(
                             triangulation.nodes(),
@@ -1803,16 +1806,9 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                     "FreeCAD emitted triangulations",
                 )
             })?;
-            let index_key = index.to_string();
-            let (tessellation_key, _tessellation_key_storage) =
-                self.ctx
-                    .with_scoped_storage("FreeCAD tessellation key scratch", || {
-                        self.ctx.join_retained(
-                            &[index_key.as_str(), face_key.data.as_str()],
-                            "@",
-                            "FreeCAD tessellation key",
-                        )
-                    })?;
+            let (tessellation_key, _tessellation_key_storage) = self.ctx.format_scoped(
+                format_args!("{index}@{}", face_key.data), "FreeCAD tessellation key",
+            )?;
             let tessellation_key = ScopedData {
                 data: tessellation_key,
                 _storage: _tessellation_key_storage,

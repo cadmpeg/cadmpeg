@@ -7,6 +7,7 @@ mod admission_paths;
 mod body_demand;
 mod decode_budget;
 mod primitive_index;
+mod numeric_text;
 mod resource_admission;
 
 use cadmpeg_test_support::wire;

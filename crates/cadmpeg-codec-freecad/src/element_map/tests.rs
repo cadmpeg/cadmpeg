@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Element-map recovery unit tests.
 
+mod numeric_text;
+
 use super::{
     node_text_bytes, owning_property, parse, parse_element_map, parse_legacy_string_ids,
     parse_mapped_name, parse_string_table, validate_string_hasher_framing,
