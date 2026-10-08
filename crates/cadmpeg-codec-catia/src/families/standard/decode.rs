@@ -414,12 +414,8 @@ fn bind_consolidated_revolution_faces_and_seams(
                     }
                 }
                 cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => {
-                    let outer = [outer];
-                    for loop_id in ctx
-                        .admit_iter(&outer, "catia_revolution_face_loops")?
-                        .copied()
-                        .chain(ctx.admit_iter(inner, "catia_revolution_face_loops")?)
-                    {
+                    visit_loop(outer)?;
+                    for loop_id in ctx.admit_iter(inner, "catia_revolution_face_loops")? {
                         visit_loop(loop_id)?;
                     }
                 }
@@ -2376,7 +2372,7 @@ fn retain_standard_population_model(
         ($($field:ident),+ $(,)?) => {
             $(ctx.retain_vec(
                 &mut model.$field,
-                |entity| ctx.starts_with(entity.identity(), "catia:standard:", OPERATION),
+                |entity| Ok(entity.identity().starts_with("catia:standard:")),
                 OPERATION,
             )?;)+
         };
@@ -2432,11 +2428,7 @@ fn rescope_standard_id(
     text: &str,
     scope: &str,
 ) -> Result<String, CodecError> {
-    match ctx.strip_prefix(
-        text,
-        "catia:standard:",
-        "catia_standard_population_identity",
-    )? {
+    match text.strip_prefix("catia:standard:") {
         Some(rest) => ctx.format_retained(
             format_args!("catia:standard:{scope}/{rest}"),
             "catia_standard_population_identity",
@@ -2474,19 +2466,14 @@ fn merge_standard_population_annotations(
 ) -> Result<Result<(), cadmpeg_ir::annotations::AnnotationIdentityCollision>, CodecError> {
     // Only standard-owned entities survive retain_standard_population_model.
     // The first population retains the shared payload and other carriers.
-    let mut keep =
-        |id: &str| ctx.starts_with(id, "catia:standard:", "filter standard annotation identity");
+    let mut keep = |id: &str| Ok(id.starts_with("catia:standard:"));
     source.retain_provenance(ctx, &mut keep)?;
     let mut annotations = AnnotationBuilder::resume(source);
     annotations.retain_exactness(ctx, keep)?;
     source = annotations.build();
     if let Err(collision) = source.map_ids(
         ctx,
-        |id| match ctx.strip_prefix(
-            id,
-            "catia:standard:",
-            "catia_standard_population_annotation_id",
-        )? {
+        |id| match id.strip_prefix("catia:standard:") {
             Some(rest) => ctx.format_retained(
                 format_args!("catia:standard:{scope}/{rest}"),
                 "catia_standard_population_annotation_id",
@@ -3546,22 +3533,14 @@ fn try_decode_standard_population(
         admitted!(ctx.retain_vec(
             &mut topology_ir.model.surfaces,
             |surface| {
-                Ok(!ctx.starts_with(
-                    surface.id.as_str(),
-                    "catia:standard:edge-support-surface#",
-                    "catia_standard_fallback_surfaces",
-                )?)
+                Ok(!surface.id.as_str().starts_with("catia:standard:edge-support-surface#"))
             },
             "catia_standard_fallback_surfaces",
         ));
         admitted!(ctx.retain_vec(
             &mut topology_ir.model.procedural_surfaces,
             |surface| {
-                Ok(!ctx.starts_with(
-                    surface.id.as_str(),
-                    "catia:standard:edge-support-definition#",
-                    "catia_standard_fallback_procedural_surfaces",
-                )?)
+                Ok(!surface.id.as_str().starts_with("catia:standard:edge-support-definition#"))
             },
             "catia_standard_fallback_procedural_surfaces",
         ));
@@ -10638,12 +10617,8 @@ fn standard_face_boundary_witnesses(
                     }
                 }
                 cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => {
-                    let outer = [outer];
-                    for loop_id in ctx
-                        .admit_iter(&outer, "catia_a5_face_boundary_loops")?
-                        .copied()
-                        .chain(ctx.admit_iter(inner, "catia_a5_face_boundary_loops")?)
-                    {
+                    visit_loop(outer)?;
+                    for loop_id in ctx.admit_iter(inner, "catia_a5_face_boundary_loops")? {
                         visit_loop(loop_id)?;
                     }
                 }
@@ -10728,9 +10703,7 @@ fn bind_standard_a5_owner_surfaces(
             .enumerate()
         {
             const FACE_ID: &str = "catia_a5_unknown_face_rows";
-            let Some(ordinal) =
-                ctx.strip_prefix(value.id.as_str(), "catia:standard:face#", FACE_ID)?
-            else {
+            let Some(ordinal) = value.id.as_str().strip_prefix("catia:standard:face#") else {
                 continue;
             };
             let Ok(ordinal) = ctx.parse_text::<usize>(ordinal, FACE_ID)? else {
