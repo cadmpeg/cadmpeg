@@ -5,8 +5,8 @@ use cadmpeg_test_support::wire;
 
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
-    CadirEncoder, Consumption, EncodeInput, Encoder, EncoderBackend, ExportBody, PatchConsumption,
-    WritePath,
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, EncodeInput,
+    Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
 };
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::codec::FormatId;
@@ -61,7 +61,11 @@ impl EncoderBackend for NeutralEncoder {
     fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
         // The body carries no identity: whatever the backend does, the
         // wrapper stamps FORMAT.
-        Ok(ExportBody::synthesized(Vec::new(), input.ir))
+        Ok(ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            ArenaCoverage::Complete,
+        ))
     }
 }
 
@@ -117,7 +121,7 @@ impl EncoderBackend for CatalogEncoder {
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        let mut body = ExportBody::synthesized(Vec::new(), input.ir);
+        let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
         body.notes
             .push(format!("resolved {}", target.target_id().as_str()));
         body.write_path = WritePath::Synthesized {
@@ -220,4 +224,77 @@ fn write_path_structurally_authors_fidelity_resolution() {
             fidelity: crate::report::export::SynthesisFidelity::NotProvided {}
         }
     );
+}
+
+macro_rules! uniform_dispositions {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+        fn uniform_dispositions(disposition: ArenaDisposition) -> ArenaDispositions {
+            ArenaDispositions { $($field: disposition,)* }
+        }
+    };
+}
+
+crate::document::arena_registry!(uniform_dispositions);
+
+struct CoverageEncoder(ArenaCoverage);
+
+impl EncoderBackend for CoverageEncoder {
+    const FORMAT: FormatId = FormatId::new("cadir");
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+        Ok(ExportBody::synthesized(Vec::new(), input.ir, self.0))
+    }
+}
+
+fn coverage_losses(ir: &CadIr, coverage: ArenaCoverage) -> Vec<crate::report::loss::LossNote> {
+    CoverageEncoder(coverage)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .unwrap()
+        .report()
+        .losses
+        .clone()
+}
+
+#[test]
+fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
+    let ir = unit_cube().expect("valid unit cube fixture");
+    assert_eq!(ir.model.faces.len(), 6);
+    assert!(ir.model.subds.is_empty());
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    dispositions.faces = ArenaDisposition::Omitted;
+    dispositions.subds = ArenaDisposition::Omitted;
+
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert_eq!(losses[0].code.namespace(), "export");
+    assert_eq!(losses[0].code.local_code(), "arena.omitted");
+    assert_eq!(
+        losses[0].code.taxonomy(),
+        crate::report::loss::LossTaxonomy::TopologyNotTransferred
+    );
+    assert!(
+        losses[0].message.contains("`faces`"),
+        "{}",
+        losses[0].message
+    );
+    assert!(
+        losses[0].message.contains("6 record(s)"),
+        "{}",
+        losses[0].message
+    );
+}
+
+#[test]
+fn written_reported_and_complete_coverage_charge_no_loss() {
+    let ir = unit_cube().expect("valid unit cube fixture");
+    for coverage in [
+        ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Written)),
+        ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Reported)),
+        ArenaCoverage::Complete,
+    ] {
+        assert_eq!(coverage_losses(&ir, coverage), Vec::new(), "{coverage:?}");
+    }
 }

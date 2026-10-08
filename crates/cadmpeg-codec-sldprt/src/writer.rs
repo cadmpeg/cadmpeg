@@ -12,6 +12,7 @@ use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
 use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
+use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
@@ -37,18 +38,25 @@ pub(crate) const SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE: &str =
     "sldprt_swobjects_metadata_identity_local_sha256";
 pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
 
-/// Writes a semantic document and returns the dialect it wrote.
-///
-/// The returned id is classified from the final section payloads through the
-/// same `swSolidWorks` envelope parser that decode uses, so a re-decode of
-/// these bytes classifies exactly the dialect stored in the serialized export
-/// report's `identity.target` field.
+/// What one semantic write produced.
+pub(crate) struct SemanticOutput {
+    /// The dialect classified from the final section payloads through the same
+    /// `swSolidWorks` envelope parser that decode uses, so a re-decode of the
+    /// bytes classifies exactly the dialect stored in the serialized export
+    /// report's `identity.target` field.
+    pub(crate) dialect: cadmpeg_core::dialect::DialectId,
+    /// Which model arenas the written document carries.
+    pub(crate) coverage: ArenaDispositions,
+}
+
+/// Writes a semantic document and returns the dialect and arena coverage it
+/// wrote.
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
     writer: &mut dyn Write,
-) -> Result<cadmpeg_core::dialect::DialectId, CodecError> {
+) -> Result<SemanticOutput, CodecError> {
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) =
         DecodeContext::from_root_bytes(&[], &digest_arena, &DecodePolicy::desktop())?;
@@ -132,6 +140,7 @@ pub(crate) fn write_semantic_with_records(
     } else {
         None
     };
+    let coverage = semantic_coverage(!retained_records.is_empty(), retained_partition.is_some());
     let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
     let partition_sections = if let Some(retained) = retained_partition {
         vec![retained]
@@ -289,7 +298,70 @@ pub(crate) fn write_semantic_with_records(
     for entry in section_directory_entries(source_scan.as_ref(), &sections, &type_ids)? {
         writer.write_all(&entry)?;
     }
-    Ok(written_dialect)
+    Ok(SemanticOutput {
+        dialect: written_dialect,
+        coverage,
+    })
+}
+
+/// What the semantic writer does with each model arena.
+///
+/// `patched` states that retained source records fed the write; `retained_brep`
+/// states that the retained Parasolid partition was replayed because
+/// `brep_local_sha256` still matches. Only that partition carries pcurves and
+/// procedural constructions: the generated and patched partitions do not
+/// encode them. Retained semantic PMI is carried only by the retained
+/// `PMISemanticDataDB` block, which exists only on the patched path;
+/// `check_semantic_support` refuses PMI that differs from its baseline. Design
+/// records reach the output through the native history lanes, synchronized
+/// from the neutral arenas declared `Written`; the other document arenas are
+/// not read.
+fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
+    use ArenaDisposition::{Omitted, Reported, Written};
+    let brep_carried = if retained_brep { Written } else { Omitted };
+    ArenaDispositions {
+        bodies: Written,
+        regions: Written,
+        shells: Written,
+        faces: Written,
+        loops: Written,
+        coedges: Written,
+        edges: Written,
+        vertices: Written,
+        points: Written,
+        surfaces: Written,
+        curves: Written,
+        subds: Reported,
+        pcurves: brep_carried,
+        procedural_surfaces: brep_carried,
+        procedural_curves: brep_carried,
+        assets: Omitted,
+        features: Written,
+        feature_input_topologies: Omitted,
+        feature_result_topologies: Omitted,
+        configurations: Written,
+        parameters: Written,
+        sketches: Written,
+        sketch_entities: Written,
+        sketch_constraints: Written,
+        spatial_sketches: Written,
+        spatial_sketch_entities: Written,
+        spatial_sketch_constraints: Omitted,
+        spreadsheets: Omitted,
+        product_definitions: Omitted,
+        occurrences: Omitted,
+        assembly_joints: Omitted,
+        drawings: Omitted,
+        semantic_annotations: Omitted,
+        presentation_documents: Omitted,
+        view_presentations: Omitted,
+        tessellations: Written,
+        appearances: Written,
+        appearance_bindings: Written,
+        attributes: Written,
+        pmi: if patched { Written } else { Omitted },
+        presentation_layers: Omitted,
+    }
 }
 
 fn assign_configuration_indices(

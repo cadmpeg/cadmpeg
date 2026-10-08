@@ -46372,6 +46372,7 @@
         "application_domains": "App,Part,PartDesign,Sketcher",
         "archive_entry_count": "66",
         "document_kind": "part-design",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "object_count": "57",
         "physical_archive_bytes": "43614",

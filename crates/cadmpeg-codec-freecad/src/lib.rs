@@ -1295,6 +1295,14 @@ impl CodecBackend for FcstdCodec {
             "FCStd dialect loss output",
         )?;
         losses.extend(dialect_losses);
+        let document_digest =
+            writer::target::document_local_sha256(ctx, &ir, "FCStd document digest")?;
+        if let Some(source) = &mut ir.source {
+            source.attributes.insert(
+                cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
+                document_digest,
+            );
+        }
         ctx.admit_entities(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
             &mut admitted_entities,

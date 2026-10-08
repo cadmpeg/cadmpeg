@@ -623,7 +623,7 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
             .code(1)
             .stderr(
                 predicate::str::contains("Preserved")
-                    .or(predicate::str::contains("export planning reported 1 loss")),
+                    .or(predicate::str::contains("source image is unavailable")),
             );
         assert!(!refused.exists());
     }

@@ -4551,19 +4551,15 @@ impl<'a> Builder<'a> {
                 // schema gate is why they were dropped. A target that supports
                 // semantic PMI and still left annotations unwritten dropped them for
                 // some other reason, and pointing at another target would misdirect.
-                if !self.schema.supports_semantic_pmi() {
-                    return self.loss(
-                    StepLossCode::PmiAnnotationNotWritten,
+                let message = if self.schema.supports_semantic_pmi() {
+                    format!("{unwritten_pmi} PMI annotation(s) were not written to STEP")
+                } else {
                     format!(
                         "{unwritten_pmi} PMI annotation(s) were not written to STEP; {} does not carry semantic PMI, which requires an AP242 edition target",
                         self.schema.file_schema()
-                    ),
-                );
-                }
-                self.loss(
-                    StepLossCode::PmiAnnotationNotWritten,
-                    format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
-                );
+                    )
+                };
+                self.loss(StepLossCode::PmiAnnotationNotWritten, message);
             }
         }
         // STEP-native source associations identify records already represented
@@ -4868,5 +4864,7 @@ fn is_identity(rows: &[[f64; 4]; 4]) -> bool {
     true
 }
 
+#[cfg(test)]
+mod accounting_tests;
 #[cfg(test)]
 mod construction_tests;
