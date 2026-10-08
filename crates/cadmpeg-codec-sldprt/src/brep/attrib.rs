@@ -346,6 +346,7 @@ impl<'a> PayloadRuns<'a, '_> {
         let mut path_storage = ctx.reserve_scoped(0, INDEX)?;
         let mut path = Vec::new();
         let mut at = from;
+        let mut first_value: Option<(&[u32], usize)> = None;
         let mut resolution = loop {
             if let Some(&resolved) = ctx.get_btree_map(&self.resolved, &(at, atom), INDEX)? {
                 break resolved;
@@ -371,6 +372,27 @@ impl<'a> PayloadRuns<'a, '_> {
                     }
                     _ => None,
                 };
+            if let Some(values) = values {
+                if let Some((previous, first)) = first_value {
+                    if previous != values {
+                        // Every prefix through the first accepted list contains
+                        // both distinct lists. Later suffixes are not resolved.
+                        for &(prefix, _) in ctx.admit_iter(&path[..=first], INDEX)? {
+                            self.storage.with_storage(|| {
+                                ctx.insert_btree_map(
+                                    &mut self.resolved,
+                                    (prefix, atom),
+                                    PayloadResolution::Conflicting,
+                                    INDEX,
+                                )
+                            })?;
+                        }
+                        return Ok(None);
+                    }
+                } else {
+                    first_value = Some((values, path.len()));
+                }
+            }
             ctx.push_scoped_vec(&mut path_storage, &mut path, (at, values), INDEX)?;
             at += 2;
         };
@@ -730,6 +752,10 @@ mod tests {
             .resolve(&ctx, &bytes, 0, &lists, false)
             .unwrap()
             .is_none());
+        assert_eq!(
+            runs.resolve(&ctx, &bytes, 2, &lists, false).unwrap(),
+            Some(&[9][..])
+        );
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
             "scan Parasolid attribute references",
@@ -743,6 +769,45 @@ mod tests {
             runs.resolve(&ctx, &bytes, 4, &lists, false).unwrap(),
             Some(&[9][..])
         );
+    }
+
+    #[test]
+    fn attribute_conflict_does_not_resolve_unrequested_tail() {
+        use super::{IntegerList, PayloadRuns};
+        let lists = std::collections::BTreeMap::from([
+            (300, Some(IntegerList { values: [9, 0, 0, 0, 0, 0, 0], len: 1 })),
+            (301, Some(IntegerList { values: [8, 0, 0, 0, 0, 0, 0], len: 1 })),
+        ]);
+        let mut bytes = vec![1, 44, 1, 45];
+        for _ in 0..4096 {
+            bytes.extend([1, 44]);
+        }
+        let work = |bytes: &[u8]| {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                "test completed attribute conflict",
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    let mut runs = PayloadRuns {
+                        resolved: std::collections::BTreeMap::new(),
+                        storage: ctx.reserve_scoped(0, "test tails")?,
+                    };
+                    assert!(runs.resolve(&ctx, bytes, 0, &lists, false)?.is_none());
+                    assert!(runs.resolved.contains_key(&(0, false)));
+                    assert!(!runs.resolved.contains_key(&(2, false)));
+                    assert!(!runs.resolved.contains_key(&(4, false)));
+                    ctx.charge_work(1, "test completed attribute conflict")
+                },
+            );
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("completed conflict work refusal");
+            };
+            limit
+        };
+        assert_eq!(work(&bytes), work(&bytes[..4]));
     }
 
     #[test]

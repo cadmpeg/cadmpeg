@@ -2268,6 +2268,7 @@ fn decode_graph(
                     && bridge.sense == first_bridge.sense
                     && face.surface_attr == first_face.surface_attr
                     && face.sense == first_face.sense
+                    && face.loops.len() == first_face.loops.len()
                     && ctx.equal(
                         &face.loops,
                         &first_face.loops,

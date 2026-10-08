@@ -39,7 +39,7 @@ struct ArraySpan {
     count: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct CurveDescriptor {
     degree: u32,
     control_count: usize,
@@ -195,6 +195,7 @@ fn scan_arrays(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     compact_attrs: Option<&BTreeSet<u16>>,
+    required_attrs: Option<&BTreeSet<u16>>,
 ) -> Result<Arrays, cadmpeg_core::CodecError> {
     let mut arrays = Arrays::default();
     let starts = 0..bytes.len().checked_sub(9).map_or(0, |end| end);
@@ -233,6 +234,11 @@ fn scan_arrays(
         };
         if attr <= 1 || count > MAX_ARRAY_VALUES {
             continue;
+        }
+        if let Some(required) = required_attrs {
+            if !ctx.contains_btree_set(required, &attr, "select Parasolid spline arrays")? {
+                continue;
+            }
         }
         let values_at = p + arr_hdr::LEN;
         // The first array of an attribute is kept; a later one is not read.
@@ -352,7 +358,8 @@ where
         };
         if !ctx.any_by(
             &candidates,
-            |candidate| ctx.equal(candidate.as_ref(), values.as_slice(), OPERATION),
+            |candidate| Ok(candidate.len() == values.len()
+                && ctx.equal(candidate.as_ref(), values.as_slice(), OPERATION)?),
             OPERATION,
         )? {
             ctx.push_scoped_vec(storage, &mut candidates, Cow::Owned(values), OPERATION)?;
@@ -1015,7 +1022,7 @@ pub(crate) fn patch_nurbs_surface(
         descriptors.values().flat_map(|descriptor| descriptor.refs),
         "index Parasolid patch compact attributes",
     )?;
-    let arrays = scan_arrays(ctx, bytes, Some(&compact_attrs))?;
+    let arrays = scan_arrays(ctx, bytes, Some(&compact_attrs), None)?;
     let mut p = wrapper_offset.checked_add(2).ok_or_else(|| {
         cadmpeg_core::CodecError::malformed("Parasolid patch wrapper offset overflow")
     })?;
@@ -1099,9 +1106,11 @@ pub(crate) fn scan_curve_carriers(
     refusals: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<u16, CurveCarrier>, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "hold Parasolid curve source tables")?;
-    let arrays = scratch.with_storage(|| scan_arrays(ctx, bytes, None))?;
-    let descriptors = scratch.with_storage(|| scan_curve_descriptors(ctx, bytes))?;
-    let mut out = BTreeMap::new();
+    let mut wrappers = Vec::new();
+    let mut required_attrs = BTreeSet::new();
+    {
+    let mut descriptor_storage = ctx.reserve_scoped(0, "hold Parasolid wrapper descriptors")?;
+    let mut descriptors = None;
     let starts = 0..bytes.len().checked_sub(6).map_or(0, |end| end);
     for off in ctx.admit_iter(starts, "scan Parasolid curve wrappers")? {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) {
@@ -1114,13 +1123,33 @@ pub(crate) fn scan_curve_carriers(
         let Some(attr) = View::u16_be_at(bytes, p) else {
             continue;
         };
+        if descriptors.is_none() {
+            descriptors = Some(descriptor_storage.with_storage(|| scan_curve_descriptors(ctx, bytes))?);
+        }
+        let Some(descriptors) = &descriptors else {
+            continue;
+        };
+        let Some(descriptor) = curve_descriptor(ctx, bytes, p, descriptors)? else {
+            continue;
+        };
+        for reference in [descriptor.control_attr, descriptor.multiplicity_attr, descriptor.knot_attr] {
+            scratch.with_storage(|| ctx.insert_btree_set(
+                &mut required_attrs, reference, "collect Parasolid curve array references",
+            ))?;
+        }
+        ctx.push_scoped_vec(&mut scratch, &mut wrappers, (off, attr, *descriptor), "collect Parasolid curve wrappers")?;
+    }
+    }
+    if wrappers.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let arrays = scratch.with_storage(|| scan_arrays(ctx, bytes, None, Some(&required_attrs)))?;
+    let mut out = BTreeMap::new();
+    for (off, attr, descriptor) in ctx.admit_iter(wrappers, "decode Parasolid curve wrappers")? {
         // The first carrier of an attribute is kept; a later wrapper is not built.
         if ctx.contains_key_btree_map(&out, &attr, "collect Parasolid curve carriers")? {
             continue;
         }
-        let Some(descriptor) = curve_descriptor(ctx, bytes, p, &descriptors)? else {
-            continue;
-        };
         let Some(control) =
             ctx.get_btree_map(&arrays.f64s, &descriptor.control_attr, CURVE_ARRAYS)?
         else {
@@ -1382,26 +1411,11 @@ pub(crate) fn scan_surface_carriers(
     refusals: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<u16, SurfaceCarrier>, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "hold Parasolid surface source tables")?;
-    let descriptors = scratch.with_storage(|| scan_surface_descriptors(ctx, bytes))?;
-    let mut compact_attrs = BTreeSet::new();
-    for (_, descriptor) in
-        ctx.admit_iter(&descriptors, "collect Parasolid surface array references")?
+    let mut required_attrs = BTreeSet::new();
+    let mut wrappers = Vec::new();
     {
-        for &attr in ctx.admit_iter(
-            &descriptor.refs,
-            "collect Parasolid surface array references",
-        )? {
-            scratch.with_storage(|| {
-                ctx.insert_btree_set(
-                    &mut compact_attrs,
-                    attr,
-                    "collect Parasolid surface array references",
-                )
-            })?;
-        }
-    }
-    let arrays = scratch.with_storage(|| scan_arrays(ctx, bytes, Some(&compact_attrs)))?;
-    let mut out = BTreeMap::new();
+    let mut descriptor_storage = ctx.reserve_scoped(0, "hold Parasolid wrapper descriptors")?;
+    let mut descriptors = None;
     let starts = 0..bytes.len().checked_sub(1).map_or(0, |end| end);
     for off in ctx.admit_iter(starts, "scan Parasolid surface wrappers")? {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) {
@@ -1414,24 +1428,43 @@ pub(crate) fn scan_surface_carriers(
         let Some(attr) = View::u16_be_at(bytes, p) else {
             continue;
         };
-        // The first carrier of an attribute is kept; a later wrapper is not built.
-        if ctx.contains_key_btree_map(&out, &attr, "collect Parasolid surface carriers")? {
-            continue;
-        }
         let Some(descriptor_at) = p.checked_add(17) else {
             continue;
         };
         let Some(descriptor_attr) = View::u16_be_at(bytes, descriptor_at) else {
             continue;
         };
-        let Some(descriptor) = ctx.get_btree_map(
-            &descriptors,
-            &descriptor_attr,
-            "find Parasolid surface descriptors",
-        )?
-        else {
+        if descriptors.is_none() {
+            descriptors = Some(descriptor_storage.with_storage(|| scan_surface_descriptors(ctx, bytes))?);
+        }
+        let Some(descriptors) = &descriptors else {
             continue;
         };
+        let Some(descriptor) = ctx.get_btree_map(
+            descriptors,
+            &descriptor_attr,
+            "find Parasolid surface descriptors",
+        )? else {
+            continue;
+        };
+        for &reference in &descriptor.refs {
+            scratch.with_storage(|| ctx.insert_btree_set(
+                &mut required_attrs, reference, "collect Parasolid surface array references",
+            ))?;
+        }
+        ctx.push_scoped_vec(&mut scratch, &mut wrappers, (off, attr, *descriptor), "collect Parasolid surface wrappers")?;
+    }
+    }
+    if wrappers.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let arrays = scratch.with_storage(|| scan_arrays(ctx, bytes, Some(&required_attrs), Some(&required_attrs)))?;
+    let mut out = BTreeMap::new();
+    for (off, attr, descriptor) in ctx.admit_iter(wrappers, "decode Parasolid surface wrappers")? {
+        // The first carrier of an attribute is kept; a later wrapper is not built.
+        if ctx.contains_key_btree_map(&out, &attr, "collect Parasolid surface carriers")? {
+            continue;
+        }
         let mut storage = ctx.reserve_scoped(0, "hold Parasolid surface array candidates")?;
         let Some(expected_poles) = descriptor.u_count.checked_mul(descriptor.v_count) else {
             continue;
@@ -1555,56 +1588,45 @@ pub(crate) fn scan_surface_carriers(
         let Some(pole_width) = std::num::NonZeroUsize::new(dimension) else {
             continue;
         };
-        let mut valid = true;
-        for row in ctx
-            .admit_iter(control.as_ref(), "scan Parasolid surface poles")?
-            .chunks(row_width)
-        {
-            let mut points =
-                ctx.vector_storage(descriptor.v_count, "decode Parasolid surface poles")?;
-            let mut weights = if descriptor.rational {
-                Some(ctx.vector_storage(descriptor.v_count, "decode Parasolid surface weights")?)
-            } else {
-                None
-            };
-            for pole in ctx
-                .admit_iter(
-                    &row[..row.len() / dimension * dimension],
+        let valid = ctx.all_by(
+            control.chunks(row_width.get()),
+            |row| {
+                let mut points = ctx.vector_storage(descriptor.v_count, "decode Parasolid surface poles")?;
+                let mut weights = if descriptor.rational {
+                    Some(ctx.vector_storage(descriptor.v_count, "decode Parasolid surface weights")?)
+                } else {
+                    None
+                };
+                if !ctx.all_by(
+                    row[..row.len() / dimension * dimension].chunks(pole_width.get()),
+                    |pole| {
+                        let weight = if descriptor.rational { pole[3] } else { 1.0 };
+                        // A pole holds three or four values.
+                        if pole.iter().any(|value| !value.is_finite()) || weight.abs() <= f64::EPSILON {
+                            return Ok(false);
+                        }
+                        ctx.push_vec(
+                            &mut points,
+                            Point3::new(pole[0] / weight * LEN_TO_MM, pole[1] / weight * LEN_TO_MM, pole[2] / weight * LEN_TO_MM),
+                            "decode Parasolid surface poles",
+                        )?;
+                        if let Some(values) = &mut weights {
+                            ctx.push_vec(values, weight, "decode Parasolid surface weights")?;
+                        }
+                        Ok(true)
+                    },
                     "scan Parasolid surface row poles",
-                )?
-                .chunks(pole_width)
-            {
-                let weight = if descriptor.rational { pole[3] } else { 1.0 };
-                // A pole holds three or four values.
-                if pole.iter().any(|value| !value.is_finite()) || weight.abs() <= f64::EPSILON {
-                    valid = false;
-                    break;
+                )? {
+                    return Ok(false);
                 }
-                ctx.push_vec(
-                    &mut points,
-                    Point3::new(
-                        pole[0] / weight * LEN_TO_MM,
-                        pole[1] / weight * LEN_TO_MM,
-                        pole[2] / weight * LEN_TO_MM,
-                    ),
-                    "decode Parasolid surface poles",
-                )?;
-                if let Some(values) = &mut weights {
-                    ctx.push_vec(values, weight, "decode Parasolid surface weights")?;
+                ctx.push_vec(&mut pole_rows, points, "partition Parasolid surface pole rows")?;
+                if let (Some(rows), Some(weights)) = (&mut weight_rows, weights) {
+                    ctx.push_vec(rows, weights, "partition Parasolid surface weight rows")?;
                 }
-            }
-            if !valid {
-                break;
-            }
-            ctx.push_vec(
-                &mut pole_rows,
-                points,
-                "partition Parasolid surface pole rows",
-            )?;
-            if let (Some(rows), Some(weights)) = (&mut weight_rows, weights) {
-                ctx.push_vec(rows, weights, "partition Parasolid surface weight rows")?;
-            }
-        }
+                Ok(true)
+            },
+            "scan Parasolid surface poles",
+        )?;
         if !valid || pole_rows.len() != descriptor.u_count {
             continue;
         }
@@ -1687,6 +1709,90 @@ mod tests {
     }
 
     #[test]
+    fn unused_spline_arrays_need_no_materialized_storage() {
+        let bytes = crate::test_support::parasolid::f64_array(0x2d, 12, &[0.0, 1.0, 2.0]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut refusals = Vec::new();
+        assert!(scan_curve_carriers(&ctx, &bytes, &mut refusals).unwrap().is_empty());
+        assert!(scan_surface_carriers(&ctx, &bytes, &mut refusals).unwrap().is_empty());
+        assert!(refusals.is_empty());
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn spline_wrappers_do_not_decode_unreferenced_scalar_arrays() {
+        for curve in [true, false] {
+            let mut bytes = if curve {
+                crate::test_support::parasolid::nurbs_curve_carrier(170, 171)
+            } else {
+                crate::test_support::parasolid::nurbs_surface_carrier(180, 181, 10)
+            };
+            let operation = if curve { "collect Parasolid curve carriers" } else { "collect Parasolid surface carriers" };
+            let refusal = |bytes: &[u8]| {
+                let error = cadmpeg_test_support::refusal::resource_limit_at(
+                    ResourceDimension::CollectionItems, operation, |cap| {
+                        let arena = DecodeArena::new();
+                        let mut policy = DecodePolicy::service();
+                        policy.limits.max_collection_items = cap;
+                        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                        let mut refusals = Vec::new();
+                        if curve {
+                            scan_curve_carriers(&ctx, bytes, &mut refusals).map(|out| out.len())
+                        } else {
+                            scan_surface_carriers(&ctx, bytes, &mut refusals).map(|out| out.len())
+                        }
+                    },
+                );
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("carrier insertion refusal"); };
+                limit
+            };
+            let original = refusal(&bytes);
+            let mut prefix = crate::test_support::parasolid::f64_array(0x2d, 65000, &vec![0.25; 4096]);
+            prefix.extend(bytes);
+            bytes = prefix;
+            let extended = refusal(&bytes);
+            assert_eq!(extended.used, original.used);
+            assert_eq!(extended.additional, original.additional);
+        }
+    }
+
+    #[test]
+    fn surface_pole_traversal_charges_rows_and_poles_once() {
+        let valid = crate::test_support::parasolid::nurbs_surface_carrier(180, 181, 10);
+        let control = crate::test_support::parasolid::f64_array(
+            0x2d, 182, &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.5],
+        );
+        let start = valid.windows(control.len()).position(|bytes| bytes == control).unwrap();
+        let mut invalid = valid.clone();
+        let values_at = super::array_body(&invalid, start, 0x2d).unwrap() + crate::layout::bspline_array_header::LEN;
+        invalid[values_at..values_at + 8].copy_from_slice(&f64::NAN.to_be_bytes());
+        let mut zero_weight = crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10);
+        let control_at = (0..zero_weight.len()).find_map(|off| {
+            let body = super::array_body(&zero_weight, off, 0x2d)?;
+            (cadmpeg_core::decode::View::u16_be_at(&zero_weight, body + crate::layout::bspline_array_header::ATTR) == Some(182))
+                .then_some(body + crate::layout::bspline_array_header::LEN)
+        }).unwrap();
+        zero_weight[control_at + 24..control_at + 32].copy_from_slice(&0.0_f64.to_be_bytes());
+        for bytes in [&valid, &zero_weight] {
+            for operation in ["scan Parasolid surface poles", "scan Parasolid surface row poles"] {
+                let error = crate::test_support::work_refusal_at(operation, |ctx| {
+                    scan_surface_carriers(ctx, bytes, &mut Vec::new())
+                });
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.operation == operation && limit.additional == 1));
+            }
+        }
+        let ctx = cadmpeg_test_support::service_decode_context();
+        assert!(scan_surface_carriers(&ctx, &invalid, &mut Vec::new()).unwrap().is_empty());
+        assert!(scan_surface_carriers(&ctx, &zero_weight, &mut Vec::new()).unwrap().is_empty());
+        assert!(scan_surface_carriers(&ctx, &valid, &mut Vec::new()).unwrap().contains_key(&180));
+    }
+
+    #[test]
     fn scalar_array_read_stops_at_first_missing_cell() {
         use std::cell::Cell;
         let arena = DecodeArena::new();
@@ -1721,7 +1827,7 @@ mod tests {
                 policy.limits.max_collection_items = cap;
                 let (ctx, _) =
                     DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-                scan_arrays(&ctx, &bytes, None)
+                scan_arrays(&ctx, &bytes, None, None)
             },
         );
         assert!(matches!(error,
@@ -1733,7 +1839,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
         assert_eq!(
-            scan_arrays(&ctx, &bytes, None)
+            scan_arrays(&ctx, &bytes, None, None)
                 .expect("service scan")
                 .f64s
                 .get(&12)
@@ -1754,7 +1860,7 @@ mod tests {
                 policy.limits.max_collection_items = cap;
                 let (ctx, _) =
                     DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-                scan_arrays(&ctx, &bytes, None)
+                scan_arrays(&ctx, &bytes, None, None)
             },
         );
         assert!(matches!(error,
@@ -1837,12 +1943,17 @@ mod tests {
     #[test]
     fn parasolid_curve_descriptors_refuse_collection_limit_before_insertion() {
         let bytes = crate::test_support::parasolid::nurbs_curve_carrier(170, 171);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 16;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect_err("curve descriptor insertion exceeds the limit");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "collect Parasolid curve descriptors",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+                scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
+            },
+        );
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -1852,12 +1963,17 @@ mod tests {
     #[test]
     fn parasolid_curve_carriers_refuse_collection_limit_before_insertion() {
         let bytes = crate::test_support::parasolid::nurbs_curve_carrier(170, 171);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 29;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect_err("curve carrier insertion exceeds the limit");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "collect Parasolid curve carriers",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+                scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
+            },
+        );
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -1867,12 +1983,17 @@ mod tests {
     #[test]
     fn parasolid_curve_weighted_poles_refuse_collection_limit_before_pairing() {
         let bytes = crate::test_support::parasolid::rational_linear_nurbs_curve_carrier(170, 171);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 24;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
-            .expect_err("weighted pole pairing exceeds the limit");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "IR NURBS paired poles",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+                scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
+            },
+        );
         assert!(
             matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
