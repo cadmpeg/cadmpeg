@@ -105,7 +105,7 @@ impl AdmittedSchemaIdentifier {
         let Some((_, Some(object_identifier))) = split_schema_identifier(ctx, self.text())? else {
             return Ok(None);
         };
-        let mut components = schema_oid_components(ctx, object_identifier)?;
+        let mut components = schema_oid_components(ctx, object_identifier);
         let Some(first) = components.next().transpose()? else {
             return Ok(None);
         };
@@ -260,7 +260,7 @@ fn schema_object_identifier_form<'a>(
     ctx: &'a DecodeContext<'_>,
     value: &'a str,
 ) -> Result<ObjectIdentifierForm<'a>, CodecError> {
-    let mut components = schema_oid_components(ctx, value)?;
+    let mut components = schema_oid_components(ctx, value);
     let Some(first) = components.next().transpose()? else {
         return Ok(ObjectIdentifierForm::Invalid);
     };
@@ -294,10 +294,10 @@ fn schema_object_identifier_form<'a>(
 fn schema_oid_components<'a>(
     ctx: &'a DecodeContext<'a>,
     value: &'a str,
-) -> Result<impl Iterator<Item = Result<&'a str, CodecError>> + 'a, CodecError> {
+) -> impl Iterator<Item = Result<&'a str, CodecError>> + 'a {
     let mut at = 0;
     let mut failed = false;
-    Ok(std::iter::from_fn(move || {
+    std::iter::from_fn(move || {
         if failed {
             return None;
         }
@@ -320,7 +320,7 @@ fn schema_oid_components<'a>(
             }
         }
         start.map(|start| Ok(&value[start..at]))
-    }))
+    })
 }
 
 /// The admission form of one object identifier component.

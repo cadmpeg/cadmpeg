@@ -55,14 +55,17 @@ pub(crate) struct OpenedRoot<'a, 'ctx> {
 pub(crate) fn open_root<'a, 'ctx>(
     ctx: &'ctx DecodeContext<'a>,
     root: View<'a>,
- ) -> Result<OpenedRoot<'a, 'ctx>, CodecError> {
+) -> Result<OpenedRoot<'a, 'ctx>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "STEP ZIP directory storage")?;
-    let archive = storage.with_storage(|| ArchiveSnapshot::new(ctx, root))
+    let archive = storage
+        .with_storage(|| ArchiveSnapshot::new(ctx, root))
         .or_else(|error| match error {
             CodecError::Malformed(message) => Err(CodecError::Malformed(
-                ctx.copy_retained_text(&message, "STEP ZIP directory error")?)),
+                ctx.copy_retained_text(&message, "STEP ZIP directory error")?,
+            )),
             CodecError::NotImplemented(message) => Err(CodecError::NotImplemented(
-                ctx.copy_retained_text(&message, "STEP ZIP directory error")?)),
+                ctx.copy_retained_text(&message, "STEP ZIP directory error")?,
+            )),
             error => Err(error),
         })?;
     let mut entries = archive.entries().iter();
@@ -238,7 +241,10 @@ pub(crate) fn root_reference_notes(
     let mut bindings = BTreeMap::new();
     let mut indexed = false;
     let mut references = exchange.references().iter();
-    while let Some(reference) = ctx.next_charged(&mut references, "STEP root reference notes borrowed traversal")? {
+    while let Some(reference) = ctx.next_charged(
+        &mut references,
+        "STEP root reference notes borrowed traversal",
+    )? {
         let name = reference.name;
         if !indexed && reference.uri.starts_with('#') && reference.uri.len() > 1 {
             for anchor in ctx.admit_iter(exchange.anchors(), "STEP ZIP anchor index traversal")? {

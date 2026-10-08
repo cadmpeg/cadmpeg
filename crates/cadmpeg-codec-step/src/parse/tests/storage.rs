@@ -39,11 +39,7 @@ fn moved_text_lexemes_keep_their_single_byte_admission() {
     ] {
         let mut policy = DecodePolicy::service();
         // Quoted strings use eight backing bytes; the other tokens retain four bytes once.
-        policy.limits.max_retained_bytes = if source.starts_with(b"'") {
-            8
-        } else {
-            4
-        };
+        policy.limits.max_retained_bytes = if source.starts_with(b"'") { 8 } else { 4 };
         with_policy_context(source, &policy, |source, ctx| {
             parser(source, ctx)
                 .value()

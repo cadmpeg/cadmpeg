@@ -28,7 +28,9 @@ pub fn parse(data: &[u8]) {
     else {
         return;
     };
-    let Ok(mut storage) = ctx.reserve_scoped(0, "STEP fuzz parsed graph storage") else { return; };
+    let Ok(mut storage) = ctx.reserve_scoped(0, "STEP fuzz parsed graph storage") else {
+        return;
+    };
     let _probe = storage.with_storage(|| crate::parse::parse_inner(data, &ctx));
 }
 
