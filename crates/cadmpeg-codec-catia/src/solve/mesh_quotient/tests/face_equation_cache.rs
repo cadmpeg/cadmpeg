@@ -279,3 +279,40 @@ fn face_projection_ignores_member_insertion_order() {
             .expect("projection")
     );
 }
+
+#[test]
+fn face_choices_retain_only_distinct_equations() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4096;
+    policy.limits.max_materialized_bytes = 512 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let faces = [vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            };
+            8
+        ]],
+    }]];
+    let mut choices = Vec::new();
+    assert!(
+        possible_face_choices_with_limit(&ctx, &faces, &[vec![]], usize::MAX, &mut choices)
+            .expect("only three distinct rows are retained")
+    );
+    assert_eq!(
+        choices,
+        vec![vec![
+            vec![[0, 0], [0, 1], [1, 1]],
+            vec![[0, 0], [1, 1]],
+            vec![[0, 1]]
+        ]]
+    );
+    let _released = ctx
+        .reserve_scoped(512 * 1024, "released face choice scratch")
+        .expect("all temporary bytes released");
+}
