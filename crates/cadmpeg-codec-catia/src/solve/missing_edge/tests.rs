@@ -14,8 +14,8 @@ fn row(handles: &[u32]) -> EdgeRow {
         .expect("admitted edge row")
 }
 
-fn handles(values: &[u32]) -> HashSet<u32> {
-    values.iter().copied().collect()
+fn handles(values: &[u32]) -> Vec<u32> {
+    values.to_vec()
 }
 
 #[test]
@@ -140,7 +140,6 @@ fn edge_port_queue_propagates_collection_refusal() {
         "catia_port_resolved_pairs",
         "catia_port_edge_entries",
         "catia_port_incident_edges",
-        "catia_port_pair_points",
         "catia_edge_port_initial_queue",
         "catia_edge_port_queue",
         "catia_port_resolved_port_rows",
@@ -472,7 +471,7 @@ fn repeated_long_row_selects_one_majority_sharing_face() {
 
 #[test]
 fn repeated_handle_candidates_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let rows = vec![row(&[10, 11])];
@@ -484,13 +483,15 @@ fn repeated_handle_candidates_refuse_collection_limit() {
         Some(vec![vec![1]])
     );
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let error = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
-        .expect_err("candidate collection exceeds the limit");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "catia_repeated_edge_handle_face_candidates",
+        |cap| {
+            crate::test_support::with_collection_limit(cap, |ctx| {
+                repeated_edge_face_handle_candidates_from_sets(ctx, &rows, &faces, &[[0, 0]])
+            })
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "catia_repeated_edge_handle_face_candidates"));
@@ -700,8 +701,8 @@ fn endpoint_degree_closure_refuses_closed_face_copy() {
             outcome => panic!("unexpected closed-face result: {outcome:?}"),
         }
     }
-    assert!(operations.contains("catia missing-edge closed faces"));
-    assert!(operations.contains("catia missing-edge closed solutions"));
+    assert!(operations.contains("catia missing-edge completed faces"));
+    assert!(operations.contains("catia missing-edge completed solutions"));
 }
 
 #[test]
@@ -747,7 +748,7 @@ fn candidate_contexts_share_edge_row_storage() {
     catia_test_context!(ctx);
     let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
     let faces = [[0, 0]; 4];
-    let base = StandardMeshBoundaryContext::parse(&ctx, &bytes, &faces)
+    let (base, _base_storage) = StandardMeshBoundaryContext::parse(&ctx, &bytes, &faces)
         .expect("service resource budget")
         .expect("quad boundary context");
     let mut candidates = Vec::with_capacity(CANDIDATES);
@@ -760,7 +761,7 @@ fn candidate_contexts_share_edge_row_storage() {
         );
         assert_eq!(Arc::strong_count(&base.analysis), candidates.len() + 1);
     }
-    for candidate in &candidates {
+    for (candidate, _candidate_storage) in &candidates {
         let StandardMeshBoundaryContext {
             analysis,
             coverage,
@@ -897,3 +898,129 @@ fn mesh_edge_run_materialization_refuses_before_occurrence_copy() {
 }
 
 mod ports_and_coverage;
+
+#[test]
+fn duplicate_face_search_refuses_recursive_depth() {
+    let faces = [[0, 0]; 2];
+    let allowed = [vec![1], vec![1]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::unique_duplicate_face_assignment(ctx, &faces, &allowed, 2, |candidate| {
+            Ok(candidate == faces)
+        })
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service depth"),
+        Some(faces.to_vec())
+    );
+    let error =
+        crate::test_support::with_depth_limit(1, run).expect_err("second frame must refuse");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+            && limit.operation == "catia_duplicate_face_search_depth")
+    );
+}
+
+#[test]
+fn ambiguous_duplicate_face_search_keeps_no_retained_solution() {
+    let serialized = [[0, 0]];
+    let allowed = [vec![0, 1]];
+    let mut visited = 0;
+    let outcome = crate::test_support::with_retained_limit(0, |ctx| {
+        unique_duplicate_face_assignment(ctx, &serialized, &allowed, 2, |_| {
+            visited += 1;
+            Ok(true)
+        })
+    })
+    .expect("ambiguous trials are temporary");
+    assert_eq!(outcome, None);
+    assert_eq!(visited, 2);
+}
+
+#[test]
+fn parsed_boundary_context_keeps_no_retained_workspace() {
+    let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
+    crate::test_support::with_retained_limit(0, |ctx| {
+        let (base, _base_storage) = StandardMeshBoundaryContext::parse(ctx, &bytes, &[[0, 0]; 4])
+            .expect("temporary parse")
+            .expect("quad context");
+        let (candidate, _candidate_storage) = base
+            .with_edge_faces(ctx, &[[0, 0]; 4])
+            .expect("temporary candidate")
+            .expect("quad candidate");
+        assert!(Arc::ptr_eq(&base.analysis, &candidate.analysis));
+        assert!(Arc::ptr_eq(&base.edge_ports, &candidate.edge_ports));
+        assert!(Arc::ptr_eq(&base.edge_runs, &candidate.edge_runs));
+        assert!(Arc::ptr_eq(&base.cycle_lengths, &candidate.cycle_lengths));
+        assert_eq!(base.coverage, candidate.coverage);
+    });
+}
+
+#[test]
+fn rejected_oriented_orders_keep_no_retained_prefix() {
+    let trails = [vec![0, 1]];
+    let orders = crate::test_support::with_retained_limit(0, |ctx| {
+        super::bounded_oriented_trail_orders(ctx, &trails, 1)
+    })
+    .expect("both orientations exceed the result cap without retained storage");
+    assert_eq!(orders, None);
+}
+
+#[test]
+fn ambiguous_mesh_port_trials_keep_no_retained_solution() {
+    let ports = [[0, 1]];
+    let candidates = [vec![[0, 1], [0, 2]]];
+    let pairs = crate::test_support::with_retained_limit(0, |ctx| {
+        super::unique_mesh_edge_port_candidate_pairs(ctx, &ports, &candidates)
+    })
+    .expect("ambiguous port candidates stay temporary");
+    assert_eq!(pairs, None);
+}
+
+#[test]
+fn closed_port_search_does_not_visit_another_frame() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty fixture fits the input limit");
+    let mut search = super::PortCandidateSearch {
+        ctx: &ctx,
+        ports: &[[0, 1]],
+        candidates: &[vec![[0, 1], [0, 2]]],
+        port_points: std::collections::HashMap::new(),
+        point_ports: std::collections::HashMap::new(),
+        edge_pairs: vec![None],
+        outcome: super::SearchOutcome::Ambiguous,
+        states: 0,
+        mode: super::PortCandidateSearchMode::UniqueMesh,
+        map_storage: ctx
+            .reserve_scoped(0, "catia_port_search_points")
+            .expect("empty storage"),
+        outcome_storage: ctx
+            .reserve_scoped(0, "catia_port_search_solution")
+            .expect("empty storage"),
+    };
+    search.search().expect("closed search needs no work");
+    assert_eq!(search.states, 0);
+    assert!(matches!(search.outcome, super::SearchOutcome::Ambiguous));
+}
+
+#[test]
+fn port_viability_retains_only_the_resolved_output() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The retained result contains one optional pair. The Boolean admission
+    // search must not retain another completed pair.
+    policy.limits.max_retained_bytes =
+        u64::try_from(std::mem::size_of::<Option<[usize; 2]>>()).expect("pair size fits u64");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty fixture fits the input limit");
+    assert_eq!(
+        super::propagate_edge_port_points(&ctx, &[[0, 1]], &[Some([0, 1])])
+            .expect("only the resolved row is retained"),
+        Some(vec![Some([0, 1])])
+    );
+}

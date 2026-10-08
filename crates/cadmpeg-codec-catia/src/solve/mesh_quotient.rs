@@ -10255,7 +10255,7 @@ where
                     edge_faces,
                     global_handle_ports,
                 )?;
-                let Some(boundary_context) = boundary_context else {
+                let Some((boundary_context, _boundary_context_storage)) = boundary_context else {
                     return Ok(None);
                 };
                 let mesh_domains = standard_mesh_boundary_domains_from_context(
@@ -10286,7 +10286,7 @@ where
                 MeshCandidateRejection::InputStructure,
             )));
         };
-        let coordinate_gauge = build_mesh_coordinate_gauge(
+        let (coordinate_gauge, _coordinate_gauge_storage) = build_mesh_coordinate_gauge(
             ctx,
             vertex_points.len(),
             &edge_rows,

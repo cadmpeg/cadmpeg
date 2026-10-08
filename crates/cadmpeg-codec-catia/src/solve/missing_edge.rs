@@ -43,19 +43,30 @@ fn standard_edge_port_identities_with_namespace(
     bytes: &[u8],
     global: bool,
 ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+    let (parsed, _parsed_storage) =
+        ctx.with_scoped_storage("catia_standard_port_rows", || -> Result<_, CodecError> {
+            let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+                return Ok(None);
+            };
+            let after_faces = face_run.after_faces();
+            let Some((edge_rows, scopes, _, _)) =
+                parse_standard_edge_tables_scoped(ctx, bytes, after_faces)?
+            else {
+                return Ok(None);
+            };
+            Ok(Some((edge_rows, scopes)))
+        })?;
+    let Some((edge_rows, scopes)) = parsed else {
         return Ok(None);
     };
-    let after_faces = face_run.after_faces();
-    let Some((edge_rows, scopes, _, _)) =
-        parse_standard_edge_tables_scoped(ctx, bytes, after_faces)?
-    else {
-        return Ok(None);
-    };
+    let mut scratch = ctx.reserve_scoped(0, "catia_standard_port_handle_ids")?;
     let mut identity_by_handle = HashMap::new();
     let mut next_identity = 0u32;
-    let mut pairs = Vec::new();
-    for (row, scope) in edge_rows.iter().zip(scopes) {
+    let mut pairs = ctx.collection_vec(edge_rows.len(), "catia_standard_port_pairs")?;
+    let mut charged_steps = edge_rows.iter().zip(scopes);
+    while let Some((row, scope)) =
+        ctx.next_charged(&mut charged_steps, "catia_standard_port_pairs")?
+    {
         let (Some(&first), Some(&last)) = (row.handles().first(), row.handles().last()) else {
             return Ok(None);
         };
@@ -73,7 +84,9 @@ fn standard_edge_port_identities_with_namespace(
             let mut pair = [0; 2];
             for (port, handle) in [first, last].into_iter().enumerate() {
                 let key = (if global { 0 } else { scope }, handle);
-                let identity = if let Some(identity) = identity_by_handle.get(&key) {
+                let identity = if let Some(identity) =
+                    ctx.get_hash_map(&identity_by_handle, &key, "catia_standard_port_handle_ids")?
+                {
                     *identity
                 } else {
                     let identity = next_identity;
@@ -81,19 +94,21 @@ fn standard_edge_port_identities_with_namespace(
                         return Ok(None);
                     };
                     next_identity = next;
-                    ctx.insert_hash_map(
-                        &mut identity_by_handle,
-                        key,
-                        identity,
-                        "catia_standard_port_handle_ids",
-                    )?;
+                    scratch.with_storage(|| {
+                        ctx.insert_hash_map(
+                            &mut identity_by_handle,
+                            key,
+                            identity,
+                            "catia_standard_port_handle_ids",
+                        )
+                    })?;
                     identity
                 };
                 pair[port] = identity;
             }
             pair
         };
-        ctx.push_vec(&mut pairs, pair, "catia_standard_port_pairs")?;
+        pairs.push(pair);
     }
     Ok(Some(pairs))
 }
@@ -103,16 +118,26 @@ fn fbb_edge_port_identities_with_namespace(
     bytes: &[u8],
     global: bool,
 ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    let Some(face_run) = largest_fbb_run(ctx, bytes)? else {
+    let (parsed, _parsed_storage) =
+        ctx.with_scoped_storage("catia_fbb_port_rows", || -> Result<_, CodecError> {
+            let Some(face_run) = largest_fbb_run(ctx, bytes)? else {
+                return Ok(None);
+            };
+            let after_faces = face_run.after_faces();
+            let Some((edge_rows, scopes, _, _)) = parse_fbb_edge_tables(ctx, bytes, after_faces)?
+            else {
+                return Ok(None);
+            };
+            Ok(Some((edge_rows, scopes)))
+        })?;
+    let Some((edge_rows, scopes)) = parsed else {
         return Ok(None);
     };
-    let after_faces = face_run.after_faces();
-    let Some((edge_rows, scopes, _, _)) = parse_fbb_edge_tables(ctx, bytes, after_faces)? else {
-        return Ok(None);
-    };
+    let mut scratch = ctx.reserve_scoped(0, "catia_fbb_port_handle_ids")?;
     let mut identity_by_handle = HashMap::new();
-    let mut pairs = Vec::new();
-    for (row, scope) in edge_rows.iter().zip(scopes) {
+    let mut pairs = ctx.collection_vec(edge_rows.len(), "catia_fbb_port_pairs")?;
+    let mut charged_steps = edge_rows.iter().zip(scopes);
+    while let Some((row, scope)) = ctx.next_charged(&mut charged_steps, "catia_fbb_port_pairs")? {
         let (Some(&first), Some(&last)) = (row.handles().first(), row.handles().last()) else {
             return Ok(None);
         };
@@ -122,19 +147,23 @@ fn fbb_edge_port_identities_with_namespace(
                 return Ok(None);
             };
             let key = (if global { 0 } else { scope }, handle);
-            pair[port] = if let Some(&identity) = identity_by_handle.get(&key) {
+            pair[port] = if let Some(&identity) =
+                ctx.get_hash_map(&identity_by_handle, &key, "catia_fbb_port_handle_ids")?
+            {
                 identity
             } else {
-                ctx.insert_hash_map(
-                    &mut identity_by_handle,
-                    key,
-                    next,
-                    "catia_fbb_port_handle_ids",
-                )?;
+                scratch.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut identity_by_handle,
+                        key,
+                        next,
+                        "catia_fbb_port_handle_ids",
+                    )
+                })?;
                 next
             };
         }
-        ctx.push_vec(&mut pairs, pair, "catia_fbb_port_pairs")?;
+        pairs.push(pair);
     }
     Ok(Some(pairs))
 }
@@ -155,16 +184,20 @@ pub(crate) fn visualization_endpoint_pairs(
     edge_rows: &[EdgeRow],
     point_coordinates: &[[f32; 3]],
 ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
-    let mut markers = source
-        .windows(INDEXED_VISUALIZATION_POINT_MARKER.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| {
-            (bytes == INDEXED_VISUALIZATION_POINT_MARKER).then_some(offset)
-        });
-    let Some(marker) = markers.next() else {
+    const OPERATION: &str = "catia_visualization_point_marker";
+    let Some(marker) = ctx.find_bytes(source, &INDEXED_VISUALIZATION_POINT_MARKER, OPERATION)?
+    else {
         return Ok(None);
     };
-    if markers.next().is_some() {
+    if ctx
+        .find_bytes_from(
+            source,
+            &INDEXED_VISUALIZATION_POINT_MARKER,
+            marker + 1,
+            OPERATION,
+        )?
+        .is_some()
+    {
         return Ok(None);
     }
     let Some((count, indexed_count, mode, marker_valid, table)) = (|| {
@@ -183,41 +216,50 @@ pub(crate) fn visualization_endpoint_pairs(
         return Ok(None);
     }
 
+    let mut scratch = ctx.reserve_scoped(0, "catia_visualization_point_bits")?;
     let mut point_by_bits = HashMap::new();
-    for (point, coordinates) in point_coordinates.iter().enumerate() {
+    let mut charged_steps = point_coordinates.iter().enumerate();
+    while let Some((point, coordinates)) =
+        ctx.next_charged(&mut charged_steps, "catia_visualization_point_bits")?
+    {
         let key = coordinates.map(f32::to_bits);
-        if ctx
-            .insert_hash_map(
-                &mut point_by_bits,
-                key,
-                point,
-                "catia_visualization_point_bits",
-            )?
+        if scratch
+            .with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut point_by_bits,
+                    key,
+                    point,
+                    "catia_visualization_point_bits",
+                )
+            })?
             .is_some()
         {
             return Ok(None);
         }
     }
-    let mut terminal_handles = HashSet::new();
-    for row in edge_rows {
+    let mut terminal_handles = BTreeSet::new();
+    for row in ctx.admit_iter(edge_rows, "catia_visualization_terminal_handles")? {
         for handle in [row.handles().first(), row.handles().last()]
             .into_iter()
             .flatten()
         {
-            ctx.insert_hash_set(
-                &mut terminal_handles,
-                *handle,
-                "catia_visualization_terminal_handles",
-            )?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut terminal_handles,
+                    *handle,
+                    "catia_visualization_terminal_handles",
+                )
+            })?;
         }
     }
+    // The handles are ascending, so the last one bounds them all.
     if terminal_handles
-        .iter()
-        .any(|handle| usize::try_from(*handle).map_or(true, |handle| handle >= count))
+        .last()
+        .is_some_and(|handle| usize::try_from(*handle).map_or(true, |handle| handle >= count))
     {
         return Ok(None);
     }
-    let point_by_handle = match mode {
+    let point_by_handle = scratch.with_storage(|| match mode {
         0 => compressed_visualization_point_bindings(
             ctx,
             source,
@@ -225,7 +267,7 @@ pub(crate) fn visualization_endpoint_pairs(
             count,
             &terminal_handles,
             &point_by_bits,
-        )?,
+        ),
         1 if count - indexed_count <= 1 => raw_visualization_point_bindings(
             ctx,
             source,
@@ -233,39 +275,51 @@ pub(crate) fn visualization_endpoint_pairs(
             count,
             &terminal_handles,
             &point_by_bits,
-        )?,
-        _ => return Ok(None),
-    };
+        ),
+        _ => Ok(None),
+    })?;
     let Some(point_by_handle) = point_by_handle else {
         return Ok(None);
     };
     let mut matched_points = HashSet::new();
-    for point in point_by_handle.values().copied() {
-        ctx.insert_hash_set(
-            &mut matched_points,
-            point,
-            "catia_visualization_matched_points",
-        )?;
+    for (_, &point) in ctx.admit_iter(&point_by_handle, "catia_visualization_matched_points")? {
+        scratch.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut matched_points,
+                point,
+                "catia_visualization_matched_points",
+            )
+        })?;
     }
     if matched_points.len() != point_coordinates.len() {
         return Ok(None);
     }
 
-    let mut pairs = Vec::new();
-    ctx.reserve_vec(
-        &mut pairs,
-        edge_rows.len(),
-        "catia_visualization_endpoint_pairs",
-    )?;
-    for row in edge_rows {
-        let Some(pair) = (|| {
-            Some([
-                *point_by_handle.get(row.handles().first()?)?,
-                *point_by_handle.get(row.handles().last()?)?,
-            ])
-        })() else {
-            return Ok(None);
-        };
+    let mut pairs = ctx.collection_vec(edge_rows.len(), "catia_visualization_endpoint_pairs")?;
+    let mut charged_steps = edge_rows.iter();
+    while let Some(row) =
+        ctx.next_charged(&mut charged_steps, "catia_visualization_endpoint_pairs")?
+    {
+        let mut pair = [0; 2];
+        for (slot, handle) in [row.handles().first(), row.handles().last()]
+            .into_iter()
+            .enumerate()
+        {
+            let Some(&point) = handle
+                .map(|handle| {
+                    ctx.get_btree_map(
+                        &point_by_handle,
+                        handle,
+                        "catia_visualization_endpoint_pairs",
+                    )
+                })
+                .transpose()?
+                .flatten()
+            else {
+                return Ok(None);
+            };
+            pair[slot] = point;
+        }
         pairs.push(pair);
     }
     Ok(Some(pairs))
@@ -276,9 +330,9 @@ fn raw_visualization_point_bindings(
     source: &[u8],
     table: usize,
     count: usize,
-    terminal_handles: &HashSet<u32>,
+    terminal_handles: &BTreeSet<u32>,
     point_by_bits: &HashMap<[u32; 3], usize>,
-) -> Result<Option<HashMap<u32, usize>>, CodecError> {
+) -> Result<Option<BTreeMap<u32, usize>>, CodecError> {
     let Some(extent) = count
         .checked_mul(RAW_VISUALIZATION_POINT_STRIDE)
         .and_then(|bytes| bytes.checked_add(table))
@@ -288,8 +342,11 @@ fn raw_visualization_point_bindings(
     if source.get(table..extent).is_none() {
         return Ok(None);
     }
-    let mut bindings = HashMap::new();
-    for handle in terminal_handles {
+    let mut bindings = BTreeMap::new();
+    let mut charged_steps = terminal_handles.iter();
+    while let Some(handle) =
+        ctx.next_charged(&mut charged_steps, "catia_raw_visualization_bindings")?
+    {
         let Some(key) = (|| {
             let index = usize::try_from(*handle).ok()?;
             let at = table.checked_add(index.checked_mul(RAW_VISUALIZATION_POINT_STRIDE)?)?;
@@ -301,10 +358,12 @@ fn raw_visualization_point_bindings(
         })() else {
             return Ok(None);
         };
-        let Some(&point) = point_by_bits.get(&key) else {
+        let Some(&point) =
+            ctx.get_hash_map(point_by_bits, &key, "catia_raw_visualization_bindings")?
+        else {
             return Ok(None);
         };
-        ctx.insert_hash_map(
+        ctx.insert_btree_map(
             &mut bindings,
             *handle,
             point,
@@ -319,9 +378,9 @@ fn compressed_visualization_point_bindings(
     source: &[u8],
     controls: usize,
     count: usize,
-    terminal_handles: &HashSet<u32>,
+    terminal_handles: &BTreeSet<u32>,
     point_by_bits: &HashMap<[u32; 3], usize>,
-) -> Result<Option<HashMap<u32, usize>>, CodecError> {
+) -> Result<Option<BTreeMap<u32, usize>>, CodecError> {
     let Some((scalar_count, scalars)) = (|| {
         let packed_len = count.checked_add(3)? / 4;
         let delimiter = controls.checked_add(packed_len)?;
@@ -340,8 +399,11 @@ fn compressed_visualization_point_bindings(
 
     let mut previous = None::<[u32; 3]>;
     let mut scalar = 0usize;
-    let mut bindings = HashMap::new();
-    for index in 0..count {
+    let mut bindings = BTreeMap::new();
+    let mut charged_steps = 0..count;
+    while let Some(index) =
+        ctx.next_charged(&mut charged_steps, "catia_compressed_visualization_points")?
+    {
         let Some(packed) = controls
             .checked_add(index / 4)
             .and_then(|at| source.get(at))
@@ -373,11 +435,20 @@ fn compressed_visualization_point_bindings(
         let Some(handle) = u32::try_from(index).ok() else {
             return Ok(None);
         };
-        if terminal_handles.contains(&handle) {
-            let Some(&point) = point_by_bits.get(&point) else {
+        if ctx.contains_btree_set(
+            terminal_handles,
+            &handle,
+            "catia_compressed_visualization_bindings",
+        )? {
+            let Some(&point) = ctx.get_hash_map(
+                point_by_bits,
+                &point,
+                "catia_compressed_visualization_bindings",
+            )?
+            else {
                 return Ok(None);
             };
-            ctx.insert_hash_map(
+            ctx.insert_btree_map(
                 &mut bindings,
                 handle,
                 point,
@@ -461,36 +532,53 @@ pub(crate) fn expand_deferred_edge_port_components(
     edge_ports: &[[u32; 2]],
     deferred_edges: &mut [bool],
 ) -> Result<bool, CodecError> {
+    const OPERATION: &str = "catia_deferred_ports";
     if edge_ports.len() != deferred_edges.len() {
         return Ok(false);
     }
-    let mut deferred_ports = HashSet::new();
-    for (edge, &deferred) in deferred_edges.iter().enumerate() {
-        if deferred {
-            for port in edge_ports[edge] {
-                ctx.insert_hash_set(&mut deferred_ports, port, "catia_deferred_ports")?;
-            }
+    let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
+    // Breadth-first search over ports: a deferred row defers every row that
+    // shares one of its ports.
+    let mut edges_by_port = HashMap::<u32, Vec<usize>>::new();
+    let mut queue = Vec::new();
+    for (edge, ports) in ctx.admit_iter(edge_ports, OPERATION)?.enumerate() {
+        for &port in unique_ports(ports) {
+            scratch.with_storage(|| {
+                ctx.push_hash_group(&mut edges_by_port, port, edge, OPERATION, OPERATION)
+            })?;
+        }
+        if deferred_edges[edge] {
+            scratch.with_storage(|| ctx.push_vec(&mut queue, edge, OPERATION))?;
         }
     }
-    let mut changed = true;
-    while changed {
+    let mut seen_ports = HashSet::new();
+    while let Some(edge) = queue.pop() {
         ctx.charge_work(1, "catia_missing_edge_iteration")?;
-        changed = false;
-        for (edge, ports) in edge_ports.iter().enumerate() {
-            if !deferred_edges[edge] && !ports.iter().any(|port| deferred_ports.contains(port)) {
+        for &port in unique_ports(&edge_ports[edge]) {
+            if !scratch.with_storage(|| ctx.insert_hash_set(&mut seen_ports, port, OPERATION))? {
                 continue;
             }
-            if !deferred_edges[edge] {
-                deferred_edges[edge] = true;
-                changed = true;
-            }
-            for port in ports {
-                changed |=
-                    ctx.insert_hash_set(&mut deferred_ports, *port, "catia_deferred_ports")?;
+            let Some(neighbors) = ctx.get_hash_map(&edges_by_port, &port, OPERATION)? else {
+                continue;
+            };
+            for &neighbor in ctx.admit_iter(neighbors, OPERATION)? {
+                if !deferred_edges[neighbor] {
+                    deferred_edges[neighbor] = true;
+                    scratch.with_storage(|| ctx.push_vec(&mut queue, neighbor, OPERATION))?;
+                }
             }
         }
     }
     Ok(true)
+}
+
+/// The distinct ports of an edge.
+fn unique_ports(ports: &[u32; 2]) -> &[u32] {
+    if ports[0] == ports[1] {
+        &ports[..1]
+    } else {
+        &ports[..]
+    }
 }
 
 /// Collapse physical edge endpoints through every exact trim-mesh occurrence.
@@ -500,10 +588,18 @@ pub(crate) fn standard_mesh_edge_ports(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
+    let (analysis, _analysis_storage) = ctx
+        .with_scoped_storage("catia_mesh_port_analysis", || {
+            standard_mesh_analysis(ctx, bytes)
+        })?;
+    let Some(analysis) = analysis else {
         return Ok(None);
     };
-    let Some(local_ports) = global_edge_port_identities(ctx, bytes)? else {
+    let (local_ports, _local_port_storage) = ctx
+        .with_scoped_storage("catia_mesh_local_ports", || {
+            global_edge_port_identities(ctx, bytes)
+        })?;
+    let Some(local_ports) = local_ports else {
         return Ok(None);
     };
     mesh_edge_ports(ctx, &analysis, &local_ports)
@@ -525,57 +621,58 @@ fn mesh_edge_ports(
         .checked_mul(2)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_mesh_edge_port_union", u64::MAX, u64::MAX))?;
     let mut union = UnionFind::charged(ctx, node_count, "catia_mesh_edge_port_union")?;
+    let mut scratch = ctx.reserve_scoped(0, "catia_mesh_edge_port_identities")?;
     let mut node_by_identity = HashMap::new();
-    for (edge, ports) in local_ports.iter().enumerate() {
+    for (edge, ports) in ctx
+        .admit_iter(local_ports, "catia_mesh_edge_port_identities")?
+        .enumerate()
+    {
         for (side, identity) in ports.iter().copied().enumerate() {
             let node = edge * 2 + side;
-            if let Some(&previous) = node_by_identity.get(&identity) {
+            if let Some(&previous) = ctx.get_hash_map(
+                &node_by_identity,
+                &identity,
+                "catia_mesh_edge_port_identities",
+            )? {
                 union.union(ctx, previous, node)?;
             } else {
-                ctx.insert_hash_map(
-                    &mut node_by_identity,
-                    identity,
-                    node,
-                    "catia_mesh_edge_port_identities",
-                )?;
+                scratch.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut node_by_identity,
+                        identity,
+                        node,
+                        "catia_mesh_edge_port_identities",
+                    )
+                })?;
             }
         }
     }
     let mut corners = HashMap::new();
-    for (edge, row) in edge_rows.iter().enumerate() {
+    for (edge, row) in ctx
+        .admit_iter(edge_rows, "catia_mesh_edge_port_corners")?
+        .enumerate()
+    {
         let Some(_) = row.boundary_pattern() else {
             continue;
         };
-        for run in &occurrences[edge] {
+        for run in ctx.admit_iter(&occurrences[edge], "catia_mesh_edge_port_corners")? {
             let cycle = &cycles[run.face][run.cycle];
-            let before = run.start;
-            let after = run.end(cycle.len());
-            let before_key = (run.face, run.cycle, before);
-            let before_node = if let Some(&node) = corners.get(&before_key) {
-                node
-            } else {
-                let node = union.push_charged(ctx, "catia_mesh_edge_port_corner_nodes")?;
-                ctx.insert_hash_map(
-                    &mut corners,
-                    before_key,
-                    node,
-                    "catia_mesh_edge_port_corners",
-                )?;
-                node
-            };
-            let after_key = (run.face, run.cycle, after);
-            let after_node = if let Some(&node) = corners.get(&after_key) {
-                node
-            } else {
-                let node = union.push_charged(ctx, "catia_mesh_edge_port_corner_nodes")?;
-                ctx.insert_hash_map(
-                    &mut corners,
-                    after_key,
-                    node,
-                    "catia_mesh_edge_port_corners",
-                )?;
-                node
-            };
+            let mut nodes = [0; 2];
+            for (slot, position) in [run.start, run.end(cycle.len())].into_iter().enumerate() {
+                let key = (run.face, run.cycle, position);
+                nodes[slot] = if let Some(&node) =
+                    ctx.get_hash_map(&corners, &key, "catia_mesh_edge_port_corners")?
+                {
+                    node
+                } else {
+                    let node = union.push_charged(ctx, "catia_mesh_edge_port_corner_nodes")?;
+                    scratch.with_storage(|| {
+                        ctx.insert_hash_map(&mut corners, key, node, "catia_mesh_edge_port_corners")
+                    })?;
+                    node
+                };
+            }
+            let [before_node, after_node] = nodes;
             if run.reversed {
                 union.union(ctx, edge * 2 + 1, before_node)?;
                 union.union(ctx, edge * 2, after_node)?;
@@ -585,25 +682,26 @@ fn mesh_edge_ports(
             }
         }
     }
-    let mut roots = HashMap::new();
-    let mut ports = Vec::new();
-    for edge in 0..edge_rows.len() {
+    // Roots are forest nodes, so a keyed array numbers them in first-use order.
+    let mut ordinal_of_root = scratch
+        .with_storage(|| ctx.alloc_filled(union.len(), None, "catia_mesh_edge_port_roots"))?;
+    let mut next_ordinal = 0usize;
+    let mut ports = ctx.collection_vec(edge_rows.len(), "catia_mesh_edge_ports")?;
+    let mut charged_steps = 0..edge_rows.len();
+    while let Some(edge) = ctx.next_charged(&mut charged_steps, "catia_mesh_edge_ports")? {
         let mut pair = [0u32; 2];
         for (side, node) in [edge * 2, edge * 2 + 1].into_iter().enumerate() {
             let root = union.find(ctx, node)?;
-            let next = roots.len();
-            let ordinal = if let Some(&existing) = roots.get(&root) {
-                existing
-            } else {
-                ctx.insert_hash_map(&mut roots, root, next, "catia_mesh_edge_port_roots")?;
-                next
-            };
+            let ordinal = *ordinal_of_root[root].get_or_insert_with(|| {
+                next_ordinal += 1;
+                next_ordinal - 1
+            });
             let Ok(value) = u32::try_from(ordinal) else {
                 return Ok(None);
             };
             pair[side] = value;
         }
-        ctx.push_vec(&mut ports, pair, "catia_mesh_edge_ports")?;
+        ports.push(pair);
     }
     Ok(Some(ports))
 }
@@ -705,96 +803,103 @@ fn mesh_edge_occurrences(
     edge_rows: &[EdgeRow],
     cycles: &[Vec<Vec<u32>>],
 ) -> Result<Option<Vec<Vec<MeshEdgeRun>>>, CodecError> {
+    const OPERATION: &str = "catia_mesh_occurrence_matches";
+    let mut scratch = ctx.reserve_scoped(0, "catia_mesh_occurrence_handles")?;
     let mut locations = HashMap::<u32, Vec<(usize, usize, usize)>>::new();
-    for (face, face_cycles) in cycles.iter().enumerate() {
-        for (cycle, handles) in face_cycles.iter().enumerate() {
-            for (position, handle) in handles.iter().copied().enumerate() {
-                if let Some(entries) = locations.get_mut(&handle) {
-                    ctx.push_vec(
-                        entries,
-                        (face, cycle, position),
-                        "catia_mesh_occurrence_locations",
-                    )?;
-                } else {
-                    let mut entries = Vec::new();
-                    ctx.push_vec(
-                        &mut entries,
-                        (face, cycle, position),
-                        "catia_mesh_occurrence_locations",
-                    )?;
-                    ctx.insert_hash_map(
+    for (face, face_cycles) in ctx
+        .admit_iter(cycles, "catia_mesh_occurrence_locations")?
+        .enumerate()
+    {
+        for (cycle, handles) in ctx
+            .admit_iter(face_cycles, "catia_mesh_occurrence_locations")?
+            .enumerate()
+        {
+            for (position, &handle) in ctx
+                .admit_iter(handles, "catia_mesh_occurrence_locations")?
+                .enumerate()
+            {
+                scratch.with_storage(|| {
+                    ctx.push_hash_group(
                         &mut locations,
                         handle,
-                        entries,
+                        (face, cycle, position),
                         "catia_mesh_occurrence_handles",
-                    )?;
-                }
+                        "catia_mesh_occurrence_locations",
+                    )
+                })?;
             }
         }
     }
-    let mut rows = Vec::new();
-    for (edge, row) in edge_rows.iter().enumerate() {
+    let mut rows = ctx.collection_vec(edge_rows.len(), "catia_mesh_occurrence_rows")?;
+    let mut charged_steps = edge_rows.iter().enumerate();
+    while let Some((edge, row)) =
+        ctx.next_charged(&mut charged_steps, "catia_mesh_occurrence_rows")?
+    {
         let Some(pattern) = row.boundary_pattern() else {
-            ctx.push_vec(&mut rows, Vec::new(), "catia_mesh_occurrence_rows")?;
+            rows.push(Vec::new());
             continue;
         };
-        let Some(&first) = pattern.first() else {
+        let (Some(&first), Some(&last)) = (pattern.first(), pattern.last()) else {
             return Ok(None);
         };
-        let Some(&last) = pattern.last() else {
-            return Ok(None);
-        };
-        let mut matches = HashMap::<(usize, usize, usize), bool>::new();
-        for &(face, cycle, start) in locations.get(&first).into_iter().flatten() {
-            let handles = &cycles[face][cycle];
-            if pattern
-                .iter()
-                .enumerate()
-                .all(|(offset, handle)| handles[(start + offset) % handles.len()] == *handle)
-            {
-                ctx.insert_hash_map(
-                    &mut matches,
-                    (face, cycle, start),
-                    false,
-                    "catia_mesh_occurrence_matches",
-                )?;
-            }
-        }
-        for &(face, cycle, start) in locations.get(&last).into_iter().flatten() {
-            let handles = &cycles[face][cycle];
-            if pattern
-                .iter()
-                .rev()
-                .enumerate()
-                .all(|(offset, handle)| handles[(start + offset) % handles.len()] == *handle)
-                && !matches.contains_key(&(face, cycle, start))
-            {
-                ctx.insert_hash_map(
-                    &mut matches,
-                    (face, cycle, start),
-                    true,
-                    "catia_mesh_occurrence_matches",
-                )?;
-            }
-        }
-        let mut cycle_counts = HashMap::new();
-        for &(face, cycle, _) in matches.keys() {
-            if let Some(count) = cycle_counts.get_mut(&(face, cycle)) {
-                *count += 1;
-            } else {
-                ctx.insert_hash_map(
-                    &mut cycle_counts,
-                    (face, cycle),
-                    1usize,
-                    "catia_mesh_occurrence_cycle_counts",
-                )?;
-            }
-        }
-        if cycle_counts.values().any(|count| *count > 1) {
-            return Ok(None);
-        }
+        // A forward match at a start position wins over a reversed one.
+        let (matches, _matches_storage) = ctx.with_scoped_storage(
+            OPERATION,
+            || -> Result<BTreeMap<(usize, usize, usize), bool>, CodecError> {
+                let mut matches = BTreeMap::new();
+                for (anchor, reversed) in [(first, false), (last, true)] {
+                    let Some(anchored) = ctx.get_hash_map(&locations, &anchor, OPERATION)? else {
+                        continue;
+                    };
+                    for &(face, cycle, start) in ctx.admit_iter(anchored, OPERATION)? {
+                        let handles = &cycles[face][cycle];
+                        let at = |offset: usize, handle: &u32| {
+                            Ok(handles[(start + offset) % handles.len()] == *handle)
+                        };
+                        let matched = if reversed {
+                            ctx.all_by(
+                                pattern.iter().rev().enumerate(),
+                                |(offset, handle)| at(offset, handle),
+                                OPERATION,
+                            )?
+                        } else {
+                            ctx.all_by(
+                                pattern.iter().enumerate(),
+                                |(offset, handle)| at(offset, handle),
+                                OPERATION,
+                            )?
+                        };
+                        if matched
+                            && !(reversed
+                                && ctx.contains_key_btree_map(
+                                    &matches,
+                                    &(face, cycle, start),
+                                    OPERATION,
+                                )?)
+                        {
+                            ctx.insert_btree_map(
+                                &mut matches,
+                                (face, cycle, start),
+                                reversed,
+                                OPERATION,
+                            )?;
+                        }
+                    }
+                }
+                Ok(matches)
+            },
+        )?;
+        // Matches are in (face, cycle, start) order, so a cycle holding two
+        // occurrences shows as two neighbouring keys.
+        let mut previous_cycle = None;
         let mut occurrences = Vec::new();
-        for ((face, cycle, start), reversed) in matches {
+        let mut charged_steps = matches.iter();
+        while let Some((&(face, cycle, start), &reversed)) =
+            ctx.next_charged(&mut charged_steps, "catia_mesh_occurrence_runs")?
+        {
+            if previous_cycle.replace((face, cycle)) == Some((face, cycle)) {
+                return Ok(None);
+            }
             let cycle_len = cycles[face][cycle].len();
             let Some((start, segment_count)) = row.boundary_span(start, cycle_len) else {
                 return Ok(None);
@@ -812,13 +917,7 @@ fn mesh_edge_occurrences(
                 "catia_mesh_occurrence_runs",
             )?;
         }
-        ctx.stable_sort_by_key(
-            &mut occurrences,
-            |value| (value.face, value.cycle, value.start),
-            Ord::cmp,
-            "catia_mesh_occurrence_sort",
-        )?;
-        ctx.push_vec(&mut rows, occurrences, "catia_mesh_occurrence_rows")?;
+        rows.push(occurrences);
     }
     Ok(Some(rows))
 }
@@ -872,7 +971,6 @@ fn mesh_edge_occurrences_refuse_nested_collection_limits() {
         "catia_mesh_occurrence_handles",
         "catia_mesh_occurrence_locations",
         "catia_mesh_occurrence_matches",
-        "catia_mesh_occurrence_cycle_counts",
         "catia_mesh_occurrence_runs",
         "catia_mesh_occurrence_rows",
     ] {
@@ -908,15 +1006,23 @@ fn standard_mesh_analysis(
     let Some((edge_rows, handle_width, fixed_complete_row_spans)) = parsed else {
         return Ok(None);
     };
-    let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
+    let (trims, _trim_storage) = ctx.with_scoped_storage("catia_mesh_analysis_trims", || {
+        parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)
+    })?;
+    let Some(trims) = trims else {
         return Ok(None);
     };
-    let mut cycles = Vec::new();
-    for trim in &trims {
-        let Some(face) = boundary_cycles(ctx, trim.packet.triangles(ctx)?)? else {
+    let mut cycles = ctx.collection_vec(trims.len(), "catia_mesh_analysis_cycles")?;
+    let mut charged_steps = trims.iter();
+    while let Some(trim) = ctx.next_charged(&mut charged_steps, "catia_mesh_analysis_cycles")? {
+        let (triangles, _triangle_storage) = ctx
+            .with_scoped_storage("catia_mesh_analysis_triangles", || {
+                trim.packet.triangles(ctx)
+            })?;
+        let Some(face) = boundary_cycles(ctx, triangles)? else {
             return Ok(None);
         };
-        ctx.push_vec(&mut cycles, face, "catia_mesh_analysis_cycles")?;
+        cycles.push(face);
     }
     let Some(occurrences) = mesh_edge_occurrences(ctx, &edge_rows, &cycles)? else {
         return Ok(None);
@@ -939,7 +1045,11 @@ pub(crate) fn standard_mesh_edge_runs(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<MeshEdgeRun>>, CodecError> {
-    standard_mesh_analysis(ctx, bytes)?
+    let (analysis, _analysis_storage) = ctx
+        .with_scoped_storage("catia_mesh_run_analysis", || {
+            standard_mesh_analysis(ctx, bytes)
+        })?;
+    analysis
         .map(|analysis| mesh_edge_runs(ctx, &analysis))
         .transpose()
 }
@@ -949,8 +1059,8 @@ fn mesh_edge_runs(
     analysis: &StandardMeshAnalysis,
 ) -> Result<Vec<MeshEdgeRun>, CodecError> {
     let mut runs = Vec::new();
-    for run in analysis.occurrences.iter().flatten() {
-        ctx.push_vec(&mut runs, *run, "catia_mesh_edge_run_rows")?;
+    for occurrences in ctx.admit_iter(&analysis.occurrences, "catia_mesh_edge_run_rows")? {
+        ctx.extend_vec(&mut runs, occurrences, "catia_mesh_edge_run_rows")?;
     }
     ctx.stable_sort_by_key(
         &mut runs,
@@ -969,7 +1079,10 @@ pub(crate) fn resolve_standard_edge_faces(
     bytes: &[u8],
     serialized: &[[usize; 2]],
 ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
-    let Some(runs) = standard_mesh_edge_runs(ctx, bytes)? else {
+    let (runs, _runs_storage) = ctx.with_scoped_storage("catia_edge_face_run_workspace", || {
+        standard_mesh_edge_runs(ctx, bytes)
+    })?;
+    let Some(runs) = runs else {
         return Ok(Some(
             ctx.copy_slice(serialized, "catia standard serialized edge faces")?,
         ));
@@ -977,26 +1090,61 @@ pub(crate) fn resolve_standard_edge_faces(
     resolve_edge_faces_from_runs(ctx, serialized, &runs)
 }
 
-fn repeated_edge_face_handle_candidates_from_sets(
+/// Second-face candidates for repeated rows from each face packet's trim
+/// handles. A short row needs a face sharing all of its distinct handles; a
+/// long row needs the one face sharing at least three and at least half.
+fn repeated_edge_face_handle_candidates_from_sets<H: AsRef<[u32]>>(
     ctx: &DecodeContext<'_>,
     edge_rows: &[EdgeRow],
-    face_handles: &[HashSet<u32>],
+    face_handles: &[H],
     serialized: &[[usize; 2]],
 ) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
+    const OPERATION: &str = "catia repeated edge face handles";
     if edge_rows.len() != serialized.len()
-        || serialized
-            .iter()
-            .flatten()
-            .any(|face| *face >= face_handles.len())
+        || ctx.any_by(
+            serialized,
+            |faces| Ok(faces[0] >= face_handles.len() || faces[1] >= face_handles.len()),
+            OPERATION,
+        )?
     {
         return Ok(None);
     }
-    for (row, faces) in edge_rows.iter().zip(serialized) {
-        if !row
-            .handles()
-            .iter()
-            .all(|handle| face_handles[faces[0]].contains(handle))
-        {
+    let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
+    // Each handle lists the faces whose packets carry it, ascending.
+    let mut faces_by_handle = HashMap::<u32, Vec<usize>>::new();
+    for (face, handles) in ctx.admit_iter(face_handles, OPERATION)?.enumerate() {
+        for &handle in ctx.admit_iter(handles.as_ref(), OPERATION)? {
+            let listed = ctx
+                .get_hash_map(&faces_by_handle, &handle, OPERATION)?
+                .is_some_and(|faces| faces.last() == Some(&face));
+            if !listed {
+                scratch.with_storage(|| {
+                    ctx.push_hash_group(
+                        &mut faces_by_handle,
+                        handle,
+                        face,
+                        OPERATION,
+                        "catia repeated edge face handle set",
+                    )
+                })?;
+            }
+        }
+    }
+    let carries = |face: usize, handle: u32| -> Result<bool, CodecError> {
+        Ok(
+            match ctx.get_hash_map(&faces_by_handle, &handle, OPERATION)? {
+                Some(faces) => ctx.binary_search(faces, &face, OPERATION)?.is_ok(),
+                None => false,
+            },
+        )
+    };
+    let mut charged_steps = edge_rows.iter().zip(serialized);
+    while let Some((row, faces)) = ctx.next_charged(&mut charged_steps, OPERATION)? {
+        if !ctx.all_by(
+            row.handles(),
+            |&handle| carries(faces[0], handle),
+            OPERATION,
+        )? {
             return Ok(None);
         }
     }
@@ -1005,36 +1153,59 @@ fn repeated_edge_face_handle_candidates_from_sets(
         "catia_repeated_edge_handle_face_candidates",
         |_| Ok(Vec::new()),
     )?;
-    for (edge, (row, faces)) in edge_rows.iter().zip(serialized).enumerate() {
+    for (edge, (row, faces)) in ctx
+        .admit_iter(edge_rows, OPERATION)?
+        .zip(serialized)
+        .enumerate()
+    {
         if faces[0] != faces[1] || row.handles().len() < 2 {
             continue;
         }
-        let mut unique_handles = HashSet::new();
-        ctx.reserve_set(
-            &mut unique_handles,
-            row.handles().len(),
+        let (counts, _counts_storage) = ctx.with_scoped_storage(
             "catia repeated edge unique handles",
+            || -> Result<(usize, BTreeMap<usize, usize>), CodecError> {
+                let mut unique =
+                    ctx.copy_slice(row.handles(), "catia repeated edge unique handles")?;
+                ctx.sort_unstable_by(
+                    &mut unique,
+                    |value| value,
+                    Ord::cmp,
+                    "catia repeated edge unique handles",
+                )?;
+                ctx.dedup_vec(&mut unique, "catia repeated edge unique handles")?;
+                let mut shared = BTreeMap::<usize, usize>::new();
+                for handle in ctx.admit_iter(&unique, "catia repeated edge matching faces")? {
+                    let Some(carrying) = ctx.get_hash_map(&faces_by_handle, handle, OPERATION)?
+                    else {
+                        continue;
+                    };
+                    for &face in ctx.admit_iter(carrying, "catia repeated edge matching faces")? {
+                        if face != faces[0] {
+                            *ctx.entry_btree_map(
+                                &mut shared,
+                                face,
+                                "catia repeated edge matching faces",
+                            )?
+                            .or_insert(0) += 1;
+                        }
+                    }
+                }
+                Ok((unique.len(), shared))
+            },
         )?;
-        unique_handles.extend(row.handles().iter().copied());
+        let (unique, shared) = counts;
         let mut matching = Vec::new();
-        for (face, handles) in face_handles.iter().enumerate() {
-            if face == faces[0] {
-                continue;
-            }
-            let shared = unique_handles
-                .iter()
-                .filter(|handle| handles.contains(handle))
-                .count();
-            let qualifies = if unique_handles.len() >= 4 {
-                shared >= 3 && shared >= unique_handles.len().div_ceil(2)
+        for (&face, &count) in ctx.admit_iter(&shared, "catia repeated edge matching faces")? {
+            let qualifies = if unique >= 4 {
+                count >= 3 && count >= unique.div_ceil(2)
             } else {
-                shared == unique_handles.len()
+                count == unique
             };
             if qualifies {
                 ctx.push_vec(&mut matching, face, "catia repeated edge matching faces")?;
             }
         }
-        if unique_handles.len() >= 4 && matching.len() != 1 {
+        if unique >= 4 && matching.len() != 1 {
             matching.clear();
         }
         candidates[edge] = matching;
@@ -1050,39 +1221,41 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     bytes: &[u8],
     serialized: &[[usize; 2]],
 ) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
-    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
-        return Ok(None);
-    };
-    let face_start = face_run.face_start();
-    let face_count = face_run.face_count();
-    let after_faces = face_run.after_faces();
-    let standard = parse_standard_edge_tables_with_width(ctx, bytes, after_faces)?;
-    let parsed = if let Some((rows, _, width)) = standard {
-        Some((rows, width))
-    } else {
-        parse_fbb_edge_tables(ctx, bytes, after_faces)?.map(|(rows, _, _, width)| (rows, width))
-    };
-    let Some((edge_rows, handle_width)) = parsed else {
-        return Ok(None);
-    };
-    let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
+    let (parsed, _parsed_storage) = ctx.with_scoped_storage(
+        "catia_repeated_face_parse_workspace",
+        || -> Result<_, CodecError> {
+            let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+                return Ok(None);
+            };
+            let face_start = face_run.face_start();
+            let face_count = face_run.face_count();
+            let after_faces = face_run.after_faces();
+            let standard = parse_standard_edge_tables_with_width(ctx, bytes, after_faces)?;
+            let parsed = if let Some((rows, _, width)) = standard {
+                Some((rows, width))
+            } else {
+                parse_fbb_edge_tables(ctx, bytes, after_faces)?
+                    .map(|(rows, _, _, width)| (rows, width))
+            };
+            let Some((edge_rows, handle_width)) = parsed else {
+                return Ok(None);
+            };
+            let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)?
+            else {
+                return Ok(None);
+            };
+            Ok(Some((edge_rows, trims)))
+        },
+    )?;
+    let Some((edge_rows, trims)) = parsed else {
         return Ok(None);
     };
     let (face_handles, _face_handle_storage) =
         ctx.with_scoped_storage("catia repeated edge face handles", || {
-            let mut face_handles =
-                ctx.collection_vec(trims.len(), "catia repeated edge face handles")?;
-            for trim in trims {
-                let mut handles = HashSet::new();
-                ctx.reserve_set(
-                    &mut handles,
-                    trim.packet.handles().len(),
-                    "catia repeated edge face handle set",
-                )?;
-                handles.extend(trim.packet.handles().iter().copied());
-                face_handles.push(handles);
-            }
-            Ok::<_, CodecError>(face_handles)
+            ctx.collect_vec(
+                trims.iter().map(|trim| trim.packet.handles()),
+                "catia repeated edge face handles",
+            )
         })?;
     repeated_edge_face_handle_candidates_from_sets(ctx, &edge_rows, &face_handles, serialized)
 }
@@ -1099,11 +1272,12 @@ pub(crate) fn refine_repeated_edge_face_candidates(
     allowed_faces: &mut [Vec<usize>],
     handle_face_candidates: &[Vec<usize>],
 ) -> Result<Option<()>, CodecError> {
+    const OPERATION: &str = "catia_repeated_face_intersection";
     if edge_faces.len() != allowed_faces.len() || edge_faces.len() != handle_face_candidates.len() {
         return Ok(None);
     }
-    for (edge, (allowed, handle_candidates)) in allowed_faces
-        .iter_mut()
+    for (edge, (allowed, handle_candidates)) in ctx
+        .admit_iter(&mut *allowed_faces, OPERATION)?
         .zip(handle_face_candidates)
         .enumerate()
     {
@@ -1115,12 +1289,10 @@ pub(crate) fn refine_repeated_edge_face_candidates(
             continue;
         }
         let mut intersection = Vec::new();
-        for face in allowed
-            .iter()
-            .copied()
-            .filter(|face| handle_candidates.contains(face))
-        {
-            ctx.push_vec(&mut intersection, face, "catia_repeated_face_intersection")?;
+        for &face in ctx.admit_iter(&*allowed, OPERATION)? {
+            if ctx.contains(handle_candidates, &face, OPERATION)? {
+                ctx.push_vec(&mut intersection, face, OPERATION)?;
+            }
         }
         *allowed = if intersection.is_empty() {
             ctx.copy_slice(handle_candidates, "catia_repeated_face_handle_copy")?
@@ -1146,6 +1318,7 @@ pub(crate) fn repeated_face_endpoint_closures(
 ) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
     const MAX_STATES: usize = 65_536;
     const MAX_SOLUTIONS: usize = 4_096;
+    const DEGREES: &str = "catia missing-edge point degrees";
 
     struct PairDegreeUndo {
         start: (usize, Option<u8>),
@@ -1157,64 +1330,69 @@ pub(crate) fn repeated_face_endpoint_closures(
         degrees: &mut BTreeMap<usize, u8>,
         pair: [usize; 2],
     ) -> Result<Option<PairDegreeUndo>, CodecError> {
-        let start_add = 1 + u8::from(pair[0] == pair[1]);
-        let Some(start_degree) = degrees
-            .get(&pair[0])
-            .copied()
+        let loop_edge = pair[0] == pair[1];
+        let start_previous = ctx.get_btree_map(degrees, &pair[0], DEGREES)?.copied();
+        let Some(start_degree) = start_previous
             .unwrap_or_default()
-            .checked_add(start_add)
+            .checked_add(1 + u8::from(loop_edge))
         else {
             return Ok(None);
         };
-        let end_degree = if pair[0] == pair[1] {
-            Some(0)
-        } else {
-            degrees
-                .get(&pair[1])
-                .copied()
-                .unwrap_or_default()
-                .checked_add(1)
-        };
-        if start_degree > 2 || end_degree.is_none_or(|degree| degree > 2) {
-            return Ok(None);
-        }
-        let start_previous = degrees.get(&pair[0]).copied();
-        ctx.admit_btree_entry(degrees, &pair[0], "catia missing-edge point degrees")?;
-        *degrees.entry(pair[0]).or_default() += start_add;
-        let end_previous = if pair[0] == pair[1] {
+        let end_previous = if loop_edge {
             None
         } else {
-            let previous = degrees.get(&pair[1]).copied();
-            ctx.admit_btree_entry(degrees, &pair[1], "catia missing-edge point degrees")?;
-            *degrees.entry(pair[1]).or_default() += 1;
-            Some((pair[1], previous))
+            Some(ctx.get_btree_map(degrees, &pair[1], DEGREES)?.copied())
         };
+        let end_degree = match end_previous {
+            None => Some(0),
+            Some(previous) => previous.unwrap_or_default().checked_add(1),
+        };
+        let Some(end_degree) = end_degree.filter(|degree| *degree <= 2) else {
+            return Ok(None);
+        };
+        if start_degree > 2 {
+            return Ok(None);
+        }
+        ctx.insert_btree_map(degrees, pair[0], start_degree, DEGREES)?;
+        if !loop_edge {
+            ctx.insert_btree_map(degrees, pair[1], end_degree, DEGREES)?;
+        }
         Ok(Some(PairDegreeUndo {
             start: (pair[0], start_previous),
-            end: end_previous,
+            end: end_previous.map(|previous| (pair[1], previous)),
         }))
     }
 
-    fn remove_pair(degrees: &mut BTreeMap<usize, u8>, undo: &PairDegreeUndo) {
-        let (start, previous) = undo.start;
-        match previous {
-            Some(degree) => {
-                degrees.insert(start, degree);
-            }
-            None => {
-                degrees.remove(&start);
-            }
-        }
-        if let Some((end, previous)) = undo.end {
+    fn remove_pair(
+        ctx: &DecodeContext<'_>,
+        degrees: &mut BTreeMap<usize, u8>,
+        undo: &PairDegreeUndo,
+    ) -> Result<(), CodecError> {
+        for (point, previous) in [Some(undo.start), undo.end].into_iter().flatten() {
             match previous {
                 Some(degree) => {
-                    degrees.insert(end, degree);
+                    if let Some(stored) = ctx.get_mut_btree_map(degrees, &point, DEGREES)? {
+                        *stored = degree;
+                    }
                 }
                 None => {
-                    degrees.remove(&end);
+                    ctx.remove_btree_map(degrees, &point, DEGREES)?;
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Whether every used point of every face has degree two.
+    fn closed(
+        ctx: &DecodeContext<'_>,
+        degrees: &[BTreeMap<usize, u8>],
+    ) -> Result<bool, CodecError> {
+        ctx.all_by(
+            degrees,
+            |face| ctx.all_by(face, |(_, degree)| Ok(*degree == 2), DEGREES),
+            DEGREES,
+        )
     }
 
     struct Search<'a, 'b> {
@@ -1234,24 +1412,22 @@ pub(crate) fn repeated_face_endpoint_closures(
             assignment: &mut [usize],
             used: &mut [bool],
         ) -> Result<(), CodecError> {
-            let _depth = self
-                .ctx
-                .enter_nested("catia missing-edge endpoint closure")?;
+            const OPERATION: &str = "catia missing-edge endpoint closure";
+            let ctx = self.ctx;
+            let _depth = ctx.enter_nested(OPERATION)?;
             if self.exhausted {
                 return Ok(());
             }
-            let Some(unassigned_branch) = used.iter().position(|used| !*used) else {
-                if degrees
-                    .iter()
-                    .all(|face| face.values().all(|degree| *degree == 2))
-                {
+            let Some(unassigned_branch) =
+                ctx.position_by(used.iter(), |used| Ok(!*used), OPERATION)?
+            else {
+                if closed(ctx, degrees)? {
                     if self.solutions.len() == MAX_SOLUTIONS {
                         self.exhausted = true;
                     } else {
-                        let solution = self
-                            .ctx
-                            .copy_slice(assignment, "catia missing-edge solution assignment")?;
-                        self.ctx.push_vec(
+                        let solution =
+                            ctx.copy_slice(assignment, "catia missing-edge solution assignment")?;
+                        ctx.push_vec(
                             &mut self.solutions,
                             solution,
                             "catia missing-edge solution list",
@@ -1260,42 +1436,54 @@ pub(crate) fn repeated_face_endpoint_closures(
                 }
                 return Ok(());
             };
-            let deficit = degrees.iter().enumerate().find_map(|(face, points)| {
-                points
-                    .iter()
-                    .find_map(|(&point, &degree)| (degree == 1).then_some((face, point)))
-            });
-            let mut choices = Vec::<(usize, usize)>::new();
-            if let Some((face, point)) = deficit {
-                for (branch, (edge, faces)) in self.branches.iter().enumerate() {
-                    if used[branch] || !self.endpoint_pairs[*edge].contains(&point) {
-                        continue;
-                    }
-                    for &candidate in faces.iter().filter(|candidate| **candidate == face) {
-                        self.ctx.push_vec(
-                            &mut choices,
-                            (branch, candidate),
+            // A degree-one point must be completed first; otherwise branch on
+            // the first unassigned row.
+            let deficit = ctx.find_map(
+                degrees.iter().enumerate(),
+                |(face, points)| {
+                    ctx.find_map(
+                        points,
+                        |(&point, &degree)| Ok((degree == 1).then_some((face, point))),
+                        OPERATION,
+                    )
+                },
+                OPERATION,
+            )?;
+            let (choices, _choices_storage) = ctx.with_scoped_storage(
+                "catia missing-edge search choices",
+                || -> Result<Vec<(usize, usize)>, CodecError> {
+                    let mut choices = Vec::new();
+                    if let Some((face, point)) = deficit {
+                        for (branch, (edge, faces)) in
+                            ctx.admit_iter(self.branches, OPERATION)?.enumerate()
+                        {
+                            if used[branch] || !self.endpoint_pairs[*edge].contains(&point) {
+                                continue;
+                            }
+                            for &candidate in ctx.admit_iter(faces, OPERATION)? {
+                                if candidate == face {
+                                    ctx.push_vec(
+                                        &mut choices,
+                                        (branch, candidate),
+                                        "catia missing-edge search choices",
+                                    )?;
+                                }
+                            }
+                        }
+                    } else {
+                        choices = ctx.collect_vec(
+                            self.branches[unassigned_branch]
+                                .1
+                                .iter()
+                                .map(|&face| (unassigned_branch, face)),
                             "catia missing-edge search choices",
                         )?;
                     }
-                }
-            } else {
-                self.ctx.reserve_vec(
-                    &mut choices,
-                    self.branches[unassigned_branch].1.len(),
-                    "catia missing-edge search choices",
-                )?;
-                choices.extend(
-                    self.branches[unassigned_branch]
-                        .1
-                        .iter()
-                        .copied()
-                        .map(|face| (unassigned_branch, face)),
-                );
-            }
+                    Ok(choices)
+                },
+            )?;
             for (branch, face) in choices {
-                self.ctx
-                    .charge_work(1, "catia missing-edge endpoint closure")?;
+                ctx.charge_work(1, OPERATION)?;
                 if self.states >= MAX_STATES {
                     self.exhausted = true;
                     return Ok(());
@@ -1303,23 +1491,21 @@ pub(crate) fn repeated_face_endpoint_closures(
                 self.states += 1;
                 let (edge, _) = &self.branches[branch];
                 let owner = self.owners[branch];
-                let adds_incidence = face != owner;
-                let undo = if adds_incidence {
-                    let Some(undo) =
-                        add_pair(self.ctx, &mut degrees[face], self.endpoint_pairs[*edge])?
+                let undo = if face == owner {
+                    None
+                } else {
+                    let Some(undo) = add_pair(ctx, &mut degrees[face], self.endpoint_pairs[*edge])?
                     else {
                         continue;
                     };
                     Some(undo)
-                } else {
-                    None
                 };
                 assignment[branch] = face;
                 used[branch] = true;
                 self.visit(degrees, assignment, used)?;
                 used[branch] = false;
                 if let Some(undo) = undo {
-                    remove_pair(&mut degrees[face], &undo);
+                    remove_pair(ctx, &mut degrees[face], &undo)?;
                 }
                 if self.exhausted {
                     return Ok(());
@@ -1329,110 +1515,122 @@ pub(crate) fn repeated_face_endpoint_closures(
         }
     }
 
+    const VALIDATION: &str = "catia missing-edge face validation";
+    let face_out_of_range = |face: &usize| Ok(*face >= face_count);
     if edge_faces.len() != allowed_faces.len()
         || edge_faces.len() != endpoint_pairs.len()
-        || edge_faces.iter().flatten().any(|face| *face >= face_count)
-        || allowed_faces
-            .iter()
-            .flatten()
-            .any(|face| *face >= face_count)
+        || ctx.any_by(
+            edge_faces,
+            |faces| Ok(faces[0] >= face_count || faces[1] >= face_count),
+            VALIDATION,
+        )?
+        || ctx.any_by(
+            allowed_faces,
+            |faces| ctx.any_by(faces, face_out_of_range, VALIDATION),
+            VALIDATION,
+        )?
     {
         return Ok(None);
     }
-    let mut degrees =
-        ctx.collect_indexed_vec(face_count, "catia missing-edge face degrees", |_| {
-            Ok(BTreeMap::<usize, u8>::new())
-        })?;
-    for (edge, faces) in edge_faces.iter().copied().enumerate() {
-        if add_pair(ctx, &mut degrees[faces[0]], endpoint_pairs[edge])?.is_none() {
-            return Ok(None);
-        }
-        if faces[1] != faces[0]
-            && add_pair(ctx, &mut degrees[faces[1]], endpoint_pairs[edge])?.is_none()
+    let mut scratch = ctx.reserve_scoped(0, "catia missing-edge face degrees")?;
+    let search_result = scratch.with_storage(|| {
+        let mut degrees =
+            ctx.collect_indexed_vec(face_count, "catia missing-edge face degrees", |_| {
+                Ok(BTreeMap::<usize, u8>::new())
+            })?;
+        let mut charged_steps = edge_faces.iter().enumerate();
+        while let Some((edge, faces)) =
+            ctx.next_charged(&mut charged_steps, "catia missing-edge face degrees")?
         {
-            return Ok(None);
+            if add_pair(ctx, &mut degrees[faces[0]], endpoint_pairs[edge])?.is_none() {
+                return Ok(None);
+            }
+            if faces[1] != faces[0]
+                && add_pair(ctx, &mut degrees[faces[1]], endpoint_pairs[edge])?.is_none()
+            {
+                return Ok(None);
+            }
         }
-    }
-    let mut branches = Vec::new();
-    for (edge, faces) in edge_faces.iter().enumerate() {
-        if faces[0] != faces[1] || allowed_faces[edge].is_empty() {
-            continue;
-        }
-        let mut choices = ctx.alloc_filled(1, faces[0], "catia missing-edge branch choices")?;
-        ctx.reserve_vec(
-            &mut choices,
-            allowed_faces[edge]
-                .iter()
-                .filter(|face| **face != faces[0])
-                .count(),
-            "catia missing-edge branch choices",
-        )?;
-        choices.extend(
-            allowed_faces[edge]
-                .iter()
-                .copied()
-                .filter(|face| *face != faces[0]),
-        );
-        ctx.sort_unstable_by(
-            &mut choices,
-            |value| value,
-            Ord::cmp,
-            "catia missing edge duplicate face choices sort",
-        )?;
-        choices.dedup();
-        ctx.push_vec(
-            &mut branches,
-            (edge, choices),
-            "catia missing-edge branches",
-        )?;
-    }
-    if branches.is_empty() {
-        let closed = degrees
-            .iter()
-            .all(|face| face.values().all(|degree| *degree == 2));
-        let mut solutions = Vec::new();
-        if closed {
-            let completed = ctx.copy_slice(edge_faces, "catia missing-edge closed faces")?;
+        let mut branches = Vec::new();
+        for (edge, faces) in ctx
+            .admit_iter(edge_faces, "catia missing-edge branches")?
+            .enumerate()
+        {
+            if faces[0] != faces[1] || allowed_faces[edge].is_empty() {
+                continue;
+            }
+            let capacity = allowed_faces[edge].len().checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia missing-edge branch choices", u64::MAX, u64::MAX)
+            })?;
+            let mut choices = ctx.collection_vec(capacity, "catia missing-edge branch choices")?;
+            choices.push(faces[0]);
+            for &face in
+                ctx.admit_iter(&allowed_faces[edge], "catia missing-edge branch choices")?
+            {
+                if face != faces[0] {
+                    choices.push(face);
+                }
+            }
+            ctx.sort_unstable_by(
+                &mut choices,
+                |value| value,
+                Ord::cmp,
+                "catia missing edge duplicate face choices sort",
+            )?;
+            ctx.dedup_vec(&mut choices, "catia missing-edge branch choices")?;
             ctx.push_vec(
-                &mut solutions,
-                completed,
-                "catia missing-edge closed solutions",
+                &mut branches,
+                (edge, choices),
+                "catia missing-edge branches",
             )?;
         }
-        return Ok(Some(solutions));
-    }
-    let mut owners = Vec::new();
-    ctx.reserve_vec(
-        &mut owners,
-        branches.len(),
-        "catia missing-edge branch owners",
-    )?;
-    owners.extend(branches.iter().map(|(edge, _)| edge_faces[*edge][0]));
-    let mut search = Search {
-        ctx,
-        branches: &branches,
-        owners: &owners,
-        endpoint_pairs,
-        states: 0,
-        exhausted: false,
-        solutions: Vec::new(),
-    };
-    let mut assignment =
-        ctx.alloc_filled(branches.len(), 0, "catia missing-edge branch assignment")?;
-    let mut used = ctx.alloc_filled(branches.len(), false, "catia missing-edge used branches")?;
-    search.visit(&mut degrees, &mut assignment, &mut used)?;
-    if search.exhausted {
+        if branches.is_empty() {
+            // Without branches the serialized faces are the one candidate.
+            let mut solutions = Vec::new();
+            if closed(ctx, &degrees)? {
+                ctx.push_vec(
+                    &mut solutions,
+                    Vec::new(),
+                    "catia missing-edge closed solutions",
+                )?;
+            }
+            return Ok(Some((branches, solutions)));
+        }
+        let mut owners = ctx.collection_vec(branches.len(), "catia missing-edge branch owners")?;
+        for (edge, _) in ctx.admit_iter(&branches, "catia missing-edge branch owners")? {
+            owners.push(edge_faces[*edge][0]);
+        }
+        let mut search = Search {
+            ctx,
+            branches: &branches,
+            owners: &owners,
+            endpoint_pairs,
+            states: 0,
+            exhausted: false,
+            solutions: Vec::new(),
+        };
+        let mut assignment =
+            ctx.alloc_filled(branches.len(), 0, "catia missing-edge branch assignment")?;
+        let mut used =
+            ctx.alloc_filled(branches.len(), false, "catia missing-edge used branches")?;
+        search.visit(&mut degrees, &mut assignment, &mut used)?;
+        if search.exhausted {
+            return Ok(None);
+        }
+        let solutions = search.solutions;
+        Ok::<_, CodecError>(Some((branches, solutions)))
+    })?;
+    let Some((branches, solutions)) = search_result else {
         return Ok(None);
-    }
-    let mut completed_solutions = Vec::new();
-    ctx.reserve_vec(
-        &mut completed_solutions,
-        search.solutions.len(),
-        "catia missing-edge completed solutions",
-    )?;
-    for solution in search.solutions {
+    };
+    let mut completed_solutions =
+        ctx.collection_vec(solutions.len(), "catia missing-edge completed solutions")?;
+    for solution in ctx.admit_iter(&solutions, "catia missing-edge completed solutions")? {
         let mut completed = ctx.copy_slice(edge_faces, "catia missing-edge completed faces")?;
-        for ((edge, _), face) in branches.iter().zip(solution) {
+        for ((edge, _), &face) in ctx
+            .admit_iter(&branches, "catia missing-edge completed faces")?
+            .zip(solution)
+        {
             completed[*edge][1] = face;
         }
         completed_solutions.push(completed);
@@ -1463,31 +1661,20 @@ impl FaceOptions {
         retained: usize,
         admitted: impl IntoIterator<Item = usize>,
     ) -> Result<Self, CodecError> {
-        let mut others = Vec::new();
-        for face in admitted.into_iter().filter(|face| *face != retained) {
-            ctx.push_vec(&mut others, face, "catia_duplicate_face_options")?;
-        }
+        const OPERATION: &str = "catia_duplicate_face_options";
+        let mut faces = ctx.collect_vec(admitted, OPERATION)?;
+        ctx.push_vec(&mut faces, retained, OPERATION)?;
         ctx.sort_unstable_by(
-            &mut others,
+            &mut faces,
             |value| value,
             Ord::cmp,
             "catia_duplicate_face_options_sort",
         )?;
-        others.dedup();
-        let at = others.partition_point(|face| *face < retained);
-        if at == 0 {
-            return Ok(Self {
-                first: retained,
-                rest: others,
-            });
-        }
-        // `others[0]` is smaller than `retained`, so it is the smallest face.
-        // Removing it shifts the insertion point of `retained` down by one.
-        let first = others.remove(0);
-        others.insert(at - 1, retained);
+        ctx.dedup_vec(&mut faces, OPERATION)?;
+        let rest = ctx.split_off_vec(&mut faces, 1, OPERATION)?;
         Ok(Self {
-            first,
-            rest: others,
+            first: faces[0],
+            rest,
         })
     }
 
@@ -1500,6 +1687,25 @@ impl FaceOptions {
     fn iter(&self) -> impl Iterator<Item = usize> + '_ {
         std::iter::once(self.first).chain(self.rest.iter().copied())
     }
+}
+
+/// Whether any serialized or admitted face is outside the face run.
+fn faces_out_of_range(
+    ctx: &DecodeContext<'_>,
+    serialized: &[[usize; 2]],
+    allowed_faces: &[Vec<usize>],
+    face_count: usize,
+) -> Result<bool, CodecError> {
+    const OPERATION: &str = "catia_duplicate_face_validation";
+    Ok(ctx.any_by(
+        serialized,
+        |faces| Ok(faces[0] >= face_count || faces[1] >= face_count),
+        OPERATION,
+    )? || ctx.any_by(
+        allowed_faces,
+        |faces| ctx.any_by(faces, |face| Ok(*face >= face_count), OPERATION),
+        OPERATION,
+    )?)
 }
 
 pub(super) fn unique_duplicate_face_assignment<F>(
@@ -1519,41 +1725,50 @@ where
         branches: &[(usize, FaceOptions)],
         at: usize,
         assignment: &mut [[usize; 2]],
-        (states, exhausted): (&mut usize, &mut bool),
-        solutions: &mut Vec<Vec<[usize; 2]>>,
+        states: &WorkBudget<'_>,
+        outcome: &mut SearchOutcome<Vec<[usize; 2]>>,
         valid: &mut F,
     ) -> Result<(), CodecError>
     where
         F: FnMut(&[[usize; 2]]) -> Result<bool, CodecError>,
     {
-        if *exhausted || solutions.len() > 1 {
+        let _depth = ctx.enter_nested("catia_duplicate_face_search_depth")?;
+        if outcome.is_closed() {
             return Ok(());
         }
         if at == branches.len() {
-            if valid(assignment)? && !solutions.iter().any(|solution| solution == assignment) {
-                let solution = ctx.copy_slice(assignment, "catia_duplicate_face_solution")?;
-                ctx.push_vec(solutions, solution, "catia_duplicate_face_solution_rows")?;
+            if valid(assignment)? {
+                match outcome {
+                    SearchOutcome::Open => {
+                        *outcome = SearchOutcome::Solved(
+                            ctx.copy_slice(assignment, "catia_duplicate_face_solution")?,
+                        );
+                    }
+                    SearchOutcome::Solved(previous) => {
+                        if !ctx.equal(
+                            previous.as_slice(),
+                            &*assignment,
+                            "catia_duplicate_face_solution",
+                        )? {
+                            *outcome = SearchOutcome::Ambiguous;
+                        }
+                    }
+                    SearchOutcome::Ambiguous | SearchOutcome::Exhausted => {}
+                }
             }
             return Ok(());
         }
-        if *states >= MAX_STATES {
-            *exhausted = true;
+        // One local unit visits one nonterminal branch frame.
+        if !states.charge() {
+            outcome.exhaust();
             return Ok(());
         }
-        *states += 1;
         let (edge, options) = &branches[at];
-        for face in options.iter() {
+        let mut faces = options.iter();
+        while let Some(face) = ctx.next_charged(&mut faces, "catia_duplicate_face_search")? {
             assignment[*edge][1] = face;
-            search(
-                ctx,
-                branches,
-                at + 1,
-                assignment,
-                (states, exhausted),
-                solutions,
-                valid,
-            )?;
-            if *exhausted || solutions.len() > 1 {
+            search(ctx, branches, at + 1, assignment, states, outcome, valid)?;
+            if outcome.is_closed() {
                 return Ok(());
             }
         }
@@ -1561,18 +1776,20 @@ where
     }
 
     if serialized.len() != allowed_faces.len()
-        || serialized.iter().flatten().any(|face| *face >= face_count)
-        || allowed_faces
-            .iter()
-            .flatten()
-            .any(|face| *face >= face_count)
+        || faces_out_of_range(ctx, serialized, allowed_faces, face_count)?
     {
         return Ok(None);
     }
+    let mut scratch = ctx.reserve_scoped(0, "catia_duplicate_face_unresolved")?;
     let mut unresolved = Vec::new();
-    for (edge, faces) in serialized.iter().enumerate() {
+    for (edge, faces) in ctx
+        .admit_iter(serialized, "catia_duplicate_face_unresolved")?
+        .enumerate()
+    {
         if faces[0] == faces[1] {
-            ctx.push_vec(&mut unresolved, edge, "catia_duplicate_face_unresolved")?;
+            scratch.with_storage(|| {
+                ctx.push_vec(&mut unresolved, edge, "catia_duplicate_face_unresolved")
+            })?;
         }
     }
     if unresolved.is_empty() {
@@ -1580,20 +1797,24 @@ where
             ctx.copy_slice(serialized, "catia_duplicate_face_serialized")?,
         ));
     }
-    let mut assignment = ctx.copy_slice(serialized, "catia_duplicate_face_serialized")?;
+    let mut assignment =
+        scratch.with_storage(|| ctx.copy_slice(serialized, "catia_duplicate_face_serialized"))?;
     let mut branches = Vec::new();
-    for edge in unresolved {
+    for &edge in ctx.admit_iter(&unresolved, "catia_duplicate_face_branches")? {
         let retained = assignment[edge][0];
-        let options =
-            FaceOptions::from_admitted(ctx, retained, allowed_faces[edge].iter().copied())?;
+        let options = scratch.with_storage(|| {
+            FaceOptions::from_admitted(ctx, retained, allowed_faces[edge].iter().copied())
+        })?;
         if options.rest.is_empty() {
             assignment[edge][1] = options.first;
         } else {
-            ctx.push_vec(
-                &mut branches,
-                (edge, options),
-                "catia_duplicate_face_branches",
-            )?;
+            scratch.with_storage(|| {
+                ctx.push_vec(
+                    &mut branches,
+                    (edge, options),
+                    "catia_duplicate_face_branches",
+                )
+            })?;
         }
     }
     ctx.sort_unstable_by_key(
@@ -1605,22 +1826,30 @@ where
         Ord::cmp,
         "catia missing edge duplicate face branches sort",
     )?;
-    let mut states = 0;
-    let mut exhausted = false;
-    let mut solutions = Vec::new();
-    search(
-        ctx,
-        &branches,
-        0,
-        &mut assignment,
-        (&mut states, &mut exhausted),
-        &mut solutions,
-        &mut valid,
+    let states = ctx.work_budget(cadmpeg_core::decode::u64_from_index(MAX_STATES));
+    let (outcome, outcome_storage) = ctx.with_scoped_storage(
+        "catia_duplicate_face_solution",
+        || -> Result<_, CodecError> {
+            let mut outcome = SearchOutcome::Open;
+            search(
+                ctx,
+                &branches,
+                0,
+                &mut assignment,
+                &states,
+                &mut outcome,
+                &mut valid,
+            )?;
+            Ok(outcome)
+        },
     )?;
-    Ok((!exhausted)
-        .then(|| <[Vec<[usize; 2]>; 1]>::try_from(solutions).ok())
-        .flatten()
-        .map(|[solution]| solution))
+    match outcome {
+        SearchOutcome::Solved(solution) => {
+            outcome_storage.commit()?;
+            Ok(Some(solution))
+        }
+        SearchOutcome::Open | SearchOutcome::Ambiguous | SearchOutcome::Exhausted => Ok(None),
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1659,8 +1888,8 @@ where
         F: FnMut(&[[usize; 2]]) -> Result<bool, cadmpeg_core::CodecError>,
     {
         let _depth = ctx.enter_nested("catia_duplicate_face_visit_depth")?;
-        ctx.charge_work(1, "catia_duplicate_face_visit_work")?;
         if at == branches.len() {
+            ctx.charge_work(1, "catia_duplicate_face_visit_work")?;
             if *visited >= max_assignments {
                 return Ok(DuplicateFaceAssignmentVisit::Exhausted);
             }
@@ -1672,7 +1901,8 @@ where
             });
         }
         let (edge, choices) = &branches[at];
-        for &face in choices {
+        let mut choices = choices.iter();
+        while let Some(&face) = ctx.next_charged(&mut choices, "catia_duplicate_face_visit_work")? {
             assignment[*edge][1] = face;
             match visit(
                 ctx,
@@ -1691,17 +1921,18 @@ where
     }
 
     if serialized.len() != allowed_faces.len()
-        || serialized.iter().flatten().any(|face| *face >= face_count)
-        || allowed_faces
-            .iter()
-            .flatten()
-            .any(|face| *face >= face_count)
+        || faces_out_of_range(ctx, serialized, allowed_faces, face_count)?
     {
         return Ok(None);
     }
-    let mut assignment = ctx.copy_slice(serialized, "catia_duplicate_visit_assignment")?;
+    let mut scratch = ctx.reserve_scoped(0, "catia_duplicate_visit_branches")?;
+    let mut assignment =
+        scratch.with_storage(|| ctx.copy_slice(serialized, "catia_duplicate_visit_assignment"))?;
     let mut branches = Vec::<(usize, Vec<usize>)>::new();
-    for (edge, faces) in serialized.iter().enumerate() {
+    let mut charged_steps = serialized.iter().enumerate();
+    while let Some((edge, faces)) =
+        ctx.next_charged(&mut charged_steps, "catia_duplicate_visit_branches")?
+    {
         let allowed = &allowed_faces[edge];
         if faces[0] != faces[1] {
             if !allowed.is_empty() {
@@ -1709,23 +1940,34 @@ where
             }
             continue;
         }
-        let mut choices = ctx.alloc_filled(1, faces[0], "catia_duplicate_visit_choices")?;
-        for face in allowed.iter().copied().filter(|face| *face != faces[0]) {
-            ctx.push_vec(&mut choices, face, "catia_duplicate_visit_choices")?;
-        }
-        ctx.sort_unstable_by(
-            &mut choices,
-            |value| value,
-            Ord::cmp,
-            "catia missing edge duplicate visit choices sort",
-        )?;
-        choices.dedup();
-        if choices.len() > 1 {
-            ctx.push_vec(
-                &mut branches,
-                (edge, choices),
-                "catia_duplicate_visit_branches",
+        let choices = scratch.with_storage(|| -> Result<Vec<usize>, CodecError> {
+            let capacity = allowed.len().checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_duplicate_visit_choices", u64::MAX, u64::MAX)
+            })?;
+            let mut choices = ctx.collection_vec(capacity, "catia_duplicate_visit_choices")?;
+            choices.push(faces[0]);
+            for &face in ctx.admit_iter(allowed, "catia_duplicate_visit_choices")? {
+                if face != faces[0] {
+                    choices.push(face);
+                }
+            }
+            ctx.sort_unstable_by(
+                &mut choices,
+                |value| value,
+                Ord::cmp,
+                "catia missing edge duplicate visit choices sort",
             )?;
+            ctx.dedup_vec(&mut choices, "catia_duplicate_visit_choices")?;
+            Ok(choices)
+        })?;
+        if choices.len() > 1 {
+            scratch.with_storage(|| {
+                ctx.push_vec(
+                    &mut branches,
+                    (edge, choices),
+                    "catia_duplicate_visit_branches",
+                )
+            })?;
         }
     }
     ctx.sort_unstable_by_key(
@@ -1764,8 +2006,8 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
     let face_count = face_run.face_count();
     let context = StandardMeshBoundaryContext::parse(ctx, bytes, serialized)?;
     unique_duplicate_face_assignment(ctx, serialized, allowed_faces, face_count, |assignment| {
-        if let Some(base) = context.as_ref() {
-            let Some(context) = base.with_edge_faces(ctx, assignment)? else {
+        if let Some((base, _base_storage)) = context.as_ref() {
+            let Some((context, _context_storage)) = base.with_edge_faces(ctx, assignment)? else {
                 return Ok(false);
             };
             Ok(standard_mesh_boundary_assignments_from_context(ctx, &context, None)?.is_some())
@@ -1780,18 +2022,26 @@ pub(super) fn resolve_edge_faces_from_runs(
     serialized: &[[usize; 2]],
     runs: &[MeshEdgeRun],
 ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
-    let mut occurrence_faces =
-        ctx.collect_indexed_vec(serialized.len(), "catia_edge_run_faces", |_| Ok(Vec::new()))?;
-    for run in runs {
+    let mut scratch = ctx.reserve_scoped(0, "catia_edge_run_faces")?;
+    let mut occurrence_faces = scratch.with_storage(|| {
+        ctx.collect_indexed_vec(serialized.len(), "catia_edge_run_faces", |_| {
+            Ok(BTreeSet::new())
+        })
+    })?;
+    let mut charged_steps = runs.iter();
+    while let Some(run) = ctx.next_charged(&mut charged_steps, "catia edge run occurrence faces")? {
         let Some(faces) = occurrence_faces.get_mut(run.edge) else {
             return Ok(None);
         };
-        if !faces.contains(&run.face) {
-            ctx.push_vec(faces, run.face, "catia edge run occurrence faces")?;
-        }
+        scratch.with_storage(|| {
+            ctx.insert_btree_set(faces, run.face, "catia edge run occurrence faces")
+        })?;
     }
     let mut resolved = ctx.copy_slice(serialized, "catia resolved edge faces")?;
-    for (faces, occurrences) in resolved.iter_mut().zip(occurrence_faces) {
+    let mut charged_steps = resolved.iter_mut().zip(&occurrence_faces);
+    while let Some((faces, occurrences)) =
+        ctx.next_charged(&mut charged_steps, "catia resolved edge faces")?
+    {
         if faces[0] != faces[1] || occurrences.len() < 2 {
             continue;
         }
@@ -1801,13 +2051,13 @@ pub(super) fn resolve_edge_faces_from_runs(
         if occurrences.len() > 2 {
             continue;
         }
-        if !occurrences.contains(&faces[0]) {
+        if !ctx.contains_btree_set(occurrences, &faces[0], "catia resolved edge faces")? {
             return Ok(None);
         }
-        let Some(face) = occurrences.iter().find(|face| **face != faces[0]) else {
+        let Some(&face) = occurrences.iter().find(|face| **face != faces[0]) else {
             return Ok(None);
         };
-        faces[1] = *face;
+        faces[1] = face;
     }
     Ok(Some(resolved))
 }
@@ -1841,87 +2091,88 @@ enum MeshFaceAssignmentDomain {
     DeferredValidation(MeshFaceCoverage),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(super) struct StandardMeshBoundaryContext {
     analysis: Arc<StandardMeshAnalysis>,
     coverage: Vec<MeshFaceCoverage>,
-    edge_ports: Vec<[u32; 2]>,
-    edge_runs: Vec<MeshEdgeRun>,
-    cycle_lengths: Vec<Vec<usize>>,
+    edge_ports: Arc<Vec<[u32; 2]>>,
+    edge_runs: Arc<Vec<MeshEdgeRun>>,
+    cycle_lengths: Arc<Vec<Vec<usize>>>,
 }
 
 impl StandardMeshBoundaryContext {
-    fn parse(
-        ctx: &DecodeContext<'_>,
+    fn parse<'storage>(
+        ctx: &'storage DecodeContext<'_>,
         bytes: &[u8],
         edge_faces: &[[usize; 2]],
-    ) -> Result<Option<Self>, CodecError> {
+    ) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'storage>)>, CodecError> {
         Self::parse_ports(ctx, bytes, edge_faces, false)
     }
 
-    pub(super) fn parse_ports(
-        ctx: &DecodeContext<'_>,
+    pub(super) fn parse_ports<'storage>(
+        ctx: &'storage DecodeContext<'_>,
         bytes: &[u8],
         edge_faces: &[[usize; 2]],
         global_handle_ports: bool,
-    ) -> Result<Option<Self>, CodecError> {
-        let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
-            return Ok(None);
-        };
-        let analysis = Arc::new(analysis);
-        if analysis.edge_rows.len() != edge_faces.len() {
-            return Ok(None);
-        }
-        let Some(coverage) = mesh_face_coverage(ctx, &analysis, edge_faces)? else {
-            return Ok(None);
-        };
-        let Some(local_ports) = solver_ports(ctx, bytes, global_handle_ports)? else {
-            return Ok(None);
-        };
-        let Some(edge_ports) = mesh_edge_ports(ctx, &analysis, &local_ports)? else {
-            return Ok(None);
-        };
-        let edge_runs = mesh_edge_runs(ctx, &analysis)?;
-        let mut cycle_lengths = Vec::new();
-        ctx.reserve_vec(
-            &mut cycle_lengths,
-            analysis.cycles.len(),
-            "catia_mesh_cycle_length_rows",
+    ) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'storage>)>, CodecError> {
+        let (context, storage) = ctx.with_scoped_storage(
+            "catia_mesh_boundary_context",
+            || -> Result<_, CodecError> {
+                let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
+                    return Ok(None);
+                };
+                let analysis = Arc::new(analysis);
+                if analysis.edge_rows.len() != edge_faces.len() {
+                    return Ok(None);
+                }
+                let Some(coverage) = mesh_face_coverage(ctx, &analysis, edge_faces)? else {
+                    return Ok(None);
+                };
+                let (local_ports, _local_port_storage) = ctx
+                    .with_scoped_storage("catia_mesh_context_local_ports", || {
+                        solver_ports(ctx, bytes, global_handle_ports)
+                    })?;
+                let Some(local_ports) = local_ports else {
+                    return Ok(None);
+                };
+                let Some(edge_ports) = mesh_edge_ports(ctx, &analysis, &local_ports)? else {
+                    return Ok(None);
+                };
+                let edge_runs = mesh_edge_runs(ctx, &analysis)?;
+                let cycle_lengths = mesh_cycle_lengths(ctx, &analysis.cycles)?;
+                Ok(Some(Self {
+                    analysis,
+                    coverage,
+                    edge_ports: Arc::new(edge_ports),
+                    edge_runs: Arc::new(edge_runs),
+                    cycle_lengths: Arc::new(cycle_lengths),
+                }))
+            },
         )?;
-        for cycles in &analysis.cycles {
-            let mut lengths = Vec::new();
-            ctx.reserve_vec(&mut lengths, cycles.len(), "catia_mesh_cycle_lengths")?;
-            lengths.extend(cycles.iter().map(Vec::len));
-            cycle_lengths.push(lengths);
-        }
-        Ok(Some(Self {
-            analysis,
-            coverage,
-            edge_ports,
-            edge_runs,
-            cycle_lengths,
-        }))
+        Ok(context.map(|context| (context, storage)))
     }
 
-    fn with_edge_faces(
+    fn with_edge_faces<'storage>(
         &self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         edge_faces: &[[usize; 2]],
-    ) -> Result<Option<Self>, CodecError> {
-        let Some(coverage) = mesh_face_coverage(ctx, &self.analysis, edge_faces)? else {
-            return Ok(None);
-        };
-        Ok(Some(Self {
-            analysis: Arc::clone(&self.analysis),
-            coverage,
-            edge_ports: ctx.copy_slice(&self.edge_ports, "catia_mesh_context_edge_ports")?,
-            edge_runs: ctx.copy_slice(&self.edge_runs, "catia_mesh_context_edge_runs")?,
-            cycle_lengths: ctx.copy_retained_rows(
-                &self.cycle_lengths,
-                "catia_mesh_context_cycle_rows",
-                "catia_mesh_context_cycle_lengths",
-            )?,
-        }))
+    ) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'storage>)>, CodecError> {
+        let (context, storage) = ctx.with_scoped_storage(
+            "catia_mesh_boundary_context",
+            || -> Result<_, CodecError> {
+                let Some(coverage) = mesh_face_coverage(ctx, &self.analysis, edge_faces)? else {
+                    return Ok(None);
+                };
+                Ok(Some(Self {
+                    analysis: Arc::clone(&self.analysis),
+                    coverage,
+                    edge_ports: Arc::clone(&self.edge_ports),
+                    edge_runs: Arc::clone(&self.edge_runs),
+                    cycle_lengths: Arc::clone(&self.cycle_lengths),
+                }))
+            },
+        )?;
+        Ok(context.map(|context| (context, storage)))
     }
 }
 
@@ -2040,10 +2291,30 @@ fn standard_mesh_face_coverage(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
 ) -> Result<Option<Vec<MeshFaceCoverage>>, CodecError> {
-    let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
+    let (analysis, _analysis_storage) = ctx
+        .with_scoped_storage("catia_mesh_coverage_analysis", || {
+            standard_mesh_analysis(ctx, bytes)
+        })?;
+    let Some(analysis) = analysis else {
         return Ok(None);
     };
     mesh_face_coverage(ctx, &analysis, edge_faces)
+}
+
+/// The segment count of each boundary cycle of each face.
+fn mesh_cycle_lengths(
+    ctx: &DecodeContext<'_>,
+    cycles: &[Vec<Vec<u32>>],
+) -> Result<Vec<Vec<usize>>, CodecError> {
+    let mut cycle_lengths = ctx.collection_vec(cycles.len(), "catia_mesh_cycle_length_rows")?;
+    for face_cycles in ctx.admit_iter(cycles, "catia_mesh_cycle_length_rows")? {
+        let mut lengths = ctx.collection_vec(face_cycles.len(), "catia_mesh_cycle_lengths")?;
+        for cycle in ctx.admit_iter(face_cycles, "catia_mesh_cycle_lengths")? {
+            lengths.push(cycle.len());
+        }
+        cycle_lengths.push(lengths);
+    }
+    Ok(cycle_lengths)
 }
 
 fn mesh_face_coverage(
@@ -2051,93 +2322,120 @@ fn mesh_face_coverage(
     analysis: &StandardMeshAnalysis,
     edge_faces: &[[usize; 2]],
 ) -> Result<Option<Vec<MeshFaceCoverage>>, CodecError> {
+    const OPERATION: &str = "catia_mesh_cycle_coverage";
     let edge_rows = &analysis.edge_rows;
     let cycles = &analysis.cycles;
     let occurrences = &analysis.occurrences;
     if edge_rows.len() != edge_faces.len() {
         return Ok(None);
     }
-    if occurrences.iter().enumerate().any(|(edge, values)| {
-        values
-            .iter()
-            .any(|occurrence| !edge_faces[edge].contains(&occurrence.face))
-    }) {
+    if ctx.any_by(
+        occurrences.iter().enumerate(),
+        |(edge, values)| {
+            ctx.any_by(
+                values,
+                |occurrence| Ok(!edge_faces[edge].contains(&occurrence.face)),
+                OPERATION,
+            )
+        },
+        OPERATION,
+    )? {
         return Ok(None);
     }
-    let mut occurrences_by_cycle = Vec::new();
-    for face_cycles in cycles {
-        let rows =
+    let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
+    let mut occurrences_by_cycle =
+        scratch.with_storage(|| ctx.collection_vec(cycles.len(), "catia_mesh_occurrence_faces"))?;
+    for face_cycles in ctx.admit_iter(cycles, "catia_mesh_occurrence_faces")? {
+        let rows = scratch.with_storage(|| {
             ctx.collect_indexed_vec(face_cycles.len(), "catia_mesh_cycle_occurrences", |_| {
                 Ok(Vec::<MeshEdgeRun>::new())
-            })?;
-        ctx.push_vec(
-            &mut occurrences_by_cycle,
-            rows,
-            "catia_mesh_occurrence_faces",
-        )?;
+            })
+        })?;
+        occurrences_by_cycle.push(rows);
     }
-    let mut present_edges_by_face =
+    let mut present_edges_by_face = scratch.with_storage(|| {
         ctx.collect_indexed_vec(cycles.len(), "catia_mesh_face_edges", |_| {
             Ok(HashSet::<usize>::new())
-        })?;
-    for values in occurrences {
-        for &occurrence in values {
+        })
+    })?;
+    let mut charged_steps = occurrences.iter();
+    while let Some(values) =
+        ctx.next_charged(&mut charged_steps, "catia_mesh_cycle_occurrence_entries")?
+    {
+        let mut charged_steps = values.iter();
+        while let Some(&occurrence) =
+            ctx.next_charged(&mut charged_steps, "catia_mesh_cycle_occurrence_entries")?
+        {
             let Some(face_cycles) = occurrences_by_cycle.get_mut(occurrence.face) else {
                 return Ok(None);
             };
             let Some(cycle_occurrences) = face_cycles.get_mut(occurrence.cycle) else {
                 return Ok(None);
             };
-            ctx.push_vec(
-                cycle_occurrences,
-                occurrence,
-                "catia_mesh_cycle_occurrence_entries",
-            )?;
-            ctx.insert_hash_set(
-                &mut present_edges_by_face[occurrence.face],
-                occurrence.edge,
-                "catia_mesh_present_face_edges",
-            )?;
+            scratch.with_storage(|| {
+                ctx.push_vec(
+                    cycle_occurrences,
+                    occurrence,
+                    "catia_mesh_cycle_occurrence_entries",
+                )?;
+                ctx.insert_hash_set(
+                    &mut present_edges_by_face[occurrence.face],
+                    occurrence.edge,
+                    "catia_mesh_present_face_edges",
+                )
+            })?;
         }
     }
-    let mut edges_by_face =
-        ctx.collect_indexed_vec(cycles.len(), "catia_mesh_edges_by_face", |_| Ok(Vec::new()))?;
-    for (edge, faces) in edge_faces.iter().copied().enumerate() {
-        for face in faces {
-            if face >= cycles.len() {
-                return Ok(None);
-            }
+    let mut edges_by_face = scratch.with_storage(|| {
+        ctx.collect_indexed_vec(cycles.len(), "catia_mesh_edges_by_face", |_| Ok(Vec::new()))
+    })?;
+    let mut charged_steps = edge_faces.iter().enumerate();
+    while let Some((edge, &faces)) =
+        ctx.next_charged(&mut charged_steps, "catia_mesh_face_edge_entries")?
+    {
+        if faces[0] >= cycles.len() || faces[1] >= cycles.len() {
+            return Ok(None);
         }
-        ctx.push_vec(
-            &mut edges_by_face[faces[0]],
-            edge,
-            "catia_mesh_face_edge_entries",
-        )?;
-        if faces[1] != faces[0] {
-            ctx.push_vec(
-                &mut edges_by_face[faces[1]],
-                edge,
-                "catia_mesh_face_edge_entries",
-            )?;
+        for face in [Some(faces[0]), (faces[1] != faces[0]).then_some(faces[1])]
+            .into_iter()
+            .flatten()
+        {
+            scratch.with_storage(|| {
+                ctx.push_vec(
+                    &mut edges_by_face[face],
+                    edge,
+                    "catia_mesh_face_edge_entries",
+                )
+            })?;
         }
     }
-    let mut coverage = Vec::new();
-    for (face, face_cycles) in cycles.iter().enumerate() {
+    let mut coverage = ctx.collection_vec(cycles.len(), "catia_mesh_coverage_faces")?;
+    let mut charged_steps = cycles.iter().enumerate();
+    while let Some((face, face_cycles)) =
+        ctx.next_charged(&mut charged_steps, "catia_mesh_coverage_faces")?
+    {
         let mut gaps = Vec::new();
-        for (cycle_index, cycle) in face_cycles.iter().enumerate() {
-            let mut covered = ctx.alloc_filled(cycle.len(), false, "catia_mesh_cycle_coverage")?;
-            for occurrence in &occurrences_by_cycle[face][cycle_index] {
-                let start = occurrence.start;
-                let segment_count = occurrence.segment_count;
-                for offset in 0..segment_count {
-                    let slot = &mut covered[(start + offset) % cycle.len()];
-                    if *slot {
-                        return Ok(None);
+        let mut charged_steps = face_cycles.iter().enumerate();
+        while let Some((cycle_index, cycle)) = ctx.next_charged(&mut charged_steps, OPERATION)? {
+            let (covered, _covered_storage) = ctx.with_scoped_storage(OPERATION, || {
+                let mut covered = ctx.alloc_filled(cycle.len(), false, OPERATION)?;
+                let mut charged_steps = occurrences_by_cycle[face][cycle_index].iter();
+                while let Some(occurrence) = ctx.next_charged(&mut charged_steps, OPERATION)? {
+                    let mut charged_steps = 0..occurrence.segment_count;
+                    while let Some(offset) = ctx.next_charged(&mut charged_steps, OPERATION)? {
+                        let slot = &mut covered[(occurrence.start + offset) % cycle.len()];
+                        if *slot {
+                            return Ok(None);
+                        }
+                        *slot = true;
                     }
-                    *slot = true;
                 }
-            }
-            if covered.iter().all(|value| !*value) {
+                Ok::<_, CodecError>(Some(covered))
+            })?;
+            let Some(covered) = covered else {
+                return Ok(None);
+            };
+            if ctx.all_by(&covered, |value| Ok(!*value), OPERATION)? {
                 ctx.push_vec(
                     &mut gaps,
                     MeshBoundaryGap {
@@ -2147,46 +2445,54 @@ fn mesh_face_coverage(
                     },
                     "catia_mesh_coverage_gaps",
                 )?;
-            } else {
-                for start in (0..covered.len()).filter(|&index| {
-                    !covered[index] && covered[(index + covered.len() - 1) % covered.len()]
-                }) {
-                    let length = (0..covered.len())
-                        .take_while(|offset| !covered[(start + offset) % covered.len()])
-                        .count();
-                    ctx.push_vec(
-                        &mut gaps,
-                        MeshBoundaryGap {
-                            cycle: cycle_index,
-                            start,
-                            length,
-                        },
-                        "catia_mesh_coverage_gaps",
-                    )?;
+                continue;
+            }
+            // A gap starts at an uncovered segment after a covered one; each
+            // uncovered segment belongs to one gap, so the walks share one pass.
+            let len = covered.len();
+            let mut charged_steps = 0..len;
+            while let Some(start) = ctx.next_charged(&mut charged_steps, OPERATION)? {
+                if covered[start] || !covered[(start + len - 1) % len] {
+                    continue;
                 }
+                let Some(length) = ctx.position_by(
+                    0..len,
+                    |offset| Ok(covered[(start + offset) % len]),
+                    OPERATION,
+                )?
+                else {
+                    return Ok(None);
+                };
+                ctx.push_vec(
+                    &mut gaps,
+                    MeshBoundaryGap {
+                        cycle: cycle_index,
+                        start,
+                        length,
+                    },
+                    "catia_mesh_coverage_gaps",
+                )?;
             }
         }
         let mut missing_edges = Vec::new();
-        for edge in edges_by_face[face]
-            .iter()
-            .copied()
-            .filter(|edge| !present_edges_by_face[face].contains(edge))
-        {
-            ctx.push_vec(
-                &mut missing_edges,
-                edge,
+        for &edge in ctx.admit_iter(&edges_by_face[face], "catia_mesh_coverage_missing_edges")? {
+            if !ctx.contains_hash_set(
+                &present_edges_by_face[face],
+                &edge,
                 "catia_mesh_coverage_missing_edges",
-            )?;
+            )? {
+                ctx.push_vec(
+                    &mut missing_edges,
+                    edge,
+                    "catia_mesh_coverage_missing_edges",
+                )?;
+            }
         }
-        ctx.push_vec(
-            &mut coverage,
-            MeshFaceCoverage {
-                face,
-                gaps,
-                missing_edges,
-            },
-            "catia_mesh_coverage_faces",
-        )?;
+        coverage.push(MeshFaceCoverage {
+            face,
+            gaps,
+            missing_edges,
+        });
     }
     Ok(Some(coverage))
 }
@@ -2203,18 +2509,26 @@ pub(crate) fn bounded_oriented_trail_orders(
         used: u64,
         edges: &mut Vec<usize>,
         orders: &mut Vec<Vec<usize>>,
+        (edge_storage, order_storage): (
+            &mut cadmpeg_core::decode::ScopedReservation<'_>,
+            &mut cadmpeg_core::decode::ScopedReservation<'_>,
+        ),
     ) -> Result<bool, CodecError> {
+        const OPERATION: &str = "catia_oriented_trail_order_work";
         let _depth = ctx.enter_nested("catia_oriented_trail_order_depth")?;
-        ctx.charge_work(1, "catia_oriented_trail_order_work")?;
+        ctx.charge_work(1, OPERATION)?;
         if orders.len() > limit {
             return Ok(false);
         }
         if index_from_u32(used.count_ones()) == trails.len() {
-            let order = ctx.copy_slice(edges, "catia_oriented_trail_order_copy")?;
-            ctx.push_vec(orders, order, "catia_oriented_trail_orders")?;
+            order_storage.with_storage(|| {
+                let order = ctx.copy_slice(edges, "catia_oriented_trail_order_copy")?;
+                ctx.push_vec(orders, order, "catia_oriented_trail_orders")
+            })?;
             return Ok(orders.len() <= limit);
         }
-        for (index, trail) in trails.iter().enumerate() {
+        let mut charged_steps = trails.iter().enumerate();
+        while let Some((index, trail)) = ctx.next_charged(&mut charged_steps, OPERATION)? {
             if used & (1 << index) != 0 {
                 continue;
             }
@@ -2223,12 +2537,21 @@ pub(crate) fn bounded_oriented_trail_orders(
                     continue;
                 }
                 let before = edges.len();
+                edge_storage.with_storage(|| {
+                    ctx.extend_vec(edges, trail, "catia_oriented_trail_scratch")
+                })?;
                 if reversed {
-                    edges.extend(trail.iter().rev());
-                } else {
-                    edges.extend(trail);
+                    ctx.reverse(&mut edges[before..], "catia_oriented_trail_scratch")?;
                 }
-                if !visit(ctx, trails, limit, used | (1 << index), edges, orders)? {
+                if !visit(
+                    ctx,
+                    trails,
+                    limit,
+                    used | (1 << index),
+                    edges,
+                    orders,
+                    (edge_storage, order_storage),
+                )? {
                     return Ok(false);
                 }
                 edges.truncate(before);
@@ -2240,16 +2563,33 @@ pub(crate) fn bounded_oriented_trail_orders(
     if trails.len() > index_from_u32(u64::BITS) {
         return Ok(None);
     }
-    let Some(edge_count) = trails
-        .iter()
-        .try_fold(0usize, |total, trail| total.checked_add(trail.len()))
-    else {
-        return Err(ctx.refuse_codec_limit("catia_oriented_trail_scratch", u64::MAX, u64::MAX));
-    };
-    let mut edges = Vec::new();
-    ctx.reserve_vec(&mut edges, edge_count, "catia_oriented_trail_scratch")?;
+    let mut edge_count = 0usize;
+    for trail in ctx.admit_iter(trails, "catia_oriented_trail_scratch")? {
+        edge_count = edge_count.checked_add(trail.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit("catia_oriented_trail_scratch", u64::MAX, u64::MAX)
+        })?;
+    }
+    let mut scratch = ctx.reserve_scoped(0, "catia_oriented_trail_scratch")?;
+    let mut edges = scratch.with_storage(|| {
+        let mut edges = Vec::new();
+        ctx.reserve_capacity(&mut edges, edge_count, "catia_oriented_trail_scratch")?;
+        Ok::<_, CodecError>(edges)
+    })?;
     let mut orders = Vec::new();
-    Ok(visit(ctx, trails, limit, 0, &mut edges, &mut orders)?.then_some(orders))
+    let mut order_storage = ctx.reserve_scoped(0, "catia_oriented_trail_orders")?;
+    if !visit(
+        ctx,
+        trails,
+        limit,
+        0,
+        &mut edges,
+        &mut orders,
+        (&mut scratch, &mut order_storage),
+    )? {
+        return Ok(None);
+    }
+    order_storage.commit()?;
+    Ok(Some(orders))
 }
 
 pub(crate) fn bounded_endpoint_cycle_orders(
@@ -2258,13 +2598,16 @@ pub(crate) fn bounded_endpoint_cycle_orders(
     edge_candidates: &[Vec<[usize; 2]>],
     limit: usize,
 ) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
+    const OPERATION: &str = "catia_endpoint_cycle_order_work";
+
     struct Search<'a> {
         ctx: &'a DecodeContext<'a>,
         missing: &'a [usize],
-        transitions: &'a HashMap<usize, Vec<(usize, usize)>>,
+        transitions: &'a BTreeMap<usize, Vec<(usize, usize)>>,
         limit: usize,
-        operations_left: usize,
-        orders: HashSet<Vec<usize>>,
+        budget: WorkBudget<'a>,
+        orders: BTreeSet<Vec<usize>>,
+        order_storage: cadmpeg_core::decode::ScopedReservation<'a>,
     }
 
     impl Search<'_> {
@@ -2276,33 +2619,38 @@ pub(crate) fn bounded_endpoint_cycle_orders(
             order: &mut Vec<usize>,
         ) -> Result<bool, CodecError> {
             let _depth = self.ctx.enter_nested("catia_endpoint_cycle_order_depth")?;
-            self.ctx.charge_work(1, "catia_endpoint_cycle_order_work")?;
-            let Some(operations_left) = self.operations_left.checked_sub(1) else {
+            // One local unit visits a state or a transition.
+            if !self.budget.charge() {
                 return Ok(false);
-            };
-            self.operations_left = operations_left;
+            }
             if order.len() == self.missing.len() {
-                if current_point == first_point && !self.orders.contains(order) {
-                    let saved = self
-                        .ctx
-                        .copy_slice(order, "catia_endpoint_cycle_order_copy")?;
-                    self.ctx.insert_hash_set(
-                        &mut self.orders,
-                        saved,
+                if current_point == first_point
+                    && !self.ctx.contains_btree_set(
+                        &self.orders,
+                        &*order,
                         "catia_endpoint_cycle_orders",
-                    )?;
+                    )?
+                {
+                    let ctx = self.ctx;
+                    self.order_storage.with_storage(|| {
+                        let saved = ctx.copy_slice(order, "catia_endpoint_cycle_order_copy")?;
+                        ctx.insert_btree_set(&mut self.orders, saved, "catia_endpoint_cycle_orders")
+                    })?;
                 }
                 return Ok(self.orders.len() <= self.limit);
             }
-            let Some(transition_count) = self.transitions.get(&current_point).map(Vec::len) else {
+            let Some(steps) = self.ctx.get_btree_map(
+                self.transitions,
+                &current_point,
+                "catia_endpoint_cycle_transition_points",
+            )?
+            else {
                 return Ok(true);
             };
-            for index in 0..transition_count {
-                let (rank, next_point) = self.transitions[&current_point][index];
-                let Some(operations_left) = self.operations_left.checked_sub(1) else {
+            for &(rank, next_point) in steps {
+                if !self.budget.charge() {
                     return Ok(false);
-                };
-                self.operations_left = operations_left;
+                }
                 if used & (1 << rank) != 0 {
                     continue;
                 }
@@ -2318,93 +2666,99 @@ pub(crate) fn bounded_endpoint_cycle_orders(
 
     if missing.is_empty()
         || missing.len() > index_from_u32(u64::BITS)
-        || missing
-            .iter()
-            .any(|&edge| edge_candidates.get(edge).is_none_or(Vec::is_empty))
+        || ctx.any_by(
+            missing,
+            |&edge| Ok(edge_candidates.get(edge).is_none_or(Vec::is_empty)),
+            OPERATION,
+        )?
     {
         return Ok(None);
     }
-    let mut missing = ctx.copy_slice(missing, "catia_endpoint_cycle_missing_edges")?;
-    ctx.sort_unstable_by(
-        &mut missing,
-        |value| value,
-        Ord::cmp,
-        "catia_endpoint_cycle_missing_sort",
-    )?;
+    let mut scratch = ctx.reserve_scoped(0, "catia_endpoint_cycle_missing_edges")?;
+    let missing = scratch.with_storage(|| {
+        let mut missing = ctx.copy_slice(missing, "catia_endpoint_cycle_missing_edges")?;
+        ctx.sort_unstable_by(
+            &mut missing,
+            |value| value,
+            Ord::cmp,
+            "catia_endpoint_cycle_missing_sort",
+        )?;
+        Ok::<_, CodecError>(missing)
+    })?;
     let first_edge = missing[0];
-    let mut transitions = HashMap::<usize, Vec<(usize, usize)>>::new();
-    for (rank, &edge) in missing.iter().enumerate().skip(1) {
-        for &[left, right] in &edge_candidates[edge] {
-            ctx.admit_hash_map_entry(
-                &mut transitions,
-                &left,
-                "catia_endpoint_cycle_transition_points",
-            )?;
-            ctx.push_vec(
-                transitions.entry(left).or_default(),
-                (rank, right),
-                "catia_endpoint_cycle_transition_steps",
-            )?;
-            if left != right {
-                ctx.admit_hash_map_entry(
-                    &mut transitions,
-                    &right,
-                    "catia_endpoint_cycle_transition_points",
-                )?;
-                ctx.push_vec(
-                    transitions.entry(right).or_default(),
-                    (rank, left),
-                    "catia_endpoint_cycle_transition_steps",
-                )?;
+    let mut transitions = BTreeMap::<usize, Vec<(usize, usize)>>::new();
+    for (offset, &edge) in ctx
+        .admit_iter(&missing[1..], "catia_endpoint_cycle_transition_steps")?
+        .enumerate()
+    {
+        let rank = offset + 1;
+        for &[left, right] in ctx.admit_iter(
+            &edge_candidates[edge],
+            "catia_endpoint_cycle_transition_steps",
+        )? {
+            for (from, to) in [
+                Some((left, right)),
+                (left != right).then_some((right, left)),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                scratch.with_storage(|| {
+                    ctx.push_btree_group(
+                        &mut transitions,
+                        from,
+                        (rank, to),
+                        "catia_endpoint_cycle_transition_points",
+                        "catia_endpoint_cycle_transition_steps",
+                    )
+                })?;
             }
         }
     }
-    for values in transitions.values_mut() {
+    for (_, values) in ctx.admit_iter(&mut transitions, "catia_endpoint_cycle_transition_sort")? {
         ctx.sort_unstable_by(
             &mut *values,
             |value| value,
             Ord::cmp,
             "catia_endpoint_cycle_transition_sort",
         )?;
-        values.dedup();
+        ctx.dedup_vec(values, "catia_endpoint_cycle_transition_sort")?;
     }
     let mut search = Search {
         ctx,
         missing: &missing,
         transitions: &transitions,
         limit,
-        operations_left: match limit.checked_mul(16) {
-            Some(operations) => operations,
+        budget: match limit.checked_mul(16) {
+            Some(operations) => ctx.work_budget(u64_from_index(operations)),
             None => return Ok(None),
         },
-        orders: HashSet::new(),
+        orders: BTreeSet::new(),
+        order_storage: ctx.reserve_scoped(0, "catia_endpoint_cycle_orders")?,
     };
-    let mut first_pairs = ctx.copy_slice(
-        &edge_candidates[first_edge],
-        "catia_endpoint_cycle_first_pairs",
-    )?;
-    for pair in &mut first_pairs {
+    let first_pairs = scratch.with_storage(|| {
+        let mut first_pairs = ctx.collect_vec(
+            edge_candidates[first_edge]
+                .iter()
+                .map(|&[left, right]| [left.min(right), left.max(right)]),
+            "catia_endpoint_cycle_first_pairs",
+        )?;
         ctx.sort_unstable_by(
-            pair,
+            &mut first_pairs,
             |value| value,
             Ord::cmp,
-            "catia_endpoint_cycle_pair_sort",
+            "catia_endpoint_cycle_first_pairs_sort",
         )?;
-    }
-    ctx.sort_unstable_by(
-        &mut first_pairs,
-        |value| value,
-        Ord::cmp,
-        "catia_endpoint_cycle_first_pairs_sort",
-    )?;
-    first_pairs.dedup();
-    for [first_point, current_point] in first_pairs {
-        let mut order = Vec::new();
-        ctx.reserve_vec(
-            &mut order,
-            missing.len(),
-            "catia_endpoint_cycle_order_scratch",
-        )?;
+        ctx.dedup_vec(&mut first_pairs, "catia_endpoint_cycle_first_pairs")?;
+        Ok::<_, CodecError>(first_pairs)
+    })?;
+    let mut order = scratch
+        .with_storage(|| ctx.collection_vec(missing.len(), "catia_endpoint_cycle_order_scratch"))?;
+    let mut charged_steps = first_pairs.iter();
+    while let Some(&[first_point, current_point]) =
+        ctx.next_charged(&mut charged_steps, "catia_endpoint_cycle_first_pairs")?
+    {
+        order.clear();
         order.push(first_edge);
         if !search.walk(first_point, current_point, 1, &mut order)? {
             return Ok(None);
@@ -2413,20 +2767,47 @@ pub(crate) fn bounded_endpoint_cycle_orders(
     if search.orders.is_empty() {
         return Ok(None);
     }
-    let mut orders = Vec::new();
-    ctx.reserve_vec(
-        &mut orders,
-        search.orders.len(),
+    // The orders come out of the set ascending.
+    ctx.try_collect_vec(
+        search
+            .orders
+            .iter()
+            .map(|order| ctx.copy_slice(order, "catia_endpoint_cycle_result_copy")),
         "catia_endpoint_cycle_result_rows",
-    )?;
-    orders.extend(search.orders);
-    ctx.sort_unstable_by(
-        &mut orders,
-        |value| value,
-        Ord::cmp,
-        "catia_endpoint_cycle_orders_sort",
-    )?;
-    Ok(Some(orders))
+    )
+    .map(Some)
+}
+
+/// Per-edge endpoint point domains and, for each point, the points an edge
+/// can lead to from it.
+struct EndpointDomains {
+    points: Vec<BTreeSet<usize>>,
+    transitions: Vec<BTreeMap<usize, BTreeSet<usize>>>,
+}
+
+/// The points a gap walk may currently stand on: an edge's endpoint domain,
+/// a bound corner's points, or a set derived during the walk.
+#[derive(Clone, Copy)]
+enum PointSet<'s> {
+    Edge(usize),
+    Corner(MeshCorner),
+    Derived(&'s BTreeSet<usize>),
+}
+
+fn point_set<'s>(
+    ctx: &DecodeContext<'_>,
+    endpoints: Option<&'s EndpointDomains>,
+    corner_points: &'s MeshCornerPoints,
+    set: PointSet<'s>,
+) -> Result<&'s BTreeSet<usize>, CodecError> {
+    let found = match set {
+        PointSet::Edge(edge) => endpoints.and_then(|domains| domains.points.get(edge)),
+        PointSet::Corner(corner) => {
+            ctx.get_hash_map(corner_points, &corner, "catia_gap_corner_points")?
+        }
+        PointSet::Derived(points) => Some(points),
+    };
+    found.ok_or_else(|| CodecError::malformed("gap point set is missing"))
 }
 
 fn standard_mesh_missing_edge_assignment_domains(
@@ -2448,12 +2829,12 @@ fn standard_mesh_missing_edge_assignment_domains(
     type PlacementConstraints<'a> = (
         Option<&'a [[u32; 2]]>,
         &'a HashMap<MeshCorner, u32>,
-        Option<(&'a [Arc<HashSet<usize>>], &'a [PointTransitions])>,
+        Option<&'a EndpointDomains>,
         &'a MeshCornerPoints,
     );
-    type PointTransitions = HashMap<usize, Arc<HashSet<usize>>>;
     type DeadState = (usize, usize, u64, Option<u32>, Vec<usize>, bool);
 
+    #[derive(Clone, Copy)]
     struct EnumerateFaceInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5> {
         face: usize,
         gaps: &'input0 [MeshBoundaryGap],
@@ -2463,7 +2844,7 @@ fn standard_mesh_missing_edge_assignment_domains(
         fixed_complete_row_spans: bool,
         constraints: PlacementConstraints<'input4>,
         canonicalize_spans: bool,
-        remaining_states: &'input5 mut usize,
+        remaining_states: &'input5 WorkBudget<'input5>,
     }
 
     fn enumerate_face(
@@ -2480,37 +2861,75 @@ fn standard_mesh_missing_edge_assignment_domains(
             fixed_complete_row_spans: bool,
             edge_ports: Option<&'a [[u32; 2]]>,
             corner_ports: &'a HashMap<MeshCorner, u32>,
-            edge_points: Option<&'a [Arc<HashSet<usize>>]>,
-            point_transitions: Option<&'a [PointTransitions]>,
+            endpoints: Option<&'a EndpointDomains>,
             corner_points: &'a MeshCornerPoints,
             canonical_spans: bool,
             canonical_gap_partitions: bool,
-            dead_states: HashSet<DeadState>,
-            remaining_states: &'a mut usize,
+            dead_states: HashMap<DeadState, cadmpeg_core::decode::ScopedReservation<'a>>,
+            storage: cadmpeg_core::decode::ScopedReservation<'a>,
+            remaining_states: &'a WorkBudget<'a>,
             states: usize,
             assignments: usize,
             complete: Vec<Vec<MeshEdgePlacementCandidate>>,
+            complete_storage: cadmpeg_core::decode::ScopedReservation<'a>,
         }
         struct GapSearchState<'input0> {
             gap: usize,
             offset: usize,
             used: u64,
             current_port: Option<u32>,
-            current_points: Option<Arc<HashSet<usize>>>,
+            current_points: Option<PointSet<'input0>>,
             gap_placed_start: usize,
             placed: &'input0 mut Vec<MeshEdgePlacementCandidate>,
         }
-        struct GapWalkState<'input0> {
-            gap: usize,
-            offset: usize,
-            used: u64,
-            current_port: Option<u32>,
-            current_points: Option<Arc<HashSet<usize>>>,
-            gap_placed_start: usize,
-            placed: &'input0 mut Vec<MeshEdgePlacementCandidate>,
-        }
-        impl Search<'_, '_> {
+        impl<'a> Search<'a, '_> {
             fn walk(&mut self, inputs: GapSearchState<'_>) -> Result<Option<()>, CodecError> {
+                let ctx = self.ctx;
+                let (points, points_storage) =
+                    ctx.with_scoped_storage("catia_gap_state_points", || {
+                        match inputs.current_points {
+                            Some(set) => {
+                                let current =
+                                    point_set(ctx, self.endpoints, self.corner_points, set)?;
+                                ctx.collect_vec(current.iter().copied(), "catia_gap_state_points")
+                            }
+                            None => Ok(Vec::new()),
+                        }
+                    })?;
+                let has_flexible = inputs.placed.len() > inputs.gap_placed_start;
+                let state = (
+                    inputs.gap,
+                    inputs.offset,
+                    inputs.used,
+                    inputs.current_port,
+                    points,
+                    has_flexible,
+                );
+                if ctx
+                    .get_hash_map(&self.dead_states, &state, "catia_gap_dead_states")?
+                    .is_some()
+                {
+                    return Ok(Some(()));
+                }
+                let before = self.assignments;
+                let Some(()) = self.walk_state(inputs)? else {
+                    return Ok(None);
+                };
+                if self.assignments == before {
+                    let dead_states = &mut self.dead_states;
+                    self.storage.with_storage(|| {
+                        ctx.insert_hash_map(
+                            dead_states,
+                            state,
+                            points_storage,
+                            "catia_gap_dead_states",
+                        )
+                    })?;
+                }
+                Ok(Some(()))
+            }
+
+            fn walk_state(&mut self, inputs: GapSearchState<'_>) -> Result<Option<()>, CodecError> {
                 let GapSearchState {
                     gap,
                     offset,
@@ -2520,78 +2939,13 @@ fn standard_mesh_missing_edge_assignment_domains(
                     gap_placed_start,
                     placed,
                 } = inputs;
+                let ctx = self.ctx;
 
-                let mut points = Vec::new();
-                if let Some(current) = current_points.as_ref() {
-                    self.ctx
-                        .reserve_vec(&mut points, current.len(), "catia_gap_state_points")?;
-                    points.extend(current.iter().copied());
-                }
-                self.ctx.sort_unstable_by(
-                    &mut points,
-                    |value| value,
-                    Ord::cmp,
-                    "catia_gap_state_points_sort",
-                )?;
-                let has_flexible = placed.len() > gap_placed_start;
-                let state = (gap, offset, used, current_port, points, has_flexible);
-                if self.dead_states.contains(&state) {
-                    return Ok(Some(()));
-                }
-                let before = self.assignments;
-                let Some(()) = self.walk_state(GapWalkState {
-                    gap,
-                    offset,
-                    used,
-                    current_port,
-                    current_points,
-                    gap_placed_start,
-                    placed,
-                })?
-                else {
+                let _depth = ctx.enter_nested("catia_gap_assignment_depth")?;
+                // One local unit visits one gap-search state across all retries.
+                if !self.remaining_states.charge() {
                     return Ok(None);
-                };
-                if self.assignments == before {
-                    let bytes = state
-                        .4
-                        .len()
-                        .checked_mul(std::mem::size_of::<usize>())
-                        .map(u64_from_index)
-                        .ok_or_else(|| {
-                            self.ctx.refuse_codec_limit(
-                                "catia_gap_dead_state_points",
-                                u64::MAX,
-                                u64::MAX,
-                            )
-                        })?;
-                    self.ctx
-                        .charge_retained(bytes, "catia_gap_dead_state_points")?;
-                    self.ctx.insert_hash_set(
-                        &mut self.dead_states,
-                        state,
-                        "catia_gap_dead_states",
-                    )?;
                 }
-                Ok(Some(()))
-            }
-
-            fn walk_state(&mut self, inputs: GapWalkState<'_>) -> Result<Option<()>, CodecError> {
-                let GapWalkState {
-                    gap,
-                    offset,
-                    used,
-                    current_port,
-                    current_points,
-                    gap_placed_start,
-                    placed,
-                } = inputs;
-
-                let _depth = self.ctx.enter_nested("catia_gap_assignment_depth")?;
-                self.ctx.charge_work(1, "catia_gap_assignment_work")?;
-                let Some(remaining) = self.remaining_states.checked_sub(1) else {
-                    return Ok(None);
-                };
-                *self.remaining_states = remaining;
                 let Some(states) = self.states.checked_add(1) else {
                     return Ok(None);
                 };
@@ -2605,14 +2959,11 @@ fn standard_mesh_missing_edge_assignment_domains(
                 if gap == self.gaps.len() {
                     if index_from_u32(used.count_ones()) == self.missing.len() {
                         self.assignments += 1;
-                        let copy = self
-                            .ctx
-                            .copy_slice(placed, "catia_gap_complete_placement_copy")?;
-                        self.ctx.push_vec(
-                            &mut self.complete,
-                            copy,
-                            "catia_gap_complete_assignments",
-                        )?;
+                        self.complete_storage.with_storage(|| {
+                            let copy =
+                                ctx.copy_slice(placed, "catia_gap_complete_placement_copy")?;
+                            ctx.push_vec(&mut self.complete, copy, "catia_gap_complete_assignments")
+                        })?;
                     }
                     return Ok(Some(()));
                 }
@@ -2621,55 +2972,65 @@ fn standard_mesh_missing_edge_assignment_domains(
                     && offset < target
                     && placed.len() > gap_placed_start;
                 if offset == target || can_expand_gap {
-                    let value = &self.gaps[gap];
+                    let value = self.gaps[gap];
                     let end = (value.start + value.length) % self.cycle_lengths[value.cycle];
-                    let port_closes = current_port
-                        .zip(
-                            self.corner_ports
-                                .get(&(self.face, value.cycle, end))
-                                .copied(),
-                        )
-                        .is_none_or(|(actual, expected)| actual == expected);
-                    let end_points = self.corner_points.get(&(self.face, value.cycle, end));
-                    let points_close = match current_points.as_ref().zip(end_points) {
-                        Some((actual, expected)) => self.ctx.any_by(
-                            expected,
-                            |point| {
-                                self.ctx.contains_hash_set(
-                                    actual,
-                                    point,
-                                    "catia_gap_corner_point_overlap",
-                                )
-                            },
-                            "catia_gap_corner_point_overlap",
-                        )?,
+                    let end_corner = (self.face, value.cycle, end);
+                    let port_closes = match current_port {
+                        Some(actual) => ctx
+                            .get_hash_map(self.corner_ports, &end_corner, "catia_gap_corner_ports")?
+                            .is_none_or(|expected| actual == *expected),
+                        None => true,
+                    };
+                    let end_points = ctx.get_hash_map(
+                        self.corner_points,
+                        &end_corner,
+                        "catia_gap_corner_points",
+                    )?;
+                    let points_close = match current_points.zip(end_points) {
+                        Some((set, expected)) => {
+                            let actual = point_set(ctx, self.endpoints, self.corner_points, set)?;
+                            ctx.any_by(
+                                expected,
+                                |point| {
+                                    ctx.contains_btree_set(
+                                        actual,
+                                        point,
+                                        "catia_gap_corner_point_overlap",
+                                    )
+                                },
+                                "catia_gap_corner_point_overlap",
+                            )?
+                        }
                         None => true,
                     };
                     if port_closes && points_close {
-                        let next_port = self.gaps.get(gap + 1).and_then(|next| {
-                            self.corner_ports
-                                .get(&(self.face, next.cycle, next.start))
-                                .copied()
-                        });
-                        let next_points = if let Some(source) =
-                            self.gaps.get(gap + 1).and_then(|next| {
-                                self.corner_points.get(&(self.face, next.cycle, next.start))
-                            }) {
-                            Some(Arc::new(
-                                self.ctx.collect_hash_set(
-                                    self.ctx
-                                        .admit_iter(source, "catia_gap_next_corner_points")?
-                                        .copied(),
-                                    "catia_gap_next_corner_points",
-                                )?,
-                            ))
-                        } else {
-                            None
+                        let next_corner = self
+                            .gaps
+                            .get(gap + 1)
+                            .map(|next| (self.face, next.cycle, next.start));
+                        let next_port = match next_corner {
+                            Some(corner) => ctx
+                                .get_hash_map(self.corner_ports, &corner, "catia_gap_corner_ports")?
+                                .copied(),
+                            None => None,
                         };
-                        let saved = self.ctx.copy_slice(
-                            &placed[gap_placed_start..],
-                            "catia_gap_saved_placements",
-                        )?;
+                        let next_points = match next_corner {
+                            Some(corner) => ctx
+                                .contains_key_hash_map(
+                                    self.corner_points,
+                                    &corner,
+                                    "catia_gap_next_corner_points",
+                                )?
+                                .then_some(PointSet::Corner(corner)),
+                            None => None,
+                        };
+                        let (saved, _saved_storage) =
+                            ctx.with_scoped_storage("catia_gap_saved_placements", || {
+                                ctx.copy_slice(
+                                    &placed[gap_placed_start..],
+                                    "catia_gap_saved_placements",
+                                )
+                            })?;
                         if offset < target {
                             let slack = target - offset;
                             let Some(flexible) = placed.get_mut(gap_placed_start) else {
@@ -2680,7 +3041,10 @@ fn standard_mesh_missing_edge_assignment_domains(
                             };
                             flexible.segment_count = count;
                             let mut at = value.start;
-                            for placement in &mut placed[gap_placed_start..] {
+                            let mut charged_steps = placed[gap_placed_start..].iter_mut();
+                            while let Some(placement) =
+                                ctx.next_charged(&mut charged_steps, "catia_gap_saved_placements")?
+                            {
                                 placement.start = at % self.cycle_lengths[value.cycle];
                                 let Some(next) = at.checked_add(placement.segment_count) else {
                                     return Ok(None);
@@ -2688,20 +3052,21 @@ fn standard_mesh_missing_edge_assignment_domains(
                                 at = next;
                             }
                         }
+                        let next_start = placed.len();
                         let Some(()) = self.walk(GapSearchState {
                             gap: gap + 1,
                             offset: 0,
                             used,
                             current_port: next_port,
                             current_points: next_points,
-                            gap_placed_start: placed.len(),
+                            gap_placed_start: next_start,
                             placed,
                         })?
                         else {
                             return Ok(None);
                         };
                         placed.truncate(gap_placed_start);
-                        placed.extend(saved);
+                        ctx.extend_vec(placed, &saved, "catia_gap_placed_edges")?;
                         if offset == target {
                             return Ok(Some(()));
                         }
@@ -2709,7 +3074,10 @@ fn standard_mesh_missing_edge_assignment_domains(
                         return Ok(Some(()));
                     }
                 }
-                for rank in 0..self.missing.len() {
+                let mut charged_steps = 0..self.missing.len();
+                while let Some(rank) =
+                    ctx.next_charged(&mut charged_steps, "catia_gap_assignment_work")?
+                {
                     if used & (1 << rank) != 0 {
                         continue;
                     }
@@ -2720,105 +3088,61 @@ fn standard_mesh_missing_edge_assignment_domains(
                             == EdgeBoundaryLayout::CompleteBoundaryRun)
                         .then(|| self.rows[edge].handles().len().checked_sub(1))
                         .flatten();
+                    // Every other unused edge still needs one segment.
                     let canonical_span = row_span.or_else(|| {
                         self.canonical_spans
                             .then(|| {
                                 if self.canonical_gap_partitions {
                                     return Some(1);
                                 }
-                                self.missing
-                                    .iter()
-                                    .enumerate()
-                                    .filter(|(other, _)| *other != rank && used & (1 << other) == 0)
-                                    .try_fold(remaining, |available, _| available.checked_sub(1))
+                                let others =
+                                    self.missing.len() - index_from_u32(used.count_ones()) - 1;
+                                remaining.checked_sub(others)
                             })
                             .flatten()
                     });
+                    // The edge's next ports, at most two.
+                    let next_ports: [Option<Option<u32>>; 2] = match (self.edge_ports, current_port)
+                    {
+                        (Some(edge_ports), Some(current)) if edge_ports[edge][0] == current => {
+                            [Some(Some(edge_ports[edge][1])), None]
+                        }
+                        (Some(edge_ports), Some(current)) if edge_ports[edge][1] == current => {
+                            [Some(Some(edge_ports[edge][0])), None]
+                        }
+                        (Some(_), Some(_)) => continue,
+                        (Some(edge_ports), None) => {
+                            let [first, second] = edge_ports[edge];
+                            [
+                                Some(Some(first.min(second))),
+                                (first != second).then_some(Some(first.max(second))),
+                            ]
+                        }
+                        (None, _) => [Some(None), None],
+                    };
+                    let derived = match (self.endpoints, current_points) {
+                        (Some(endpoints), Some(set)) if !endpoints.points[edge].is_empty() => {
+                            Some(self.derive_points(endpoints, edge, set)?)
+                        }
+                        _ => None,
+                    };
+                    let next_points = match self.endpoints {
+                        Some(endpoints) if !endpoints.points[edge].is_empty() => {
+                            match derived.as_ref() {
+                                Some((points, _storage)) if points.is_empty() => continue,
+                                Some((points, _storage)) => Some(PointSet::Derived(points)),
+                                None => Some(PointSet::Edge(edge)),
+                            }
+                        }
+                        _ => None,
+                    };
                     let first_span = canonical_span.unwrap_or(1);
                     let last_span = canonical_span.unwrap_or(remaining);
-                    for segment_count in first_span..=last_span {
+                    let mut charged_steps = first_span..=last_span;
+                    while let Some(segment_count) =
+                        ctx.next_charged(&mut charged_steps, "catia_gap_assignment_work")?
+                    {
                         if segment_count == 0 || segment_count > remaining {
-                            continue;
-                        }
-                        let mut next_ports = match (self.edge_ports, current_port) {
-                            (Some(edge_ports), Some(current)) if edge_ports[edge][0] == current => {
-                                self.ctx.alloc_filled(
-                                    1,
-                                    Some(edge_ports[edge][1]),
-                                    "catia_gap_next_ports",
-                                )?
-                            }
-                            (Some(edge_ports), Some(current)) if edge_ports[edge][1] == current => {
-                                self.ctx.alloc_filled(
-                                    1,
-                                    Some(edge_ports[edge][0]),
-                                    "catia_gap_next_ports",
-                                )?
-                            }
-                            (Some(_), Some(_)) => continue,
-                            (Some(edge_ports), None) => {
-                                let mut ports = self.ctx.alloc_filled(
-                                    1,
-                                    Some(edge_ports[edge][0]),
-                                    "catia_gap_next_ports",
-                                )?;
-                                self.ctx.push_vec(
-                                    &mut ports,
-                                    Some(edge_ports[edge][1]),
-                                    "catia_gap_next_ports",
-                                )?;
-                                ports
-                            }
-                            (None, _) => self.ctx.alloc_filled(1, None, "catia_gap_next_ports")?,
-                        };
-                        self.ctx.sort_unstable_by(
-                            &mut next_ports,
-                            |value| value,
-                            Ord::cmp,
-                            "catia_gap_next_ports_sort",
-                        )?;
-                        next_ports.dedup();
-                        let next_points =
-                            if let Some(edge_points) =
-                                self.edge_points.filter(|points| !points[edge].is_empty())
-                            {
-                                match &current_points {
-                                    None => Some(Arc::clone(&edge_points[edge])),
-                                    Some(current) => {
-                                        let mut next = HashSet::new();
-                                        if let Some(transitions) = self.point_transitions {
-                                            for point in current.iter() {
-                                                if let Some(points) = transitions[edge].get(point) {
-                                                    for &point in points.iter() {
-                                                        if !next.contains(&point) {
-                                                            let bytes = u64_from_index(
-                                                                std::mem::size_of::<usize>(),
-                                                            );
-                                                            self.ctx.charge_retained(
-                                                                bytes,
-                                                                "catia_gap_transition_points",
-                                                            )?;
-                                                            self.ctx.insert_hash_set(
-                                                                &mut next,
-                                                                point,
-                                                                "catia_gap_transition_points",
-                                                            )?;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        let bytes =
-                                            u64_from_index(std::mem::size_of::<HashSet<usize>>());
-                                        self.ctx
-                                            .charge_retained(bytes, "catia_gap_transition_set")?;
-                                        Some(Arc::new(next))
-                                    }
-                                }
-                            } else {
-                                None
-                            };
-                        if next_points.as_ref().is_some_and(|points| points.is_empty()) {
                             continue;
                         }
                         let value = MeshEdgePlacementCandidate {
@@ -2829,14 +3153,14 @@ fn standard_mesh_missing_edge_assignment_domains(
                                 % self.cycle_lengths[self.gaps[gap].cycle],
                             segment_count,
                         };
-                        self.ctx.push_vec(placed, value, "catia_gap_placed_edges")?;
-                        for next_port in next_ports {
+                        ctx.push_vec(placed, value, "catia_gap_placed_edges")?;
+                        for next_port in next_ports.into_iter().flatten() {
                             let Some(()) = self.walk(GapSearchState {
                                 gap,
                                 offset: offset + segment_count,
                                 used: used | (1 << rank),
                                 current_port: next_port,
-                                current_points: next_points.clone(),
+                                current_points: next_points,
                                 gap_placed_start,
                                 placed,
                             })?
@@ -2847,8 +3171,35 @@ fn standard_mesh_missing_edge_assignment_domains(
                         placed.pop();
                     }
                 }
-                drop(current_points);
                 Ok(Some(()))
+            }
+
+            /// The points an edge leads to from the current points, held by
+            /// the caller while its branch walks that edge.
+            fn derive_points(
+                &self,
+                endpoints: &EndpointDomains,
+                edge: usize,
+                current: PointSet<'_>,
+            ) -> Result<(BTreeSet<usize>, cadmpeg_core::decode::ScopedReservation<'a>), CodecError>
+            {
+                const OPERATION: &str = "catia_gap_transition_points";
+                let ctx = self.ctx;
+                let source = point_set(ctx, self.endpoints, self.corner_points, current)?;
+                let transitions = &endpoints.transitions[edge];
+                ctx.with_scoped_storage(OPERATION, || {
+                    let mut next = BTreeSet::new();
+                    for point in ctx.admit_iter(source, OPERATION)? {
+                        let Some(targets) = ctx.get_btree_map(transitions, point, OPERATION)?
+                        else {
+                            continue;
+                        };
+                        for &target in ctx.admit_iter(targets, OPERATION)? {
+                            ctx.insert_btree_set(&mut next, target, OPERATION)?;
+                        }
+                    }
+                    Ok::<_, CodecError>(next)
+                })
             }
         }
 
@@ -2864,11 +3215,27 @@ fn standard_mesh_missing_edge_assignment_domains(
             remaining_states,
         } = inputs;
 
-        let (edge_ports, corner_ports, endpoint_constraints, corner_points) = constraints;
+        let (edge_ports, corner_ports, endpoints, corner_points) = constraints;
         if missing.len() > index_from_u32(u64::BITS) {
             return Ok(None);
         }
-        let (edge_points, point_transitions) = endpoint_constraints.unzip();
+        let mut storage = ctx.reserve_scoped(0, "catia_gap_placed_edges")?;
+        // A walk places each missing edge at most once.
+        let mut placed =
+            storage.with_storage(|| ctx.collection_vec(missing.len(), "catia_gap_placed_edges"))?;
+        let first_corner = gaps.first().map(|gap| (face, gap.cycle, gap.start));
+        let first_port = match first_corner {
+            Some(corner) => ctx
+                .get_hash_map(corner_ports, &corner, "catia_gap_corner_ports")?
+                .copied(),
+            None => None,
+        };
+        let first_points = match first_corner {
+            Some(corner) => ctx
+                .contains_key_hash_map(corner_points, &corner, "catia_gap_initial_corner_points")?
+                .then_some(PointSet::Corner(corner)),
+            None => None,
+        };
         let mut search = Search {
             ctx,
             face,
@@ -2879,8 +3246,7 @@ fn standard_mesh_missing_edge_assignment_domains(
             fixed_complete_row_spans,
             edge_ports,
             corner_ports,
-            edge_points,
-            point_transitions,
+            endpoints,
             corner_points,
             // Mesh span allocation does not change the ordered edge uses or
             // their endpoint quotient. Keep one allocation for each edge
@@ -2888,28 +3254,13 @@ fn standard_mesh_missing_edge_assignment_domains(
             // placement API above still enumerates every span allocation.
             canonical_spans: canonicalize_spans,
             canonical_gap_partitions: canonicalize_spans,
-            dead_states: HashSet::new(),
+            dead_states: HashMap::new(),
+            storage,
             remaining_states,
             states: 0,
             assignments: 0,
             complete: Vec::new(),
-        };
-        let first_port = gaps
-            .first()
-            .and_then(|gap| corner_ports.get(&(face, gap.cycle, gap.start)).copied());
-        let first_points = if let Some(source) = gaps
-            .first()
-            .and_then(|gap| corner_points.get(&(face, gap.cycle, gap.start)))
-        {
-            Some(Arc::new(
-                ctx.collect_hash_set(
-                    ctx.admit_iter(source, "catia_gap_initial_corner_points")?
-                        .copied(),
-                    "catia_gap_initial_corner_points",
-                )?,
-            ))
-        } else {
-            None
+            complete_storage: ctx.reserve_scoped(0, "catia_gap_complete_assignments")?,
         };
         if search
             .walk(GapSearchState {
@@ -2919,7 +3270,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                 current_port: first_port,
                 current_points: first_points,
                 gap_placed_start: 0,
-                placed: &mut Vec::new(),
+                placed: &mut placed,
             })?
             .is_none()
         {
@@ -2928,9 +3279,12 @@ fn standard_mesh_missing_edge_assignment_domains(
         if search.assignments == 0 || search.assignments > MAX_ASSIGNMENTS_PER_FACE {
             return Ok(None);
         }
+        search.complete_storage.commit()?;
         Ok(Some(search.complete))
     }
 
+    /// Placements built from oriented trails of edges with single endpoint
+    /// pairs; each gap takes the one trail its corner points admit.
     fn endpoint_trail_assignments(
         ctx: &DecodeContext<'_>,
         face: usize,
@@ -2940,287 +3294,277 @@ fn standard_mesh_missing_edge_assignment_domains(
         edge_points: &[Option<[usize; 2]>],
         corner_points: &MeshCornerPoints,
     ) -> Result<Option<Vec<Vec<MeshEdgePlacementCandidate>>>, CodecError> {
-        (|| -> Option<Result<Vec<Vec<MeshEdgePlacementCandidate>>, CodecError>> {
-            struct EndpointTrail {
-                edges: Vec<usize>,
-                start: usize,
-                end: usize,
-            }
+        const OPERATION: &str = "catia_trail_edges";
+        struct EndpointTrail {
+            edges: Vec<usize>,
+            start: usize,
+            end: usize,
+            /// The smallest edge, which orders the trails.
+            first_edge: usize,
+        }
 
-            impl cadmpeg_core::decode::cost::DecodeCost for EndpointTrail {
-                fn decode_cost(
-                    &self,
-                    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                    operation: &'static str,
-                ) -> Result<u64, cadmpeg_core::CodecError> {
-                    cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-                        &(&self.edges, self.start, self.end),
-                        ctx,
-                        operation,
-                    )
-                }
-            }
-
-            if gaps.is_empty()
-                || missing
-                    .iter()
-                    .any(|&edge| edge_points.get(edge).is_none_or(Option::is_none))
-            {
-                return None;
-            }
-            let mut at_point = HashMap::<usize, Vec<usize>>::new();
-            for &edge in missing {
-                for point in edge_points[edge]? {
-                    if let Err(error) =
-                        ctx.admit_hash_map_entry(&mut at_point, &point, "catia_trail_point_entries")
-                    {
-                        return Some(Err(error));
-                    }
-                    if let Err(error) = ctx.push_vec(
-                        at_point.entry(point).or_default(),
+        if gaps.is_empty()
+            || ctx.any_by(
+                missing,
+                |&edge| Ok(edge_points.get(edge).is_none_or(Option::is_none)),
+                OPERATION,
+            )?
+        {
+            return Ok(None);
+        }
+        let endpoints_of = |edge: usize| {
+            edge_points[edge].ok_or_else(|| CodecError::malformed("trail edge has no endpoints"))
+        };
+        let mut scratch = ctx.reserve_scoped(0, "catia_trail_point_entries")?;
+        // Each point lists the missing edges ending at it; a trail point has
+        // at most two.
+        let mut at_point = HashMap::<usize, Vec<usize>>::new();
+        let mut charged_steps = missing.iter();
+        while let Some(&edge) = ctx.next_charged(&mut charged_steps, "catia_trail_point_edges")? {
+            for point in endpoints_of(edge)? {
+                scratch.with_storage(|| {
+                    ctx.push_hash_group(
+                        &mut at_point,
+                        point,
                         edge,
+                        "catia_trail_point_entries",
                         "catia_trail_point_edges",
-                    ) {
-                        return Some(Err(error));
-                    }
-                }
-            }
-            if at_point.values().any(|edges| edges.len() > 2) {
-                return None;
-            }
-            let mut unseen = HashSet::new();
-            for &edge in missing {
-                if let Err(error) =
-                    ctx.insert_hash_set(&mut unseen, edge, "catia_trail_unseen_edges")
+                    )
+                })?;
+                if ctx
+                    .get_hash_map(&at_point, &point, "catia_trail_point_entries")?
+                    .is_some_and(|edges| edges.len() > 2)
                 {
-                    return Some(Err(error));
+                    return Ok(None);
                 }
             }
-            let mut trails = Vec::<EndpointTrail>::new();
-            while !unseen.is_empty() {
-                if let Err(error) = ctx.charge_work(1, "catia_missing_edge_iteration") {
-                    return Some(Err(error));
+        }
+        let incident = |point: usize| -> Result<&[usize], CodecError> {
+            Ok(ctx
+                .get_hash_map(&at_point, &point, "catia_trail_point_entries")?
+                .map_or(&[][..], Vec::as_slice))
+        };
+        let mut unseen = BTreeSet::new();
+        for &edge in ctx.admit_iter(missing, "catia_trail_unseen_edges")? {
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(&mut unseen, edge, "catia_trail_unseen_edges")
+            })?;
+        }
+        let mut trails = Vec::<EndpointTrail>::new();
+        while let Some(&smallest) = unseen.first() {
+            ctx.charge_work(1, "catia_missing_edge_iteration")?;
+            // Start at the smallest edge with an open end, else the smallest edge.
+            let open_start = ctx.find_by(
+                unseen.iter().copied(),
+                |&edge| {
+                    let pair = endpoints_of(edge)?;
+                    Ok(incident(pair[0])?.len() == 1 || incident(pair[1])?.len() == 1)
+                },
+                OPERATION,
+            )?;
+            let first = open_start.unwrap_or(smallest);
+            let endpoints = endpoints_of(first)?;
+            let start = if incident(endpoints[0])?.len() == 1 {
+                endpoints[0]
+            } else if incident(endpoints[1])?.len() == 1 {
+                endpoints[1]
+            } else {
+                endpoints[0]
+            };
+            let mut point = start;
+            let mut edge = first;
+            let mut trail = Vec::new();
+            loop {
+                ctx.charge_work(1, "catia_missing_edge_iteration")?;
+                if !ctx.remove_btree_set(&mut unseen, &edge, "catia_trail_unseen_edges")? {
+                    break;
                 }
-                let first = unseen
-                    .iter()
-                    .copied()
-                    .filter(|edge| {
-                        edge_points[*edge]
-                            .is_some_and(|pair| pair.iter().any(|point| at_point[point].len() == 1))
-                    })
-                    .min()
-                    .or_else(|| unseen.iter().copied().min())?;
-                let endpoints = edge_points[first]?;
-                let start = endpoints
-                    .iter()
-                    .copied()
-                    .find(|point| at_point[point].len() == 1)
-                    .unwrap_or(endpoints[0]);
-                let mut point = start;
-                let mut edge = first;
-                let mut trail = Vec::new();
-                loop {
-                    if let Err(error) = ctx.charge_work(1, "catia_missing_edge_iteration") {
-                        return Some(Err(error));
-                    }
-                    if !unseen.remove(&edge) {
-                        break;
-                    }
-                    if let Err(error) = ctx.push_vec(&mut trail, edge, "catia_trail_edges") {
-                        return Some(Err(error));
-                    }
-                    let endpoints = edge_points[edge]?;
-                    point = if endpoints[0] == point {
-                        endpoints[1]
-                    } else if endpoints[1] == point {
-                        endpoints[0]
-                    } else {
-                        return None;
-                    };
-                    let Some(next) = at_point[&point]
-                        .iter()
-                        .copied()
-                        .find(|candidate| unseen.contains(candidate))
-                    else {
-                        break;
-                    };
-                    edge = next;
-                }
-                if point == start && (gaps.len() != 1 || trail.len() != missing.len()) {
-                    return None;
-                }
-                if let Err(error) = ctx.push_vec(
+                scratch.with_storage(|| ctx.push_vec(&mut trail, edge, OPERATION))?;
+                let endpoints = endpoints_of(edge)?;
+                point = if endpoints[0] == point {
+                    endpoints[1]
+                } else if endpoints[1] == point {
+                    endpoints[0]
+                } else {
+                    return Ok(None);
+                };
+                let Some(next) = ctx.find_by(
+                    incident(point)?.iter().copied(),
+                    |candidate| ctx.contains_btree_set(&unseen, candidate, OPERATION),
+                    OPERATION,
+                )?
+                else {
+                    break;
+                };
+                edge = next;
+            }
+            if point == start && (gaps.len() != 1 || trail.len() != missing.len()) {
+                return Ok(None);
+            }
+            let first_edge = ctx.min(&trail, OPERATION)?.copied().unwrap_or(first);
+            scratch.with_storage(|| {
+                ctx.push_vec(
                     &mut trails,
                     EndpointTrail {
                         edges: trail,
                         start,
                         end: point,
+                        first_edge,
                     },
                     "catia_trail_rows",
-                ) {
-                    return Some(Err(error));
-                }
+                )
+            })?;
+        }
+        if gaps.len() > 1 {
+            if trails.len() != gaps.len() {
+                return Ok(None);
             }
-            if gaps.len() > 1 {
-                if trails.len() != gaps.len() {
-                    return None;
-                }
-                let mut available = trails;
-                if let Err(error) = ctx.stable_sort_by(
-                    &mut available,
-                    |value| value,
-                    |left, right| {
-                        left.edges
-                            .iter()
-                            .copied()
-                            .min()
-                            .cmp(&right.edges.iter().copied().min())
-                    },
-                    "catia_trail_sort",
-                ) {
-                    return Some(Err(error));
-                }
-                let mut placements = Vec::new();
-                if let Err(error) =
-                    ctx.reserve_vec(&mut placements, missing.len(), "catia_trail_placements")
-                {
-                    return Some(Err(error));
-                }
-                for gap in gaps {
-                    let mut candidates = Vec::new();
-                    for (index, trail) in available.iter().enumerate() {
-                        for reversed in [false, true] {
-                            let trail_start = if reversed { trail.end } else { trail.start };
-                            let trail_end = if reversed { trail.start } else { trail.end };
-                            let gap_end = (gap.start + gap.length) % cycle_lengths[gap.cycle];
-                            let Some(start_points) =
-                                corner_points.get(&(face, gap.cycle, gap.start))
-                            else {
-                                continue;
-                            };
-                            let Some(end_points) = corner_points.get(&(face, gap.cycle, gap_end))
-                            else {
-                                continue;
-                            };
-                            if !start_points.contains(&trail_start)
-                                || !end_points.contains(&trail_end)
-                            {
-                                continue;
-                            }
-                            let span = trail.edges.len();
-                            if span <= gap.length {
-                                if let Err(error) = ctx.push_vec(
-                                    &mut candidates,
-                                    (index, span, reversed),
-                                    "catia_trail_gap_candidates",
-                                ) {
-                                    return Some(Err(error));
-                                }
-                            }
-                        }
-                    }
-                    let [(trail_index, minimum_span, reversed)] = candidates.as_slice() else {
-                        return None;
-                    };
-                    let (trail_index, minimum_span, reversed) =
-                        (*trail_index, *minimum_span, *reversed);
-                    let trail = available.remove(trail_index);
-                    let mut edges = trail.edges;
-                    if reversed {
-                        edges.reverse();
-                    }
-                    let slack = gap.length - minimum_span;
-                    let mut offset = 0usize;
-                    for (index, edge) in edges.into_iter().enumerate() {
-                        let mut segment_count = 1usize;
-                        if index == 0 {
-                            segment_count = segment_count.checked_add(slack)?;
-                        }
-                        placements.push(MeshEdgePlacementCandidate {
-                            edge,
-                            face,
-                            cycle: gap.cycle,
-                            start: (gap.start + offset) % cycle_lengths[gap.cycle],
-                            segment_count,
-                        });
-                        offset = offset.checked_add(segment_count)?;
-                    }
-                }
-                let mut rows = Vec::new();
-                if let Err(error) =
-                    ctx.push_vec(&mut rows, placements, "catia_trail_placement_rows")
-                {
-                    return Some(Err(error));
-                }
-                return Some(Ok(rows));
-            }
-            let [gap] = gaps else {
-                return None;
-            };
-            if cycle_lengths.len() != 1
-                || gap.start != 0
-                || gap.cycle != 0
-                || gap.length != cycle_lengths[0]
-                || gap.length != missing.len()
-                || missing.iter().any(|&edge| rows[edge].handles().len() != 2)
+            let mut available = trails;
+            ctx.stable_sort_by_key(
+                &mut available,
+                |trail| trail.first_edge,
+                Ord::cmp,
+                "catia_trail_sort",
+            )?;
+            let mut placements = ctx.collection_vec(missing.len(), "catia_trail_placements")?;
+            let mut charged_steps = gaps.iter();
+            while let Some(gap) =
+                ctx.next_charged(&mut charged_steps, "catia_trail_gap_candidates")?
             {
-                return None;
-            }
-            if trails.len() > index_from_u32(u64::BITS) {
-                return None;
-            }
-            let mut trail_edges = Vec::new();
-            if let Err(error) = ctx.reserve_vec(
-                &mut trail_edges,
-                trails.len(),
-                "catia_trail_order_input_rows",
-            ) {
-                return Some(Err(error));
-            }
-            for trail in &trails {
-                let copy = match ctx.copy_slice(&trail.edges, "catia_trail_order_input_edges") {
-                    Ok(copy) => copy,
-                    Err(error) => return Some(Err(error)),
+                let gap_end = (gap.start + gap.length) % cycle_lengths[gap.cycle];
+                let start_points = ctx.get_hash_map(
+                    corner_points,
+                    &(face, gap.cycle, gap.start),
+                    "catia_trail_gap_candidates",
+                )?;
+                let end_points = ctx.get_hash_map(
+                    corner_points,
+                    &(face, gap.cycle, gap_end),
+                    "catia_trail_gap_candidates",
+                )?;
+                let (Some(start_points), Some(end_points)) = (start_points, end_points) else {
+                    return Ok(None);
                 };
-                trail_edges.push(copy);
-            }
-            let orders =
-                match bounded_oriented_trail_orders(ctx, &trail_edges, MAX_ASSIGNMENTS_PER_FACE) {
-                    Ok(Some(orders)) => orders,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
-            let mut assignments = Vec::new();
-            if let Err(error) = ctx.reserve_vec(
-                &mut assignments,
-                orders.len(),
-                "catia_trail_assignment_rows",
-            ) {
-                return Some(Err(error));
-            }
-            for order in orders {
-                let mut placements = Vec::new();
-                if let Err(error) = ctx.reserve_vec(
-                    &mut placements,
-                    order.len(),
-                    "catia_trail_assignment_placements",
-                ) {
-                    return Some(Err(error));
+                let mut candidate = None;
+                let mut charged_steps = available.iter().enumerate();
+                while let Some((index, trail)) =
+                    ctx.next_charged(&mut charged_steps, "catia_trail_gap_candidates")?
+                {
+                    for reversed in [false, true] {
+                        let (trail_start, trail_end) = if reversed {
+                            (trail.end, trail.start)
+                        } else {
+                            (trail.start, trail.end)
+                        };
+                        if trail.edges.len() <= gap.length
+                            && ctx.contains_btree_set(
+                                start_points,
+                                &trail_start,
+                                "catia_trail_gap_candidates",
+                            )?
+                            && ctx.contains_btree_set(
+                                end_points,
+                                &trail_end,
+                                "catia_trail_gap_candidates",
+                            )?
+                        {
+                            // A gap must admit exactly one oriented trail.
+                            if candidate.replace((index, reversed)).is_some() {
+                                return Ok(None);
+                            }
+                        }
+                    }
                 }
-                placements.extend(order.into_iter().enumerate().map(|(offset, edge)| {
-                    MeshEdgePlacementCandidate {
+                let Some((trail_index, reversed)) = candidate else {
+                    return Ok(None);
+                };
+                let mut trail = available.swap_remove(trail_index);
+                if reversed {
+                    ctx.reverse(&mut trail.edges, "catia_trail_edges")?;
+                }
+                let slack = gap.length - trail.edges.len();
+                let mut offset = 0usize;
+                let mut charged_steps = trail.edges.iter().enumerate();
+                while let Some((index, &edge)) =
+                    ctx.next_charged(&mut charged_steps, "catia_trail_placements")?
+                {
+                    let Some(segment_count) = 1usize.checked_add(usize::from(index == 0) * slack)
+                    else {
+                        return Ok(None);
+                    };
+                    placements.push(MeshEdgePlacementCandidate {
                         edge,
                         face,
                         cycle: gap.cycle,
-                        start: offset,
-                        segment_count: 1,
-                    }
-                }));
-                assignments.push(placements);
+                        start: (gap.start + offset) % cycle_lengths[gap.cycle],
+                        segment_count,
+                    });
+                    let Some(next) = offset.checked_add(segment_count) else {
+                        return Ok(None);
+                    };
+                    offset = next;
+                }
             }
-            Some(Ok(assignments))
-        })()
-        .transpose()
+            let mut rows = ctx.collection_vec(1, "catia_trail_placement_rows")?;
+            rows.push(placements);
+            return Ok(Some(rows));
+        }
+        let [gap] = gaps else {
+            return Ok(None);
+        };
+        if cycle_lengths.len() != 1
+            || gap.start != 0
+            || gap.cycle != 0
+            || gap.length != cycle_lengths[0]
+            || gap.length != missing.len()
+            || ctx.any_by(
+                missing,
+                |&edge| Ok(rows[edge].handles().len() != 2),
+                OPERATION,
+            )?
+            || trails.len() > index_from_u32(u64::BITS)
+        {
+            return Ok(None);
+        }
+        let trail_edges = scratch.with_storage(|| {
+            ctx.collect_vec(
+                trails.into_iter().map(|trail| trail.edges),
+                "catia_trail_order_input_rows",
+            )
+        })?;
+        let Some(orders) =
+            bounded_oriented_trail_orders(ctx, &trail_edges, MAX_ASSIGNMENTS_PER_FACE)?
+        else {
+            return Ok(None);
+        };
+        cycle_order_placements(ctx, face, gap.cycle, orders).map(Some)
+    }
+
+    /// One placement row per order, each edge covering one segment.
+    fn cycle_order_placements(
+        ctx: &DecodeContext<'_>,
+        face: usize,
+        cycle: usize,
+        orders: Vec<Vec<usize>>,
+    ) -> Result<Vec<Vec<MeshEdgePlacementCandidate>>, CodecError> {
+        let mut assignments = ctx.collection_vec(orders.len(), "catia_cycle_assignment_rows")?;
+        for order in ctx.admit_iter(orders, "catia_cycle_assignment_rows")? {
+            assignments.push(
+                ctx.collect_vec(
+                    order.into_iter().enumerate().map(|(offset, edge)| {
+                        MeshEdgePlacementCandidate {
+                            edge,
+                            face,
+                            cycle,
+                            start: offset,
+                            segment_count: 1,
+                        }
+                    }),
+                    "catia_cycle_assignment_placements",
+                )?,
+            );
+        }
+        Ok(assignments)
     }
 
     fn endpoint_cycle_assignments(
@@ -3232,157 +3576,102 @@ fn standard_mesh_missing_edge_assignment_domains(
         rows: &[EdgeRow],
         edge_candidates: &[Vec<[usize; 2]>],
     ) -> Result<Option<Vec<Vec<MeshEdgePlacementCandidate>>>, CodecError> {
-        (|| -> Option<Result<Vec<Vec<MeshEdgePlacementCandidate>>, CodecError>> {
-            let [gap] = gaps else {
-                return None;
-            };
-            if cycle_lengths.len() != 1
-                || gap.start != 0
-                || gap.cycle != 0
-                || gap.length != cycle_lengths[0]
-                || gap.length != missing.len()
-                || missing.iter().any(|&edge| rows[edge].handles().len() != 2)
-            {
-                return None;
-            }
-            let orders = match bounded_endpoint_cycle_orders(
-                ctx,
+        let [gap] = gaps else {
+            return Ok(None);
+        };
+        if cycle_lengths.len() != 1
+            || gap.start != 0
+            || gap.cycle != 0
+            || gap.length != cycle_lengths[0]
+            || gap.length != missing.len()
+            || ctx.any_by(
                 missing,
-                edge_candidates,
-                MAX_ASSIGNMENTS_PER_FACE,
-            ) {
-                Ok(Some(orders)) => orders,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-            let mut assignments = Vec::new();
-            if let Err(error) = ctx.reserve_vec(
-                &mut assignments,
-                orders.len(),
+                |&edge| Ok(rows[edge].handles().len() != 2),
                 "catia_cycle_assignment_rows",
-            ) {
-                return Some(Err(error));
-            }
-            for order in orders {
-                let mut placements = Vec::new();
-                if let Err(error) = ctx.reserve_vec(
-                    &mut placements,
-                    order.len(),
-                    "catia_cycle_assignment_placements",
-                ) {
-                    return Some(Err(error));
-                }
-                placements.extend(order.into_iter().enumerate().map(|(offset, edge)| {
-                    MeshEdgePlacementCandidate {
-                        edge,
-                        face,
-                        cycle: 0,
-                        start: offset,
-                        segment_count: 1,
-                    }
-                }));
-                assignments.push(placements);
-            }
-            Some(Ok(assignments))
-        })()
-        .transpose()
+            )?
+        {
+            return Ok(None);
+        }
+        let Some(orders) =
+            bounded_endpoint_cycle_orders(ctx, missing, edge_candidates, MAX_ASSIGNMENTS_PER_FACE)?
+        else {
+            return Ok(None);
+        };
+        cycle_order_placements(ctx, face, 0, orders).map(Some)
     }
 
     let edge_rows = &context.analysis.edge_rows;
     if edge_candidates.is_some_and(|candidates| candidates.len() != edge_rows.len()) {
         return Ok(None);
     }
-    let admit_set_retention = |set: &HashSet<usize>, operation| -> Result<(), CodecError> {
-        let bytes = set
-            .len()
-            .checked_mul(std::mem::size_of::<usize>())
-            .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<usize>>()))
-            .map(u64_from_index)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        ctx.charge_retained(bytes, operation)
+    let mut scratch = ctx.reserve_scoped(0, "catia_mesh_edge_point_domain_rows")?;
+    let endpoint_domains = match edge_candidates {
+        Some(candidates) => Some(scratch.with_storage(
+            || -> Result<EndpointDomains, CodecError> {
+                let mut points_by_edge =
+                    ctx.collection_vec(candidates.len(), "catia_mesh_edge_point_domain_rows")?;
+                let mut transitions_by_edge =
+                    ctx.collection_vec(candidates.len(), "catia_mesh_edge_transition_rows")?;
+                for pairs in ctx.admit_iter(candidates, "catia_mesh_edge_point_domain_rows")? {
+                    let mut points = BTreeSet::new();
+                    let mut transitions = BTreeMap::<usize, BTreeSet<usize>>::new();
+                    for &[left, right] in
+                        ctx.admit_iter(pairs, "catia_mesh_edge_point_domain_values")?
+                    {
+                        for point in [left, right] {
+                            ctx.insert_btree_set(
+                                &mut points,
+                                point,
+                                "catia_mesh_edge_point_domain_values",
+                            )?;
+                        }
+                        for (from, to) in [(left, right), (right, left)] {
+                            ctx.insert_btree_group_set(
+                                &mut transitions,
+                                from,
+                                to,
+                                "catia_mesh_edge_transition_points",
+                                "catia_mesh_edge_transition_targets",
+                            )?;
+                        }
+                    }
+                    points_by_edge.push(points);
+                    transitions_by_edge.push(transitions);
+                }
+                Ok(EndpointDomains {
+                    points: points_by_edge,
+                    transitions: transitions_by_edge,
+                })
+            },
+        )?),
+        None => None,
     };
-    let mut edge_point_domains = None;
-    let mut edge_point_transitions = None;
-    if let Some(candidates) = edge_candidates {
-        let mut domains = Vec::new();
-        let mut transition_rows = Vec::new();
-        ctx.reserve_vec(
-            &mut domains,
-            candidates.len(),
-            "catia_mesh_edge_point_domain_rows",
-        )?;
-        ctx.reserve_vec(
-            &mut transition_rows,
-            candidates.len(),
-            "catia_mesh_edge_transition_rows",
-        )?;
-        for pairs in candidates {
-            let mut points = HashSet::new();
-            let mut transitions = HashMap::<usize, HashSet<usize>>::new();
-            for &[left, right] in pairs {
-                for point in [left, right] {
-                    ctx.insert_hash_set(&mut points, point, "catia_mesh_edge_point_domain_values")?;
-                }
-                for (from, to) in [(left, right), (right, left)] {
-                    ctx.admit_hash_map_entry(
-                        &mut transitions,
-                        &from,
-                        "catia_mesh_edge_transition_points",
-                    )?;
-                    ctx.insert_hash_set(
-                        transitions.entry(from).or_default(),
-                        to,
-                        "catia_mesh_edge_transition_targets",
-                    )?;
-                }
-            }
-            admit_set_retention(&points, "catia_mesh_edge_point_domain_retained")?;
-            domains.push(Arc::new(points));
-            let mut retained_transitions = HashMap::new();
-            for (point, targets) in transitions {
-                admit_set_retention(&targets, "catia_mesh_edge_transition_retained")?;
-                ctx.insert_hash_map(
-                    &mut retained_transitions,
-                    point,
-                    Arc::new(targets),
-                    "catia_mesh_edge_transition_map",
-                )?;
-            }
-            transition_rows.push(retained_transitions);
-        }
-        edge_point_domains = Some(domains);
-        edge_point_transitions = Some(transition_rows);
-    }
-    let endpoint_constraints = edge_point_domains
-        .as_deref()
-        .zip(edge_point_transitions.as_deref());
     let coverage = &context.coverage;
-    let edge_ports = &context.edge_ports;
-    let complete_boundary_ports = edge_rows
-        .iter()
-        .all(|row| row.boundary_layout() == EdgeBoundaryLayout::CompleteBoundaryRun);
-    let placement_ports = complete_boundary_ports.then_some(edge_ports.as_slice());
-    let singleton_edge_points = if let Some(candidates) = edge_candidates {
-        let mut singleton = Vec::new();
-        ctx.reserve_vec(
-            &mut singleton,
-            candidates.len(),
-            "catia_mesh_singleton_edge_points",
-        )?;
-        singleton.extend(candidates.iter().map(|domain| {
-            <[[usize; 2]; 1]>::try_from(domain.as_slice())
-                .ok()
-                .map(|[pair]| pair)
-        }));
-        Some(singleton)
-    } else {
-        None
+    let edge_ports = context.edge_ports.as_slice();
+    let complete_boundary_ports = ctx.all_by(
+        edge_rows,
+        |row| Ok(row.boundary_layout() == EdgeBoundaryLayout::CompleteBoundaryRun),
+        "catia_mesh_corner_ports",
+    )?;
+    let placement_ports = complete_boundary_ports.then_some(edge_ports);
+    let singleton_edge_points = match edge_candidates {
+        Some(candidates) => Some(scratch.with_storage(|| {
+            ctx.collect_vec(
+                candidates.iter().map(|domain| match domain.as_slice() {
+                    [pair] => Some(*pair),
+                    _ => None,
+                }),
+                "catia_mesh_singleton_edge_points",
+            )
+        })?),
+        None => None,
     };
-    let edge_runs = &context.edge_runs;
-    let mut remaining_states = MAX_SEARCH_STATES;
+    let edge_runs = context.edge_runs.as_slice();
+    let remaining_states = ctx.work_budget(u64_from_index(MAX_SEARCH_STATES));
     let mut corner_ports = HashMap::<MeshCorner, u32>::new();
     let mut corner_points = MeshCornerPoints::new();
-    for run in edge_runs {
+    let mut charged_steps = edge_runs.iter();
+    while let Some(run) = ctx.next_charged(&mut charged_steps, "catia_mesh_corner_ports")? {
         let length = context.cycle_lengths[run.face][run.cycle];
         let end = (run.start + run.segment_count) % length;
         if edge_rows[run.edge].boundary_layout() == EdgeBoundaryLayout::CompleteBoundaryRun {
@@ -3393,26 +3682,44 @@ fn standard_mesh_missing_edge_assignment_domains(
                 ports
             };
             for (corner, port) in [(run.start, oriented[0]), (end, oriented[1])] {
-                match ctx.insert_hash_map(
-                    &mut corner_ports,
-                    (run.face, run.cycle, corner),
-                    port,
-                    "catia_mesh_corner_ports",
-                )? {
-                    Some(stored) if stored != port => return Ok(None),
-                    Some(_) | None => {}
+                let stored = scratch.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut corner_ports,
+                        (run.face, run.cycle, corner),
+                        port,
+                        "catia_mesh_corner_ports",
+                    )
+                })?;
+                if stored.is_some_and(|stored| stored != port) {
+                    return Ok(None);
                 }
             }
         }
         if let Some(candidates) = edge_candidates {
-            let mut points = BTreeSet::new();
-            for &point in candidates[run.edge].iter().flatten() {
-                ctx.insert_btree_set(&mut points, point, "catia_mesh_corner_candidate_points")?;
-            }
+            let (points, _points_storage) =
+                ctx.with_scoped_storage("catia_mesh_corner_candidate_points", || {
+                    let mut points = BTreeSet::new();
+                    for pair in
+                        ctx.admit_iter(&candidates[run.edge], "catia_mesh_corner_candidate_points")?
+                    {
+                        for &point in pair {
+                            ctx.insert_btree_set(
+                                &mut points,
+                                point,
+                                "catia_mesh_corner_candidate_points",
+                            )?;
+                        }
+                    }
+                    Ok::<_, CodecError>(points)
+                })?;
             if !points.is_empty() {
                 for corner in [run.start, end] {
                     let key = (run.face, run.cycle, corner);
-                    if let Some(stored) = corner_points.get_mut(&key) {
+                    if let Some(stored) = ctx.get_mut_hash_map(
+                        &mut corner_points,
+                        &key,
+                        "catia_mesh_corner_point_entries",
+                    )? {
                         ctx.retain_btree_set(
                             stored,
                             |point| {
@@ -3425,53 +3732,54 @@ fn standard_mesh_missing_edge_assignment_domains(
                             "catia_mesh_corner_point_filter",
                         )?;
                     } else {
-                        let copied = ctx.collect_btree_set(
-                            ctx.admit_iter(&points, "catia_mesh_corner_point_copy")?
-                                .copied(),
-                            "catia_mesh_corner_point_copy",
-                        )?;
-                        ctx.insert_hash_map(
-                            &mut corner_points,
-                            key,
-                            copied,
-                            "catia_mesh_corner_point_entries",
-                        )?;
+                        scratch.with_storage(|| {
+                            let copied = ctx.collect_btree_set(
+                                points.iter().copied(),
+                                "catia_mesh_corner_point_copy",
+                            )?;
+                            ctx.insert_hash_map(
+                                &mut corner_points,
+                                key,
+                                copied,
+                                "catia_mesh_corner_point_entries",
+                            )
+                        })?;
                     }
                 }
             }
         }
     }
-    let mut assignment_results = Vec::new();
-    ctx.reserve_vec(
-        &mut assignment_results,
-        coverage.len(),
-        "catia_mesh_assignment_domain_faces",
-    )?;
-    for face in coverage {
+    let mut assignment_results =
+        ctx.collection_vec(coverage.len(), "catia_mesh_assignment_domain_faces")?;
+    let mut charged_steps = coverage.iter();
+    while let Some(face) =
+        ctx.next_charged(&mut charged_steps, "catia_mesh_assignment_domain_faces")?
+    {
         let cycle_lengths = &context.cycle_lengths[face.face];
-        let unordered_full_cycle = edge_candidates.and_then(|candidates| {
-            let [gap] = face.gaps.as_slice() else {
-                return None;
-            };
-            (cycle_lengths.len() == 1
-                && gap.cycle == 0
-                && gap.start == 0
-                && gap.length == cycle_lengths[0]
-                && gap.length == face.missing_edges.len()
-                && face
-                    .missing_edges
-                    .iter()
-                    .all(|&edge| edge_rows[edge].handles().len() == 2)
-                && defer_validation
-                && face
-                    .missing_edges
-                    .iter()
-                    .any(|&edge| candidates[edge].len() > 1))
-            .then_some(face.missing_edges.as_slice())
-        });
-        if let Some(edges) = unordered_full_cycle {
+        let unordered_full_cycle = match (edge_candidates, face.gaps.as_slice()) {
+            (Some(candidates), [gap]) => {
+                defer_validation
+                    && cycle_lengths.len() == 1
+                    && gap.cycle == 0
+                    && gap.start == 0
+                    && gap.length == cycle_lengths[0]
+                    && gap.length == face.missing_edges.len()
+                    && ctx.all_by(
+                        &face.missing_edges,
+                        |&edge| Ok(edge_rows[edge].handles().len() == 2),
+                        "catia_mesh_unordered_missing_edges",
+                    )?
+                    && ctx.any_by(
+                        &face.missing_edges,
+                        |&edge| Ok(candidates[edge].len() > 1),
+                        "catia_mesh_unordered_missing_edges",
+                    )?
+            }
+            _ => false,
+        };
+        if unordered_full_cycle {
             assignment_results.push(MeshFaceAssignmentDomain::UnorderedFullCycle(
-                ctx.copy_slice(edges, "catia_mesh_unordered_missing_edges")?,
+                ctx.copy_slice(&face.missing_edges, "catia_mesh_unordered_missing_edges")?,
             ));
             continue;
         }
@@ -3506,7 +3814,26 @@ fn standard_mesh_missing_edge_assignment_domains(
             None
         };
         let mut assignments = cycle_assignments.or(trail_assignments);
-        if assignments.is_none() {
+        let unconstrained_ports = HashMap::new();
+        let unconstrained_points = MeshCornerPoints::new();
+        for constraints in [
+            (
+                placement_ports,
+                &corner_ports,
+                endpoint_domains.as_ref(),
+                &corner_points,
+            ),
+            (
+                None,
+                &unconstrained_ports,
+                endpoint_domains.as_ref(),
+                &corner_points,
+            ),
+            (None, &unconstrained_ports, None, &unconstrained_points),
+        ] {
+            if assignments.is_some() {
+                break;
+            }
             assignments = enumerate_face(
                 ctx,
                 EnumerateFaceInputs {
@@ -3516,66 +3843,24 @@ fn standard_mesh_missing_edge_assignment_domains(
                     missing: &face.missing_edges,
                     rows: edge_rows,
                     fixed_complete_row_spans: context.analysis.fixed_complete_row_spans,
-                    constraints: (
-                        placement_ports,
-                        &corner_ports,
-                        endpoint_constraints,
-                        &corner_points,
-                    ),
+                    constraints,
                     canonicalize_spans,
-                    remaining_states: &mut remaining_states,
-                },
-            )?;
-        }
-        if assignments.is_none() {
-            assignments = enumerate_face(
-                ctx,
-                EnumerateFaceInputs {
-                    face: face.face,
-                    gaps: &face.gaps,
-                    cycle_lengths,
-                    missing: &face.missing_edges,
-                    rows: edge_rows,
-                    fixed_complete_row_spans: context.analysis.fixed_complete_row_spans,
-                    constraints: (None, &HashMap::new(), endpoint_constraints, &corner_points),
-                    canonicalize_spans,
-                    remaining_states: &mut remaining_states,
-                },
-            )?;
-        }
-        if assignments.is_none() {
-            assignments = enumerate_face(
-                ctx,
-                EnumerateFaceInputs {
-                    face: face.face,
-                    gaps: &face.gaps,
-                    cycle_lengths,
-                    missing: &face.missing_edges,
-                    rows: edge_rows,
-                    fixed_complete_row_spans: context.analysis.fixed_complete_row_spans,
-                    constraints: (None, &HashMap::new(), None, &MeshCornerPoints::new()),
-                    canonicalize_spans,
-                    remaining_states: &mut remaining_states,
+                    remaining_states: &remaining_states,
                 },
             )?;
         }
         let domain = if let Some(assignments) = assignments {
-            Some(MeshFaceAssignmentDomain::Ordered(assignments))
+            MeshFaceAssignmentDomain::Ordered(assignments)
         } else if defer_validation {
-            Some(MeshFaceAssignmentDomain::DeferredValidation(
-                MeshFaceCoverage {
-                    face: face.face,
-                    gaps: ctx.copy_slice(&face.gaps, "catia_mesh_deferred_face_gaps")?,
-                    missing_edges: ctx.copy_slice(
-                        &face.missing_edges,
-                        "catia_mesh_deferred_face_missing_edges",
-                    )?,
-                },
-            ))
+            MeshFaceAssignmentDomain::DeferredValidation(MeshFaceCoverage {
+                face: face.face,
+                gaps: ctx.copy_slice(&face.gaps, "catia_mesh_deferred_face_gaps")?,
+                missing_edges: ctx.copy_slice(
+                    &face.missing_edges,
+                    "catia_mesh_deferred_face_missing_edges",
+                )?,
+            })
         } else {
-            None
-        };
-        let Some(domain) = domain else {
             return Ok(None);
         };
         assignment_results.push(domain);
@@ -3593,7 +3878,9 @@ fn standard_mesh_missing_edge_assignments(
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     canonicalize_spans: bool,
 ) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>>, CodecError> {
-    let Some(context) = StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)? else {
+    let Some((context, _context_storage)) =
+        StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)?
+    else {
         return Ok(None);
     };
     let Some((domains, _)) = standard_mesh_missing_edge_assignment_domains(
@@ -3606,13 +3893,11 @@ fn standard_mesh_missing_edge_assignments(
     else {
         return Ok(None);
     };
-    let mut assignments = Vec::new();
-    ctx.reserve_vec(
-        &mut assignments,
-        domains.len(),
-        "catia_missing_assignment_faces",
-    )?;
-    for domain in domains {
+    let mut assignments = ctx.collection_vec(domains.len(), "catia_missing_assignment_faces")?;
+    let mut charged_steps = domains.into_iter();
+    while let Some(domain) =
+        ctx.next_charged(&mut charged_steps, "catia_missing_assignment_faces")?
+    {
         let MeshFaceAssignmentDomain::Ordered(face) = domain else {
             return Ok(None);
         };
@@ -3656,7 +3941,9 @@ pub(crate) fn standard_mesh_boundary_assignments(
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
 ) -> Result<Option<Vec<Vec<MeshFaceBoundaryAssignment>>>, CodecError> {
-    let Some(context) = StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)? else {
+    let Some((context, _context_storage)) =
+        StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)?
+    else {
         return Ok(None);
     };
     standard_mesh_boundary_assignments_from_context(ctx, &context, edge_candidates)
@@ -3672,13 +3959,11 @@ fn standard_mesh_boundary_assignments_from_context(
     else {
         return Ok(None);
     };
-    let mut assignments = Vec::new();
-    ctx.reserve_vec(
-        &mut assignments,
-        domains.len(),
-        "catia_boundary_assignment_faces",
-    )?;
-    for domain in domains {
+    let mut assignments = ctx.collection_vec(domains.len(), "catia_boundary_assignment_faces")?;
+    let mut charged_steps = domains.into_iter();
+    while let Some(domain) =
+        ctx.next_charged(&mut charged_steps, "catia_boundary_assignment_faces")?
+    {
         let MeshFaceBoundaryDomain::Ordered(face) = domain else {
             return Ok(None);
         };
@@ -3703,162 +3988,201 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
     else {
         return Ok(None);
     };
-    let cycle_lengths = &context.cycle_lengths;
-    let mut resolved = Vec::new();
-    ctx.reserve_vec(
-        &mut resolved,
-        domains.len(),
-        "catia_mesh_boundary_domain_faces",
-    )?;
-    for (face, domain) in domains.into_iter().enumerate() {
-        let Some(domain) = (|| -> Result<Option<MeshFaceBoundaryDomain>, CodecError> {
-            match domain {
-                MeshFaceAssignmentDomain::UnorderedFullCycle(edges) => {
-                    Ok(Some(MeshFaceBoundaryDomain::UnorderedFullCycle(edges)))
-                }
-                MeshFaceAssignmentDomain::DeferredValidation(coverage) => {
-                    let mut cycles = Vec::new();
-                    ctx.reserve_vec(
-                        &mut cycles,
-                        cycle_lengths[face].len(),
-                        "catia_deferred_boundary_cycles",
-                    )?;
-                    cycles.extend(cycle_lengths[face].iter().copied().map(|length| {
-                        MeshDeferredBoundaryCycle {
-                            length,
-                            exact_uses: Vec::new(),
-                        }
-                    }));
-                    for run in runs.iter().filter(|run| run.face == face) {
-                        let length = cycles[run.cycle].length;
-                        let fixed_direction = edge_candidates.is_none()
-                            || context.analysis.edge_rows[run.edge].boundary_layout()
-                                == EdgeBoundaryLayout::CompleteBoundaryRun;
-                        ctx.push_vec(
-                            &mut cycles[run.cycle].exact_uses,
-                            (
-                                MeshBoundaryEdgeCandidate {
-                                    edge: run.edge,
-                                    start: run.start,
-                                    end: run.end(length),
-                                    reversed: fixed_direction.then_some(run.reversed),
-                                },
-                                run.segment_count,
-                            ),
-                            "catia_deferred_boundary_exact_uses",
-                        )?;
-                    }
-                    for cycle in &mut cycles {
-                        ctx.sort_unstable_by(
-                            &mut cycle.exact_uses,
-                            |value| &value.0.start,
-                            Ord::cmp,
-                            "catia_deferred_boundary_exact_uses_sort",
-                        )?;
-                    }
-                    Ok(Some(MeshFaceBoundaryDomain::DeferredValidation(
-                        MeshDeferredFaceBoundary {
-                            cycles,
-                            missing_edges: coverage.missing_edges,
-                        },
-                    )))
-                }
-                MeshFaceAssignmentDomain::Ordered(assignments) => {
-                    let mut ordered = Vec::new();
-                    for assignment in assignments {
-                        let mut boundaries = ctx.collect_indexed_vec(
-                            cycle_lengths[face].len(),
-                            "catia_mesh_ordered_boundaries",
-                            |_| Ok(Vec::new()),
-                        )?;
-                        for run in runs.iter().filter(|run| run.face == face) {
-                            let fixed_direction = edge_candidates.is_none()
-                                || context.analysis.edge_rows[run.edge].boundary_layout()
-                                    == EdgeBoundaryLayout::CompleteBoundaryRun;
-                            ctx.push_vec(
-                                &mut boundaries[run.cycle],
-                                (
-                                    MeshBoundaryEdgeCandidate {
-                                        edge: run.edge,
-                                        start: run.start,
-                                        end: run.end(cycle_lengths[face][run.cycle]),
-                                        reversed: fixed_direction.then_some(run.reversed),
-                                    },
-                                    run.segment_count,
-                                ),
-                                "catia_mesh_ordered_boundary_entries",
-                            )?;
-                        }
-                        for placement in assignment {
-                            ctx.push_vec(
-                                &mut boundaries[placement.cycle],
-                                (
-                                    MeshBoundaryEdgeCandidate {
-                                        edge: placement.edge,
-                                        start: placement.start,
-                                        end: placement.end(cycle_lengths[face][placement.cycle]),
-                                        reversed: None,
-                                    },
-                                    placement.segment_count,
-                                ),
-                                "catia_mesh_ordered_boundary_entries",
-                            )?;
-                        }
-                        let mut completed = Vec::new();
-                        for (cycle, mut uses) in boundaries.into_iter().enumerate() {
-                            ctx.sort_unstable_by(
-                                &mut uses,
-                                |value| &value.0.start,
-                                Ord::cmp,
-                                "catia_mesh_ordered_boundary_sort",
-                            )?;
-                            let length = cycle_lengths[face][cycle];
-                            let mut coverage =
-                                ctx.alloc_filled(length, 0u8, "catia_mesh_boundary_coverage")?;
-                            for (edge, segment_count) in &uses {
-                                for offset in 0..*segment_count {
-                                    let covered = &mut coverage[(edge.start + offset) % length];
-                                    let Some(count) = covered.checked_add(1) else {
-                                        return Ok(None);
-                                    };
-                                    *covered = count;
-                                }
-                            }
-                            if coverage.iter().any(|count| *count != 1) {
-                                return Ok(None);
-                            }
-                            let mut boundary = Vec::new();
-                            for (edge, _) in uses {
-                                ctx.push_vec(
-                                    &mut boundary,
-                                    edge,
-                                    "catia_mesh_completed_boundary_entries",
-                                )?;
-                            }
-                            ctx.push_vec(
-                                &mut completed,
-                                boundary,
-                                "catia_mesh_completed_boundaries",
-                            )?;
-                        }
-                        ctx.push_vec(
-                            &mut ordered,
-                            MeshFaceBoundaryAssignment {
-                                boundaries: completed,
-                            },
-                            "catia_mesh_ordered_assignments",
-                        )?;
-                    }
-                    Ok(Some(MeshFaceBoundaryDomain::Ordered(ordered)))
-                }
+    let cycle_lengths = context.cycle_lengths.as_slice();
+    let fixed_direction = |edge: usize| {
+        edge_candidates.is_none()
+            || context.analysis.edge_rows[edge].boundary_layout()
+                == EdgeBoundaryLayout::CompleteBoundaryRun
+    };
+    let mut resolved = ctx.collection_vec(domains.len(), "catia_mesh_boundary_domain_faces")?;
+    let mut charged_steps = domains.into_iter().enumerate();
+    while let Some((face, domain)) =
+        ctx.next_charged(&mut charged_steps, "catia_mesh_boundary_domain_faces")?
+    {
+        // The runs are ordered by face, so each face's runs are one slice.
+        let face_start =
+            ctx.partition_point(&runs, |run| Ok(run.face < face), "catia_mesh_face_runs")?;
+        let face_end = face_start
+            + ctx.partition_point(
+                &runs[face_start..],
+                |run| Ok(run.face == face),
+                "catia_mesh_face_runs",
+            )?;
+        let face_runs = &runs[face_start..face_end];
+        let domain = match domain {
+            MeshFaceAssignmentDomain::UnorderedFullCycle(edges) => {
+                MeshFaceBoundaryDomain::UnorderedFullCycle(edges)
             }
-        })()?
-        else {
-            return Ok(None);
+            MeshFaceAssignmentDomain::DeferredValidation(coverage) => {
+                let mut cycles = ctx
+                    .collection_vec(cycle_lengths[face].len(), "catia_deferred_boundary_cycles")?;
+                for &length in
+                    ctx.admit_iter(&cycle_lengths[face], "catia_deferred_boundary_cycles")?
+                {
+                    cycles.push(MeshDeferredBoundaryCycle {
+                        length,
+                        exact_uses: Vec::new(),
+                    });
+                }
+                for run in ctx.admit_iter(face_runs, "catia_deferred_boundary_exact_uses")? {
+                    let length = cycles[run.cycle].length;
+                    ctx.push_vec(
+                        &mut cycles[run.cycle].exact_uses,
+                        (
+                            MeshBoundaryEdgeCandidate {
+                                edge: run.edge,
+                                start: run.start,
+                                end: run.end(length),
+                                reversed: fixed_direction(run.edge).then_some(run.reversed),
+                            },
+                            run.segment_count,
+                        ),
+                        "catia_deferred_boundary_exact_uses",
+                    )?;
+                }
+                for cycle in
+                    ctx.admit_iter(&mut cycles, "catia_deferred_boundary_exact_uses_sort")?
+                {
+                    ctx.sort_unstable_by(
+                        &mut cycle.exact_uses,
+                        |value| &value.0.start,
+                        Ord::cmp,
+                        "catia_deferred_boundary_exact_uses_sort",
+                    )?;
+                }
+                MeshFaceBoundaryDomain::DeferredValidation(MeshDeferredFaceBoundary {
+                    cycles,
+                    missing_edges: coverage.missing_edges,
+                })
+            }
+            MeshFaceAssignmentDomain::Ordered(assignments) => {
+                let mut ordered =
+                    ctx.collection_vec(assignments.len(), "catia_mesh_ordered_assignments")?;
+                let mut charged_steps = assignments.into_iter();
+                while let Some(assignment) =
+                    ctx.next_charged(&mut charged_steps, "catia_mesh_ordered_assignments")?
+                {
+                    let Some(boundaries) = ordered_boundary_cycles(
+                        ctx,
+                        &cycle_lengths[face],
+                        face_runs,
+                        &assignment,
+                        fixed_direction,
+                    )?
+                    else {
+                        return Ok(None);
+                    };
+                    ordered.push(MeshFaceBoundaryAssignment { boundaries });
+                }
+                MeshFaceBoundaryDomain::Ordered(ordered)
+            }
         };
         resolved.push(domain);
     }
     Ok(Some(resolved))
+}
+
+/// The edge uses of each boundary cycle in start order, from the matched runs
+/// and one complete placement assignment; `None` unless every cycle segment is
+/// covered exactly once.
+fn ordered_boundary_cycles(
+    ctx: &DecodeContext<'_>,
+    cycle_lengths: &[usize],
+    face_runs: &[MeshEdgeRun],
+    assignment: &[MeshEdgePlacementCandidate],
+    fixed_direction: impl Fn(usize) -> bool,
+) -> Result<Option<Vec<Vec<MeshBoundaryEdgeCandidate>>>, CodecError> {
+    const OPERATION: &str = "catia_mesh_ordered_boundary_entries";
+    let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
+    let mut boundaries = scratch.with_storage(|| {
+        ctx.collect_indexed_vec(cycle_lengths.len(), "catia_mesh_ordered_boundaries", |_| {
+            Ok(Vec::new())
+        })
+    })?;
+    for run in ctx.admit_iter(face_runs, OPERATION)? {
+        scratch.with_storage(|| {
+            ctx.push_vec(
+                &mut boundaries[run.cycle],
+                (
+                    MeshBoundaryEdgeCandidate {
+                        edge: run.edge,
+                        start: run.start,
+                        end: run.end(cycle_lengths[run.cycle]),
+                        reversed: fixed_direction(run.edge).then_some(run.reversed),
+                    },
+                    run.segment_count,
+                ),
+                OPERATION,
+            )
+        })?;
+    }
+    for placement in ctx.admit_iter(assignment, OPERATION)? {
+        scratch.with_storage(|| {
+            ctx.push_vec(
+                &mut boundaries[placement.cycle],
+                (
+                    MeshBoundaryEdgeCandidate {
+                        edge: placement.edge,
+                        start: placement.start,
+                        end: placement.end(cycle_lengths[placement.cycle]),
+                        reversed: None,
+                    },
+                    placement.segment_count,
+                ),
+                OPERATION,
+            )
+        })?;
+    }
+    let mut completed = ctx.collection_vec(boundaries.len(), "catia_mesh_completed_boundaries")?;
+    let mut charged_steps = boundaries.iter_mut().enumerate();
+    while let Some((cycle, uses)) =
+        ctx.next_charged(&mut charged_steps, "catia_mesh_completed_boundaries")?
+    {
+        ctx.sort_unstable_by(
+            &mut *uses,
+            |value| &value.0.start,
+            Ord::cmp,
+            "catia_mesh_ordered_boundary_sort",
+        )?;
+        let length = cycle_lengths[cycle];
+        let (coverage, _coverage_storage) =
+            ctx.with_scoped_storage("catia_mesh_boundary_coverage", || {
+                let mut coverage = ctx.alloc_filled(length, 0u8, "catia_mesh_boundary_coverage")?;
+                let mut charged_steps = uses.iter();
+                while let Some((edge, segment_count)) =
+                    ctx.next_charged(&mut charged_steps, "catia_mesh_boundary_coverage")?
+                {
+                    let mut charged_steps = 0..*segment_count;
+                    while let Some(offset) =
+                        ctx.next_charged(&mut charged_steps, "catia_mesh_boundary_coverage")?
+                    {
+                        let covered = &mut coverage[(edge.start + offset) % length];
+                        let Some(count) = covered.checked_add(1) else {
+                            return Ok(None);
+                        };
+                        *covered = count;
+                    }
+                }
+                Ok::<_, CodecError>(Some(coverage))
+            })?;
+        let Some(coverage) = coverage else {
+            return Ok(None);
+        };
+        if ctx.any_by(
+            &coverage,
+            |count| Ok(*count != 1),
+            "catia_mesh_boundary_coverage",
+        )? {
+            return Ok(None);
+        }
+        let mut boundary =
+            ctx.collection_vec(uses.len(), "catia_mesh_completed_boundary_entries")?;
+        for (edge, _) in ctx.admit_iter(&*uses, "catia_mesh_completed_boundary_entries")? {
+            boundary.push(*edge);
+        }
+        completed.push(boundary);
+    }
+    Ok(Some(completed))
 }
 
 /// Materialize one complete face-assignment selection and one direction for
@@ -3901,7 +4225,7 @@ fn parse_standard_mesh_selection(
 
 #[derive(Debug)]
 struct BoundaryEndpointSupport {
-    by_edge: HashMap<usize, HashSet<[usize; 2]>>,
+    by_edge: BTreeMap<usize, BTreeSet<[usize; 2]>>,
 }
 
 fn boundary_endpoint_support(
@@ -3917,13 +4241,13 @@ fn boundary_endpoint_support(
         end: usize,
     }
 
-    let mut layers = Vec::new();
-    ctx.reserve_vec(
-        &mut layers,
-        boundary.len(),
-        "catia_boundary_support_layer_rows",
-    )?;
-    for use_ in boundary {
+    let mut scratch = ctx.reserve_scoped(0, "catia_boundary_support_layer_rows")?;
+    let mut layers = scratch
+        .with_storage(|| ctx.collection_vec(boundary.len(), "catia_boundary_support_layer_rows"))?;
+    let mut charged_steps = boundary.iter();
+    while let Some(use_) =
+        ctx.next_charged(&mut charged_steps, "catia_boundary_support_layer_rows")?
+    {
         let Some(pairs) = edge_candidates
             .get(use_.edge)
             .filter(|pairs| !pairs.is_empty())
@@ -3937,147 +4261,204 @@ fn boundary_endpoint_support(
                 u64::MAX,
             ));
         };
-        let mut states = Vec::new();
-        ctx.reserve_vec(&mut states, count, "catia_boundary_support_layer_states")?;
-        for &pair in pairs {
-            let mut unordered = pair;
-            ctx.sort_unstable_by(
-                &mut unordered,
-                |value| value,
-                Ord::cmp,
-                "catia_boundary_support_pair_sort",
-            )?;
-            states.extend([
-                State {
+        let states = scratch.with_storage(|| -> Result<Vec<State>, CodecError> {
+            let mut states = ctx.collection_vec(count, "catia_boundary_support_layer_states")?;
+            for &pair in ctx.admit_iter(pairs, "catia_boundary_support_layer_states")? {
+                let unordered = [pair[0].min(pair[1]), pair[0].max(pair[1])];
+                states.push(State {
                     pair: unordered,
                     start: unordered[0],
                     end: unordered[1],
-                },
-                State {
+                });
+                states.push(State {
                     pair: unordered,
                     start: unordered[1],
                     end: unordered[0],
-                },
-            ]);
-        }
+                });
+            }
+            Ok(states)
+        })?;
         layers.push(states);
     }
     let Some(first_layer) = layers.first() else {
         return Ok(None);
     };
-    let Some(layer_states) = layers
-        .iter()
-        .try_fold(0usize, |total, layer| total.checked_add(layer.len()))
-    else {
-        return Ok(None);
-    };
-    let mut first_points = HashSet::new();
-    for state in first_layer {
-        ctx.insert_hash_set(
-            &mut first_points,
-            state.start,
-            "catia_boundary_first_points",
-        )?;
+    let mut first_points = BTreeSet::new();
+    for state in ctx.admit_iter(first_layer, "catia_boundary_first_points")? {
+        scratch.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut first_points,
+                state.start,
+                "catia_boundary_first_points",
+            )
+        })?;
     }
     let make_marks = |row_operation, item_operation| -> Result<Vec<Vec<bool>>, CodecError> {
-        let mut marks = Vec::new();
-        ctx.reserve_vec(&mut marks, layers.len(), row_operation)?;
-        for layer in &layers {
+        let mut marks = ctx.collection_vec(layers.len(), row_operation)?;
+        for layer in ctx.admit_iter(&layers, row_operation)? {
             marks.push(ctx.alloc_filled(layer.len(), false, item_operation)?);
         }
         Ok(marks)
     };
-    let mut supported = make_marks(
-        "catia_boundary_support_mark_rows",
-        "catia_boundary_layer_marks",
-    )?;
-    for first_point in first_points {
-        let Some(work) = layer_states.checked_mul(3) else {
-            return Ok(None);
-        };
-        if !budget.charge_by(work) {
-            return Ok(None);
-        }
-        let mut forward = make_marks(
-            "catia_boundary_forward_mark_rows",
-            "catia_boundary_forward_marks",
-        )?;
+    let mut supported = scratch.with_storage(|| {
+        make_marks(
+            "catia_boundary_support_mark_rows",
+            "catia_boundary_layer_marks",
+        )
+    })?;
+    let mut starts = first_points.iter();
+    while let Some(&first_point) = ctx.next_charged(&mut starts, "catia_boundary_first_points")? {
+        // One local unit visits one propagation or union state. Point-set
+        // lookups and the closure query charge their own context work.
+        let mut pass_storage = ctx.reserve_scoped(0, "catia_boundary_forward_marks")?;
+        let mut forward = pass_storage.with_storage(|| {
+            make_marks(
+                "catia_boundary_forward_mark_rows",
+                "catia_boundary_forward_marks",
+            )
+        })?;
         for (state, reachable) in first_layer.iter().zip(&mut forward[0]) {
-            *reachable = state.start == first_point;
-        }
-        for layer in 1..layers.len() {
-            if !budget.charge_by(layers[layer - 1].len() + layers[layer].len()) {
+            if !budget.charge() {
                 return Ok(None);
             }
+            *reachable = state.start == first_point;
+        }
+        let mut forward_layers = 1..layers.len();
+        while let Some(layer) =
+            ctx.next_charged(&mut forward_layers, "catia_boundary_forward_layers")?
+        {
+            let mut points_storage = ctx.reserve_scoped(0, "catia_boundary_reachable_points")?;
             let mut reachable_points = HashSet::new();
             for (state, reachable) in layers[layer - 1].iter().zip(&forward[layer - 1]) {
+                if !budget.charge() {
+                    return Ok(None);
+                }
                 if *reachable {
-                    ctx.insert_hash_set(
-                        &mut reachable_points,
-                        state.end,
-                        "catia_boundary_reachable_points",
-                    )?;
+                    points_storage.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut reachable_points,
+                            state.end,
+                            "catia_boundary_reachable_points",
+                        )
+                    })?;
                 }
             }
             for (right, right_state) in layers[layer].iter().enumerate() {
-                forward[layer][right] = reachable_points.contains(&right_state.start);
+                if !budget.charge() {
+                    return Ok(None);
+                }
+                forward[layer][right] = ctx.contains_hash_set(
+                    &reachable_points,
+                    &right_state.start,
+                    "catia_boundary_reachable_points",
+                )?;
             }
         }
-        let mut backward = make_marks(
-            "catia_boundary_backward_mark_rows",
-            "catia_boundary_backward_marks",
-        )?;
+        let mut backward = pass_storage.with_storage(|| {
+            make_marks(
+                "catia_boundary_backward_mark_rows",
+                "catia_boundary_backward_marks",
+            )
+        })?;
         let last = layers.len() - 1;
         for (state, (reachable, value)) in layers[last]
             .iter()
             .zip(forward[last].iter().zip(&mut backward[last]))
         {
+            if !budget.charge() {
+                return Ok(None);
+            }
             *value = *reachable && state.end == first_point;
         }
-        for layer in (0..last).rev() {
+        let mut backward_layers = (0..last).rev();
+        while let Some(layer) =
+            ctx.next_charged(&mut backward_layers, "catia_boundary_backward_layers")?
+        {
+            let mut points_storage = ctx.reserve_scoped(0, "catia_boundary_supported_points")?;
             let mut supported_points = HashSet::new();
             for (state, supported) in layers[layer + 1].iter().zip(&backward[layer + 1]) {
+                if !budget.charge() {
+                    return Ok(None);
+                }
                 if *supported {
-                    ctx.insert_hash_set(
-                        &mut supported_points,
-                        state.start,
-                        "catia_boundary_supported_points",
-                    )?;
+                    points_storage.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut supported_points,
+                            state.start,
+                            "catia_boundary_supported_points",
+                        )
+                    })?;
                 }
             }
             for (left, left_state) in layers[layer].iter().enumerate() {
-                backward[layer][left] = supported_points.contains(&left_state.end);
+                if !budget.charge() {
+                    return Ok(None);
+                }
+                backward[layer][left] = ctx.contains_hash_set(
+                    &supported_points,
+                    &left_state.end,
+                    "catia_boundary_supported_points",
+                )?;
             }
         }
-        if backward[0].iter().any(|supported| *supported) {
-            for layer in 0..layers.len() {
+        if ctx.any_by(
+            &backward[0],
+            |supported| Ok(*supported),
+            "catia_boundary_closed_support",
+        )? {
+            let mut charged_steps = 0..layers.len();
+            while let Some(layer) =
+                ctx.next_charged(&mut charged_steps, "catia_boundary_union_layers")?
+            {
                 for state in 0..layers[layer].len() {
+                    if !budget.charge() {
+                        return Ok(None);
+                    }
                     supported[layer][state] |= forward[layer][state] && backward[layer][state];
                 }
             }
         }
     }
-    let mut by_edge = HashMap::<usize, HashSet<[usize; 2]>>::new();
-    for (layer, use_) in boundary.iter().enumerate() {
-        let mut values = HashSet::new();
-        for (state, supported) in layers[layer].iter().zip(&supported[layer]) {
+    let mut by_edge = BTreeMap::<usize, BTreeSet<[usize; 2]>>::new();
+    let mut charged_steps = boundary.iter().enumerate();
+    while let Some((layer, use_)) =
+        ctx.next_charged(&mut charged_steps, "catia_boundary_support_edges")?
+    {
+        let mut values = BTreeSet::new();
+        for (state, supported) in ctx
+            .admit_iter(&layers[layer], "catia_boundary_supported_pairs")?
+            .zip(&supported[layer])
+        {
             if *supported {
-                ctx.insert_hash_set(&mut values, state.pair, "catia_boundary_supported_pairs")?;
+                ctx.insert_btree_set(&mut values, state.pair, "catia_boundary_supported_pairs")?;
             }
         }
         if values.is_empty() {
             return Ok(None);
         }
-        ctx.admit_hash_map_entry(&mut by_edge, &use_.edge, "catia_boundary_support_edges")?;
-        by_edge
-            .entry(use_.edge)
-            .and_modify(|stored| stored.retain(|pair| values.contains(pair)))
-            .or_insert(values);
+        if let Some(stored) =
+            ctx.get_mut_btree_map(&mut by_edge, &use_.edge, "catia_boundary_support_edges")?
+        {
+            ctx.retain_btree_set(
+                stored,
+                |pair| ctx.contains_btree_set(&values, pair, "catia_boundary_supported_pairs"),
+                "catia_boundary_supported_pairs",
+            )?;
+        } else {
+            ctx.insert_btree_map(
+                &mut by_edge,
+                use_.edge,
+                values,
+                "catia_boundary_support_edges",
+            )?;
+        }
     }
-    Ok(by_edge
-        .values()
-        .all(|domain| !domain.is_empty())
-        .then_some(BoundaryEndpointSupport { by_edge }))
+    let complete = ctx.all_by(
+        &by_edge,
+        |(_, domain)| Ok(!domain.is_empty()),
+        "catia_boundary_support_edges",
+    )?;
+    Ok(complete.then_some(BoundaryEndpointSupport { by_edge }))
 }
 
 /// Prune endpoint-pair domains through every ordered trim-boundary candidate.
@@ -4089,6 +4470,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
+    const OPERATION: &str = "catia_prune_support_edges";
     if edge_faces.len() != edge_candidates.len() {
         return Ok(None);
     }
@@ -4096,30 +4478,51 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
         return Ok(None);
     };
     let after_faces = face_run.after_faces();
-    let Some((_, vertex_header)) = parse_edge_tables(ctx, bytes, after_faces)? else {
+    let Some(vertex_header) = ({
+        let (rows, _row_storage) = ctx.with_scoped_storage("catia_prune_edge_workspace", || {
+            parse_edge_tables(ctx, bytes, after_faces)
+        })?;
+        rows.map(|(_, header)| header)
+    }) else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
+    let Some(point_count) = ({
+        let (points, _point_storage) = ctx
+            .with_scoped_storage("catia_prune_vertex_workspace", || {
+                parse_vertex_table(ctx, bytes, vertex_header)
+            })?;
+        points.map(|points| points.len())
+    }) else {
         return Ok(None);
     };
-    let point_count = vertex_points.len();
-    let mut complete_domain = Vec::new();
-    for left in 0..point_count {
-        for right in (left + 1)..point_count {
-            ctx.push_vec(
-                &mut complete_domain,
-                [left, right],
-                "catia_prune_complete_point_pairs",
-            )?;
-        }
-    }
-    let mut candidates = Vec::new();
-    ctx.reserve_vec(
-        &mut candidates,
-        edge_candidates.len(),
-        "catia_prune_candidate_rows",
-    )?;
-    for domain in edge_candidates {
+    let mut scratch = ctx.reserve_scoped(0, "catia_prune_complete_point_pairs")?;
+    // An edge without candidates may take any pair of distinct points.
+    let complete_domain = if ctx.any_by(
+        edge_candidates,
+        |domain| Ok(domain.is_empty()),
+        "catia_prune_complete_point_pairs",
+    )? {
+        scratch.with_storage(|| -> Result<Vec<[usize; 2]>, CodecError> {
+            let mut complete = Vec::new();
+            for left in ctx.admit_iter(&(0..point_count), "catia_prune_complete_point_pairs")? {
+                for right in ctx.admit_iter(
+                    &((left + 1)..point_count),
+                    "catia_prune_complete_point_pairs",
+                )? {
+                    ctx.push_vec(
+                        &mut complete,
+                        [left, right],
+                        "catia_prune_complete_point_pairs",
+                    )?;
+                }
+            }
+            Ok(complete)
+        })?
+    } else {
+        Vec::new()
+    };
+    let mut candidates = ctx.collection_vec(edge_candidates.len(), "catia_prune_candidate_rows")?;
+    for domain in ctx.admit_iter(edge_candidates, "catia_prune_candidate_rows")? {
         let source = if domain.is_empty() {
             &complete_domain
         } else {
@@ -4127,133 +4530,191 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
         };
         candidates.push(ctx.copy_slice(source, "catia_prune_candidate_pairs")?);
     }
-    let Some(mut faces) = standard_mesh_boundary_assignments(ctx, bytes, edge_faces, None)? else {
+    let (faces, _face_storage) = ctx
+        .with_scoped_storage("catia_prune_boundary_workspace", || {
+            standard_mesh_boundary_assignments(ctx, bytes, edge_faces, None)
+        })?;
+    let Some(mut faces) = faces else {
         return Ok(None);
     };
-    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = ctx.work_budget(u64_from_index(MAX_MESH_CONSTRAINT_OPERATIONS));
+    let size = |faces: &[Vec<MeshFaceBoundaryAssignment>],
+                candidates: &[Vec<[usize; 2]>]|
+     -> Result<(usize, usize), CodecError> {
+        let mut assignments = 0usize;
+        for face in ctx.admit_iter(faces, "catia_missing_edge_iteration")? {
+            assignments += face.len();
+        }
+        let mut pairs = 0usize;
+        for domain in ctx.admit_iter(candidates, "catia_missing_edge_iteration")? {
+            pairs += domain.len();
+        }
+        Ok((assignments, pairs))
+    };
     loop {
-        ctx.charge_work(1, "catia_missing_edge_iteration")?;
-        let before = (
-            faces.iter().map(Vec::len).sum::<usize>(),
-            candidates.iter().map(Vec::len).sum::<usize>(),
-        );
-        let mut face_supports = Vec::new();
-        ctx.reserve_vec(
-            &mut face_supports,
-            faces.len(),
-            "catia_prune_face_support_rows",
-        )?;
-        for assignments in &mut faces {
+        let before = size(&faces, &candidates)?;
+        let mut round_storage = ctx.reserve_scoped(0, "catia_prune_face_support_rows")?;
+        let mut face_supports = round_storage
+            .with_storage(|| ctx.collection_vec(faces.len(), "catia_prune_face_support_rows"))?;
+        let mut charged_steps = faces.iter_mut();
+        while let Some(assignments) =
+            ctx.next_charged(&mut charged_steps, "catia_prune_face_support_rows")?
+        {
             let mut evaluated = Vec::new();
-            'assignment: for (index, assignment) in assignments.iter().enumerate() {
-                let mut support = HashMap::<usize, HashSet<[usize; 2]>>::new();
-                for boundary in &assignment.boundaries {
-                    let Some(boundary_support) =
-                        boundary_endpoint_support(ctx, boundary, &candidates, &budget)?
+            let mut evaluated_storage =
+                ctx.reserve_scoped(0, "catia_prune_evaluated_assignments")?;
+            'assignment: for (index, assignment) in ctx
+                .admit_iter(&*assignments, "catia_prune_evaluated_assignments")?
+                .enumerate()
+            {
+                let mut support = BTreeMap::<usize, BTreeSet<[usize; 2]>>::new();
+                let mut support_storage =
+                    ctx.reserve_scoped(0, "catia_prune_assignment_support")?;
+                let mut boundaries = assignment.boundaries.iter();
+                while let Some(boundary) = ctx.next_charged(&mut boundaries, OPERATION)? {
+                    let Some(boundary_support) = support_storage.with_storage(|| {
+                        boundary_endpoint_support(ctx, boundary, &candidates, &budget)
+                    })?
                     else {
                         continue 'assignment;
                     };
-                    for (edge, domain) in boundary_support.by_edge {
-                        ctx.admit_hash_map_entry(&mut support, &edge, "catia_prune_support_edges")?;
-                        support
-                            .entry(edge)
-                            .and_modify(|stored| stored.retain(|pair| domain.contains(pair)))
-                            .or_insert(domain);
+                    for (edge, domain) in ctx.admit_iter(boundary_support.by_edge, OPERATION)? {
+                        if let Some(stored) =
+                            ctx.get_mut_btree_map(&mut support, &edge, OPERATION)?
+                        {
+                            ctx.retain_btree_set(
+                                stored,
+                                |pair| ctx.contains_btree_set(&domain, pair, OPERATION),
+                                OPERATION,
+                            )?;
+                        } else {
+                            support_storage.with_storage(|| {
+                                ctx.insert_btree_map(&mut support, edge, domain, OPERATION)
+                            })?;
+                        }
                     }
                 }
-                if support.values().all(|domain| !domain.is_empty()) {
-                    ctx.push_vec(
-                        &mut evaluated,
-                        (index, support),
-                        "catia_prune_evaluated_assignments",
-                    )?;
+                if ctx.all_by(&support, |(_, domain)| Ok(!domain.is_empty()), OPERATION)? {
+                    evaluated_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut evaluated,
+                            (index, support, support_storage),
+                            "catia_prune_evaluated_assignments",
+                        )
+                    })?;
                 }
             }
             if evaluated.is_empty() {
                 return Ok(None);
             }
-            let mut retained_assignments = Vec::new();
-            ctx.reserve_vec(
-                &mut retained_assignments,
-                evaluated.len(),
+            let (mut kept, kept_storage) = ctx
+                .with_scoped_storage("catia_prune_assignment_marks", || {
+                    ctx.alloc_filled(assignments.len(), false, "catia_prune_assignment_marks")
+                })?;
+            for &(index, _, _) in ctx.admit_iter(&evaluated, "catia_prune_retained_assignments")? {
+                kept[index] = true;
+            }
+            let mut index = 0;
+            ctx.retain_vec(
+                assignments,
+                |_| {
+                    let selected = kept[index];
+                    index += 1;
+                    Ok(selected)
+                },
                 "catia_prune_retained_assignments",
             )?;
-            for (index, _) in &evaluated {
-                retained_assignments.push(MeshFaceBoundaryAssignment {
-                    boundaries: ctx.copy_retained_rows(
-                        &assignments[*index].boundaries,
-                        "catia_prune_retained_boundary_rows",
-                        "catia_prune_retained_boundary_uses",
-                    )?,
-                });
-            }
-            *assignments = retained_assignments;
-            let mut support_rows = Vec::new();
-            ctx.reserve_vec(
-                &mut support_rows,
-                evaluated.len(),
-                "catia_prune_assignment_supports",
-            )?;
-            support_rows.extend(evaluated.into_iter().map(|(_, support)| support));
+            let support_rows = round_storage.with_storage(|| {
+                ctx.collect_vec(
+                    evaluated
+                        .into_iter()
+                        .map(|(_, support, storage)| (support, storage)),
+                    "catia_prune_assignment_supports",
+                )
+            })?;
+            drop((evaluated_storage, kept, kept_storage));
             face_supports.push(support_rows);
         }
-        for (edge, domain) in candidates.iter_mut().enumerate() {
-            let mut allowed = None::<HashSet<[usize; 2]>>;
-            let mut incident = edge_faces[edge];
-            ctx.sort_unstable_by(
-                &mut incident,
-                |value| value,
-                Ord::cmp,
-                "catia missing edge incident faces sort",
-            )?;
-            for face in incident
-                .into_iter()
-                .take(if incident[0] == incident[1] { 1 } else { 2 })
+        let mut charged_steps = candidates.iter_mut().enumerate();
+        while let Some((edge, domain)) =
+            ctx.next_charged(&mut charged_steps, "catia_prune_incident_support_pairs")?
+        {
+            let [first, second] = edge_faces[edge];
+            let mut allowed = None;
+            for face in [
+                Some(first.min(second)),
+                (first != second).then_some(first.max(second)),
+            ]
+            .into_iter()
+            .flatten()
             {
-                let mut support = HashSet::new();
-                for &pair in face_supports[face]
-                    .iter()
-                    .filter_map(|assignment| assignment.get(&edge))
-                    .flatten()
-                {
-                    ctx.insert_hash_set(&mut support, pair, "catia_prune_incident_support_pairs")?;
-                }
+                let (support, support_storage) = ctx.with_scoped_storage(
+                    "catia_prune_incident_support_pairs",
+                    || -> Result<BTreeSet<[usize; 2]>, CodecError> {
+                        let mut support = BTreeSet::new();
+                        for (assignment, _storage) in ctx.admit_iter(
+                            &face_supports[face],
+                            "catia_prune_incident_support_pairs",
+                        )? {
+                            let Some(pairs) = ctx.get_btree_map(
+                                assignment,
+                                &edge,
+                                "catia_prune_incident_support_pairs",
+                            )?
+                            else {
+                                continue;
+                            };
+                            for &pair in
+                                ctx.admit_iter(pairs, "catia_prune_incident_support_pairs")?
+                            {
+                                ctx.insert_btree_set(
+                                    &mut support,
+                                    pair,
+                                    "catia_prune_incident_support_pairs",
+                                )?;
+                            }
+                        }
+                        Ok(support)
+                    },
+                )?;
                 if support.is_empty() {
                     return Ok(None);
                 }
-                if let Some(allowed) = &mut allowed {
-                    allowed.retain(|pair| support.contains(pair));
+                if let Some((allowed, _storage)) = &mut allowed {
+                    ctx.retain_btree_set(
+                        allowed,
+                        |pair| {
+                            ctx.contains_btree_set(
+                                &support,
+                                pair,
+                                "catia_prune_incident_support_pairs",
+                            )
+                        },
+                        "catia_prune_incident_support_pairs",
+                    )?;
                 } else {
-                    allowed = Some(support);
+                    allowed = Some((support, support_storage));
                 }
             }
-            let Some(allowed) = allowed else {
+            let Some((allowed, _allowed_storage)) = allowed else {
                 return Ok(None);
             };
-            let mut kept = 0;
-            for index in 0..domain.len() {
-                let mut pair = domain[index];
-                ctx.sort_unstable_by(
-                    &mut pair,
-                    |value| value,
-                    Ord::cmp,
-                    "catia missing edge allowed pair sort",
-                )?;
-                if allowed.contains(&pair) {
-                    domain.swap(kept, index);
-                    kept += 1;
-                }
-            }
-            domain.truncate(kept);
+            ctx.retain_vec(
+                domain,
+                |pair| {
+                    ctx.contains_btree_set(
+                        &allowed,
+                        &[pair[0].min(pair[1]), pair[0].max(pair[1])],
+                        "catia missing edge allowed pairs",
+                    )
+                },
+                "catia missing edge allowed pairs",
+            )?;
             if domain.is_empty() {
                 return Ok(None);
             }
         }
-        let after = (
-            faces.iter().map(Vec::len).sum::<usize>(),
-            candidates.iter().map(Vec::len).sum::<usize>(),
-        );
-        if after == before {
+        if size(&faces, &candidates)? == before {
             break;
         }
     }
@@ -4265,7 +4726,7 @@ type MeshCornerPoints = HashMap<MeshCorner, BTreeSet<usize>>;
 
 struct MeshAssignmentCorners {
     assignments: Vec<Vec<Vec<MeshEdgePlacementCandidate>>>,
-    corner_points: MeshCornerPoints,
+    corner_points: HashMap<MeshCorner, [Option<usize>; 2]>,
     cycle_lengths: Vec<Vec<usize>>,
 }
 
@@ -4275,156 +4736,153 @@ fn standard_mesh_assignment_corner_points(
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
 ) -> Result<Option<MeshAssignmentCorners>, CodecError> {
-    (|| -> Option<Result<_, CodecError>> {
-        let analysis = match standard_mesh_analysis(ctx, bytes) {
-            Ok(Some(analysis)) => analysis,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
+    const OPERATION: &str = "catia_corner_point_narrowing";
+    let (analysis, _analysis_storage) = ctx
+        .with_scoped_storage("catia_corner_mesh_analysis", || {
+            standard_mesh_analysis(ctx, bytes)
+        })?;
+    let Some(analysis) = analysis else {
+        return Ok(None);
+    };
+    let edge_rows = &analysis.edge_rows;
+    if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
+        return Ok(None);
+    }
+    let (runs, _run_storage) = ctx.with_scoped_storage("catia_corner_run_workspace", || {
+        mesh_edge_runs(ctx, &analysis)
+    })?;
+    let Some(assignments) =
+        standard_mesh_missing_edge_assignments(ctx, bytes, edge_faces, None, true)?
+    else {
+        return Ok(None);
+    };
+    let cycle_lengths = mesh_cycle_lengths(ctx, &analysis.cycles)?;
+    let mut scratch = ctx.reserve_scoped(0, "catia_corner_run_constraints")?;
+    let mut corner_points = HashMap::<MeshCorner, [Option<usize>; 2]>::new();
+    // Each run binds its two corners to its endpoint pair; the constraints of
+    // each corner are indexed for narrowing.
+    let mut run_constraints = Vec::new();
+    let mut constraints_by_corner = HashMap::<MeshCorner, Vec<usize>>::new();
+    let mut charged_steps = runs.iter();
+    while let Some(run) = ctx.next_charged(&mut charged_steps, "catia_corner_run_constraints")? {
+        let Some(pair) = edge_points[run.edge] else {
+            continue;
         };
-        let edge_rows = &analysis.edge_rows;
-        if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
-            return None;
-        }
-        let runs = match mesh_edge_runs(ctx, &analysis) {
-            Ok(runs) => runs,
-            Err(error) => return Some(Err(error)),
-        };
-        let assignments =
-            match standard_mesh_missing_edge_assignments(ctx, bytes, edge_faces, None, true) {
-                Ok(Some(assignments)) => assignments,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-        let mut cycle_lengths = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut cycle_lengths,
-            analysis.cycles.len(),
-            "catia_missing_cycle_length_rows",
-        ) {
-            return Some(Err(error));
-        }
-        for cycles in &analysis.cycles {
-            let mut lengths = Vec::new();
-            if let Err(error) =
-                ctx.reserve_vec(&mut lengths, cycles.len(), "catia_missing_cycle_lengths")
+        let positions = [
+            (run.face, run.cycle, run.start),
+            (
+                run.face,
+                run.cycle,
+                run.end(cycle_lengths[run.face][run.cycle]),
+            ),
+        ];
+        for position in positions {
+            if let Some(stored) =
+                ctx.get_mut_hash_map(&mut corner_points, &position, "catia_corner_point_entries")?
             {
-                return Some(Err(error));
+                // Each corner starts with the two endpoints of one run.
+                for point in &mut *stored {
+                    *point = point.filter(|point| pair.contains(point));
+                }
+                if stored.iter().all(Option::is_none) {
+                    return Ok(None);
+                }
+            } else {
+                let points = [Some(pair[0]), (pair[1] != pair[0]).then_some(pair[1])];
+                ctx.insert_hash_map(
+                    &mut corner_points,
+                    position,
+                    points,
+                    "catia_corner_point_entries",
+                )?;
             }
-            lengths.extend(cycles.iter().map(Vec::len));
-            cycle_lengths.push(lengths);
+            let index = run_constraints.len();
+            scratch.with_storage(|| {
+                ctx.push_hash_group(
+                    &mut constraints_by_corner,
+                    position,
+                    index,
+                    "catia_corner_run_constraints",
+                    "catia_corner_run_constraints",
+                )
+            })?;
         }
-        let mut corner_points = MeshCornerPoints::new();
-        let mut run_constraints = Vec::new();
-        for run in runs {
-            let Some(pair) = edge_points[run.edge] else {
-                continue;
-            };
-            let mut candidates = BTreeSet::new();
-            for point in pair {
-                if let Err(error) =
-                    ctx.insert_btree_set(&mut candidates, point, "catia_corner_candidate_points")
-                {
-                    return Some(Err(error));
-                }
-            }
-            let positions = [
-                (run.face, run.cycle, run.start),
-                (
-                    run.face,
-                    run.cycle,
-                    run.end(cycle_lengths[run.face][run.cycle]),
-                ),
-            ];
-            for position in positions {
-                if let Some(stored) = corner_points.get_mut(&position) {
-                    if let Err(error) = ctx.retain_btree_set(
-                        stored,
-                        |point| {
-                            ctx.contains_btree_set(&candidates, point, "catia_corner_point_filter")
-                        },
-                        "catia_corner_point_filter",
-                    ) {
-                        return Some(Err(error));
-                    }
-                    if stored.is_empty() {
-                        return None;
-                    }
-                } else {
-                    let copied = match ctx
-                        .admit_iter(&candidates, "catia_corner_point_copy")
-                        .map_err(CodecError::from)
-                        .and_then(|points| {
-                            ctx.collect_btree_set(points.copied(), "catia_corner_point_copy")
-                        }) {
-                        Ok(copied) => copied,
-                        Err(error) => return Some(Err(error)),
-                    };
-                    if let Err(error) = ctx.insert_hash_map(
-                        &mut corner_points,
-                        position,
-                        copied,
-                        "catia_corner_point_entries",
-                    ) {
-                        return Some(Err(error));
-                    }
-                }
-            }
-            if let Err(error) = ctx.push_vec(
+        scratch.with_storage(|| {
+            ctx.push_vec(
                 &mut run_constraints,
                 (positions[0], positions[1], pair),
                 "catia_corner_run_constraints",
-            ) {
-                return Some(Err(error));
+            )
+        })?;
+    }
+    // A corner left with one point removes that point from the corner across
+    // the run and keeps it within the run's pair. Narrowing only removes
+    // points, so the fixed point does not depend on the order constraints are
+    // revisited; a constraint is revisited when one of its corners shrinks.
+    let mut queued = scratch.with_storage(|| {
+        ctx.alloc_filled(
+            run_constraints.len(),
+            true,
+            "catia_corner_point_constraint_round",
+        )
+    })?;
+    let mut pending = scratch.with_storage(|| {
+        ctx.collect_vec(
+            (0..run_constraints.len()).rev(),
+            "catia_corner_point_constraint_round",
+        )
+    })?;
+    while let Some(constraint) = pending.pop() {
+        ctx.charge_work(1, "catia_corner_point_constraint_round")?;
+        queued[constraint] = false;
+        let (left, right, pair) = run_constraints[constraint];
+        let single = |corner: &MeshCorner| -> Result<Option<usize>, CodecError> {
+            let points = ctx
+                .get_hash_map(&corner_points, corner, OPERATION)?
+                .ok_or_else(|| CodecError::malformed("corner has no point set"))?;
+            Ok(match *points {
+                [Some(point), None] | [None, Some(point)] => Some(point),
+                _ => None,
+            })
+        };
+        let left_single = single(&left)?;
+        let right_single = single(&right)?;
+        for (single, target) in [(left_single, right), (right_single, left)] {
+            let Some(point) = single else {
+                continue;
+            };
+            let stored = ctx
+                .get_mut_hash_map(&mut corner_points, &target, OPERATION)?
+                .ok_or_else(|| CodecError::malformed("corner has no point set"))?;
+            let before = *stored;
+            for candidate in &mut *stored {
+                *candidate =
+                    candidate.filter(|candidate| *candidate != point && pair.contains(candidate));
+            }
+            if stored.iter().all(Option::is_none) {
+                return Ok(None);
+            }
+            if *stored == before {
+                continue;
+            }
+            let Some(affected) = ctx.get_hash_map(&constraints_by_corner, &target, OPERATION)?
+            else {
+                continue;
+            };
+            for &other in ctx.admit_iter(affected, OPERATION)? {
+                if !std::mem::replace(&mut queued[other], true) {
+                    scratch.with_storage(|| {
+                        ctx.push_vec(&mut pending, other, "catia_corner_point_constraint_round")
+                    })?;
+                }
             }
         }
-        loop {
-            // Each round either removes a point or ends the loop, so rounds are
-            // bounded by the admitted points; every round admits its visits.
-            let mut changed = false;
-            let constraints =
-                match ctx.admit_iter(&run_constraints, "catia_corner_point_constraint_round") {
-                    Ok(constraints) => constraints,
-                    Err(error) => return Some(Err(error.into())),
-                };
-            for &(left, right, pair) in constraints {
-                let left_points = corner_points.get(&left)?;
-                let right_points = corner_points.get(&right)?;
-                let left_single = (left_points.len() == 1)
-                    .then(|| left_points.first().copied())
-                    .flatten();
-                let right_single = (right_points.len() == 1)
-                    .then(|| right_points.first().copied())
-                    .flatten();
-                for (single, target) in [(left_single, right), (right_single, left)] {
-                    let Some(point) = single else {
-                        continue;
-                    };
-                    let stored = corner_points.get_mut(&target)?;
-                    let before = stored.len();
-                    if let Err(error) = ctx.retain_btree_set(
-                        stored,
-                        |candidate| Ok(*candidate != point && pair.contains(candidate)),
-                        "catia_corner_point_narrowing",
-                    ) {
-                        return Some(Err(error));
-                    }
-                    changed |= stored.len() != before;
-                }
-                if corner_points.get(&left)?.is_empty() || corner_points.get(&right)?.is_empty() {
-                    return None;
-                }
-            }
-            if !changed {
-                break;
-            }
-        }
-        Some(Ok(MeshAssignmentCorners {
-            assignments,
-            corner_points,
-            cycle_lengths,
-        }))
-    })()
-    .transpose()
+    }
+    Ok(Some(MeshAssignmentCorners {
+        assignments,
+        corner_points,
+        cycle_lengths,
+    }))
 }
 
 /// Retain endpoint constraints on each placement inside each complete face
@@ -4436,68 +4894,68 @@ fn standard_mesh_missing_edge_endpoint_assignments(
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
 ) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>>, CodecError> {
+    const OPERATION: &str = "catia_placement_endpoint_candidate_pairs";
+    let (corners, _corner_storage) = ctx
+        .with_scoped_storage("catia_placement_corner_workspace", || {
+            standard_mesh_assignment_corner_points(ctx, bytes, edge_faces, edge_points)
+        })?;
     let Some(MeshAssignmentCorners {
         assignments,
         corner_points,
         cycle_lengths,
-    }) = standard_mesh_assignment_corner_points(ctx, bytes, edge_faces, edge_points)?
+    }) = corners
     else {
         return Ok(None);
     };
-    let mut faces = Vec::new();
-    ctx.reserve_vec(
-        &mut faces,
-        assignments.len(),
-        "catia_placement_endpoint_face_rows",
-    )?;
-    for face in assignments {
-        let mut face_assignments = Vec::new();
-        ctx.reserve_vec(
-            &mut face_assignments,
-            face.len(),
-            "catia_placement_endpoint_assignment_rows",
-        )?;
-        for assignment in face {
-            let mut placements = Vec::new();
-            ctx.reserve_vec(
-                &mut placements,
-                assignment.len(),
-                "catia_placement_endpoint_placement_rows",
-            )?;
-            for placement in assignment {
-                let endpoint_pairs = if let Some((starts, ends)) = corner_points
-                    .get(&(placement.face, placement.cycle, placement.start))
-                    .zip(corner_points.get(&(
+    let mut faces = ctx.collection_vec(assignments.len(), "catia_placement_endpoint_face_rows")?;
+    for face in ctx.admit_iter(assignments, "catia_placement_endpoint_face_rows")? {
+        let mut face_assignments =
+            ctx.collection_vec(face.len(), "catia_placement_endpoint_assignment_rows")?;
+        for assignment in ctx.admit_iter(face, "catia_placement_endpoint_assignment_rows")? {
+            let mut placements =
+                ctx.collection_vec(assignment.len(), "catia_placement_endpoint_placement_rows")?;
+            for placement in
+                ctx.admit_iter(assignment, "catia_placement_endpoint_placement_rows")?
+            {
+                let starts = ctx.get_hash_map(
+                    &corner_points,
+                    &(placement.face, placement.cycle, placement.start),
+                    OPERATION,
+                )?;
+                let ends = ctx.get_hash_map(
+                    &corner_points,
+                    &(
                         placement.face,
                         placement.cycle,
                         placement.end(cycle_lengths[placement.face][placement.cycle]),
-                    ))) {
-                    let mut pairs = Vec::new();
-                    for &start in starts {
-                        for &end in ends {
+                    ),
+                    OPERATION,
+                )?;
+                let endpoint_pairs = if let Some((starts, ends)) = starts.zip(ends) {
+                    // At most two points per corner give four pairs.
+                    let mut ordered = [None; 4];
+                    let mut count = 0;
+                    for &start in starts.iter().flatten() {
+                        for &end in ends.iter().flatten() {
                             if start != end {
-                                let mut pair = [start, end];
-                                ctx.sort_unstable_by(
-                                    &mut pair,
-                                    |value| value,
-                                    Ord::cmp,
-                                    "catia_placement_endpoint_pair_sort",
-                                )?;
-                                ctx.push_vec(
-                                    &mut pairs,
-                                    pair,
-                                    "catia_placement_endpoint_candidate_pairs",
-                                )?;
+                                ordered[count] = Some([start.min(end), start.max(end)]);
+                                count += 1;
                             }
                         }
                     }
-                    ctx.sort_unstable_by(
-                        &mut pairs,
-                        |value| value,
-                        Ord::cmp,
-                        "catia_placement_endpoint_pairs_sort",
-                    )?;
-                    pairs.dedup();
+                    for (first, second) in [(0, 1), (2, 3), (0, 2), (1, 3), (1, 2)] {
+                        if ordered[first] > ordered[second] {
+                            ordered.swap(first, second);
+                        }
+                    }
+                    let mut pairs = Vec::new();
+                    let mut previous = None;
+                    for pair in ordered.into_iter().flatten() {
+                        if previous != Some(pair) {
+                            ctx.push_vec(&mut pairs, pair, OPERATION)?;
+                        }
+                        previous = Some(pair);
+                    }
                     Some(pairs)
                 } else {
                     None
@@ -4523,112 +4981,142 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
 ) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>>, CodecError> {
+    const OPERATION: &str = "catia_placement_face_domain_pairs";
     let Some(mut faces) =
         standard_mesh_missing_edge_endpoint_assignments(ctx, bytes, edge_faces, edge_points)?
     else {
         return Ok(None);
     };
+    let mut scratch = ctx.reserve_scoped(0, "catia_placement_face_edges")?;
+    // The edges incident to each face, ascending.
+    let mut edges_by_face = scratch.with_storage(|| {
+        ctx.collect_indexed_vec(
+            faces.len(),
+            "catia_placement_face_edges",
+            |_| Ok(Vec::new()),
+        )
+    })?;
+    for (edge, &incident) in ctx
+        .admit_iter(edge_faces, "catia_placement_face_edges")?
+        .enumerate()
+    {
+        for face in [
+            Some(incident[0]),
+            (incident[1] != incident[0]).then_some(incident[1]),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if let Some(edges) = edges_by_face.get_mut(face) {
+                scratch.with_storage(|| ctx.push_vec(edges, edge, "catia_placement_face_edges"))?;
+            }
+        }
+    }
+    let size = |faces: &[Vec<Vec<MeshEdgePlacementEndpointCandidate>>]| -> Result<(usize, usize), CodecError> {
+        let mut assignments = 0usize;
+        let mut pairs = 0usize;
+        for face in ctx.admit_iter(faces, "catia_missing_edge_iteration")? {
+            assignments += face.len();
+            for assignment in ctx.admit_iter(face, "catia_missing_edge_iteration")? {
+                for candidate in ctx.admit_iter(assignment, "catia_missing_edge_iteration")? {
+                    pairs += candidate.endpoint_pairs.as_ref().map_or(0, Vec::len);
+                }
+            }
+        }
+        Ok((assignments, pairs))
+    };
     loop {
-        ctx.charge_work(1, "catia_missing_edge_iteration")?;
-        let before = (
-            faces.iter().map(Vec::len).sum::<usize>(),
-            faces
-                .iter()
-                .flatten()
-                .flatten()
-                .filter_map(|candidate| candidate.endpoint_pairs.as_ref().map(Vec::len))
-                .sum::<usize>(),
-        );
-        let mut face_domains = HashMap::<(usize, usize), Option<HashSet<[usize; 2]>>>::new();
-        for (face, assignments) in faces.iter().enumerate() {
-            for edge in edge_faces
-                .iter()
-                .enumerate()
-                .filter_map(|(edge, incident)| incident.contains(&face).then_some(edge))
-            {
-                let mut domain = HashSet::new();
+        let before = size(&faces)?;
+        let mut round_storage = ctx.reserve_scoped(0, "catia_placement_face_domain_entries")?;
+        let mut face_domains = HashMap::<
+            (usize, usize),
+            Option<(
+                BTreeSet<[usize; 2]>,
+                cadmpeg_core::decode::ScopedReservation<'_>,
+            )>,
+        >::new();
+        for (face, assignments) in ctx.admit_iter(&faces, OPERATION)?.enumerate() {
+            for &edge in ctx.admit_iter(&edges_by_face[face], OPERATION)? {
+                let mut domain = BTreeSet::new();
+                let mut domain_storage = ctx.reserve_scoped(0, OPERATION)?;
                 let mut complete = true;
-                for assignment in assignments {
-                    let Some(pairs) = assignment
-                        .iter()
-                        .find(|candidate| candidate.placement.edge == edge)
+                let mut assignments = assignments.iter();
+                while let Some(assignment) = ctx.next_charged(&mut assignments, OPERATION)? {
+                    let Some(pairs) = ctx
+                        .find_by(
+                            assignment,
+                            |candidate| Ok(candidate.placement.edge == edge),
+                            OPERATION,
+                        )?
                         .and_then(|candidate| candidate.endpoint_pairs.as_ref())
                     else {
                         complete = false;
                         break;
                     };
-                    for &pair in pairs {
-                        ctx.insert_hash_set(
-                            &mut domain,
-                            pair,
-                            "catia_placement_face_domain_pairs",
-                        )?;
+                    for &pair in ctx.admit_iter(pairs, OPERATION)? {
+                        domain_storage
+                            .with_storage(|| ctx.insert_btree_set(&mut domain, pair, OPERATION))?;
                     }
                 }
-                ctx.insert_hash_map(
-                    &mut face_domains,
-                    (face, edge),
-                    complete.then_some(domain),
-                    "catia_placement_face_domain_entries",
-                )?;
+                round_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut face_domains,
+                        (face, edge),
+                        complete.then_some((domain, domain_storage)),
+                        "catia_placement_face_domain_entries",
+                    )
+                })?;
             }
         }
-        for assignments in &mut faces {
-            let mut kept = Vec::new();
-            ctx.reserve_vec(
-                &mut kept,
-                assignments.len(),
+        let mut charged_steps = faces.iter_mut();
+        while let Some(assignments) =
+            ctx.next_charged(&mut charged_steps, "catia_placement_kept_assignments")?
+        {
+            ctx.retain_mut(
+                assignments,
+                |assignment| {
+                    let mut charged_steps = assignment.iter_mut();
+                    while let Some(candidate) = ctx.next_charged(&mut charged_steps, OPERATION)? {
+                        let edge = candidate.placement.edge;
+                        let seed = edge_points[edge];
+                        let opposite_face = edge_faces[edge]
+                            .into_iter()
+                            .find(|&face| face != candidate.placement.face);
+                        let opposite = match opposite_face {
+                            Some(face) => ctx
+                                .get_hash_map(&face_domains, &(face, edge), OPERATION)?
+                                .and_then(Option::as_ref),
+                            None => None,
+                        };
+                        let Some(domain) = &mut candidate.endpoint_pairs else {
+                            continue;
+                        };
+                        ctx.retain_vec(
+                            domain,
+                            |pair| {
+                                Ok(seed.is_none_or(|seed| same_unordered_pair(*pair, seed))
+                                    && match opposite {
+                                        Some((opposite, _storage)) => {
+                                            ctx.contains_btree_set(opposite, pair, OPERATION)?
+                                        }
+                                        None => true,
+                                    })
+                            },
+                            OPERATION,
+                        )?;
+                        if domain.is_empty() {
+                            return Ok(false);
+                        }
+                    }
+                    Ok(true)
+                },
                 "catia_placement_kept_assignments",
             )?;
-            for mut assignment in std::mem::take(assignments) {
-                let mut keep = true;
-                for candidate in &mut assignment {
-                    let edge = candidate.placement.edge;
-                    let mut seed = edge_points[edge];
-                    if let Some(pair) = &mut seed {
-                        ctx.sort_unstable_by(
-                            pair,
-                            |value| value,
-                            Ord::cmp,
-                            "catia_placement_seed_pair_sort",
-                        )?;
-                    }
-                    let opposite = edge_faces[edge]
-                        .into_iter()
-                        .find(|&face| face != candidate.placement.face)
-                        .and_then(|face| face_domains.get(&(face, edge)))
-                        .and_then(Option::as_ref);
-                    let Some(domain) = &mut candidate.endpoint_pairs else {
-                        continue;
-                    };
-                    domain.retain(|pair| {
-                        seed.is_none_or(|seed| same_unordered_pair(*pair, seed))
-                            && opposite.is_none_or(|opposite| opposite.contains(pair))
-                    });
-                    if domain.is_empty() {
-                        keep = false;
-                        break;
-                    }
-                }
-                if keep {
-                    kept.push(assignment);
-                }
-            }
-            *assignments = kept;
             if assignments.is_empty() {
                 return Ok(None);
             }
         }
-        let after = (
-            faces.iter().map(Vec::len).sum::<usize>(),
-            faces
-                .iter()
-                .flatten()
-                .flatten()
-                .filter_map(|candidate| candidate.endpoint_pairs.as_ref().map(Vec::len))
-                .sum::<usize>(),
-        );
-        if after == before {
+        if size(&faces)? == before {
             break;
         }
     }
@@ -4645,55 +5133,71 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
 ) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
-    let Some(edge_rows) = standard_edge_rows(ctx, bytes)? else {
+    let (edge_rows, _edge_rows_storage) = ctx
+        .with_scoped_storage("catia_placement_edge_rows", || {
+            standard_edge_rows(ctx, bytes)
+        })?;
+    let Some(edge_rows) = edge_rows else {
         return Ok(None);
     };
     if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
         return Ok(None);
     }
-    let Some(assignments) = standard_mesh_pruned_missing_edge_endpoint_assignments(
-        ctx,
-        bytes,
-        edge_faces,
-        edge_points,
-    )?
-    else {
+    let (assignments, _assignment_storage) =
+        ctx.with_scoped_storage("catia_placement_assignment_workspace", || {
+            standard_mesh_pruned_missing_edge_endpoint_assignments(
+                ctx,
+                bytes,
+                edge_faces,
+                edge_points,
+            )
+        })?;
+    let Some(assignments) = assignments else {
         return Ok(None);
     };
     let mut domains =
         ctx.collect_indexed_vec(edge_rows.len(), "catia_placement_endpoint_domains", |_| {
             Ok(Vec::new())
         })?;
-    let mut placement_counts =
-        ctx.alloc_filled(edge_rows.len(), 0usize, "catia_placement_counts")?;
-    let mut bound_counts =
-        ctx.alloc_filled(edge_rows.len(), 0usize, "catia_placement_bound_counts")?;
-    for face in assignments {
-        let mut placements = Vec::new();
-        for placement in face.into_iter().flatten() {
-            ctx.push_vec(&mut placements, placement, "catia_placement_candidates")?;
-        }
-        ctx.sort_unstable_by(
-            &mut placements,
-            |value| &value.placement,
-            Ord::cmp,
-            "catia missing edge placement candidates sort",
-        )?;
-        placements.dedup_by_key(|candidate| candidate.placement);
-        for candidate in placements {
+    let mut scratch = ctx.reserve_scoped(0, "catia_placement_counts")?;
+    let mut placement_counts = scratch
+        .with_storage(|| ctx.alloc_filled(edge_rows.len(), 0usize, "catia_placement_counts"))?;
+    let mut bound_counts = scratch.with_storage(|| {
+        ctx.alloc_filled(edge_rows.len(), 0usize, "catia_placement_bound_counts")
+    })?;
+    for face in ctx.admit_iter(assignments, "catia_placement_candidates")? {
+        let (placements, _placements_storage) =
+            ctx.with_scoped_storage("catia_placement_candidates", || {
+                let mut placements = Vec::new();
+                for assignment in ctx.admit_iter(face, "catia_placement_candidates")? {
+                    ctx.extend_vec(&mut placements, assignment, "catia_placement_candidates")?;
+                }
+                ctx.sort_unstable_by(
+                    &mut placements,
+                    |value| &value.placement,
+                    Ord::cmp,
+                    "catia missing edge placement candidates sort",
+                )?;
+                ctx.dedup_by_key(
+                    &mut placements,
+                    |candidate| Ok(candidate.placement),
+                    "catia_placement_candidates",
+                )?;
+                Ok::<_, CodecError>(placements)
+            })?;
+        for candidate in ctx.admit_iter(placements, "catia_placement_endpoint_pairs")? {
             let edge = candidate.placement.edge;
             placement_counts[edge] += 1;
             if let Some(pairs) = candidate.endpoint_pairs {
                 bound_counts[edge] += 1;
-                for pair in pairs {
-                    if !domains[edge].contains(&pair) {
-                        ctx.push_vec(&mut domains[edge], pair, "catia_placement_endpoint_pairs")?;
-                    }
-                }
+                ctx.extend_vec(&mut domains[edge], pairs, "catia_placement_endpoint_pairs")?;
             }
         }
     }
-    for (edge, domain) in domains.iter_mut().enumerate() {
+    for (edge, domain) in ctx
+        .admit_iter(&mut domains, "catia missing edge placement domain sort")?
+        .enumerate()
+    {
         if bound_counts[edge] == placement_counts[edge] {
             ctx.sort_unstable_by(
                 domain,
@@ -4701,6 +5205,7 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
                 Ord::cmp,
                 "catia missing edge placement domain sort",
             )?;
+            ctx.dedup_vec(domain, "catia missing edge placement domain sort")?;
         } else {
             domain.clear();
         }
@@ -4714,7 +5219,7 @@ fn bind_port_point(
     port: u32,
     point: usize,
 ) -> Result<bool, CodecError> {
-    if let Some(&stored) = port_points.get(&port) {
+    if let Some(&stored) = ctx.get_hash_map(port_points, &port, "catia_port_bound_points")? {
         return Ok(stored == point);
     }
     ctx.insert_hash_map(port_points, port, point, "catia_port_bound_points")?;
@@ -4746,227 +5251,196 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
     endpoint_pairs: &[Option<[usize; 2]>],
     ordered_endpoint_pairs: &[Option<[usize; 2]>],
 ) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
-    (|| -> Option<Result<Vec<Option<[usize; 2]>>, CodecError>> {
-        if edge_ports.len() != endpoint_pairs.len() {
-            return None;
-        }
-        if !ordered_endpoint_pairs.is_empty()
-            && ordered_endpoint_pairs.len() != endpoint_pairs.len()
-        {
-            return None;
-        }
-        let mut resolved = match ctx.copy_slice(endpoint_pairs, "catia_port_resolved_pairs") {
-            Ok(resolved) => resolved,
-            Err(error) => return Some(Err(error)),
-        };
-        let mut edges_by_port = HashMap::<u32, Vec<usize>>::new();
-        for (edge, ports) in edge_ports.iter().enumerate() {
-            if let Err(error) =
-                ctx.admit_hash_map_entry(&mut edges_by_port, &ports[0], "catia_port_edge_entries")
-            {
-                return Some(Err(error));
-            }
-            if let Err(error) = ctx.push_vec(
-                edges_by_port.entry(ports[0]).or_default(),
-                edge,
-                "catia_port_incident_edges",
-            ) {
-                return Some(Err(error));
-            }
-            if ports[1] != ports[0] {
-                if let Err(error) = ctx.admit_hash_map_entry(
+    const OPERATION: &str = "catia_port_incident_edges";
+    if edge_ports.len() != endpoint_pairs.len() {
+        return Ok(None);
+    }
+    if !ordered_endpoint_pairs.is_empty() && ordered_endpoint_pairs.len() != endpoint_pairs.len() {
+        return Ok(None);
+    }
+    let mut resolved = ctx.copy_slice(endpoint_pairs, "catia_port_resolved_pairs")?;
+    let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
+    let mut edges_by_port = BTreeMap::<u32, Vec<usize>>::new();
+    for (edge, ports) in ctx.admit_iter(edge_ports, OPERATION)?.enumerate() {
+        for &port in unique_ports(ports) {
+            scratch.with_storage(|| {
+                ctx.push_btree_group(
                     &mut edges_by_port,
-                    &ports[1],
-                    "catia_port_edge_entries",
-                ) {
-                    return Some(Err(error));
-                }
-                if let Err(error) = ctx.push_vec(
-                    edges_by_port.entry(ports[1]).or_default(),
+                    port,
                     edge,
-                    "catia_port_incident_edges",
-                ) {
-                    return Some(Err(error));
-                }
-            }
+                    "catia_port_edge_entries",
+                    OPERATION,
+                )
+            })?;
         }
-        let mut port_points = HashMap::<u32, usize>::new();
+    }
+    let mut port_points = HashMap::<u32, usize>::new();
+    let mut bind = |port_points: &mut HashMap<u32, usize>, port, point| {
+        scratch.with_storage(|| bind_port_point(ctx, port_points, port, point))
+    };
 
-        if !ordered_endpoint_pairs.is_empty() {
-            for (edge, ordered) in ordered_endpoint_pairs.iter().enumerate() {
-                let Some(ordered) = ordered else { continue };
-                if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, *ordered)) {
-                    return None;
-                }
-                let ports = edge_ports[edge];
-                if ports[0] == ports[1] && ordered[0] != ordered[1] {
-                    return None;
-                }
-                let first = match bind_port_point(ctx, &mut port_points, ports[0], ordered[0]) {
-                    Ok(first) => first,
-                    Err(error) => return Some(Err(error)),
-                };
-                if !first {
-                    return None;
-                }
-                let second = match bind_port_point(ctx, &mut port_points, ports[1], ordered[1]) {
-                    Ok(second) => second,
-                    Err(error) => return Some(Err(error)),
-                };
-                if !second {
-                    return None;
-                }
-                resolved[edge] = Some(*ordered);
-            }
+    let mut charged_steps = ordered_endpoint_pairs.iter().enumerate();
+    while let Some((edge, ordered)) =
+        ctx.next_charged(&mut charged_steps, "catia_port_ordered_seeds")?
+    {
+        let Some(ordered) = ordered else { continue };
+        if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, *ordered)) {
+            return Ok(None);
         }
+        let ports = edge_ports[edge];
+        if ports[0] == ports[1] && ordered[0] != ordered[1] {
+            return Ok(None);
+        }
+        if !bind(&mut port_points, ports[0], ordered[0])?
+            || !bind(&mut port_points, ports[1], ordered[1])?
+        {
+            return Ok(None);
+        }
+        resolved[edge] = Some(*ordered);
+    }
 
-        for (&port, edges) in &edges_by_port {
-            let mut intersection: Option<HashSet<usize>> = None;
-            for &edge in edges {
-                let Some(pair) = resolved[edge] else { continue };
-                let mut points = HashSet::new();
-                for point in pair {
-                    if let Err(error) =
-                        ctx.insert_hash_set(&mut points, point, "catia_port_pair_points")
-                    {
-                        return Some(Err(error));
-                    }
-                }
-                if let Some(current) = intersection.take() {
-                    let mut common = HashSet::new();
-                    for &point in current.intersection(&points) {
-                        if let Err(error) = ctx.insert_hash_set(
-                            &mut common,
-                            point,
-                            "catia_port_intersection_points",
-                        ) {
-                            return Some(Err(error));
+    // A port whose resolved rows share exactly one point is bound to it.
+    let mut charged_steps = edges_by_port.iter();
+    while let Some((&port, edges)) = ctx.next_charged(&mut charged_steps, OPERATION)? {
+        let mut common: Option<([usize; 2], usize)> = None;
+        for &edge in ctx.admit_iter(edges, OPERATION)? {
+            let Some(pair) = resolved[edge] else { continue };
+            let points = if pair[0] == pair[1] {
+                ([pair[0], pair[0]], 1)
+            } else {
+                (pair, 2)
+            };
+            common = Some(match common {
+                None => points,
+                Some((current, count)) => {
+                    let mut shared = [0; 2];
+                    let mut shared_count = 0;
+                    for &point in &current[..count] {
+                        if points.0[..points.1].contains(&point) {
+                            shared[shared_count] = point;
+                            shared_count += 1;
                         }
                     }
-                    intersection = Some(common);
-                } else {
-                    intersection = Some(points);
+                    (shared, shared_count)
                 }
-            }
-            if let Some(points) = intersection {
-                if points.len() == 1 {
-                    let point = *points.iter().next()?;
-                    match bind_port_point(ctx, &mut port_points, port, point) {
-                        Ok(true) => {}
-                        Ok(false) => return None,
-                        Err(error) => return Some(Err(error)),
-                    }
-                }
+            });
+        }
+        if let Some((points, 1)) = common {
+            if !bind(&mut port_points, port, points[0])? {
+                return Ok(None);
             }
         }
+    }
 
+    let mut queue = scratch.with_storage(|| {
         let mut queue = std::collections::VecDeque::new();
-        for edge in 0..edge_ports.len() {
-            if let Err(error) = ctx.push_back(&mut queue, edge, "catia_edge_port_initial_queue") {
-                return Some(Err(error));
-            }
+        for edge in ctx.admit_iter(&(0..edge_ports.len()), "catia_edge_port_initial_queue")? {
+            ctx.push_back(&mut queue, edge, "catia_edge_port_initial_queue")?;
         }
-        let mut queued = match ctx.alloc_filled(edge_ports.len(), true, "catia_edge_port_queue") {
-            Ok(queued) => queued,
-            Err(error) => return Some(Err(error)),
+        Ok::<_, CodecError>(queue)
+    })?;
+    let mut queued = scratch
+        .with_storage(|| ctx.alloc_filled(edge_ports.len(), true, "catia_edge_port_queue"))?;
+    while let Some(edge) = queue.pop_front() {
+        ctx.charge_work(1, "catia_missing_edge_iteration")?;
+        queued[edge] = false;
+        let ports = edge_ports[edge];
+        let bound = |port: &u32| -> Result<Option<usize>, CodecError> {
+            Ok(ctx
+                .get_hash_map(&port_points, port, "catia_port_propagated_points")?
+                .copied())
         };
-        while let Some(edge) = queue.pop_front() {
-            if let Err(error) = ctx.charge_work(1, "catia_missing_edge_iteration") {
-                return Some(Err(error));
-            }
-            queued[edge] = false;
-            let ports = edge_ports[edge];
-            let inserted = if let Some([left, right]) = resolved[edge] {
-                match (
-                    port_points.get(&ports[0]).copied(),
-                    port_points.get(&ports[1]).copied(),
-                ) {
-                    (Some(point), None) if point == left => Some((ports[1], right)),
-                    (Some(point), None) if point == right => Some((ports[1], left)),
-                    (None, Some(point)) if point == left => Some((ports[0], right)),
-                    (None, Some(point)) if point == right => Some((ports[0], left)),
-                    (Some(_), None) | (None, Some(_)) => return None,
-                    (Some(left_point), Some(right_point))
-                        if !same_unordered_pair([left_point, right_point], [left, right]) =>
-                    {
-                        return None;
-                    }
-                    _ => None,
+        let inserted = if let Some([left, right]) = resolved[edge] {
+            match (bound(&ports[0])?, bound(&ports[1])?) {
+                (Some(point), None) if point == left => Some((ports[1], right)),
+                (Some(point), None) if point == right => Some((ports[1], left)),
+                (None, Some(point)) if point == left => Some((ports[0], right)),
+                (None, Some(point)) if point == right => Some((ports[0], left)),
+                (Some(_), None) | (None, Some(_)) => return Ok(None),
+                (Some(left_point), Some(right_point))
+                    if !same_unordered_pair([left_point, right_point], [left, right]) =>
+                {
+                    return Ok(None);
                 }
-            } else {
-                None
-            };
-            if let Some((port, point)) = inserted {
-                if let Err(error) = ctx.insert_hash_map(
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if let Some((port, point)) = inserted {
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(
                     &mut port_points,
                     port,
                     point,
                     "catia_port_propagated_points",
-                ) {
-                    return Some(Err(error));
-                }
-            }
-            if let (Some(&left), Some(&right)) =
-                (port_points.get(&ports[0]), port_points.get(&ports[1]))
-            {
-                if ports[0] == ports[1] || left != right {
-                    if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, [left, right]))
-                    {
-                        return None;
-                    }
-                    resolved[edge] = Some([left, right]);
-                }
-            }
-            if let Some((port, _)) = inserted {
-                for &neighbor in edges_by_port.get(&port)? {
-                    if !queued[neighbor] {
-                        queued[neighbor] = true;
-                        if let Err(error) =
-                            ctx.push_back(&mut queue, neighbor, "catia_edge_port_neighbor_queue")
-                        {
-                            return Some(Err(error));
-                        }
-                    }
-                }
-            }
+                )
+            })?;
         }
-        let mut resolved_ports = Vec::new();
-        let mut resolved_candidates = Vec::new();
-        for (ports, pair) in edge_ports.iter().copied().zip(resolved.iter().copied()) {
-            if let Some(pair) = pair {
-                if let Err(error) =
-                    ctx.push_vec(&mut resolved_ports, ports, "catia_port_resolved_port_rows")
-                {
-                    return Some(Err(error));
-                }
-                let candidate =
-                    match ctx.alloc_filled(1, pair, "catia_port_resolved_candidate_pair") {
-                        Ok(candidate) => candidate,
-                        Err(error) => return Some(Err(error)),
-                    };
-                if let Err(error) = ctx.push_vec(
-                    &mut resolved_candidates,
-                    candidate,
-                    "catia_port_resolved_candidate_rows",
-                ) {
-                    return Some(Err(error));
-                }
-            }
-        }
-        match edge_port_candidate_assignment(
-            ctx,
-            &resolved_ports,
-            &resolved_candidates,
-            false,
-            true,
+        if let (Some(left), Some(right)) = (
+            ctx.get_hash_map(&port_points, &ports[0], "catia_port_propagated_points")?
+                .copied(),
+            ctx.get_hash_map(&port_points, &ports[1], "catia_port_propagated_points")?
+                .copied(),
         ) {
-            Ok(Some(_)) => {}
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
+            if ports[0] == ports[1] || left != right {
+                if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, [left, right])) {
+                    return Ok(None);
+                }
+                resolved[edge] = Some([left, right]);
+            }
         }
-        Some(Ok(resolved))
-    })()
-    .transpose()
+        if let Some((port, _)) = inserted {
+            let Some(neighbors) = ctx.get_btree_map(&edges_by_port, &port, OPERATION)? else {
+                return Ok(None);
+            };
+            for &neighbor in ctx.admit_iter(neighbors, OPERATION)? {
+                if !queued[neighbor] {
+                    queued[neighbor] = true;
+                    scratch.with_storage(|| {
+                        ctx.push_back(&mut queue, neighbor, "catia_edge_port_neighbor_queue")
+                    })?;
+                }
+            }
+        }
+    }
+    let (resolved_rows, _resolved_storage) =
+        ctx.with_scoped_storage("catia_port_resolved_port_rows", || {
+            let mut resolved_ports = Vec::new();
+            let mut resolved_candidates = Vec::new();
+            for (ports, pair) in ctx
+                .admit_iter(edge_ports, "catia_port_resolved_port_rows")?
+                .zip(&resolved)
+            {
+                if let Some(pair) = *pair {
+                    ctx.push_vec(&mut resolved_ports, *ports, "catia_port_resolved_port_rows")?;
+                    ctx.push_vec(
+                        &mut resolved_candidates,
+                        ctx.alloc_filled(1, pair, "catia_port_resolved_candidate_pair")?,
+                        "catia_port_resolved_candidate_rows",
+                    )?;
+                }
+            }
+            Ok::<_, CodecError>((resolved_ports, resolved_candidates))
+        })?;
+    let (resolved_ports, resolved_candidates) = resolved_rows;
+    let (viable, _viability_storage) = ctx.with_scoped_storage(
+        "catia_port_resolved_viability",
+        || -> Result<bool, CodecError> {
+            Ok(edge_port_candidate_assignment(
+                ctx,
+                &resolved_ports,
+                &resolved_candidates,
+                false,
+                true,
+            )?
+            .is_some())
+        },
+    )?;
+    if !viable {
+        return Ok(None);
+    }
+    Ok(Some(resolved))
 }
 
 /// Propagate endpoint points while leaving every port component that touches
@@ -4987,13 +5461,18 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds_and_deferred(
     {
         return Ok(None);
     }
-    let mut effective_deferred =
-        ctx.copy_slice(deferred_edges, "catia_ordered_seed_deferred_copy")?;
+    let mut scratch = ctx.reserve_scoped(0, "catia_ordered_seed_deferred_copy")?;
+    let mut effective_deferred = scratch
+        .with_storage(|| ctx.copy_slice(deferred_edges, "catia_ordered_seed_deferred_copy"))?;
     if !expand_deferred_edge_port_components(ctx, edge_ports, &mut effective_deferred)? {
         return Ok(None);
     }
-    let mut masked_pairs = ctx.copy_slice(endpoint_pairs, "catia_ordered_seed_pair_copy")?;
-    for (edge, deferred) in effective_deferred.into_iter().enumerate() {
+    let mut masked_pairs =
+        scratch.with_storage(|| ctx.copy_slice(endpoint_pairs, "catia_ordered_seed_pair_copy"))?;
+    for (edge, &deferred) in ctx
+        .admit_iter(&effective_deferred, "catia_ordered_seed_pair_copy")?
+        .enumerate()
+    {
         if deferred
             && ordered_endpoint_pairs
                 .get(edge)
@@ -5021,6 +5500,7 @@ pub(crate) fn propagate_partial_edge_port_points_with_ordered_seeds(
     endpoint_pairs: &[Option<[usize; 2]>],
     ordered_endpoint_pairs: &[Option<[usize; 2]>],
 ) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
+    const OPERATION: &str = "catia_partial_known_port_rows";
     if edge_ports.len() != endpoint_pairs.len() {
         return Ok(None);
     }
@@ -5028,42 +5508,50 @@ pub(crate) fn propagate_partial_edge_port_points_with_ordered_seeds(
         return Ok(None);
     }
     let mut resolved = ctx.copy_slice(endpoint_pairs, "catia_partial_port_resolved_pairs")?;
-    if !ordered_endpoint_pairs.is_empty() {
-        for (edge, ordered) in ordered_endpoint_pairs.iter().enumerate() {
-            let Some(ordered) = ordered else { continue };
-            if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, *ordered)) {
-                return Ok(None);
-            }
-            resolved[edge] = Some(*ordered);
+    let mut charged_steps = ordered_endpoint_pairs.iter().enumerate();
+    while let Some((edge, ordered)) =
+        ctx.next_charged(&mut charged_steps, "catia_partial_port_resolved_pairs")?
+    {
+        let Some(ordered) = ordered else { continue };
+        if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, *ordered)) {
+            return Ok(None);
         }
+        resolved[edge] = Some(*ordered);
     }
+    let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
     let mut known = Vec::new();
-    for (edge, ports) in edge_ports.iter().enumerate() {
+    for (edge, ports) in ctx.admit_iter(edge_ports, OPERATION)?.enumerate() {
         if let Some(ports) = ports {
-            ctx.push_vec(&mut known, (edge, *ports), "catia_partial_known_port_rows")?;
+            scratch.with_storage(|| ctx.push_vec(&mut known, (edge, *ports), OPERATION))?;
         }
     }
     if known.is_empty() {
         return Ok(Some(resolved));
     }
-    let mut ports = Vec::new();
-    let mut pairs = Vec::new();
-    let mut ordered = Vec::new();
-    ctx.reserve_vec(&mut ports, known.len(), "catia_partial_port_rows")?;
-    ctx.reserve_vec(&mut pairs, known.len(), "catia_partial_pair_rows")?;
-    ctx.reserve_vec(&mut ordered, known.len(), "catia_partial_ordered_rows")?;
-    for &(edge, port) in &known {
-        ports.push(port);
-        pairs.push(resolved[edge]);
-        ordered.push(ordered_endpoint_pairs.get(edge).copied().flatten());
-    }
-    let Some(propagated) =
-        propagate_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)?
-    else {
+    let (rows, _rows_storage) = ctx.with_scoped_storage("catia_partial_port_rows", || {
+        let mut ports = ctx.collection_vec(known.len(), "catia_partial_port_rows")?;
+        let mut pairs = ctx.collection_vec(known.len(), "catia_partial_pair_rows")?;
+        let mut ordered = ctx.collection_vec(known.len(), "catia_partial_ordered_rows")?;
+        for &(edge, port) in ctx.admit_iter(&known, "catia_partial_port_rows")? {
+            ports.push(port);
+            pairs.push(resolved[edge]);
+            ordered.push(ordered_endpoint_pairs.get(edge).copied().flatten());
+        }
+        Ok::<_, CodecError>((ports, pairs, ordered))
+    })?;
+    let (ports, pairs, ordered) = rows;
+    let (propagated, _propagated_storage) = ctx
+        .with_scoped_storage("catia_partial_propagation_workspace", || {
+            propagate_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)
+        })?;
+    let Some(propagated) = propagated else {
         return Ok(None);
     };
-    for ((edge, _), pair) in known.into_iter().zip(propagated) {
-        resolved[edge] = pair;
+    for ((edge, _), pair) in ctx
+        .admit_iter(&known, "catia_partial_port_resolved_pairs")?
+        .zip(propagated)
+    {
+        resolved[*edge] = pair;
     }
     Ok(Some(resolved))
 }
@@ -5093,6 +5581,8 @@ fn port_candidate_pair_key(pair: [usize; 2]) -> [usize; 2] {
     }
 }
 
+type PortBindingUndo = [Option<(u32, usize)>; 2];
+
 struct PortCandidateSearch<'a, 'b> {
     ctx: &'a DecodeContext<'b>,
     ports: &'a [[u32; 2]],
@@ -5103,80 +5593,108 @@ struct PortCandidateSearch<'a, 'b> {
     outcome: SearchOutcome<Vec<[usize; 2]>>,
     states: usize,
     mode: PortCandidateSearchMode,
+    map_storage: cadmpeg_core::decode::ScopedReservation<'a>,
+    outcome_storage: cadmpeg_core::decode::ScopedReservation<'a>,
 }
 
 impl PortCandidateSearch<'_, '_> {
-    fn compatible(&self, edge: usize, pair: [usize; 2]) -> [Option<[usize; 2]>; 2] {
+    /// The orientations of a candidate pair that agree with the bound ports
+    /// (and, under a point bijection, with the bound points).
+    fn compatible(
+        &self,
+        edge: usize,
+        pair: [usize; 2],
+    ) -> Result<[Option<[usize; 2]>; 2], CodecError> {
+        const OPERATION: &str = "catia_port_search_points";
         let mut oriented = [
             Some(pair),
             (pair[0] != pair[1]).then_some([pair[1], pair[0]]),
         ];
         for option in &mut oriented {
-            let Some(points) = option else {
+            let Some(points) = *option else {
                 continue;
             };
-            let compatible = (self.ports[edge][0] == self.ports[edge][1])
-                == (points[0] == points[1])
-                && self.ports[edge]
-                    .iter()
-                    .zip(points.iter().copied())
-                    .all(|(&port, point)| {
-                        self.port_points
-                            .get(&port)
-                            .is_none_or(|stored| *stored == point)
-                            && (!self.mode.enforces_point_bijection()
-                                || self
-                                    .point_ports
-                                    .get(&point)
-                                    .is_none_or(|stored| *stored == port))
-                    });
+            let mut compatible =
+                (self.ports[edge][0] == self.ports[edge][1]) == (points[0] == points[1]);
+            for (&port, point) in self.ports[edge].iter().zip(points) {
+                if !compatible {
+                    break;
+                }
+                compatible = self
+                    .ctx
+                    .get_hash_map(&self.port_points, &port, OPERATION)?
+                    .is_none_or(|stored| *stored == point)
+                    && (!self.mode.enforces_point_bijection()
+                        || self
+                            .ctx
+                            .get_hash_map(&self.point_ports, &point, OPERATION)?
+                            .is_none_or(|stored| *stored == port));
+            }
             if !compatible {
                 *option = None;
             }
         }
-        oriented
+        Ok(oriented)
     }
 
-    fn assign(&mut self, edge: usize, points: [usize; 2]) -> Result<Vec<(u32, usize)>, CodecError> {
-        let mut inserted = Vec::new();
-        for (&port, point) in self.ports[edge].iter().zip(points) {
-            if !self.port_points.contains_key(&port) {
-                self.ctx.insert_hash_map(
-                    &mut self.port_points,
-                    port,
-                    point,
-                    "catia_port_search_points",
-                )?;
-                if self.mode.enforces_point_bijection() {
+    fn assign(&mut self, edge: usize, points: [usize; 2]) -> Result<PortBindingUndo, CodecError> {
+        let mut inserted = [None; 2];
+        for (slot, (&port, point)) in self.ports[edge].iter().zip(points).enumerate() {
+            if !self.ctx.contains_key_hash_map(
+                &self.port_points,
+                &port,
+                "catia_port_search_points",
+            )? {
+                self.map_storage.with_storage(|| {
                     self.ctx.insert_hash_map(
-                        &mut self.point_ports,
-                        point,
+                        &mut self.port_points,
                         port,
-                        "catia_port_search_reverse_points",
-                    )?;
+                        point,
+                        "catia_port_search_points",
+                    )
+                })?;
+                if self.mode.enforces_point_bijection() {
+                    self.map_storage.with_storage(|| {
+                        self.ctx.insert_hash_map(
+                            &mut self.point_ports,
+                            point,
+                            port,
+                            "catia_port_search_reverse_points",
+                        )
+                    })?;
                 }
-                self.ctx
-                    .push_vec(&mut inserted, (port, point), "catia_port_search_inserted")?;
+                inserted[slot] = Some((port, point));
             }
         }
         self.edge_pairs[edge] = Some(points);
         Ok(inserted)
     }
 
-    fn unassign(&mut self, edge: usize, inserted: Vec<(u32, usize)>) {
+    fn unassign(&mut self, edge: usize, inserted: PortBindingUndo) -> Result<(), CodecError> {
         self.edge_pairs[edge] = None;
-        for (port, point) in inserted {
-            self.port_points.remove(&port);
+        for (port, point) in inserted.into_iter().flatten() {
+            self.ctx
+                .remove_hash_map(&mut self.port_points, &port, "catia_port_search_points")?;
             if self.mode.enforces_point_bijection() {
-                self.point_ports.remove(&point);
+                self.ctx.remove_hash_map(
+                    &mut self.point_ports,
+                    &point,
+                    "catia_port_search_reverse_points",
+                )?;
             }
         }
+        Ok(())
     }
 
-    fn rollback(&mut self, propagated: Vec<(usize, Vec<(u32, usize)>)>) {
-        for (edge, inserted) in propagated.into_iter().rev() {
-            self.unassign(edge, inserted);
+    fn rollback(&mut self, propagated: Vec<(usize, PortBindingUndo)>) -> Result<(), CodecError> {
+        for (edge, inserted) in self
+            .ctx
+            .admit_iter(propagated, "catia_port_search_propagated")?
+            .rev()
+        {
+            self.unassign(edge, inserted)?;
         }
+        Ok(())
     }
 
     fn search(&mut self) -> Result<(), CodecError> {
@@ -5184,44 +5702,57 @@ impl PortCandidateSearch<'_, '_> {
         // still contain symmetric coordinate assignments. Ambiguity beyond
         // this bound is retained for later paths rather than partially bound.
         const MAX_STATES: usize = 1_024;
-        let _depth = self.ctx.enter_nested("catia_port_candidate_search")?;
-        self.ctx.charge_work(1, "catia_port_candidate_search")?;
+        const OPERATION: &str = "catia_port_candidate_search";
+        let ctx = self.ctx;
         if self.outcome.is_closed()
             || (!self.mode.requires_unique() && matches!(self.outcome, SearchOutcome::Solved(_)))
         {
             return Ok(());
         }
+        let _depth = ctx.enter_nested(OPERATION)?;
+        ctx.charge_work(1, OPERATION)?;
         let mut propagated = Vec::new();
+        let mut propagated_storage = ctx.reserve_scoped(0, "catia_port_search_propagated")?;
+        // Assign every edge with one compatible orientation until none is
+        // forced, then branch on the edge with the fewest.
         let branch = loop {
-            self.ctx.charge_work(1, "catia_missing_edge_iteration")?;
             let mut best = None;
             let mut progress = false;
             let mut incomplete = false;
-            for edge in 0..self.ports.len() {
+            let mut charged_steps = 0..self.ports.len();
+            while let Some(edge) =
+                ctx.next_charged(&mut charged_steps, "catia_missing_edge_iteration")?
+            {
                 if self.edge_pairs[edge].is_some() {
                     continue;
                 }
                 incomplete = true;
-                let mut options = self.candidates[edge]
-                    .iter()
-                    .flat_map(|pair| self.compatible(edge, *pair).into_iter().flatten());
-                let Some(first) = options.next() else {
-                    self.rollback(propagated);
+                let mut first = None;
+                let mut count = 0usize;
+                for &pair in ctx.admit_iter(&self.candidates[edge], OPERATION)? {
+                    for points in self.compatible(edge, pair)?.into_iter().flatten() {
+                        count += 1;
+                        first.get_or_insert(points);
+                    }
+                }
+                let Some(first) = first else {
+                    self.rollback(propagated)?;
                     return Ok(());
                 };
-                if options.next().is_some() {
-                    let count = 2 + options.count();
+                if count > 1 {
                     if best.is_none_or(|(stored, _)| count < stored) {
                         best = Some((count, edge));
                     }
                     continue;
                 }
                 let inserted = self.assign(edge, first)?;
-                self.ctx.push_vec(
-                    &mut propagated,
-                    (edge, inserted),
-                    "catia_port_search_propagated",
-                )?;
+                propagated_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut propagated,
+                        (edge, inserted),
+                        "catia_port_search_propagated",
+                    )
+                })?;
                 progress = true;
             }
             if !incomplete {
@@ -5233,50 +5764,65 @@ impl PortCandidateSearch<'_, '_> {
             break best.map(|(_, edge)| edge);
         };
         let Some(edge) = branch else {
-            let mut candidate = Vec::new();
-            let mut complete = true;
-            for pair in &self.edge_pairs {
-                let Some(pair) = *pair else {
-                    complete = false;
-                    break;
-                };
-                self.ctx
-                    .push_vec(&mut candidate, pair, "catia_port_search_solution")?;
+            // No branch remains only when every edge is assigned.
+            match &self.outcome {
+                SearchOutcome::Open => {
+                    let candidate = self.outcome_storage.with_storage(|| {
+                        ctx.collect_options(
+                            self.edge_pairs.iter().copied(),
+                            "catia_port_search_solution",
+                        )
+                    })?;
+                    if let Some(candidate) = candidate {
+                        self.outcome = SearchOutcome::Solved(candidate);
+                    }
+                }
+                SearchOutcome::Solved(previous) => {
+                    let equivalent = previous.len() == self.edge_pairs.len()
+                        && ctx.all_by(
+                            previous.iter().zip(&self.edge_pairs),
+                            |(&left, &right)| {
+                                Ok(right.is_some_and(|right| {
+                                    port_candidate_pair_key(left) == port_candidate_pair_key(right)
+                                }))
+                            },
+                            "catia_port_search_solution",
+                        )?;
+                    if !equivalent {
+                        self.outcome = SearchOutcome::Ambiguous;
+                        self.outcome_storage =
+                            ctx.reserve_scoped(0, "catia_port_search_solution")?;
+                    }
+                }
+                SearchOutcome::Ambiguous | SearchOutcome::Exhausted => {}
             }
-            if complete {
-                self.outcome.record_solved(candidate, |previous, next| {
-                    previous.len() == next.len()
-                        && previous.iter().zip(next).all(|(&left, &right)| {
-                            port_candidate_pair_key(left) == port_candidate_pair_key(right)
-                        })
-                });
-            }
-            self.rollback(propagated);
+            self.rollback(propagated)?;
             return Ok(());
         };
         if self.states >= MAX_STATES {
             self.outcome.exhaust();
         } else {
             self.states += 1;
-            'candidates: for candidate in 0..self.candidates[edge].len() {
+            let mut candidates = 0..self.candidates[edge].len();
+            'candidates: while let Some(candidate) = ctx.next_charged(&mut candidates, OPERATION)? {
                 for points in self
-                    .compatible(edge, self.candidates[edge][candidate])
+                    .compatible(edge, self.candidates[edge][candidate])?
                     .into_iter()
                     .flatten()
                 {
                     let inserted = self.assign(edge, points)?;
                     self.search()?;
-                    self.unassign(edge, inserted);
-                    if !self.mode.requires_unique()
-                        && matches!(self.outcome, SearchOutcome::Solved(_))
+                    self.unassign(edge, inserted)?;
+                    if self.outcome.is_closed()
+                        || (!self.mode.requires_unique()
+                            && matches!(self.outcome, SearchOutcome::Solved(_)))
                     {
                         break 'candidates;
                     }
                 }
             }
         }
-        self.rollback(propagated);
-        Ok(())
+        self.rollback(propagated)
     }
 }
 
@@ -5304,13 +5850,8 @@ pub(crate) fn unique_mesh_edge_port_candidate_pairs(
     else {
         return Ok(None);
     };
-    for pair in &mut pairs {
-        ctx.sort_unstable_by(
-            pair,
-            |value| value,
-            Ord::cmp,
-            "catia missing edge port pair sort",
-        )?;
+    for pair in ctx.admit_iter(&mut pairs, "catia missing edge port pair sort")? {
+        *pair = port_candidate_pair_key(*pair);
     }
     Ok(Some(pairs))
 }
@@ -5327,35 +5868,46 @@ pub(crate) fn unique_mesh_edge_port_candidate_pairs_with_deferred(
     if ports.len() != candidates.len() || deferred_edges.len() != candidates.len() {
         return Ok(None);
     }
-    let mut effective_deferred = ctx.copy_slice(deferred_edges, "catia_candidate_deferred_copy")?;
+    let mut scratch = ctx.reserve_scoped(0, "catia_candidate_settled_edges")?;
+    let mut effective_deferred =
+        scratch.with_storage(|| ctx.copy_slice(deferred_edges, "catia_candidate_deferred_copy"))?;
     if !expand_deferred_edge_port_components(ctx, ports, &mut effective_deferred)? {
         return Ok(None);
     }
     let mut settled = Vec::new();
     let mut settled_ports = Vec::new();
     let mut settled_candidates = Vec::new();
-    for edge in 0..ports.len() {
-        if !effective_deferred[edge] {
-            ctx.push_vec(&mut settled, edge, "catia_candidate_settled_edges")?;
-            ctx.push_vec(
-                &mut settled_ports,
-                ports[edge],
-                "catia_candidate_settled_ports",
-            )?;
-            ctx.push_vec(
-                &mut settled_candidates,
-                ctx.copy_slice(&candidates[edge], "catia_candidate_settled_pairs")?,
-                "catia_candidate_settled_rows",
-            )?;
+    for (edge, &deferred) in ctx
+        .admit_iter(&effective_deferred, "catia_candidate_settled_edges")?
+        .enumerate()
+    {
+        if !deferred {
+            scratch.with_storage(|| {
+                ctx.push_vec(&mut settled, edge, "catia_candidate_settled_edges")?;
+                ctx.push_vec(
+                    &mut settled_ports,
+                    ports[edge],
+                    "catia_candidate_settled_ports",
+                )?;
+                ctx.push_vec(
+                    &mut settled_candidates,
+                    ctx.copy_slice(&candidates[edge], "catia_candidate_settled_pairs")?,
+                    "catia_candidate_settled_rows",
+                )
+            })?;
         }
     }
-    let Some(settled_pairs) =
-        unique_mesh_edge_port_candidate_pairs(ctx, &settled_ports, &settled_candidates)?
+    let Some(settled_pairs) = scratch.with_storage(|| {
+        unique_mesh_edge_port_candidate_pairs(ctx, &settled_ports, &settled_candidates)
+    })?
     else {
         return Ok(None);
     };
     let mut resolved = ctx.alloc_filled(candidates.len(), None, "catia_candidate_resolved")?;
-    for (edge, pair) in settled.into_iter().zip(settled_pairs) {
+    for (&edge, pair) in ctx
+        .admit_iter(&settled, "catia_candidate_resolved")?
+        .zip(settled_pairs)
+    {
         resolved[edge] = Some(pair);
     }
     Ok(Some(resolved))
@@ -5368,7 +5920,10 @@ fn edge_port_candidate_assignment(
     require_unique: bool,
     enforce_point_bijection: bool,
 ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
-    if ports.len() != candidates.len() || candidates.iter().any(Vec::is_empty) {
+    const OPERATION: &str = "catia_port_dependency_ports";
+    if ports.len() != candidates.len()
+        || ctx.any_by(candidates, |pairs| Ok(pairs.is_empty()), OPERATION)?
+    {
         return Ok(None);
     }
     let mode = match (require_unique, enforce_point_bijection) {
@@ -5378,93 +5933,114 @@ fn edge_port_candidate_assignment(
         (false, false) => return Ok(None),
     };
     let mut dependencies = UnionFind::charged(ctx, ports.len(), "catia_port_dependency_union")?;
+    let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
     let mut edge_by_port = HashMap::new();
     let mut edge_by_point = HashMap::new();
-    for edge in 0..ports.len() {
-        for port in ports[edge] {
-            if let Some(previous) =
-                ctx.insert_hash_map(&mut edge_by_port, port, edge, "catia_port_dependency_ports")?
+    for (edge, edge_ports) in ctx.admit_iter(ports, OPERATION)?.enumerate() {
+        for &port in edge_ports {
+            if let Some(previous) = scratch
+                .with_storage(|| ctx.insert_hash_map(&mut edge_by_port, port, edge, OPERATION))?
             {
                 dependencies.union(ctx, previous, edge)?;
             }
         }
         if enforce_point_bijection {
-            for point in candidates[edge].iter().flatten() {
-                if let Some(previous) = ctx.insert_hash_map(
-                    &mut edge_by_point,
-                    *point,
-                    edge,
-                    "catia_port_dependency_points",
-                )? {
+            for &point in ctx
+                .admit_iter(&candidates[edge], "catia_port_dependency_points")?
+                .flatten()
+            {
+                if let Some(previous) = scratch.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut edge_by_point,
+                        point,
+                        edge,
+                        "catia_port_dependency_points",
+                    )
+                })? {
                     dependencies.union(ctx, previous, edge)?;
                 }
             }
         }
     }
-    let mut groups = HashMap::<usize, Vec<usize>>::new();
-    for edge in 0..ports.len() {
+    // Components open in first-edge order and list their edges ascending.
+    let mut component_of_root = scratch
+        .with_storage(|| ctx.alloc_filled(ports.len(), None, "catia_port_component_roots"))?;
+    let mut components: Vec<Vec<usize>> = Vec::new();
+    for edge in ctx.admit_iter(&(0..ports.len()), "catia_port_component_edges")? {
         let root = dependencies.find(ctx, edge)?;
-        if let Some(group) = groups.get_mut(&root) {
-            ctx.push_vec(group, edge, "catia_port_component_edges")?;
+        let component = if let Some(component) = component_of_root[root] {
+            component
         } else {
-            let mut group = Vec::new();
-            ctx.push_vec(&mut group, edge, "catia_port_component_edges")?;
-            ctx.insert_hash_map(&mut groups, root, group, "catia_port_component_roots")?;
-        }
-    }
-    let mut components = Vec::new();
-    for group in groups.into_values() {
-        ctx.push_vec(&mut components, group, "catia_port_components")?;
-    }
-    ctx.stable_sort_by_key(
-        &mut components,
-        |value| value[0],
-        Ord::cmp,
-        "catia missing edge port components sort",
-    )?;
-    let mut solution = ctx.alloc_filled(ports.len(), None, "catia_edge_port_solution")?;
-    for component in components {
-        let mut component_ports = Vec::new();
-        let mut component_candidates = Vec::new();
-        for &edge in &component {
-            ctx.push_vec(
-                &mut component_ports,
-                ports[edge],
-                "catia_port_component_ports",
-            )?;
-            let pairs =
-                ctx.copy_slice(&candidates[edge], "catia_port_component_candidate_pairs")?;
-            ctx.push_vec(
-                &mut component_candidates,
-                pairs,
-                "catia_port_component_candidates",
-            )?;
-        }
-        let mut search = PortCandidateSearch {
-            ctx,
-            ports: &component_ports,
-            candidates: &component_candidates,
-            port_points: HashMap::new(),
-            point_ports: HashMap::new(),
-            edge_pairs: ctx.alloc_filled(component.len(), None, "catia_edge_port_pairs")?,
-            outcome: SearchOutcome::Open,
-            states: 0,
-            mode,
+            let component = components.len();
+            scratch.with_storage(|| {
+                ctx.push_vec(&mut components, Vec::new(), "catia_port_components")
+            })?;
+            component_of_root[root] = Some(component);
+            component
         };
-        search.search()?;
+        scratch.with_storage(|| {
+            ctx.push_vec(
+                &mut components[component],
+                edge,
+                "catia_port_component_edges",
+            )
+        })?;
+    }
+    let mut solution =
+        scratch.with_storage(|| ctx.alloc_filled(ports.len(), None, "catia_edge_port_solution"))?;
+    let mut charged_steps = components.iter();
+    while let Some(component) =
+        ctx.next_charged(&mut charged_steps, "catia_port_component_ports")?
+    {
+        let (rows, _rows_storage) =
+            ctx.with_scoped_storage("catia_port_component_ports", || {
+                let mut component_ports =
+                    ctx.collection_vec(component.len(), "catia_port_component_ports")?;
+                let mut component_candidates =
+                    ctx.collection_vec(component.len(), "catia_port_component_candidates")?;
+                for &edge in ctx.admit_iter(component, "catia_port_component_ports")? {
+                    component_ports.push(ports[edge]);
+                    component_candidates.push(
+                        ctx.copy_slice(&candidates[edge], "catia_port_component_candidate_pairs")?,
+                    );
+                }
+                Ok::<_, CodecError>((component_ports, component_candidates))
+            })?;
+        let (component_ports, component_candidates) = rows;
+        let mut search_storage = ctx.reserve_scoped(0, "catia_edge_port_pairs")?;
+        let mut search = search_storage.with_storage(|| {
+            Ok::<_, CodecError>(PortCandidateSearch {
+                ctx,
+                ports: &component_ports,
+                candidates: &component_candidates,
+                port_points: HashMap::new(),
+                point_ports: HashMap::new(),
+                edge_pairs: ctx.alloc_filled(component.len(), None, "catia_edge_port_pairs")?,
+                outcome: SearchOutcome::Open,
+                states: 0,
+                mode,
+                map_storage: ctx.reserve_scoped(0, "catia_port_search_points")?,
+                outcome_storage: ctx.reserve_scoped(0, "catia_port_search_solution")?,
+            })
+        })?;
+        search_storage.with_storage(|| search.search())?;
         let SearchOutcome::Solved(component_solution) = search.outcome else {
             return Ok(None);
         };
-        for (&edge, pair) in component.iter().zip(component_solution) {
+        for (&edge, pair) in ctx
+            .admit_iter(component, "catia_edge_port_solution")?
+            .zip(component_solution)
+        {
             solution[edge] = Some(pair);
         }
     }
-    let mut result = Vec::new();
-    for pair in solution {
-        let Some(pair) = pair else {
+    let mut result = ctx.collection_vec(ports.len(), "catia_port_assignment_result")?;
+    let mut charged_steps = solution.iter();
+    while let Some(pair) = ctx.next_charged(&mut charged_steps, "catia_port_assignment_result")? {
+        let Some(pair) = *pair else {
             return Ok(None);
         };
-        ctx.push_vec(&mut result, pair, "catia_port_assignment_result")?;
+        result.push(pair);
     }
     Ok(Some(result))
 }
@@ -5498,7 +6074,7 @@ pub(crate) fn motif_port_points(
         seen: &mut HashMap<u32, usize>,
         handle: u32,
     ) -> Result<(), CodecError> {
-        if !seen.contains_key(&handle) {
+        if !ctx.contains_key_hash_map(seen, &handle, "catia_motif_port_points")? {
             let next = seen.len();
             ctx.insert_hash_map(seen, handle, next, "catia_motif_port_points")?;
         }

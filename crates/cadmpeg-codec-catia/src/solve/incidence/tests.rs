@@ -21,44 +21,81 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 #[test]
-fn incidence_factor_checkpoint_refuses_nested_mask_copies() {
+fn mask_undo_charges_only_when_restored() {
+    use crate::solve::incidence::MaskUndo;
+    use cadmpeg_core::{decode::ResourceDimension, CodecError};
+
+    crate::test_support::with_work_limit(0, |ctx| {
+        let mut undo = MaskUndo::new(ctx, "test mask storage").expect("empty storage");
+        undo.record(ctx, 0, 0, 3)
+            .expect("record has no restore work");
+        drop(undo);
+    });
+    for cap in [1, 2] {
+        crate::test_support::with_work_limit(cap, |ctx| {
+            let mut undo = MaskUndo::new(ctx, "test mask storage").expect("empty storage");
+            undo.record(ctx, 0, 0, 3).expect("first record");
+            undo.record(ctx, 0, 0, 2).expect("second record");
+            let mut active = vec![vec![0]];
+            let result = undo.restore(ctx, &mut active);
+            if cap == 2 {
+                result.expect("two visits restore newest first");
+                assert_eq!(active, vec![vec![3]]);
+            } else {
+                let Err(CodecError::ResourceLimit(limit)) = result else {
+                    panic!("two visits need two units")
+                };
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(limit.operation, "catia face configuration mask restore");
+                assert_eq!(active, vec![vec![0]]);
+            }
+        });
+    }
+}
+
+#[test]
+fn incidence_factor_refinement_restores_cleared_configurations() {
     use crate::solve::incidence::{FaceFactorRefinement, PreparedFaceFactors};
     use cadmpeg_core::CodecError;
-    use std::collections::BTreeSet;
 
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        let mut factors = PreparedFaceFactors {
-            domains: Vec::new(),
-            factor_faces: Vec::new(),
-            factor_by_face: Vec::new(),
-            factors_by_edge: Vec::new(),
-            active: Some(vec![vec![1u64, 2u64]]),
-        };
-        factors.refine_edges(ctx, &[])
+    let factors = || PreparedFaceFactors {
+        domains: vec![Some(vec![vec![(0, [0, 1])], vec![(0, [1, 2])]])],
+        factor_faces: vec![0],
+        factor_by_face: vec![Some(0)],
+        factors_by_edge: vec![vec![0]],
+        active: vec![vec![0b11]],
     };
     crate::test_support::with_service_context(|ctx| {
+        let mut refined = factors();
+        let FaceFactorRefinement::Tracked(undo) = refined
+            .refine_edges(ctx, &[(0, [1, 0])], |pair| *pair)
+            .expect("service budget")
+        else {
+            panic!("one configuration agrees with the pair")
+        };
+        assert_eq!(refined.active, vec![vec![0b01]]);
+        refined.restore(ctx, Some(undo)).expect("service budget");
+        assert_eq!(refined.active, vec![vec![0b11]]);
+
+        let mut rejected = factors();
         assert!(matches!(
-            run(ctx).expect("service budget"),
-            FaceFactorRefinement::Tracked(_)
+            rejected
+                .refine_edges(ctx, &[(0, [5, 6])], |pair| *pair)
+                .expect("service budget"),
+            FaceFactorRefinement::Rejected
         ));
+        assert_eq!(rejected.active, vec![vec![0b11]]);
     });
-    let mut refusals = BTreeSet::new();
-    for cap in 0..=4 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refusals.insert(limit.operation);
-            }
-            Ok(FaceFactorRefinement::Tracked(_)) => break,
-            _ => panic!("unexpected face factor checkpoint result"),
-        }
-    }
-    assert_eq!(
-        refusals,
-        BTreeSet::from([
-            "catia_face_factor_checkpoint_rows",
-            "catia_face_factor_checkpoint_words"
-        ])
-    );
+    crate::test_support::with_collection_limit(0, |ctx| {
+        let mut refused = factors();
+        let Err(CodecError::ResourceLimit(limit)) =
+            refused.refine_edges(ctx, &[(0, [1, 0])], |pair| *pair)
+        else {
+            panic!("the undo record refuses its first entry")
+        };
+        assert_eq!(limit.operation, "catia face configuration mask undo");
+        assert_eq!(refused.active, vec![vec![0b11]]);
+    });
 }
 
 fn sparse_degrees(faces: &[&[u8]]) -> Vec<BTreeMap<usize, u8>> {
@@ -211,7 +248,7 @@ fn endpoint_candidate_fallback_honors_caller_budget() {
 }
 
 #[test]
-fn endpoint_candidate_validation_charges_full_incidence_work() {
+fn endpoint_candidate_validation_charges_candidate_visit() {
     use crate::solve::incidence::{visit_incidence_endpoint_pair_solutions, IncidenceSolve};
     use std::ops::ControlFlow;
 
@@ -236,7 +273,8 @@ fn endpoint_candidate_validation_charges_full_incidence_work() {
     let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     let edge_faces = [[0, 0]; 3];
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
-    let budget = WorkBudget::new(2);
+    // One local unit visits the candidate; validation admits its own work.
+    let budget = WorkBudget::new(0);
     let mut visited = false;
     let outcome = visit_incidence_endpoint_pair_solutions(
         &ctx,
@@ -449,7 +487,7 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -505,7 +543,7 @@ fn incidence_component_indexes_and_revalidates_frontier_support() {
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -563,7 +601,7 @@ fn incidence_component_caches_implicit_frontier_support() {
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -624,7 +662,7 @@ fn incidence_implicit_frontier_witness_refuses_map_and_pair_growth() {
             solution_filter: None,
             solution_visitor: None,
             partial_solution_filter: None,
-            dead_states: HashSet::new(),
+            dead_states: HashMap::new(),
             budget: &budget,
             degree_support_budget: &budget,
             coordinate_propagation_budget: &budget,
@@ -683,7 +721,7 @@ fn incidence_degree_support_budget_exhaustion_keeps_candidate_unknown() {
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &degree_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -732,7 +770,7 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -800,7 +838,7 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -846,7 +884,7 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -857,7 +895,7 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
             .expect("service resource budget"),
         Some(vec![(0, [0, 2])])
     );
@@ -896,7 +934,7 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -907,7 +945,7 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
             .expect("service resource budget"),
         Some(vec![(0, [0, 2])])
     );
@@ -955,7 +993,7 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
         solution_filter: Some(&solution_filter),
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -1008,7 +1046,7 @@ fn incidence_solution_filter_propagates_collection_refusal() {
             solution_filter: Some(&filter),
             solution_visitor: None,
             partial_solution_filter: None,
-            dead_states: HashSet::new(),
+            dead_states: HashMap::new(),
             budget: &budget,
             degree_support_budget: &budget,
             coordinate_propagation_budget: &budget,
@@ -1089,7 +1127,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
             assignment_order: AssignmentOrder::new(None, Some(&assignment_dependencies)),
             valid: &valid,
         }),
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -1100,7 +1138,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
             .expect("service resource budget"),
         Some(vec![(1, [3, 4]), (1, [3, 5]), (1, [4, 5])])
     );
@@ -1150,7 +1188,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
             assignment_order: AssignmentOrder::new(Some(&assignment_predecessors), None),
             valid: &valid,
         }),
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -1161,7 +1199,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
             .expect("service resource budget"),
         Some(vec![(0, [0, 1]), (0, [0, 2])])
     );
@@ -1175,7 +1213,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     assert_eq!(
         independent
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
             .expect("service resource budget"),
         Some(Vec::new())
     );
@@ -1214,7 +1252,7 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -1270,7 +1308,7 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -1329,7 +1367,7 @@ fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &search_budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -1393,7 +1431,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -1460,7 +1498,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -1528,7 +1566,7 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
@@ -1608,7 +1646,7 @@ fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
         solution_filter: None,
         solution_visitor: None,
         partial_solution_filter: None,
-        dead_states: HashSet::new(),
+        dead_states: HashMap::new(),
         budget: &budget,
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
