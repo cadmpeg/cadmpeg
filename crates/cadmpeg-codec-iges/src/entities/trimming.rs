@@ -304,7 +304,10 @@ fn create_boundary_vertices<'ctx>(
     source: (&str, usize),
     source_endpoints: &[BoundaryVertexSourceEndpoint],
     tolerance: cadmpeg_ir::scalar::PositiveReal,
-    sequences: &mut super::geometry::SourceSequences,
+    (sequences, derivation_storage): (
+        &mut super::geometry::SourceSequences<'_>,
+        &mut ScopedReservation<'_>,
+    ),
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<BoundaryVertices<'ctx>, BoundaryVertexCreationError> {
     let (source_entity, boundary) = source;
@@ -325,7 +328,8 @@ fn create_boundary_vertices<'ctx>(
             |_| Ok(None),
         )
     })?;
-    let mut derivations = ctx.collection_vec(clusters.len(), "iges boundary vertex derivations")?;
+    let mut derivations = derivation_storage
+        .with_storage(|| ctx.collection_vec(clusters.len(), "iges boundary vertex derivations"))?;
     for (index, cluster) in ctx
         .admit_iter(clusters, "iges boundary vertex cluster traversal")?
         .enumerate()
@@ -352,32 +356,15 @@ fn create_boundary_vertices<'ctx>(
             point: point_id,
             tolerance: Some(tolerance),
         });
-        let mut derivation_endpoints =
-            ctx.collection_vec(cluster.members.len(), "iges boundary derivation endpoints")?;
-        for member in ctx.admit_iter(
+        derivations.push(BoundaryVertexDerivation::for_decode(
+            (source_entity, &vertex_id),
+            cluster.representative,
+            tolerance.get(),
+            source_endpoints,
             &cluster.members,
-            "iges boundary derivation member traversal",
-        )? {
-            let endpoint = &source_endpoints[*member];
-            derivation_endpoints.push(BoundaryVertexSourceEndpoint {
-                edge: ctx.format_retained(
-                    format_args!("{}", endpoint.edge),
-                    "iges boundary derivation edge text",
-                )?,
-                endpoint: endpoint.endpoint,
-                position: endpoint.position,
-            });
-        }
-        derivations.push(BoundaryVertexDerivation {
-            source_entity: ctx.format_retained(
-                format_args!("{source_entity}"),
-                "iges boundary derivation source text",
-            )?,
-            vertex: vertex_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
-            representative: cluster.representative,
-            tolerance: tolerance.get(),
-            source_endpoints: derivation_endpoints,
-        });
+            ctx,
+            derivation_storage,
+        )?);
         for member in ctx.admit_iter(cluster.members, "iges boundary vertex member traversal")? {
             vertex_ids[member] = Some(vertex_storage.with_storage(|| {
                 vertex_id.try_clone_for_decode(ctx, "iges trimming identity copy")
@@ -533,13 +520,18 @@ pub(super) fn pcurve_geometry(
     support: &PcurveSupport<'_>,
     tolerance: Option<f64>,
     ctx: &DecodeContext<'_>,
-    composite_index: Option<&CompositeIndex>,
+    composite_index: &CompositeIndex,
 ) -> Result<Option<(PcurveGeometry, [f64; 2])>, super::composite::CompositeCurveError> {
     let mut identity_storage = ctx.reserve_scoped(0, "iges pcurve source identity")?;
     let curve_id = identity_storage
         .with_storage(|| crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx))?;
-    let Some((nurbs, range)) =
-        bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?
+    let Some((nurbs, range)) = bounded_nurbs_for_curve_with_tolerance(
+        ir,
+        &curve_id,
+        tolerance,
+        ctx,
+        Some(composite_index),
+    )?
     else {
         return Ok(None);
     };
@@ -1040,17 +1032,19 @@ fn linear_model_nurbs_points(
     {
         return Ok(None);
     }
-    let Some(parameters) = linear_nurbs_parameters(
+    let Some((parameters, _parameter_storage)) = linear_nurbs_parameters(
         nurbs.degree(),
         nurbs.knots(),
         nurbs.pole_count(),
         nurbs.periodic(),
         range,
-    ) else {
+        ctx,
+    )?
+    else {
         return Ok(None);
     };
     let mut points = Vec::new();
-    let mut parameters = parameters;
+    let mut parameters = parameters.into_iter();
     while let Some(parameter) =
         ctx.next_charged(&mut parameters, "iges linear boundary parameter traversal")?
     {
@@ -1091,17 +1085,19 @@ fn linear_pcurve_points(
     {
         return Ok(None);
     }
-    let Some(parameters) = linear_nurbs_parameters(
+    let Some((parameters, _parameter_storage)) = linear_nurbs_parameters(
         nurbs.degree(),
         nurbs.knots(),
         nurbs.pole_rows().count(),
         nurbs.periodic(),
         range,
-    ) else {
+        ctx,
+    )?
+    else {
         return Ok(None);
     };
     let mut points = Vec::new();
-    let mut parameters = parameters;
+    let mut parameters = parameters.into_iter();
     while let Some(parameter) =
         ctx.next_charged(&mut parameters, "iges linear boundary parameter traversal")?
     {
@@ -2201,8 +2197,8 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    (ctx, derivation_storage): (&DecodeContext<'_>, &mut ScopedReservation<'_>),
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<(ProjectionOutcome, Vec<BoundaryVertexDerivation>), CodecError> {
     let mut lookup_storage = ctx.reserve_scoped(0, "IGES projection source lookup")?;
     let records = parameters;
@@ -2854,7 +2850,7 @@ pub(super) fn project(
                         },
                         Some(carrier_agreement_tolerance),
                         ctx,
-                        Some(index),
+                        index,
                     ) {
                         Ok(Some(resolved)) => {
                             if let Some(pcurves) = pcurves.as_mut() {
@@ -3148,7 +3144,7 @@ pub(super) fn project(
                 ),
                 &source_endpoints,
                 checked_sewing_tolerance,
-                sequences,
+                (sequences, derivation_storage),
                 ctx,
             ) {
                 Ok(result) => result,
@@ -3169,11 +3165,13 @@ pub(super) fn project(
                 }
                 Err(BoundaryVertexCreationError::Resource(error)) => return Err(error),
             };
-            ctx.extend_vec(
-                &mut candidate_boundary_vertex_derivations,
-                derivations,
-                "iges trimming candidate vertex derivations",
-            )?;
+            derivation_storage.with_storage(|| {
+                ctx.extend_vec(
+                    &mut candidate_boundary_vertex_derivations,
+                    derivations,
+                    "iges trimming candidate vertex derivations",
+                )
+            })?;
             for (segment_index, item) in ctx
                 .admit_iter(items, "iges trimming edge traversal")?
                 .enumerate()
@@ -3543,11 +3541,13 @@ pub(super) fn project(
             entry.sequence,
             "iges trimming decoded sequences",
         )?;
-        ctx.extend_vec(
-            &mut boundary_vertex_derivations,
-            derivations,
-            "iges trimming committed vertex derivations",
-        )?;
+        derivation_storage.with_storage(|| {
+            ctx.extend_vec(
+                &mut boundary_vertex_derivations,
+                derivations,
+                "iges trimming committed vertex derivations",
+            )
+        })?;
     }
 
     Ok((

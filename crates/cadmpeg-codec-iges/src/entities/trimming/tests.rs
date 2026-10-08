@@ -579,6 +579,7 @@ fn boundary_vertex_creation_retains_every_source_endpoint() {
         },
     ];
 
+    let mut derivation_storage = ctx.reserve_scoped(0, "test derivation storage").unwrap();
     let super::BoundaryVertices {
         ids: vertex_ids,
         derivations,
@@ -589,7 +590,10 @@ fn boundary_vertex_creation_retains_every_source_endpoint() {
         ("iges:entity:directory#9", 0),
         &source_endpoints,
         cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
-        &mut crate::entities::geometry::SourceSequences::default(),
+        (
+            &mut crate::entities::geometry::SourceSequences::default(),
+            &mut derivation_storage,
+        ),
         &ctx,
     )
     .unwrap();
@@ -645,13 +649,18 @@ fn boundary_vertex_creation_refuses_each_collection_before_growth() {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut derivation_storage =
+                    ctx.reserve_scoped(0, "test derivation storage").unwrap();
                 create_boundary_vertices(
                     &mut ModelDraft::new(),
                     &crate::ids::Stem::directory(9_u32),
                     ("iges:entity:directory#9", 0),
                     &source_endpoints,
                     cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
-                    &mut crate::entities::geometry::SourceSequences::default(),
+                    (
+                        &mut crate::entities::geometry::SourceSequences::default(),
+                        &mut derivation_storage,
+                    ),
                     &ctx,
                 )
                 .map(|_| ())
