@@ -99,7 +99,7 @@ pub(in crate::native) fn object_uuid_values(
 ) -> Result<Vec<ObjectUuidValue>, CodecError> {
     const FRAME_LEN: usize = 2 + 36 + 1;
     let mut values = Vec::new();
-    let sections = container.indexed_om_sections(ctx)?;
+    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
     for (section_ordinal, (entry, section)) in ctx
         .admit_iter(&sections, "NX object uuid input sections")?
         .enumerate()

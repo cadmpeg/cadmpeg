@@ -133,7 +133,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
     object_ids: &[RmFastLoadObjectId],
 ) -> Result<Vec<RmCreationDisplayDataRelation>, CodecError> {
     let mut relations = Vec::new();
-    let sections = container.om_sections(ctx)?;
+    let (sections, _sections_storage) = container.om_sections(ctx)?;
     for (entry, section) in ctx
         .admit_iter(&sections, "NX creation display input sections")?
         .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")

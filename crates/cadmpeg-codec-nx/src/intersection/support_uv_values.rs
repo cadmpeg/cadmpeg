@@ -81,12 +81,12 @@ impl SupportUvValues {
     pub(crate) fn new_charged(
         ctx: &DecodeContext<'_>,
         packing: SupportUvPacking,
-        values: Vec<f64>,
+        values: &[f64],
     ) -> Result<Option<Self>, CodecError> {
         let mut reservation = ctx.reserve_scoped(0, "NX finite support-UV values")?;
         let data = Self::with_storage(
             packing,
-            &values,
+            values,
             Vec::new(),
             |values| {
                 Ok(ctx
@@ -105,7 +105,7 @@ impl SupportUvValues {
         Ok(data)
     }
 
-    pub(crate) fn new(packing: SupportUvPacking, values: Vec<f64>) -> Result<Self, &'static str> {
+    pub(crate) fn new(packing: SupportUvPacking, values: &[f64]) -> Result<Self, &'static str> {
         let finite = {
             let mut storage = Vec::new();
             storage.try_reserve_exact(values.len()).map(|()| storage)
@@ -113,7 +113,7 @@ impl SupportUvValues {
         .map_err(|_| "values: storage allocation failed")?;
         match Self::with_storage(
             packing,
-            &values,
+            values,
             finite,
             |values| Ok::<_, Infallible>(values.next().copied()),
             |finite, value| {
@@ -124,6 +124,18 @@ impl SupportUvValues {
             Ok(value) => value,
             Err(never) => match never {},
         }
+    }
+
+    pub(super) fn copy_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            packing: self.packing,
+            values: ctx.copy_slice(&self.values, operation)?,
+            count: self.count,
+        })
     }
 
     pub(crate) fn count(&self) -> u32 {
@@ -213,7 +225,7 @@ mod tests {
             let width = packing.width();
             let values = SupportUvValues::new(
                 packing,
-                std::iter::repeat_n(0.0, width * 2).collect::<Vec<_>>(),
+                &std::iter::repeat_n(0.0, width * 2).collect::<Vec<_>>(),
             )
             .unwrap();
             assert_eq!(values.marker(), marker);
@@ -221,13 +233,13 @@ mod tests {
             for len in [0, width * 2 + 1] {
                 assert!(SupportUvValues::new(
                     packing,
-                    std::iter::repeat_n(0.0, len).collect::<Vec<_>>()
+                    &std::iter::repeat_n(0.0, len).collect::<Vec<_>>()
                 )
                 .is_err());
             }
             let mut values = std::iter::repeat_n(0.0, width * 2).collect::<Vec<_>>();
             values[0] = f64::NAN;
-            assert!(SupportUvValues::new(packing, values).is_err());
+            assert!(SupportUvValues::new(packing, &values).is_err());
         }
         assert!(SupportUvPacking::try_from(1).is_err());
     }
@@ -253,8 +265,8 @@ mod constructor_tests {
             ] {
                 crate::test_support::with_decode_context(|ctx| {
                     assert_eq!(
-                        SupportUvValues::new_charged(ctx, packing, values.clone()).unwrap(),
-                        SupportUvValues::new(packing, values).ok()
+                        SupportUvValues::new_charged(ctx, packing, &values).unwrap(),
+                        SupportUvValues::new(packing, &values).ok()
                     );
                 });
             }
@@ -272,13 +284,13 @@ mod physical_lane_tests {
             let packing = SupportUvPacking::try_from(marker).unwrap();
             crate::test_support::with_decode_context(|ctx| {
                 let scalars = vec![0.0; packing.width()];
-                let values = SupportUvValues::new_charged(ctx, packing, scalars.clone())
+                let values = SupportUvValues::new_charged(ctx, packing, &scalars)
                     .unwrap()
                     .unwrap();
                 assert_eq!(values.count(), u32::try_from(scalars.len()).unwrap());
                 assert_eq!(values.marker(), marker);
                 assert_eq!(values.into_values(), scalars);
-                let values = SupportUvValues::new(packing, scalars).unwrap();
+                let values = SupportUvValues::new(packing, &scalars).unwrap();
                 assert_eq!(values.support_uv_charged(ctx, 1).unwrap(), [None, None]);
                 assert_eq!(values.support_uv_charged(ctx, 2).unwrap(), [None, None]);
             });
@@ -292,7 +304,7 @@ mod physical_lane_tests {
             &[],
             ResourceDimension::WorkUnits,
             "admit NX support-UV scalars",
-            |ctx| SupportUvValues::new_charged(ctx, SupportUvPacking::Form2, vec![0.0, 0.0]),
+            |ctx| SupportUvValues::new_charged(ctx, SupportUvPacking::Form2, &[0.0, 0.0]),
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "admit NX support-UV scalars"));
@@ -316,10 +328,10 @@ mod validation_budget_tests {
             },
             |ctx| {
                 assert!(
-                    SupportUvValues::new_charged(ctx, SupportUvPacking::Form2, values)
+                    SupportUvValues::new_charged(ctx, SupportUvPacking::Form2, &values)
                         .unwrap()
                         .is_none()
-                )
+                );
             },
         );
     }

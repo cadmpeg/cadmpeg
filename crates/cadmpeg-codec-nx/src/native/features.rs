@@ -4112,7 +4112,7 @@ pub(super) fn feature_unlabeled_operation_body_writes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureOperationBodyWrite>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut writes = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -4183,7 +4183,7 @@ pub(super) fn feature_operation_body_writes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureOperationBodyWrite>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut writes = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -4743,7 +4743,7 @@ pub(super) fn feature_operation_object_references(
             "operation-data-block-reference"
         }
     };
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut references = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -4822,7 +4822,7 @@ pub(super) fn feature_operation_common_frames(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureOperationCommonFrame>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut frames = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -4891,7 +4891,7 @@ pub(super) fn feature_operation_terminal_frames(
     history: &FeatureHistory<'_, '_, '_>,
     common_frames: &[FeatureOperationCommonFrame],
 ) -> Result<Vec<FeatureOperationTerminalFrame>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let (common_by_record_offset, _common_storage) = ctx.unique_index(
         common_frames.iter().map(|common| {
             (
@@ -5657,7 +5657,7 @@ pub(super) fn feature_input_blocks(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureInputBlock>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut inputs = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -6242,7 +6242,7 @@ pub(super) fn feature_datum_csys_constructions(
     history: &FeatureHistory<'_, '_, '_>,
     inputs: &[FeatureInputBlock],
 ) -> Result<Vec<FeatureDatumCsysConstruction>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let (inputs_by_operation, _inputs_storage) = inputs_by_operation_label(ctx, inputs)?;
     let mut constructions = Vec::new();
     for history_section in
@@ -7650,7 +7650,7 @@ fn offset_data_block_bytes<'a, 'ctx>(
             _reservation: None,
         });
     }
-    let indexed = container.indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = container.indexed_om_sections(ctx)?;
     if let Some(blocks) = container.cached_offset_data_block_bytes() {
         return Ok(OffsetDataBlockView {
             blocks: Cow::Borrowed(blocks),
@@ -8428,7 +8428,7 @@ pub(super) fn offset_store_named_points(
     container: &Container,
 ) -> Result<Vec<OffsetStoreNamedPoint>, cadmpeg_core::CodecError> {
     let mut points = Vec::new();
-    let indexed = container.indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = container.indexed_om_sections(ctx)?;
     for (section_ordinal, (entry, section)) in ctx
         .admit_iter(indexed, "visit NX named point offset sections")?
         .enumerate()
@@ -9260,7 +9260,7 @@ pub(super) fn feature_sketch_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureSketchReference>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut references = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?

@@ -2400,20 +2400,17 @@ pub(super) fn source_meta(
         "plain_streams",
         scan.count(ctx, StreamKind::Plain)?,
     )?;
-    let external_reference_paths = scan.container.external_reference_paths(ctx)?;
+    let (external_reference_paths, _paths_storage) =
+        scan.container.external_reference_paths(ctx)?;
     for (index, path) in ctx
-        .admit_iter(
-            &external_reference_paths,
-            "nx external reference attributes",
-        )?
+        .admit_iter(external_reference_paths, "nx external reference attributes")?
         .enumerate()
     {
-        insert_source_attribute(
-            ctx,
-            &mut attributes,
+        let key = ctx.format_retained(
             format_args!("external_reference.{index}"),
-            path,
+            "nx source attribute text",
         )?;
+        ctx.insert_btree_map(&mut attributes, key, path, "nx source attributes")?;
     }
     if let Some((_, table)) = scan.container.rmfastload_object_id_table() {
         insert_source_attribute(

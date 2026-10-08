@@ -875,7 +875,9 @@ fn matching_section_refusal(
     let container = crate::test_support::with_decode_context(|ctx| {
         let container = container::scan_bytes(ctx, file)?;
         // Build the section cache once so every walk step charges the same route.
-        container.om_sections(ctx)?;
+        container
+            .om_sections(ctx)
+            .map(|(sections, _storage)| sections)?;
         Ok::<_, CodecError>(container)
     })
     .expect("section search container");

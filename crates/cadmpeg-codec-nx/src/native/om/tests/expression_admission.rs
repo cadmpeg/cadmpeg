@@ -99,7 +99,9 @@ fn native_expression_record_directory_ordinal_parse_refuses_named_work() {
     let container = crate::test_support::with_decode_context(|ctx| {
         let container = container::scan_bytes(ctx, file.as_slice())?;
         // Build the section cache once so every walk step charges the same route.
-        container.indexed_om_sections(ctx)?;
+        container
+            .indexed_om_sections(ctx)
+            .map(|(sections, _storage)| sections)?;
         Ok::<_, CodecError>(container)
     })
     .expect("indexed expression container");
@@ -127,7 +129,9 @@ fn native_expression_malformed_record_directory_ordinal_skips_declaration() {
     let container = crate::test_support::with_decode_context(|ctx| {
         let container = container::scan_bytes(ctx, file.as_slice())?;
         // Build the section cache once so every walk step charges the same route.
-        container.indexed_om_sections(ctx)?;
+        container
+            .indexed_om_sections(ctx)
+            .map(|(sections, _storage)| sections)?;
         Ok::<_, CodecError>(container)
     })
     .expect("indexed expression container");
@@ -166,7 +170,9 @@ fn expression_search_refusal(operation: &str, declarations_needed: bool) {
     let container = crate::test_support::with_decode_context(|ctx| {
         let container = container::scan_bytes(ctx, file.as_slice())?;
         // Build the section cache once so every walk step charges the same route.
-        container.indexed_om_sections(ctx)?;
+        container
+            .indexed_om_sections(ctx)
+            .map(|(sections, _storage)| sections)?;
         Ok::<_, CodecError>(container)
     })
     .expect("indexed expression container");
