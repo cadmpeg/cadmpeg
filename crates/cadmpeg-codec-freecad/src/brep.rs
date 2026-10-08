@@ -6091,17 +6091,13 @@ fn normalize_periodic_surface(
             new_count,
             "FreeCAD periodic B-rep surface weights",
         )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(new_count),
-            "FreeCAD periodic B-rep surface poles",
-        )?;
-        for u in 0..new_u {
-            for v in 0..new_v {
-                let source = (u % old_u) * old_v + v % old_v;
-                points.push(old_points[source]);
-                if let (Some(source_weights), Some(target_weights)) = (old_weights, &mut weights) {
-                    target_weights.push(source_weights[source]);
-                }
+        // Every reserved cell is filled; the source grid was checked above.
+        for cell in ctx.admit_iter(0..new_count, "FreeCAD periodic B-rep surface poles")? {
+            let (u, v) = (cell / new_v, cell % new_v);
+            let source = (u % old_u) * old_v + v % old_v;
+            points.push(old_points[source]);
+            if let (Some(source_weights), Some(target_weights)) = (old_weights, &mut weights) {
+                target_weights.push(source_weights[source]);
             }
         }
         (points, weights)
@@ -6345,12 +6341,9 @@ fn clamped_bezier_knots(
     })?;
     let mut knots = ctx.collection_vec(count, "FreeCAD Bezier knots")?;
     // A binary degree is any u16, so filling the slots is input-sized work.
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(count),
-        "FreeCAD Bezier knots",
-    )?;
-    knots.extend(std::iter::repeat_with(|| FiniteReal::ZERO).take(half));
-    knots.extend(std::iter::repeat_with(|| FiniteReal::ONE).take(half));
+    knots.extend(ctx.admit_iter(0..count, "FreeCAD Bezier knots")?.map(|index| {
+        if index < half { FiniteReal::ZERO } else { FiniteReal::ONE }
+    }));
     Ok(knots)
 }
 
