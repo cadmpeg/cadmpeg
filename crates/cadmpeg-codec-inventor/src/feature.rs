@@ -1567,14 +1567,16 @@ fn project_extrusion(
         "resolve Inventor feature sketch",
     ))
     .and_then(Option::as_ref)?;
-    let (sketch_native_id, sketch_native_id_storage) = option_result_value!(ctx
-        .with_scoped_storage("resolve Inventor extrusion sketch native id", || sketch
-            .id(ctx),));
+    let mut sketch_native_id_storage =
+        option_result_value!(ctx.reserve_scoped(0, "resolve Inventor extrusion sketch native id"));
+    let sketch_native_id =
+        option_result_value!(sketch_native_id_storage.with_storage(|| sketch.id(ctx)));
     let sketch_id = option_result_value!(ctx.get_hash_map(
         &index.sketch_ids,
         sketch_native_id.as_str(),
         "access Inventor feature records",
     ))?;
+    drop(sketch_native_id);
     drop(sketch_native_id_storage);
     let sketch_id = match sketch_id.try_clone_for_decode(ctx, "retain Inventor extrusion sketch id")
     {
