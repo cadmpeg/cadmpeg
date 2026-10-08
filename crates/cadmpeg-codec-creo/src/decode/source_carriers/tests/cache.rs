@@ -14,6 +14,16 @@ fn cached_curve() -> Curve {
     }
 }
 
+fn cached_surface(id: &'static str, record: &'static str) -> Surface {
+    Surface {
+        id: SurfaceId::mint(id).expect("identity"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            record: Some(cadmpeg_ir::ids::UnknownId::mint(record).expect("identity")),
+        }),
+        source_object: None,
+    }
+}
+
 #[test]
 fn replacement_cache_releases_geometry_and_all_storage_at_drop() {
     let curve = cached_curve();
@@ -77,6 +87,84 @@ fn source_surface_removal_releases_key_geometry_and_node_storage() {
     let cap =
         crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, None, run);
     run(cap).expect("removed surface releases storage before cache drop");
+}
+
+#[test]
+fn source_surface_node_storage_stays_live_until_last_removal() {
+    const PROBE_OPERATION: &str = "test source surface live storage probe";
+
+    let surface_a = cached_surface(
+        "creo:test:cache-surface-a#1",
+        "creo:test:cache-record-a#1",
+    );
+    let surface_b = cached_surface(
+        "creo:test:cache-surface-b#1",
+        "creo:test:cache-record-b#1",
+    );
+    let run = |cap: u64,
+               include_a: bool,
+               remove_a: bool,
+               remove_b: bool,
+               probe_bytes: Option<u64>| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut carriers = SourceUnitCarriers::for_decode(&ctx, None);
+        let mut ir = CadIr::empty();
+        if include_a {
+            carriers.admit_surface(&ctx, &mut ir, surface_a.clone())?;
+            assert_eq!(carriers.surface_geometry(&surface_a)?, &surface_a.geometry);
+        }
+        carriers.admit_surface(&ctx, &mut ir, surface_b.clone())?;
+        assert_eq!(carriers.surface_geometry(&surface_b)?, &surface_b.geometry);
+        if remove_a {
+            carriers.remove_surface(&surface_a.id)?;
+        }
+        if !remove_b {
+            assert_eq!(carriers.surface_geometry(&surface_b)?, &surface_b.geometry);
+        }
+        if remove_b {
+            carriers.remove_surface(&surface_b.id)?;
+        }
+        if let Some(probe_bytes) = probe_bytes {
+            let _probe = ctx.reserve_scoped(probe_bytes, PROBE_OPERATION)?;
+        }
+        Ok::<_, CodecError>(())
+    };
+
+    let two_entry_peak = crate::test_support::allocation_limit_at(
+        ResourceDimension::MaterializedBytes,
+        None,
+        |cap| run(cap, true, true, false, None),
+    );
+    let one_entry_peak = crate::test_support::allocation_limit_at(
+        ResourceDimension::MaterializedBytes,
+        None,
+        |cap| run(cap, false, false, false, None),
+    );
+    let probe_bytes = two_entry_peak
+        .max(one_entry_peak)
+        .checked_add(1)
+        .expect("probe exceeds setup peak");
+    let measured_live_bytes = |include_a, remove_a, remove_b| {
+        let below_probe = crate::test_support::allocation_limit_at(
+            ResourceDimension::MaterializedBytes,
+            Some(PROBE_OPERATION),
+            |cap| run(cap, include_a, remove_a, remove_b, Some(probe_bytes)),
+        );
+        below_probe
+            .checked_add(1)
+            .expect("probe boundary")
+            .checked_sub(probe_bytes)
+            .expect("probe exceeds the setup peak")
+    };
+
+    let after_removing_a = measured_live_bytes(true, true, false);
+    let with_b_only = measured_live_bytes(false, false, false);
+    assert!(after_removing_a > 0);
+    assert_eq!(after_removing_a, with_b_only);
+    assert_eq!(measured_live_bytes(true, true, true), 0);
 }
 
 #[test]
