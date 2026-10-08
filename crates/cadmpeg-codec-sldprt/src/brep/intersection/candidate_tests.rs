@@ -19,6 +19,59 @@ fn chart() -> Chart {
 }
 
 #[test]
+fn identical_bare_chart_skips_copy_and_preserves_closed_chart_acceptance() {
+    use crate::test_support::parasolid::{be16, be32, bef64};
+
+    let mut bytes = vec![0, 0x28];
+    be32(&mut bytes, 3);
+    be16(&mut bytes, 4);
+    bef64(&mut bytes, 0.0);
+    bef64(&mut bytes, 1.0);
+    be32(&mut bytes, 3);
+    bef64(&mut bytes, 0.01);
+    bytes.extend_from_slice(&[0; 8]);
+    bef64(&mut bytes, super::MISSING_PARAMETER);
+    bef64(&mut bytes, super::MISSING_PARAMETER);
+    let mut interior_at = 0;
+    for index in 0..3 {
+        if index == 1 {
+            interior_at = bytes.len();
+        }
+        for _ in 0..3 {
+            bef64(&mut bytes, 0.0);
+        }
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "decode Parasolid chart interior points", Some(1));
+    assert!(super::chart_candidates(&ctx, &bytes, 2).unwrap().is_none());
+    assert_eq!(ctx.resource_refusal(), None);
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "decode Parasolid chart interior points") else {
+        panic!("unvisited interior-copy probe remains armed");
+    };
+    assert_eq!(limit.operation, "decode Parasolid chart interior points");
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    drop(probe);
+
+    // Coincident endpoints with a distinct interior point remain a closed chart.
+    bytes[interior_at..interior_at + 8].copy_from_slice(&1.0_f64.to_be_bytes());
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (attr, candidates) = super::chart_candidates(&ctx, &bytes, 2).unwrap().unwrap();
+    assert_eq!(attr, 4);
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].endpoints, [[0.0; 3]; 2]);
+    assert_eq!(candidates[0].interior_points, [[1.0, 0.0, 0.0]]);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
 fn repeated_chart_point_releases_rejected_parameter_storage() {
     let mut chart = chart();
     // Bare chart framing permits a repeated interior point when endpoints differ.
