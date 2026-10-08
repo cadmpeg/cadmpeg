@@ -116,6 +116,80 @@ fn native_conversion_error_admission_preserves_refusals_and_formats_once() {
 }
 
 #[test]
+fn native_arena_lookup_admits_matches_and_misses_before_typed_reads() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let fixture = super::test_ctx();
+    let mut namespace = super::NativeNamespace::default();
+    namespace
+        .set_arena(
+            &fixture,
+            "records",
+            &[serde_json::json!({"id": "test:native:record#first"})],
+        )
+        .unwrap();
+
+    for name in ["records", "missing"] {
+        for lazy in [false, true] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::TYPED_RECORD_READ_COUNT.with(|count| count.set(0));
+            let error = if lazy {
+                let mut records = namespace.arena_iter_as_for_decode::<serde_json::Value>(&ctx, name);
+                let error = records.next().unwrap().unwrap_err();
+                assert!(records.next().is_none());
+                error
+            } else {
+                namespace.arena_as_for_decode::<serde_json::Value>(&ctx, name).unwrap_err()
+            };
+            super::TYPED_RECORD_READ_COUNT.with(|count| assert_eq!(count.get(), 0));
+            let CodecError::ResourceLimit(limit) = CodecError::from(error) else {
+                panic!("arena lookup must preserve its resource refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "select typed native arena");
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
+    }
+    let ctx = super::test_ctx();
+    assert!(namespace.arena_as_for_decode::<serde_json::Value>(&ctx, "missing").unwrap().is_empty());
+    assert!(namespace.arena_iter_as_for_decode::<serde_json::Value>(&ctx, "missing").next().is_none());
+}
+
+#[test]
+fn native_arena_iterator_borrows_lookup_key_and_reads_only_requested_records() {
+    #[derive(Debug, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Record {
+        id: String,
+    }
+
+    let ctx = super::test_ctx();
+    let mut namespace = super::NativeNamespace::default();
+    namespace
+        .set_arena(
+            &ctx,
+            "records",
+            &[
+                serde_json::json!({"id": "test:native:record#first"}),
+                serde_json::json!({"id": "test:native:record#second", "unexpected": 7}),
+            ],
+        )
+        .unwrap();
+    super::TYPED_RECORD_READ_COUNT.with(|count| count.set(0));
+    let mut records = namespace.arena_iter_as_for_decode::<Record>(&ctx, &String::from("records"));
+    super::TYPED_RECORD_READ_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert_eq!(records.next().unwrap().unwrap().id, "test:native:record#first");
+    super::TYPED_RECORD_READ_COUNT.with(|count| assert_eq!(count.get(), 1));
+    drop(records);
+    super::TYPED_RECORD_READ_COUNT.with(|count| assert_eq!(count.get(), 1));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
 fn native_record_conversion_refuses_retained_limit_before_record_growth() {
     use std::cell::Cell;
 
