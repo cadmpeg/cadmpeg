@@ -83,3 +83,5 @@ mod loops;
 mod reference_ranges;
 mod typed;
 mod walk;
+
+mod index_tests;

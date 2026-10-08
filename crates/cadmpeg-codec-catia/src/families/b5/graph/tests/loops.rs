@@ -259,13 +259,18 @@ fn resolve_surface_aliases(
         .collect::<HashMap<_, _>>();
     crate::test_support::with_service_context(|ctx| {
         let mut scratch = ctx.reserve_scoped(0, "test_b5_conflicts")?;
+        let terminals =
+            super::super::surface_alias_terminals(ctx, &aliases, &by_id, None, &mut scratch)?
+                .expect("no local ceiling");
         super::super::resolve_surface_aliases(
             ctx,
             &aliases,
-            &by_id,
+            &terminals,
             surfaces,
             (conflicts, &mut scratch),
+            None,
         )
+        .map(|changed| changed.expect("no local ceiling"))
     })
     .expect("service budget")
 }
@@ -281,7 +286,15 @@ fn surface_alias_carrier(
         .map(|(&object_id, record)| (object_id, record))
         .collect::<HashMap<_, _>>();
     crate::test_support::with_service_context(|ctx| {
-        super::super::surface_alias_terminal(ctx, object_id, &by_id_refs, surfaces, by_id.len())
+        let mut scratch = ctx.reserve_scoped(0, "test_alias_terminals")?;
+        let aliases = by_id_views
+            .values()
+            .filter(|record| super::super::surface_alias_target(record).is_some())
+            .collect::<Vec<_>>();
+        let terminals =
+            super::super::surface_alias_terminals(ctx, &aliases, &by_id_refs, None, &mut scratch)?
+                .expect("no local ceiling");
+        super::super::resolved_surface_alias_terminal(ctx, object_id, &terminals, surfaces)
     })
     .expect("service budget")
     .map(|terminal| surfaces[&terminal].clone())
@@ -709,7 +722,7 @@ fn b5_candidate_indexes_and_alias_walk_refuse_collection_limits() {
         },
     )]);
     let limited = crate::test_support::with_work_refusal("catia_b5_surface_alias_step", |ctx| {
-        super::super::surface_alias_terminal(ctx, 1, &HashMap::new(), &surfaces, 0)
+        super::super::resolved_surface_alias_terminal(ctx, 1, &HashMap::new(), &surfaces)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
