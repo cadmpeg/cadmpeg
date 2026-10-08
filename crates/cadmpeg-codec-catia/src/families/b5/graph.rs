@@ -2197,7 +2197,7 @@ fn object_stream_pcurve_candidate(
     ctx: &DecodeContext<'_>,
     jet: &crate::families::a5a8::records::A8Pcurve,
 ) -> Result<Option<B5Pcurve>, CodecError> {
-    let Some((_, control_points)) = jet.bspline(ctx)? else {
+    let Some((_, control_points)) = jet.bspline(ctx, false)? else {
         return Ok(None);
     };
     Ok(Some(B5Pcurve {
@@ -2447,7 +2447,12 @@ fn parse_a8_class21_pcurve(
         ) {
             return Some(Err(error));
         }
-        points.extend(u.into_iter().zip(v).map(|(u, v)| [u, v]));
+        for (u, v) in match ctx.admit_iter(u, "catia_b5_point_jet_projection") {
+            Ok(values) => values.zip(v),
+            Err(error) => return Some(Err(error.into())),
+        } {
+            points.push([u, v]);
+        }
         let mut first = Vec::new();
         if let Err(error) = ctx.reserve_scoped_vec(
             &mut scratch,
@@ -2457,7 +2462,12 @@ fn parse_a8_class21_pcurve(
         ) {
             return Some(Err(error));
         }
-        first.extend(du.into_iter().zip(dv).map(|(u, v)| [u, v]));
+        for (u, v) in match ctx.admit_iter(du, "catia_b5_first_jet_projection") {
+            Ok(values) => values.zip(dv),
+            Err(error) => return Some(Err(error.into())),
+        } {
+            first.push([u, v]);
+        }
         let mut second = Vec::new();
         if let Err(error) = ctx.reserve_scoped_vec(
             &mut scratch,
@@ -2467,8 +2477,13 @@ fn parse_a8_class21_pcurve(
         ) {
             return Some(Err(error));
         }
-        second.extend(ddu.into_iter().zip(ddv).map(|(u, v)| [u, v]));
-        let (_, control_points) = match crate::nurbs::quintic_jet_bspline(
+        for (u, v) in match ctx.admit_iter(ddu, "catia_b5_second_jet_projection") {
+            Ok(values) => values.zip(ddv),
+            Err(error) => return Some(Err(error.into())),
+        } {
+            second.push([u, v]);
+        }
+        let control_points = match crate::nurbs::quintic_jet_controls(
             ctx,
             degree,
             &knot_values,

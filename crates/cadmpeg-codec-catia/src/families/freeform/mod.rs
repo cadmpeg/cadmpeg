@@ -2104,7 +2104,8 @@ pub(super) fn append_freeform_surface_pools(
                     second.push([value[0], value[1], value[2]]);
                 }
             }
-            let distinct_knots = guide.knots(ctx)?;
+            let mut knot_input_storage = ctx.reserve_scoped(0, "catia A5 guide knot input")?;
+            let distinct_knots = knot_input_storage.with_storage(|| guide.knots(ctx))?;
             crate::nurbs::quintic_jet_bspline(
                 ctx,
                 guide.degree,
@@ -2112,25 +2113,24 @@ pub(super) fn append_freeform_surface_pools(
                 &points,
                 &first,
                 &second,
-                cadmpeg_ir::units::FiniteVector::new,
+                |point| {
+                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                        point[0], point[1], point[2],
+                    ))
+                },
             )?
         };
         let Some((knots, control_points)) = solution else {
             continue;
         };
-        let mut poles = Vec::new();
-        admission.context().reserve_vec(
-            &mut poles,
-            control_points.len(),
-            "catia A5 guide poles",
-        )?;
-        poles.extend(
-            control_points
-                .into_iter()
-                .map(|point| Point3::new(point[0], point[1], point[2])),
-        );
-        let geometry =
-            NurbsCurve::from_lanes(admission.context(), guide.degree, knots, poles, None, false)??;
+        let geometry = NurbsCurve::from_lanes(
+            admission.context(),
+            guide.degree,
+            knots,
+            control_points,
+            None,
+            false,
+        )??;
         let id = crate::resource::compose_index_id(
             admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "guide", "curve"),

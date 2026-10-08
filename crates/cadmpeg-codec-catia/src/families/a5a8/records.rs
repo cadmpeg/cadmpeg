@@ -533,36 +533,45 @@ impl A8Pcurve {
     pub(in crate::families) fn bspline(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        keep_full_knots: bool,
     ) -> A8BSplineOutput {
-        let mut knots = Vec::new();
-        let mut points = Vec::new();
-        let mut first = Vec::new();
-        let mut second = Vec::new();
-        ctx.reserve_vec(&mut knots, self.sites.len(), "catia A8 pcurve jet knots")?;
-        ctx.reserve_vec(&mut points, self.sites.len(), "catia A8 pcurve jet points")?;
-        ctx.reserve_vec(&mut first, self.sites.len(), "catia A8 pcurve first jets")?;
-        ctx.reserve_vec(&mut second, self.sites.len(), "catia A8 pcurve second jets")?;
-        let work = u64_from_index(self.sites.len())
-            .checked_mul(4)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("catia_a8_pcurve_jet_projection", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(work, "catia_a8_pcurve_jet_projection")?;
-        for site in &self.sites {
+        let mut input_storage = ctx.reserve_scoped(0, "catia A8 pcurve jet input")?;
+        let mut knots = input_storage
+            .with_storage(|| ctx.collection_vec(self.sites.len(), "catia A8 pcurve jet knots"))?;
+        let mut points = input_storage
+            .with_storage(|| ctx.collection_vec(self.sites.len(), "catia A8 pcurve jet points"))?;
+        let mut first = input_storage
+            .with_storage(|| ctx.collection_vec(self.sites.len(), "catia A8 pcurve first jets"))?;
+        let mut second = input_storage
+            .with_storage(|| ctx.collection_vec(self.sites.len(), "catia A8 pcurve second jets"))?;
+        for site in ctx.admit_iter(&self.sites, "catia_a8_pcurve_jet_projection")? {
             knots.push(site.knot.get());
             points.push(site.point.get());
             first.push(site.first_derivative.get());
             second.push(site.second_derivative.get());
         }
-        crate::nurbs::quintic_jet_bspline(
-            ctx,
-            Self::DEGREE,
-            &knots,
-            &points,
-            &first,
-            &second,
-            cadmpeg_ir::units::FiniteVector::new,
-        )
+        if keep_full_knots {
+            crate::nurbs::quintic_jet_bspline(
+                ctx,
+                Self::DEGREE,
+                &knots,
+                &points,
+                &first,
+                &second,
+                cadmpeg_ir::units::FiniteVector::new,
+            )
+        } else {
+            Ok(crate::nurbs::quintic_jet_controls(
+                ctx,
+                Self::DEGREE,
+                &knots,
+                &points,
+                &first,
+                &second,
+                cadmpeg_ir::units::FiniteVector::new,
+            )?
+            .map(|controls| (Vec::new(), controls)))
+        }
     }
 }
 
@@ -654,31 +663,15 @@ pub(in crate::families) fn rolling_ball_limit_curve(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<NurbsCurve>, cadmpeg_core::CodecError> {
     let offset = usize::from(second_limit) * 3;
-    let mut positions = Vec::new();
-    let mut first = Vec::new();
-    let mut second = Vec::new();
-    ctx.reserve_vec(
-        &mut positions,
-        jet.sites.len(),
-        "catia A5 rolling ball positions",
-    )?;
-    ctx.reserve_vec(
-        &mut first,
-        jet.sites.len(),
-        "catia A5 rolling ball first jets",
-    )?;
-    ctx.reserve_vec(
-        &mut second,
-        jet.sites.len(),
-        "catia A5 rolling ball second jets",
-    )?;
-    let work = u64_from_index(jet.sites.len())
-        .checked_mul(3)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("catia_a5_limit_jet_projection", u64::MAX - 1, u64::MAX)
-        })?;
-    ctx.charge_work(work, "catia_a5_limit_jet_projection")?;
-    for sample in &jet.sites {
+    let mut input_storage = ctx.reserve_scoped(0, "catia A5 rolling ball input")?;
+    let mut positions = input_storage
+        .with_storage(|| ctx.collection_vec(jet.sites.len(), "catia A5 rolling ball positions"))?;
+    let mut first = input_storage
+        .with_storage(|| ctx.collection_vec(jet.sites.len(), "catia A5 rolling ball first jets"))?;
+    let mut second = input_storage.with_storage(|| {
+        ctx.collection_vec(jet.sites.len(), "catia A5 rolling ball second jets")
+    })?;
+    for sample in ctx.admit_iter(&jet.sites, "catia_a5_limit_jet_projection")? {
         let limit = if second_limit {
             sample.site.limit2
         } else {
@@ -690,7 +683,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
         let values = FiniteReal::raw_array(sample.second_derivatives);
         second.push([values[offset], values[offset + 1], values[offset + 2]]);
     }
-    let knots = jet.knots(ctx)?;
+    let knots = input_storage.with_storage(|| jet.knots(ctx))?;
     let Some((knots, control_points)) = crate::nurbs::quintic_jet_bspline(
         ctx,
         A5FreeformCurve::DEGREE,
@@ -698,7 +691,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
         &positions,
         &first,
         &second,
-        cadmpeg_ir::units::FiniteVector::new,
+        |point| cadmpeg_ir::features::FinitePoint3::new(Point3::new(point[0], point[1], point[2])),
     )?
     else {
         refusal.push_solver(
@@ -711,28 +704,13 @@ pub(in crate::families) fn rolling_ball_limit_curve(
         )?;
         return Ok(None);
     };
-    let mut poles = Vec::new();
-    ctx.reserve_vec(
-        &mut poles,
-        control_points.len(),
-        "catia A5 rolling ball poles",
-    )?;
-    ctx.charge_work(
-        u64_from_index(control_points.len()),
-        "catia_a5_limit_pole_projection",
-    )?;
-    poles.extend(
-        control_points
-            .into_iter()
-            .map(|point| Point3::new(point[0], point[1], point[2])),
-    );
     crate::nurbs::note_refusal(
         ctx,
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             A5FreeformCurve::DEGREE,
             knots,
-            poles,
+            control_points,
             None,
             false,
         )?,
