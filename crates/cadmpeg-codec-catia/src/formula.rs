@@ -704,7 +704,7 @@ pub(crate) fn transfer_parameters<'ctx>(
                 continue;
             }
             if entity.formula_relation().is_some()
-                || object.subtype() == crate::object_graph::PayloadSubtype::Empty
+                || object.subtype_charged(ctx)? == crate::object_graph::PayloadSubtype::Empty
                     && object.references.is_empty()
             {
                 consumed_storage.with_storage(|| {
