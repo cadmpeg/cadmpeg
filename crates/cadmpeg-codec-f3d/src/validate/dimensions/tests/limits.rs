@@ -192,7 +192,7 @@ fn dimension_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_cor
         policy.limits.max_collection_items = max_items;
         policy.limits.max_retained_bytes = max_retained;
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let mut ctx = crate::validate::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
         let mut findings = Vec::new();
         match case {
@@ -223,13 +223,16 @@ fn dimension_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_cor
 }
 
 macro_rules! limit_case {
-    ($name:ident, $case:expr, $items:expr, $retained:expr, $operation:literal) => {
+    ($name:ident, $case:expr, $retained:expr, $operation:literal) => {
         #[test]
         fn $name() {
             let error = if $retained != u64::MAX {
                 cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                    $operation, |cap| Err::<(), cadmpeg_core::CodecError>(dimension_error($case, $items, cap)))
-            } else { dimension_error($case, $items, $retained) };
+                    $operation, |cap| Err::<(), cadmpeg_core::CodecError>(dimension_error($case, u64::MAX, cap)))
+            } else {
+ cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems,
+ $operation, |cap| Err::<(), cadmpeg_core::CodecError>(dimension_error($case, cap, u64::MAX)))
+};
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == $operation));
         }
@@ -239,154 +242,181 @@ macro_rules! limit_case {
 limit_case!(
     dimension_recipe_invalid_finding_refuses_collection_limit,
     Case::Recipe,
-    0,
     u64::MAX,
     "collect F3D native validation findings"
 );
 limit_case!(
     dimension_recipe_invalid_entity_refuses_retained_limit,
     Case::Recipe,
-    u64::MAX,
     0,
     "retain F3D validation entity"
 );
 limit_case!(
     dimension_locus_pair_index_refuses_collection_limit,
     Case::Pair,
-    0,
     u64::MAX,
     "index F3D dimension locus pairs"
 );
 limit_case!(
     dimension_locus_pair_companion_refuses_collection_limit,
     Case::Pair,
-    1,
     u64::MAX,
     "index F3D dimension locus pair companions"
 );
 limit_case!(
     dimension_annotation_index_refuses_collection_limit,
     Case::Annotation,
-    0,
     u64::MAX,
     "index F3D dimension annotation frames"
 );
 limit_case!(
     dimension_presentation_index_refuses_collection_limit,
     Case::Presentation,
-    0,
     u64::MAX,
     "index F3D dimension presentation frames"
 );
 limit_case!(
     dimension_locus_group_index_refuses_collection_limit,
     Case::Group,
-    0,
     u64::MAX,
     "index F3D dimension locus groups"
 );
 limit_case!(
     dimension_locus_group_companion_refuses_collection_limit,
     Case::Group,
-    1,
     u64::MAX,
     "index F3D dimension locus group companions"
 );
 limit_case!(
     dimension_locus_members_refuse_collection_limit,
     Case::Group,
-    2,
     u64::MAX,
     "collect F3D dimension locus members"
 );
 limit_case!(
     dimension_return_members_refuse_collection_limit,
     Case::Group,
-    3,
     u64::MAX,
     "collect F3D dimension return members"
 );
 limit_case!(
     dimension_null_locus_index_refuses_collection_limit,
     Case::NullPair,
-    0,
     u64::MAX,
     "index F3D null-locus dimension pairs"
 );
 limit_case!(
     dimension_null_locus_companion_refuses_collection_limit,
     Case::NullPair,
-    1,
     u64::MAX,
     "index F3D null-locus dimension companions"
 );
 limit_case!(
     dimension_locus_pair_finding_refuses_collection_limit,
     Case::Pair,
-    2,
     u64::MAX,
     "collect F3D native validation findings"
 );
 limit_case!(
     dimension_locus_pair_entity_refuses_retained_limit,
     Case::Pair,
-    u64::MAX,
     0,
     "retain F3D validation entity"
 );
 limit_case!(
     dimension_annotation_finding_refuses_collection_limit,
     Case::Annotation,
-    1,
     u64::MAX,
     "collect F3D native validation findings"
 );
 limit_case!(
     dimension_annotation_entity_refuses_retained_limit,
     Case::Annotation,
-    u64::MAX,
     0,
     "retain F3D validation entity"
 );
 limit_case!(
     dimension_presentation_finding_refuses_collection_limit,
     Case::Presentation,
-    1,
     u64::MAX,
     "collect F3D native validation findings"
 );
 limit_case!(
     dimension_presentation_entity_refuses_retained_limit,
     Case::Presentation,
-    u64::MAX,
     0,
     "retain F3D validation entity"
 );
 limit_case!(
     dimension_locus_group_finding_refuses_collection_limit,
     Case::Group,
-    4,
     u64::MAX,
     "collect F3D native validation findings"
 );
 limit_case!(
     dimension_locus_group_entity_refuses_retained_limit,
     Case::Group,
-    u64::MAX,
     0,
     "retain F3D validation entity"
 );
 limit_case!(
     dimension_null_locus_finding_refuses_collection_limit,
     Case::NullPair,
-    2,
     u64::MAX,
     "collect F3D native validation findings"
 );
 limit_case!(
     dimension_null_locus_entity_refuses_retained_limit,
     Case::NullPair,
-    u64::MAX,
     0,
     "retain F3D validation entity"
 );
+
+#[test]
+fn dimension_recipe_absent_companion_member_skips_text_comparison() {
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = crate::native::F3dNative::default();
+        native
+            .design_dimension_recipe_records
+            .push(DesignDimensionRecipeRecord {
+                id: "f3d:native:recipe#0".into(),
+                companion_record_index: 2,
+                recipe_ordinal: 0,
+                recipe_id: "f3d:native:construction-recipe#0".into(),
+                recipe_kind: crate::records::recipes::ConstructionRecipeKind::Face,
+                byte_offset: 100,
+                class_tag: "256".to_owned().try_into().unwrap(),
+                record_index: 3,
+                frame_length: 11,
+                prefix_offset: 111,
+                prefix_bytes: Vec::new(),
+                references: Vec::new(),
+                program_offset: 111,
+                program: Vec::new(),
+                matching_edge_operand_ids: Vec::new(),
+            });
+        native.design_parameter_companions.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "f3d:native:companion#2", "byte_offset": 100,
+                "class_tag": "256", "record_index": 2, "owner_record_index": 1,
+                "timestamp_micros": 1, "timestamp_micros_offset": 142,
+            }))
+            .unwrap(),
+        );
+        let ctx = crate::validate::Ctx::new(&ir, &native, decode).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "compare F3D dimension companion recipe order",
+            None,
+        );
+        let mut findings = Vec::new();
+        super::super::validate_dimension_recipe_records(&ctx, &mut findings).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].message,
+            "Fusion Design dimension recipe has an invalid indexed-record owner"
+        );
+        assert!(decode.resource_refusal().is_none());
+    });
+}

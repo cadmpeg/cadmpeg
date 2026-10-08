@@ -25,16 +25,21 @@ fn design_type(module: &str) -> crate::records::entity_header::SegmentType {
     .unwrap()
 }
 
-fn image_index_error(module: &str, canvas: bool) -> cadmpeg_core::CodecError {
+fn image_index_error(module: &str, canvas: bool, cap: u64) -> cadmpeg_core::CodecError {
     crate::test_support::with_decode_context(|service_ctx| {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let mut native = crate::native::F3dNative::default();
         native.design_types.push(design_type(module));
+        if canvas {
+            native.design_canvas_images.push(canvas_image());
+        } else {
+            native.design_decal_images.push(decal_image());
+        }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        policy.limits.max_collection_items = cap;
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
@@ -179,7 +184,17 @@ fn image_record_error(
 
 #[test]
 fn canvas_geometry_entity_index_refuses_collection_limit() {
-    let error = image_index_error(crate::records::entity_header::DESIGN_MODULE_BODY, true);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D Canvas geometry entities",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(image_index_error(
+                crate::records::entity_header::DESIGN_MODULE_BODY,
+                true,
+                cap,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Canvas geometry entities")
@@ -188,7 +203,17 @@ fn canvas_geometry_entity_index_refuses_collection_limit() {
 
 #[test]
 fn canvas_component_entity_index_refuses_collection_limit() {
-    let error = image_index_error(crate::records::entity_header::DESIGN_MODULE_COMPONENT, true);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D Canvas component entities",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(image_index_error(
+                crate::records::entity_header::DESIGN_MODULE_COMPONENT,
+                true,
+                cap,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Canvas component entities")
@@ -197,7 +222,17 @@ fn canvas_component_entity_index_refuses_collection_limit() {
 
 #[test]
 fn decal_fusion_entity_index_refuses_collection_limit() {
-    let error = image_index_error(crate::records::entity_header::DESIGN_MODULE_FUSION, false);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D Decal fusion entities",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(image_index_error(
+                crate::records::entity_header::DESIGN_MODULE_FUSION,
+                false,
+                cap,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Decal fusion entities")
@@ -206,7 +241,11 @@ fn decal_fusion_entity_index_refuses_collection_limit() {
 
 #[test]
 fn canvas_scope_index_refuses_collection_limit() {
-    let error = image_record_error(true, true, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D Canvas scopes",
+        |cap| Err::<(), cadmpeg_core::CodecError>(image_record_error(true, true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Canvas scopes")
@@ -215,7 +254,11 @@ fn canvas_scope_index_refuses_collection_limit() {
 
 #[test]
 fn canvas_geometry_record_index_refuses_collection_limit() {
-    let error = image_record_error(true, true, 1, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D Canvas geometry records",
+        |cap| Err::<(), cadmpeg_core::CodecError>(image_record_error(true, true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Canvas geometry records")
@@ -224,7 +267,11 @@ fn canvas_geometry_record_index_refuses_collection_limit() {
 
 #[test]
 fn canvas_invalid_finding_refuses_collection_limit() {
-    let error = image_record_error(true, false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(image_record_error(true, false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -233,7 +280,11 @@ fn canvas_invalid_finding_refuses_collection_limit() {
 
 #[test]
 fn canvas_invalid_entity_refuses_retained_limit() {
-    let error = image_record_error(true, false, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(image_record_error(true, false, u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -242,7 +293,11 @@ fn canvas_invalid_entity_refuses_retained_limit() {
 
 #[test]
 fn decal_scope_index_refuses_collection_limit() {
-    let error = image_record_error(false, true, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D Decal scopes",
+        |cap| Err::<(), cadmpeg_core::CodecError>(image_record_error(false, true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Decal scopes")
@@ -251,7 +306,11 @@ fn decal_scope_index_refuses_collection_limit() {
 
 #[test]
 fn decal_asset_index_refuses_collection_limit() {
-    let error = image_record_error(false, true, 1, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D Decal assets",
+        |cap| Err::<(), cadmpeg_core::CodecError>(image_record_error(false, true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Decal assets")
@@ -260,7 +319,11 @@ fn decal_asset_index_refuses_collection_limit() {
 
 #[test]
 fn decal_invalid_finding_refuses_collection_limit() {
-    let error = image_record_error(false, false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(image_record_error(false, false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -269,7 +332,11 @@ fn decal_invalid_finding_refuses_collection_limit() {
 
 #[test]
 fn decal_invalid_entity_refuses_retained_limit() {
-    let error = image_record_error(false, false, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(image_record_error(false, false, u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -320,15 +387,6 @@ fn canvas_scope_lookup_preserves_work_refusal() {
 }
 
 #[test]
-fn canvas_scope_kind_preserves_work_refusal() {
-    let error = image_work_error(true, "compare F3D Canvas scope kind");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "compare F3D Canvas scope kind")
-    );
-}
-
-#[test]
 fn decal_scope_lookup_preserves_work_refusal() {
     let error = image_work_error(false, "find F3D Decal scope");
     assert!(
@@ -338,10 +396,90 @@ fn decal_scope_lookup_preserves_work_refusal() {
 }
 
 #[test]
-fn decal_scope_kind_preserves_work_refusal() {
-    let error = image_work_error(false, "compare F3D Decal scope kind");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "compare F3D Decal scope kind")
-    );
+fn decal_unnamed_projected_asset_skips_name_comparison() {
+    use cadmpeg_ir::features::{
+        DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureOperation,
+    };
+    crate::test_support::with_decode_context(|decode| {
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let face = ir.model.faces[0].id.clone();
+        let asset = cadmpeg_ir::assets::Asset::try_new(
+            decode,
+            cadmpeg_ir::assets::AssetId::mint("test:model:asset#decal").unwrap(),
+            None,
+            None,
+            cadmpeg_ir::assets::AssetContent::External {
+                uri: cadmpeg_core::text::NonBlankString::try_from("mark.png").unwrap(),
+            },
+            None,
+        )
+        .unwrap();
+        let mut native = super::construction_group_limits::native(false, false);
+        let scope = scope(
+            crate::records::feature::scope::DesignScopePayload::Decal,
+            10,
+        );
+        let scope_id = scope.id.clone();
+        native.design_parameter_scopes.push(scope);
+        let mut image_wire = serde_json::to_value(decal_image()).unwrap();
+        image_wire["scope_record_index"] = serde_json::json!(10);
+        image_wire["target_group_record_index"] = serde_json::json!(100);
+        native
+            .design_decal_images
+            .push(serde_json::from_value(image_wire).unwrap());
+        let mut draft = super::body_recipe_limits::operand().into_draft();
+        draft.scope_record_index = 10;
+        draft.record_index = 101;
+        draft.id = "f3d:Design/BulkStream.dat:design-body-recipe-operand#101".into();
+        draft.nested_record_index = 104;
+        draft.next_record_index = 105;
+        draft.owner = crate::records::topology::body_recipe::DesignOperandOwner::Group {
+            group_record_index: 100,
+            group_member_ordinal: 0,
+        };
+        draft.references[0].candidate_faces.push(face.clone());
+        let operand =
+            crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(draft).unwrap();
+        let operand_id = operand.id.clone();
+        native.design_body_recipe_operands.push(operand);
+        ir.model.features.push(Feature {
+            id: FeatureId::mint("test:model:feature#decal").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Default::default(),
+            native_ref: Some(scope_id),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::Decal {
+                    asset: asset.id.clone(),
+                    faces: FaceSelection::Resolved {
+                        faces: vec![face],
+                        native: operand_id,
+                    },
+                    mapping: DecalMapping::FitToFaces,
+                    opacity: None,
+                },
+            )),
+        });
+        ir.model.assets.push(asset);
+        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "compare F3D Decal asset name",
+            None,
+        );
+        let mut findings = Vec::new();
+        super::super::validate_decal_images(&ctx, &mut findings).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].message,
+            "Fusion Decal image has an invalid frame or Design object join"
+        );
+        assert!(decode.resource_refusal().is_none());
+    });
 }

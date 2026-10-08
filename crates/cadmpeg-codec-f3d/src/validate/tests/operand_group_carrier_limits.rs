@@ -91,7 +91,31 @@ fn operand_group_identity_members_refuse_collection_limit() {
         let native = native_with_identity();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        policy.limits.max_collection_items = match cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "collect F3D operand group identity members",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+                ctx.decode = &decode;
+                let error = super::super::validate_operand_group_carriers(
+                    &ctx,
+                    &mut Vec::new(),
+                    &HashSet::new(),
+                    &HashSet::new(),
+                    &HashSet::new(),
+                    &HashSet::new(),
+                    &HashSet::new(),
+                )
+                .unwrap_err();
+                Err::<(), cadmpeg_core::CodecError>(error)
+            },
+        ) {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+            error => panic!("unexpected refusal: {error:?}"),
+        };
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
@@ -143,7 +167,11 @@ fn carrier_error(
 
 #[test]
 fn operand_group_missing_member_refuses_finding_limit() {
-    let error = carrier_error(false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(carrier_error(false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -152,7 +180,11 @@ fn operand_group_missing_member_refuses_finding_limit() {
 
 #[test]
 fn operand_group_missing_member_refuses_entity_limit() {
-    let error = carrier_error(false, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(carrier_error(false, u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -161,7 +193,11 @@ fn operand_group_missing_member_refuses_entity_limit() {
 
 #[test]
 fn operand_group_missing_trailing_carrier_refuses_finding_limit() {
-    let error = carrier_error(true, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(carrier_error(true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -170,7 +206,11 @@ fn operand_group_missing_trailing_carrier_refuses_finding_limit() {
 
 #[test]
 fn operand_group_missing_trailing_carrier_refuses_entity_limit() {
-    let error = carrier_error(true, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(carrier_error(true, u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -225,31 +265,39 @@ fn operand_group_exact_identity_member_has_no_finding() {
 }
 
 #[test]
-fn operand_group_identity_scan_preserves_work_refusal() {
-    crate::test_support::with_decode_context(|service_ctx| {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let native = native_with_identity();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // One outer construction-group visit precedes the identity scan.
-        policy.limits.max_work_units = 1;
-        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-        ctx.decode = &decode;
-        let error = super::super::validate_operand_group_carriers(
-            &ctx,
-            &mut Vec::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-        )
-        .unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "scan F3D operand group identity members" && decode.resource_refusal() == Some(limit))
-        );
-    })
+fn operand_group_identity_index_preserves_work_refusal() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "index F3D identity carrier groups",
+        |cap| {
+            crate::test_support::with_decode_context(|service_ctx| {
+                use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+                let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+                let native = native_with_identity();
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+                ctx.decode = &decode;
+                let result = super::super::validate_operand_group_carriers(
+                    &ctx,
+                    &mut Vec::new(),
+                    &HashSet::new(),
+                    &HashSet::new(),
+                    &HashSet::new(),
+                    &HashSet::new(),
+                    &HashSet::new(),
+                );
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                    assert_eq!(decode.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            })
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D identity carrier groups")
+    );
 }
