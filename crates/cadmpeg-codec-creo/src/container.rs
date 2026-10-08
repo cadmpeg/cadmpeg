@@ -754,7 +754,8 @@ fn scan_sections<'a>(
     if let Some(preceding_byte) = body_start.checked_sub(1) {
         i = preceding_byte;
     }
-    let mut positions = i..data.len().saturating_sub(1);
+    let pair_end = data.len() - data.len().min(1);
+    let mut positions = i..pair_end;
     while let Some(i) = ctx.next_charged(&mut positions, "creo section framing scan")? {
         let toc_delimited = data[i] == 0xf1 && data[i + 1] == b'#';
         if !toc_delimited && (data[i] != b'\n' || data[i + 1] != b'#') {
@@ -768,7 +769,7 @@ fn scan_sections<'a>(
             break;
         };
         let name_bytes = &data[name_start..nl];
-        positions = nl..data.len().saturating_sub(1);
+        positions = nl..pair_end;
         // A name contains only defined ASCII name bytes and has an alphanumeric byte.
         if name_bytes.len() < 2
             || !ctx.all_by(
