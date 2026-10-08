@@ -375,7 +375,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows(std::slice::from_ref(&row).to_vec())))
         .expect("admitted surface roster"),
         Some(117)
     );
@@ -391,20 +391,20 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         offset: 0,
     };
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&exact_class_203_plane), &crate::surface::SurfaceRows::from_rows((&[topology_plane, row.clone()]).to_vec())))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&exact_class_203_plane), &crate::surface::SurfaceRows::from_rows([topology_plane, row.clone()].to_vec())))
         .expect("admitted surface roster"),
         Some(117)
     );
     table.entries[2].payload = crate::feature::entity::EntryPayload::Source { entity: None };
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows(std::slice::from_ref(&row).to_vec())))
         .expect("admitted surface roster")
         .is_none()
     );
     table.entries[2].payload = crate::feature::entity::EntryPayload::Source { entity: Some(0) };
     table.table_class_id = 28;
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows(std::slice::from_ref(&row).to_vec())))
         .expect("admitted surface roster")
         .is_none()
     );
@@ -413,14 +413,14 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         class: crate::feature::entity::PlainClass::new(201).expect("201 is not the source class"),
     };
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows(std::slice::from_ref(&row).to_vec())))
         .expect("admitted surface roster")
         .is_none()
     );
     table.entries[3].payload = crate::feature::entity::EntryPayload::Source { entity: None };
     table.mark_surface_ids([109, 117]);
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows(std::slice::from_ref(&row).to_vec())))
         .expect("admitted surface roster")
         .is_none()
     );
@@ -455,7 +455,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     };
     let rows = [plane.clone(), row.clone()];
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&extended), &crate::surface::SurfaceRows::from_rows((&rows).to_vec())))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&extended), &crate::surface::SurfaceRows::from_rows(rows.to_vec())))
         .expect("admitted surface roster"),
         Some(117)
     );
@@ -465,13 +465,13 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     second_topology_plane.id = 112;
     let second_topology_rows = [second_topology_plane, row];
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&class_203_plane), &crate::surface::SurfaceRows::from_rows((&second_topology_rows).to_vec())))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&class_203_plane), &crate::surface::SurfaceRows::from_rows(second_topology_rows.to_vec())))
         .expect("admitted surface roster"),
         Some(117)
     );
     extended.mark_surface_ids([109, 117, 120]);
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&extended), &crate::surface::SurfaceRows::from_rows((&rows).to_vec())))
+        crate::decode::with_test_decode_ctx(|ctx| compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&extended), &crate::surface::SurfaceRows::from_rows(rows.to_vec())))
         .expect("admitted surface roster")
         .is_none()
     );
