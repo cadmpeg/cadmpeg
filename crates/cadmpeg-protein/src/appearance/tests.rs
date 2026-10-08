@@ -39,16 +39,9 @@ fn texture_for_test(
 
 fn distance_for_test(
     record: &crate::DecodedRecord,
-    suffix: &str,
 ) -> Result<Option<cadmpeg_ir::scalar::Length>, super::DistanceError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("service root");
-    super::distance_property(&ctx, record, suffix).expect("service admission")
+    let property = record.properties.get("test_Depth").expect("fixture distance");
+    super::distance_property(property.value())
 }
 
 /// The three length tags of the Distance quantity class each convert to
@@ -58,7 +51,7 @@ fn distance_tags_convert_to_millimetres() {
     for (unit, value, expected) in [(0x2016, 1.0, 25.4), (0x200e, 0.5, 0.5), (0x200d, 0.5, 5.0)] {
         let record = distance_record(unit, value);
         assert_eq!(
-            distance_for_test(&record, "Depth")
+            distance_for_test(&record)
                 .map(|value| value.map(cadmpeg_ir::scalar::Length::get)),
             Ok(Some(expected))
         );
@@ -71,7 +64,7 @@ fn distance_tags_convert_to_millimetres() {
 fn a_non_length_distance_tag_yields_no_value() {
     let record = distance_record(0x0002_1008, 1.0);
     assert_eq!(
-        distance_for_test(&record, "Depth"),
+        distance_for_test(&record),
         Err(super::DistanceError::UnknownUnit(0x0002_1008))
     );
 }
@@ -110,7 +103,7 @@ fn numerical_audit_distance_conversion_rejects_nonfinite_results() {
         };
         let record = distance_record(unit, value.get());
         assert_eq!(
-            distance_for_test(&record, "Depth"),
+            distance_for_test(&record),
             Err(super::DistanceError::NonFinite)
         );
     }
@@ -206,21 +199,10 @@ fn a_suffix_names_the_whole_property_or_an_underscore_qualified_one() {
         let mut record = float_record("UnifiedBitmapSchema", "UScale", 2.0);
         let (_, property) = record.properties.pop_first().expect("float property");
         record.properties.insert(id.into(), property);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("service root");
-        let value = super::finite_float_property(
-            &ctx,
-            &record,
-            "UScale",
-            cadmpeg_ir::scalar::FiniteReal::ONE,
-        )
-        .expect("service admission")
-        .get();
+        let super::TextureAssetResult::Usable(texture) = texture_for_test(&record).expect("service admission") else {
+            panic!("usable texture");
+        };
+        let value = texture.mapping.u_scale.get();
         assert_eq!(value, if matches { 2.0 } else { 1.0 }, "{id}");
     }
 }
@@ -366,4 +348,39 @@ fn texture_projection_preserves_first_named_and_first_usable_fields() {
     assert_eq!(texture.mapping.u_scale, cadmpeg_ir::scalar::FiniteReal::ONE);
     assert_eq!(texture.paths, ["first path"]);
     assert_eq!(texture.urn.as_deref(), Some("first urn"));
+}
+
+#[test]
+fn texture_projection_visits_the_property_map_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut record = float_record("UnifiedBitmapSchema", "UScale", 7.0);
+    let (_, property) = record.properties.pop_first().expect("fixture property");
+    for index in 0..64 {
+        record.properties.insert(format!("{index:03}{}", "a".repeat(1024)), property.clone());
+    }
+    // One complete map visit per property; literal suffix grammar is fixed.
+    // Only the schema string is copied because GUID, paths and URN are absent.
+    let work = cadmpeg_core::decode::u64_from_index(record.properties.len() + record.schema.len());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("input");
+    let super::TextureAssetResult::Usable(texture) = super::texture_asset(&ctx, &record)
+        .expect("single traversal and retained fields fit exactly") else {
+        panic!("usable texture");
+    };
+    assert_eq!(texture.mapping.u_scale, cadmpeg_ir::scalar::FiniteReal::ONE);
+    assert!(matches!(ctx.charge_work(1, "after exact projection"),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.used == work));
+    let original = ctx.resource_refusal().expect("recorded limit");
+    record.schema = "AnotherSchema".into();
+    assert!(matches!(super::texture_asset(&ctx, &record),
+        Err(CodecError::ResourceLimit(limit)) if limit == original));
+    policy.limits.max_work_units = 63;
+    record.schema = "UnifiedBitmapSchema".into();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("input");
+    assert!(matches!(super::texture_asset(&ctx, &record),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits
+            && limit.used == 0 && limit.additional == 64 && limit.operation == "Protein texture property selection"));
 }
