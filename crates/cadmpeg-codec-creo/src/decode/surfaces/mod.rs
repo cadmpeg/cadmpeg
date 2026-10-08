@@ -893,7 +893,7 @@ pub(super) fn transfer_fc05_cap_circles(
                 |record| record.id.as_str(),
                 id.as_str(),
             )?
-            .is_some();
+            .exists();
         if !identity_present {
             let Ok(circle_curve) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::from(center),
@@ -957,7 +957,7 @@ pub(super) fn transfer_fc05_cap_circles(
                 |record| record.id.as_str(),
                 surface_id.as_str(),
             )?
-            .is_some();
+            .exists();
         if identity_present {
             continue;
         }

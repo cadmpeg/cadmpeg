@@ -154,12 +154,8 @@ pub(in super::super) fn carrier_intersection_curve(
         })(),
         (CarrierEquation::Plane(plane), CarrierEquation::Cone(cone))
         | (CarrierEquation::Cone(cone), CarrierEquation::Plane(plane)) => {
-            let Some(normal) = normalize(plane.normal) else {
-                return None;
-            };
-            let Some(axis) = normalize(cone.axis()) else {
-                return None;
-            };
+            let normal = normalize(plane.normal)?;
+            let axis = normalize(cone.axis())?;
             let alignment = dot(normal, axis);
             let slope = cone.half_angle().tan();
             if circular_cone(cone) && slope.abs() > EPS_CONE_SLOPE_NONZERO {
@@ -174,11 +170,9 @@ pub(in super::super) fn carrier_intersection_curve(
                 if plane_distance.abs() <= EPS_CARRIER_AGREEMENT * scale
                     && (alignment.abs() - cone.half_angle().sin()).abs() <= EPS_AXIS_ORTHO
                 {
-                    let Some(direction) = normalize(std::array::from_fn(|index| {
+                    let direction = normalize(std::array::from_fn(|index| {
                         axis[index] - alignment * normal[index]
-                    })) else {
-                        return None;
-                    };
+                    }))?;
                     let Ok(line) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                         Point3::from(apex),
                         Vector3::from(direction),
@@ -209,9 +203,7 @@ pub(in super::super) fn carrier_intersection_curve(
                 }
                 let center: [f64; 3] =
                     std::array::from_fn(|index| cone.origin()[index] + axial * axis[index]);
-                let Some(reference) = normalize(cone.ref_direction()) else {
-                    return None;
-                };
+                let reference = normalize(cone.ref_direction())?;
                 if circular_cone(cone) {
                     let Ok(circle) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         Point3::from(center),

@@ -152,7 +152,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                     |record| record.id.as_str(),
                     id.as_str(),
                 )?
-                .is_some();
+                .exists();
             if identity_present {
                 continue;
             }
@@ -298,7 +298,7 @@ pub(in super::super) fn transfer_positional_tori(
                 |record| record.id.as_str(),
                 id.as_str(),
             )?
-            .is_some();
+            .exists();
         if identity_present {
             continue;
         }
@@ -433,7 +433,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                 |record| record.id.as_str(),
                 surface_id.as_str(),
             )?
-            .is_some();
+            .exists();
         if identity_present {
             continue;
         }
@@ -754,7 +754,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                 |record| record.id.as_str(),
                 surface_id.as_str(),
             )?
-            .is_some();
+            .exists();
         if identity_present {
             continue;
         }

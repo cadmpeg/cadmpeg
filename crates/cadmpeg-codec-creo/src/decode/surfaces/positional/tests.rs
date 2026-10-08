@@ -107,8 +107,13 @@ fn line_extrusion_replay_set_refuses_before_node_insertion() {
         .expect("service admits replay set"),
         0
     );
+    let refused_limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo line-extrusion replay surface ids"),
+        run,
+    );
     assert!(matches!(
-        run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo line-extrusion replay surface ids"), run)),
+        run(refused_limit),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo line-extrusion replay surface ids"
@@ -142,8 +147,13 @@ fn tabulated_replay_counts_refuse_before_node_insertion() {
         .expect("service admits replay count"),
         0
     );
+    let refused_limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo tabulated-cylinder replay counts"),
+        run,
+    );
     assert!(matches!(
-        run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo tabulated-cylinder replay counts"), run)),
+        run(refused_limit),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo tabulated-cylinder replay counts"
@@ -199,7 +209,7 @@ fn positional_torus_round_feature_node_refuses_before_insertion() {
         positional_round_result(crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             None,
-            |cap| positional_round_result(cap)
+            positional_round_result
         ))
         .expect("service admits round"),
         0
@@ -207,7 +217,7 @@ fn positional_torus_round_feature_node_refuses_before_insertion() {
     let error = positional_round_result(crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         Some("creo positional torus round feature ids"),
-        |cap| positional_round_result(cap),
+        positional_round_result,
     ))
     .expect_err("round feature needs a set node");
     assert!(matches!(
@@ -223,7 +233,7 @@ fn positional_torus_constant_round_node_refuses_before_insertion() {
     let error = positional_round_result(crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         Some("creo positional torus constant round ids"),
-        |cap| positional_round_result(cap),
+        positional_round_result,
     ))
     .expect_err("constant round follows feature node");
     assert!(matches!(
@@ -384,7 +394,7 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
                 )
                 .expect("valid positional torus frame"),
             ),
-        )
+        );
     });
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
@@ -429,7 +439,7 @@ fn positional_sphere_is_in_millimeters_at_ir_admission() {
                 )
                 .expect("valid positional sphere frame"),
             ),
-        )
+        );
     });
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(

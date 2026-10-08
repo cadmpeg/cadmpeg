@@ -78,7 +78,7 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
     for table in ctx.admit_iter(tables, "creo rowless round feature tables")? {
         let feature_id = table.feature_id;
         if !ctx.contains_btree_set(
-            &round_feature_ids,
+            round_feature_ids,
             &feature_id,
             "creo round feature ids lookup",
         )? {
@@ -128,7 +128,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
                 |record| record.id.as_str(),
                 id.as_str(),
             )?
-            .is_some();
+            .exists();
         if surface_exists {
             continue;
         }
@@ -294,7 +294,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
                     |surface| surface.id.as_str(),
                     key.as_str(),
                 )?
-                .is_some();
+                .exists();
             if already_present {
                 continue;
             }
@@ -413,7 +413,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
                 |record| record.id.as_str(),
                 sibling.as_str(),
             )?
-            .flatten()
+            .unique_position()
             .map(|index| &ir.model.surfaces[index]);
         let Some(cylinder_surface) =
             selected_surface.and_then(|surface| match source_carriers.surface_geometry(surface) {
@@ -438,7 +438,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
                 |record| record.id.as_str(),
                 id.as_str(),
             )?
-            .is_some();
+            .exists();
         if surface_exists {
             continue;
         }
@@ -538,7 +538,7 @@ pub(in super::super) fn transfer_hole_cylinders(
                         |record| record.id.as_str(),
                         id.as_str(),
                     )?
-                    .is_some();
+                    .exists();
                 if surface_exists {
                     return Ok(());
                 }
@@ -725,7 +725,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                     |record| record.id.as_str(),
                     id.as_str(),
                 )?
-                .is_some();
+                .exists();
             if surface_exists {
                 continue;
             }
@@ -1563,8 +1563,9 @@ pub(in super::super) fn transfer_positional_cylinders(
             |record| record.id.as_str(),
             id.as_str(),
         )?;
-        if let Some(position) = existing {
-            if let Some(surface) = position
+        if existing.exists() {
+            if let Some(surface) = existing
+                .unique_position()
                 .filter(|_| row_local_frame_selected)
                 .and_then(|index| ir.model.surfaces.get_mut(index))
             {
@@ -1859,15 +1860,13 @@ pub(in super::super) fn reference_cap_bound_round_frame(
         let reference_index = radial_indices[0];
         ref_direction[reference_index] =
             (second[reference_index] - first[reference_index]).signum();
-        let Some(frame) = crate::surface::PositionalCylinderFrame::new(
+        let frame = crate::surface::PositionalCylinderFrame::new(
             origin,
             axis,
             ref_direction,
             envelope.diameter / 2.0,
             Some((second[axis_index] - first[axis_index]).abs()),
-        ) else {
-            return None;
-        };
+        )?;
         if candidate.is_some() {
             return None;
         }
@@ -1915,7 +1914,7 @@ pub(in super::super) fn transfer_positional_cones(
                 |record| record.id.as_str(),
                 id.as_str(),
             )?
-            .is_some();
+            .exists();
         if surface_exists {
             continue;
         }
@@ -2016,7 +2015,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                     |record| record.id.as_str(),
                     id.as_str(),
                 )?
-                .is_some();
+                .exists();
             if surface_exists {
                 continue;
             }
@@ -2105,7 +2104,7 @@ pub(in super::super) fn transfer_cross_section_planes(
                 |record| record.id.as_str(),
                 id.as_str(),
             )?
-            .is_some();
+            .exists();
         if surface_exists {
             continue;
         }
@@ -2173,7 +2172,7 @@ pub(in super::super) fn transfer_cross_section_planes(
                 |record| record.id.as_str(),
                 id.as_str(),
             )?
-            .is_some();
+            .exists();
         if surface_exists {
             continue;
         }
