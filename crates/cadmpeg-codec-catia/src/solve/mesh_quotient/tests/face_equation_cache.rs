@@ -196,5 +196,9 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
     assert!(search
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
-    assert_eq!(search.face_equation_cache.borrow().len(), 1);
+    let cache = search.face_equation_cache.borrow();
+    assert_eq!(cache.len(), MAX_FACE_EQUATION_CACHE_ENTRIES + 2);
+    for key in 1..=MAX_FACE_EQUATION_CACHE_ENTRIES {
+        assert_eq!(cache.get(&(key, Vec::new())), Some(&Vec::new()));
+    }
 }
