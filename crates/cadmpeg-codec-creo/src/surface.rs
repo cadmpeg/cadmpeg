@@ -4545,11 +4545,14 @@ fn torus_radius_override_at(body: &[u8], offset: usize) -> Option<TorusRadiusOve
 }
 
 fn terminal_cone_half_angle_layout(body: &[u8]) -> Option<ConeHalfAngleLayout> {
-    let mut layouts = (body.len().saturating_sub(9)..body.len()).filter_map(|start| {
-        let (value, end) = scalar::decode_positive_dict(body, start)?;
-        let value = ApexConeHalfAngle::new(value)?;
-        (end == body.len()).then_some(ConeHalfAngleLayout { value, start, end })
-    });
+    let mut layouts = (1..=9)
+        .rev()
+        .filter_map(|distance| body.len().checked_sub(distance))
+        .filter_map(|start| {
+            let (value, end) = scalar::decode_positive_dict(body, start)?;
+            let value = ApexConeHalfAngle::new(value)?;
+            (end == body.len()).then_some(ConeHalfAngleLayout { value, start, end })
+        });
     let layout = layouts.next()?;
     layouts.next().is_none().then_some(layout)
 }
@@ -4715,35 +4718,40 @@ fn first_coordinate_plane_corner_tokens(
     } else {
         body.len()
     };
-    let mut candidates = (frame_end.saturating_sub(6 * 9)..frame_end).filter_map(|start| {
-        (start >= 3 && body.get(start - 3..start) == Some(&[0x00, 0x0c, 0x9a])).then_some(())?;
-        let (stored_first_x, first_end) =
-            scalar::decode_tabulated_cylinder_first_coordinate(body, start, cache)?;
-        (first_end > start && stored_first_x.is_finite() && stored_first_x < 0.0).then_some(())?;
-        let (first_y, first_z_start) = scalar::decode_in_surface_row_lane(body, first_end, cache)?;
-        let (first_z, second_x_start) =
-            scalar::decode_in_surface_row_lane(body, first_z_start, cache)?;
-        let (stored_second_x, second_y_start) =
-            scalar::decode_tabulated_cylinder_first_coordinate(body, second_x_start, cache)?;
-        let (second_y, second_z_start) =
-            scalar::decode_in_surface_row_lane(body, second_y_start, cache)?;
-        let (second_z, end) = scalar::decode_in_surface_row_lane(body, second_z_start, cache)?;
-        (end == frame_end
-            && [first_y, first_z, stored_second_x, second_y, second_z]
-                .iter()
-                .all(|value| value.is_finite())
-            && stored_second_x < 0.0
-            && second_y_start > second_x_start)
-            .then_some(())?;
-        Some([
-            (-stored_first_x, start, first_end),
-            (first_y, first_end, first_z_start),
-            (first_z, first_z_start, second_x_start),
-            (-stored_second_x, second_x_start, second_y_start),
-            (second_y, second_y_start, second_z_start),
-            (second_z, second_z_start, end),
-        ])
-    });
+    let mut candidates = (1..=6 * 9)
+        .rev()
+        .filter_map(|distance| frame_end.checked_sub(distance))
+        .filter_map(|start| {
+            (start >= 3 && body.get(start - 3..start) == Some(&[0x00, 0x0c, 0x9a])).then_some(())?;
+            let (stored_first_x, first_end) =
+                scalar::decode_tabulated_cylinder_first_coordinate(body, start, cache)?;
+            (first_end > start && stored_first_x.is_finite() && stored_first_x < 0.0)
+                .then_some(())?;
+            let (first_y, first_z_start) =
+                scalar::decode_in_surface_row_lane(body, first_end, cache)?;
+            let (first_z, second_x_start) =
+                scalar::decode_in_surface_row_lane(body, first_z_start, cache)?;
+            let (stored_second_x, second_y_start) =
+                scalar::decode_tabulated_cylinder_first_coordinate(body, second_x_start, cache)?;
+            let (second_y, second_z_start) =
+                scalar::decode_in_surface_row_lane(body, second_y_start, cache)?;
+            let (second_z, end) = scalar::decode_in_surface_row_lane(body, second_z_start, cache)?;
+            (end == frame_end
+                && [first_y, first_z, stored_second_x, second_y, second_z]
+                    .iter()
+                    .all(|value| value.is_finite())
+                && stored_second_x < 0.0
+                && second_y_start > second_x_start)
+                .then_some(())?;
+            Some([
+                (-stored_first_x, start, first_end),
+                (first_y, first_end, first_z_start),
+                (first_z, first_z_start, second_x_start),
+                (-stored_second_x, second_x_start, second_y_start),
+                (second_y, second_y_start, second_z_start),
+                (second_z, second_z_start, end),
+            ])
+        });
     let candidate = candidates.next()?;
     candidates.next().is_none().then_some(candidate)
 }
@@ -5080,16 +5088,20 @@ fn inline_surface_suffix_body(
                     decode_inline_surface_suffix_at(kind, local, frame.cursor, cache)
                 {
                     if local.get(end) == Some(&psb::token::COMPOUND_CLOSE) {
-                        *match terminal_closes.get_mut(close_count) {
-                            Some(value) => value,
-                            None => return Ok(None),
-                        } = end;
+                        if close_count >= terminal_closes.len() {
+                            return Ok(None);
+                        }
+                        let mut position = close_count;
+                        while position > 0 && terminal_closes[position - 1] > end {
+                            terminal_closes[position] = terminal_closes[position - 1];
+                            position -= 1;
+                        }
+                        terminal_closes[position] = end;
                         close_count += 1;
                     }
                 }
             }
         }
-        terminal_closes[..close_count].sort_unstable();
         let mut previous_close = None;
         for relative_close in terminal_closes[..close_count].iter().copied() {
             if previous_close == Some(relative_close) {
@@ -6528,16 +6540,20 @@ fn decode_support_apex_cone_frame(
 ) -> Option<PositionalConeFrame> {
     const MAX_SUPPORT_FRAME_BYTES: usize = 12 * 9;
 
-    let mut reference_candidates =
-        (body.len().saturating_sub(12)..body.len()).filter_map(|start| {
+    let mut reference_candidates = (1..=12)
+        .rev()
+        .filter_map(|distance| body.len().checked_sub(distance))
+        .filter_map(|start| {
             matches!(body.get(start), Some(0x19 | 0x32)).then_some(())?;
             let (_, end) = scalar::decode_model_reference_coordinate(body, start, cache)?;
             (end + 3 == body.len()).then_some(start)
         });
     let reference_start = reference_candidates.next()?;
     reference_candidates.next().is_none().then_some(())?;
-    let mut apex_candidates =
-        (reference_start.saturating_sub(9)..reference_start).filter_map(|start| {
+    let mut apex_candidates = (1..=9)
+        .rev()
+        .filter_map(|distance| reference_start.checked_sub(distance))
+        .filter_map(|start| {
             let (apex, end) = scalar::decode_in_surface_row_lane(body, start, cache)?;
             (end == reference_start && apex.is_finite()).then_some((apex, start))
         });
@@ -6546,11 +6562,11 @@ fn decode_support_apex_cone_frame(
     // Twelve scalar slots each consume at most nine bytes in this lane.
 
     let mut sole_slots = None;
-    for start in apex_start.saturating_sub(MAX_SUPPORT_FRAME_BYTES - 3)..apex_start {
+    for start in (1..=MAX_SUPPORT_FRAME_BYTES - 3)
+        .rev()
+        .filter_map(|distance| apex_start.checked_sub(distance))
+    {
         let prefix = body.get(start..apex_start)?;
-        if prefix.len() > MAX_SUPPORT_FRAME_BYTES - 3 {
-            continue;
-        }
         let mut frame = [0; MAX_SUPPORT_FRAME_BYTES];
         frame[..prefix.len()].copy_from_slice(prefix);
         frame[prefix.len()..prefix.len() + 3].copy_from_slice(&[0x18, 0x18, 0x18]);

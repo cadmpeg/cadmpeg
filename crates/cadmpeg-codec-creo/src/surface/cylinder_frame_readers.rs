@@ -850,13 +850,17 @@ fn decode_local_system_cylinder_frame(
     }
     let (radius_start, radius) = unique_terminal_positive_scalar(body, cursor)?;
     let slots = crate::decode::uniqueness::exactly_one(
-        (cursor.max(radius_start.saturating_sub(12 * 9))..radius_start).filter_map(|start| {
-            scalar::decode_positional_plane_local_system_slots(
-                body.get(start..radius_start)?,
-                cache,
-            )
-            .map(cadmpeg_ir::units::FiniteVector::get)
-        }),
+        (1..=12 * 9)
+            .rev()
+            .filter_map(|distance| radius_start.checked_sub(distance))
+            .filter(|start| *start >= cursor)
+            .filter_map(|start| {
+                scalar::decode_positional_plane_local_system_slots(
+                    body.get(start..radius_start)?,
+                    cache,
+                )
+                .map(cadmpeg_ir::units::FiniteVector::get)
+            }),
     )?;
     let length = envelope[0];
     let scale = envelope
@@ -1342,7 +1346,9 @@ pub(super) fn decode_local_system_suffix_cylinder_frame(
 ) -> Option<PositionalCylinderFrame> {
     let (radius_start, radius) = unique_terminal_positive_scalar(body, 1)?;
     let slots = crate::decode::uniqueness::exactly_one(
-        (radius_start.saturating_sub(12 * 9)..radius_start)
+        (1..=12 * 9)
+            .rev()
+            .filter_map(|distance| radius_start.checked_sub(distance))
             .filter_map(|start| {
                 scalar::decode_positional_cylinder_local_system_slots(
                     body.get(start..radius_start)?,
@@ -1392,7 +1398,11 @@ pub(super) fn decode_compound_local_system_cylinder_frame(
         {
             continue;
         }
-        for start in 1.max(radius_start.saturating_sub(12 * 9))..radius_start {
+        for start in (1..=12 * 9)
+            .rev()
+            .filter_map(|distance| radius_start.checked_sub(distance))
+            .filter(|start| *start >= 1)
+        {
             if body[start - 1] != psb::token::COMPOUND_CLOSE {
                 continue;
             }
@@ -1450,8 +1460,12 @@ fn decode_zero_support_cylinder_origin_radius(
     cache: &scalar::ScalarCache,
 ) -> Option<([f64; 3], f64)> {
     let (radius_start, radius) = unique_terminal_positive_scalar(body, start)?;
+    let after_support = start.checked_add(zero_support.len())?;
     let origin = crate::decode::uniqueness::exactly_one(
-        ((start + zero_support.len()).max(radius_start.saturating_sub(3 * 9))..radius_start)
+        (1..=3 * 9)
+            .rev()
+            .filter_map(|distance| radius_start.checked_sub(distance))
+            .filter(|origin_start| *origin_start >= after_support)
             .filter_map(|origin_start| {
                 (body.get(origin_start - zero_support.len()..origin_start) == Some(zero_support))
                     .then(|| {
@@ -1464,10 +1478,14 @@ fn decode_zero_support_cylinder_origin_radius(
 
 pub(super) fn unique_terminal_positive_scalar(body: &[u8], start: usize) -> Option<(usize, f64)> {
     crate::decode::uniqueness::exactly_one(
-        (start.max(body.len().saturating_sub(9))..body.len()).filter_map(|offset| {
-            let (value, end) = scalar::decode(body, offset)?;
-            (end == body.len() && value.is_finite() && value > 0.0).then_some((offset, value))
-        }),
+        (1..=9)
+            .rev()
+            .filter_map(|distance| body.len().checked_sub(distance))
+            .filter(|offset| *offset >= start)
+            .filter_map(|offset| {
+                let (value, end) = scalar::decode(body, offset)?;
+                (end == body.len() && value.is_finite() && value > 0.0).then_some((offset, value))
+            }),
     )
 }
 
