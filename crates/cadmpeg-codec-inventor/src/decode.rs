@@ -2413,10 +2413,8 @@ fn admit_assembly_placement(
                     segment_token: cadmpeg_ir::ids::IdentityKey::try_new(segment_token)
                         .map_err(CodecError::malformed)?,
                     record_ordinal,
-                    detail: ctx.copy_retained_text(
-                        &detail,
-                        "retain Inventor placement issue detail",
-                    )?,
+                    detail: ctx
+                        .copy_retained_text(&detail, "retain Inventor placement issue detail")?,
                 },
                 "retain Inventor native structural records",
             )?;
