@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 use crate::dialect::FcstdDialect;
@@ -17,8 +17,9 @@ const MAX_PROPERTY_VALUE_XML_BYTES: usize = 16 * 1024 * 1024;
 const ATTRIBUTE_SEARCH: &str = "FCStd XML attribute search";
 const ELEMENT_NAME: &str = "FCStd XML element name";
 
-struct DependencyInfo<'input> {
+struct DependencyInfo<'input, 'context> {
     dependencies: Vec<&'input str>,
+    storage: ScopedReservation<'context>,
     allow_partial: Option<std::num::NonZeroU64>,
     order: usize,
 }
@@ -155,7 +156,7 @@ pub(crate) fn parse_document(
     }
     // Names borrow the document text; the tables hold no copies.
     let mut dependency_storage = ctx.reserve_scoped(0, "FCStd dependency lookup")?;
-    let mut dependency_map = HashMap::<&str, DependencyInfo<'_>>::new();
+    let mut dependency_map = HashMap::<&str, DependencyInfo<'_, '_>>::new();
     let mut dependency_record_visits = dependency_records.iter().copied().enumerate();
     while dependency_record_visits.len() != 0 {
         let Some((order, node)) =
@@ -164,6 +165,7 @@ pub(crate) fn parse_document(
             break;
         };
         let name = required_attr(ctx, node, "Name")?;
+        let mut item_storage = ctx.reserve_scoped(0, "FCStd object dependencies")?;
         let mut dependencies = Vec::new();
         let mut children = node.children();
         while let Some(child) = ctx.next_charged(&mut children, "FCStd dependency search")? {
@@ -172,7 +174,7 @@ pub(crate) fn parse_document(
             }
             let dependency = required_attr(ctx, child, "Name")?;
             ctx.push_scoped_vec(
-                &mut dependency_storage,
+                &mut item_storage,
                 &mut dependencies,
                 dependency,
                 "FCStd object dependencies",
@@ -203,6 +205,7 @@ pub(crate) fn parse_document(
         };
         let info = DependencyInfo {
             dependencies,
+            storage: item_storage,
             allow_partial,
             order,
         };
@@ -217,6 +220,7 @@ pub(crate) fn parse_document(
             ));
         }
     }
+    drop((dependency_records, dependency_records_storage));
 
     let mut data_storage = ctx.reserve_scoped(0, "FCStd object data lookup")?;
     let mut data_by_name = HashMap::new();
@@ -319,11 +323,12 @@ pub(crate) fn parse_document(
         }
         let (dependencies, dependency_allow_partial) = match dependency {
             Some(dependency) => {
+                let DependencyInfo { storage, dependencies, allow_partial, .. } = dependency;
                 let mut ids = ctx.vector_storage(
-                    dependency.dependencies.len(),
+                    dependencies.len(),
                     "FCStd object dependency identities",
                 )?;
-                let mut dependency_visits = dependency.dependencies.iter();
+                let mut dependency_visits = dependencies.iter();
                 while dependency_visits.len() != 0 {
                     let Some(&target) = ctx.next_charged(
                         &mut dependency_visits,
@@ -351,7 +356,8 @@ pub(crate) fn parse_document(
                         "FCStd object dependency identities",
                     )?;
                 }
-                (ids, dependency.allow_partial)
+                drop((dependencies, storage));
+                (ids, allow_partial)
             }
             None => (Vec::new(), None),
         };
@@ -634,6 +640,7 @@ fn parse_properties(
     let mut nodes_storage = ctx.reserve_scoped(0, "FCStd property nodes")?;
     let mut property_nodes = Vec::new();
     let mut transient_property_nodes = Vec::new();
+    let mut names_storage = ctx.reserve_scoped(0, "FCStd duplicate property names")?;
     let mut names = HashSet::new();
     let mut children = container.children();
     while let Some(node) = ctx.next_charged(&mut children, "FCStd property search")? {
@@ -645,7 +652,7 @@ fn parse_properties(
             continue;
         };
         let name = required_attr(ctx, node, "name")?;
-        if !nodes_storage.with_storage(|| {
+        if !names_storage.with_storage(|| {
             ctx.insert_hash_set(&mut names, name, "FCStd duplicate property names")
         })? {
             return Err(crate::resource::malformed_charged(
@@ -656,7 +663,7 @@ fn parse_properties(
         }
         ctx.push_scoped_vec(&mut nodes_storage, nodes, node, "FCStd property nodes")?;
     }
-    drop(names);
+    drop((names, names_storage));
     let declared = parsed_attr::<usize>(ctx, container, "Count", "FCStd property count parse")?
         .ok_or_else(|| CodecError::Malformed("Properties Count is missing or invalid".into()))?;
     if declared != property_nodes.len() {
