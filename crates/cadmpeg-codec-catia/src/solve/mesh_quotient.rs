@@ -1267,7 +1267,7 @@ impl<'storage> MeshQuotient<'storage> {
             struct State<'storage> {
                 boundary_index: usize,
                 at: usize,
-                directions: Vec<bool>,
+                directions: ScopedValue<'storage, Vec<bool>>,
                 quotient: MeshQuotient<'storage>,
             }
 
@@ -1294,11 +1294,18 @@ impl<'storage> MeshQuotient<'storage> {
                         return Ok(false);
                     }
                 }
-                ctx.push_vec(
-                    &mut state.directions,
-                    reversed,
-                    "catia_assignment_directions",
-                )?;
+                state
+                    .directions
+                    .storage
+                    .as_mut()
+                    .ok_or_else(|| CodecError::malformed("assignment directions own storage"))?
+                    .with_storage(|| {
+                        ctx.push_vec(
+                            &mut state.directions.value,
+                            reversed,
+                            "catia_assignment_directions",
+                        )
+                    })?;
                 state.at += 1;
                 Ok(true)
             }
@@ -1309,7 +1316,10 @@ impl<'storage> MeshQuotient<'storage> {
                 State {
                     boundary_index: 0,
                     at: 0,
-                    directions: Vec::new(),
+                    directions: ScopedValue {
+                        value: Vec::new(),
+                        storage: Some(ctx.reserve_scoped(0, "catia_assignment_directions")?),
+                    },
                     quotient: self.clone_charged(ctx)?,
                 },
                 "catia_assignment_states",
@@ -1364,11 +1374,17 @@ impl<'storage> MeshQuotient<'storage> {
                         if budget.is_some_and(|budget| !budget.charge()) {
                             return Ok(false);
                         }
+                        let (directions, storage) = ctx
+                            .with_scoped_storage("catia_assignment_direction_copy", || {
+                                ctx.copy_slice(&state.directions, "catia_assignment_direction_copy")
+                            })?;
                         let mut next = State {
                             boundary_index: state.boundary_index,
                             at: state.at,
-                            directions: ctx
-                                .copy_slice(&state.directions, "catia_assignment_direction_copy")?,
+                            directions: ScopedValue {
+                                value: directions,
+                                storage: Some(storage),
+                            },
                             quotient: state.quotient.clone_charged(ctx)?,
                         };
                         if advance(ctx, &mut next, boundary, reversed)?
