@@ -2,13 +2,12 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    append_link_to_record, append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join,
-    coedge_sense, commit_curve_tree, edge_param_range, edge_vertices, face_components, face_sense,
+    append_link_to_record, append_record_links, brep_free_vertex_indices, coedge_sense,
+    commit_curve_tree, edge_param_range, edge_vertices, face_components, face_sense,
     hatch_loop_ids, hatch_plane_transform, hatch_source_links, region_shell_groups,
     region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
-    snapshot_instance_links, snapshot_instance_statuses, stage_brep, stage_curve_tree,
-    stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
-    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    stage_brep, stage_curve_tree, stage_extrusion_caps, transform_decoded_curve, transform_surface,
+    with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
     CommittedExtrusionBoundary, CurveCommitSource, DecodeContext, GeometryOutcome,
     ReferenceFailure, ReportBuckets,
 };
@@ -33,8 +32,8 @@ use cadmpeg_ir::topology::{Body, BodyKind, Point, Sense};
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
+mod c2;
 mod candidate_annotations;
-mod carrier_copy;
 mod local_limits;
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
@@ -189,35 +188,44 @@ fn point_cloud_vertices_refuse_collection_limit() {
             warnings: Diagnostics::new(),
         })
     };
-    let refusal = with_transaction_limits(&scan, 4, None, None, |expand| {
-        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
-        context
-            .commit_geometry(0, cloud())
-            .expect_err("point-cloud vertex exceeds four collection items")
-    });
+    let run = |cap| {
+        with_transaction_limits(&scan, cap, None, None, |expand| {
+            let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+            let committed = context.commit_geometry(0, cloud())?;
+            Ok((committed, context.session.document().model.vertices.len()))
+        })
+    };
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino point-cloud vertices",
+        run,
+    );
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
             if limit.operation == "Rhino point-cloud vertices"
     ));
-    let refusal = with_transaction_limits(&scan, 5, None, None, |expand| {
-        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
-        context
-            .commit_geometry(0, cloud())
-            .expect_err("unknown-record link exceeds five collection items")
-    });
+    // Four setup items, one cloud vertex, five arena entries, and two child slots precede the link.
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino unknown record links",
+        run,
+    );
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
             if limit.operation == "Rhino unknown record links"
     ));
-    with_transaction_limits(&scan, 6, None, None, |expand| {
-        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
-        assert!(context
-            .commit_geometry(0, cloud())
-            .expect("vertex admitted"));
-        assert_eq!(context.session.document().model.vertices.len(), 1);
-    });
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = refusal else {
+        panic!("named resource refusal");
+    };
+    let cap = limit
+        .used
+        .checked_add(limit.additional)
+        .expect("bounded fixture requirement");
+    let (committed, vertices) = run(cap).expect("vertex and link admitted");
+    assert!(committed);
+    assert_eq!(vertices, 1);
 }
 
 #[test]
@@ -1004,123 +1012,6 @@ fn two_bounded_regions_sharing_one_face_use_deterministic_incidence_fallback() {
     );
 }
 
-#[test]
-fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
-    let compound = crate::curves::DecodedCurve::Compound {
-        children: vec![
-            (
-                finite_parameter(10.0),
-                decoded_nurbs(line_nurbs(0.0, 1.0, true)),
-            ),
-            (
-                finite_parameter(20.0),
-                decoded_nurbs(line_nurbs(-2.0, 2.0, false)),
-            ),
-        ],
-        end_parameter: finite_parameter(40.0),
-        warnings: Diagnostics::new(),
-    };
-    let merged = with_expand_bytes(&[], |expand| {
-        c2_curve_to_nurbs_join(expand.ctx(), compound, 0)
-    })
-    .expect("merge")
-    .curve;
-    assert_eq!(
-        merged.knots().as_slice(),
-        vec![10.0, 10.0, 20.0, 40.0, 40.0]
-    );
-    assert_eq!(merged.control_points().len(), 3);
-    assert_eq!(merged.pole_rows().weights(), Some(vec![2.0, 1.0, 1.0]));
-    assert!(!merged.periodic());
-}
-
-#[test]
-fn c2_joined_segments_refuse_collection_limit() {
-    let compound = crate::curves::DecodedCurve::Compound {
-        children: vec![(
-            finite_parameter(0.0),
-            decoded_nurbs(line_nurbs(0.0, 1.0, true)),
-        )],
-        end_parameter: finite_parameter(1.0),
-        warnings: Diagnostics::new(),
-    };
-    let error = with_collection_limit(0, |ctx| c2_curve_to_nurbs_join(ctx, compound, 0))
-        .err()
-        .expect("one C2 segment exceeds zero collection items");
-    assert!(matches!(
-        error,
-        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-            if refusal.operation == "Rhino C2 joined segments"
-    ));
-}
-
-#[test]
-fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
-    let nested = crate::curves::DecodedCurve::Compound {
-        children: vec![
-            (
-                finite_parameter(0.0),
-                decoded_nurbs(line_nurbs(0.0, 1.0, false)),
-            ),
-            (
-                finite_parameter(1.0),
-                decoded_nurbs(line_nurbs(0.0, 1.0, false)),
-            ),
-        ],
-        end_parameter: finite_parameter(2.0),
-        warnings: Diagnostics::new(),
-    };
-    let outer = crate::curves::DecodedCurve::Compound {
-        children: vec![(finite_parameter(5.0), nested)],
-        end_parameter: finite_parameter(9.0),
-        warnings: Diagnostics::new(),
-    };
-    let merged = with_expand_bytes(&[], |expand| c2_curve_to_nurbs_join(expand.ctx(), outer, 0))
-        .expect("nested merge")
-        .curve;
-    assert_eq!(merged.knots().as_slice(), vec![5.0, 5.0, 7.0, 9.0, 9.0]);
-}
-
-#[test]
-fn unequal_degree_c2_polycurve_elevates_lower_degree() {
-    let quadratic = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        2,
-        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.5, 1.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-        ],
-        Some(vec![1.0, 0.5, 1.0]),
-        false,
-    )
-    .expect("fixture constructor admission")
-    .expect("valid quadratic");
-    let compound = crate::curves::DecodedCurve::Compound {
-        children: vec![
-            (
-                finite_parameter(0.0),
-                decoded_nurbs(line_nurbs(0.0, 1.0, false)),
-            ),
-            (finite_parameter(1.0), decoded_nurbs(quadratic)),
-        ],
-        end_parameter: finite_parameter(2.0),
-        warnings: Diagnostics::new(),
-    };
-    let merged = with_expand_bytes(&[], |expand| {
-        c2_curve_to_nurbs_join(expand.ctx(), compound, 0)
-    })
-    .expect("degree elevation")
-    .curve;
-    assert_eq!(merged.degree(), 2);
-    assert_eq!(merged.control_points().len(), 5);
-    assert_eq!(
-        merged.knots().as_slice(),
-        vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0]
-    );
-}
-
 fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
     let knots = vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0];
     let start = NurbsCurve::from_lanes(
@@ -1266,11 +1157,13 @@ fn candidate_rejections_distinguish_admission_from_validation() {
     with_expand(&scan, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
         let admission =
-            context.validate_candidate_fallible::<(), String>(|_, _| Err("admission".into()));
+            context.validate_candidate_fallible::<(), String>(|_, _, _arena_storage| {
+                Err("admission".into())
+            });
         assert!(
             matches!(admission, Err(CandidateError::Admission(message)) if message == "admission")
         );
-        let validation = context.validate_candidate_fallible(|candidate, _| {
+        let validation = context.validate_candidate_fallible(|candidate, _, _arena_storage| {
             let point = Point::new(
                 "rhino:test:point#duplicate"
                     .try_into()
@@ -1299,53 +1192,54 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
             let before_ir = context.session.document().clone();
             let before_annotations = context.annotations.clone();
             let before_budget = context.expansion_budget.entities;
-            let result = context.validate_candidate_fallible(|candidate, annotations| {
-                candidate.model.assets.push(Asset {
-                    id: "rhino:test:asset#rejected".try_into().unwrap(),
-                    name: None,
-                    media_type: None,
-                    content: AssetContent::Embedded {
-                        data: AssetData::new(vec![1]).unwrap(),
-                    },
-                    native_ref: None,
+            let result =
+                context.validate_candidate_fallible(|candidate, annotations, _arena_storage| {
+                    candidate.model.assets.push(Asset {
+                        id: "rhino:test:asset#rejected".try_into().unwrap(),
+                        name: None,
+                        media_type: None,
+                        content: AssetContent::Embedded {
+                            data: AssetData::new(vec![1]).unwrap(),
+                        },
+                        native_ref: None,
+                    });
+                    candidate.native.namespace_mut("rhino").arenas_mut().insert(
+                        "history_records".into(),
+                        vec![NativeRecord::new(
+                            cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
+                                .expect("valid identity"),
+                            serde_json::Map::new(),
+                        )
+                        .unwrap()],
+                    );
+                    {
+                        let arena = cadmpeg_core::decode::DecodeArena::new();
+                        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                            &[],
+                            &arena,
+                            &cadmpeg_core::decode::DecodePolicy::service(),
+                        )
+                        .unwrap();
+                        set_exactness(
+                            &ctx,
+                            annotations,
+                            "rhino:test:asset#rejected",
+                            Exactness::Derived,
+                        )
+                        .unwrap();
+                    }
+                    if admission_failure {
+                        return Err::<(), String>("source admission refusal".into());
+                    }
+                    let point = Point::new(
+                        "rhino:test:point#duplicate".try_into().unwrap(),
+                        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                            .expect("a finite position is a point"),
+                        None,
+                    );
+                    candidate.model.points.extend([point.clone(), point]);
+                    Ok(())
                 });
-                candidate.native.namespace_mut("rhino").arenas_mut().insert(
-                    "history_records".into(),
-                    vec![NativeRecord::new(
-                        cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
-                            .expect("valid identity"),
-                        serde_json::Map::new(),
-                    )
-                    .unwrap()],
-                );
-                {
-                    let arena = cadmpeg_core::decode::DecodeArena::new();
-                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                        &[],
-                        &arena,
-                        &cadmpeg_core::decode::DecodePolicy::service(),
-                    )
-                    .unwrap();
-                    set_exactness(
-                        &ctx,
-                        annotations,
-                        "rhino:test:asset#rejected",
-                        Exactness::Derived,
-                    )
-                    .unwrap();
-                }
-                if admission_failure {
-                    return Err::<(), String>("source admission refusal".into());
-                }
-                let point = Point::new(
-                    "rhino:test:point#duplicate".try_into().unwrap(),
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .expect("a finite position is a point"),
-                    None,
-                );
-                candidate.model.points.extend([point.clone(), point]);
-                Ok(())
-            });
             assert!(result.is_err());
             assert_eq!(context.session.document(), &before_ir);
             assert_eq!(context.annotations, before_annotations);
@@ -1453,7 +1347,12 @@ fn extrusion_cap_staging_preserves_pcurve_rejection_details() {
         }];
         let error = with_collection_limit(u64::MAX, |ctx| {
             stage_extrusion_caps(
-                ctx,
+                (
+                    ctx,
+                    &mut ctx
+                        .reserve_scoped(0, "Rhino fixture arena scratch")
+                        .expect("fixture scratch"),
+                ),
                 &mut CadIr::empty(),
                 &mut cadmpeg_ir::Annotations::default(),
                 "caps",
@@ -1478,21 +1377,36 @@ fn extrusion_cap_loop_ids_refuse_collection_limit() {
         boundary: &extrusion.boundaries[0],
         directrix: "rhino:test:curve#cap".try_into().expect("curve identity"),
     }];
-    let error = with_collection_limit(0, |ctx| {
-        stage_extrusion_caps(
-            ctx,
-            &mut CadIr::empty(),
-            &mut cadmpeg_ir::Annotations::default(),
-            "caps",
-            &test_association(),
-            &extrusion,
-            &boundaries,
-        )
-        .expect_err("cap loop ID exceeds collection limit")
-    });
+    // One staged surface arena entry precedes the loop-ID collection.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino extrusion cap loop IDs",
+        |cap| {
+            with_collection_limit(cap, |ctx| {
+                stage_extrusion_caps(
+                    (
+                        ctx,
+                        &mut ctx
+                            .reserve_scoped(0, "Rhino fixture arena scratch")
+                            .expect("fixture scratch"),
+                    ),
+                    &mut CadIr::empty(),
+                    &mut cadmpeg_ir::Annotations::default(),
+                    "caps",
+                    &test_association(),
+                    &extrusion,
+                    &boundaries,
+                )
+                .map_err(|error| match error {
+                    CandidateError::Codec(error) => error,
+                    error => panic!("unexpected cap staging error: {error}"),
+                })
+            })
+        },
+    );
     assert!(matches!(
         error,
-        super::CandidateError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.operation == "Rhino extrusion cap loop IDs"
     ));
 }
@@ -1526,7 +1440,12 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             .collect::<Vec<_>>();
         with_collection_limit(u64::MAX, |ctx| {
             assert!(stage_extrusion_caps(
-                ctx,
+                (
+                    ctx,
+                    &mut ctx
+                        .reserve_scoped(0, "Rhino fixture arena scratch")
+                        .expect("fixture scratch")
+                ),
                 &mut ir,
                 &mut cadmpeg_ir::Annotations::default(),
                 "caps",
@@ -1704,6 +1623,7 @@ fn unknown_record_link_insertion_refuses_collection_limit() {
             "rhino:object:unknown#0",
             record.links_mut(),
             "rhino:curve#1",
+            None,
         )
         .expect_err("one link exceeds the collection limit")
     });
@@ -1973,6 +1893,7 @@ fn finite_parameter(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
 }
 
 mod brep;
+mod budget_paths;
 
 mod instance_snapshots;
 

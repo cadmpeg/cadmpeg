@@ -1,139 +1,176 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::disallowed_methods)]
 
+use super::super::InstanceJournal;
 use super::{
-    snapshot_instance_links, snapshot_instance_statuses, with_collection_limit, GeometryOutcome,
-    UnknownId, UnknownRecord,
+    object_record, scan_with_objects, with_expand, ArchiveVersion, DecodeContext, GeometryOutcome,
+    POINT_CLASS,
 };
 
-fn one_instance_link_record() -> UnknownRecord {
-    UnknownRecord::unavailable(
-        UnknownId::mint("rhino:object:unknown#0").expect("valid identity"),
-        0,
-        0,
-        "",
-        vec!["rhino:curve#1".to_string()],
-    )
-}
-
 #[test]
-fn instance_link_snapshot_rows_refuse_collection_limit() {
-    let refusal = with_collection_limit(0, |ctx| {
-        snapshot_instance_links(ctx, &[one_instance_link_record()])
-            .err()
-            .expect("one row exceeds the collection limit")
-    });
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "Rhino instance link snapshot rows"
-    ));
-}
-
-#[test]
-fn instance_link_snapshot_entries_refuse_collection_limit() {
-    let refusal = with_collection_limit(1, |ctx| {
-        snapshot_instance_links(ctx, &[one_instance_link_record()])
-            .err()
-            .expect("one entry exceeds the collection limit")
-    });
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "Rhino instance link snapshot entries"
-    ));
-}
-
-#[test]
-fn instance_link_snapshot_bytes_refuse_materialized_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 12;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
-    let refusal = snapshot_instance_links(&ctx, &[one_instance_link_record()])
-        .err()
-        .expect("one temporary row exceeds the limit");
-    // Scoped byte admission uses the byte operation before collection admission.
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "Rhino instance link snapshot bytes"
-    ));
-}
-
-#[test]
-fn instance_status_snapshot_refuses_collection_limit() {
-    let refusal = with_collection_limit(0, |ctx| {
-        snapshot_instance_statuses(ctx, &[Some(GeometryOutcome::Decoded)])
-            .expect_err("one status exceeds the collection limit")
-    });
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "Rhino instance status snapshot"
-    ));
-}
-
-#[test]
-fn instance_status_snapshot_bytes_refuse_materialized_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let bytes = std::mem::size_of::<Option<GeometryOutcome>>();
-    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(bytes - 1);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
-    let refusal = snapshot_instance_statuses(&ctx, &[Some(GeometryOutcome::Decoded)])
-        .expect_err("one status exceeds the temporary-byte limit");
-    // Scoped byte admission uses the byte operation before collection admission.
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "Rhino instance status snapshot bytes"
-    ));
-}
-
-#[test]
-fn instance_snapshots_admit_work_and_hold_scoped_storage() {
-    for links in [false, true] {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = if links {
-            snapshot_instance_links(&ctx, &[one_instance_link_record()])
-                .err()
-                .unwrap()
-        } else {
-            snapshot_instance_statuses(&ctx, &[Some(GeometryOutcome::Decoded)]).unwrap_err()
-        };
-        let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
-            panic!("snapshot work must refuse");
-        };
+fn instance_row_journal_captures_only_selected_rows_once() {
+    let objects = (0..128)
+        .map(|_| object_record(ArchiveVersion::V5, 1, POINT_CLASS))
+        .collect::<Vec<_>>();
+    let scan = scan_with_objects(&objects);
+    with_expand(&scan, |expand| {
+        let mut transaction = DecodeContext::new(&scan, expand).unwrap();
+        transaction
+            .append_link(9, "rhino:test:curve#original")
+            .unwrap();
+        transaction.instance_journal = Some(InstanceJournal::new(expand.ctx()).unwrap());
+        transaction
+            .append_link(9, "rhino:test:curve#later")
+            .unwrap();
+        transaction.mark_decoded(9);
+        transaction
+            .append_link(9, "rhino:test:curve#another")
+            .unwrap();
+        let journal = transaction.instance_journal.as_ref().unwrap();
+        assert_eq!(journal.rows.len(), 1);
+        let row = &journal.rows[&9];
         assert_eq!(
-            first.dimension,
-            cadmpeg_core::decode::ResourceDimension::WorkUnits
+            row.additions.iter().map(String::as_str).collect::<Vec<_>>(),
+            ["rhino:test:curve#another", "rhino:test:curve#later"]
+        );
+        assert_eq!(row.status, None);
+        assert_eq!(transaction.unknown(9).unwrap().links().len(), 3);
+    });
+}
+
+#[test]
+fn instance_row_journal_rolls_back_links_and_statuses_without_replacing_untouched_rows() {
+    let objects = (0..3)
+        .map(|_| object_record(ArchiveVersion::V5, 1, POINT_CLASS))
+        .collect::<Vec<_>>();
+    let scan = scan_with_objects(&objects);
+    with_expand(&scan, |expand| {
+        let mut transaction = DecodeContext::new(&scan, expand).unwrap();
+        transaction
+            .append_link(0, "rhino:test:curve#original")
+            .unwrap();
+        transaction.instance_journal = Some(InstanceJournal::new(expand.ctx()).unwrap());
+        transaction
+            .append_link(0, "rhino:test:curve#later")
+            .unwrap();
+        transaction.mark_decoded(0);
+        transaction.mark_decoded(2);
+        transaction.rollback_instance_rows().unwrap();
+        assert_eq!(
+            transaction.unknown(0).unwrap().links(),
+            ["rhino:test:curve#original"]
+        );
+        assert_eq!(transaction.statuses[0], None);
+        assert_eq!(transaction.statuses[2], Some(GeometryOutcome::Decoded));
+        assert!(transaction.instance_journal.is_none());
+        assert!(expand.ctx().resource_refusal().is_none());
+    });
+}
+
+#[test]
+fn instance_row_journal_preserves_resource_refusal_before_link_mutation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    for dimension in [
+        ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::WorkUnits,
+    ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            dimension,
+            "Rhino instance touched rows",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                    ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap;
+                    }
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                    _ => panic!("journal probe dimension"),
+                }
+                let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    scan.data, &arena, &policy,
+                )?;
+                let mut transaction =
+                    DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
+                transaction.instance_journal = Some(InstanceJournal::new(&ctx)?);
+                let result = transaction.append_link(0, "rhino:test:curve#later");
+                assert!(transaction.unknown(0).unwrap().links().is_empty());
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal)) = result {
+                    assert_eq!(ctx.resource_refusal(), Some(*refusal));
+                }
+                result
+            },
         );
         assert!(
-            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino instance touched rows" && refusal.dimension == dimension)
         );
     }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+}
+
+#[test]
+fn instance_row_journal_does_not_copy_existing_link_text() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 4096;
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let links = snapshot_instance_links(&ctx, &[one_instance_link_record()]).unwrap();
-    let statuses = snapshot_instance_statuses(&ctx, &[Some(GeometryOutcome::Decoded)]).unwrap();
-    assert_eq!(links.links, [vec!["rhino:curve#1".to_string()]]);
-    assert_eq!(statuses.0, [Some(GeometryOutcome::Decoded)]);
-    drop(statuses);
-    drop(links);
-    let all_storage = ctx
-        .reserve_scoped(4096, "instance snapshots released")
-        .unwrap();
-    drop(all_storage);
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
+    let mut transaction =
+        DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root)).unwrap();
+    let original = (0..64)
+        .map(|index| format!("rhino:test:curve#{}-{index:03}", "x".repeat(128)))
+        .collect::<Vec<_>>();
+    for link in &original {
+        transaction.append_link(0, link).unwrap();
+    }
+    transaction.instance_journal = Some(InstanceJournal::new(&ctx).unwrap());
+    transaction
+        .append_link(0, "rhino:test:curve#added")
+        .expect("only the new link is copied into scratch");
+    transaction.mark_decoded(0);
+    transaction.rollback_instance_rows().unwrap();
+    assert_eq!(transaction.unknown(0).unwrap().links(), original);
+    assert_eq!(transaction.statuses[0], None);
+    assert!(ctx.resource_refusal().is_none());
+    drop(transaction);
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn instance_row_journal_field_transfer_preserves_retained_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let link = "rhino:test:curve#added";
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "Rhino instance link field text",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+            let mut transaction =
+                DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
+            transaction.instance_journal = Some(InstanceJournal::new(&ctx)?);
+            transaction.append_link(0, link)?;
+            let journal = transaction.instance_journal.take().unwrap();
+            let result = journal.field_text_storage.commit();
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*refusal));
+            }
+            result
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("field text transfer must preserve its retained refusal");
+    };
+    assert_eq!(refusal.operation, "Rhino instance link field text");
+    assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+    // Only the actual new field text transfers; journal keys remain scratch.
+    assert_eq!(refusal.additional, u64::try_from(link.len()).unwrap());
 }
