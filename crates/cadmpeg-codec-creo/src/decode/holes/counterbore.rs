@@ -938,24 +938,23 @@ fn counterbore_source_boundary_circle(
         &scan.curves.topology_rows,
         |row| row.id,
     )?;
-    (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
-        let boundary_for =
-            |cylinder_id: u32| -> Result<Option<(u32, Point3, [f64; 3])>, CodecError> {
-                Ok({
-                    let mut numbered_identity_unique = None;
-                    for numbered_identity_candidate in ctx.admit_iter(&(unique_edges)[..], "creo numbered identity candidate scan")?.copied().map(|edge| -> Result<Option<_>, cadmpeg_core::CodecError> {
-                { let Some(value) = (edge.feature_id == feature_id && edge.type_byte == 0).then_some(()) else { return Ok(None); }; value };
-                let cylinder = { let Some(value) = std::num::NonZeroU32::new(cylinder_id) else { return Ok(None); }; value };
+    let boundary_for = |cylinder_id: u32| -> Result<Option<(u32, Point3, [f64; 3])>, CodecError> {
+        let Some(cylinder) = std::num::NonZeroU32::new(cylinder_id) else { return Ok(None); };
+        let mut boundary = None;
+        let mut edges = unique_edges.iter();
+        while let Some(edge) = ctx.next_charged(&mut edges, "creo numbered identity candidate scan")? {
+            let candidate = | | -> Result<Option<_>, CodecError> {
+                if edge.feature_id != feature_id || edge.type_byte != 0 { return Ok(None); }
                 let other = match edge.faces {
                     [Some(left), Some(right)] if left == cylinder => right.get(),
                     [Some(left), Some(right)] if right == cylinder => left.get(),
                     _ => return Ok(None),
                 };
-                let plane = { let Some(value) = crate::surface::unique_surface_row(&scan.surfaces.rows, other) else { return Ok(None); }; value };
-                { let Some(value) = (plane.kind == crate::surface::SurfaceKind::Plane).then_some(()) else { return Ok(None); }; value };
-                let curve = { let Some(value) = ({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(ir.model.curves)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let curve = &numbered_identity_candidate; 
-                    Ok(if crate::identity::matches_numbered_identity(curve.id.as_str(), "creo:visibgeom:curve#", edge.id) { Some(numbered_identity_candidate) } else { None })
-                }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique }) else { return Ok(None); }; value };
+                let Some(plane) = scan.surfaces.rows.unique(other) else { return Ok(None); };
+                if plane.kind != crate::surface::SurfaceKind::Plane { return Ok(None); }
+                let Some(curve) = super::super::uniqueness::exactly_one_by(ctx, &ir.model.curves,
+                    |curve| Ok(crate::identity::matches_numbered_identity(curve.id.as_str(), "creo:visibgeom:curve#", edge.id)),
+                    "creo numbered identity candidate scan")? else { return Ok(None); };
                 let Some(SolvedCurveGeometry::Circle(circle_curve)) =
                     source_carriers.curve_geometry(curve).solved()
                 else {
@@ -963,10 +962,10 @@ fn counterbore_source_boundary_circle(
                 };
                 let center = circle_curve.center().get();
                 let candidate = circle_curve.radius().get();
-                { let Some(value) = ((candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY).then_some(()) else { return Ok(None); }; value };
+                if (candidate - radius).abs() > EPS_COUNTERBORE_GEOMETRY { return Ok(None); }
                 let axis = unit_length(*circle_curve.frame().axis());
-                let plane = { let Some(value) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, other)? else { return Ok(None); }; value };
-                let normal = { let Some(value) = normalize(plane.normal) else { return Ok(None); }; value };
+                let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, other)? else { return Ok(None); };
+                let Some(normal) = normalize(plane.normal) else { return Ok(None); };
                 let alignment = axis
                     .iter()
                     .zip(normal)
@@ -1001,37 +1000,24 @@ fn counterbore_source_boundary_circle(
                     return Ok(None);
                 }
                 Ok(Some((other, center, axis)))
-            }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); }
-                    numbered_identity_unique
-                })
             };
-        let mut boundaries = cylinder_ids.iter().copied().map(boundary_for);
-        let Some(first) = boundaries.next() else {
-            return Ok(None);
-        };
-        let Some(first) = first? else {
-            return Ok(None);
-        };
-        for candidate in boundaries {
-            let Some(candidate) = candidate? else {
-                return Ok(None);
-            };
-            if !(candidate.0 == first.0
-                && candidate.1 == first.1
-                && candidate
-                    .2
-                    .iter()
-                    .zip(first.2)
-                    .map(|(left, right)| left * right)
-                    .sum::<f64>()
-                    .abs()
-                    >= 1.0 - EPS_COUNTERBORE_GEOMETRY)
-            {
-                return Ok(None);
-            }
+            let Some(candidate) = candidate()? else { continue; };
+            if boundary.is_some() { return Ok(None); }
+            boundary = Some(candidate);
         }
-        Ok(Some(first))
-    })()
+        Ok(boundary)
+    };
+    let mut ids = cylinder_ids.iter();
+    let Some(first_id) = ctx.next_charged(&mut ids, "creo counterbore boundary cylinder scan")? else { return Ok(None); };
+    let Some(first) = boundary_for(*first_id)? else { return Ok(None); };
+    while let Some(id) = ctx.next_charged(&mut ids, "creo counterbore boundary cylinder scan")? {
+        let Some(candidate) = boundary_for(*id)? else { return Ok(None); };
+        if !(candidate.0 == first.0 && candidate.1 == first.1
+            && candidate.2.iter().zip(first.2).map(|(left, right)| left * right).sum::<f64>().abs() >= 1.0 - EPS_COUNTERBORE_GEOMETRY) {
+            return Ok(None);
+        }
+    }
+    Ok(Some(first))
 }
 
 pub(in crate::decode) fn counterbore_source_patch_geometries(
