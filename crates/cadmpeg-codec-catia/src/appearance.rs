@@ -1,6 +1,6 @@
 //! Transfer of byte-proven CATIA display colors to neutral appearance bindings.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId};
@@ -81,6 +81,23 @@ pub(crate) fn transfer(
     graph_scope: &crate::decode::ModelingGraphScope,
     standard_fbb: Option<&[u8]>,
 ) -> Result<TransferResult, cadmpeg_core::CodecError> {
+    let mut asset_storage = ctx.reserve_scoped(0, "catia_appearance_identity_index")?;
+    let mut assets = HashMap::<String, usize>::new();
+    for (index, appearance) in ctx
+        .admit_iter(
+            &ir.model.appearances,
+            "catia_appearance_existing_identity_visits",
+        )?
+        .enumerate()
+    {
+        asset_storage.with_storage(|| {
+            let key =
+                ctx.copy_retained_text(appearance.id.as_str(), "catia_appearance_identity_key")?;
+            ctx.entry_hash_map(&mut assets, key, "catia_appearance_identity_index")?
+                .or_insert(index);
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })?;
+    }
     let initial_assets = ir.model.appearances.len();
     let initial_bindings = ir.model.appearance_bindings.len();
     let mut packet_storage = ctx.reserve_scoped(0, "catia_appearance_packets")?;
@@ -137,7 +154,13 @@ pub(crate) fn transfer(
             Packet::Body(rgba) => body_storage
                 .with_storage(|| ctx.push_vec(&mut body, rgba, "catia_appearance_body"))?,
         }
-        insert_appearance(ctx, &mut ir.model.appearances, packet.rgba())?;
+        insert_appearance(
+            ctx,
+            &mut assets,
+            &mut asset_storage,
+            &mut ir.model.appearances,
+            packet.rgba(),
+        )?;
     }
     let (positional_colors, positional_storage) = ctx.with_scoped_storage(
         "catia_appearance_positional_colors",
@@ -187,7 +210,13 @@ pub(crate) fn transfer(
             .zip(colors)
             .enumerate()
         {
-            let asset = insert_appearance(ctx, &mut ir.model.appearances, rgba)?;
+            let asset = insert_appearance(
+                ctx,
+                &mut assets,
+                &mut asset_storage,
+                &mut ir.model.appearances,
+                rgba,
+            )?;
             let face = face
                 .id
                 .try_clone_for_decode(ctx, "catia_appearance_face_id")?;
@@ -204,7 +233,13 @@ pub(crate) fn transfer(
     } else {
         drop(positional_storage);
         if all_faces.len() == 1 && !ir.model.faces.is_empty() {
-            let asset = insert_appearance(ctx, &mut ir.model.appearances, all_faces[0])?;
+            let asset = insert_appearance(
+                ctx,
+                &mut assets,
+                &mut asset_storage,
+                &mut ir.model.appearances,
+                all_faces[0],
+            )?;
             for (index, face) in ctx
                 .admit_iter(&ir.model.faces, "catia_appearance_face_visits")?
                 .enumerate()
@@ -233,14 +268,27 @@ pub(crate) fn transfer(
                     ),
                     "catia_appearance_source_id",
                 )?;
-                insert_source_binding(ctx, ir, packet.packet, source_id)?;
+                insert_source_binding(
+                    ctx,
+                    &mut assets,
+                    &mut asset_storage,
+                    ir,
+                    packet.packet,
+                    source_id,
+                )?;
             }
             result.unresolved_packets += all_faces.len();
         }
 
         match body.as_slice() {
             [rgba] if all_faces.is_empty() && ir.model.bodies.len() == 1 => {
-                let asset = insert_appearance(ctx, &mut ir.model.appearances, *rgba)?;
+                let asset = insert_appearance(
+                    ctx,
+                    &mut assets,
+                    &mut asset_storage,
+                    &mut ir.model.appearances,
+                    *rgba,
+                )?;
                 let target = AppearanceTarget::Body(
                     ir.model.bodies[0]
                         .id
@@ -269,7 +317,14 @@ pub(crate) fn transfer(
                         ),
                         "catia_appearance_source_id",
                     )?;
-                    insert_source_binding(ctx, ir, packet.packet, source_id)?;
+                    insert_source_binding(
+                        ctx,
+                        &mut assets,
+                        &mut asset_storage,
+                        ir,
+                        packet.packet,
+                        source_id,
+                    )?;
                 }
                 result.unresolved_packets += values.len();
             }
@@ -323,6 +378,8 @@ fn packet(field: &ValueField) -> Option<Packet> {
 
 fn insert_appearance(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    assets: &mut HashMap<String, usize>,
+    asset_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     appearances: &mut Vec<Appearance>,
     rgba: [u8; 4],
 ) -> Result<usize, cadmpeg_core::CodecError> {
@@ -339,14 +396,16 @@ fn insert_appearance(
         )?);
         Ok::<_, cadmpeg_core::CodecError>(id)
     })?;
-    if let Some(index) = ctx.position_by(
-        &*appearances,
-        |appearance| ctx.equal(&appearance.id, &id, "catia_appearance_asset_identity_match"),
-        "catia_appearance_asset_search",
-    )? {
-        return Ok(index);
+    if let Some(index) =
+        ctx.get_hash_map(assets, id.as_str(), "catia_appearance_asset_identity_match")?
+    {
+        return Ok(*index);
     }
     let index = appearances.len();
+    asset_storage.with_storage(|| {
+        let key = ctx.copy_retained_text(id.as_str(), "catia_appearance_identity_key")?;
+        ctx.insert_hash_map(assets, key, index, "catia_appearance_identity_index")
+    })?;
     ctx.charge_entities(1, "admit CATIA appearance")?;
     id_storage.commit()?;
     let schema = {
@@ -399,6 +458,8 @@ fn insert_binding(
 
 fn insert_source_binding(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    assets: &mut HashMap<String, usize>,
+    asset_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ir: &mut CadIr,
     packet: Packet,
     source_id: String,
@@ -407,7 +468,7 @@ fn insert_source_binding(
         Packet::AllFaces([r, g, b]) => [r, g, b, 0xff],
         Packet::Body(rgba) => rgba,
     };
-    let asset = insert_appearance(ctx, &mut ir.model.appearances, rgba)?;
+    let asset = insert_appearance(ctx, assets, asset_storage, &mut ir.model.appearances, rgba)?;
     let appearance = &ir.model.appearances[asset].id;
     // Hex encoding preserves the source token while excluding key delimiters.
     let key = ctx
@@ -472,7 +533,7 @@ fn insert_binding_record(
 
 #[cfg(test)]
 mod tests {
-    use super::{insert_source_binding, packet, transfer, Packet, TransferResult};
+    use super::{packet, transfer, Packet, TransferResult};
     use crate::native::CatiaNative;
     use crate::native::CatiaValueBlock;
     use crate::value_block::ValueField;
@@ -501,11 +562,74 @@ mod tests {
         );
     }
 
+    fn insert_source_binding(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ir: &mut CadIr,
+        packet: Packet,
+        source_id: String,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "catia_appearance_test_index")?;
+        let mut assets = std::collections::HashMap::new();
+        for (index, appearance) in ir.model.appearances.iter().enumerate() {
+            storage.with_storage(|| {
+                let key =
+                    ctx.copy_retained_text(appearance.id.as_str(), "catia_appearance_test_key")?;
+                ctx.insert_hash_map(&mut assets, key, index, "catia_appearance_test_index")
+            })?;
+        }
+        super::insert_source_binding(ctx, &mut assets, &mut storage, ir, packet, source_id)
+    }
+
+    #[test]
+    fn appearance_identity_index_admits_distinct_assets_and_reuses_existing_ids() {
+        let mut appearances = Vec::new();
+        crate::test_support::with_work_limit(1_000_000, |ctx| {
+            let mut storage = ctx.reserve_scoped(0, "catia_appearance_test_index")?;
+            let mut assets = std::collections::HashMap::new();
+            for index in 0u16..512 {
+                let [low, high] = index.to_le_bytes();
+                let rgba = [low, high, 0, 255];
+                assert_eq!(
+                    super::insert_appearance(
+                        ctx,
+                        &mut assets,
+                        &mut storage,
+                        &mut appearances,
+                        rgba
+                    )?,
+                    usize::from(index)
+                );
+                assert_eq!(
+                    super::insert_appearance(
+                        ctx,
+                        &mut assets,
+                        &mut storage,
+                        &mut appearances,
+                        rgba
+                    )?,
+                    usize::from(index)
+                );
+            }
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })
+        .expect("indexed asset transfer fits a linear allowance");
+        assert_eq!(appearances.len(), 512);
+    }
+
     #[test]
     fn appearance_asset_identity_refuses_grammar_work() {
         assert_identity_grammar_refusal("catia_appearance_asset_identity", |ctx| {
             let mut ir = model(0);
-            let result = super::insert_appearance(ctx, &mut ir.model.appearances, [1, 2, 3, 4]);
+            let result = {
+                let mut storage = ctx.reserve_scoped(0, "catia_appearance_test_index")?;
+                super::insert_appearance(
+                    ctx,
+                    &mut std::collections::HashMap::new(),
+                    &mut storage,
+                    &mut ir.model.appearances,
+                    [1, 2, 3, 4],
+                )
+            };
             if result.is_err() {
                 assert!(ir.model.appearances.is_empty());
             }
@@ -649,30 +773,37 @@ mod tests {
     #[test]
     fn appearance_emission_refuses_each_collection_boundary() {
         let input = native(vec![inline(&[0x01, 1, 2, 3])]);
-        for (limit, operation) in [
-            (4, "catia_value_fields"),
-            (5, "catia_appearance_packets"),
-            (6, "catia_appearance_all_faces"),
-            (7, "catia_appearance_assets"),
-            (8, "catia_appearance_bindings"),
+        for operation in [
+            "catia_value_fields",
+            "catia_appearance_packets",
+            "catia_appearance_all_faces",
+            "catia_appearance_identity_index",
+            "catia_appearance_assets",
+            "catia_appearance_bindings",
         ] {
-            let refusal = crate::test_support::with_collection_limit(limit, |ctx| {
-                transfer(
-                    ctx,
-                    &mut model(0),
-                    &input,
-                    &crate::decode::ModelingGraphScope::Unscoped,
-                    None,
-                )
-            });
+            let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                operation,
+                |limit| {
+                    crate::test_support::with_collection_limit(limit, |ctx| {
+                        transfer(
+                            ctx,
+                            &mut model(0),
+                            &input,
+                            &crate::decode::ModelingGraphScope::Unscoped,
+                            None,
+                        )
+                    })
+                },
+            );
             assert!(
                 matches!(
                     refusal,
-                    Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+                    cadmpeg_core::CodecError::ResourceLimit(resource)
                         if resource.operation == operation
                             && resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 ),
-                "limit {limit}"
+                "operation {operation}"
             );
         }
         let retained_refusal =
