@@ -45,7 +45,7 @@ fn compact_boundary_advance_refuses_edge_point_collection_limit() {
         &choices,
         &[Some([0, 1]), Some([0, 1])],
         None,
-        vec![(quotient.clone(), HashSet::new())],
+        vec![(quotient.clone(), std::collections::BTreeSet::new())],
         &budget,
     )
     .expect("service resource budget");
@@ -68,7 +68,7 @@ fn compact_boundary_advance_refuses_edge_point_collection_limit() {
             &choices,
             &[Some([0, 1]), Some([0, 1])],
             None,
-            vec![(quotient.clone(), HashSet::new())],
+            vec![(quotient.clone(), std::collections::BTreeSet::new())],
             &budget,
         ) {
             Err(CodecError::ResourceLimit(error)) => {
@@ -126,7 +126,7 @@ fn compact_boundary_advance_refuses_nested_ordered_alternative_copies() {
             &choices,
             &[Some([0, 1]), Some([0, 1])],
             None,
-            vec![(quotient.clone(), HashSet::new())],
+            vec![(quotient.clone(), std::collections::BTreeSet::new())],
             &budget,
         )
         .map(|outcome| {
@@ -195,7 +195,7 @@ fn compact_boundary_advance_charges_existing_oriented_edges() {
     )
     .expect("service resource budget")
     .expect("initial quotient");
-    let initial = vec![(quotient, HashSet::from([0]))];
+    let initial = vec![(quotient, std::collections::BTreeSet::from([0]))];
     let mut refused = HashSet::new();
     for limit in 0..256 {
         let arena = DecodeArena::new();

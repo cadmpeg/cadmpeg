@@ -383,7 +383,6 @@ fn boundary_component_graph_refuses_collection_limits() {
         "catia_boundary_domain_edges",
         "catia_component_active_faces",
         "catia_component_domain_rows",
-        "catia_component_active_index",
         "catia_component_union",
         "catia_component_edge_owner",
         "catia_component_face_members",

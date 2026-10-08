@@ -626,7 +626,9 @@ fn incidence_implicit_frontier_witness_refuses_map_and_pair_growth() {
     let choices = vec![vec![[0, 1]], Vec::new()];
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
-    let coordinate_domains = crate::test_support::with_service_context(|ctx| {
+    catia_test_context!(initial_ctx);
+    let coordinate_domains = {
+        let ctx = &initial_ctx;
         let mut quotient =
             crate::solve::mesh_quotient::initial_mesh_quotient(ctx, &choices, 2, &[[0, 1], [0, 1]])
                 .expect("service budget")
@@ -635,7 +637,7 @@ fn incidence_implicit_frontier_witness_refuses_map_and_pair_growth() {
             .prepare_coordinate_root_domains(ctx, 2, &choices, None)
             .expect("service budget")
             .expect("coordinate domains")
-    });
+    };
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
         let search = crate::solve::incidence::IncidenceComponentSearch {
@@ -895,7 +897,15 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
+            .and_then(|options| options
+                .map(|(mut branch, _storage)| {
+                    let mut pairs = Vec::new();
+                    while let Some(pair) = branch.next_with_context(&ctx)? {
+                        pairs.push(pair);
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(pairs)
+                })
+                .transpose())
             .expect("service resource budget"),
         Some(vec![(0, [0, 2])])
     );
@@ -945,7 +955,15 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
+            .and_then(|options| options
+                .map(|(mut branch, _storage)| {
+                    let mut pairs = Vec::new();
+                    while let Some(pair) = branch.next_with_context(&ctx)? {
+                        pairs.push(pair);
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(pairs)
+                })
+                .transpose())
             .expect("service resource budget"),
         Some(vec![(0, [0, 2])])
     );
@@ -1138,7 +1156,15 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
+            .and_then(|options| options
+                .map(|(mut branch, _storage)| {
+                    let mut pairs = Vec::new();
+                    while let Some(pair) = branch.next_with_context(&ctx)? {
+                        pairs.push(pair);
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(pairs)
+                })
+                .transpose())
             .expect("service resource budget"),
         Some(vec![(1, [3, 4]), (1, [3, 5]), (1, [4, 5])])
     );
@@ -1199,7 +1225,15 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
+            .and_then(|options| options
+                .map(|(mut branch, _storage)| {
+                    let mut pairs = Vec::new();
+                    while let Some(pair) = branch.next_with_context(&ctx)? {
+                        pairs.push(pair);
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(pairs)
+                })
+                .transpose())
             .expect("service resource budget"),
         Some(vec![(0, [0, 1]), (0, [0, 2])])
     );
@@ -1213,7 +1247,15 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     assert_eq!(
         independent
             .branch(None)
-            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
+            .and_then(|options| options
+                .map(|(mut branch, _storage)| {
+                    let mut pairs = Vec::new();
+                    while let Some(pair) = branch.next_with_context(&ctx)? {
+                        pairs.push(pair);
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(pairs)
+                })
+                .transpose())
             .expect("service resource budget"),
         Some(Vec::new())
     );
