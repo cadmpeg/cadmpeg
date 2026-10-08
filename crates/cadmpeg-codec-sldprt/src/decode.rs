@@ -2267,7 +2267,9 @@ fn unbound_feature_input_operation_objects(
                 };
                 let names = match &object_names {
                     Some(names) => names,
-                    None => object_names.insert(crate::resolved_features::scalars::ObjectNames::new(ctx, lane)?),
+                    None => object_names.insert(
+                        crate::resolved_features::scalars::ObjectNames::new(ctx, lane)?,
+                    ),
                 };
                 let name = names.of(ctx, feature)?;
                 if let Some(name) = name {
@@ -2775,7 +2777,8 @@ fn try_decode_brep<'ctx>(
     // Without a resolved active site, this is only a deterministic merge
     // accumulator. All site identities are qualified below.
     let selected_site = resolved_active_site.unwrap_or(0);
-    let selected_is_empty_model = if decoded_sites[selected_site].2.stats.source_entity_records == 0 {
+    let selected_is_empty_model = if decoded_sites[selected_site].2.stats.source_entity_records == 0
+    {
         let selected_streams = ctx
             .get_btree_map(
                 &sites,
@@ -5224,10 +5227,10 @@ fn project_design_history(
                 histories,
                 "clone SLDPRT semantic histories",
             )?;
-            let (scene_feature_classes, scene_storage) = ctx.with_scoped_storage(
-                "SLDPRT scene feature class workspace",
-                || crate::tessellation::scene_feature_classes(ctx, scan),
-            )?;
+            let (scene_feature_classes, scene_storage) = ctx
+                .with_scoped_storage("SLDPRT scene feature class workspace", || {
+                    crate::tessellation::scene_feature_classes(ctx, scan)
+                })?;
             crate::history::enrich_scene_classes(
                 ctx,
                 &mut semantic_projection,
@@ -5915,7 +5918,8 @@ fn assign_configuration_bodies(
     let mut workspace = ctx.reserve_scoped(0, "SLDPRT configuration partition lookup workspace")?;
     let mut partition_map = BTreeMap::<u32, Vec<cadmpeg_ir::ids::BodyId>>::new();
     // Each partition keeps the first copy of every body, in site order.
-    let mut seen_storage = ctx.reserve_scoped(0, "SLDPRT configuration body uniqueness workspace")?;
+    let mut seen_storage =
+        ctx.reserve_scoped(0, "SLDPRT configuration body uniqueness workspace")?;
     let mut seen = BTreeMap::<u32, BTreeSet<cadmpeg_ir::ids::BodyId>>::new();
     for (index, bodies) in ctx.admit_iter(configuration_bodies, MERGE)? {
         let Ok(index) = u32::try_from(index) else {
@@ -6377,6 +6381,7 @@ fn brep_local_sha256_in_place(
     use std::mem::take;
 
     const FACE_APPEARANCES: &str = "scan SLDPRT digest appearance bindings";
+    const DISPLAY_WORK: &str = "save and restore SLDPRT body display fields for digest";
     let mut face_appearances = BTreeSet::new();
     let mut face_appearance_storage = ctx.reserve_scoped(0, FACE_APPEARANCES)?;
     for binding in ctx.admit_iter(&ir.model.appearance_bindings, FACE_APPEARANCES)? {
@@ -6406,8 +6411,11 @@ fn brep_local_sha256_in_place(
                 "save SLDPRT body display fields for digest",
             )
         })?;
-    const DISPLAY_WORK: &str = "save and restore SLDPRT body display fields for digest";
-    let display_work = ir.model.bodies.len().checked_mul(2)
+    let display_work = ir
+        .model
+        .bodies
+        .len()
+        .checked_mul(2)
         .ok_or_else(|| ctx.refuse_codec_limit(DISPLAY_WORK, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(u64_from_index(display_work), DISPLAY_WORK)?;
     let mut binding_partition = binding_partition.move_from();
