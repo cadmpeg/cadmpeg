@@ -142,3 +142,51 @@ fn dimension_child_digest_admits_source_bytes_before_hashing() {
         assert_eq!(limit.additional, u64::try_from(bytes.len()).unwrap());
     }
 }
+
+#[test]
+fn uuid_text_rejection_charges_only_attempted_steps() {
+    // Invalid first byte: one step. Seventeenth byte: 34 hex-digit steps.
+    // Valid UUID: all 36 source bytes and one end probe.
+    for (text, allowance, expected) in [
+        (format!("!{}", "a".repeat(900)), 1, None),
+        ("a".repeat(900), 34, None),
+        ("AABBCCDD-EEFF-0011-2233-445566778899".to_owned(), 37,
+            Some(crate::wire::Uuid::from_canonical([
+                0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0, 0x11,
+                0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
+            ]))),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino UUID text traversal", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            crate::presentation::parse_uuid_text(&ctx, &text)
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = allowance;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(crate::presentation::parse_uuid_text(&ctx, &text).unwrap(), expected);
+    }
+}
+
+#[test]
+fn rdk_utf8_validation_preserves_structural_errors_and_work_refusal() {
+    let mut bytes = 2_i32.to_le_bytes().to_vec();
+    bytes.extend(1_i32.to_le_bytes());
+    bytes.push(0xff);
+    assert!(matches!(crate::presentation::classify_rdk_material_payload(
+        &cadmpeg_test_support::service_decode_context(), &bytes, 0..bytes.len()
+    ), Err(FramingError::Structural { offset: 0, message }) if message == "legacy RDK XML is not UTF-8"));
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "validate Rhino RDK XML UTF-8", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        crate::presentation::classify_rdk_material_payload(&ctx, &bytes, 0..bytes.len()).map_err(|error| match error {
+            FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
+            other => panic!("validation must refuse before malformed text: {other:?}"),
+        })
+    });
+}

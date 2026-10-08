@@ -1794,3 +1794,5 @@ fn history_cursor_walks_preserve_work_refusal() {
 }
 
 mod projection;
+
+mod budget_repairs;

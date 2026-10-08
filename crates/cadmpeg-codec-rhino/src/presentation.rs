@@ -1721,10 +1721,8 @@ fn parse_uuid_text(
     let mut bytes = [0_u8; 16];
     let mut nibble = None;
     let mut index = 0;
-    for byte in ctx
-        .admit_iter(value.as_bytes(), "Rhino UUID text traversal")?
-        .copied()
-    {
+    let mut source = value.bytes();
+    while let Some(byte) = ctx.next_charged(&mut source, "Rhino UUID text traversal")? {
         if byte == b'-' {
             continue;
         }
@@ -1798,11 +1796,7 @@ fn classify_rdk_material_payload(
     if xml.last() == Some(&0) {
         return Ok(RdkMaterialPayload::CallbackOwned);
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(xml.len()),
-        "validate Rhino RDK XML UTF-8",
-    )?;
-    let xml = std::str::from_utf8(xml).map_err(|_| {
+    let xml = ctx.validate_utf8(xml, "validate Rhino RDK XML UTF-8")?.map_err(|_| {
         FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
     })?;
     let admitted_document = ctx

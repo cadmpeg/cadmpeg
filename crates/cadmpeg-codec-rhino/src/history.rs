@@ -538,17 +538,15 @@ fn subd_edge_chain(
     let orientations =
         lane_workspace.with_storage(|| array(ctx, &mut reader, 1, BoundedReader::u8))?;
     let orientation_start = reader.position() - orientations.len();
-    for (index, orientation) in ctx
-        .admit_iter(&orientations[..], "Rhino subd edge chain traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .enumerate()
-    {
-        if *orientation > 1 {
-            return Err(FramingError::structural(
-                orientation_start + index,
-                "invalid history SubD edge orientation",
-            ));
-        }
+    if let Some(index) = ctx.position_by(
+        &orientations,
+        |orientation| Ok(*orientation > 1),
+        "Rhino subd edge chain traversal",
+    )? {
+        return Err(FramingError::structural(
+            orientation_start + index,
+            "invalid history SubD edge orientation",
+        ));
     }
     let edges = if edge_ids.len() != count || orientations.len() != count {
         warnings.push_coded_admitted(
