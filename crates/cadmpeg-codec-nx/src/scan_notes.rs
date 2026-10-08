@@ -72,7 +72,7 @@ pub(super) fn summarize(
         )?;
     }
     let mut framed_storage = ctx.reserve_scoped(0, "NX scan-note framed sections")?;
-    let framed_om_sections = framed_storage.with_storage(|| c.om_sections(ctx))?;
+    let (framed_om_sections, framed_readers_storage) = framed_storage.with_storage(|| c.om_sections(ctx))?;
     if !framed_om_sections.is_empty() {
         let (mut declarations, mut fields) = (0usize, 0usize);
         for (_, section) in
@@ -99,9 +99,10 @@ pub(super) fn summarize(
         )?;
     }
     drop(framed_om_sections);
+    drop(framed_readers_storage);
     drop(framed_storage);
     let mut indexed_storage = ctx.reserve_scoped(0, "NX scan-note indexed sections")?;
-    let om_sections = indexed_storage.with_storage(|| c.indexed_om_sections(ctx))?;
+    let (om_sections, indexed_readers_storage) = indexed_storage.with_storage(|| c.indexed_om_sections(ctx))?;
     if !om_sections.is_empty() {
         let (mut entities, mut blocks) = (0usize, 0usize);
         for (_, section) in
@@ -146,6 +147,7 @@ pub(super) fn summarize(
         }
     }
     drop(om_sections);
+    drop(indexed_readers_storage);
     drop(indexed_storage);
     if !scan.has_parasolid(ctx)? && c.has_external_references(ctx)? {
         push_note(

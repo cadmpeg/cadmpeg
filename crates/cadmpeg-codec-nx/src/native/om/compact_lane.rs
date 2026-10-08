@@ -73,7 +73,7 @@ pub(in crate::native) fn data_block_counted_index_lanes(
     container: &Container,
 ) -> Result<Vec<DataBlockCountedIndexLane>, CodecError> {
     let mut output = Vec::new();
-    let sections = container.indexed_om_sections(ctx)?;
+    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
     for (section_ordinal, (entry, section)) in ctx
         .admit_iter(&sections, "NX compact lane input sections")?
         .enumerate()
@@ -136,7 +136,7 @@ pub(in crate::native) fn data_block_abr_reference_lanes(
     container: &Container,
 ) -> Result<Vec<DataBlockAbrReferenceLane>, CodecError> {
     let mut output = Vec::new();
-    let sections = container.indexed_om_sections(ctx)?;
+    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
     for (section_ordinal, (entry, section)) in ctx
         .admit_iter(&sections, "NX compact lane input sections")?
         .enumerate()

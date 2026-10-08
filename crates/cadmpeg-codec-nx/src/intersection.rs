@@ -447,8 +447,14 @@ pub(crate) fn scan_with_graph(
             blend_bound_records(ctx, stream)?,
         ))
     })?;
-    let mut constructions = graph.composite_curves(ctx)?;
-    append_intersection_data_curves(ctx, stream, &mut constructions)?;
+    let (constructions, _construction_storage) = ctx.with_scoped_storage(
+        "NX intersection construction scratch",
+        || {
+            let mut constructions = graph.composite_curves(ctx)?;
+            append_intersection_data_curves(ctx, stream, &mut constructions)?;
+            Ok::<_, CodecError>(constructions)
+        },
+    )?;
     scan_with_auxiliaries(
         ctx,
         AuxiliaryMaps {
@@ -468,7 +474,10 @@ fn append_intersection_data_curves(
     stream: &[u8],
     constructions: &mut Vec<CompositeCurve>,
 ) -> Result<(), CodecError> {
-    let twins = topology::intersection_data_curves(ctx, stream)?;
+    let (twins, _twins_storage) = ctx.with_scoped_storage(
+        "NX intersection twin scratch",
+        || topology::intersection_data_curves(ctx, stream),
+    )?;
     ctx.extend_vec(constructions, twins, "NX intersection constructions")?;
     Ok(())
 }
@@ -538,8 +547,14 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
             Ok::<_, CodecError>(())
         })?;
     }
-    let mut constructions = graph.composite_curves(ctx)?;
-    append_intersection_data_curves(ctx, stream, &mut constructions)?;
+    let (constructions, _construction_storage) = ctx.with_scoped_storage(
+        "NX intersection construction scratch",
+        || {
+            let mut constructions = graph.composite_curves(ctx)?;
+            append_intersection_data_curves(ctx, stream, &mut constructions)?;
+            Ok::<_, CodecError>(constructions)
+        },
+    )?;
     scan_with_auxiliaries(
         ctx,
         AuxiliaryMaps {
@@ -707,7 +722,7 @@ fn scan_with_auxiliaries(
             Err(EnrichError::Resource(error)) => return Err(error),
         }
     }
-    result.source_constructions = constructions;
+    result.source_constructions = ctx.copy_slice(&constructions, "NX selected source constructions")?;
     Ok(result)
 }
 

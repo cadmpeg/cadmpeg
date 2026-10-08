@@ -134,7 +134,7 @@ pub(in crate::native) fn rm_display_color_assignments(
     object_ids: &[RmFastLoadObjectId],
 ) -> Result<Vec<RmDisplayColorAssignment>, CodecError> {
     let mut assignments = Vec::new();
-    let sections = container.om_sections(ctx)?;
+    let (sections, _sections_storage) = container.om_sections(ctx)?;
     for (entry, section) in ctx
         .admit_iter(&sections, "NX display color input sections")?
         .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")

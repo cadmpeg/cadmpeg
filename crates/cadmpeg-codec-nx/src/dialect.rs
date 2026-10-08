@@ -106,7 +106,8 @@ pub(crate) fn classify_layers(
         let Some(schema) = stream.schema_token() else {
             continue;
         };
-        let label = ctx.format_retained(
+        let label = ctx.format_scoped_text(
+            &mut carriers_storage,
             format_args!("stream@{}", stream.file_offset),
             "nx schema carrier labels",
         )?;
