@@ -1477,7 +1477,7 @@ pub(super) fn decode<'ctx>(
         scratch.with_storage(|| ctx.push_vec(&mut deferred_ids, id, "step_deferred_curve_ids"))?;
     }
     let mut deferred_queue = VecDeque::from(deferred_ids);
-    let mut waiting_on = HashMap::<u64, Vec<u64>>::new();
+    let mut waiting_on = DeferredDependencies::default();
     while let Some(id) = deferred_queue.pop_front() {
         ctx.charge_work(1, "step deferred curve worklist")?;
         if ctx.contains_key_hash_map(&carrier_index.curves, &id, "step_geometry_lookup")? {
@@ -1508,8 +1508,7 @@ pub(super) fn decode<'ctx>(
                 .copied()
             else {
                 scratch.with_storage(|| {
-                    ctx.push_hash_group(
-                        &mut waiting_on,
+                    waiting_on.register(ctx,
                         parent_step,
                         id,
                         "step_deferred_curve_groups",
@@ -1625,8 +1624,7 @@ pub(super) fn decode<'ctx>(
                 "step_geometry_lookup",
             )? {
                 scratch.with_storage(|| {
-                    ctx.push_hash_group(
-                        &mut waiting_on,
+                    waiting_on.register(ctx,
                         basis_step,
                         id,
                         "step_deferred_curve_groups",
@@ -1776,8 +1774,7 @@ pub(super) fn decode<'ctx>(
                     "step_geometry_lookup",
                 )? {
                     scratch.with_storage(|| {
-                        ctx.push_hash_group(
-                            &mut waiting_on,
+                        waiting_on.register(ctx,
                             dependency,
                             id,
                             "step_deferred_curve_groups",
@@ -1900,8 +1897,7 @@ pub(super) fn decode<'ctx>(
             "step_geometry_lookup",
         )? {
             scratch.with_storage(|| {
-                ctx.push_hash_group(
-                    &mut waiting_on,
+                waiting_on.register(ctx,
                     source_step,
                     id,
                     "step_deferred_curve_groups",
@@ -2430,7 +2426,7 @@ pub(super) fn decode<'ctx>(
         })?;
     }
     let mut deferred_surface_queue = VecDeque::from(deferred_surface_ids);
-    let mut surface_waiting_on = HashMap::<u64, Vec<u64>>::new();
+    let mut surface_waiting_on = DeferredDependencies::default();
     let (mut worklist_scale_index, mut worklist_scale_storage) = SurfaceScaleIndex::build(ir, ctx)?;
     let mut surface_start = ir.model.surfaces.len();
     let mut procedural_start = ir.model.procedural_surfaces.len();
@@ -2519,8 +2515,7 @@ pub(super) fn decode<'ctx>(
                 .map(|surface| &surface.geometry)
             else {
                 scratch.with_storage(|| {
-                    ctx.push_hash_group(
-                        &mut surface_waiting_on,
+                    surface_waiting_on.register(ctx,
                         support_step,
                         id,
                         "step_deferred_surface_groups",
@@ -2657,8 +2652,7 @@ pub(super) fn decode<'ctx>(
                 .copied()
             else {
                 scratch.with_storage(|| {
-                    ctx.push_hash_group(
-                        &mut surface_waiting_on,
+                    surface_waiting_on.register(ctx,
                         support_step,
                         id,
                         "step_deferred_surface_groups",
@@ -2807,8 +2801,7 @@ pub(super) fn decode<'ctx>(
                 "step_geometry_lookup",
             )? {
                 scratch.with_storage(|| {
-                    ctx.push_hash_group(
-                        &mut surface_waiting_on,
+                    surface_waiting_on.register(ctx,
                         support_step,
                         id,
                         "step_deferred_surface_groups",
@@ -2878,8 +2871,7 @@ pub(super) fn decode<'ctx>(
                 .copied()
             else {
                 scratch.with_storage(|| {
-                    ctx.push_hash_group(
-                        &mut surface_waiting_on,
+                    surface_waiting_on.register(ctx,
                         parent_step,
                         id,
                         "step_deferred_surface_groups",
@@ -6126,16 +6118,58 @@ fn curve_parameter_at_point(
 
 type CompositeCurveData = (Vec<(u64, CompositeCurveSegment)>, Option<bool>);
 
+/// Each missing edge is registered once; only the final wake queues its constructor.
+#[derive(Default)]
+struct DeferredDependencies {
+    waiting_on: HashMap<u64, Vec<u64>>,
+    remaining: HashMap<u64, usize>,
+}
+
+impl DeferredDependencies {
+    fn register(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        dependency: u64,
+        dependent: u64,
+        group_operation: &'static str,
+        member_operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if let Some(remaining) = ctx.get_mut_hash_map(
+            &mut self.remaining, &dependent, "step deferred dependency count",
+        )? {
+            *remaining += 1;
+        } else {
+            ctx.insert_hash_map(
+                &mut self.remaining, dependent, 1, "step deferred dependency count",
+            )?;
+        }
+        ctx.push_hash_group(
+            &mut self.waiting_on, dependency, dependent, group_operation, member_operation,
+        )
+    }
+}
+
 fn wake_deferred_dependents(
     id: u64,
-    waiting_on: &mut HashMap<u64, Vec<u64>>,
+    waiting_on: &mut DeferredDependencies,
     queue: &mut VecDeque<u64>,
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    if let Some(dependents) = ctx.remove_hash_map(waiting_on, &id, "step_geometry_remove")? {
+    if let Some(dependents) = ctx.remove_hash_map(&mut waiting_on.waiting_on, &id, "step_geometry_remove")? {
         for dependent in ctx.admit_iter(dependents, "step deferred dependent traversal")? {
-            ctx.push_back(queue, dependent, operation)?;
+            let Some(remaining) = ctx.get_mut_hash_map(
+                &mut waiting_on.remaining, &dependent, "step deferred dependency count",
+            )? else {
+                continue;
+            };
+            *remaining -= 1;
+            if *remaining == 0 {
+                ctx.remove_hash_map(
+                    &mut waiting_on.remaining, &dependent, "step deferred dependency count",
+                )?;
+                ctx.push_back(queue, dependent, operation)?;
+            }
         }
     }
     Ok(())
