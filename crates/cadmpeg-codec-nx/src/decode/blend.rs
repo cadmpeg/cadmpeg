@@ -479,15 +479,15 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
 
         for (dimension, operation) in [
-            (ResourceDimension::WorkUnits, "nx polynomial critical roots sort"),
+            (
+                ResourceDimension::WorkUnits,
+                "nx polynomial critical roots sort",
+            ),
             (ResourceDimension::WorkUnits, "nx polynomial roots sort"),
         ] {
-            crate::test_support::resource_refusal_at(
-                &[],
-                dimension,
-                operation,
-                |ctx| super::real_polynomial_roots(ctx, &[-1.0, 3.5, -3.0, -0.5, 1.0]).map(|_| ()),
-            );
+            crate::test_support::resource_refusal_at(&[], dimension, operation, |ctx| {
+                super::real_polynomial_roots(ctx, &[-1.0, 3.5, -3.0, -0.5, 1.0]).map(|_| ())
+            });
         }
     }
 
@@ -4019,7 +4019,9 @@ fn charge_de_casteljau_work(
     let pairs = if count == 0 {
         Some(0)
     } else if count.is_multiple_of(2) {
-        count.checked_sub(1).and_then(|previous| (count / 2).checked_mul(previous))
+        count
+            .checked_sub(1)
+            .and_then(|previous| (count / 2).checked_mul(previous))
     } else {
         count.checked_mul(count / 2)
     };
@@ -5437,9 +5439,8 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
         minor_radius * y,
     ];
     let constant_distance = coefficients.iter().all(|coefficient| *coefficient == 0.0);
-    let roots = match real_polynomial_roots(geometry_budget.charges, &coefficients) {
-        Ok(roots) => roots,
-        Err(_) => return geometry_budget.resource_refusal().map_or(Ok(None), Err),
+    let Ok(roots) = real_polynomial_roots(geometry_budget.charges, &coefficients) else {
+        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
     };
     let Some(roots) = roots else {
         return Ok(None);
@@ -5499,7 +5500,12 @@ pub(super) fn real_polynomial_roots(
             .filter(|root| *root != 0.0)
             .map(f64::recip),
     );
-    ctx.stable_sort_by(&mut roots, |value| value, f64::total_cmp, "nx polynomial roots sort")?;
+    ctx.stable_sort_by(
+        &mut roots,
+        |value| value,
+        f64::total_cmp,
+        "nx polynomial roots sort",
+    )?;
     roots.dedup_by(|first, second| {
         (*first - *second).abs() <= 256.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
@@ -5554,13 +5560,19 @@ fn polynomial_roots_in_unit_interval(
         .map(|(degree, coefficient)| {
             Some(*coefficient * cadmpeg_core::convert::f64_from_index(degree)?)
         })
-        .collect::<Option<Vec<_>>>() else {
+        .collect::<Option<Vec<_>>>()
+    else {
         return Ok(None);
     };
     let Some(mut critical) = polynomial_roots_in_unit_interval(ctx, &derivative)? else {
         return Ok(None);
     };
-    ctx.stable_sort_by(&mut critical, |value| value, f64::total_cmp, "nx polynomial critical roots sort")?;
+    ctx.stable_sort_by(
+        &mut critical,
+        |value| value,
+        f64::total_cmp,
+        "nx polynomial critical roots sort",
+    )?;
     critical.dedup_by(|first, second| {
         (*first - *second).abs() <= 64.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
@@ -5617,7 +5629,12 @@ fn polynomial_roots_in_unit_interval(
         }
         roots.push(lower + (upper - lower) * 0.5);
     }
-    ctx.stable_sort_by(&mut roots, |value| value, f64::total_cmp, "nx polynomial roots sort")?;
+    ctx.stable_sort_by(
+        &mut roots,
+        |value| value,
+        f64::total_cmp,
+        "nx polynomial roots sort",
+    )?;
     roots.dedup_by(|first, second| {
         (*first - *second).abs() <= 256.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
