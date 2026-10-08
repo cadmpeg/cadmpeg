@@ -524,6 +524,22 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
     assert_eq!(edges.map(|edge| edge.slot), [1, 3, 5, 7]);
     assert_eq!(edges[0].endpoint_records, [100, 101]);
 
+    for operation in [
+        "catia_b2_owner_boundary_edge_sort",
+        "catia_b2_owner_boundary_key_sort",
+        "catia_b2_owner_boundary_vertex_sort",
+    ] {
+        let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+            b2_closed_owner_boundary_edges(ctx, &targets, &endpoints)
+        });
+        assert!(matches!(
+            refused,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == operation
+        ));
+    }
+
     let mut open = endpoints.clone();
     open.insert(16, [101, 104]);
     assert!(crate::test_support::with_service_context(|ctx| {
