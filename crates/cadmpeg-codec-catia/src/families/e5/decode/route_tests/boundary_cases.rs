@@ -523,7 +523,12 @@ fn e5_intersection_requires_equivalent_two_sided_carriers() {
         )
         .expect("valid CircleCurve fixture"),
     ));
-    assert!(equivalent_e5_curve_carriers(&left, &right));
+    assert!(
+        crate::test_support::with_service_context(|ctx| equivalent_e5_curve_carriers(
+            ctx, &left, &right
+        ))
+        .expect("comparison budget")
+    );
     let reversed_axis = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
@@ -533,7 +538,14 @@ fn e5_intersection_requires_equivalent_two_sided_carriers() {
         )
         .expect("valid CircleCurve fixture"),
     ));
-    assert!(!equivalent_e5_curve_carriers(&left, &reversed_axis));
+    assert!(
+        !crate::test_support::with_service_context(|ctx| equivalent_e5_curve_carriers(
+            ctx,
+            &left,
+            &reversed_axis
+        ))
+        .expect("comparison budget")
+    );
     let shifted_reference = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
@@ -543,7 +555,14 @@ fn e5_intersection_requires_equivalent_two_sided_carriers() {
         )
         .expect("valid CircleCurve fixture"),
     ));
-    assert!(!equivalent_e5_curve_carriers(&left, &shifted_reference));
+    assert!(
+        !crate::test_support::with_service_context(|ctx| equivalent_e5_curve_carriers(
+            ctx,
+            &left,
+            &shifted_reference
+        ))
+        .expect("comparison budget")
+    );
     assert!(crate::test_support::with_service_context(|ctx| {
         e5_circle_carriers_have_same_ordered_sweep(
             ctx,
@@ -573,7 +592,12 @@ fn e5_intersection_requires_equivalent_two_sided_carriers() {
         )
         .expect("valid CircleCurve fixture"),
     ));
-    assert!(!equivalent_e5_curve_carriers(&left, &displaced));
+    assert!(
+        !crate::test_support::with_service_context(|ctx| equivalent_e5_curve_carriers(
+            ctx, &left, &displaced
+        ))
+        .expect("comparison budget")
+    );
 
     let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -589,7 +613,14 @@ fn e5_intersection_requires_equivalent_two_sided_carriers() {
         )
         .expect("valid LineCurve fixture"),
     ));
-    assert!(equivalent_e5_curve_carriers(&line, &parallel_line));
+    assert!(
+        crate::test_support::with_service_context(|ctx| equivalent_e5_curve_carriers(
+            ctx,
+            &line,
+            &parallel_line
+        ))
+        .expect("comparison budget")
+    );
     let reversed_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
@@ -597,7 +628,14 @@ fn e5_intersection_requires_equivalent_two_sided_carriers() {
         )
         .expect("valid LineCurve fixture"),
     ));
-    assert!(!equivalent_e5_curve_carriers(&line, &reversed_line));
+    assert!(
+        !crate::test_support::with_service_context(|ctx| equivalent_e5_curve_carriers(
+            ctx,
+            &line,
+            &reversed_line
+        ))
+        .expect("comparison budget")
+    );
 }
 
 #[test]

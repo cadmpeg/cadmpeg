@@ -139,9 +139,8 @@ fn b5_oriented_member_order_propagates_caller_work_refusal() {
         ],
     };
     crate::test_support::with_work_limit(1, |ctx| {
-        let error = match orientation.member_order(ctx) {
-            Ok(_) => panic!("two member visits exceed the caller work limit"),
-            Err(error) => error,
+        let Err(error) = orientation.member_order(ctx) else {
+            panic!("two member visits exceed the caller work limit");
         };
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             panic!("resource refusal required")

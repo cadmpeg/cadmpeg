@@ -338,17 +338,21 @@ fn last_save_version_in_segments(
     data: &[u8],
     segments: &[FinjplSegment],
 ) -> Result<Option<LastSaveVersion>, CodecError> {
-    let mut selected: Option<LastSaveVersion> = None;
-    for segment in ctx
-        .admit_iter(segments, "catia_last_save_segment_scan")?
-        .filter(|segment| segment.type_word == 0x0101_0003)
-    {
-        let Some(version) = parse_last_save_version(ctx, &data[segment.range.clone()])? else {
+    let mut selected: Option<(LastSaveVersion, ScopedReservation<'_>)> = None;
+    let mut segments = segments.iter();
+    while let Some(segment) = ctx.next_charged(&mut segments, "catia_last_save_segment_scan")? {
+        if segment.type_word != 0x0101_0003 {
+            continue;
+        }
+        let mut version_storage = ctx.reserve_scoped(0, "catia_last_save_version_storage")?;
+        let Some(version) = version_storage
+            .with_storage(|| parse_last_save_version(ctx, &data[segment.range.clone()]))?
+        else {
             continue;
         };
         match &selected {
-            None => selected = Some(version),
-            Some(existing) => {
+            None => selected = Some((version, version_storage)),
+            Some((existing, _)) => {
                 let same = (
                     existing.version,
                     existing.release,
@@ -370,7 +374,13 @@ fn last_save_version_in_segments(
             }
         }
     }
-    Ok(selected)
+    match selected {
+        Some((version, storage)) => {
+            storage.commit()?;
+            Ok(Some(version))
+        }
+        None => Ok(None),
+    }
 }
 
 /// Enumerate exact `CATStorageProperty` external-document references from
@@ -437,7 +447,7 @@ fn parse_external_reference<'a>(
         return Ok(None);
     };
     Ok(
-        (data.get(at) == Some(&0x9f) && is_catia_document_name(ctx, target)?)
+        (data.get(at) == Some(&0x9f) && is_catia_document_name(target))
             .then_some((target_offset, target)),
     )
 }
@@ -466,19 +476,19 @@ fn length_prefixed_ascii<'a>(
         .ok())
 }
 
-fn is_catia_document_name(ctx: &DecodeContext<'_>, value: &str) -> Result<bool, CodecError> {
+fn is_catia_document_name(value: &str) -> bool {
     for extension in [".catpart", ".catproduct", ".catshape", ".cgr"] {
         let suffix = value
             .len()
             .checked_sub(extension.len())
             .and_then(|start| value.get(start..));
         if let Some(suffix) = suffix {
-            if ctx.eq_ignore_ascii_case(suffix, extension, "catia_document_extension")? {
-                return Ok(true);
+            if suffix.eq_ignore_ascii_case(extension) {
+                return true;
             }
         }
     }
-    Ok(false)
+    false
 }
 
 fn parse_last_save_version(
@@ -843,12 +853,8 @@ impl Descriptor {
     }
 
     /// Whether the descriptor names the stream `name`.
-    fn is_named(&self, ctx: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
-        ctx.equal_bytes(
-            self.name.as_bytes(),
-            name.as_bytes(),
-            "catia_descriptor_name_match",
-        )
+    fn is_named(&self, name: &'static str) -> bool {
+        self.name == name
     }
 }
 
@@ -937,6 +943,7 @@ pub(crate) fn consolidated_record_sources(
         for descriptor in
             ctx.admit_iter(&directory.descriptors, "catia_record_source_descriptors")?
         {
+            let mut source_storage = ctx.reserve_scoped(0, "catia_record_source_extents")?;
             let mut source = Vec::new();
             for extent in ctx.admit_iter(&descriptor.extents, "catia_record_source_extent_scan")? {
                 let Some(start) = directory.inner.checked_add(index_from_u32(extent.phys_off))
@@ -950,7 +957,12 @@ pub(crate) fn consolidated_record_sources(
                 // source. The scanner reads every byte of an extent it accepts,
                 // so it never receives a shortened one.
                 if let Some(extent) = SourceExtent::within(&scan.data, start, end) {
-                    ctx.push_vec(&mut source, extent, "catia_record_source_extents")?;
+                    ctx.push_scoped_vec(
+                        &mut source_storage,
+                        &mut source,
+                        extent,
+                        "catia_record_source_extents",
+                    )?;
                 }
             }
             if source.is_empty() {
@@ -968,6 +980,7 @@ pub(crate) fn consolidated_record_sources(
             if seen_storage
                 .with_storage(|| ctx.insert_hash_set(&mut seen, key, "catia_record_source_keys"))?
             {
+                source_storage.commit()?;
                 ctx.push_vec(sources, source, "catia_record_sources")?;
             }
         }
@@ -1022,16 +1035,22 @@ pub(crate) fn consolidated_record_ranges(
     )
 }
 
-/// Reconstruct each catalogued logical stream as an independent record source.
-///
-/// Records cannot establish adjacency or one object-id namespace across two
-/// descriptors. A container without a parsed directory has one unnamed source:
-/// its bounded outer preamble.
-pub(crate) fn logical_record_streams(
-    ctx: &DecodeContext<'_>,
+/// Independent logical sources and their live temporary storage.
+pub(crate) struct LogicalRecordStreams<'storage> {
+    pub(crate) streams: Vec<Vec<u8>>,
+    _stream_storage: Vec<ScopedReservation<'storage>>,
+    _storage: ScopedReservation<'storage>,
+}
+
+/// Reconstruct catalogued logical streams without joining descriptor namespaces.
+/// A container without a directory has one source: its bounded outer preamble.
+pub(crate) fn logical_record_streams<'storage>(
+    ctx: &'storage DecodeContext<'_>,
     scan: &ContainerScan<'_>,
-) -> Result<Vec<Vec<u8>>, CodecError> {
+) -> Result<LogicalRecordStreams<'storage>, CodecError> {
     let mut streams = Vec::new();
+    let mut stream_storage = Vec::new();
+    let mut scratch = ctx.reserve_scoped(0, "catia_logical_record_streams")?;
     for directory in [scan.outer.as_ref(), scan.inner.as_ref()]
         .into_iter()
         .flatten()
@@ -1042,18 +1061,34 @@ pub(crate) fn logical_record_streams(
             let (stream, storage) =
                 reconstruct_logical_stream(ctx, &scan.data, descriptor, directory.inner)?;
             if !stream.is_empty() {
-                storage.commit()?;
-                ctx.push_vec(&mut streams, stream, "catia_logical_record_streams")?;
+                ctx.push_scoped_vec(
+                    &mut scratch,
+                    &mut streams,
+                    stream,
+                    "catia_logical_record_streams",
+                )?;
+                ctx.push_scoped_vec(
+                    &mut scratch,
+                    &mut stream_storage,
+                    storage,
+                    "catia_logical_stream_reservations",
+                )?;
             }
         }
     }
     if streams.is_empty() {
         if let Some(range) = outer_preamble_range(ctx, &scan.data)? {
-            let stream = ctx.copy_slice(&scan.data[range], "catia_outer_preamble_stream")?;
-            ctx.push_vec(&mut streams, stream, "catia_logical_record_streams")?;
+            scratch.with_storage(|| {
+                let stream = ctx.copy_slice(&scan.data[range], "catia_outer_preamble_stream")?;
+                ctx.push_vec(&mut streams, stream, "catia_logical_record_streams")
+            })?;
         }
     }
-    Ok(streams)
+    Ok(LogicalRecordStreams {
+        streams,
+        _stream_storage: stream_storage,
+        _storage: scratch,
+    })
 }
 
 /// Whether a byte prefix is a `.CATPart`: the `V5_CFV2\0` outer magic is unique
@@ -1235,7 +1270,10 @@ fn parse_directory_region(
             .checked_mul(extent::LEN)
             .and_then(|extent_bytes| o.checked_add(4)?.checked_add(extent_bytes));
         if k != 0 && extents_end.is_some_and(|end| end <= dirbuf.len()) {
-            if let Some((extents, cum)) = parse_extents(ctx, dirbuf, o, k, physical_base, file_len)?
+            let mut candidate_storage =
+                ctx.reserve_scoped(0, "catia_directory_extent_candidate")?;
+            if let Some((extents, cum)) = candidate_storage
+                .with_storage(|| parse_extents(ctx, dirbuf, o, k, physical_base, file_len))?
             {
                 if cum > 0 && o >= stream_desc::EXTENT_COUNT {
                     let ds = o - stream_desc::EXTENT_COUNT;
@@ -1244,6 +1282,7 @@ fn parse_directory_region(
                             .unwrap_or(0);
                     if index_from_u32(logical_length) == cum {
                         let name = descriptor_name(ctx, dirbuf, ds)?;
+                        candidate_storage.commit()?;
                         ctx.push_vec(
                             &mut descriptors,
                             Descriptor {
@@ -1455,7 +1494,6 @@ fn descriptor_name(
         && (0x20..0x7f).contains(&header_name[name_len])
         && header_name[name_len + 1] == 0
     {
-        ctx.charge_work(1, "catia_container_iteration")?;
         name_len += 2;
     }
     if name_len < 6
@@ -1513,8 +1551,11 @@ pub(crate) fn outer_container_declarations(
     outer: &InnerDir,
 ) -> Result<Vec<OuterContainerDeclaration>, CodecError> {
     let mut data_descriptor = None;
-    for descriptor in ctx.admit_iter(&outer.descriptors, "catia_container_data_stream_scan")? {
-        if descriptor.is_named(ctx, "Data")? {
+    let mut descriptors = outer.descriptors.iter();
+    while let Some(descriptor) =
+        ctx.next_charged(&mut descriptors, "catia_container_data_stream_scan")?
+    {
+        if descriptor.is_named("Data") {
             if data_descriptor.is_some() {
                 return Ok(Vec::new());
             }
@@ -1528,12 +1569,10 @@ pub(crate) fn outer_container_declarations(
     parse_outer_container_declarations(ctx, &logical, &outer.descriptors)
 }
 
-/// Physical extents in ascending start order, with a prefix maximum end.
+/// At each start, the largest ends belonging to two distinct declarations.
 struct DeclaredExtent {
     start: u64,
-    end: u64,
-    declaration: usize,
-    prefix_end: u64,
+    owners: [Option<(u64, usize)>; 2],
 }
 
 /// One borrowed declaration index with live temporary interval storage.
@@ -1585,17 +1624,28 @@ pub(crate) fn outer_container_extent_index<'a, 'storage>(
         Ok::<_, CodecError>(ordered)
     })?;
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut prefix_end = 0;
+    let mut owners = [None::<(u64, usize)>; 2];
     let extents = storage.with_storage(|| {
         ctx.collect_vec(
             ordered.into_iter().map(|(start, end, declaration)| {
-                prefix_end = prefix_end.max(end);
-                DeclaredExtent {
-                    start,
-                    end,
-                    declaration,
-                    prefix_end,
+                if let Some(slot) = owners
+                    .iter_mut()
+                    .find(|slot| slot.is_some_and(|(_, owner)| owner == declaration))
+                {
+                    if let Some((previous_end, _)) = *slot {
+                        *slot = Some((previous_end.max(end), declaration));
+                    }
+                } else if owners[0].is_none() {
+                    owners[0] = Some((end, declaration));
+                } else if owners[1].is_none_or(|(previous_end, _)| end > previous_end) {
+                    owners[1] = Some((end, declaration));
                 }
+                if owners[1]
+                    .is_some_and(|(second, _)| owners[0].is_none_or(|(first, _)| second > first))
+                {
+                    owners.swap(0, 1);
+                }
+                DeclaredExtent { start, owners }
             }),
             OPERATION,
         )
@@ -1608,7 +1658,7 @@ pub(crate) fn outer_container_extent_index<'a, 'storage>(
 }
 
 /// Select the unique declaration whose single physical extent contains the range.
-/// Prefix maxima stop the backward query once no earlier extent can contain it.
+/// The two prefix owners distinguish unique containment from overlap.
 pub(crate) fn outer_container_for_extent<'a>(
     ctx: &DecodeContext<'_>,
     index: &OuterContainerIndex<'a, '_>,
@@ -1624,20 +1674,19 @@ pub(crate) fn outer_container_for_extent<'a>(
         |extent| Ok(extent.start <= byte_offset),
         OPERATION,
     )?;
-    let mut selected = None;
-    let mut candidates = index.extents[..position].iter().rev();
-    while let Some(extent) = ctx.next_charged(&mut candidates, OPERATION)? {
-        if extent.prefix_end < byte_end {
-            break;
-        }
-        if byte_end <= extent.end {
-            if selected.is_some_and(|owner| owner != extent.declaration) {
-                return Ok(None);
-            }
-            selected = Some(extent.declaration);
-        }
+    let Some(extent) = position
+        .checked_sub(1)
+        .and_then(|position| index.extents.get(position))
+    else {
+        return Ok(None);
+    };
+    let Some((end, owner)) = extent.owners[0] else {
+        return Ok(None);
+    };
+    if end < byte_end || extent.owners[1].is_some_and(|(end, _)| end >= byte_end) {
+        return Ok(None);
     }
-    Ok(selected.map(|owner| &index.declarations[owner]))
+    Ok(Some(&index.declarations[owner]))
 }
 
 fn parse_outer_container_declarations(
@@ -1677,7 +1726,9 @@ fn parse_outer_container_declarations(
         })?;
     }
     let mut selected_streams = HashSet::new();
-    for start in ctx.admit_iter(0..data.len() - 64, "catia_container_declaration_scan")? {
+    let mut output_storage = ctx.reserve_scoped(0, "catia_container_declarations")?;
+    let mut starts = 0..data.len() - 64;
+    while let Some(start) = ctx.next_charged(&mut starts, "catia_container_declaration_scan")? {
         if data.get(start + 8..start + 12) != Some(HEADER)
             || data.get(start + 16..start + 24) != Some(PREFIX)
             || data.get(start + 32..start + 36) != Some(CLASS_BLOCK)
@@ -1708,11 +1759,11 @@ fn parse_outer_container_declarations(
         else {
             continue;
         };
-        let canonical_stream_name = ctx.format_retained(
+        let (canonical_stream_name, _canonical_storage) = ctx.format_scoped(
             format_args!("{first:x}_{middle:08x}_{last:x}"),
             "catia_container_stream_name",
         )?;
-        let prefixed_stream_name = ctx.format_retained(
+        let (prefixed_stream_name, _prefixed_storage) = ctx.format_scoped(
             format_args!("_{canonical_stream_name}"),
             "catia_container_stream_name",
         )?;
@@ -1728,38 +1779,46 @@ fn parse_outer_container_declarations(
                 "catia_container_descriptor_lookup",
             )?,
         ) {
-            (true, false) => canonical_stream_name,
-            (false, true) => prefixed_stream_name,
+            (true, false) => canonical_stream_name.as_str(),
+            (false, true) => prefixed_stream_name.as_str(),
             (false, false) | (true, true) => continue,
         };
         let Some(ordinal) = View::u32_le_at(data, start + 12) else {
             continue;
         };
         // Two declarations that select one stream select neither.
-        let new_stream = scratch.with_storage(|| {
+        if ctx.contains_hash_set(
+            &selected_streams,
+            stream_name,
+            "catia_container_selected_streams",
+        )? {
+            return Ok(Vec::new());
+        }
+        scratch.with_storage(|| {
             ctx.insert_hash_set(
                 &mut selected_streams,
-                ctx.copy_retained_text(&stream_name, "catia_container_selected_streams")?,
+                ctx.copy_retained_text(stream_name, "catia_container_selected_streams")?,
                 "catia_container_selected_streams",
             )
         })?;
-        if !new_stream {
-            return Ok(Vec::new());
-        }
-        let class_name = ctx.copy_retained_text(class_name, "catia_container_class_name")?;
-        let base_class = ctx.copy_retained_text(base_class, "catia_container_base_class")?;
-        ctx.push_vec(
-            &mut declarations,
-            OuterContainerDeclaration {
-                data_offset: start,
-                ordinal,
-                class_name,
-                base_class,
-                stream_name,
-            },
-            "catia_container_declarations",
-        )?;
+        output_storage.with_storage(|| {
+            let class_name = ctx.copy_retained_text(class_name, "catia_container_class_name")?;
+            let base_class = ctx.copy_retained_text(base_class, "catia_container_base_class")?;
+            let stream_name = ctx.copy_retained_text(stream_name, "catia_container_stream_name")?;
+            ctx.push_vec(
+                &mut declarations,
+                OuterContainerDeclaration {
+                    data_offset: start,
+                    ordinal,
+                    class_name,
+                    base_class,
+                    stream_name,
+                },
+                "catia_container_declarations",
+            )
+        })?;
     }
+    output_storage.commit()?;
     Ok(declarations)
 }
 
@@ -1806,14 +1865,18 @@ fn brep_stream(
     data: &[u8],
     dir: &InnerDir,
 ) -> Result<Option<Vec<u8>>, CodecError> {
-    let Some(mut out) = main_data_stream(ctx, data, dir)? else {
+    let Some(main) = unique_largest_descriptor(ctx, &dir.descriptors, "MainDataStream")? else {
         return Ok(None);
     };
     let Some(surf) = unique_largest_descriptor(ctx, &dir.descriptors, "SurfacicReps")? else {
         return Ok(None);
     };
+    let (mut out, mut output_storage) = reconstruct_logical_stream(ctx, data, main, dir.inner)?;
     let (surface, _storage) = reconstruct_logical_stream(ctx, data, surf, dir.inner)?;
-    ctx.extend_retained_bytes(&mut out, &surface, "catia_brep_surface_bytes")?;
+    output_storage.with_storage(|| {
+        ctx.extend_retained_bytes(&mut out, &surface, "catia_brep_surface_bytes")
+    })?;
+    output_storage.commit()?;
     Ok(Some(out))
 }
 
@@ -1838,13 +1901,13 @@ fn main_data_stream(
 fn unique_largest_descriptor<'a>(
     ctx: &DecodeContext<'_>,
     descriptors: &'a [Descriptor],
-    name: &str,
+    name: &'static str,
 ) -> Result<Option<&'a Descriptor>, CodecError> {
     let mut selected = None;
     let mut selected_length = 0;
     let mut equal_count = 0;
     for descriptor in ctx.admit_iter(descriptors, "catia_largest_descriptor_scan")? {
-        if !descriptor.is_named(ctx, name)? {
+        if !descriptor.is_named(name) {
             continue;
         }
         let logical_length = descriptor.logical_length(ctx)?;
@@ -2046,6 +2109,22 @@ pub(crate) fn summarize(
             Ok(())
         }
     }
+    let mut declaration_storage = ctx.reserve_scoped(0, "catia_summary_declaration_index")?;
+    let declarations = declaration_storage.with_storage(|| {
+        let mut declarations = HashMap::new();
+        for declaration in ctx.admit_iter(
+            &scan.outer_container_declarations,
+            "catia_summary_declaration_index",
+        )? {
+            ctx.entry_hash_map(
+                &mut declarations,
+                declaration.stream_name.as_str(),
+                "catia_summary_declaration_index",
+            )?
+            .or_insert(declaration);
+        }
+        Ok::<_, CodecError>(declarations)
+    })?;
     let mut entries = Vec::new();
 
     for (directory, dir) in [
@@ -2084,9 +2163,9 @@ pub(crate) fn summarize(
                 "catia_summary_attribute",
             )?;
             if directory == "outer" {
-                if let Some(declaration) = ctx.find_by(
-                    &scan.outer_container_declarations,
-                    |declaration| d.is_named(ctx, &declaration.stream_name),
+                if let Some(declaration) = ctx.get_hash_map(
+                    &declarations,
+                    d.name.as_str(),
                     "catia_summary_declaration_lookup",
                 )? {
                     crate::resource::string_attribute(

@@ -259,13 +259,18 @@ fn resolve_surface_aliases(
         .collect::<HashMap<_, _>>();
     crate::test_support::with_service_context(|ctx| {
         let mut scratch = ctx.reserve_scoped(0, "test_b5_conflicts")?;
+        let terminals =
+            super::super::surface_alias_terminals(ctx, &aliases, &by_id, None, &mut scratch)?
+                .expect("no local ceiling");
         super::super::resolve_surface_aliases(
             ctx,
             &aliases,
-            &by_id,
+            &terminals,
             surfaces,
             (conflicts, &mut scratch),
+            None,
         )
+        .map(|changed| changed.expect("no local ceiling"))
     })
     .expect("service budget")
 }
@@ -281,7 +286,15 @@ fn surface_alias_carrier(
         .map(|(&object_id, record)| (object_id, record))
         .collect::<HashMap<_, _>>();
     crate::test_support::with_service_context(|ctx| {
-        super::super::surface_alias_terminal(ctx, object_id, &by_id_refs, surfaces, by_id.len())
+        let mut scratch = ctx.reserve_scoped(0, "test_alias_terminals")?;
+        let aliases = by_id_views
+            .values()
+            .filter(|record| super::super::surface_alias_target(record).is_some())
+            .collect::<Vec<_>>();
+        let terminals =
+            super::super::surface_alias_terminals(ctx, &aliases, &by_id_refs, None, &mut scratch)?
+                .expect("no local ceiling");
+        super::super::resolved_surface_alias_terminal(ctx, object_id, &terminals, surfaces)
     })
     .expect("service budget")
     .map(|terminal| surfaces[&terminal].clone())
@@ -709,7 +722,7 @@ fn b5_candidate_indexes_and_alias_walk_refuse_collection_limits() {
         },
     )]);
     let limited = crate::test_support::with_work_refusal("catia_b5_surface_alias_step", |ctx| {
-        super::super::surface_alias_terminal(ctx, 1, &HashMap::new(), &surfaces, 0)
+        super::super::resolved_surface_alias_terminal(ctx, 1, &HashMap::new(), &surfaces)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -853,7 +866,7 @@ fn class21_pcurve_lanes_and_typed_index_refuse_collection_limit() {
 }
 
 #[test]
-fn class21_pcurve_multiplicity_range_collector_preserves_work_refusal() {
+fn class21_pcurve_multiplicity_storage_preserves_refusal_without_work() {
     let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
@@ -868,18 +881,24 @@ fn class21_pcurve_multiplicity_range_collector_preserves_work_refusal() {
     let pcurve = service.expect("service fixture produces a pcurve");
     assert_eq!(pcurve.multiplicities, [2, 2]);
 
-    let refused =
-        crate::test_support::with_work_refusal("catia_b5_class21_multiplicities", |ctx| {
-            let result = super::super::parse_pcurve(ctx, &record.record());
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-            }
-            result
-        });
+    let zero_work = crate::test_support::with_work_limit(0, |ctx| {
+        super::super::parse_pcurve(ctx, &record.record())
+    })
+    .expect("fixed pcurve reads require no traversal work")
+    .expect("zero-work fixture produces a pcurve");
+    assert_eq!(zero_work.multiplicities, [2, 2]);
+
+    let refused = crate::test_support::with_collection_limit(2, |ctx| {
+        let result = super::super::parse_pcurve(ctx, &record.record());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
     assert!(matches!(
         refused,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && limit.operation == "catia_b5_class21_multiplicities"
     ));
 }
@@ -1219,7 +1238,7 @@ fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
     }
     for operation in [
         "catia_b5_targeted_surface_visited",
-        "catia_b5_targeted_visited_copy",
+        "catia_b5_targeted_surface_nodes",
         "catia_b5_targeted_offset_surfaces",
     ] {
         assert!(
@@ -1879,3 +1898,30 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
 }
 
 mod incidence_loci;
+
+#[test]
+fn face_rejection_does_not_charge_unvisited_references() {
+    let surfaces = BTreeMap::from([(
+        1,
+        B5Surface::Unknown {
+            family: 0xb5,
+            class: 0x27,
+            payload: Vec::new(),
+        },
+    )]);
+    let mut record = B5FaceRecord {
+        object_id: 2,
+        references: vec![1, 3],
+        terminal_control: None,
+    };
+    // The first unsupported reference ends the scan under the same allowance
+    // regardless of the number of trailing references.
+    for suffix in [0, 10_000] {
+        record.references.resize(2 + suffix, 3);
+        assert!(crate::test_support::with_work_limit(100, |ctx| {
+            super::super::parse_face(ctx, &record, &BTreeMap::new(), &surfaces, &BTreeMap::new())
+        })
+        .expect("only the visited prefix is charged")
+        .is_none());
+    }
+}
