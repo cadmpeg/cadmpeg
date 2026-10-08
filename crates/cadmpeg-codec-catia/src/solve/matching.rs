@@ -50,14 +50,13 @@ fn complete_assignment(
     mates: &[Option<usize>],
     operation: &'static str,
 ) -> Result<Option<Vec<usize>>, CodecError> {
-    let mut completed = ctx.collection_vec(mates.len(), operation)?;
-    for mate in ctx.admit_iter(mates, operation)? {
-        let Some(point) = *mate else {
-            return Ok(None);
-        };
-        completed.push(point);
+    let (completed, storage) = ctx.with_scoped_storage(operation, || {
+        ctx.collect_options(mates.iter().copied(), operation)
+    })?;
+    if completed.is_some() {
+        storage.commit()?;
     }
-    Ok(Some(completed))
+    Ok(completed)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -166,7 +165,10 @@ fn distinct_domain_mates<'a>(
             return Ok(None);
         };
         let mut augmented = false;
-        for start in ctx.admit_iter(&(0..count), "catia_match_augmenting_starts")? {
+        let mut charged_steps = 0..count;
+        while let Some(start) =
+            ctx.next_charged(&mut charged_steps, "catia_match_augmenting_starts")?
+        {
             if mates[start].is_some() || distance[start] != Some(0) {
                 continue;
             }
@@ -218,9 +220,9 @@ fn distinct_domain_mates<'a>(
             };
             // Each path domain takes the point the search reached it by and
             // hands its previous point to the domain before it.
-            for index in ctx
-                .admit_iter(&(0..depth), "catia_match_augmenting_path")?
-                .rev()
+            let mut charged_steps = (0..depth).rev();
+            while let Some(index) =
+                ctx.next_charged(&mut charged_steps, "catia_match_augmenting_path")?
             {
                 let root = path[index];
                 owner[point] = Some(root);
@@ -296,9 +298,9 @@ fn repaired_domain_mates<'a>(
         ctx.alloc_filled(point_count, 0usize, "catia_match_repair_seen_points")?;
     let mut via_domain = ctx.alloc_filled(point_count, 0usize, "catia_match_repair_via")?;
     let mut queue = ctx.alloc_filled(count, 0usize, "catia_match_repair_queue")?;
-    for (search, &start) in ctx
-        .admit_iter(&unmatched, "catia_match_repair_starts")?
-        .enumerate()
+    let mut charged_steps = unmatched.iter().enumerate();
+    while let Some((search, &start)) =
+        ctx.next_charged(&mut charged_steps, "catia_match_repair_starts")?
     {
         let generation = search + 1;
         seen_domains[start] = generation;
@@ -417,9 +419,9 @@ fn matching_support_classes(
             |_| Ok(Vec::new()),
         )?;
     let mut matched_points = ctx.alloc_filled(point_count, false, "catia_match_support_points")?;
-    for (domain, values) in ctx
-        .admit_iter(domains, "catia_match_support_domains")?
-        .enumerate()
+    let mut charged_steps = domains.iter().enumerate();
+    while let Some((domain, values)) =
+        ctx.next_charged(&mut charged_steps, "catia_match_support_domains")?
     {
         let matched = matching[domain];
         if matched_points[matched]
@@ -620,9 +622,9 @@ where
     // Class domains in first-reference order; a vertex stamp drops repeats.
     let mut stamps = ctx.alloc_filled(class_count, 0usize, "catia_bijection_class_stamps")?;
     let mut class_domains = ctx.collection_vec(count, "catia_bijection_class_domains")?;
-    for (vertex, domain) in ctx
-        .admit_iter(domains, "catia_bijection_domains")?
-        .enumerate()
+    let mut charged_steps = domains.iter().enumerate();
+    while let Some((vertex, domain)) =
+        ctx.next_charged(&mut charged_steps, "catia_bijection_domains")?
     {
         let mut classes = Vec::new();
         let mut values = domain.into_iter();
@@ -652,7 +654,8 @@ where
     let mut via_vertex = ctx.alloc_filled(class_count, 0usize, "catia_bijection_via")?;
     let mut seen_vertices = ctx.alloc_filled(count, 0usize, "catia_bijection_seen_vertices")?;
     let mut queue = ctx.alloc_filled(count, 0usize, "catia_bijection_queue")?;
-    for start in ctx.admit_iter(&(0..count), "catia_bijection_starts")? {
+    let mut charged_steps = 0..count;
+    while let Some(start) = ctx.next_charged(&mut charged_steps, "catia_bijection_starts")? {
         let generation = start + 1;
         seen_vertices[start] = generation;
         queue[0] = start;
@@ -930,6 +933,21 @@ mod tests {
         distinct_domain_matching_with_budget, repair_distinct_domain_matching_with_budget,
         retain_distinct_matching_supports, unique_coordinate_bijection, MatchingEdgeConstraint,
     };
+
+    #[test]
+    fn incomplete_matching_stops_before_unvisited_rows_or_allocation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty fixture fits the input limit");
+        assert_eq!(
+            super::complete_assignment(&ctx, &[None; 64], "catia_match_completed")
+                .expect("one absent row needs one visit"),
+            None
+        );
+    }
 
     fn allocation_refusals(
         final_limit: u64,
