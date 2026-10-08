@@ -217,7 +217,7 @@ pub(super) fn witnessed_surface_circle_end(
         _ => return Ok(None),
     };
     let mut selected_candidate = None;
-    for lane in ctx.admit_iter(lanes, "catia_standard_circle_witness_lanes")? {
+    for lane in lanes {
         let mut candidate = uv[1];
         let (start, short_end, witness) = if *lane == 0 {
             (uv[0].u, uv[1].u, witness_uv.u)
