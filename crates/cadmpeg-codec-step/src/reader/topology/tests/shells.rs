@@ -873,13 +873,19 @@ fn brep_with_voids_preserves_bidirectional_face_shell_ownership() {
     for shell in &model.shells {
         assert_eq!(shell.faces().len(), 1);
         for face_id in shell.faces() {
-            let face = model.faces.iter().find(|face| &face.id == face_id)
+            let face = model
+                .faces
+                .iter()
+                .find(|face| &face.id == face_id)
                 .expect("shell face exists");
             assert_eq!(face.shell, shell.id);
         }
     }
     for face in &model.faces {
-        let shell = model.shells.iter().find(|shell| shell.id == face.shell)
+        let shell = model
+            .shells
+            .iter()
+            .find(|shell| shell.id == face.shell)
             .expect("face shell exists");
         assert!(shell.faces().contains(&face.id));
     }

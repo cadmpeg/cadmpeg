@@ -30,6 +30,6 @@ mod set_lookups;
 
 mod equality;
 
+mod budget_regressions;
 mod early_exits;
 mod face_ancestry;
-mod budget_regressions;
