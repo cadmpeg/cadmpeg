@@ -251,6 +251,7 @@ pub(crate) fn model_id(kind: &str, parent: &str, child: impl AsRef<str>) -> Stri
     format!("fcstd:model:{kind}#{}:{}", id_key(parent), child_key)
 }
 
+#[cfg(test)]
 pub(crate) fn id_key(id: &str) -> &str {
     id.split_once('#').map_or(id, |(_, key)| key)
 }
