@@ -5908,6 +5908,9 @@ fn normalize_periodic_knots(
     degree: u32,
     periodic: bool,
 ) -> Result<(Vec<FiniteReal>, usize), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if !periodic {
         return Ok((knots, 0));
     }
@@ -5925,17 +5928,34 @@ fn normalize_periodic_knots(
     };
     // A valid end multiplicity is at most the degree, so neither run is read
     // past degree + 1 knots.
-    let first_multiplicity = knots
-        .iter()
-        .take(degree + 1)
-        .take_while(|knot| **knot == first)
-        .count();
-    let last_multiplicity = knots
-        .iter()
-        .rev()
-        .take(degree + 1)
-        .take_while(|knot| **knot == last)
-        .count();
+    let mut first_multiplicity = 0;
+    let mut first_run = knots.iter().take(degree + 1);
+    while first_run.len() != 0 {
+        let Some(knot) = ctx.next_charged(
+            &mut first_run,
+            "FreeCAD periodic B-rep knot endpoint search",
+        )? else {
+            break;
+        };
+        if *knot != first {
+            break;
+        }
+        first_multiplicity += 1;
+    }
+    let mut last_multiplicity = 0;
+    let mut last_run = knots.iter().rev().take(degree + 1);
+    while last_run.len() != 0 {
+        let Some(knot) = ctx.next_charged(
+            &mut last_run,
+            "FreeCAD periodic B-rep knot endpoint search",
+        )? else {
+            break;
+        };
+        if *knot != last {
+            break;
+        }
+        last_multiplicity += 1;
+    }
     if first_multiplicity == 0
         || first_multiplicity > degree
         || last_multiplicity != first_multiplicity
@@ -5961,29 +5981,36 @@ fn normalize_periodic_knots(
     let mut normalized = ctx.collection_vec(normalized_count, "FreeCAD periodic B-rep knots")?;
     let overflow =
         || CodecError::Malformed("periodic B-spline extension exceeds finite knot range".into());
-    for knot in &knots[before_last - padding..before_last] {
+    let mut leading = knots[before_last - padding..before_last].iter();
+    while leading.len() != 0 {
+        let Some(knot) = ctx.next_charged(&mut leading, "FreeCAD periodic B-rep knots")? else {
+            break;
+        };
         normalized
             .push(FiniteReal::new(first.get() - (last.get() - knot.get())).ok_or_else(overflow)?);
     }
     // The slots were admitted with the vector; the copy is the work.
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(knots.len()),
-        "FreeCAD periodic B-rep knots",
-    )?;
-    normalized.extend_from_slice(&knots);
-    for knot in &knots[first_multiplicity..first_multiplicity + padding] {
+    normalized.extend(ctx.admit_iter(&knots, "FreeCAD periodic B-rep knots")?.copied());
+    let mut trailing = knots[first_multiplicity..first_multiplicity + padding].iter();
+    while trailing.len() != 0 {
+        let Some(knot) = ctx.next_charged(&mut trailing, "FreeCAD periodic B-rep knots")? else {
+            break;
+        };
         normalized
             .push(FiniteReal::new(last.get() + (knot.get() - first.get())).ok_or_else(overflow)?);
     }
     Ok((normalized, padding))
 }
 
-fn append_periodic_curve_poles<T: Clone>(
+fn append_periodic_curve_poles<T: Copy>(
     ctx: &DecodeContext<'_>,
     control_points: &mut Vec<T>,
     weights: Option<&mut Vec<FiniteReal>>,
     padding: usize,
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if padding == 0 {
         return Ok(());
     }
@@ -5997,7 +6024,10 @@ fn append_periodic_curve_poles<T: Clone>(
         padding,
         "FreeCAD periodic B-rep curve poles",
     )?;
-    control_points.extend_from_within(..padding);
+    // The reserved slots make these fixed-width copies infallible.
+    for index in ctx.admit_iter(0..padding, "FreeCAD periodic B-rep curve poles")? {
+        control_points.push(control_points[index]);
+    }
     if let Some(weights) = weights {
         if weights.len() < padding {
             return Err(CodecError::Malformed(
@@ -6005,7 +6035,9 @@ fn append_periodic_curve_poles<T: Clone>(
             ));
         }
         ctx.reserve_vec(weights, padding, "FreeCAD periodic B-rep curve weights")?;
-        weights.extend_from_within(..padding);
+        for index in ctx.admit_iter(0..padding, "FreeCAD periodic B-rep curve weights")? {
+            weights.push(weights[index]);
+        }
     }
     Ok(())
 }
