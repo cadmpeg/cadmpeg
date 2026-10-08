@@ -238,6 +238,7 @@ fn curve_path_admits_each_output_item_once() {
 #[test]
 fn surface_metadata_is_built_only_by_its_consuming_operation() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    const OPERATION: &str = "index SLDPRT operation surface classes";
     let lane = crate::records::FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -270,12 +271,13 @@ fn surface_metadata_is_built_only_by_its_consuming_operation() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     {
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
             ResourceDimension::WorkUnits,
-            "index SLDPRT operation surface classes",
+            OPERATION,
             None,
         );
         assert!(
@@ -299,16 +301,57 @@ fn surface_metadata_is_built_only_by_its_consuming_operation() {
         .is_empty());
         assert!(classes.surfaces.get().is_none());
         assert!(classes.split_classes.get().is_none());
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
+            .charge_work(1, OPERATION)
+            .expect_err("unconsumed surface metadata leaves the probe armed")
+        else {
+            panic!("work refusal");
+        };
+        assert_eq!(limit.operation, OPERATION);
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     }
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[]).unwrap();
     assert!(classes.has_split_classes(&lane).unwrap());
-    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+    {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            OPERATION,
+            None,
+        );
+        assert!(classes.has_split_classes(&lane).unwrap());
+        assert!(classes.surfaces.get().is_none());
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
+            .charge_work(1, OPERATION)
+            .expect_err("cached split metadata leaves the probe armed")
+        else {
+            panic!("work refusal");
+        };
+        assert_eq!(limit.operation, OPERATION);
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    }
+
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
-        "index SLDPRT operation surface classes",
-        None,
+        OPERATION,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[])?;
+            classes.has_split_classes(&lane).map(|_| ())
+        },
     );
-    assert!(classes.has_split_classes(&lane).unwrap());
-    assert!(classes.surfaces.get().is_none());
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal");
+    };
+    assert_eq!(limit.operation, OPERATION);
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
 }
 
 #[test]

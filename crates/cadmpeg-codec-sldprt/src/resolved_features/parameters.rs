@@ -24,10 +24,42 @@ pub(crate) fn enrich_history_parameters<'a>(
     lanes: &'a [FeatureInputLane],
     replace_existing: bool,
 ) -> Result<(), CodecError> {
-    let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT parameters temporary storage")?;
-
-    let mut candidates = BTreeMap::<(usize, usize, &'a str), Vec<(f64, ScalarUnit)>>::new();
+    let mut enrichment = ParameterEnrichment::new(ctx, histories)?;
     for lane in ctx.admit_iter(lanes, "scan SLDPRT parameter lanes")? {
+        let names = ObjectNames::new(ctx, lane)?;
+        enrichment.collect(lane, &names)?;
+    }
+    enrichment.apply(replace_existing)
+}
+
+/// Cross-lane scalar agreement, with candidate storage held until application.
+pub(crate) struct ParameterEnrichment<'history, 'lane, 'ctx> {
+    histories: &'history mut [crate::records::FeatureHistory],
+    ctx: &'ctx DecodeContext<'ctx>,
+    candidates: BTreeMap<(usize, usize, &'lane str), Vec<(f64, ScalarUnit)>>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'history, 'lane, 'ctx> ParameterEnrichment<'history, 'lane, 'ctx> {
+    pub(crate) fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        histories: &'history mut [crate::records::FeatureHistory],
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            histories,
+            ctx,
+            candidates: BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "SLDPRT parameters temporary storage")?,
+        })
+    }
+
+    pub(crate) fn collect(
+        &mut self,
+        lane: &'lane FeatureInputLane,
+        object_names: &ObjectNames<'lane, '_>,
+    ) -> Result<(), CodecError> {
+        let ctx = self.ctx;
+        let histories = &*self.histories;
         let mut lane_storage = ctx.reserve_scoped(0, "SLDPRT parameter lane workspace")?;
         let mut names_by_id = HashMap::new();
         for name in ctx.admit_iter(&lane.names, "index SLDPRT parameter names")? {
@@ -41,7 +73,6 @@ pub(crate) fn enrich_history_parameters<'a>(
             })?;
         }
         let scalar_units = lane_storage.with_storage(|| scalar_units(ctx, lane, &names_by_id))?;
-        let object_names = ObjectNames::new(ctx, lane)?;
         let mut starts = Vec::<(u64, usize, usize)>::new();
         for (history_index, history) in ctx
             .admit_iter(&*histories, "collect SLDPRT parameter feature starts")?
@@ -124,7 +155,7 @@ pub(crate) fn enrich_history_parameters<'a>(
             };
             let following = unowned.get(first..last).unwrap_or_default();
             let mut feature_storage = ctx.reserve_scoped(0, "SLDPRT owned parameter workspace")?;
-            let mut owned = BTreeMap::<&'a str, Vec<&FeatureInputScalar>>::new();
+            let mut owned = BTreeMap::<&'lane str, Vec<&FeatureInputScalar>>::new();
             for &scalar in ctx
                 .admit_iter(named, "collect SLDPRT owned scalars")?
                 .chain(ctx.admit_iter(following, "collect SLDPRT owned scalars")?)
@@ -171,9 +202,9 @@ pub(crate) fn enrich_history_parameters<'a>(
                     None => scalar_unit_from_feature_parameter(ctx, feature, name)?
                         .unwrap_or(ScalarUnit::Native),
                 };
-                temporary_storage.with_storage(|| {
+                self.storage.with_storage(|| {
                     ctx.push_btree_group(
-                        &mut candidates,
+                        &mut self.candidates,
                         (history_index, feature_index, name),
                         (scalar.value.get(), unit),
                         "index SLDPRT parameter candidates",
@@ -182,105 +213,128 @@ pub(crate) fn enrich_history_parameters<'a>(
                 })?;
             }
         }
+        Ok(())
     }
 
-    for (&(history_index, feature_index, name), values) in
-        ctx.admit_iter(&candidates, "apply SLDPRT parameter candidates")?
-    {
-        let Some((&(first, unit), rest)) = values.split_first() else {
-            continue;
-        };
-        if ctx.any_by(
-            rest,
-            |(value, candidate_unit)| {
-                Ok(value.to_bits() != first.to_bits() || *candidate_unit != unit)
-            },
-            "check SLDPRT parameter candidate agreement",
-        )? {
-            continue;
-        }
-        let feature = &mut histories[history_index].features[feature_index];
-        let existing = ctx
-            .get_btree_map(
-                &feature.parameters,
-                name,
-                "lookup existing SLDPRT parameter",
-            )?
-            .map(String::as_str);
-        if unit == ScalarUnit::Native {
-            if let Some(expression) = existing {
-                let source_dimension = ctx.any_by(
-                    &feature.content,
-                    |content| match content {
-                        crate::records::FeatureContent::Dimension(dimension) => {
-                            ctx.equal(dimension.as_str(), name, "compare SLDPRT source dimension")
-                        }
-                        _ => Ok(false),
-                    },
-                    "check SLDPRT source dimensions",
-                )?;
-                if source_dimension
-                    || !native_scalar_matches_discrete_parameter(
-                        ctx, feature, name, expression, first,
-                    )?
-                {
-                    continue;
-                }
+    pub(crate) fn apply(
+        self,
+        replace_existing: bool,
+    ) -> Result<(), CodecError> {
+        let ctx = self.ctx;
+        let histories = self.histories;
+        for (&(history_index, feature_index, name), values) in
+            ctx.admit_iter(&self.candidates, "apply SLDPRT parameter candidates")?
+        {
+            let Some((&(first, unit), rest)) = values.split_first() else {
+                continue;
+            };
+            if ctx.any_by(
+                rest,
+                |(value, candidate_unit)| {
+                    Ok(value.to_bits() != first.to_bits() || *candidate_unit != unit)
+                },
+                "check SLDPRT parameter candidate agreement",
+            )? {
+                continue;
             }
-        }
-        let expression = match unit {
-            ScalarUnit::Native => crate::history::parameters::format_native_scalar(
-                ctx, feature, name, first, existing,
-            )?,
-            ScalarUnit::Length => {
-                let diameter = match existing {
-                    Some(expression) => {
-                        crate::history::literals::admit_literal(
-                            ctx,
-                            expression,
-                            "check SLDPRT diameter parameter",
-                        )?;
-                        crate::history::literals::strip_diameter_modifier(expression).is_some()
+            let feature = &mut histories[history_index].features[feature_index];
+            let existing = ctx
+                .get_btree_map(
+                    &feature.parameters,
+                    name,
+                    "lookup existing SLDPRT parameter",
+                )?
+                .map(String::as_str);
+            if !replace_existing && existing.is_some() {
+                continue;
+            }
+            if unit == ScalarUnit::Native {
+                if let Some(expression) = existing {
+                    let source_dimension = ctx.any_by(
+                        &feature.content,
+                        |content| match content {
+                            crate::records::FeatureContent::Dimension(dimension) => {
+                                ctx.equal(dimension.as_str(), name, "compare SLDPRT source dimension")
+                            }
+                            _ => Ok(false),
+                        },
+                        "check SLDPRT source dimensions",
+                    )?;
+                    if source_dimension
+                        || !native_scalar_matches_discrete_parameter(
+                            ctx, feature, name, expression, first,
+                        )?
+                    {
+                        continue;
                     }
-                    None => false,
-                };
-                if diameter {
-                    crate::history::parameters::format_native_scalar(
-                        ctx, feature, name, first, existing,
-                    )?
-                } else {
-                    cadmpeg_ir::scalar::Length::new(first * 1000.0)
-                        .map(crate::history::literals::format_length_mm)
                 }
             }
-            ScalarUnit::Angle => cadmpeg_ir::scalar::Angle::new(first)
-                .map(crate::history::literals::format_angle_rad),
-        };
-        let Some(expression) = expression else {
-            continue;
-        };
-        let Some(name) =
-            cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")?
-        else {
-            continue;
-        };
-        if replace_existing {
-            ctx.insert_btree_map(
-                &mut feature.parameters,
-                name,
-                expression,
-                "insert SLDPRT enriched parameter",
-            )?;
-        } else {
-            ctx.entry_btree_map(
-                &mut feature.parameters,
-                name,
-                "insert SLDPRT enriched parameter",
-            )?
-            .or_insert(expression);
+            let expression = match unit {
+                ScalarUnit::Native => crate::history::parameters::format_native_scalar(
+                    ctx, feature, name, first, existing,
+                )?,
+                ScalarUnit::Length => {
+                    let diameter = match existing {
+                        Some(expression) => {
+                            crate::history::literals::admit_literal(
+                                ctx,
+                                expression,
+                                "check SLDPRT diameter parameter",
+                            )?;
+                            crate::history::literals::strip_diameter_modifier(expression).is_some()
+                        }
+                        None => false,
+                    };
+                    if diameter {
+                        crate::history::parameters::format_native_scalar(
+                            ctx, feature, name, first, existing,
+                        )?
+                    } else {
+                        cadmpeg_ir::scalar::Length::new(first * 1000.0)
+                            .map(|value| ctx.format_retained(
+                                format_args!("{}", crate::history::literals::ParameterLiteral(
+                                    &cadmpeg_ir::features::ParameterValue::Length(value),
+                                )),
+                                "format SLDPRT native scalar",
+                            ))
+                            .transpose()?
+                    }
+                }
+                ScalarUnit::Angle => cadmpeg_ir::scalar::Angle::new(first)
+                    .map(|value| ctx.format_retained(
+                        format_args!("{}", crate::history::literals::ParameterLiteral(
+                            &cadmpeg_ir::features::ParameterValue::Angle(value),
+                        )),
+                        "format SLDPRT native scalar",
+                    ))
+                    .transpose()?,
+            };
+            let Some(expression) = expression else {
+                continue;
+            };
+            let Some(name) =
+                cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")?
+            else {
+                continue;
+            };
+            if replace_existing {
+                ctx.insert_btree_map(
+                    &mut feature.parameters,
+                    name,
+                    expression,
+                    "insert SLDPRT enriched parameter",
+                )?;
+            } else {
+                ctx.entry_btree_map(
+                    &mut feature.parameters,
+                    name,
+                    "insert SLDPRT enriched parameter",
+                )?
+                .or_insert(expression);
+            }
         }
+        Ok(())
     }
-    Ok(())
 }
 
 /// The one scalar a parameter name stands for among the scalars a feature

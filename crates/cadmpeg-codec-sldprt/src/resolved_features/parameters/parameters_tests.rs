@@ -1,5 +1,7 @@
 //! Tests for the `parameters` module.
 
+mod admission;
+
 use super::{
     enrich_history_parameters, native_scalar_matches_discrete_parameter,
     scalar_unit_from_feature_parameter, sync_changed_feature_scalars, ScalarUnit,

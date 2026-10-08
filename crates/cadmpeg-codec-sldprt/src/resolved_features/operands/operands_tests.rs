@@ -1188,7 +1188,8 @@ fn line_handle_without_endpoints_skips_id_index() {
     let marker = SketchInputEntity::new("handle", "lane", 0, 0, SketchInputKind::Point)
         .with_test_identity(Some(7), Some(7));
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
@@ -1206,4 +1207,71 @@ fn line_handle_without_endpoints_skips_id_index() {
     .unwrap();
     drop(probe);
     assert!(resolved.is_none());
+
+    let endpoint = |id: &str, local_id: u32, coordinates| {
+        let mut endpoint = SketchInputEntity::new(
+            id,
+            "lane",
+            local_id,
+            u64::from(local_id),
+            SketchInputKind::Point,
+        )
+        .with_test_identity(None, Some(local_id));
+        endpoint.feature_ref = Some("feature".into());
+        endpoint.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates);
+        endpoint
+    };
+    let endpoints = [
+        endpoint("first", 1, [0.0, 0.0]),
+        endpoint("second", 2, [1.0, 0.0]),
+    ];
+    let mut linked_handle = SketchInputEntity::new(
+        "linked-handle",
+        "lane",
+        2,
+        2,
+        SketchInputKind::Relation(SketchRelationKind::Radius),
+    )
+    .with_test_identity(Some(5), Some(6));
+    linked_handle.feature_ref = Some("feature".into());
+    linked_handle.links = crate::records::SketchInputLinks::new(
+        0,
+        endpoints
+            .iter()
+            .map(|endpoint| SketchInputLink {
+                local_id: u16::try_from(endpoint.local_id().expect("local identity"))
+                    .expect("u16 local identity"),
+                entity_ref: endpoint.id().to_owned(),
+            })
+            .collect(),
+    );
+    let linked_markers = [&endpoints[0], &endpoints[1], &linked_handle];
+    let fresh_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut fresh_policy = cadmpeg_core::decode::DecodePolicy::service();
+    fresh_policy.limits.max_work_units = u64::MAX;
+    let (fresh_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &fresh_arena,
+        &fresh_policy,
+    )
+    .unwrap();
+    let positive_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "index SLDPRT scalar operand links",
+        None,
+    );
+    let positive = resolve_operand_marker_excluding(
+        &fresh_ctx,
+        &linked_markers,
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
+        5,
+        |_| Ok(false),
+    );
+    drop(positive_probe);
+    assert!(matches!(
+        positive,
+        Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            if refusal.operation == "index SLDPRT scalar operand links"
+    ));
+    assert!(fresh_ctx.resource_refusal().is_some());
 }

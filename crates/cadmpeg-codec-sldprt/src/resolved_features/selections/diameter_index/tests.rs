@@ -71,7 +71,11 @@ fn feature() -> Feature {
 
 #[test]
 fn diameter_interval_index_reuses_lane_work_and_keeps_absent_source_lazy() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let lane = lane();
     let mut feature = feature();
     let index = CosmeticDiameterIndex::new(&ctx, &lane).unwrap();
@@ -81,7 +85,7 @@ fn diameter_interval_index_reuses_lane_work_and_keeps_absent_source_lazy() {
     feature.source_id = FeatureSource::from_value(53);
     assert_eq!(index.tail(&ctx, &feature).unwrap(), Some(158..400));
     let original = std::ptr::from_ref(index.records.get().unwrap());
-    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+    let cache_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "index SLDPRT cosmetic diameter intervals",
         None,
@@ -90,6 +94,31 @@ fn diameter_interval_index_reuses_lane_work_and_keeps_absent_source_lazy() {
         assert_eq!(index.tail(&ctx, &feature).unwrap(), Some(158..400));
     }
     assert_eq!(std::ptr::from_ref(index.records.get().unwrap()), original);
+    drop(cache_probe);
+
+    let fresh_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut fresh_policy = cadmpeg_core::decode::DecodePolicy::service();
+    fresh_policy.limits.max_work_units = u64::MAX;
+    let (fresh_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &fresh_arena,
+        &fresh_policy,
+    )
+    .unwrap();
+    let fresh_index = CosmeticDiameterIndex::new(&fresh_ctx, &lane).unwrap();
+    let positive_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "index SLDPRT cosmetic diameter intervals",
+        None,
+    );
+    let positive = fresh_index.tail(&fresh_ctx, &feature);
+    drop(positive_probe);
+    assert!(matches!(
+        positive,
+        Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            if refusal.operation == "index SLDPRT cosmetic diameter intervals"
+    ));
+    assert!(fresh_ctx.resource_refusal().is_some());
 }
 
 #[test]
