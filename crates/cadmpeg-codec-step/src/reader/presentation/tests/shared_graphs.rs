@@ -35,13 +35,23 @@ fn domain_resolution_reuses_a_shared_dag() {
     let exchange = exchange(&layered_graph("GEOMETRIC_SET", 16));
     let mut policy = DecodePolicy::service();
     // Thirty-three reachable nodes need one active and one completed entry each.
-    // Re-expanding the 2^16 source paths cannot fit this item budget.
+    // The first query transfers its 33-node completion map: 66 total slots.
+    // Root #2 needs one active, one pending and one stage entry: 69 total.
+    // Repeating all 33 nodes needs 66 + 66 + 1 = 133 slots; publication
+    // charges only the new root, because existing map keys add no slots.
     policy.limits.max_collection_items = 128;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let mut index = super::super::StyleDomainIndex::new(ctx).expect("stage index");
         assert!(matches!(
-            super::super::style_domain(1, &exchange, ctx).expect("linear domain walk"),
+            index.domain(1, &exchange).expect("linear domain walk"),
             super::super::StyleDomain::Point
         ));
+        assert_eq!(index.complete.len(), 33);
+        assert!(matches!(
+            index.domain(2, &exchange).expect("distinct root reuses its descendants"),
+            super::super::StyleDomain::Point
+        ));
+        assert_eq!(index.complete.len(), 34);
     });
 }
 
@@ -62,7 +72,7 @@ fn style_domain_name_substrings_keep_all_classifications() {
     for (name, expected) in cases {
         let exchange = exchange(&format!("#1={name}();"));
         crate::test_support::with_service_context(b"", |_, ctx| {
-            let actual = super::super::style_domain(1, &exchange, ctx)
+            let actual = super::super::StyleDomainIndex::new(ctx).and_then(|mut index| index.domain(1, &exchange))
                 .expect("style domain classification");
             assert!(actual == expected, "wrong style domain for {name}");
         });
@@ -80,10 +90,46 @@ fn style_domain_point_prefix_does_not_scan_the_name_suffix() {
     // full-name-plus-pattern scan cannot fit.
     policy.limits.max_work_units = 2048;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let actual = super::super::style_domain(1, &exchange, ctx)
+        let actual = super::super::StyleDomainIndex::new(ctx).and_then(|mut index| index.domain(1, &exchange))
             .expect("POINT prefix fits the work limit");
         assert!(actual == super::super::StyleDomain::Point);
         assert!(ctx.resource_refusal().is_none());
+    });
+}
+
+#[test]
+fn style_domain_query_error_does_not_publish_completed_descendants() {
+    let exchange = exchange("#1=GEOMETRIC_SET('',(#2,#3));#2=CARTESIAN_POINT('',(0.,0.,0.));#3=CARTESIAN_POINT('',(1.,0.,0.));");
+    let mut policy = DecodePolicy::service();
+    // Root active, #2 active and #2 pending completion precede #3's active slot.
+    policy.limits.max_collection_items = 3;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let mut index = super::super::StyleDomainIndex::new(ctx).expect("stage index");
+        let error = match index.domain(1, &exchange) {
+            Err(error) => error,
+            Ok(_) => panic!("the second child needs a fourth collection slot"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "step_presentation_style_domain_active"
+                && limit.used == 3 && limit.additional == 1
+                && ctx.resource_refusal() == Some(limit)));
+        assert!(index.complete.is_empty());
+    });
+}
+
+#[test]
+fn cached_style_domain_does_not_enter_skipped_child_depth() {
+    let exchange = exchange("#1=GEOMETRIC_SET('',(#2));#2=CARTESIAN_POINT('',(0.,0.,0.));");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 1;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let mut index = super::super::StyleDomainIndex::new(ctx).expect("stage index");
+        assert!(matches!(index.domain(2, &exchange).expect("leaf root"),
+            super::super::StyleDomain::Point));
+        assert!(matches!(index.domain(1, &exchange).expect("cached child has no descent"),
+            super::super::StyleDomain::Point));
+        assert_eq!(ctx.resource_refusal(), None);
     });
 }
 
@@ -125,8 +171,13 @@ fn domain_cycles_keep_any_and_invisibility_cycles_keep_unsupported() {
         "#1=GEOMETRIC_SET('',(#2,#3));#2=GEOMETRIC_SET('',(#1));#3=CARTESIAN_POINT('',(0.,0.,0.));",
     );
     crate::test_support::with_service_context(b"", |_, ctx| {
+        let mut index = super::super::StyleDomainIndex::new(ctx).expect("stage index");
         assert!(matches!(
-            super::super::style_domain(1, &exchange, ctx).expect("cycle walk"),
+            index.domain(1, &exchange).expect("cycle walk"),
+            super::super::StyleDomain::Any
+        ));
+        assert!(matches!(
+            index.domain(2, &exchange).expect("completed cycle remains Any"),
             super::super::StyleDomain::Any
         ));
     });
