@@ -48,14 +48,21 @@ pub(crate) fn classify(
 /// One pass reads the first line: each search stops at the byte it needs, so
 /// the bytes visited are at most the line and the byte after it.
 fn looks_like_text_stream(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<bool, CodecError> {
-    if !sat::has_text_magic(prefix) {
+    // The text discriminant starts with at least three decimal digits. Its
+    // full first field is checked by the admitted field scan below.
+    if !prefix.get(..3).is_some_and(|bytes| bytes.iter().all(u8::is_ascii_digit)) {
         return Ok(false);
     }
     let mut rest = prefix;
-    for _ in 0..4 {
+    for index in 0..4 {
         let Some(field) = next_header_field(ctx, &mut rest)? else {
             return Ok(false);
         };
+        // Text magic requires a space immediately after the leading digit
+        // run. The integer parse rejects non-digit bytes in that field.
+        if index == 0 && rest.first() != Some(&b' ') {
+            return Ok(false);
+        }
         let Ok(field) = ctx.validate_utf8(field, "SAT header field UTF-8")? else {
             return Ok(false);
         };
