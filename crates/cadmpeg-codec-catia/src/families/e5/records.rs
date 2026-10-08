@@ -838,9 +838,11 @@ fn nurbs_pole_rows<T>(
     mut pole: impl FnMut(usize) -> Option<T>,
 ) -> Result<Option<Vec<Vec<T>>>, CodecError> {
     let mut rows = ctx.collection_vec(u_count, "catia_e5_nurbs_pole_rows")?;
-    for row_index in ctx.admit_iter(0..u_count, "catia_e5_nurbs_pole_row_scan")? {
+    let mut steps = 0..u_count;
+    while let Some(row_index) = ctx.next_charged(&mut steps, "catia_e5_nurbs_pole_row_scan")? {
         let mut row = ctx.collection_vec(v_count, "catia_e5_nurbs_pole_row")?;
-        for column in ctx.admit_iter(0..v_count, "catia_e5_nurbs_pole_scan")? {
+        let mut steps = 0..v_count;
+        while let Some(column) = ctx.next_charged(&mut steps, "catia_e5_nurbs_pole_scan")? {
             let Some(value) = pole(row_index * v_count + column) else {
                 return Ok(None);
             };
@@ -1384,3 +1386,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod budget_tests;

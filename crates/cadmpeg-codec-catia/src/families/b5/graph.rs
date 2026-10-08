@@ -1063,9 +1063,9 @@ fn visit_topology_runs(
         |run| Ok(run.topology),
         "catia_b5_topology_root_run_scan",
     )?;
-    for (index, run) in ctx
-        .admit_iter(&runs, "catia_b5_topology_candidate_scan")?
-        .enumerate()
+    let mut candidates = runs.iter().enumerate();
+    while let Some((index, run)) =
+        ctx.next_charged(&mut candidates, "catia_b5_topology_candidate_scan")?
     {
         if rooted && !run.topology {
             continue;
@@ -1564,10 +1564,15 @@ fn parse_from_records_with_class21(
                     by_id,
                     &object_stream_pcurve_candidates,
                 )?
-                && ctx.all_by(
-                    &construction.support_surfaces,
-                    |surface| ctx.contains_key_btree_map(&surfaces, surface, LOOKUP),
-                    "catia_b5_supported_surface_support_scan",
+                && ctx.contains_key_btree_map(
+                    &surfaces,
+                    &construction.support_surfaces[0],
+                    LOOKUP,
+                )?
+                && ctx.contains_key_btree_map(
+                    &surfaces,
+                    &construction.support_surfaces[1],
+                    LOOKUP,
                 )?
             {
                 let metadata_changed =

@@ -1787,3 +1787,5 @@ fn container_scan_rejects_wrong_magic_and_truncated_header() {
         ));
     }
 }
+
+mod budget_repairs;
