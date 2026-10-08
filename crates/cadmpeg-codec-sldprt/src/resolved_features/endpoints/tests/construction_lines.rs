@@ -66,7 +66,7 @@ fn compact_84_construction_line_prefers_points_and_accepts_one_curve_marker() {
                     )
                     .unwrap(),
                 )
-                .unwrap(),
+                .unwrap(), None,
             );
             result
         }
@@ -99,7 +99,7 @@ fn compact_84_construction_line_prefers_points_and_accepts_one_curve_marker() {
                 )
                 .unwrap(),
             )
-            .unwrap(),
+            .unwrap(), None,
         );
         result
     }

@@ -2499,6 +2499,7 @@ fn line_endpoint_markers_from<'a>(
 /// by offset, with source-order ties.
 pub(super) struct CurveMarkers<'roster, 'a, 'ctx> {
     roster: &'roster [&'a SketchInputEntity],
+    reverse_incidence: std::cell::OnceCell<super::markers::ReverseIncidenceIndex<'a>>,
     by_feature: std::cell::OnceCell<HashMap<Option<&'a str>, Vec<&'a SketchInputEntity>>>,
     by_offset: std::cell::OnceCell<BTreeMap<Option<&'a str>, Vec<&'a SketchInputEntity>>>,
     by_object: std::cell::OnceCell<HashMap<(Option<&'a str>, Option<u32>), Vec<&'a SketchInputEntity>>>,
@@ -2513,6 +2514,7 @@ impl<'roster, 'a, 'ctx> CurveMarkers<'roster, 'a, 'ctx> {
     ) -> Result<Self, CodecError> {
         Ok(Self {
             roster,
+            reverse_incidence: std::cell::OnceCell::new(),
             by_feature: std::cell::OnceCell::new(),
             by_offset: std::cell::OnceCell::new(),
             by_object: std::cell::OnceCell::new(),
@@ -2588,6 +2590,24 @@ impl<'roster, 'a, 'ctx> CurveMarkers<'roster, 'a, 'ctx> {
             .map_or(&[][..], Vec::as_slice))
     }
 
+    pub(super) fn reverse_endpoint_offsets(
+        &self, ctx: &DecodeContext<'_>, payload: &[u8], curve: &SketchInputEntity,
+    ) -> Result<Option<[u64; 2]>, CodecError> {
+        if super::markers::reverse_incidence_curve_index(payload, curve).is_none() {
+            return Ok(None);
+        }
+        let index = match self.reverse_incidence.get() {
+            Some(index) => index,
+            None => {
+                let built = self.storage.borrow_mut().with_storage(|| {
+                    super::markers::ReverseIncidenceIndex::build(ctx, payload, self.roster, None)
+                })?;
+                self.reverse_incidence.get_or_init(|| built)
+            }
+        };
+        super::markers::current_reverse_incidence_endpoint_offsets_in(ctx, payload, curve, index)
+    }
+
     fn next_after(&self, ctx: &DecodeContext<'_>, curve: &SketchInputEntity)
         -> Result<Option<&'a SketchInputEntity>, CodecError> {
         const INDEX: &str = "index SLDPRT curve marker offsets";
@@ -2635,10 +2655,15 @@ pub(super) fn marker_curve_endpoint_markers_in<'a>(
         if let Some(ids) = direct {
             let resolve = |id| {
                 let object = (id != 0).then_some(id);
-                let candidates = index.object_markers(ctx, feature, object)?;
-                unique_feature_marker(ctx, candidates, curve, OPERATION, is_coordinate_point)
+                let mut candidates = index.object_markers(ctx, feature, object)?.iter().copied();
+                let Some(first) = ctx.find_by(&mut candidates, |marker| Ok(is_coordinate_point(marker)), OPERATION)? else {
+                    return Ok::<_, CodecError>(None);
+                };
+                Ok(ctx.find_by(&mut candidates, |marker| Ok(is_coordinate_point(marker)), OPERATION)?.is_none().then_some(first))
             };
-            if let (Some(first), Some(second)) = (resolve(ids[0])?, resolve(ids[1])?) {
+            let first = resolve(ids[0])?;
+            let second = if first.is_some() { resolve(ids[1])? } else { None };
+            if let (Some(first), Some(second)) = (first, second) {
                 if let Some(pair) = distinct_endpoints(ctx, [first, second], OPERATION)? {
                     return copy_endpoint_markers(ctx, &pair);
                 }
@@ -2769,7 +2794,7 @@ fn marker_curve_endpoint_markers_from<'a>(
         return copy_endpoint_markers(ctx, &endpoints);
     }
     let roster = index.map_or(markers, |index| index.roster);
-    let endpoints = roster_curve_endpoint_markers(ctx, payload, curve, roster, geometry)?;
+    let endpoints = roster_curve_endpoint_markers(ctx, payload, curve, roster, geometry, index)?;
     if endpoints.len() == 2 {
         if let Some(direct) = legacy_marker104_arc_endpoints(ctx, payload, curve, markers)? {
             let roster = [endpoints[0], endpoints[1]];
@@ -2960,7 +2985,10 @@ pub(super) fn extended_direct_object_line_endpoints<'a>(
                 }
         })
     };
-    let (Some(first), Some(second)) = (resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?) else {
+    let Some(first) = resolve(endpoint_ids[0])? else {
+        return Ok(None);
+    };
+    let Some(second) = resolve(endpoint_ids[1])? else {
         return Ok(None);
     };
     distinct_endpoints(ctx, [first, second], OPERATION)
@@ -2984,7 +3012,10 @@ pub(super) fn compact_legacy_object_line_endpoints<'a>(
             marker.object_index() == Some(id) && is_coordinate_point(marker)
         })
     };
-    let (Some(first), Some(second)) = (resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?) else {
+    let Some(first) = resolve(endpoint_ids[0])? else {
+        return Ok(None);
+    };
+    let Some(second) = resolve(endpoint_ids[1])? else {
         return Ok(None);
     };
     distinct_endpoints(ctx, [first, second], OPERATION)
@@ -3035,10 +3066,9 @@ fn extended_wide_selected_axis_endpoints<'a>(
             marker.object_index() == Some(index) && is_coordinate_point(marker)
         })
     };
-    if let (Some(first), Some(second)) = (
-        resolve_object(encoded[0] + 1)?,
-        resolve_object(encoded[1] + 1)?,
-    ) {
+    let first = resolve_object(encoded[0] + 1)?;
+    let second = if first.is_some() { resolve_object(encoded[1] + 1)? } else { None };
+    if let (Some(first), Some(second)) = (first, second) {
         if let Some(endpoints) = distinct_endpoints(ctx, [first, second], OPERATION)? {
             return Ok(Some(endpoints));
         }
@@ -3105,7 +3135,10 @@ pub(super) fn legacy_marker104_arc_endpoints<'a>(
             marker.object_index() == Some(id) && is_coordinate_point(marker)
         })
     };
-    let (Some(first), Some(second)) = (resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?) else {
+    let Some(first) = resolve(endpoint_ids[0])? else {
+        return Ok(None);
+    };
+    let Some(second) = resolve(endpoint_ids[1])? else {
         return Ok(None);
     };
     Ok((first.coordinates_m != second.coordinates_m).then_some([first, second]))
@@ -3267,7 +3300,10 @@ pub(super) fn legacy_terminal_profile_indexed_endpoints<'a>(
                     || marker.object_index().and_then(|index| index.checked_add(1)) == Some(id))
         })
     };
-    let (Some(first), Some(second)) = (resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?) else {
+    let Some(first) = resolve(endpoint_ids[0])? else {
+        return Ok(None);
+    };
+    let Some(second) = resolve(endpoint_ids[1])? else {
         return Ok(None);
     };
     Ok((!ctx.equal(first.id(), second.id(), OPERATION)?).then_some([first, second]))
@@ -3309,7 +3345,10 @@ fn coordinate_endpoint_pair<'a>(
             })
         })
     };
-    let (Some(first), Some(second)) = (resolve(coordinates[0])?, resolve(coordinates[1])?) else {
+    let Some(first) = resolve(coordinates[0])? else {
+        return Ok(None);
+    };
+    let Some(second) = resolve(coordinates[1])? else {
         return Ok(None);
     };
     Ok((!ctx.equal(first.id(), second.id(), operation)?).then_some([first, second]))
