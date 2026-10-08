@@ -149,14 +149,18 @@ fn append_oriented_wire_curve(
     ir: &mut CadIr,
     positions: &mut ModelCurvePositions<'_>,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
-    curve_id: CurveId,
-    geometry: CurveGeometry,
+    curve: Curve,
     source_pos: usize,
     procedural: Option<(
         ProceduralCurveDefinition,
         Option<cadmpeg_ir::geometry::FitTolerance>,
     )>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let Curve {
+        id: curve_id,
+        geometry,
+        source_object,
+    } = curve;
     let geometry = if let Some((definition, cache_fit_tolerance)) = procedural {
         let construction_id = ProceduralCurveId::mint(admission.context().format_retained(
             format_args!("{}-construction", curve_id.as_str()),
@@ -244,7 +248,7 @@ fn append_oriented_wire_curve(
     ir.model.curves.push(Curve {
         id: curve_id,
         geometry,
-        source_object: None,
+        source_object,
     });
     Ok(())
 }
@@ -814,11 +818,14 @@ fn transfer_closed_wire_loops(
                                     ir,
                                     positions,
                                     annotations,
-                                    oriented_curve_id.try_clone_for_decode(
-                                        admission.context(),
-                                        "catia_zero_wire_oriented_curve_record_id",
-                                    )?,
-                                    geometry,
+                                    Curve {
+                                        id: oriented_curve_id.try_clone_for_decode(
+                                            admission.context(),
+                                            "catia_zero_wire_oriented_curve_record_id",
+                                        )?,
+                                        geometry,
+                                        source_object: None,
+                                    },
                                     support.pos,
                                     procedural,
                                 )?;

@@ -394,10 +394,7 @@ fn object_stream_frames<'a>(
                 }
                 return None;
             }
-            let Some(frame) = object_stream_frame(data, pos).filter(|frame| frame.end <= limit)
-            else {
-                return None;
-            };
+            let frame = object_stream_frame(data, pos).filter(|frame| frame.end <= limit)?;
             match frame.family {
                 0xa8 if child_end.is_none() => {
                     child_end = Some(frame.end);

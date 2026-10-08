@@ -754,9 +754,8 @@ fn owner_chart_rows_refuse_collection_limits() {
             refused.insert(error.operation);
         }
     }
-    for operation in ["catia_b2_owner_charts"] {
-        assert!(refused.contains(operation), "{operation} did not refuse");
-    }
+    let operation = "catia_b2_owner_charts";
+    assert!(refused.contains(operation), "{operation} did not refuse");
 }
 
 #[test]
@@ -1019,7 +1018,8 @@ fn b2_adjacent_face_owner_requires_adjacency_and_successor_identity() {
 fn b2_adjacent_face_owner_pair_refuses_collection_limit() {
     let bytes = b2_adjacent_face_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    for (limit, operation) in [(0, "catia_b2_adjacent_face_pairs")] {
+    {
+        let (limit, operation) = (0, "catia_b2_adjacent_face_pairs");
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
             crate::families::b2::records::b2_adjacent_face_owners_from_records(
                 ctx, &bytes, &records,
