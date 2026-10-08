@@ -171,3 +171,4 @@ fn surface_descriptor_scan_admits_work_before_empty_pass() {
 }
 
 mod homogeneous;
+mod knots;
