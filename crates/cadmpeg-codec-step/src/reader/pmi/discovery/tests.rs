@@ -32,14 +32,14 @@ fn shared_annotations(cyclic: bool) {
     policy.limits.max_collection_items = 4000;
     policy.limits.max_retained_bytes = 128 * 6;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let mut index = super::super::AnnotationDiscoveryIndex { graphs: BTreeMap::new(), texts: BTreeMap::new(), independent_reach: BTreeMap::new(), storage: ctx.reserve_scoped(0, "index fixture").expect("scope") };
+        let mut index = super::AnnotationDiscoveryIndex { graphs: BTreeMap::new(), texts: BTreeMap::new(), independent_reach: BTreeMap::new(), storage: ctx.reserve_scoped(0, "index fixture").expect("scope") };
         let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
         let mut losses = Vec::new();
         for id in 100..228 {
-            assert!(super::super::index_annotation_graph(id, 0, &exchange, &geometry.value, &mut BTreeSet::new(), &mut index, ctx).expect("shared query"));
+            assert!(super::index_annotation_graph(id, 0, &exchange, &geometry.value, &mut BTreeSet::new(), &mut index, ctx).expect("shared query"));
             let mut claims = BTreeSet::new();
             let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
-            let text = super::super::indexed_annotation_text(id, &exchange, &mut index, (&mut claims, &mut claim_storage), (&mut losses, &reports), ctx).expect("selected text");
+            let text = super::indexed_annotation_text(id, &exchange, &mut index, (&mut claims, &mut claim_storage), (&mut losses, &reports), ctx).expect("selected text");
             assert_eq!(text.as_deref(), Some("shared"));
             assert_eq!(claims, BTreeSet::from([5]));
             let (graph, _) = index.graphs.get(&(id, 0)).expect("graph result");
@@ -63,8 +63,8 @@ fn indexed_annotation_text_replays_invalid_warnings_in_dfs_order() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service()).expect("context");
     let geometry = crate::reader::geometry::decode(&exchange, &mut CadIr::empty(), &ctx).expect("geometry");
-    let mut index = super::super::AnnotationDiscoveryIndex { graphs: BTreeMap::new(), texts: BTreeMap::new(), independent_reach: BTreeMap::new(), storage: ctx.reserve_scoped(0, "index fixture").expect("scope") };
-    assert!(super::super::index_annotation_graph(1, 0, &exchange, &geometry.value, &mut BTreeSet::new(), &mut index, &ctx).expect("index"));
+    let mut index = super::AnnotationDiscoveryIndex { graphs: BTreeMap::new(), texts: BTreeMap::new(), independent_reach: BTreeMap::new(), storage: ctx.reserve_scoped(0, "index fixture").expect("scope") };
+    assert!(super::index_annotation_graph(1, 0, &exchange, &geometry.value, &mut BTreeSet::new(), &mut index, &ctx).expect("index"));
     let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
     let mut expected = Vec::new();
     let mut used = BTreeSet::new();
@@ -75,7 +75,7 @@ fn indexed_annotation_text_replays_invalid_warnings_in_dfs_order() {
     assert!(expected[1].message.contains("record #2"));
     for _ in 0..2 {
         let mut actual = Vec::new();
-        assert!(super::super::indexed_annotation_text(1, &exchange, &mut index, (&mut BTreeSet::new(), &mut claims), (&mut actual, &reports), &ctx).expect("indexed text query").is_none());
+        assert!(super::indexed_annotation_text(1, &exchange, &mut index, (&mut BTreeSet::new(), &mut claims), (&mut actual, &reports), &ctx).expect("indexed text query").is_none());
         assert_eq!(actual, expected);
     }
 }
@@ -86,12 +86,12 @@ fn annotation_index_preserves_cyclic_discovery_results() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service()).expect("context");
     let geometry = crate::reader::geometry::decode(&exchange, &mut CadIr::empty(), &ctx).expect("geometry");
-    let mut index = super::super::AnnotationDiscoveryIndex { graphs: BTreeMap::new(), texts: BTreeMap::new(), independent_reach: BTreeMap::new(), storage: ctx.reserve_scoped(0, "index fixture").expect("scope") };
-    assert!(super::super::index_annotation_graph(1, 0, &exchange, &geometry.value, &mut BTreeSet::new(), &mut index, &ctx).expect("cyclic graph is indexed"));
+    let mut index = super::AnnotationDiscoveryIndex { graphs: BTreeMap::new(), texts: BTreeMap::new(), independent_reach: BTreeMap::new(), storage: ctx.reserve_scoped(0, "index fixture").expect("scope") };
+    assert!(super::index_annotation_graph(1, 0, &exchange, &geometry.value, &mut BTreeSet::new(), &mut index, &ctx).expect("cyclic graph is indexed"));
     let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
     let mut claims = ctx.reserve_scoped(0, "claim fixture").expect("scope");
     assert_eq!(super::super::find_annotation_text(1, &exchange, &mut BTreeSet::new(), (&mut BTreeSet::new(), &mut claims), (&mut Vec::new(), &reports), 0, &ctx).expect("cyclic text query").as_deref(), Some("cycle text"));
-    assert_eq!(super::super::indexed_annotation_text(1, &exchange, &mut index, (&mut BTreeSet::new(), &mut claims), (&mut Vec::new(), &reports), &ctx).expect("indexed cyclic text query").as_deref(), Some("cycle text"));
+    assert_eq!(super::indexed_annotation_text(1, &exchange, &mut index, (&mut BTreeSet::new(), &mut claims), (&mut Vec::new(), &reports), &ctx).expect("indexed cyclic text query").as_deref(), Some("cycle text"));
 }
 
 #[test]
@@ -99,8 +99,8 @@ fn annotation_index_does_not_reuse_a_cycle_under_a_reachable_ancestor() {
     let exchange = exchange("#1=ITEM(#2,#3);#2=ITEM(#1);#3=TEXT_LITERAL('text',$,.LEFT.);");
     crate::test_support::with_service_context(b"", |_, ctx| {
         let geometry = crate::reader::geometry::decode(&exchange, &mut CadIr::empty(), ctx).expect("geometry");
-        let mut index = super::super::AnnotationDiscoveryIndex { graphs: BTreeMap::new(), texts: BTreeMap::new(), independent_reach: BTreeMap::new(), storage: ctx.reserve_scoped(0, "index fixture").expect("scope") };
-        assert!(super::super::index_annotation_graph(2, 1, &exchange, &geometry.value, &mut BTreeSet::new(), &mut index, ctx).expect("independent query"));
-        assert!(!super::super::index_annotation_graph(2, 1, &exchange, &geometry.value, &mut BTreeSet::from([1]), &mut index, ctx).expect("ancestor-sensitive query"));
+        let mut index = super::AnnotationDiscoveryIndex { graphs: BTreeMap::new(), texts: BTreeMap::new(), independent_reach: BTreeMap::new(), storage: ctx.reserve_scoped(0, "index fixture").expect("scope") };
+        assert!(super::index_annotation_graph(2, 1, &exchange, &geometry.value, &mut BTreeSet::new(), &mut index, ctx).expect("independent query"));
+        assert!(!super::index_annotation_graph(2, 1, &exchange, &geometry.value, &mut BTreeSet::from([1]), &mut index, ctx).expect("ancestor-sensitive query"));
     });
 }
