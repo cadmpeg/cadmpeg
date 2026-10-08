@@ -243,7 +243,7 @@ fn full_data_dimension_rows<'a>(
         return Ok(None);
     };
     let array = *array;
-    if !array.payload.is_complete() {
+    if !array.payload.is_complete(ctx)? {
         return Ok(None);
     }
     let ObjectPayload::Array { elements, .. } = &array.payload else {
