@@ -25,11 +25,14 @@ fn object_stream_pcurve(
     surface: u32,
     distinct_knots: Vec<f64>,
     suffix: Option<f64>,
-) -> B5ObjectStreamPcurve {
-    let distinct_knots = distinct_knots
+) -> B5ObjectStreamPcurve<'static> {
+    // The index borrows its knots from a pcurve candidate; a fixture leaks its
+    // lane to stand in for that candidate.
+    let distinct_knots: &'static [_] = distinct_knots
         .into_iter()
         .map(crate::test_support::test_b5::finite)
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>()
+        .leak();
     B5ObjectStreamPcurve {
         class: 0x21,
         surface,
@@ -65,8 +68,11 @@ fn terminal_directrix_accepts_matching_wide_finite_spans() {
     );
     pcurve.class = 0x20;
     let pcurves = std::collections::BTreeMap::from([(31, pcurve)]);
-    let directrix = super::terminal_span_directrix(31, active, [0x05, 0x15], &pcurves)
-        .expect("matching wide terminal span");
+    let directrix = crate::test_support::with_service_context(|ctx| {
+        super::terminal_span_directrix(ctx, 31, active, [0x05, 0x15], &pcurves)
+    })
+    .expect("service lookup budget")
+    .expect("matching wide terminal span");
     assert_eq!(directrix.parameter_range().endpoints(), active.endpoints());
 }
 

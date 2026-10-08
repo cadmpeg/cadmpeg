@@ -174,79 +174,83 @@ pub(super) fn oriented_circle_plan(
         return Ok(None);
     }
     let direction = delta.signum();
-    let pair_window = std::num::NonZeroUsize::new(2)
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("fixed pcurve pair window"))?;
-    if ctx
-        .admit_iter(
-            &pcurve.control_points,
-            "catia_b5_circle_pcurve_direction_scan",
-        )?
-        .windows(pair_window)
-        .any(|points| {
-            direction * (points[1][dimension] - points[0][dimension]) / scale
-                < -EPS_PCURVE_PARAMETER
-        })
-    {
+    if ctx.any_by(
+        pcurve.control_points.windows(2),
+        |points| {
+            Ok(
+                direction * (points[1][dimension] - points[0][dimension]) / scale
+                    < -EPS_PCURVE_PARAMETER,
+            )
+        },
+        "catia_b5_circle_pcurve_direction_scan",
+    )? {
         return Ok(None);
     }
-    (|| -> Option<Result<CurvePlan, cadmpeg_core::CodecError>> {
-        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
-            return None;
+    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
+        return Ok(None);
+    };
+    let mut circle_curve = *circle_curve;
+    let oriented_angles = if delta < 0.0 {
+        circle_curve.reverse_parameterization();
+        [-angles[0], -angles[1]]
+    } else {
+        angles
+    };
+    let Some(parameter_range) = crate::nurbs::canonical_periodic_range(oriented_angles) else {
+        return Ok(None);
+    };
+    edge_fitted_plan(
+        ctx,
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
+        parameter_range,
+        edge_start,
+        edge_end,
+    )
+}
+
+/// The plan for `geometry` over `parameter_range` when its ends meet the edge
+/// endpoints, with an edge tolerance covering a residual above the pcurve
+/// residual.
+fn edge_fitted_plan(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    geometry: CurveGeometry,
+    parameter_range: [f64; 2],
+    edge_start: [f64; 3],
+    edge_end: [f64; 3],
+) -> Result<Option<CurvePlan>, cadmpeg_core::CodecError> {
+    let point = |parameter| -> Result<_, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
+                ctx, &geometry, parameter,
+            ))?,
+        )?)
+    };
+    let Some(start) = point(parameter_range[0])? else {
+        return Ok(None);
+    };
+    let Some(end) = point(parameter_range[1])? else {
+        return Ok(None);
+    };
+    let residual = distance([start.x, start.y, start.z], edge_start)
+        .max(distance([end.x, end.y, end.z], edge_end));
+    if residual > POINT_TOLERANCE {
+        return Ok(None);
+    }
+    let edge_tolerance = if residual > EPS_PCURVE_RESIDUAL {
+        let Some(tolerance) = cadmpeg_ir::scalar::PositiveReal::new(residual + EPS_PCURVE_RESIDUAL)
+        else {
+            return Ok(None);
         };
-        let mut circle_curve = *circle_curve;
-        let oriented_angles = if delta < 0.0 {
-            circle_curve.reverse_parameterization();
-            [-angles[0], -angles[1]]
-        } else {
-            angles
-        };
-        let parameter_range = crate::nurbs::canonical_periodic_range(oriented_angles)?;
-        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve));
-        let start =
-            match cadmpeg_ir::eval::finite_or_refusal(
-                match cadmpeg_ir::eval::decode::outer_refusal(
-                    cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, parameter_range[0]),
-                ) {
-                    Ok(value) => value,
-                    Err(error) => return Some(Err(error.into())),
-                },
-            ) {
-                Ok(Some(point)) => point,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit.into())),
-            };
-        let end =
-            match cadmpeg_ir::eval::finite_or_refusal(
-                match cadmpeg_ir::eval::decode::outer_refusal(
-                    cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, parameter_range[1]),
-                ) {
-                    Ok(value) => value,
-                    Err(error) => return Some(Err(error.into())),
-                },
-            ) {
-                Ok(Some(point)) => point,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit.into())),
-            };
-        let residual = distance([start.x, start.y, start.z], edge_start)
-            .max(distance([end.x, end.y, end.z], edge_end));
-        if residual > POINT_TOLERANCE {
-            return None;
-        }
-        Some(Ok(CurvePlan {
-            geometry,
-            parameter_range: Some(parameter_range),
-            edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
-                Some(cadmpeg_ir::scalar::PositiveReal::new(
-                    residual + EPS_PCURVE_RESIDUAL,
-                )?)
-            } else {
-                None
-            },
-            cache_fit_tolerance: None,
-        }))
-    })()
-    .transpose()
+        Some(tolerance)
+    } else {
+        None
+    };
+    Ok(Some(CurvePlan {
+        geometry,
+        parameter_range: Some(parameter_range),
+        edge_tolerance,
+        cache_fit_tolerance: None,
+    }))
 }
 
 fn isoparametric_angle_coordinate(
@@ -293,83 +297,52 @@ pub(super) fn oriented_nurbs_range(
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = geometry else {
         return Ok(None);
     };
-    let mut curve = curve.try_clone_for_decode(ctx, "catia_b5_oriented_nurbs_curve")?;
-    (|| -> Option<Result<CurvePlan, cadmpeg_core::CodecError>> {
-        let degree = usize::try_from(curve.degree()).ok()?;
-        let domain_start = *curve.knots().get(degree)?;
-        let domain_end = *curve
-            .knots()
+    let Ok(degree) = usize::try_from(curve.degree()) else {
+        return Ok(None);
+    };
+    let knots = curve.knots();
+    let (Some(&domain_start), Some(&domain_end)) = (
+        knots.get(degree),
+        knots
             .len()
             .checked_sub(degree + 1)
-            .and_then(|index| curve.knots().get(index))?;
-        let mut range = endpoint_parameters;
-        if range[0] > range[1] {
-            let sum = domain_start + domain_end;
-            if let Err(error) = curve.reverse_parameterization(ctx) {
-                return Some(Err(error));
-            }
-            match curve.edit_knots(ctx, |knots| {
+            .and_then(|index| knots.get(index)),
+    ) else {
+        return Ok(None);
+    };
+    let mut curve = curve.try_clone_for_decode(ctx, "catia_b5_oriented_nurbs_curve")?;
+    let mut range = endpoint_parameters;
+    if range[0] > range[1] {
+        let sum = domain_start + domain_end;
+        curve.reverse_parameterization(ctx)?;
+        // The knot edit charges one step per knot.
+        if curve
+            .edit_knots(ctx, |knots| {
                 for knot in knots {
                     *knot += sum;
                 }
-            }) {
-                Err(error) => return Some(Err(error)),
-                Ok(result) => result.ok()?,
-            }
-            range = [sum - range[0], sum - range[1]];
-        }
-        if !range[0].is_finite()
-            || !range[1].is_finite()
-            || range[0] >= range[1]
-            || range[0] < domain_start
-            || range[1] > domain_end
+            })?
+            .is_err()
         {
-            return None;
+            return Ok(None);
         }
-        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
-        let start = match cadmpeg_ir::eval::finite_or_refusal(
-            match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
-                ctx, &geometry, range[0],
-            )) {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error.into())),
-            },
-        ) {
-            Ok(Some(point)) => point,
-            Ok(None) => return None,
-            Err(limit) => return Some(Err(limit.into())),
-        };
-        let end = match cadmpeg_ir::eval::finite_or_refusal(
-            match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
-                ctx, &geometry, range[1],
-            )) {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error.into())),
-            },
-        ) {
-            Ok(Some(point)) => point,
-            Ok(None) => return None,
-            Err(limit) => return Some(Err(limit.into())),
-        };
-        let residual = distance([start.x, start.y, start.z], edge_start)
-            .max(distance([end.x, end.y, end.z], edge_end));
-        if residual > POINT_TOLERANCE {
-            return None;
-        }
-        Some(Ok(CurvePlan {
-            geometry,
-            parameter_range: Some(range),
-            edge_tolerance: if residual > EPS_PCURVE_RESIDUAL {
-                Some(cadmpeg_ir::scalar::PositiveReal::new(
-                    residual + EPS_PCURVE_RESIDUAL,
-                )?)
-            } else {
-                None
-            },
-            cache_fit_tolerance: None,
-        }))
-    })()
-    .transpose()
+        range = [sum - range[0], sum - range[1]];
+    }
+    if !range[0].is_finite()
+        || !range[1].is_finite()
+        || range[0] >= range[1]
+        || range[0] < domain_start
+        || range[1] > domain_end
+    {
+        return Ok(None);
+    }
+    edge_fitted_plan(
+        ctx,
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+        range,
+        edge_start,
+        edge_end,
+    )
 }
 
 pub(super) fn isocurve_endpoint_parameters(
@@ -391,23 +364,15 @@ pub(super) fn isocurve_endpoint_parameters(
     {
         return Ok(None);
     }
-    let pair_window = std::num::NonZeroUsize::new(2)
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("fixed pcurve pair window"))?;
-    if !ctx
-        .admit_iter(
-            &pcurve.control_points,
-            "catia_b5_isocurve_increasing_parameter_scan",
-        )?
-        .windows(pair_window)
-        .all(|pair| pair[0][varying_dimension] <= pair[1][varying_dimension])
-        && !ctx
-            .admit_iter(
-                &pcurve.control_points,
-                "catia_b5_isocurve_decreasing_parameter_scan",
-            )?
-            .windows(pair_window)
-            .all(|pair| pair[0][varying_dimension] >= pair[1][varying_dimension])
-    {
+    if !ctx.all_by(
+        pcurve.control_points.windows(2),
+        |pair| Ok(pair[0][varying_dimension] <= pair[1][varying_dimension]),
+        "catia_b5_isocurve_increasing_parameter_scan",
+    )? && !ctx.all_by(
+        pcurve.control_points.windows(2),
+        |pair| Ok(pair[0][varying_dimension] >= pair[1][varying_dimension]),
+        "catia_b5_isocurve_decreasing_parameter_scan",
+    )? {
         return Ok(None);
     }
     let Some(start) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[0])? else {
@@ -686,8 +651,11 @@ fn constant_coordinate(
         return Ok(None);
     };
     Ok(ctx
-        .admit_iter(points, "catia_b5_pcurve_constant_coordinate_scan")?
-        .all(|point| point[dimension] == value)
+        .all_by(
+            points,
+            |point| Ok(point[dimension] == value),
+            "catia_b5_pcurve_constant_coordinate_scan",
+        )?
         .then_some(value))
 }
 
@@ -844,6 +812,7 @@ pub(super) fn emit_pcurves(
     plan: &TransferPlan,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
 ) -> Result<PcurveUses, cadmpeg_core::CodecError> {
+    const LOOKUP: &str = "catia_b5_emit_pcurve_plan_lookup";
     let pcurve_plan = &plan.pcurve_plan;
     let mut occurrence_groups =
         BTreeMap::<u32, BTreeMap<[u64; 2], ([FiniteReal; 2], Vec<(u32, usize)>)>>::new();
@@ -859,7 +828,11 @@ pub(super) fn emit_pcurves(
         {
             let object_id = member.pcurve;
             let edge_id = member.edge;
-            let Some((_, _, native_range)) = pcurve_plan.get(&object_id) else {
+            let Some((_, _, native_range)) =
+                admission
+                    .context()
+                    .get_btree_map(pcurve_plan, &object_id, LOOKUP)?
+            else {
                 continue;
             };
             let parameter_range =
@@ -873,20 +846,18 @@ pub(super) fn emit_pcurves(
                             parameter
                         }
                     });
-            admission.context().admit_btree_entry(
-                &occurrence_groups,
-                &object_id,
-                "catia_b5_pcurve_occurrence_objects",
-            )?;
-            let ranges = occurrence_groups.entry(object_id).or_default();
+            let ranges = admission
+                .context()
+                .entry_btree_map(
+                    &mut occurrence_groups,
+                    object_id,
+                    "catia_b5_pcurve_occurrence_objects",
+                )?
+                .or_default();
             let key = parameter_range.map(|parameter| parameter.get().to_bits());
-            admission.context().admit_btree_entry(
-                ranges,
-                &key,
-                "catia_b5_pcurve_occurrence_ranges",
-            )?;
-            let occurrences = &mut ranges
-                .entry(key)
+            let occurrences = &mut admission
+                .context()
+                .entry_btree_map(ranges, key, "catia_b5_pcurve_occurrence_ranges")?
                 .or_insert_with(|| (parameter_range, Vec::new()))
                 .1;
             admission.context().push_vec(
@@ -902,7 +873,10 @@ pub(super) fn emit_pcurves(
         .admit_iter(&occurrence_groups, "catia_b5_pcurve_emission_object_scan")?
         .map(|(object_id, ranges)| (*object_id, ranges))
     {
-        let (geometry, cylinder_reparameterized, _) = &pcurve_plan[&object_id];
+        let (geometry, cylinder_reparameterized, _) = admission
+            .context()
+            .get_btree_map(pcurve_plan, &object_id, LOOKUP)?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("grouped B5 pcurve without plan"))?;
         let range_count = ranges.len();
         for (rank, (parameter_range, occurrences)) in admission
             .context()
@@ -935,11 +909,12 @@ pub(super) fn emit_pcurves(
                     admission.context(),
                     annotations,
                     id.as_str(),
-                    "geometry.control_points",)?;
+                    "geometry.control_points",
+                )?;
             }
-            if graph
-                .pcurves
-                .get(&object_id)
+            if admission
+                .context()
+                .get_btree_map(&graph.pcurves, &object_id, LOOKUP)?
                 .and_then(|pcurve| pcurve.parameter_range)
                 != Some(parameter_range)
             {
@@ -947,7 +922,8 @@ pub(super) fn emit_pcurves(
                     admission.context(),
                     annotations,
                     id.as_str(),
-                    "parameter_range",)?;
+                    "parameter_range",
+                )?;
             }
             for &occurrence in admission
                 .context()

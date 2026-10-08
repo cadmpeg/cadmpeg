@@ -424,7 +424,8 @@ pub(super) fn transfer_closed_face_topology(
                                         admission.context(),
                                         annotations,
                                         &occurrence.curve,
-                                        "geometry",));
+                                        "geometry",
+                                    ));
                                     (copied_id!(occurrence.curve, CurveId), parameter_range)
                                 } else {
                                     curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
@@ -434,7 +435,8 @@ pub(super) fn transfer_closed_face_topology(
                                         admission.context(),
                                         annotations,
                                         &occurrence.curve,
-                                        "geometry",));
+                                        "geometry",
+                                    ));
                                     (copied_id!(occurrence.curve, CurveId), parameter_range)
                                 }
                             }
@@ -446,7 +448,8 @@ pub(super) fn transfer_closed_face_topology(
                                     admission.context(),
                                     annotations,
                                     &occurrence.curve,
-                                    "geometry",));
+                                    "geometry",
+                                ));
                                 (copied_id!(occurrence.curve, CurveId), parameter_range)
                             }
                         }
@@ -478,7 +481,8 @@ pub(super) fn transfer_closed_face_topology(
                         admission.context(),
                         annotations,
                         &occurrence.curve,
-                        "geometry",));
+                        "geometry",
+                    ));
                     (copied_id!(occurrence.curve, CurveId), parameter_range)
                 };
             occurrence.oriented_curve = Some((oriented_curve, oriented_curve_parameter_range));
@@ -700,7 +704,8 @@ pub(super) fn transfer_closed_face_topology(
                 admission.context(),
                 annotations,
                 &point_ids[index],
-                "position",));
+                "position",
+            ));
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
@@ -728,7 +733,8 @@ pub(super) fn transfer_closed_face_topology(
                 admission.context(),
                 annotations,
                 &vertex_ids[index],
-                "point",));
+                "point",
+            ));
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
@@ -767,7 +773,8 @@ pub(super) fn transfer_closed_face_topology(
                 admission.context(),
                 annotations,
                 &pcurve.id,
-                "geometry",));
+                "geometry",
+            ));
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
@@ -883,23 +890,27 @@ pub(super) fn transfer_closed_face_topology(
                 admission.context(),
                 annotations,
                 &edge_id,
-                "curve",));
+                "curve",
+            ));
             admitted!(crate::resource::derived_annotation(
                 admission.context(),
                 annotations,
                 &edge_id,
-                "start",));
+                "start",
+            ));
             admitted!(crate::resource::derived_annotation(
                 admission.context(),
                 annotations,
                 &edge_id,
-                "end",));
+                "end",
+            ));
             if param_range.is_some() {
                 admitted!(crate::resource::derived_annotation(
                     admission.context(),
                     annotations,
                     &edge_id,
-                    "param_range",));
+                    "param_range",
+                ));
             }
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
@@ -983,22 +994,26 @@ pub(super) fn transfer_closed_face_topology(
                 admission.context(),
                 annotations,
                 face_id,
-                "shell",));
+                "shell",
+            ));
             admitted!(crate::resource::derived_annotation(
                 admission.context(),
                 annotations,
                 face_id,
-                "surface",));
+                "surface",
+            ));
             admitted!(crate::resource::derived_annotation(
                 admission.context(),
                 annotations,
                 face_id,
-                "sense",));
+                "sense",
+            ));
             admitted!(crate::resource::derived_annotation(
                 admission.context(),
                 annotations,
                 face_id,
-                "loops",));
+                "loops",
+            ));
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
@@ -1104,17 +1119,20 @@ pub(super) fn transfer_closed_face_topology(
                     admission.context(),
                     annotations,
                     loop_id,
-                    "face",));
+                    "face",
+                ));
                 admitted!(crate::resource::derived_annotation(
                     admission.context(),
                     annotations,
                     loop_id,
-                    "coedges",));
+                    "coedges",
+                ));
                 admitted!(crate::resource::derived_annotation(
                     admission.context(),
                     annotations,
                     loop_id,
-                    "vertex_uses",));
+                    "vertex_uses",
+                ));
                 let ring = admitted!(cadmpeg_ir::topology::LoopRing::new(
                     admission.context(),
                     admitted!(admission.context().try_collect_vec(
@@ -1226,38 +1244,45 @@ pub(super) fn transfer_closed_face_topology(
                         admission.context(),
                         annotations,
                         &coedge_id,
-                        "owner_loop",));
+                        "owner_loop",
+                    ));
                     admitted!(crate::resource::derived_annotation(
                         admission.context(),
                         annotations,
                         &coedge_id,
-                        "edge",));
+                        "edge",
+                    ));
                     admitted!(crate::resource::derived_annotation(
                         admission.context(),
                         annotations,
                         &coedge_id,
-                        "radial_next",));
+                        "radial_next",
+                    ));
                     admitted!(crate::resource::derived_annotation(
                         admission.context(),
                         annotations,
                         &coedge_id,
-                        "sense",));
+                        "sense",
+                    ));
                     admitted!(crate::resource::derived_annotation(
                         admission.context(),
                         annotations,
                         &coedge_id,
-                        "pcurves",));
+                        "pcurves",
+                    ));
                     if use_curve.is_some() {
                         admitted!(crate::resource::derived_annotation(
                             admission.context(),
                             annotations,
                             &coedge_id,
-                            "use_curve",));
+                            "use_curve",
+                        ));
                         admitted!(crate::resource::derived_annotation(
                             admission.context(),
                             annotations,
                             &coedge_id,
-                            "use_curve_parameter_range",));
+                            "use_curve_parameter_range",
+                        ));
                     }
                     if let Err(error) = admission.charge() {
                         return Some(Err(error));
@@ -1332,12 +1357,14 @@ pub(super) fn transfer_closed_face_topology(
             admission.context(),
             annotations,
             &body_id,
-            "kind",));
+            "kind",
+        ));
         admitted!(crate::resource::derived_annotation(
             admission.context(),
             annotations,
             &body_id,
-            "regions",));
+            "regions",
+        ));
         if let Err(error) = admission.charge() {
             return Some(Err(error));
         }
@@ -1378,12 +1405,14 @@ pub(super) fn transfer_closed_face_topology(
             admission.context(),
             annotations,
             &region_id,
-            "body",));
+            "body",
+        ));
         admitted!(crate::resource::derived_annotation(
             admission.context(),
             annotations,
             &region_id,
-            "shells",));
+            "shells",
+        ));
         if let Err(error) = admission.charge() {
             return Some(Err(error));
         }
@@ -1420,12 +1449,14 @@ pub(super) fn transfer_closed_face_topology(
             admission.context(),
             annotations,
             &shell_id,
-            "region",));
+            "region",
+        ));
         admitted!(crate::resource::derived_annotation(
             admission.context(),
             annotations,
             &shell_id,
-            "faces",));
+            "faces",
+        ));
         if let Err(error) = admission.charge() {
             return Some(Err(error));
         }

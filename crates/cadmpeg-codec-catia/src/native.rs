@@ -10477,6 +10477,12 @@ impl CatiaNative {
             Some(outer) => container::outer_container_declarations(ctx, bytes, outer)?,
             None => Vec::new(),
         };
+        let outer_container_index = outer_directory
+            .as_ref()
+            .map(|outer| {
+                container::outer_container_extent_index(ctx, outer, &outer_container_declarations)
+            })
+            .transpose()?;
         let parsed_finjpl = container::finjpl_segments(ctx, &container::BodyExtent::whole(bytes))?;
         let finjpl_segments = ctx.try_collect_vec(
             parsed_finjpl.into_iter().enumerate().map(
@@ -10592,16 +10598,18 @@ impl CatiaNative {
             )?
             .map(|id| ctx.copy_retained_text(id, "catia_native_graph_finjpl"))
             .transpose()?;
-            let outer_container = outer_directory
+            let outer_container = outer_container_index
                 .as_ref()
-                .and_then(|outer| {
+                .map(|index| {
                     container::outer_container_for_extent(
-                        outer,
-                        &outer_container_declarations,
+                        ctx,
+                        index,
                         u64_from_index(graph.pos),
                         u64_from_index(graph.total_len),
                     )
                 })
+                .transpose()?
+                .flatten()
                 .map(|container| CatiaOuterContainerBinding::from_source(ctx, container))
                 .transpose()?;
             let mut graph_scratch = ctx.reserve_scoped(0, "catia_native_graph_scratch")?;
@@ -10892,16 +10900,13 @@ impl CatiaNative {
             &mut legacy_entity_runs,
             "catia_native_legacy_run_containers",
         )? {
-            run.outer_container = outer_directory
+            run.outer_container = outer_container_index
                 .as_ref()
-                .and_then(|outer| {
-                    container::outer_container_for_extent(
-                        outer,
-                        &outer_container_declarations,
-                        run.byte_offset,
-                        run.byte_len,
-                    )
+                .map(|index| {
+                    container::outer_container_for_extent(ctx, index, run.byte_offset, run.byte_len)
                 })
+                .transpose()?
+                .flatten()
                 .map(|container| CatiaOuterContainerBinding::from_source(ctx, container))
                 .transpose()?;
         }
@@ -10936,7 +10941,7 @@ impl CatiaNative {
             consolidated_revolutions(ctx, bytes, consolidated_records, &consolidated_circles)?;
         let consolidated_spheres = consolidated_spheres(ctx, bytes, consolidated_records)?;
         let consolidated_tori = consolidated_tori(ctx, bytes, consolidated_records)?;
-        let zero_entity_range = container::outer_preamble_range(bytes).unwrap_or_else(|| {
+        let zero_entity_range = container::outer_preamble_range(ctx, bytes)?.unwrap_or_else(|| {
             if bytes.starts_with(container::OUTER_MAGIC) {
                 0..0
             } else {

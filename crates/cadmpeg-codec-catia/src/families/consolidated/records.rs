@@ -1307,7 +1307,10 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
             else {
                 continue;
             };
-            if !crate::wire::records::record_run_is_contiguous(ctx, &records[owner_index..=target_index])? {
+            if !crate::wire::records::record_run_is_contiguous(
+                ctx,
+                &records[owner_index..=target_index],
+            )? {
                 continue;
             }
             let target = &records[target_index];
@@ -1641,7 +1644,10 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
                 }
                 let &owner_index = boundary_value!(record_indices.get(&packet.pos));
                 if owner_index <= first_edge_index
-                    || !crate::wire::records::record_run_is_contiguous(ctx, &records[node_index..=owner_index])?
+                    || !crate::wire::records::record_run_is_contiguous(
+                        ctx,
+                        &records[node_index..=owner_index],
+                    )?
                 {
                     return Ok(None);
                 }

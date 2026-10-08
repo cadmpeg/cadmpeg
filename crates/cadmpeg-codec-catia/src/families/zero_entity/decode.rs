@@ -161,12 +161,14 @@ fn append_oriented_wire_curve(
             admission.context(),
             annotations,
             &construction_id,
-            "curve",)?;
+            "curve",
+        )?;
         crate::resource::derived_annotation(
             admission.context(),
             annotations,
             &construction_id,
-            "definition",)?;
+            "definition",
+        )?;
         let mut definition = definition;
         let cached = match cache_fit_tolerance.map(cadmpeg_ir::geometry::LegacyCache::new) {
             Some(cache) => definition
@@ -216,11 +218,7 @@ fn append_oriented_wire_curve(
         "oriented_support_model_curve",
         Exactness::Derived,
     )?;
-    crate::resource::derived_annotation(
-        admission.context(),
-        annotations,
-        &curve_id,
-        "geometry",)?;
+    crate::resource::derived_annotation(admission.context(), annotations, &curve_id, "geometry")?;
     admission.reserve_entity(&mut ir.model.curves, "catia_zero_wire_curves")?;
     ir.model.curves.push(Curve {
         id: curve_id,
@@ -420,12 +418,14 @@ fn transfer_closed_wire_loops(
                     admission.context(),
                     annotations,
                     &point_id,
-                    "position",)?;
+                    "position",
+                )?;
                 crate::resource::derived_annotation(
                     admission.context(),
                     annotations,
                     &vertex_id,
-                    "point",)?;
+                    "point",
+                )?;
                 admission.reserve_entity(&mut ir.model.points, "catia_zero_wire_points")?;
                 ir.model.points.push(Point::new(
                     point_id.try_clone_for_decode(
@@ -828,17 +828,20 @@ fn transfer_closed_wire_loops(
                     admission.context(),
                     annotations,
                     &edge_id,
-                    "curve",)?;
+                    "curve",
+                )?;
                 crate::resource::derived_annotation(
                     admission.context(),
                     annotations,
                     &edge_id,
-                    "start",)?;
+                    "start",
+                )?;
                 crate::resource::derived_annotation(
                     admission.context(),
                     annotations,
                     &edge_id,
-                    "end",)?;
+                    "end",
+                )?;
                 admission.reserve_entity(&mut ir.model.edges, "catia_zero_wire_edges")?;
                 ir.model.edges.push(Edge {
                     id: edge_id.try_clone_for_decode(
@@ -860,7 +863,8 @@ fn transfer_closed_wire_loops(
                         admission.context(),
                         annotations,
                         &edge_id,
-                        "param_range",)?;
+                        "param_range",
+                    )?;
                 }
                 edge_ids.push(edge_id);
                 counts.edges += 1;
@@ -1134,7 +1138,7 @@ pub(in crate::families) fn try_decode_zero_entity(
             }
         };
     }
-    let preamble = container::outer_preamble_range(&scan.data)?;
+    let preamble = admitted!(container::outer_preamble_range(ctx, &scan.data))?;
     let surfaces = match crate::families::zero_entity::records::zero_entity_surfaces_in_range(
         ctx, &scan.data, preamble.clone(), refusal,
     ) {
