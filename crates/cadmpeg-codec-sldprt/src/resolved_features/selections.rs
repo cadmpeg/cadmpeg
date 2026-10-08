@@ -1277,13 +1277,16 @@ impl<'identities, 'ctx> OperationSurfaceClasses<'identities, 'ctx> {
     }
 
     fn has_split_classes(&self, lane: &FeatureInputLane) -> Result<bool, CodecError> {
+        const OPERATION: &str = "index SLDPRT operation surface classes";
         if let Some(present) = self.split_classes.get() {
             return Ok(*present);
         }
-        const OPERATION: &str = "index SLDPRT operation surface classes";
         let mut present = true;
         for required in ["moPLineProjIdRep_c", "moPLineSurfIdRep_c"] {
-            if !self.ctx.any_by(&lane.classes, |class| Ok(class.name == required), OPERATION)? {
+            if !self
+                .ctx
+                .any_by(&lane.classes, |class| Ok(class.name == required), OPERATION)?
+            {
                 present = false;
                 break;
             }
@@ -1579,8 +1582,13 @@ fn cosmetic_thread_cylinder_references(
 ) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
     const OPERATION: &str = "decode SLDPRT cosmetic cylinder references";
     let (mut offsets, scan_storage) = cosmetic_thread_cylinder_offsets(
-        ctx, &lane.native_payload, object_start..object_end,
-        diameter_index.tail(ctx, feature)?, cylinder_reference_tokens, Some, OPERATION,
+        ctx,
+        &lane.native_payload,
+        object_start..object_end,
+        diameter_index.tail(ctx, feature)?,
+        cylinder_reference_tokens,
+        Some,
+        OPERATION,
     )?;
     ctx.sort_unstable_by(
         &mut offsets,
@@ -1842,8 +1850,11 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
 ) -> Result<Vec<CylinderMarkerReference>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "collect SLDPRT cosmetic thread cylinder markers";
     let (mut markers, scan_storage) = cosmetic_thread_cylinder_offsets(
-        ctx, &lane.native_payload, object_start..object_end,
-        diameter_index.tail(ctx, feature)?, cylinder_reference_tokens,
+        ctx,
+        &lane.native_payload,
+        object_start..object_end,
+        diameter_index.tail(ctx, feature)?,
+        cylinder_reference_tokens,
         |body| cosmetic_thread_cylinder_reference_marker_layout_at(&lane.native_payload, body),
         OPERATION,
     )?;
@@ -1860,7 +1871,11 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
     let mut references = Vec::new();
     for marker in ctx.admit_iter(markers, OPERATION)? {
         let components = cosmetic_thread_cylinder_components_at(ctx, &lane.native_payload, marker)?;
-        ctx.push_vec(&mut references, CylinderMarkerReference(marker, components), OPERATION)?;
+        ctx.push_vec(
+            &mut references,
+            CylinderMarkerReference(marker, components),
+            OPERATION,
+        )?;
     }
     drop(scan_storage);
     Ok(references)
@@ -1877,9 +1892,15 @@ fn cosmetic_thread_cylinder_offsets<'ctx>(
     operation: &'static str,
 ) -> Result<(Vec<usize>, ScopedReservation<'ctx>), CodecError> {
     let ranges = match diameter_tail {
-        Some(tail) if object.start < object.end
-            && tail.start <= object.end && object.start <= tail.end => {
-            [Some(object.start.min(tail.start)..object.end.max(tail.end)), None]
+        Some(tail)
+            if object.start < object.end
+                && tail.start <= object.end
+                && object.start <= tail.end =>
+        {
+            [
+                Some(object.start.min(tail.start)..object.end.max(tail.end)),
+                None,
+            ]
         }
         tail => [Some(object), tail],
     };
@@ -1910,8 +1931,10 @@ fn cosmetic_thread_cylinder_reference_at(
     else {
         return Ok(None);
     };
-    Ok(cosmetic_thread_cylinder_components_at(ctx, payload, marker)?
-        .map(|components| (marker, components)))
+    Ok(
+        cosmetic_thread_cylinder_components_at(ctx, payload, marker)?
+            .map(|components| (marker, components)),
+    )
 }
 
 /// Decodes the surface, termination or edge path carried by one cylinder marker.
