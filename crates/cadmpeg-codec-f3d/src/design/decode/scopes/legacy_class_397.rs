@@ -3,7 +3,9 @@
 
 use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
+use super::extrude::ExtrudeScopeFrame;
 use crate::bytes::f64s_at;
+use crate::design::decode::byte_fields::zeros_at;
 use crate::design::decode::text::fixed_guid_end;
 use crate::layout::legacy_class_397_symmetric_extrude_frame as symmetric;
 use crate::records::feature::extrude::{
@@ -47,6 +49,42 @@ impl Class397SymmetricFrame {
 
 pub(super) fn exact_symmetric_extrude_prologue(
     bytes: &[u8],
+    frame: ExtrudeScopeFrame<'_>,
+    reference_members: &[u32],
+) -> Option<DesignExtrudePrologue> {
+    let ExtrudeScopeFrame {
+        start,
+        paired_at,
+        class_tag,
+        paired_class_tag,
+        reference_count_at,
+    } = frame;
+    let prefix = symmetric_prefix(
+        bytes,
+        start,
+        paired_at,
+        class_tag,
+        paired_class_tag,
+        reference_count_at,
+        reference_members,
+    )?;
+    let guid_offset = start + symmetric::GUID;
+    let guid_end = fixed_guid_end(bytes, guid_offset)?;
+    let reference_count_offset = start + symmetric::REFERENCE_COUNT;
+    if guid_end != guid_offset + 76
+        || !zeros_at::<3>(bytes, guid_end)
+        || View::u32_le_at(bytes, reference_count_offset) != Some(symmetric::REFERENCE_COUNT_VALUE)
+    {
+        return None;
+    }
+    Some(prefix)
+}
+
+/// The prologue fields before the GUID of a class-397 symmetric-distance
+/// frame. The frame admission fixes the reference run at eight members, so
+/// each reference-slot membership test reads at most eight values.
+fn symmetric_prefix(
+    bytes: &[u8],
     start: usize,
     paired_at: usize,
     class_tag: &str,
@@ -63,17 +101,15 @@ pub(super) fn exact_symmetric_extrude_prologue(
         u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
         reference_members.len(),
     )?;
+    let reference_members = <&[u32; 8]>::try_from(reference_members).ok()?;
     if View::u32_le_at(bytes, start.checked_add(symmetric::PREFIX_CONSTANT)?)?
         != symmetric::PREFIX_CONSTANT_VALUE
-        || bytes.get(
-            start.checked_add(symmetric::PREFIX_CONSTANT + 4)?
-                ..start.checked_add(symmetric::OPERATION)?,
-        )? != [0; 3]
+        || !zeros_at::<3>(bytes, start + symmetric::PREFIX_CONSTANT + 4)
     {
         return None;
     }
 
-    let operation_offset = start.checked_add(symmetric::OPERATION)?;
+    let operation_offset = start + symmetric::OPERATION;
     let operation = match View::u32_le_at(bytes, operation_offset)? {
         1 => DesignExtrudeOperation::Join,
         2 => DesignExtrudeOperation::Cut,
@@ -81,10 +117,8 @@ pub(super) fn exact_symmetric_extrude_prologue(
         4 => DesignExtrudeOperation::NewBody,
         _ => return None,
     };
-    let direction_face_extend_offsets = [
-        start.checked_add(symmetric::DIRECTION)?,
-        start.checked_add(symmetric::FACE_EXTEND)?,
-    ];
+    let direction_face_extend_offsets =
+        [start + symmetric::DIRECTION, start + symmetric::FACE_EXTEND];
     let direction_face_extend_values = [
         View::u32_le_at(bytes, direction_face_extend_offsets[0])?,
         View::u32_le_at(bytes, direction_face_extend_offsets[1])?,
@@ -93,19 +127,19 @@ pub(super) fn exact_symmetric_extrude_prologue(
         return None;
     }
 
-    let direction_reversed_offset = start.checked_add(symmetric::DIRECTION_REVERSED)?;
+    let direction_reversed_offset = start + symmetric::DIRECTION_REVERSED;
     let direction_reversed = match bytes.get(direction_reversed_offset)? {
         0 => false,
         1 => true,
         _ => return None,
     };
-    let solid_operation_offset = start.checked_add(symmetric::GEOMETRY_KIND)?;
+    let solid_operation_offset = start + symmetric::GEOMETRY_KIND;
     let solid_operation = match bytes.get(solid_operation_offset)? {
         0 => false,
         1 => true,
         _ => return None,
     };
-    let start_offset = start.checked_add(symmetric::START_SUPPORT)?;
+    let start_offset = start + symmetric::START_SUPPORT;
     let start_support = match bytes.get(start_offset)? {
         0 => DesignExtrudeStart::ProfilePlane,
         1 => DesignExtrudeStart::OffsetProfilePlane,
@@ -113,7 +147,7 @@ pub(super) fn exact_symmetric_extrude_prologue(
         _ => return None,
     };
 
-    let profile_normal = f64s_at::<3>(bytes, start.checked_add(symmetric::PROFILE_NORMAL)?)?;
+    let profile_normal = f64s_at::<3>(bytes, start + symmetric::PROFILE_NORMAL)?;
     let profile_normal_squared = profile_normal
         .iter()
         .map(|component| component * component)
@@ -126,7 +160,7 @@ pub(super) fn exact_symmetric_extrude_prologue(
         return None;
     }
 
-    let mut slot_offset = start.checked_add(symmetric::REFERENCE_SLOTS)?;
+    let mut slot_offset = start + symmetric::REFERENCE_SLOTS;
     for expected_present in [true, true, true, true, false, true, false] {
         let present = match bytes.get(slot_offset)? {
             0 => false,
@@ -141,56 +175,46 @@ pub(super) fn exact_symmetric_extrude_prologue(
             if !reference_members.contains(&record_index) {
                 return None;
             }
-            slot_offset = slot_offset.checked_add(11)?;
+            slot_offset += 11;
         } else {
-            slot_offset = slot_offset.checked_add(1)?;
+            slot_offset += 1;
         }
     }
-    if slot_offset != start.checked_add(symmetric::FIRST_SIDE_EXTENT)? {
+    let first_side_extent_offset = start + symmetric::FIRST_SIDE_EXTENT;
+    if slot_offset != first_side_extent_offset {
         return None;
     }
 
-    let first_side_extent_offset = start.checked_add(symmetric::FIRST_SIDE_EXTENT)?;
-    let second_side_extent_offset = start.checked_add(symmetric::SECOND_SIDE_EXTENT)?;
+    let second_side_extent_offset = start + symmetric::SECOND_SIDE_EXTENT;
     let side_extent_discriminators = [
         View::u32_le_at(bytes, first_side_extent_offset)?,
         View::u32_le_at(bytes, second_side_extent_offset)?,
     ];
     let extent = frame.extent(direction_face_extend_values[0], side_extent_discriminators)?;
-    if bytes.get(first_side_extent_offset.checked_add(4)?..second_side_extent_offset)? != [0; 9] {
-        return None;
-    }
-
-    let guid_offset = start.checked_add(symmetric::GUID)?;
-    let guid_end = fixed_guid_end(bytes, guid_offset)?;
-    let reference_count_offset = start.checked_add(symmetric::REFERENCE_COUNT)?;
-    if guid_end != guid_offset.checked_add(76)?
-        || bytes.get(guid_end..reference_count_offset)? != [0; 3]
-        || View::u32_le_at(bytes, reference_count_offset)? != symmetric::REFERENCE_COUNT_VALUE
-    {
+    if !zeros_at::<9>(bytes, first_side_extent_offset + 4) {
         return None;
     }
 
     Some(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker_offset: None,
         operation,
-        operation_offset: u64::try_from(operation_offset).ok()?,
+        operation_offset: u64_from_index(operation_offset),
         direction_face_extend_values,
         side_extent_discriminators,
         side_extent_discriminator_offsets: [
-            u64::try_from(first_side_extent_offset).ok()?,
-            u64::try_from(second_side_extent_offset).ok()?,
+            u64_from_index(first_side_extent_offset),
+            u64_from_index(second_side_extent_offset),
         ],
         extent: Some(extent),
         direction_face_extend_offsets: [
-            u64::try_from(direction_face_extend_offsets[0]).ok()?,
-            u64::try_from(direction_face_extend_offsets[1]).ok()?,
+            u64_from_index(direction_face_extend_offsets[0]),
+            u64_from_index(direction_face_extend_offsets[1]),
         ],
         direction_reversed,
-        direction_reversed_offset: u64::try_from(direction_reversed_offset).ok()?,
+        direction_reversed_offset: u64_from_index(direction_reversed_offset),
         solid_operation,
-        solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
+        solid_operation_offset: u64_from_index(solid_operation_offset),
         start: start_support,
-        start_offset: u64::try_from(start_offset).ok()?,
+        start_offset: u64_from_index(start_offset),
     })
 }

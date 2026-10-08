@@ -604,7 +604,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 .unwrap(),
             )
             .unwrap();
-        let mut owner = parse_parameter_owner(&parameter_owner_frame())
+        let mut owner = parse_parameter_owner(&cadmpeg_test_support::service_decode_context(), &parameter_owner_frame()).expect("service decode context")
             .expect("generated parameter owner is canonical")
             .into_record("Design/BulkStream.dat", 0)
             .unwrap();
@@ -1362,7 +1362,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             };
         let mut ordered_faces = [face_group.clone(), face_group.clone()];
         set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
-        assign_extrude_face_roles(&scope, &mut ordered_faces);
+        assign_extrude_face_roles(
+            &cadmpeg_test_support::service_decode_context(),
+            &scope,
+            &mut ordered_faces,
+        )
+        .expect("Extrude face roles");
         assert_eq!(
             ordered_faces.map(|group| group.extrude_face_role()),
             [
