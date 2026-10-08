@@ -3114,9 +3114,10 @@ fn validate_regions(
         ));
     }
     let mut infinite = 0;
-    let mut sides = ctx
-        .collection_vec(raw.face_sides.len(), "Rhino resolved Brep region sides")
-        .map_err(crate::curves::GeometryError::from)?;
+    let mut side_storage = ctx.reserve_scoped(0, "Rhino resolved Brep region sides")?;
+    let mut sides = side_storage.with_storage(|| {
+        ctx.collection_vec(raw.face_sides.len(), "Rhino resolved Brep region sides")
+    })?;
     for (index, side) in ctx
         .admit_iter(&raw.face_sides[..], "Rhino validate regions traversal")
         .map_err(cadmpeg_core::CodecError::from)?
@@ -3201,6 +3202,7 @@ fn validate_regions(
             "region topology needs one infinite region",
         ));
     }
+    side_storage.commit()?;
     Ok(sides)
 }
 

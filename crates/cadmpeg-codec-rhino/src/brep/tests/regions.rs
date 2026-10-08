@@ -399,3 +399,86 @@ fn invalid_region_reciprocity_degrades_to_incidence_without_topology_failure() {
     assert!(validated.raw().regions.is_empty());
     assert_eq!(validated.warnings().len(), 1);
 }
+
+fn region_storage_fixture(direction: i32, region_sides: Vec<i32>) -> RawBrep {
+    let mut raw = one_face_raw();
+    raw.minor = 3;
+    raw.face_sides = vec![
+        RawBrepFaceSide { index: 0, region: 0, face: 0, direction: 1, source_range: 0..0 },
+        RawBrepFaceSide { index: 1, region: 0, face: 0, direction, source_range: 0..0 },
+    ];
+    raw.regions = vec![RawBrepRegion {
+        region_type: 0,
+        sides: region_sides,
+        bounds: raw.bounds,
+        source_range: 0..0,
+    }];
+    raw
+}
+
+fn assert_rejected_region_storage_released(raw: &RawBrep, expected: &str) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Two provisional sides and two membership flags are live together.
+    let scratch_bytes = 2 * std::mem::size_of::<super::super::ResolvedFaceSide>() + 2;
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(scratch_bytes);
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty validation root");
+    let error = validate_regions(&ctx, raw).expect_err("invalid optional region topology");
+    assert!(matches!(error,
+        GeometryError::Malformed(crate::chunks::FramingError::Structural { ref message, .. })
+        if message == expected));
+    ctx.charge_retained(0, "Rhino rejected region retained storage")
+        .expect("rejected sides retain no storage");
+    let storage = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(scratch_bytes),
+        "Rhino rejected region scratch reuse",
+    ).expect("all provisional side and membership storage is released");
+    drop(storage);
+    ctx.finish_session().expect("no resource refusal from optional region rejection");
+}
+
+#[test]
+fn invalid_region_direction_releases_provisional_sides() {
+    assert_rejected_region_storage_released(
+        &region_storage_fixture(0, vec![0, 1]),
+        "region side direction is invalid",
+    );
+}
+
+#[test]
+fn invalid_region_membership_releases_provisional_sides() {
+    assert_rejected_region_storage_released(
+        &region_storage_fixture(-1, vec![0]),
+        "region membership is not reciprocal",
+    );
+}
+
+#[test]
+fn resolved_region_sides_refuse_retained_limit_at_acceptance() {
+    let raw = region_storage_fixture(-1, vec![0, 1]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "Rhino resolved Brep region sides",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty validation root");
+            validate_regions(&ctx, &raw).map_err(|error| match error {
+                GeometryError::Codec(error) => error,
+                other => panic!("unexpected region rejection: {other:?}"),
+            })
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected region retention resource refusal");
+    };
+    assert_eq!(limit.used, 0);
+    // Both admitted side records become retained only after all checks pass.
+    assert_eq!(limit.additional, cadmpeg_core::decode::u64_from_index(
+        2 * std::mem::size_of::<super::super::ResolvedFaceSide>(),
+    ));
+}
