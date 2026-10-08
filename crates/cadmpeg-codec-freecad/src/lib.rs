@@ -1647,6 +1647,7 @@ impl CodecBackend for FcstdCodec {
                 &shape_payloads,
                 &graph.properties,
                 &mut topology_losses,
+                !element_maps.is_empty(),
             )?;
             cycle_affected_design_objects = design::transfer(
                 ctx,
@@ -1679,7 +1680,8 @@ impl CodecBackend for FcstdCodec {
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "design_census", &design_census)?;
-            element_map::bind_topology(ctx, &mut element_maps, &topology_occurrences)?;
+            element_map::bind_topology(ctx, &mut element_maps, &topology_occurrences.records)?;
+            drop(topology_occurrences);
             let mut gui_graph = if let Some(gui_view) =
                 ctx.get_btree_map(&scan.data, "GuiDocument.xml", "FCStd GUI entry lookup")?
             {

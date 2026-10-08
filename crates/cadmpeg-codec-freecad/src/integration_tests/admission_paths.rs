@@ -261,7 +261,11 @@ fn mapped_name_record(string_ids: Vec<i64>, topology_ids: Vec<String>)
         encoded: "Vertex1".into(), resolved: None, string_ids, topology_ids,
     }]])]);
     let maps = crate::test_support::with_service_context(&[], |ctx| {
-        ElementMapNodes::from_root_names(ctx, 0, groups).expect("root map")
+        let groups = ctx.collect_scoped_btree_map(groups, "validation fixture group tree")
+            .expect("fixture group tree");
+        ElementMapNodes::from_root_names(ctx, 0, crate::native::element_map::ScopedData {
+            data: groups.0, _storage: groups.1,
+        }).expect("root map")
     });
     ElementMapRecord {
         id: "fcstd:native:element-map#A:Shape".into(),

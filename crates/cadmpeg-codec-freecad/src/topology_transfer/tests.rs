@@ -12,6 +12,7 @@ use crate::brep::{
 };
 use crate::test_support::test_archive::{archive_entries, assert_valid_document};
 use crate::FcstdCodec;
+use cadmpeg_core::decode::refusal_probe::RefusalProbe;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
@@ -79,6 +80,51 @@ Sh 1001000 +3 0 *
 So 1001000 +2 0 *
 +1 0 *";
     archive_entries(&[("Document.xml", document), ("Shape.brp", brep)])
+}
+
+pub(super) fn repeated_shape_roots_archive(with_element_map: bool) -> Vec<u8> {
+    let map = if with_element_map {
+        r#"<Part ElementMap="1.0" file="Shape.brp"/>
+<ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
+<ElementMap2 count="4">
+1 PostfixCount 0 MapCount 1
+ElementMap 1 1 2
+Edge ChildCount 0 NameCount 3
+0
+;EdgeStable.0.a 0
+;DeletedEdgeStable.0.a 0
+Vertex ChildCount 0 NameCount 3
+0
+;VertexStable1.0.a 0
+;VertexStable2.0.a 0
+EndMap
+</ElementMap2>"#
+    } else {
+        r#"<Part file="Shape.brp"/>"#
+    };
+    let document = format!(
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape">
+{map}
+</Property></Properties></Object></ObjectData>
+</Document>"#
+    );
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 1
+1 0 0 0 1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 3
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
++1 0 +1 0 *";
+    archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)])
 }
 
 fn admitted_range(values: [f64; 2]) -> [FiniteReal; 2] {
@@ -1569,41 +1615,7 @@ Ed 0.001 1 1 0 1 1 0 0 1 1 2 0 0 1 0 1001000 +3 0 -2 0 *
 
 #[test]
 fn repeated_shape_roots_have_distinct_occurrence_identity() {
-    let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
-<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape">
-<Part ElementMap="1.0" file="Shape.brp"/>
-<ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
-<ElementMap2 count="4">
-1 PostfixCount 0 MapCount 1
-ElementMap 1 1 2
-Edge ChildCount 0 NameCount 3
-0
-;EdgeStable.0.a 0
-;DeletedEdgeStable.0.a 0
-Vertex ChildCount 0 NameCount 3
-0
-;VertexStable1.0.a 0
-;VertexStable2.0.a 0
-EndMap
-</ElementMap2>
-</Property></Properties></Object></ObjectData>
-</Document>"#;
-    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
-Locations 0
-Curve2ds 0
-Curves 1
-1 0 0 0 1 0 0
-Polygon3D 0
-PolygonOnTriangulations 0
-Surfaces 0
-Triangulations 0
-TShapes 3
-Ve 0.001 0 0 0 0 0 1001000 *
-Ve 0.001 1 0 0 0 0 1001000 *
-Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
-+1 0 +1 0 *";
-    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let bytes = repeated_shape_roots_archive(true);
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("repeated roots");
@@ -1627,6 +1639,48 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
     assert_eq!(groups[1].names[1][0].topology_ids.len(), 2);
     assert_eq!(groups[1].names[2][0].topology_ids.len(), 2);
     assert_valid_document(result.ir());
+}
+
+#[test]
+fn repeated_shape_roots_without_element_map_keep_neutral_topology() {
+    let bytes = repeated_shape_roots_archive(false);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("repeated roots without an element map");
+
+    assert_eq!(result.ir().model.bodies.len(), 2);
+    assert_eq!(result.ir().model.edges.len(), 2);
+    assert_eq!(result.ir().model.vertices.len(), 4);
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn absent_element_map_skips_occurrence_only_work_and_storage() {
+    let bytes = repeated_shape_roots_archive(false);
+    for (dimension, operation) in [
+        (ResourceDimension::WorkUnits, "FreeCAD source topology roots"),
+        (
+            ResourceDimension::WorkUnits,
+            "FreeCAD topology occurrence property",
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            "FreeCAD topology occurrence identity",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "FreeCAD topology occurrences",
+        ),
+    ] {
+        let _probe = RefusalProbe::arm(dimension, operation, None);
+        let result = FcstdCodec
+            .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+            .expect("no map means no occurrence-only admission");
+        assert_eq!(result.ir().model.bodies.len(), 2);
+        assert_eq!(result.ir().model.edges.len(), 2);
+        assert_eq!(result.ir().model.vertices.len(), 4);
+        assert_valid_document(result.ir());
+    }
 }
 
 #[test]

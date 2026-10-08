@@ -28,9 +28,16 @@ pub(crate) fn transfer(
     entries: &[EntryRecord],
     admitted_entities: &mut u64,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut entry_index = None;
     let mut transferred = false;
-    for property in ctx.admit_iter(properties, "FreeCAD geometry properties")? {
+    let mut property_sources = properties.iter();
+    while property_sources.len() != 0 {
+        let Some(property) = ctx.next_charged(&mut property_sources, "FreeCAD geometry properties")? else {
+            break;
+        };
         let geometry_kind = match property.type_name.as_str() {
             "Mesh::PropertyMeshKernel" => GeometryKind::Mesh,
             "Points::PropertyPointKernel" => GeometryKind::Points,
@@ -56,7 +63,7 @@ pub(crate) fn transfer(
                     "FreeCAD geometry XML error",
                 )?))
             })?;
-        let (root_entry, _root_storage) =
+        let root_entry =
             ctx.with_scoped_storage("FreeCAD geometry side-entry lookup", || {
                 validate_value_root(
                     ctx,
@@ -65,6 +72,8 @@ pub(crate) fn transfer(
                     Some(admitted_document.document()),
                 )
             })?;
+        let _root_storage = root_entry.1;
+        let root_entry = root_entry.0;
         let side_entry_matches_root = property.side_entries().len()
             == usize::from(root_entry.is_some())
             && match (property.side_entries().first(), root_entry.as_ref()) {
@@ -235,7 +244,11 @@ fn parse_mesh(
         ));
     }
     let mut vertices = ctx.collection_vec(point_count, "FreeCAD mesh vertices")?;
-    for _ in ctx.admit_iter(0..point_count, "FreeCAD mesh vertex visits")? {
+    let mut vertex_sources = 0..point_count;
+    while vertex_sources.len() != 0 {
+        let Some(_) = ctx.next_charged(&mut vertex_sources, "FreeCAD mesh vertex visits")? else {
+            break;
+        };
         vertices.push(reader.point3(byte_order, "mesh point")?);
     }
     // Each facet consumes three point indices and three neighbour indices (24 bytes),
@@ -249,7 +262,11 @@ fn parse_mesh(
             CodecError::Malformed("mesh facet count exceeds remaining payload".into())
         })?;
     let mut triangles = ctx.collection_vec(facet_capacity, "FreeCAD mesh facets")?;
-    for _ in ctx.admit_iter(0..facet_count, "FreeCAD mesh facet visits")? {
+    let mut facet_sources = 0..facet_count;
+    while facet_sources.len() != 0 {
+        let Some(_) = ctx.next_charged(&mut facet_sources, "FreeCAD mesh facet visits")? else {
+            break;
+        };
         let triangle = [
             reader.index(byte_order, point_count, "mesh facet point")?,
             reader.index(byte_order, point_count, "mesh facet point")?,
@@ -322,9 +339,15 @@ fn parse_points(
     let transform = point_transform(ctx, property, document.as_ref().map(AdmittedXml::document))?;
     drop(document);
     ctx.reserve_vec(points, count, "FreeCAD point-cloud points")?;
-    for index in ctx.admit_iter(0..count, "FreeCAD point-cloud point visits")? {
-        let (ordinal, _ordinal_storage) =
+    let mut point_sources = 0..count;
+    while point_sources.len() != 0 {
+        let Some(index) = ctx.next_charged(&mut point_sources, "FreeCAD point-cloud point visits")? else {
+            break;
+        };
+        let ordinal =
             ctx.format_scoped(format_args!("{index}"), "FreeCAD point ordinal")?;
+        let _ordinal_storage = ordinal.1;
+        let ordinal = ordinal.0;
         let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
         points.push(Point::new(
             PointId::mint(crate::native::model_id_charged(
@@ -587,6 +610,87 @@ pub(crate) mod tests {
             xml: RetainedXml::from_text("<Property><Points/></Property>".to_owned(), 0)
                 .expect("valid XML span"),
         }
+    }
+
+    #[test]
+    fn empty_geometry_transfer_is_free_and_preserves_original_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        assert!(!super::transfer(&ctx, &mut ir, &[], &[], &mut 0).expect("empty geometry"));
+        assert!(ir.model.points.is_empty());
+        assert!(ir.model.tessellations.is_empty());
+        let CodecError::ResourceLimit(original) = ctx.charge_work(1, "prior geometry refusal")
+            .expect_err("work limit") else { panic!("resource refusal") };
+        assert!(matches!(super::transfer(&ctx, &mut ir, &[], &[], &mut 0),
+            Err(CodecError::ResourceLimit(repeated)) if repeated == original));
+    }
+
+    #[test]
+    fn malformed_first_geometry_property_skips_unvisited_suffix() {
+        let mut property = resource_test_property();
+        let budget = crate::test_support::with_service_context(&[], |ctx| {
+            assert!(!super::transfer(ctx, &mut cadmpeg_ir::CadIr::empty(),
+                std::slice::from_ref(&property), &[], &mut 0).expect("short geometry"));
+            ctx.format_retained(format_args!(
+                "geometry property {} references more than one side entry", property.id,
+            ), "FreeCAD geometry side-entry error").expect("diagnostic oracle");
+            let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "geometry work oracle")
+                .expect_err("work overflow") else { panic!("resource refusal") };
+            limit.used
+        });
+        property.body = PropertyBody::Persisted {
+            values: Vec::new(), links: Vec::new(), side_entries: vec!["A".into(), "B".into()],
+            dynamic: None,
+        };
+        let count = usize::try_from(budget).expect("finite budget").checked_add(1)
+            .expect("finite suffix count");
+        let properties: Vec<_> = (0..count).map(|_| property.clone()).collect();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = budget;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let error = super::transfer(&ctx, &mut cadmpeg_ir::CadIr::empty(), &properties, &[], &mut 0)
+            .expect_err("first invalid side-entry cardinality");
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "geometry property fcstd:native:property#Geometry references more than one side entry"));
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+
+    #[test]
+    fn nonfinite_first_point_skips_unvisited_population_suffix() {
+        let property = resource_test_property();
+        let short = [1_u32.to_le_bytes().as_slice(), &[0; 12]].concat();
+        let budget = crate::test_support::with_service_context(&[], |ctx| {
+            let mut points = Vec::new();
+            parse_points(ctx, &property, &short, 0, &mut 0, None, &mut points)
+                .expect("short point population");
+            assert_eq!(points.len(), 1);
+            let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "point work oracle")
+                .expect_err("work overflow") else { panic!("resource refusal") };
+            limit.used
+        });
+        let count = budget.checked_add(1).expect("finite point count");
+        assert!(count <= u64::try_from(super::MAX_ELEMENTS).expect("codec population bound"));
+        let mut bytes = u32::try_from(count).expect("bounded u32 count").to_le_bytes().to_vec();
+        bytes.extend_from_slice(&f32::NAN.to_le_bytes());
+        bytes.resize(4 + usize::try_from(count).expect("bounded count") * 12, 0);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = budget;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut points = Vec::new();
+        let error = parse_points(&ctx, &property, &bytes, 0, &mut 0, None, &mut points)
+            .expect_err("first non-finite point");
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "point-cloud point contains a non-finite coordinate"));
+        assert!(points.is_empty());
+        assert_eq!(ctx.resource_refusal(), None);
     }
 
     #[test]
