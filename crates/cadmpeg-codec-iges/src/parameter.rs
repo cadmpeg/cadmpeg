@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter Data assembly and count-driven token spans.
 
-use crate::card::{Card, CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Section};
+use crate::card::{Card, CardScan, FramingDefect, FramingRecoveries, FramingValue, PhysicalLine, Section};
 
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
 use crate::global::{GlobalTable, NumericLimits, RealPrecision, ResolvedGlobal};
@@ -15,17 +15,6 @@ use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::ops::Range;
-
-struct BackPointer(Option<u32>);
-
-impl fmt::Display for BackPointer {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            Some(value) => write!(formatter, "back-pointer {value}"),
-            None => formatter.write_str("no readable back-pointer"),
-        }
-    }
-}
 
 /// One typed lexical value in an entity parameter record.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -2924,6 +2913,20 @@ enum QuarantinedCards {
     },
 }
 
+enum ParameterCardDescription {
+    Owned { first: u32, last: u32 },
+    None,
+}
+
+impl fmt::Display for ParameterCardDescription {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Owned { first, last } => write!(formatter, "P{first} through P{last}"),
+            Self::None => formatter.write_str("no owned Parameter Data card"),
+        }
+    }
+}
+
 impl QuarantinedParameterRecord {
     pub(crate) fn source_offset(&self) -> u64 {
         match &self.ownership {
@@ -2952,20 +2955,17 @@ impl QuarantinedParameterRecord {
     }
 
     pub(crate) fn loss_note(&self, ctx: &DecodeContext<'_>) -> Result<LossNote, CodecError> {
+        if let Some(limit) = ctx.resource_refusal() {
+            return Err(CodecError::ResourceLimit(limit));
+        }
         let owned = match &self.ownership {
             QuarantinedCards::Owned { range, .. } => {
                 let last = range.end.checked_sub(1).ok_or_else(|| {
                     CodecError::Malformed("IGES owned Parameter Data range ends at zero".into())
                 })?;
-                ctx.format_retained(
-                    format_args!("P{} through P{last}", range.start),
-                    "iges parameter quarantine owned card range",
-                )?
+                ParameterCardDescription::Owned { first: range.start, last }
             }
-            QuarantinedCards::None { .. } => ctx.format_retained(
-                format_args!("no owned Parameter Data card"),
-                "iges parameter quarantine absent card range",
-            )?,
+            QuarantinedCards::None { .. } => ParameterCardDescription::None,
         };
         let message = ctx.format_retained(format_args!(
                 "IGES Parameter Data of D{} ({owned}) is quarantined because {}; its {} raw card(s) are retained and no token was interpreted",
@@ -4412,8 +4412,8 @@ fn resolve_ownership<'a, 'ctx>(
                     CodecError::Malformed("IGES Parameter Data card index exceeds usize".into())
                 })?,
                 lines.line(*card).map_or(0, |line| line.offset),
-                format_args!("{}", BackPointer(pointer)),
-                format_args!("the declared range of D{owner}"),
+                FramingValue::BackPointer(pointer),
+                FramingValue::DeclaredRange(*owner),
             )?;
         }
     }
@@ -4461,11 +4461,12 @@ fn resolve_ownership<'a, 'ctx>(
                     CodecError::Malformed("IGES Parameter Data card index exceeds usize".into())
                 })?,
                 lines.line(first).map_or(0, |line| line.offset),
-                format_args!(
-                    "an unusable declared range for D{} (start {}, count {})",
-                    entry.sequence, entry.parameter_start, entry.parameter_line_count
-                ),
-                format_args!("the back-pointer census run of {} card(s)", run.len()),
+                FramingValue::UnusableRange {
+                    sequence: entry.sequence,
+                    start: entry.parameter_start,
+                    count: entry.parameter_line_count,
+                },
+                FramingValue::CensusRun(run.len()),
             )?;
             output_storage.with_storage(|| ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership"))?;
             resolved.push(Ownership {
@@ -4707,8 +4708,8 @@ pub(crate) fn assemble_with_context<'ctx>(
                 CodecError::Malformed("IGES Parameter Data card index exceeds usize".into())
             })?,
             line.offset,
-            format_args!("{}", BackPointer(pointer)),
-            format_args!("no owning Directory Entry"),
+            FramingValue::BackPointer(pointer),
+            FramingValue::Literal("no owning Directory Entry"),
         )?;
     }
     Ok(ParameterAssembly {

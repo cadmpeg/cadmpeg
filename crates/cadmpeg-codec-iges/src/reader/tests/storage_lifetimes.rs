@@ -15,7 +15,7 @@ fn quarantine_loss_slots_are_scoped_and_payloads_remain_retained() {
             "iges directory quarantine loss message", "directory_entry:D1"),
         ("00000000", "116,1,2,3x4,0;",
             crate::loss::IgesLossCode::ParameterDataQuarantined,
-            "iges parameter quarantine owned card range", "D1:parameter"),
+            "iges parameter quarantine loss message", "D1:parameter"),
     ] {
         let bytes = owned_test_file(&[OwnedTestEntity {
             entity_type: 116, form: 0, label: "POINT".into(), status,
@@ -83,7 +83,7 @@ fn quarantine_loss_payload_refusal_does_not_precharge_unvisited_records() {
         ("0000 201", "116,1,2,3,0;", 1,
             "iges directory quarantine loss message"),
         ("00000000", "116,1,2,3x4,0;", 2,
-            "iges parameter quarantine owned card range"),
+            "iges parameter quarantine loss message"),
     ] {
         let entities = (0..17).map(|_| OwnedTestEntity {
             entity_type: 116, form: 0, label: "POINT".into(), status,

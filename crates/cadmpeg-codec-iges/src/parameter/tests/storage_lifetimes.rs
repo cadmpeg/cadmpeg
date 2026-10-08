@@ -330,3 +330,64 @@ fn ownership_index_refuses_before_first_named_owner_node() {
         ));
     });
 }
+
+#[test]
+fn quarantine_loss_retains_only_final_text_and_preserves_zero_range_rejection() {
+    use crate::parameter::{ParameterDefect, QuarantinedCards};
+
+    for (ownership, message) in [
+        (QuarantinedCards::Owned { range: 2..3, bytes: Vec::new(), first_offset: 160 },
+            "IGES Parameter Data of D3 (P2 through P2) is quarantined because no Parameter Data card is owned; its 0 raw card(s) are retained and no token was interpreted"),
+        (QuarantinedCards::None { directory_offset: 160 },
+            "IGES Parameter Data of D3 (no owned Parameter Data card) is quarantined because no Parameter Data card is owned; its 0 raw card(s) are retained and no token was interpreted"),
+    ] {
+        let record = QuarantinedParameterRecord {
+            sequence: 3, ownership, failing_offset: None, defect: ParameterDefect::NoOwnedCards,
+        };
+        let tag = "D3:parameter";
+        let code = crate::loss::IgesLossCode::ParameterDataQuarantined;
+        // Only final message, tag, qualified kind and source-format bytes survive.
+        let retained = u64_from_index(message.len() + tag.len() + 4 + code.code().len() + 4);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = retained;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let loss = record.loss_note(&ctx).unwrap();
+        assert_eq!(loss.message, message);
+        assert_eq!(loss.code, code.kind());
+        assert_eq!(loss.provenance.as_ref().unwrap().tag.as_deref(), Some(tag));
+        assert_eq!(loss.provenance.as_ref().unwrap().offset, 160);
+        let CodecError::ResourceLimit(first) = ctx.charge_retained(
+            1, "test complete quarantine loss retained text",
+        ).unwrap_err() else { panic!("expected retained text refusal"); };
+        assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(first.used, retained);
+        assert_eq!(first.additional, 1);
+        drop(loss);
+        assert!(matches!(ctx.finish_session(),
+            Err(CodecError::ResourceLimit(actual)) if actual == first
+        ));
+    }
+
+    let record = QuarantinedParameterRecord {
+        sequence: 3,
+        ownership: QuarantinedCards::Owned { range: 0..0, bytes: Vec::new(), first_offset: 0 },
+        failing_offset: None, defect: ParameterDefect::NoOwnedCards,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(record.loss_note(&ctx), Err(CodecError::Malformed(message))
+        if message == "IGES owned Parameter Data range ends at zero"));
+    let CodecError::ResourceLimit(first) = ctx.charge_work(
+        1, "test prior malformed-range refusal",
+    ).unwrap_err() else { panic!("expected work refusal"); };
+    assert!(matches!(record.loss_note(&ctx),
+        Err(CodecError::ResourceLimit(actual)) if actual == first
+    ));
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(actual)) if actual == first
+    ));
+}

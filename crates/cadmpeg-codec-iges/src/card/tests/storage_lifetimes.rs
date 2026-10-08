@@ -11,7 +11,7 @@ fn framing_loss_slots_are_live_until_consumed_and_then_released() {
     crate::test_support::with_service_context(&[], |ctx| {
         recoveries.record(ctx,
             (crate::card::Section::Parameter, crate::card::FramingDefect::ParameterOwner),
-            2, 160, format_args!("D1"), format_args!("D3"),
+            2, 160, crate::card::FramingValue::Literal("D1"), crate::card::FramingValue::Literal("D3"),
         ).unwrap();
     });
     cadmpeg_test_support::refusal::resource_limit_at(
