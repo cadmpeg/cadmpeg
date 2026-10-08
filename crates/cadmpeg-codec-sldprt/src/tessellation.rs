@@ -347,7 +347,11 @@ pub(crate) fn scene_feature_classes(
     let mut candidates = std::collections::BTreeMap::<u32, Option<&str>>::new();
     for section in scan.sections(ctx)? {
         let payload = section.payload();
-        for class in class_intervals(ctx, payload)? {
+        let (classes, _class_storage) = ctx
+            .with_scoped_storage("hold SLDPRT scene class intervals", || {
+                class_intervals(ctx, payload)
+            })?;
+        for class in ctx.admit_iter(classes, "scan SLDPRT scene class intervals")? {
             if !is_scene_light(class.name) {
                 continue;
             }
@@ -575,12 +579,16 @@ fn probe_table<'ctx>(
     }
     let mut scratch = ctx.reserve_scoped(0, "decode display-list strips")?;
     let spans = scratch.with_storage(|| {
-        let mut spans = ctx.collection_vec(strips.count(), "decode display-list strips")?;
+        let mut spans = ctx.vector_storage(strips.count(), "decode display-list strips")?;
         for length in ctx
             .admit_iter(strips.data, "decode display-list strips")?
             .chunks(const { crate::nonzero(4) })
         {
-            spans.extend(View::u32_le_at(length, 0));
+            ctx.extend_vec(
+                &mut spans,
+                View::u32_le_at(length, 0),
+                "decode display-list strips",
+            )?;
         }
         Ok::<_, cadmpeg_core::CodecError>(spans)
     })?;
@@ -1096,7 +1104,7 @@ impl<V> Iterator for StripTriangles<'_, V> {
     type Item = [u32; 3];
 
     fn next(&mut self) -> Option<[u32; 3]> {
-        while self.index == self.count {
+        if self.index == self.count {
             let strip = self.strips.next()?;
             self.base = self.next_base;
             self.next_base = self
@@ -2570,12 +2578,7 @@ fn planar_trim(
                     sampling_tolerance
                 }
             )?);
-            ctx.reserve_vec(
-                &mut polygon,
-                samples.len(),
-                "collect SLDPRT planar trim polygon",
-            )?;
-            polygon.extend(samples);
+            ctx.extend_vec(&mut polygon, samples, "collect SLDPRT planar trim polygon")?;
             boundary_tolerance = boundary_tolerance.max(sample_tolerance);
             first_start.get_or_insert(start);
             previous_end = Some(end);
@@ -2645,14 +2648,12 @@ fn polygon_outer_and_holes(
         .enumerate()
     {
         if ctx.all_by(
-            polygons
-                .iter()
-                .enumerate()
-                .filter(|(inner_index, _)| *inner_index != index),
+            polygons.iter().enumerate(),
             |(inner_index, inner)| {
-                Ok(simple(inner_index)
-                    && simple(index)
-                    && polygon_inside_polygon(ctx, inner, outer, tolerance)?)
+                Ok(inner_index == index
+                    || (simple(inner_index)
+                        && simple(index)
+                        && polygon_inside_polygon(ctx, inner, outer, tolerance)?))
             },
             COMPARE,
         )? && ctx.all_by(
@@ -2713,13 +2714,17 @@ fn polygon_outer_and_holes(
         return Ok(None);
     }
     let mut holes = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut holes,
         circles.len() + hole_count,
         "collect SLDPRT planar trim holes",
     )?;
     for circle in ctx.admit_iter(circles, "scan SLDPRT circles values")? {
-        holes.push(PlanarHole::Circle(*circle));
+        ctx.push_vec(
+            &mut holes,
+            PlanarHole::Circle(*circle),
+            "collect SLDPRT planar trim holes",
+        )?;
     }
     let mut outer = Vec::new();
     for (index, polygon) in ctx
@@ -2731,9 +2736,8 @@ fn polygon_outer_and_holes(
             continue;
         }
         let area = require_some!(areas.get(index).copied().flatten());
-        holes.push(require_some!(PlanarHole::polygon(
-            ctx, polygon, area, tolerance
-        )?));
+        let hole = require_some!(PlanarHole::polygon(ctx, polygon, area, tolerance)?);
+        ctx.push_vec(&mut holes, hole, "collect SLDPRT planar trim holes")?;
     }
     Ok(Some((outer, holes)))
 }
@@ -3300,9 +3304,8 @@ fn triangulate_polygon(
     const OPERATION: &str = "triangulate SLDPRT planar polygon";
     let mut scratch = ctx.reserve_scoped(0, "collect SLDPRT planar polygon vertices")?;
     let mut remaining = scratch.with_storage(|| {
-        ctx.collection_vec(polygon.len(), "collect SLDPRT planar polygon vertices")
+        ctx.collect_vec(0..polygon.len(), "collect SLDPRT planar polygon vertices")
     })?;
-    remaining.extend(ctx.admit_iter(0..polygon.len(), "collect SLDPRT planar polygon vertices")?);
     let mut triangles = Vec::new();
     while remaining.len() > 3 {
         let count = remaining.len();
@@ -3518,8 +3521,13 @@ fn polygon_contains_triangle(
         }
         let (mut cuts, mut reservation) =
             ctx.scoped_vector_storage(capacity, "collect SLDPRT triangle boundary cuts")?;
-        ctx.charge_collection_items(2, "collect SLDPRT triangle boundary cuts")?;
-        cuts.extend([0.0_f64, 1.0]);
+        reservation.with_storage(|| {
+            ctx.extend_vec(
+                &mut cuts,
+                [0.0_f64, 1.0],
+                "collect SLDPRT triangle boundary cuts",
+            )
+        })?;
         for (index, point) in ctx
             .admit_iter(boundary, "intersect SLDPRT planar outer triangle")?
             .enumerate()
@@ -3687,7 +3695,7 @@ fn triangle_projection(triangle: [Point2; 3], axis: Point2) -> (f64, f64) {
         )
 }
 
-fn convex_polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
+fn convex_polygon_contains(polygon: &[Point2; 3], point: Point2, tolerance: f64) -> bool {
     let mut sign = 0.0_f64;
     for index in 0..polygon.len() {
         let start = polygon[index];
