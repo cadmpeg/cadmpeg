@@ -551,8 +551,13 @@ fn native_surface_validation_collection_limit_refuses_before_candidates() {
     let features_by_source =
         crate::resolved_features::component_paths::FeaturesBySource::new(&limited, []).unwrap();
     let error = super::surface_selection_disagrees_with_payload(
-        &limited, &lane, &record, &[], &features_by_source,
-    ).unwrap_err();
+        &limited,
+        &lane,
+        &record,
+        &[],
+        &features_by_source,
+    )
+    .unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -563,11 +568,14 @@ fn native_surface_validation_collection_limit_refuses_before_candidates() {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let features_by_source =
         crate::resolved_features::component_paths::FeaturesBySource::new(&service, []).unwrap();
-    assert!(
-        !super::surface_selection_disagrees_with_payload(
-            &service, &lane, &record, &[], &features_by_source,
-        ).unwrap()
-    );
+    assert!(!super::surface_selection_disagrees_with_payload(
+        &service,
+        &lane,
+        &record,
+        &[],
+        &features_by_source,
+    )
+    .unwrap());
 }
 
 #[test]
