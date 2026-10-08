@@ -17,7 +17,6 @@ use crate::mesh::MeshExpand;
 use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::objects::parse_class_wrapper;
 use crate::wire::Uuid;
-use cadmpeg_core::decode::collect::ExactVec;
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const ITEM_CAP: usize = 1 << 20;
@@ -74,23 +73,6 @@ pub(crate) struct HistoryPolyEdge {
     pub(crate) evaluation_mode: i32,
 }
 
-fn refused(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    offset: usize,
-    error: &CodecError,
-) -> Result<FramingError, cadmpeg_core::CodecError> {
-    Ok(match error {
-        CodecError::ResourceLimit(limit) => FramingError::Resource(*limit),
-        _ => FramingError::structural(
-            offset,
-            ctx.format_retained(
-                format_args!("polyedge allocation refused: {error}"),
-                "Rhino refused text",
-            )?,
-        ),
-    })
-}
-
 fn req_u8(view: &mut View<'_>) -> Result<u8, FramingError> {
     let offset = view.position();
     view.req_u8()
@@ -134,10 +116,7 @@ fn req_bool(view: &mut View<'_>) -> Result<bool, FramingError> {
 /// `ITEM_CAP`.
 ///
 /// [`BoundedCount`]: cadmpeg_core::decode::BoundedCount
-fn counted(
-    view: &mut View<'_>,
-    width: usize,
-) -> Result<(usize, cadmpeg_core::decode::BoundedCount), FramingError> {
+fn counted(view: &mut View<'_>, width: usize) -> Result<usize, FramingError> {
     let offset = view.position();
     let value = req_i32(view)?;
     let count = usize::try_from(value).map_err(|_| FramingError::Overflow { offset })?;
@@ -147,12 +126,11 @@ fn counted(
             "polyedge count exceeds cap",
         ));
     }
-    let bound = view
-        .counted(cadmpeg_core::decode::u64_from_index(count), width)
+    view.counted(cadmpeg_core::decode::u64_from_index(count), width)
         .ok_or_else(|| {
             FramingError::structural(offset, "polyedge count exceeds remaining window")
         })?;
-    Ok((count, bound))
+    Ok(count)
 }
 
 fn interval(view: &mut View<'_>) -> Result<FiniteVector<2>, FramingError> {
@@ -230,18 +208,19 @@ pub(crate) fn decode(
             "unsupported polyedge-curve version",
         ));
     }
-    let (segment_count, segment_bound) = counted(&mut body, MIN_SEGMENT_BYTES)?;
+    let segment_count = counted(&mut body, MIN_SEGMENT_BYTES)?;
     req_i32(&mut body)?;
     req_i32(&mut body)?;
     body.skip(48)
         .ok_or_else(|| FramingError::structural(body.position(), "polyedge record truncated"))?;
-    let (parameter_count, parameter_bound) = counted(&mut body, 8)?;
+    let parameter_count = counted(&mut body, 8)?;
 
-    let mut reserved =
-        ExactVec::<FiniteReal>::new(expand.ctx(), parameter_bound, "Rhino polyedge parameters")
-            .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
+    let mut parameters = expand
+        .ctx()
+        .collection_vec(parameter_count, "Rhino polyedge parameters")?;
     let mut previous: Option<FiniteReal> = None;
     for _ in 0..parameter_count {
+        expand.ctx().charge_work(1, "Rhino polyedge parameters")?;
         let offset = body.position();
         let value = req_f64(&mut body)?;
         let Some(value) = FiniteReal::new(value) else {
@@ -257,43 +236,40 @@ pub(crate) fn decode(
             ));
         }
         previous = Some(value);
-        reserved
-            .push(expand.ctx(), value, "Rhino polyedge parameters")
-            .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
+        parameters.push(value);
     }
-    let parameters = reserved
-        .finish()
-        .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
 
-    let mut segments = ExactVec::<Segment<PersistentReference, FiniteVector<2>>>::new(
-        expand.ctx(),
-        segment_bound,
-        "Rhino polyedge segments",
-    )
-    .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
+    let mut segments = expand
+        .ctx()
+        .collection_vec(segment_count, "Rhino polyedge segments")?;
     for _ in 0..segment_count {
+        expand.ctx().charge_work(1, "Rhino polyedge segments")?;
         let start = body.position();
         let wrapper = chunk_at(data, start, range.end, archive, false)?;
-        let class = parse_class_wrapper(
-            expand.ctx(),
-            data,
-            start..wrapper.next_offset(),
-            archive,
-            &mut Diagnostics::new(),
-        )?;
+        let mut wrapper_storage = expand
+            .ctx()
+            .reserve_scoped(0, "Rhino polyedge wrapper scratch")?;
+        let class = wrapper_storage.with_storage(|| {
+            parse_class_wrapper(
+                expand.ctx(),
+                data,
+                start..wrapper.next_offset(),
+                archive,
+                &mut Diagnostics::new(),
+            )
+        })?;
         if class.class_uuid != SEGMENT_CLASS {
             return Err(FramingError::structural(
                 start,
                 "polyedge child is not a persistent segment",
             ));
         }
-        segments
-            .push(
-                expand.ctx(),
-                segment(expand.root(), data, class.class_data_range, archive)?,
-                "Rhino polyedge segments",
-            )
-            .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
+        segments.push(segment(
+            expand.root(),
+            data,
+            class.class_data_range,
+            archive,
+        )?);
         body.skip(wrapper.next_offset() - start).ok_or_else(|| {
             FramingError::structural(body.position(), "polyedge segment overruns body")
         })?;
@@ -302,9 +278,6 @@ pub(crate) fn decode(
     body.skip(remaining).ok_or_else(|| {
         FramingError::structural(body.position(), "polyedge suffix overruns body")
     })?;
-    let segments = segments
-        .finish()
-        .or_else(|error| Err(refused(expand.ctx(), body.position(), &error)?))?;
     Ok(PolyEdge {
         parameters,
         segments,
@@ -313,24 +286,52 @@ pub(crate) fn decode(
 
 const SEMANTIC_JSON_OPERATION: &str = "Rhino polyedge semantic JSON";
 
-struct SemanticJson<'a>(&'a PersistentPolyEdge);
+struct SemanticJson<'a, 'arena>(&'a PersistentPolyEdge, &'a DecodeContext<'arena>);
 
-impl Serialize for SemanticJson<'_> {
+impl Serialize for SemanticJson<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(Some(3))?;
         map.serialize_entry("kind", "polyedge_reference")?;
-        map.serialize_entry("parameters", &self.0.parameters)?;
-        map.serialize_entry("segments", &SemanticSegments(&self.0.segments))?;
+        map.serialize_entry(
+            "parameters",
+            &SemanticParameters(&self.0.parameters, self.1),
+        )?;
+        map.serialize_entry("segments", &SemanticSegments(&self.0.segments, self.1))?;
         map.end()
     }
 }
 
-struct SemanticSegments<'a>(&'a [Segment<PersistentReference, FiniteVector<2>>]);
+struct SemanticParameters<'a, 'arena>(&'a [FiniteReal], &'a DecodeContext<'arena>);
 
-impl Serialize for SemanticSegments<'_> {
+impl Serialize for SemanticParameters<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
-        for segment in self.0 {
+        for parameter in self
+            .1
+            .admit_iter(self.0, "Rhino polyedge semantic parameters")
+            .map_err(cadmpeg_core::CodecError::from)
+            .map_err(serde::ser::Error::custom)?
+        {
+            sequence.serialize_element(parameter)?;
+        }
+        sequence.end()
+    }
+}
+
+struct SemanticSegments<'a, 'arena>(
+    &'a [Segment<PersistentReference, FiniteVector<2>>],
+    &'a DecodeContext<'arena>,
+);
+
+impl Serialize for SemanticSegments<'_, '_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for segment in self
+            .1
+            .admit_iter(self.0, "Rhino polyedge semantic segments")
+            .map_err(cadmpeg_core::CodecError::from)
+            .map_err(serde::ser::Error::custom)?
+        {
             sequence.serialize_element(&SemanticSegment(segment))?;
         }
         sequence.end()
@@ -393,13 +394,21 @@ pub(crate) fn semantic_json(
         bytes: Vec::new(),
         refusal: None,
     };
-    let serialized = serde_json::to_writer(&mut writer, &SemanticJson(polyedge));
+    let serialized = serde_json::to_writer(&mut writer, &SemanticJson(polyedge, ctx));
     if let Some(refusal) = writer.refusal {
         return Err(refusal);
     }
-    Ok(serialized
-        .ok()
-        .and_then(|()| String::from_utf8(writer.bytes).ok()))
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
+    if serialized.is_err() {
+        return Ok(None);
+    }
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(writer.bytes.len()),
+        "Rhino polyedge semantic UTF-8",
+    )?;
+    Ok(String::from_utf8(writer.bytes).ok())
 }
 
 #[cfg(test)]
