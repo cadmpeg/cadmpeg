@@ -3217,10 +3217,9 @@ pub(super) fn sketch_records<'a>(
                 "creo native sketch solved external IDs",
             )?,
             variables: {
-                let mut resolution_storage = ctx.reserve_scoped(0, "creo sketch variable resolution storage")?;
-                let (resolved_coordinates, resolved_radii, resolved_scalars) = resolution_storage.with_storage(|| Ok::<_, CodecError>((
-                    resolved_section_coordinates(ctx, definition)?, resolved_section_radii(ctx, definition)?, resolved_section_scalar_values(ctx, definition)?,
-                )))?;
+                let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
+                let resolved_radii = resolved_section_radii(ctx, definition)?;
+                let resolved_scalars = resolved_section_scalar_values(ctx, definition)?;
                 ctx.try_collect_vec(
                     (ctx.admit_iter(definition.variables.as_ref().map_or(&[][..], |table| table.rows.as_slice()), "creo native sketch row traversal")?).map(|row| {
                         Ok::<_, CodecError>(CreoSketchVariable {
@@ -3533,7 +3532,7 @@ pub(super) fn sketch_section_point_records(
         return Ok(Vec::new());
     };
     let mut point_storage = ctx.reserve_scoped(0, "creo sketch point index storage")?;
-    let crate::feature::definitions::ReconciledPoints { points, ambiguous } = point_storage.with_storage(|| variables.reconciled_points(ctx))?;
+    let crate::feature::definitions::ReconciledPoints { points, ambiguous } = variables.reconciled_points(ctx)?;
     let mut point_ids = BTreeSet::new();
     point_storage.with_storage(|| {
     for point_id in ctx.admit_iter(&points, "creo sketch resolved point traversal")?.map(|(id, _)| *id)
@@ -3546,9 +3545,9 @@ pub(super) fn sketch_section_point_records(
     }
     Ok::<(), CodecError>(())
     })?;
-    let _ids = ctx.admit_iter(&point_ids, "creo sketch point projection traversal")?;
+    let ids = ctx.admit_iter(&point_ids, "creo sketch point projection traversal")?;
     ctx.try_collect_vec(
-        point_ids.into_iter().map(|point_id| {
+        ids.copied().map(|point_id| {
             let [u, v] = ctx.get_btree_map(&points, &point_id, "creo sketch resolved point lookup")?.copied().unwrap_or([None; 2]);
             let state = if ctx.contains_btree_set(&ambiguous, &point_id, "creo sketch ambiguous point lookup")? {
                 CreoSketchPointState::Conflicting
