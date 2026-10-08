@@ -100,33 +100,49 @@ fn empty_section_transfer_keeps_zero_family_coverage() {
     use crate::coverage::SketchSegmentFamily;
     let scan = empty_section_scan();
     let coverage = crate::decode::with_test_decode_ctx(|ctx| {
-        super::transfer_sketches(ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty(),
-            &mut cadmpeg_ir::AnnotationBuilder::new(), &mut Vec::new(),
-            &mut crate::decode::source_carriers::SourceUnitCarriers::default())
-    }).expect("empty section coverage");
-    assert_eq!(coverage.families().collect::<Vec<_>>(), vec![
-        (SketchSegmentFamily::Point, (0, 0)),
-        (SketchSegmentFamily::Circle, (0, 0)),
-        (SketchSegmentFamily::CenteredLine, (0, 0)),
-        (SketchSegmentFamily::ReferenceLine, (0, 0)),
-        (SketchSegmentFamily::BoundedCurve, (0, 0)),
-        (SketchSegmentFamily::Conic, (0, 0)),
-        (SketchSegmentFamily::Opaque, (0, 0)),
-    ]);
+        super::transfer_sketches(
+            ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("empty section coverage");
+    assert_eq!(
+        coverage.families().collect::<Vec<_>>(),
+        vec![
+            (SketchSegmentFamily::Point, (0, 0)),
+            (SketchSegmentFamily::Circle, (0, 0)),
+            (SketchSegmentFamily::CenteredLine, (0, 0)),
+            (SketchSegmentFamily::ReferenceLine, (0, 0)),
+            (SketchSegmentFamily::BoundedCurve, (0, 0)),
+            (SketchSegmentFamily::Conic, (0, 0)),
+            (SketchSegmentFamily::Opaque, (0, 0)),
+        ]
+    );
 }
 
 #[test]
 fn sketch_native_reference_refuses_below_retained_limit() {
     let sketch = SketchId::mint("creo:model:sketch#7").expect("valid sketch ID");
     let need = crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| {
-                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
-                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
-                    trial_policy.limits.max_retained_bytes = cap;
-                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
-                    crate::decode::sketch_ids::sketch_native_ref_admitted(&ctx, &sketch)
-                },
-            );
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        None,
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+            trial_policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            crate::decode::sketch_ids::sketch_native_ref_admitted(&ctx, &sketch)
+        },
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = need - 1;
@@ -210,7 +226,15 @@ fn emitted_entity_views_refuse_each_tree_node() {
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo emitted sketch entity ID nodes"));
-    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo emitted sketch geometry nodes"), |cap| { let mut trial = policy; trial.limits.max_collection_items = cap; views_with_policy(&trial) });
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo emitted sketch geometry nodes"),
+        |cap| {
+            let mut trial = policy;
+            trial.limits.max_collection_items = cap;
+            views_with_policy(&trial)
+        },
+    );
     let error = views_with_policy(&policy).expect_err("second node exceeds its boundary");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -224,8 +248,15 @@ fn emitted_entity_views_refuse_each_tree_node() {
 #[test]
 fn emitted_entity_views_refuse_nested_identity_and_geometry_copies() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo emitted sketch entity IDs"), |cap| { let mut trial = policy; trial.limits.max_retained_bytes = cap; views_with_policy(&trial) });
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes,
+        Some("creo emitted sketch entity IDs"),
+        |cap| {
+            let mut trial = policy;
+            trial.limits.max_retained_bytes = cap;
+            views_with_policy(&trial)
+        },
+    );
     let error = views_with_policy(&policy).expect_err("first identity copy exceeds cap");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -263,14 +294,21 @@ fn available_parameter_ids_refuse_existing_node_and_identity_copy() {
             && resource.operation == "creo available parameter ID nodes"));
     policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo available parameter identities"), |cap| {
-                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
-                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
-                    trial_policy.limits.max_retained_bytes = cap;
-                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
-                    available_parameter_ids(&ctx, [&id], BTreeSet::new())
-                },
-            );
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo available parameter identities"),
+        |cap| {
+            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+            trial_policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
+            available_parameter_ids(&ctx, [&id], BTreeSet::new())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = available_parameter_ids(&ctx, [&id], BTreeSet::new())
         .expect_err("existing parameter identity exceeds cap");

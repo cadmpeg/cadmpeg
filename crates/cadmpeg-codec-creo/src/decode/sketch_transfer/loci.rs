@@ -71,34 +71,60 @@ pub(super) fn section_point_locus(
                 use crate::feature::definitions::FeatureSegmentKind;
                 let endpoint = match segment.kind {
                     FeatureSegmentKind::Point(id) if id == point_id => Some(PointLocusKind::Entity),
-                    FeatureSegmentKind::Line([start, _]) if start == point_id => Some(PointLocusKind::Start),
-                    FeatureSegmentKind::Line([_, end]) if end == point_id => Some(PointLocusKind::End),
-                    FeatureSegmentKind::Arc([end, _]) if end == point_id => Some(PointLocusKind::End),
-                    FeatureSegmentKind::Arc([_, start]) if start == point_id => Some(PointLocusKind::Start),
+                    FeatureSegmentKind::Line([start, _]) if start == point_id => {
+                        Some(PointLocusKind::Start)
+                    }
+                    FeatureSegmentKind::Line([_, end]) if end == point_id => {
+                        Some(PointLocusKind::End)
+                    }
+                    FeatureSegmentKind::Arc([end, _]) if end == point_id => {
+                        Some(PointLocusKind::End)
+                    }
+                    FeatureSegmentKind::Arc([_, start]) if start == point_id => {
+                        Some(PointLocusKind::Start)
+                    }
                     _ => None,
                 };
                 let center = (matches!(segment.kind, FeatureSegmentKind::Arc(_))
-                    && segment.center_id == Some(point_id)).then_some(PointLocusKind::Center);
+                    && segment.center_id == Some(point_id))
+                .then_some(PointLocusKind::Center);
                 (segment.external_id, [endpoint, center])
             }
-            SegmentRow::Circle(segment) => (segment.external_id, [
-                (segment.center_id == point_id).then_some(PointLocusKind::Center), None,
-            ]),
-            SegmentRow::Point(segment) => (segment.external_id, [
-                (segment.point_id == point_id).then_some(PointLocusKind::Entity), None,
-            ]),
-            SegmentRow::CenteredLine(segment) => (segment.external_id, [
-                (point_id == 0).then_some(PointLocusKind::Start),
-                (point_id == 1).then_some(PointLocusKind::End),
-            ]),
-            SegmentRow::ReferenceLine(segment) => (segment.external_id, [
-                (segment.point_ids[0] == Some(point_id)).then_some(PointLocusKind::Start),
-                (segment.point_ids[1] == Some(point_id)).then_some(PointLocusKind::End),
-            ]),
-            SegmentRow::BoundedCurve(segment) => (segment.external_id, [
-                (segment.point_ids[0] == point_id).then_some(PointLocusKind::Start),
-                (segment.point_ids[1] == point_id).then_some(PointLocusKind::End),
-            ]),
+            SegmentRow::Circle(segment) => (
+                segment.external_id,
+                [
+                    (segment.center_id == point_id).then_some(PointLocusKind::Center),
+                    None,
+                ],
+            ),
+            SegmentRow::Point(segment) => (
+                segment.external_id,
+                [
+                    (segment.point_id == point_id).then_some(PointLocusKind::Entity),
+                    None,
+                ],
+            ),
+            SegmentRow::CenteredLine(segment) => (
+                segment.external_id,
+                [
+                    (point_id == 0).then_some(PointLocusKind::Start),
+                    (point_id == 1).then_some(PointLocusKind::End),
+                ],
+            ),
+            SegmentRow::ReferenceLine(segment) => (
+                segment.external_id,
+                [
+                    (segment.point_ids[0] == Some(point_id)).then_some(PointLocusKind::Start),
+                    (segment.point_ids[1] == Some(point_id)).then_some(PointLocusKind::End),
+                ],
+            ),
+            SegmentRow::BoundedCurve(segment) => (
+                segment.external_id,
+                [
+                    (segment.point_ids[0] == point_id).then_some(PointLocusKind::Start),
+                    (segment.point_ids[1] == point_id).then_some(PointLocusKind::End),
+                ],
+            ),
             SegmentRow::Conic(_) | SegmentRow::Opaque(_) => continue,
         };
         if segments.rows.get(external_id).is_none() {
@@ -467,12 +493,14 @@ pub(in super::super) fn section_skamp_incidence_locus(
     let Some(geometry) = geometry else {
         return Ok(None);
     };
-    let native = ctx.get_btree_map(geometry, &entity, "creo SKAMP locus geometry lookup")?.is_some_and(|geometry| {
-        matches!(
-            geometry.definition(),
-            SketchGeometryDefinition::Native { .. }
-        )
-    });
+    let native = ctx
+        .get_btree_map(geometry, &entity, "creo SKAMP locus geometry lookup")?
+        .is_some_and(|geometry| {
+            matches!(
+                geometry.definition(),
+                SketchGeometryDefinition::Native { .. }
+            )
+        });
     if !native {
         return Ok(None);
     }
@@ -577,7 +605,9 @@ pub(super) fn section_skamp_oriented_line(
     let Some(geometry) = geometry else {
         return Ok(None);
     };
-    let Some(geometry) = ctx.get_btree_map(geometry, &entity, "creo SKAMP locus geometry lookup")? else {
+    let Some(geometry) =
+        ctx.get_btree_map(geometry, &entity, "creo SKAMP locus geometry lookup")?
+    else {
         return Ok(None);
     };
     if !matches!(
@@ -624,11 +654,15 @@ pub(super) fn section_skamp_same_coordinate(
         };
         let point = |source| -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
             match source {
-                SectionPointSource::Point(point_id) => Ok(ctx.get_btree_map(points, &point_id, "creo SKAMP resolved point lookup")?.copied()),
+                SectionPointSource::Point(point_id) => Ok(ctx
+                    .get_btree_map(points, &point_id, "creo SKAMP resolved point lookup")?
+                    .copied()),
                 SectionPointSource::Value(point) => Ok(Some(point.get())),
             }
         };
-        if let (Some(first_point), Some(second_point)) = (point(first_source)?, point(second_source)?) {
+        if let (Some(first_point), Some(second_point)) =
+            (point(first_source)?, point(second_source)?)
+        {
             let scale = first_point
                 .iter()
                 .chain(&second_point)
@@ -768,7 +802,11 @@ pub(in super::super) fn section_degenerate_axis_line(
             if kind == expected_kind && item.entity_id == segment.external_id && item.sense == 0);
         symmetry_axis |= matches!((skamp.kind, skamp.items.as_slice()), (14, [axis, _, _])
             if axis.entity_id == segment.external_id && axis.sense == 0);
-        Ok(if unary_orientation && symmetry_axis { ControlFlow::Break(()) } else { ControlFlow::Continue(()) })
+        Ok(if unary_orientation && symmetry_axis {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        })
     })?;
     Ok(unary_orientation && symmetry_axis)
 }
@@ -1504,16 +1542,26 @@ mod tests {
             sense: 0,
         };
         let need = crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| {
-                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
-                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
-                    trial_policy.limits.max_retained_bytes = cap;
-                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
-                    let refusal = std::cell::Cell::new(None);
-                    let result = section_skamp_locus(&ctx, &refusal, &definition, &sketch, &item)?;
-                    match refusal.into_inner() { Some(error) => Err(error), None => Ok(result) }
-                },
-            );
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                trial_policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                let refusal = std::cell::Cell::new(None);
+                let result = section_skamp_locus(&ctx, &refusal, &definition, &sketch, &item)?;
+                match refusal.into_inner() {
+                    Some(error) => Err(error),
+                    None => Ok(result),
+                }
+            },
+        );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = need - 1;
@@ -1670,14 +1718,21 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         let need = crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| {
-                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
-                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
-                    trial_policy.limits.max_retained_bytes = cap;
-                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
-                    section_point_locus(&ctx, &definition, &sketch, 7)
-                },
-            );
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                trial_policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                section_point_locus(&ctx, &definition, &sketch, 7)
+            },
+        );
         policy.limits.max_retained_bytes = need - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = section_point_locus(&ctx, &definition, &sketch, 7)
@@ -1761,10 +1816,10 @@ mod tests {
         };
         let sketch =
             SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
-        let result = crate::test_support::assert_work_boundaries(
-            &["creo point locus rows"],
-            |ctx| section_point_locus(ctx, &definition, &sketch, 0),
-        );
+        let result =
+            crate::test_support::assert_work_boundaries(&["creo point locus rows"], |ctx| {
+                section_point_locus(ctx, &definition, &sketch, 0)
+            });
         assert_eq!(
             result,
             Some(SketchLocus::Start(

@@ -729,7 +729,10 @@ pub(in super::super) fn schema_feature_definition(
     }
     if schema_class == Some(SchemaClass::Protrusion)
         && !feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
-        && section_sweep_allows_linear_extrusion(schema_class, feature_recipe(ctx, scan, feature_id)?)
+        && section_sweep_allows_linear_extrusion(
+            schema_class,
+            feature_recipe(ctx, scan, feature_id)?,
+        )
     {
         if let Some(sweep) = circular_sweep_geometry(ctx, scan, feature_id)? {
             let definition =
@@ -1239,7 +1242,9 @@ pub(in super::super) fn feature_allows_linear_extrusion(
         (!feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
             && match schema_class {
                 Some(schema_class) => section_sweep_allows_linear_extrusion(
-                    Some(schema_class), feature_recipe(ctx, scan, feature_id)?),
+                    Some(schema_class),
+                    feature_recipe(ctx, scan, feature_id)?,
+                ),
                 None => false,
             })
             || feature_is_sheet_extrusion(ctx, scan, feature_id)?,
