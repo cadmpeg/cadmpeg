@@ -134,7 +134,7 @@ fn prototype_association_vec_refuses_before_growth() {
         association_result(crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             None,
-            |cap| association_result(cap)
+            association_result
         ))
         .expect("service limit admits association"),
         1
@@ -142,7 +142,7 @@ fn prototype_association_vec_refuses_before_growth() {
     let error = association_result(crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         Some("creo surface prototype associations"),
-        |cap| association_result(cap),
+        association_result,
     ))
     .expect_err("one association needs a vector item");
     assert!(matches!(
@@ -158,7 +158,7 @@ fn prototype_association_row_count_refuses_before_node_insertion() {
     let error = association_result(crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         Some("creo surface prototype row counts"),
-        |cap| association_result(cap),
+        association_result,
     ))
     .expect_err("row count follows association vector");
     assert!(matches!(

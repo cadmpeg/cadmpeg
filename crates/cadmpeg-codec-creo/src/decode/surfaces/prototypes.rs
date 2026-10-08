@@ -222,10 +222,12 @@ fn prototype_spline_nurbs(
     )
 }
 
+type PrototypeLocalFrame = ([f64; 3], [f64; 3], [f64; 3]);
+
 fn prototype_local_frame(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &crate::surface::SurfacePrototypeRecord,
-) -> Result<Option<([f64; 3], [f64; 3], [f64; 3])>, cadmpeg_core::CodecError> {
+) -> Result<Option<PrototypeLocalFrame>, cadmpeg_core::CodecError> {
     let Some(field) = prototype_field(ctx, record, "local_sys")? else {
         return Ok(None);
     };
@@ -761,7 +763,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 |record| record.id.as_str(),
                 id.as_str(),
             )?
-            .is_some();
+            .exists();
         if identity_present {
             continue;
         }
@@ -975,7 +977,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
                 |record| record.id.as_str(),
                 id.as_str(),
             )?
-            .is_some();
+            .exists();
         if identity_present {
             continue;
         }
@@ -1185,7 +1187,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 |record| record.id.as_str(),
                 id.as_str(),
             )?
-            .is_some();
+            .exists();
         if identity_present {
             continue;
         }

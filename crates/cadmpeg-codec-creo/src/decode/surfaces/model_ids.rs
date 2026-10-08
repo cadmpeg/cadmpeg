@@ -6,6 +6,26 @@ use std::collections::HashMap;
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ModelIdentityMatch {
+    Absent,
+    Unique(usize),
+    Duplicate,
+}
+
+impl ModelIdentityMatch {
+    pub(super) fn exists(self) -> bool {
+        !matches!(self, Self::Absent)
+    }
+
+    pub(super) fn unique_position(self) -> Option<usize> {
+        match self {
+            Self::Unique(position) => Some(position),
+            Self::Absent | Self::Duplicate => None,
+        }
+    }
+}
+
 /// A unique position or a duplicate marker for each identity already indexed.
 /// New arena records are indexed once, in arena order. Queries never visit hash order.
 pub(super) struct ModelIdentityIndex<'ctx> {
@@ -31,11 +51,15 @@ impl<'ctx> ModelIdentityIndex<'ctx> {
         arena: &[T],
         identity: impl Fn(&T) -> &str,
         key: &str,
-    ) -> Result<Option<Option<usize>>, CodecError> {
+    ) -> Result<ModelIdentityMatch, CodecError> {
         self.update(ctx, arena, identity)?;
-        Ok(ctx
-            .get_hash_map(&self.positions, key, "creo model identity index lookup")?
-            .map(|&(position, count)| (count == 1).then_some(position)))
+        Ok(
+            match ctx.get_hash_map(&self.positions, key, "creo model identity index lookup")? {
+                None => ModelIdentityMatch::Absent,
+                Some(&(position, 1)) => ModelIdentityMatch::Unique(position),
+                Some(_) => ModelIdentityMatch::Duplicate,
+            },
+        )
     }
 
     pub(super) fn count<T>(
@@ -88,7 +112,7 @@ impl<'ctx> ModelIdentityIndex<'ctx> {
 
 #[cfg(test)]
 mod tests {
-    use super::ModelIdentityIndex;
+    use super::{ModelIdentityIndex, ModelIdentityMatch};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     #[test]
@@ -105,18 +129,21 @@ mod tests {
                 let mut index = ModelIdentityIndex::new(ctx)?;
                 assert_eq!(
                     index.lookup(ctx, &records, String::as_str, "first")?,
-                    Some(Some(0))
+                    ModelIdentityMatch::Unique(0)
                 );
-                assert_eq!(index.lookup(ctx, &records, String::as_str, "absent")?, None);
+                assert_eq!(
+                    index.lookup(ctx, &records, String::as_str, "absent")?,
+                    ModelIdentityMatch::Absent
+                );
                 records.push("first".to_owned());
                 assert_eq!(
                     index.lookup(ctx, &records, String::as_str, "first")?,
-                    Some(None)
+                    ModelIdentityMatch::Duplicate
                 );
                 assert_eq!(index.count(ctx, &records, String::as_str, "first")?, 2);
                 assert_eq!(
                     index.lookup(ctx, &records, String::as_str, "second")?,
-                    Some(Some(1))
+                    ModelIdentityMatch::Unique(1)
                 );
                 Ok(())
             },
@@ -135,7 +162,7 @@ mod tests {
             index
                 .lookup(&ctx, &records, String::as_str, "identity")
                 .expect("scoped index"),
-            Some(Some(0))
+            ModelIdentityMatch::Unique(0)
         );
         assert!(ctx.resource_refusal().is_none());
     }

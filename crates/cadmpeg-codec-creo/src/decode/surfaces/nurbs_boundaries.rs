@@ -938,7 +938,7 @@ pub(in super::super) fn cubic_unit_interval_roots(
     }
     stations.sort_and_dedup();
     let mut roots = CubicRoots::new();
-    for &station in stations.as_slice().iter() {
+    for &station in stations.as_slice() {
         if evaluate(station).abs() <= value_tolerance {
             roots.push(station);
         }
@@ -1272,7 +1272,6 @@ mod tests {
                     visited += 1;
                     Ok(true)
                 })
-                .map(|_| ())
             },
         );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -1711,18 +1710,18 @@ mod tests {
                 })
             },
         );
-        let curve = match result {
-            Some(cadmpeg_ir::geometry::CurveGeometry::Solved(
-                cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(curve),
-            )) => curve,
-            _ => panic!("service plane boundary remains a NURBS curve"),
+        let Some(cadmpeg_ir::geometry::CurveGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(curve),
+        )) = result
+        else {
+            panic!("service plane boundary remains a NURBS curve");
         };
         assert_eq!(curve.degree(), 1);
         assert_eq!(
             curve
                 .control_points()
                 .into_iter()
-                .map(|point| point.get())
+                .map(cadmpeg_ir::features::FinitePoint3::get)
                 .collect::<Vec<_>>(),
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
         );
@@ -1749,18 +1748,18 @@ mod tests {
                 })
             },
         );
-        let curve = match result {
-            Some(cadmpeg_ir::geometry::CurveGeometry::Solved(
-                cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(curve),
-            )) => curve,
-            _ => panic!("service shared generator remains a NURBS curve"),
+        let Some(cadmpeg_ir::geometry::CurveGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(curve),
+        )) = result
+        else {
+            panic!("service shared generator remains a NURBS curve");
         };
         assert_eq!(curve.degree(), 1);
         assert_eq!(
             curve
                 .control_points()
                 .into_iter()
-                .map(|point| point.get())
+                .map(cadmpeg_ir::features::FinitePoint3::get)
                 .collect::<Vec<_>>(),
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
         );
@@ -1915,9 +1914,10 @@ mod tests {
                 })
             },
         );
+        let expected_operation = "creo generator separation angle evaluations";
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-            if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == "creo generator separation angle evaluations")
+            if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == expected_operation)
         );
         assert!(run(u64::MAX)
             .expect("service work budget admits the shared generator")

@@ -92,7 +92,7 @@ fn resolve_carrier_intersection_curve(
     Ok(selected.and_then(|index| candidates.into_iter().nth(index)))
 }
 
-/// The caller holds result_storage until it drops the returned curve evidence.
+/// The caller holds `result_storage` until it drops the returned curve evidence.
 pub(in super::super) fn transfer_carrier_intersection_curves(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -212,7 +212,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
                 |record| record.id.as_str(),
                 id.as_str(),
             )?
-            .is_some();
+            .exists();
         if identity_present {
             continue;
         }
@@ -348,7 +348,7 @@ fn note_boundary_lane_records(
     Ok(())
 }
 
-/// The caller holds result_storage until it drops the returned curve evidence.
+/// The caller holds `result_storage` until it drops the returned curve evidence.
 pub(in super::super) fn transfer_nurbs_boundary_curves(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -403,7 +403,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     |record| record.id.as_str(),
                     id.as_str(),
                 )?
-                .flatten()
+                .unique_position()
                 .map(|index| source_carriers.surface_geometry(&ir.model.surfaces[index])))
         };
         let Some(first_geometry) = geometry(first.id)? else {
@@ -480,7 +480,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 |record| record.id.as_str(),
                 id.as_str(),
             )?
-            .is_some();
+            .exists();
         if identity_present {
             continue;
         }

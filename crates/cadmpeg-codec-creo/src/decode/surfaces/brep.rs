@@ -183,7 +183,7 @@ impl FaceAdmissionDetail {
                 ctx.admit_iter(lp.half_edges(), "creo B-rep rejection half edge traversal")?
             {
                 if ctx.contains_key_btree_map(
-                    &edge_vertices,
+                    edge_vertices,
                     &half_edge.curve_id,
                     "creo edge vertices lookup",
                 )? {
@@ -198,7 +198,7 @@ impl FaceAdmissionDetail {
                     detail.boundary_half_edges.push(*half_edge);
                 }
                 if let Some(binding) =
-                    ctx.get_btree_map(&incidence, half_edge, "creo incidence lookup")?
+                    ctx.get_btree_map(incidence, half_edge, "creo incidence lookup")?
                 {
                     if detail.vertex_ids.len() < FACE_REJECTION_OPERAND_SAMPLE_LIMIT
                         && !detail.vertex_ids.contains(&binding.start_vertex_id.get())
@@ -772,11 +772,7 @@ fn admitted_face_components<'a>(
         if ctx.any_by(
             component.face_ids(),
             |face_id| {
-                Ok(ctx.contains_btree_set(
-                    &eligible_face_ids,
-                    face_id,
-                    "creo eligible face ids lookup",
-                )?)
+                ctx.contains_btree_set(eligible_face_ids, face_id, "creo eligible face ids lookup")
             },
             "creo B-rep component face search",
         )? {
@@ -894,7 +890,7 @@ fn split_neutral_component_shells(
             "creo B-rep pending shell face traversal",
         )? {
             let Some(neighbours) =
-                ctx.get_btree_map(&face_adjacency, &face_id, "creo face adjacency lookup")?
+                ctx.get_btree_map(face_adjacency, &face_id, "creo face adjacency lookup")?
             else {
                 continue;
             };
@@ -935,7 +931,7 @@ fn split_neutral_component_shells(
     let mut unattached_wire_curves = BTreeSet::new();
     for curve_id in ctx.admit_iter(wire_curves, "creo B-rep wire curve traversal")? {
         let curve_vertices = *ctx
-            .get_btree_map(&edge_vertices, curve_id, "creo edge vertices lookup")?
+            .get_btree_map(edge_vertices, curve_id, "creo edge vertices lookup")?
             .ok_or_else(|| cadmpeg_core::CodecError::malformed("edge vertices indexed record"))?;
         let mut matching_shell = None;
         let mut shells = shell_specs.iter().enumerate();
@@ -1156,7 +1152,7 @@ fn native_circle_loop_geometry(
             |curve| curve.id.as_str(),
             first_id.as_str(),
         )?
-        .flatten()
+        .unique_position()
     else {
         return Ok(None);
     };
@@ -1173,7 +1169,7 @@ fn native_circle_loop_geometry(
             |curve| curve.id.as_str(),
             second_id.as_str(),
         )?
-        .flatten()
+        .unique_position()
     else {
         return Ok(None);
     };
@@ -1365,7 +1361,7 @@ fn native_parameter_loop_polygon(
     while let Some(half_edge) =
         ctx.next_charged(&mut visits, "creo B-rep loop half edge traversal")?
     {
-        let Some(binding) = ctx.get_btree_map(&incidence, half_edge, "creo incidence lookup")?
+        let Some(binding) = ctx.get_btree_map(incidence, half_edge, "creo incidence lookup")?
         else {
             return Ok(None);
         };
@@ -1373,7 +1369,7 @@ fn native_parameter_loop_polygon(
             return Ok(None);
         };
         let Some(candidates) = ctx.get_btree_map(
-            &native_pcurves,
+            native_pcurves,
             &(half_edge.curve_id, face_id),
             "creo native pcurves lookup",
         )?
@@ -1382,13 +1378,13 @@ fn native_parameter_loop_polygon(
         };
         let [Some(start), Some(end)] = [
             ctx.get_btree_map(
-                &solved_vertices,
+                solved_vertices,
                 &binding.start_vertex_id.get(),
                 "creo solved vertices lookup",
             )?
             .copied(),
             ctx.get_btree_map(
-                &solved_vertices,
+                solved_vertices,
                 &end_vertex_id.get(),
                 "creo solved vertices lookup",
             )?
@@ -1416,7 +1412,7 @@ fn native_parameter_loop_polygon(
                 lp.half_edges(),
                 |half_edge| {
                     Ok(!ctx.contains_btree_set(
-                        &typed_nonlinear_curve_ids,
+                        typed_nonlinear_curve_ids,
                         &half_edge.curve_id,
                         "creo typed nonlinear curve ids lookup",
                     )?)
@@ -1728,7 +1724,7 @@ impl BrepEdgeIndexes {
         {
             let Some(vertices) = ctx
                 .get_btree_map(
-                    &native_edge_vertices,
+                    native_edge_vertices,
                     &row.id,
                     "creo native edge vertices lookup",
                 )?
@@ -1929,7 +1925,7 @@ impl BrepBodyIndexes {
                 .copied()
             {
                 if !ctx.contains_btree_set(
-                    &admitted_edge_curves,
+                    admitted_edge_curves,
                     &curve_id,
                     "creo admitted edge curves lookup",
                 )? {
@@ -1940,7 +1936,7 @@ impl BrepBodyIndexes {
                     crate::container::Layout::LegacyAscii(_)
                 ) {
                     let Some(faces) =
-                        ctx.get_btree_map(&curve_faces, &curve_id, "creo curve faces lookup")?
+                        ctx.get_btree_map(curve_faces, &curve_id, "creo curve faces lookup")?
                     else {
                         continue;
                     };
@@ -1971,7 +1967,7 @@ impl BrepBodyIndexes {
                 .copied()
             {
                 if !ctx.contains_key_btree_map(
-                    &eligible_faces,
+                    eligible_faces,
                     &face_id,
                     "creo eligible faces lookup",
                 )? {
@@ -2092,7 +2088,7 @@ impl BrepComponentTopology {
                 )?
                 .or_default();
             for native_loop in ctx.admit_iter(
-                ctx.get_btree_map(&eligible_faces, face_id, "creo eligible faces lookup")?
+                ctx.get_btree_map(eligible_faces, face_id, "creo eligible faces lookup")?
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("eligible faces indexed record")
                     })?,
@@ -2119,7 +2115,7 @@ impl BrepComponentTopology {
                     })?;
                     let [start, end] = *ctx
                         .get_btree_map(
-                            &edge_vertices,
+                            edge_vertices,
                             &half_edge.curve_id,
                             "creo edge vertices lookup",
                         )?
@@ -2339,7 +2335,7 @@ fn unique_native_model_surface<'a>(
     )?;
     Ok(index
         .lookup(ctx, surfaces, |surface| surface.id.as_str(), key.as_str())?
-        .flatten()
+        .unique_position()
         .map(|position| &surfaces[position]))
 }
 
@@ -2888,7 +2884,7 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                 |record| record.id.as_str(),
                 query_id.as_str(),
             )?
-            .is_some()
+            .exists()
         {
             continue;
         }
@@ -2980,7 +2976,7 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                 |record| record.id.as_str(),
                 query_id.as_str(),
             )?
-            .is_some()
+            .exists()
         {
             continue;
         }
@@ -3030,11 +3026,11 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
             "creo B-rep edge curve identities",
         )?;
         let points = [
-            *ctx.get_btree_map(&solved_vertices, &start, "creo solved vertices lookup")?
+            *ctx.get_btree_map(solved_vertices, &start, "creo solved vertices lookup")?
                 .ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed("solved vertices indexed record")
                 })?,
-            *ctx.get_btree_map(&solved_vertices, &end, "creo solved vertices lookup")?
+            *ctx.get_btree_map(solved_vertices, &end, "creo solved vertices lookup")?
                 .ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed("solved vertices indexed record")
                 })?,
@@ -3082,7 +3078,7 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                     |record| record.id.as_str(),
                     curve.as_str(),
                 )?
-                .flatten()
+                .unique_position()
                 .map(|index| &mut ir.model.curves[index]);
             if let Some(candidate) = candidate {
                 let mut geometry = source_carriers
@@ -3192,7 +3188,7 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                 |record| record.id.as_str(),
                 curve.as_str(),
             )?
-            .is_some();
+            .exists();
         if !identity_present {
             let offset = ctx
                 .get_btree_map(&row_offsets, curve_id, "creo row offsets lookup")?
@@ -3464,7 +3460,7 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                     |record| record.id.as_str(),
                     surface.as_str(),
                 )?
-                .is_some();
+                .exists();
             if !identity_present {
                 annotate(
                     ctx,
@@ -3650,7 +3646,7 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                             };
                             let traversal = [
                                 *ctx.get_btree_map(
-                                    &solved_vertices,
+                                    solved_vertices,
                                     &binding.start_vertex_id.get(),
                                     "creo solved vertices lookup",
                                 )?
@@ -3660,7 +3656,7 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                                     )
                                 })?,
                                 *ctx.get_btree_map(
-                                    &solved_vertices,
+                                    solved_vertices,
                                     &end.get(),
                                     "creo solved vertices lookup",
                                 )?
@@ -3730,7 +3726,7 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                                     |curve| curve.id.as_str(),
                                     curve_id.as_str(),
                                 )?
-                                .flatten()
+                                .unique_position()
                             else {
                                 break 'projected None;
                             };
@@ -3748,7 +3744,7 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                                     |edge| edge.id.as_str(),
                                     edge_id.as_str(),
                                 )?
-                                .flatten()
+                                .unique_position()
                             else {
                                 break 'projected None;
                             };
@@ -3850,7 +3846,7 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
                                 |record| record.id.as_str(),
                                 pcurve.as_str(),
                             )?
-                            .is_some();
+                            .exists();
                         if !identity_present {
                             annotate(
                                 ctx,
@@ -3966,7 +3962,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 |record| record.id.as_str(),
                 id.as_str(),
             )?
-            .is_some();
+            .exists();
         if identity_present {
             continue;
         }
@@ -4042,7 +4038,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                     |record| record.id.as_str(),
                     id.as_str(),
                 )?
-                .is_some();
+                .exists();
             if identity_present {
                 continue;
             }

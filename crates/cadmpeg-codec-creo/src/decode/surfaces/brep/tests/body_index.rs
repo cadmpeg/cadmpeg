@@ -51,7 +51,7 @@ fn brep_neutral_edge_curve_nodes_refuse_collection_limit() {
         &index_result(crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             Some("creo B-rep neutral edge curve nodes"),
-            |cap| index_result(cap),
+            index_result,
         ))
         .err()
         .expect("node refused"),
@@ -65,7 +65,7 @@ fn brep_component_face_ids_refuse_collection_limit() {
         &index_result(crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             Some("creo B-rep component face IDs"),
-            |cap| index_result(cap),
+            index_result,
         ))
         .err()
         .expect("face refused"),
@@ -79,7 +79,7 @@ fn brep_component_wire_nodes_refuse_collection_limit() {
         &index_result(crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             Some("creo B-rep component wire nodes"),
-            |cap| index_result(cap),
+            index_result,
         ))
         .err()
         .expect("wire refused"),
@@ -93,7 +93,7 @@ fn brep_component_records_refuse_collection_limit() {
         &index_result(crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             Some("creo B-rep component records"),
-            |cap| index_result(cap),
+            index_result,
         ))
         .err()
         .expect("record refused"),
@@ -128,7 +128,7 @@ fn brep_body_indexes_preserve_service_values() {
     let indexes = index_result(crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         None,
-        |cap| index_result(cap),
+        index_result,
     ))
     .expect("service body indexes admitted");
     assert_eq!(indexes.neutral_edge_curves, BTreeSet::from([10]));
@@ -177,7 +177,7 @@ fn brep_merged_component_faces_refuse_collection_limit() {
         &merge_result(crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             Some("creo B-rep merged component faces"),
-            |cap| merge_result(cap),
+            merge_result,
         ))
         .expect_err("face refused"),
         "creo B-rep merged component faces",
@@ -190,7 +190,7 @@ fn brep_merged_component_wire_nodes_refuse_collection_limit() {
         &merge_result(crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             Some("creo B-rep merged component wire nodes"),
-            |cap| merge_result(cap),
+            merge_result,
         ))
         .expect_err("wire refused"),
         "creo B-rep merged component wire nodes",
@@ -203,7 +203,7 @@ fn brep_merged_component_records_refuse_collection_limit() {
         &merge_result(crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             Some("creo B-rep merged component records"),
-            |cap| merge_result(cap),
+            merge_result,
         ))
         .expect_err("record refused"),
         "creo B-rep merged component records",

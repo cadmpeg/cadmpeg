@@ -117,9 +117,7 @@ fn brep_coverage_refuses_before_first_report_node() {
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("root");
-            diagnostics
-                .record_coverage(&ctx, &mut cadmpeg_ir::report::decode::Coverage::default())
-                .map(|_| ())
+            diagnostics.record_coverage(&ctx, &mut cadmpeg_ir::report::decode::Coverage::default())
         },
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
