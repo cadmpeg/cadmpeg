@@ -280,6 +280,24 @@ pub(in crate::decode) fn solve_planes(
     ctx: &DecodeContext<'_>,
     planes: &[PlaneEquation],
 ) -> Result<Option<[f64; 3]>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
+    match planes {
+        [] | [_] | [_, _] => return Ok(None),
+        [a, b, c] => {
+            let triple = [*a, *b, *c];
+            return Ok(plane_triple_intersection(triple).filter(|point| {
+                triple.iter().all(|plane| {
+                    crate::vecmath::within(
+                        (dot(plane.normal, *point) - dot(plane.normal, plane.origin)).abs(),
+                        EPS_PLANE_RESIDUAL,
+                    )
+                })
+            }));
+        }
+        _ => {}
+    }
     let mut traversal = (planes).iter().enumerate();
     while let Some((first_index, a)) =
         ctx.next_charged(&mut traversal, "creo plane solver candidates")?
@@ -293,27 +311,9 @@ pub(in crate::decode) fn solve_planes(
             while let Some(c) =
                 ctx.next_charged(&mut traversal, "creo plane solver third candidates")?
             {
-                let b_cross_c = cross(b.normal, c.normal);
-                let determinant = dot(a.normal, b_cross_c);
-                if determinant.abs() <= EPS_AGREE {
+                let Some(point) = plane_triple_intersection([*a, *b, *c]) else {
                     continue;
-                }
-                let distances = [
-                    dot(a.normal, a.origin),
-                    dot(b.normal, b.origin),
-                    dot(c.normal, c.origin),
-                ];
-                let c_cross_a = cross(c.normal, a.normal);
-                let a_cross_b = cross(a.normal, b.normal);
-                let point = [0, 1, 2].map(|axis| {
-                    (distances[0] * b_cross_c[axis]
-                        + distances[1] * c_cross_a[axis]
-                        + distances[2] * a_cross_b[axis])
-                        / determinant
-                });
-                if !point.iter().all(|value| value.is_finite()) {
-                    continue;
-                }
+                };
                 let mut agrees = true;
                 let mut traversal = (planes).iter();
                 while let Some(plane) =
@@ -334,6 +334,28 @@ pub(in crate::decode) fn solve_planes(
         }
     }
     Ok(None)
+}
+
+fn plane_triple_intersection([a, b, c]: [PlaneEquation; 3]) -> Option<[f64; 3]> {
+    let b_cross_c = cross(b.normal, c.normal);
+    let determinant = dot(a.normal, b_cross_c);
+    if determinant.abs() <= EPS_AGREE {
+        return None;
+    }
+    let distances = [
+        dot(a.normal, a.origin),
+        dot(b.normal, b.origin),
+        dot(c.normal, c.origin),
+    ];
+    let c_cross_a = cross(c.normal, a.normal);
+    let a_cross_b = cross(a.normal, b.normal);
+    let point = [0, 1, 2].map(|axis| {
+        (distances[0] * b_cross_c[axis]
+            + distances[1] * c_cross_a[axis]
+            + distances[2] * a_cross_b[axis])
+            / determinant
+    });
+    point.iter().all(|value| value.is_finite()).then_some(point)
 }
 
 pub(in crate::decode) fn plane_intersection_line(
@@ -1884,6 +1906,8 @@ pub(in crate::decode) fn plane_cone_conic(
 
 #[cfg(test)]
 mod tests {
+    mod plane_solver;
+
     use super::{
         BoundedCoefficient, CarrierEquation, ConeEquation, PlaneConicEquation, PlaneEquation,
         SphereEquation, TorusEquation,
@@ -1958,7 +1982,7 @@ mod tests {
     );
 
     #[test]
-    fn plane_solver_refuses_candidate_scan_work() {
+    fn plane_solver_fixed_candidates_need_no_scan_work() {
         let planes = [
             PlaneEquation {
                 origin: [1.0, 0.0, 0.0],
@@ -1979,12 +2003,9 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
 
-        let error = super::solve_planes(&ctx, &planes)
-            .expect_err("the first plane candidate exceeds work limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::WorkUnits
-                && refusal.operation == "creo plane solver candidates")
+        assert_eq!(
+            super::solve_planes(&ctx, &planes).expect("fixed three-plane solve"),
+            Some([1.0, 2.0, 3.0])
         );
     }
 
