@@ -13,14 +13,14 @@ fn style_target_expansion_keeps_order_duplicates_cycles_and_depth_bound() {
             let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
             let mut typed = BTreeSet::new();
             let mut active = BTreeSet::new();
-            let (mut targets, mut storage) = ctx.temporary_vec(0, "target fixture").expect("scope");
+            let mut targets = Vec::new();
             super::super::expand_style_targets(
                 1,
                 &exchange,
                 (&mut typed, &mut claim_storage),
                 &mut active,
                 (0, graph_limit),
-                (&mut targets, &mut storage),
+                &mut |id| ctx.push_vec(&mut targets, id, "target fixture"),
                 ctx,
             )
             .expect("expanded targets");
@@ -33,16 +33,14 @@ fn style_target_expansion_keeps_order_duplicates_cycles_and_depth_bound() {
             .expect("scope");
         let mut typed = BTreeSet::new();
         let mut active = BTreeSet::new();
-        let (mut targets, mut storage) = ctx
-            .temporary_vec(0, "missing target fixture")
-            .expect("scope");
+        let mut targets = Vec::new();
         super::super::expand_style_targets(
             99,
             &exchange,
             (&mut typed, &mut claim_storage),
             &mut active,
             (0, 64),
-            (&mut targets, &mut storage),
+            &mut |id| ctx.push_vec(&mut targets, id, "missing target fixture"),
             ctx,
         )
         .expect("missing record leaf");

@@ -230,10 +230,8 @@ fn shared_color_cache_keeps_depth_cutoffs_and_per_style_warnings() {
 
 #[test]
 fn shared_style_color_query_keeps_ordered_local_cache_history() {
-    // The cutoff witness needs 256 large unoptimized recursive frames.
-    std::thread::Builder::new()
-        .stack_size(64 * 1024 * 1024)
-        .spawn(|| {
+    // Exercise the full cutoff path on an ordinary thread stack.
+    std::thread::spawn(|| {
             let mut records = String::from("#1=COLOUR_RGB('red',1.,0.,0.);#2=ITEM(#1);");
             for id in 10..265 {
                 write!(
@@ -283,7 +281,6 @@ fn shared_style_color_query_keeps_ordered_local_cache_history() {
                 assert_eq!(shared.values.len(), 2);
             });
         })
-        .expect("depth witness thread")
         .join()
-        .expect("depth witness assertions");
+        .expect("color query assertions");
 }

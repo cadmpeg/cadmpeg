@@ -26,21 +26,33 @@ fn pmi_refuses(records: &str, operation: &str) {
         crate::reader::index::CarrierIndex::from_ir(&setup_ir, &setup_ctx).expect("carrier setup");
     let topology = crate::reader::topology::decode(&exchange, &mut setup_ir, &index, &setup_ctx)
         .expect("topology setup");
-    let refused = (0..=32).any(|limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
-            .expect("root fits collection policy");
-        let refused = matches!(
-            super::super::decode(&exchange, &geometry.value, &topology.value, &mut setup_ir.clone(), &ctx),
-            Err(CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == operation
-        );
-        refused
-    });
-    assert!(refused, "no collection limit refused {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+                .expect("root fits collection policy");
+            let result = super::super::decode(
+                &exchange,
+                &geometry.value,
+                &topology.value,
+                &mut setup_ir.clone(),
+                &ctx,
+            )
+            .map(|_| ());
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == operation),
+        "no collection limit refused {operation}");
 }
 
 fn pmi_retained_refuses(records: &str, operation: &str) {
@@ -362,29 +374,57 @@ fn datum_reference_refuses(records: &str, operation: &str) {
             )
             .expect("datum annotation setup");
     });
-    let refused = (0..=8).any(|limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits collection policy");
-        let mut losses = Vec::new();
-        let mut measurements = super::super::MeasureContext {
-            length_scale: 1.0,
-            angle_scale: 1.0,
-            graph_limit: 64,
-            losses: (&mut losses, &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
-        };
-        let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
-        let refused = matches!(
-            super::super::datum_references_for_compartment((&crate::parse::Value::Reference(1), NonZeroU32::new(1).expect("positive precedence")), &exchange, &annotations, (&mut std::collections::BTreeSet::new(), &mut claim_storage), &mut measurements, (&mut Vec::new(), &mut ctx.reserve_scoped(0, "reference fixture").expect("scope")), &ctx),
-            Err(CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == operation
-        );
-        refused
-    });
-    assert!(refused, "datum reference never refused {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+                .expect("empty root fits collection policy");
+            let mut losses = Vec::new();
+            let mut measurements = super::super::MeasureContext {
+                length_scale: 1.0,
+                angle_scale: 1.0,
+                graph_limit: 64,
+                losses: (
+                    &mut losses,
+                    &std::cell::RefCell::new(
+                        ctx.reserve_scoped(0, "report fixture").expect("scope"),
+                    ),
+                ),
+            };
+            let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
+            let result = super::super::datum_references_for_compartment(
+                (
+                    &crate::parse::Value::Reference(1),
+                    NonZeroU32::new(1).expect("positive precedence"),
+                ),
+                &exchange,
+                &annotations,
+                (
+                    &mut std::collections::BTreeSet::new(),
+                    &mut claim_storage,
+                ),
+                &mut measurements,
+                (
+                    &mut Vec::new(),
+                    &mut ctx.reserve_scoped(0, "reference fixture").expect("scope"),
+                ),
+                &ctx,
+            )
+            .map(|_| ());
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == operation),
+        "datum reference never refused {operation}");
 }
 
 #[test]
@@ -417,21 +457,35 @@ fn placement_refuses(operation: &str) {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let geometry =
         crate::reader::geometry::decode(&exchange, &mut ir, &setup_ctx).expect("geometry setup");
-    let refused = (0..=32).any(|limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits collection policy");
-        let refused = matches!(
-            super::super::collect_placement_candidates(5, &exchange, &geometry.value, &mut BTreeMap::new(), &mut BTreeMap::new(), 0, &ctx),
-            Err(CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == operation
-        );
-        refused
-    });
-    assert!(refused, "placement walk did not refuse {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+                .expect("empty root fits collection policy");
+            let result = super::super::collect_placement_candidates(
+                5,
+                &exchange,
+                &geometry.value,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
+                0,
+                &ctx,
+            )
+            .map(|_| ());
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == operation),
+        "placement walk did not refuse {operation}");
 }
 
 #[test]

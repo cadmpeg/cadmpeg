@@ -207,3 +207,31 @@ fn reference_worklist_preserves_per_visit_refusal() {
         assert_eq!(values, [2]);
     });
 }
+
+#[test]
+fn reference_materialization_does_not_admit_suffix_after_a_depth_refusal() {
+    for count in [1, 1024] {
+        let mut values = vec![Value::Typed("T".into(), Box::new(Value::Typed("T".into(), Box::new(Value::Integer(1)))))];
+        values.extend((1..count).map(|_| Value::Integer(1)));
+        let value = Value::List(values);
+        let mut policy = DecodePolicy::service();
+        // The empty binding iterator, list node, first child visit and typed
+        // node use four work units.
+        // The typed node's child reaches the next depth gate before its work.
+        policy.limits.max_work_units = 4;
+        policy.limits.max_recursion_depth = 2;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let anchors = std::collections::BTreeMap::new();
+            let mut resolver = crate::parse::ReferenceResolver::new(&[], &anchors, &ctx).expect("empty resolver");
+            let error = resolver.resolve_value(&value, 0).expect_err("first child exceeds depth");
+            let crate::parse::ResolveError::Resource(CodecError::ResourceLimit(refusal)) = error else {
+                panic!("original depth refusal required");
+            };
+            assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
+            assert_eq!(refusal.operation, "step_reference_expansion");
+            assert_eq!(ctx.resource_refusal(), Some(refusal));
+            drop(resolver);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
+    }
+}

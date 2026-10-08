@@ -684,3 +684,24 @@ fn control_run_lookahead_is_linear_and_preserves_resource_error_offset() {
         "print control directive is not allowed in a resource"
     );
 }
+
+#[test]
+fn normalized_long_names_use_linear_work_and_exact_storage() {
+    let input = vec![b'a'; 8192];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(input.len() * 8).expect("fixture work bound");
+    policy.limits.max_retained_bytes = u64::try_from(input.len()).expect("fixture storage");
+    let name = lex_under_policy(&input, policy, false).expect("linear lexer work fits");
+    assert_eq!(name, super::TokenKind::Name("A".repeat(input.len())));
+}
+
+#[test]
+fn normalized_measurement_and_emission_preserve_controls_and_numeric_mapping() {
+    let input = b"a\x01b\x02c";
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 3;
+    assert_eq!(lex_under_policy(input, policy, false).expect("three normalized bytes"),
+        super::TokenKind::Name("ABC".into()));
+    assert_eq!(lex_under_policy(b"1\x01D\x02+\x033", DecodePolicy::service(), false).expect("Fortran exponent"),
+        super::TokenKind::Real(cadmpeg_ir::scalar::FiniteReal::new(1000.0).expect("finite fixture")));
+}

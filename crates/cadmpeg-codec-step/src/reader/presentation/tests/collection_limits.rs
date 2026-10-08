@@ -75,9 +75,23 @@ fn style_target_refuses(operation: &str, depth_limit: bool) {
         let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
             .expect("root fits style target policy");
         let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
-        let mut target_storage = ctx.reserve_scoped(0, "target fixture").expect("scope");
+        let result = super::super::expand_style_targets(
+            1,
+            &exchange,
+            (
+                &mut std::collections::BTreeSet::new(),
+                &mut claim_storage,
+            ),
+            &mut BTreeSet::new(),
+            (0, 128),
+            &mut |_| Ok(()),
+            &ctx,
+        );
+        if let Err(CodecError::ResourceLimit(refusal)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+        }
         let refused = matches!(
-            super::super::expand_style_targets(1, &exchange, (&mut std::collections::BTreeSet::new(), &mut claim_storage), &mut BTreeSet::new(), (0, 128), (&mut Vec::new(), &mut target_storage), &ctx),
+            result,
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.operation == operation
                     && refusal.dimension == if depth_limit { ResourceDimension::RecursionDepth } else { ResourceDimension::CollectionItems }
@@ -171,8 +185,81 @@ fn presentation_style_target_active_refuses_collection_limit() {
 }
 
 #[test]
-fn presentation_style_target_items_refuse_collection_limit() {
-    style_target_refuses("step_presentation_style_target_items", false);
+fn presentation_style_target_traversal_refuses_work_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=GEOMETRIC_SET('',(#2));#2=CARTESIAN_POINT('',(0.,0.,0.));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("style set exchange");
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP style target traversal",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits style target policy");
+            let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
+            let result = super::super::expand_style_targets(
+                1,
+                &exchange,
+                (&mut BTreeSet::new(), &mut claim_storage),
+                &mut BTreeSet::new(),
+                (0, 128),
+                &mut |_| ctx.charge_work(1, "STEP style target traversal"),
+                &ctx,
+            );
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
+}
+
+#[test]
+fn presentation_style_target_visits_first_child_before_large_set_suffix() {
+    let mut members = String::from("#2");
+    for _ in 0..4096 {
+        members.push_str(",$");
+    }
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=GEOMETRIC_SET('',({members}));#2=GEOMETRIC_SET('',(#3));#3=CARTESIAN_POINT('',(0.,0.,0.));ENDSEC;END-ISO-10303-21;"
+    );
+    let (exchange, _) = crate::test_support::with_service_context(
+        source.as_bytes(),
+        crate::parse::parse_inner,
+    )
+    .expect("large style set exchange");
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The 4,097 values exceed this cap if pre-admitted. The root's active and
+    // typed B-tree insertions cost 696 work units each (three 232-byte node
+    // passes); the first child then reaches the configured depth refusal.
+    policy.limits.max_work_units = 2_048;
+    policy.limits.max_recursion_depth = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits style target policy");
+    let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
+    let result = super::super::expand_style_targets(
+        1,
+        &exchange,
+        (
+            &mut BTreeSet::new(),
+            &mut claim_storage,
+        ),
+        &mut BTreeSet::new(),
+        (0, 128),
+        &mut |_| Ok(()),
+        &ctx,
+    );
+    let CodecError::ResourceLimit(refusal) = result.expect_err("first child exceeds depth") else {
+        panic!("style child must refuse on depth");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!(refusal.operation, "step_presentation_style_target_walk");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
 
 #[test]
@@ -251,6 +338,96 @@ fn presentation_transparency_candidates_refuse_collection_limit() {
 #[test]
 fn presentation_transparency_conflict_text_refuses_retained_limit() {
     transparency_refuses("step_presentation_transparency_conflict_text", true);
+}
+
+#[test]
+fn presentation_surface_transparency_visits_first_property_before_large_parameter_suffix() {
+    let mut parameters = String::from("#2");
+    for _ in 0..1024 {
+        parameters.push_str(",$");
+    }
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=SURFACE_STYLE_RENDERING_WITH_PROPERTIES({parameters});#2=SURFACE_STYLE_TRANSPARENT(0.2);ENDSEC;END-ISO-10303-21;"
+    );
+    let (exchange, _) = crate::test_support::with_service_context(
+        source.as_bytes(),
+        crate::parse::parse_inner,
+    )
+    .expect("large transparency parameter exchange");
+    let record = exchange.records().get(&1).expect("rendering record");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The source has 1,025 top-level parameters, so bulk admission exceeds the
+    // work cap. The first parameter reaches a nested property visit first.
+    policy.limits.max_work_units = 256;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits transparency policy");
+    let reports = std::cell::RefCell::new(
+        ctx.reserve_scoped(0, "report fixture")
+            .expect("report scope"),
+    );
+    let result = super::super::surface_transparency(
+        1,
+        record,
+        &exchange,
+        (&mut Vec::new(), &reports),
+        &ctx,
+    );
+    let refusal = match result {
+        Err(CodecError::ResourceLimit(refusal)) => refusal,
+        Err(error) => panic!("unexpected transparency property refusal: {error:?}"),
+        Ok(_) => panic!("transparency property must refuse on depth"),
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!(refusal.operation, "step_reference_value_walk");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+}
+
+#[test]
+fn presentation_transparency_details_charge_first_property_before_large_suffix() {
+    let mut parameters = String::from("#2");
+    for _ in 0..1024 {
+        parameters.push_str(",#2");
+    }
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=SURFACE_STYLE_RENDERING_WITH_PROPERTIES($,({parameters}));#2=SURFACE_STYLE_TRANSPARENT(0.2);ENDSEC;END-ISO-10303-21;"
+    );
+    let (exchange, _) = crate::test_support::with_service_context(
+        source.as_bytes(),
+        crate::parse::parse_inner,
+    )
+    .expect("large transparency candidate exchange");
+    let record = exchange.records().get(&1).expect("rendering record");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP transparency detail traversal",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+                .expect("empty root fits transparency policy");
+            let reports = std::cell::RefCell::new(
+                ctx.reserve_scoped(0, "report fixture")
+                    .expect("report scope"),
+            );
+            super::super::surface_transparency(
+                1,
+                record,
+                &exchange,
+                (&mut Vec::new(), &reports),
+                &ctx,
+            )
+            .map(|_| ())
+        },
+    );
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("first transparency detail must expose its work boundary");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(refusal.operation, "STEP transparency detail traversal");
+    assert_eq!(refusal.additional, 1);
 }
 
 fn invalid_side_refuses(operation: &str, retained: bool) {
@@ -368,6 +545,38 @@ fn presentation_style_domain_walk_refuses_depth_limit() {
         true,
         |exchange, ctx| super::super::style_domain(4, exchange, ctx).map(|_| ()),
     );
+}
+
+#[test]
+fn presentation_style_domain_visits_first_child_before_large_set_suffix() {
+    let mut members = String::from("#2");
+    for _ in 0..4096 {
+        members.push_str(",$");
+    }
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=GEOMETRIC_SET('',({members}));#2=GEOMETRIC_SET('',(#3));#3=CARTESIAN_POINT('',(0.,0.,0.));ENDSEC;END-ISO-10303-21;"
+    );
+    let (exchange, _) = crate::test_support::with_service_context(
+        source.as_bytes(),
+        crate::parse::parse_inner,
+    )
+    .expect("large style domain exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Pre-admitting 4,097 values cannot fit. The root active-set insertion
+    // costs 696 work units; its first child then reaches the depth refusal.
+    policy.limits.max_work_units = 2_048;
+    policy.limits.max_recursion_depth = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits domain policy");
+    let refusal = match super::super::style_domain(1, &exchange, &ctx) {
+        Err(CodecError::ResourceLimit(refusal)) => refusal,
+        Err(error) => panic!("unexpected style domain refusal: {error:?}"),
+        Ok(_) => panic!("style domain child must refuse on depth"),
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!(refusal.operation, "step_presentation_style_domain_walk");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
 
 #[test]
@@ -493,6 +702,143 @@ fn presentation_invisible_body_ids_refuse_collection_limit() {
 #[test]
 fn presentation_appearance_targets_refuse_collection_limit() {
     vector_refuses("step_presentation_appearance_targets");
+}
+
+#[test]
+fn presentation_appearance_target_copies_visit_prefix_before_large_suffix() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("appearance exchange");
+    let setup_arena = DecodeArena::new();
+    let (setup_ctx, _) = DecodeContext::from_root_bytes(source, &setup_arena, &DecodePolicy::default())
+        .expect("setup root");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup_ctx)
+        .expect("setup carriers");
+    let mut topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, &setup_ctx)
+        .expect("setup topology");
+    let body = cadmpeg_ir::ids::BodyId::mint("step:model:body#1").expect("body ID");
+    const TARGETS: usize = 1_025;
+    topology
+        .body_by_root
+        .insert(1, std::iter::repeat(body.clone()).take(TARGETS).collect());
+
+    let products = std::collections::BTreeMap::new();
+    let entity_ids = super::super::EntityIds {
+        edges: BTreeSet::new(),
+        vertices: BTreeSet::new(),
+        points: BTreeSet::new(),
+        curves: BTreeSet::new(),
+        surfaces: BTreeSet::new(),
+        products: &products,
+        occurrences: BTreeSet::new(),
+        pmi: BTreeSet::new(),
+        tessellations: BTreeSet::new(),
+    };
+    let faces = std::collections::BTreeMap::new();
+    let bodies = std::collections::BTreeMap::from([(body.as_str().to_owned(), 0)]);
+    let indices = super::super::PresentationIndices {
+        faces: &faces,
+        bodies: &bodies,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The source collection has 1,025 targets, above this work cap by itself.
+    // The first two identity copies reach the retained cap first.
+    policy.limits.max_work_units = 1_024;
+    policy.limits.max_retained_bytes = body.as_str().len() as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits target policy");
+    let mut storage = ctx.reserve_scoped(0, "target fixture").expect("scope");
+    let result = super::super::appearance_targets(
+        1,
+        &exchange,
+        &topology,
+        &entity_ids,
+        indices,
+        &mut storage,
+        &ctx,
+    );
+    let CodecError::ResourceLimit(refusal) = result.expect_err("second copy exceeds retained cap")
+    else {
+        panic!("appearance target copy must refuse");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(refusal.operation, "step_presentation_appearance_body_identity");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+}
+
+#[test]
+fn presentation_layer_item_copies_visit_prefix_before_large_suffix() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("presentation exchange");
+    let setup_arena = DecodeArena::new();
+    let (setup_ctx, _) = DecodeContext::from_root_bytes(source, &setup_arena, &DecodePolicy::default())
+        .expect("setup root");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup_ctx)
+        .expect("setup carriers");
+    let mut topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, &setup_ctx)
+        .expect("setup topology");
+    let body = cadmpeg_ir::ids::BodyId::mint("step:model:body#1").expect("body ID");
+    const ITEMS: usize = 1_025;
+    topology
+        .body_by_root
+        .insert(1, std::iter::repeat(body.clone()).take(ITEMS).collect());
+    let products = std::collections::BTreeMap::new();
+    let entity_ids = super::super::EntityIds {
+        edges: BTreeSet::new(),
+        vertices: BTreeSet::new(),
+        points: BTreeSet::new(),
+        curves: BTreeSet::new(),
+        surfaces: BTreeSet::new(),
+        products: &products,
+        occurrences: BTreeSet::new(),
+        pmi: BTreeSet::new(),
+        tessellations: BTreeSet::new(),
+    };
+    let faces = std::collections::BTreeMap::new();
+    let bodies = std::collections::BTreeMap::from([(body.as_str().to_owned(), 0)]);
+    let indices = super::super::PresentationIndices {
+        faces: &faces,
+        bodies: &bodies,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The source collection exceeds the work cap. A per-item walk reaches the
+    // second identity copy after the first item's initial Vec backing fits.
+    policy.limits.max_work_units = 1_024;
+    let item_size = std::mem::size_of::<cadmpeg_ir::PresentationItem>();
+    let initial_capacity = match item_size {
+        0 => 0,
+        1 => 8,
+        2..=1024 => 4,
+        _ => 1,
+    };
+    let initial_backing = initial_capacity * item_size;
+    policy.limits.max_retained_bytes =
+        (initial_backing + body.as_str().len()) as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits layer-item policy");
+    let mut items = Vec::new();
+    let result = super::super::append_presentation_items(
+        1,
+        &exchange,
+        &topology,
+        &entity_ids,
+        indices,
+        &mut items,
+        &ctx,
+    );
+    let CodecError::ResourceLimit(refusal) = result.expect_err("second copy exceeds retained cap")
+    else {
+        panic!("layer item identity copy must refuse");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(refusal.operation, "step_presentation_layer_body_identity");
+    assert_eq!(items.len(), 1);
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
 
 #[test]
@@ -692,8 +1038,107 @@ fn presentation_color_active_refuses_collection_limit() {
 }
 
 #[test]
+fn presentation_color_walk_frames_refuse_collection_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(#2);#2=COLOUR_RGB('red',1.,0.,0.);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("color graph exchange");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "step_presentation_color_walk_frames",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+                .expect("empty root fits frame policy");
+            let result = super::super::find_color(
+                1,
+                &exchange,
+                super::super::StyleDomain::Any,
+                super::super::ColorSearchState {
+                    storage: &std::cell::RefCell::new(
+                        ctx.reserve_scoped(0, "color search fixture").expect("scope"),
+                    ),
+                    active: &mut BTreeSet::new(),
+                    cache: &mut std::collections::BTreeMap::new(),
+                    losses: (
+                        &mut Vec::new(),
+                        &std::cell::RefCell::new(
+                            ctx.reserve_scoped(0, "report fixture").expect("scope"),
+                        ),
+                    ),
+                    invalid_surface_sides: &mut BTreeSet::new(),
+                },
+                0,
+                &ctx,
+            );
+            if let Err(CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_presentation_color_walk_frames"
+    ));
+}
+
+#[test]
 fn presentation_color_walk_refuses_depth_limit() {
     color_search_refuses("step_presentation_color_walk", 100, 100, 0);
+}
+
+#[test]
+fn presentation_color_walk_visits_first_child_before_large_parameter_suffix() {
+    let mut parameters = String::from("T(#2)");
+    for _ in 0..4096 {
+        parameters.push_str(",$");
+    }
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM({parameters});#2=ITEM(#3);#3=ITEM();ENDSEC;END-ISO-10303-21;"
+    );
+    let (exchange, _) = crate::test_support::with_service_context(
+        source.as_bytes(),
+        crate::parse::parse_inner,
+    )
+    .expect("large color graph exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The root record alone has 4,097 parameters. Pre-admitting them cannot fit.
+    // The first typed value descends to #2 before a second color frame is needed.
+    policy.limits.max_work_units = 2_048;
+    policy.limits.max_recursion_depth = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits color policy");
+    let storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "color search fixture").expect("scope"));
+    let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
+    let mut losses = Vec::new();
+    let result = super::super::find_color(
+        1,
+        &exchange,
+        super::super::StyleDomain::Any,
+        super::super::ColorSearchState {
+            storage: &storage,
+            active: &mut BTreeSet::new(),
+            cache: &mut std::collections::BTreeMap::new(),
+            losses: (&mut losses, &reports),
+            invalid_surface_sides: &mut BTreeSet::new(),
+        },
+        0,
+        &ctx,
+    );
+    let refusal = match result {
+        Err(CodecError::ResourceLimit(refusal)) => refusal,
+        Err(error) => panic!("unexpected color child refusal: {error:?}"),
+        Ok(_) => panic!("color child must refuse on depth"),
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!(refusal.operation, "step_reference_value_walk");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
 
 #[test]

@@ -202,11 +202,12 @@ pub(crate) fn split_schema_identifier<'a>(
     identifier: &'a str,
 ) -> Result<Option<(&'a str, Option<&'a str>)>, CodecError> {
     let identifier = ctx.trim_text(identifier, "STEP schema identifier trim")?;
-    let Some((name, object_identifier)) =
-        ctx.split_once(identifier, "{", "STEP schema identifier brace split")?
+    let Some(separator) =
+        ctx.position_by(identifier.as_bytes(), |byte| Ok(*byte == b'{'), "STEP schema identifier brace split")?
     else {
         return Ok(Some((identifier, None)));
     };
+    let (name, object_identifier) = (&identifier[..separator], &identifier[separator + 1..]);
     let Some(object_identifier) = object_identifier.strip_suffix('}') else {
         return Ok(None);
     };
@@ -343,11 +344,12 @@ fn schema_oid_component_form<'a>(
     if valid_schema_oid_name(ctx, component)? {
         return Ok(ComponentForm::Unnumbered);
     }
-    let Some((name, number)) =
-        ctx.split_once(component, "(", "STEP schema object identifier number split")?
+    let Some(separator) =
+        ctx.position_by(component.as_bytes(), |byte| Ok(*byte == b'('), "STEP schema object identifier number split")?
     else {
         return schema_oid_number_form(ctx, component);
     };
+    let (name, number) = (&component[..separator], &component[separator + 1..]);
     let Some(number) = number.strip_suffix(')') else {
         return Ok(ComponentForm::Invalid);
     };

@@ -398,3 +398,16 @@ fn schema_name_search_charges_visited_bytes_and_end_probe() {
         assert_eq!(limit.additional, 1);
     }
 }
+
+#[test]
+fn component_number_separator_does_not_admit_the_suffix_after_an_open_parenthesis() {
+    let component = format!("({}", "a".repeat(8192));
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // One invalid name character and one separator visit precede the missing closer.
+    policy.limits.max_work_units = 2;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(matches!(super::schema_oid_component_form(&ctx, &component).expect("visited prefix fits"),
+            super::ComponentForm::Invalid));
+        ctx.finish_session().expect("no resource refusal");
+}
