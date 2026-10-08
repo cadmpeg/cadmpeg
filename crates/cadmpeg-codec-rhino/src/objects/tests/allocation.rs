@@ -14,7 +14,7 @@ fn object_boxes_refuse_before_allocating_their_inline_storage() {
     let record = crate::container::Record::long(chunk.typecode, chunk.range(), chunk.body());
     for (dimension, operation) in [
         (
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "Rhino object attribute box",
         ),
         (
@@ -22,18 +22,14 @@ fn object_boxes_refuse_before_allocating_their_inline_storage() {
             "Rhino framed object box",
         ),
         (
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "Rhino resolved object box",
         ),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            if dimension == ResourceDimension::MaterializedBytes {
-                policy.limits.max_materialized_bytes = cap;
-            } else {
-                policy.limits.max_retained_bytes = cap;
-            }
+            policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
             let mut workspace = ctx
                 .reserve_scoped(0, "Rhino test object workspace")
@@ -47,12 +43,14 @@ fn object_boxes_refuse_before_allocating_their_inline_storage() {
                 None,
                 &mut Diagnostics::new(),
             ) {
-                Ok(object) => crate::objects::resolve_identities(
-                    &ctx,
-                    vec![object],
-                    &settings::DocumentMetadata::default(),
-                    &mut Diagnostics::new(),
-                ),
+                Ok(object) => workspace.with_storage(|| {
+                    crate::objects::resolve_identities(
+                        &ctx,
+                        vec![object],
+                        &settings::DocumentMetadata::default(),
+                        &mut Diagnostics::new(),
+                    )
+                }),
                 Err(FramingError::Resource(limit)) => {
                     Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 }

@@ -1198,7 +1198,7 @@ pub(crate) fn parse(
     };
     match ValidatedRawBrep::validate(ctx, &mut raw) {
         Ok((resolved, mut validation_warnings)) => {
-            validation_warnings.prepend(warnings);
+            validation_warnings.prepend_admitted(ctx, warnings)?;
             let validated = ValidatedRawBrep {
                 raw,
                 resolved,
@@ -1933,7 +1933,7 @@ fn parse_legacy_major2(
     };
     match ValidatedRawBrep::validate(ctx, &mut raw) {
         Ok((resolved, mut validation_warnings)) => {
-            validation_warnings.prepend(warnings);
+            validation_warnings.prepend_admitted(ctx, warnings)?;
             let validated = ValidatedRawBrep {
                 raw,
                 resolved,

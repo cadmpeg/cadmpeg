@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Built-in history-record decoding.
 
-use crate::loss::Diagnostics;
+use crate::loss::{DiagnosticSink, Diagnostics, ScratchDiagnostics};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::ops::Range;
@@ -157,12 +157,18 @@ pub(crate) struct HistoryRecord {
 }
 
 /// Result of scanning the history-record table.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct HistoryScan {
+#[derive(Debug)]
+pub(crate) struct HistoryScan<'ctx> {
     /// Valid history records in source order.
     pub(crate) records: Vec<HistoryRecord>,
+    /// History-record vector backing stays scratch until source projection ends.
+    pub(crate) _records_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     /// Complete records whose registered class payload was not admitted.
     pub(crate) opaque_records: Vec<OpaqueRecord>,
+    /// Parsed record fields stay scratch until projection and native output.
+    pub(crate) _record_storage: Vec<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+    /// The vector of per-record guards stays scratch with the scan.
+    pub(crate) _record_guards_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 fn anonymous(
@@ -390,13 +396,17 @@ fn geometries(
         ctx.charge_work(1, "Rhino history cursor traversal")?;
         let start = nested.position();
         let wrapper = chunk_at(nested.backing_bytes(), start, nested.end(), archive, false)?;
-        let mut warnings = Diagnostics::new();
+        let mut geometry_warnings = ScratchDiagnostics::new(
+            ctx,
+            "Rhino history embedded geometry diagnostics",
+        )
+        .map_err(FramingError::from)?;
         let (class, userdata) = parse_class_wrapper_with_userdata(
             ctx,
             nested.backing_bytes(),
             start..wrapper.next_offset(),
             archive,
-            &mut warnings,
+            &mut geometry_warnings,
         )?;
         nested.skip(wrapper.next_offset() - start)?;
         values.push(EmbeddedGeometry {
@@ -515,13 +525,13 @@ fn poly_edges(
     Ok(values)
 }
 
-fn subd_edge_chain(
+fn subd_edge_chain<D: DiagnosticSink>(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
-    warnings: &mut Diagnostics,
+    warnings: &mut D,
 ) -> Result<(SubdEdgeChain, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
     if minor < 1 {
@@ -574,11 +584,11 @@ fn subd_edge_chain(
     Ok((SubdEdgeChain { subd_id, edges }, next))
 }
 
-fn subd_edge_chains(
+fn subd_edge_chains<D: DiagnosticSink>(
     ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Diagnostics,
+    warnings: &mut D,
 ) -> Result<Vec<SubdEdgeChain>, FramingError> {
     let (mut nested, next, minor) = anonymous(
         reader.backing_bytes(),
@@ -622,7 +632,8 @@ fn parse_value(
     end: usize,
     archive: ArchiveVersion,
 ) -> Result<(HistoryValue, usize), FramingError> {
-    let mut warnings = Diagnostics::new();
+    let mut warnings = ScratchDiagnostics::new(ctx, "Rhino history value diagnostics")
+        .map_err(FramingError::from)?;
     parse_value_with_warnings(ctx, bytes, offset, end, archive, &mut warnings)
 }
 
@@ -632,7 +643,7 @@ fn parse_value_with_warnings(
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
-    warnings: &mut Diagnostics,
+    warnings: &mut impl DiagnosticSink,
 ) -> Result<(HistoryValue, usize), FramingError> {
     let (mut reader, next, _) = anonymous(bytes, offset, end, archive)?;
     let type_code = reader.i32()?;
@@ -672,7 +683,7 @@ fn parse_record(
     bytes: &[u8],
     record: &Record,
     archive: ArchiveVersion,
-    warnings: &mut Diagnostics,
+    warnings: &mut ScratchDiagnostics<'_>,
 ) -> Result<HistoryRecord, FramingError> {
     if record.typecode != HISTORY_RECORD || record.is_short() {
         return Err(FramingError::structural(
@@ -754,22 +765,50 @@ fn parse_record(
 }
 
 /// Decodes valid built-in records and isolates malformed records at table boundaries.
-pub(crate) fn parse_records(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn parse_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     records: &[Record],
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
     table_typecode: u32,
-) -> Result<HistoryScan, CodecError> {
-    let mut result = HistoryScan::default();
-    for record in ctx.admit_iter(records, "Rhino parse records traversal")? {
-        match parse_record(ctx, bytes, record, archive, warnings) {
+) -> Result<HistoryScan<'ctx>, CodecError> {
+    let mut result = HistoryScan {
+        records: Vec::new(),
+        opaque_records: Vec::new(),
+        _records_storage: ctx.reserve_scoped(0, "Rhino history records")?,
+        _record_storage: Vec::new(),
+        _record_guards_storage: ctx.reserve_scoped(0, "Rhino history record storage guards")?,
+    };
+    let mut records = records.iter();
+    while let Some(record) = ctx.next_charged(&mut records, "Rhino parse records traversal")? {
+        let mut record_storage = ctx.reserve_scoped(0, "Rhino history record fields")?;
+        let mut record_warnings =
+            ScratchDiagnostics::new(ctx, "Rhino history record diagnostics")?;
+        let parsed = record_storage.with_storage(|| {
+            parse_record(ctx, bytes, record, archive, &mut record_warnings)
+        });
+        warnings.append_scoped_admitted(
+            ctx,
+            record_warnings,
+            "Rhino history record diagnostic promotion",
+        )?;
+        match parsed {
             Ok(value) => {
-                ctx.reserve_vec(&mut result.records, 1, "Rhino history records")
-                    .map_err(crate::chunks::FramingError::from)
-                    .or_else(|error| Err(history_resource_error(ctx, error)?))?;
+                ctx.reserve_scoped_vec(
+                    &mut result._records_storage,
+                    &mut result.records,
+                    1,
+                    "Rhino history records",
+                )?;
+                ctx.reserve_scoped_vec(
+                    &mut result._record_guards_storage,
+                    &mut result._record_storage,
+                    1,
+                    "Rhino history record storage guards",
+                )?;
                 result.records.push(value);
+                result._record_storage.push(record_storage);
             }
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
@@ -777,6 +816,7 @@ pub(crate) fn parse_records(
                     ctx,
                     format_args!("history record at {} degraded: {error}", record.range.start),
                 )?;
+                drop(error);
                 ctx.reserve_vec(
                     &mut result.opaque_records,
                     1,
@@ -788,6 +828,7 @@ pub(crate) fn parse_records(
                     table_typecode,
                     record: record.clone(),
                 });
+                drop(record_storage);
             }
         }
     }
@@ -1290,9 +1331,9 @@ impl serde::Serialize for LateralsJson<'_> {
     }
 }
 
-struct ExtrusionJson<'a>(&'a crate::extrusion::DecodedExtrusion);
+struct ExtrusionJson<'borrow, 'ctx>(&'borrow crate::extrusion::DecodedExtrusion<'ctx>);
 
-impl serde::Serialize for ExtrusionJson<'_> {
+impl serde::Serialize for ExtrusionJson<'_, '_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
         let mut map = serializer.serialize_map(Some(8))?;
@@ -1684,13 +1725,18 @@ fn extended_geometry_json(
             refusal,
         )
     } else if value.class_id == crate::hatch::CLASS {
+        // Keep installed userdata backing alive until the owned hatch drops.
+        let _gradient_storage;
         let mut hatch = optional_geometry(
             geometry_workspace.with_storage(|| {
                 crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive)
             }),
             refusal,
         )?;
-        if let Err(errors) = match geometry_workspace.with_storage(|| {
+        let crate::hatch::HatchUserdataInstall {
+            errors: userdata_errors,
+            _gradient_storage: install_storage,
+        } = match geometry_workspace.with_storage(|| {
             crate::hatch::apply_userdata(
                 expand.ctx(),
                 data,
@@ -1705,18 +1751,27 @@ fn extended_geometry_json(
                 *refusal = Some(error);
                 return None;
             }
-        } {
-            let errors = match expand
-                .ctx()
-                .admit_iter(errors, "Rhino history hatch diagnostic traversal")
-            {
-                Ok(errors) => errors,
-                Err(error) => {
-                    *refusal = Some(error.into());
-                    return None;
-                }
-            };
-            for error in errors {
+        };
+        _gradient_storage = install_storage;
+        if !userdata_errors.is_empty() {
+            let mut errors = userdata_errors.iter();
+            for _ in 0..userdata_errors.len() {
+                let error = match expand
+                    .ctx()
+                    .next_charged(&mut errors, "Rhino history hatch diagnostic traversal")
+                {
+                    Ok(Some(error)) => error,
+                    Ok(None) => {
+                        *refusal = Some(CodecError::malformed(
+                            "Rhino history hatch diagnostic source ended early",
+                        ));
+                        return None;
+                    }
+                    Err(error) => {
+                        *refusal = Some(error);
+                        return None;
+                    }
+                };
                 optional_warning(
                     expand.ctx(),
                     warnings,
@@ -1728,6 +1783,7 @@ fn extended_geometry_json(
                 )?;
             }
         }
+        drop(userdata_errors);
         let plane = hatch.plane;
         let millimetres = |coordinate: f64, field: &str| {
             crate::wire::scaled_coordinate(coordinate, scale).map_or_else(

@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::container::Scan;
 use crate::instances::{hex, DefinitionKind, LinkSource, UnitDetail};
-use crate::loss::RhinoLossCode;
+use crate::loss::{RhinoLossCode, ScratchVec};
 use crate::settings::UnitBinding;
 use crate::wire::Uuid;
 
@@ -199,12 +199,12 @@ fn external_record<'a>(
 }
 
 /// Installs the source product graph without requiring occurrence expansion.
-pub(crate) fn install(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(crate) fn install<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
-) -> Result<Vec<LossNote>, CodecError> {
-    let mut losses = Vec::new();
+) -> Result<ScratchVec<'ctx, LossNote>, CodecError> {
+    let mut losses = ScratchVec::new(ctx, "Rhino product loss Vec")?;
     let mut object_records = HashMap::<Uuid, Option<usize>>::new();
     let mut object_workspace = ctx.reserve_scoped(0, "Rhino product object workspace")?;
     for (source_order, object) in ctx
@@ -365,7 +365,6 @@ pub(crate) fn install(
                 return Err(CodecError::ResourceLimit(limit))
             }
             Err(error) => {
-                ctx.reserve_vec(&mut losses, 1, "Rhino product occurrence losses")?;
                 let loss = crate::wire::admitted_loss(
                     ctx,
                     RhinoLossCode::ProductOccurrenceDropped,
@@ -382,7 +381,8 @@ pub(crate) fn install(
                     ),
                     "Rhino product occurrence loss tag",
                 )?;
-                losses.push(
+                losses.push_admitted(
+                    ctx,
                     loss.with_provenance(
                         SourceProvenance::root(
                             "rhino",
@@ -390,7 +390,8 @@ pub(crate) fn install(
                         )
                         .with_tag(tag),
                     ),
-                );
+                    "Rhino product occurrence losses",
+                )?;
                 continue;
             }
         };
@@ -557,7 +558,7 @@ mod tests {
         assert!(matches!(
             cadmpeg_test_support::refusal::resource_limit_at(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino product object keys", |cap| {
-                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()).map(drop))
                 }
             ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -572,7 +573,7 @@ mod tests {
         assert!(matches!(
             cadmpeg_test_support::refusal::resource_limit_at(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino occurrence links", |cap| {
-                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()).map(drop))
                 }
             ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -587,7 +588,7 @@ mod tests {
         assert!(matches!(
             cadmpeg_test_support::refusal::resource_limit_at(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino product occurrences", |cap| {
-                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()).map(drop))
                 }
             ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -601,7 +602,7 @@ mod tests {
         assert!(matches!(
             cadmpeg_test_support::refusal::resource_limit_at(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino definition member UUIDs", |cap| {
-                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()).map(drop))
                 }
             ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -615,7 +616,7 @@ mod tests {
         assert!(matches!(
             cadmpeg_test_support::refusal::resource_limit_at(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino product definitions", |cap| {
-                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()).map(drop))
                 }
             ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -629,7 +630,7 @@ mod tests {
         assert!(matches!(
             cadmpeg_test_support::refusal::resource_limit_at(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino product definition keys", |cap| {
-                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()).map(drop))
                 }
             ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -643,7 +644,7 @@ mod tests {
         assert!(matches!(
             cadmpeg_test_support::refusal::resource_limit_at(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino product member keys", |cap| {
-                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()).map(drop))
                 }
             ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -657,7 +658,7 @@ mod tests {
         assert!(matches!(
             cadmpeg_test_support::refusal::resource_limit_at(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino product member parents", |cap| {
-                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()).map(drop))
                 }
             ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -682,7 +683,7 @@ mod tests {
         assert!(matches!(
             cadmpeg_test_support::refusal::resource_limit_at(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino external reference links", |cap| {
-                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()).map(drop))
                 }
             ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -696,7 +697,7 @@ mod tests {
         assert!(matches!(
             cadmpeg_test_support::refusal::resource_limit_at(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino external references", |cap| {
-                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()).map(drop))
                 }
             ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -765,7 +766,7 @@ mod tests {
         assert!(matches!(
             cadmpeg_test_support::refusal::resource_limit_at(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino product occurrence losses", |cap| {
-                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()).map(drop))
                 }
             ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -819,8 +820,9 @@ mod tests {
             .source_id
             .clone();
         let mut ir = CadIr::empty();
+        let service_context = cadmpeg_test_support::service_decode_context();
         let losses = install(
-            &cadmpeg_test_support::service_decode_context(),
+            &service_context,
             &scan,
             &mut ir,
         )
@@ -1092,7 +1094,7 @@ mod tests {
                 operation,
                 |cap| {
                     with_collection_limit(&scan, cap, |ctx| {
-                        install(ctx, &scan, &mut CadIr::empty())
+                        install(ctx, &scan, &mut CadIr::empty()).map(drop)
                     })
                 },
             );

@@ -1005,7 +1005,19 @@ fn brep_mesh_cache_retention_refusal_reaches_the_caller() {
     data.extend(crc32fast::hash(&vertex_bytes).to_le_bytes());
     data.push(0);
     data.extend(vertex_bytes);
-    for _ in 0..4 {
+    data.extend(0_u32.to_le_bytes());
+    let uv_bytes = (0..6_u16)
+        .flat_map(|value| f32::from(value).to_le_bytes())
+        .collect::<Vec<_>>();
+    data.extend(
+        u32::try_from(uv_bytes.len())
+            .expect("UV size")
+            .to_le_bytes(),
+    );
+    data.extend(crc32fast::hash(&uv_bytes).to_le_bytes());
+    data.push(0);
+    data.extend(uv_bytes);
+    for _ in 0..2 {
         data.extend(0_u32.to_le_bytes());
     }
     raw.render_meshes.push(Some(crate::brep::RawBrepMesh {
@@ -1061,7 +1073,7 @@ fn brep_mesh_cache_retention_refusal_reaches_the_caller() {
     assert_eq!(staged.draft.model().tessellations.len(), 1);
     let refused = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "rhino_mesh_buffer",
+        "Rhino mesh numeric buffer scratch",
         |limit| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -1103,7 +1115,7 @@ fn brep_mesh_cache_retention_refusal_reaches_the_caller() {
     assert!(matches!(
         refused,
         cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "rhino_mesh_buffer"
+            if limit.operation == "Rhino mesh numeric buffer scratch"
     ));
 }
 

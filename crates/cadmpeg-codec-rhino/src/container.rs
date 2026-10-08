@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded Rhino 3DM container scanning and summary construction.
 
-use crate::loss::Diagnostics;
+use crate::loss::{Diagnostics, ScratchVec};
 use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::collections::BTreeMap;
@@ -168,12 +168,12 @@ pub(crate) struct OpaqueRecord {
 }
 
 /// Losses and opaque records from one native-arena install pass.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct NativeInstall {
+#[derive(Debug)]
+pub(crate) struct NativeInstall<'ctx> {
     /// Losses from records that could not be transferred.
-    pub(crate) losses: Vec<LossNote>,
+    pub(crate) losses: ScratchVec<'ctx, LossNote>,
     /// Complete records whose registered class payload was not admitted.
-    pub(crate) opaque_records: Vec<OpaqueRecord>,
+    pub(crate) opaque_records: ScratchVec<'ctx, OpaqueRecord>,
 }
 
 /// A table descriptor whose body is a strict sub-range of its chunk range.
@@ -247,7 +247,7 @@ impl Table {
 /// The result of scanning a complete supported container.
 ///
 /// `data` borrows the root bytes from the decode arena without copying them.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct Scan<'a> {
     /// Complete input bytes, borrowed from the session root view.
     pub(crate) data: &'a [u8],
@@ -265,12 +265,34 @@ pub(crate) struct Scan<'a> {
     pub(crate) definitions: DefinitionScan,
     /// Decoded built-in history records in source order.
     pub(crate) history: Vec<crate::history::HistoryRecord>,
+    /// Parsed history fields stay scratch through projection and source reporting.
+    _history_record_storage: Vec<ScopedReservation<'a>>,
+    /// The history-record vector backing stays scratch through source reporting.
+    _history_storage: ScopedReservation<'a>,
+    /// The history record-guard vector stays scratch through source reporting.
+    _history_record_guards_storage: ScopedReservation<'a>,
+    /// Parsed instance-definition fields stay scratch through native projection.
+    _definition_storage: Vec<(crate::wire::Uuid, ScopedReservation<'a>)>,
+    /// The definition guard vector stays scratch through native projection.
+    _definition_guards_storage: ScopedReservation<'a>,
+    /// Definition vector backing stays scratch until the scan is dropped.
+    _definitions_storage: ScopedReservation<'a>,
+    /// The definition-member index stays scratch through object resolution.
+    _definition_member_storage: ScopedReservation<'a>,
+    /// The ambiguous-definition index stays scratch through native projection.
+    _definition_ambiguous_storage: ScopedReservation<'a>,
     /// Validated EOF descriptor.
     eof_offset: usize,
     /// Recoverable checksum and unknown-record notes.
     pub(crate) warnings: Diagnostics,
     /// Typed metadata decoded from property, setting, and layer records.
     pub(crate) metadata: crate::settings::DocumentMetadata,
+    /// Parsed metadata stays scratch through projection and source reporting.
+    _metadata_storage: ScopedReservation<'a>,
+    /// Storage owned by successfully parsed object records.
+    _object_record_storage: Vec<ScopedReservation<'a>>,
+    /// Source object records are scratch until projection completes.
+    _object_storage: ScopedReservation<'a>,
 }
 
 /// Borrows the session root bytes after the shared input budget admitted them.
@@ -1066,7 +1088,7 @@ fn known_record(record: u32) -> bool {
 }
 
 /// Scan a V3/V4 or V5–V8 Rhino container.
-pub(crate) fn scan<'a>(ctx: &DecodeContext<'_>, data: &'a [u8]) -> Result<Scan<'a>, CodecError> {
+pub(crate) fn scan<'a>(ctx: &'a DecodeContext<'_>, data: &'a [u8]) -> Result<Scan<'a>, CodecError> {
     let header = parse_header(ctx, data).or_else(|error| Err(framing_error(ctx, error)?))?;
     scan_with_record_limit(ctx, data, TABLE_RECORD_CAP, header)
 }
@@ -1082,7 +1104,7 @@ fn count_object_typecode(
 }
 
 fn scan_with_record_limit<'a>(
-    ctx: &DecodeContext<'_>,
+    ctx: &'a DecodeContext<'_>,
     data: &'a [u8],
     record_limit: usize,
     header: crate::chunks::Header,
@@ -1125,10 +1147,22 @@ fn scan_with_record_limit<'a>(
     let mut saw_properties = false;
     let mut saw_settings = false;
     let mut saw_objects = false;
-    let mut all_objects = Vec::new();
     let mut object_storage = ctx.reserve_scoped(0, "Rhino scanned object descriptors")?;
+    let mut object_record_storage = Vec::new();
+    let mut all_objects = Vec::new();
     let mut opaque_records = Vec::new();
+    let mut history_storage = ctx.reserve_scoped(0, "Rhino history records")?;
+    let mut history_record_guards_storage =
+        ctx.reserve_scoped(0, "Rhino history record storage guards")?;
+    let mut definition_guards_storage =
+        ctx.reserve_scoped(0, "Rhino instance definition storage guards")?;
+    let mut definitions_storage = ctx.reserve_scoped(0, "Rhino instance definitions")?;
+    let mut definition_member_storage = ctx.reserve_scoped(0, "Rhino definition member identities")?;
+    let mut definition_ambiguous_storage =
+        ctx.reserve_scoped(0, "Rhino ambiguous definition identities")?;
+    let mut definition_storage = Vec::new();
     let mut definitions = DefinitionScan::default();
+    let mut history_record_storage = Vec::new();
     let mut history = Vec::new();
     let mut record_count = 0_usize;
     while offset < data.len() {
@@ -1142,9 +1176,14 @@ fn scan_with_record_limit<'a>(
                 ));
             }
             validate_eof(data, offset, archive).or_else(|error| Err(framing_error(ctx, error)?))?;
-            let mut metadata =
-                crate::settings::parse_metadata(ctx, data, archive, &tables, &mut warnings)?;
-            let all_objects = resolve_identities(ctx, all_objects, &metadata, &mut warnings)?;
+            let (metadata_storage, mut metadata) = ctx
+                .with_scoped_storage(
+                    "Rhino scanned document metadata",
+                    || crate::settings::parse_metadata(ctx, data, archive, &tables, &mut warnings),
+                )
+                .map(|(metadata, storage)| (storage, metadata))?;
+            let all_objects = object_storage
+                .with_storage(|| resolve_identities(ctx, all_objects, &metadata, &mut warnings))?;
             ctx.append_vec(
                 &mut opaque_records,
                 &mut metadata.opaque_records,
@@ -1159,9 +1198,20 @@ fn scan_with_record_limit<'a>(
                 opaque_records,
                 definitions,
                 history,
+                _history_record_storage: history_record_storage,
+                _history_storage: history_storage,
+                _history_record_guards_storage: history_record_guards_storage,
+                _definition_storage: definition_storage,
+                _definition_guards_storage: definition_guards_storage,
+                _definitions_storage: definitions_storage,
+                _definition_member_storage: definition_member_storage,
+                _definition_ambiguous_storage: definition_ambiguous_storage,
                 eof_offset: offset,
                 warnings,
                 metadata,
+                _metadata_storage: metadata_storage,
+                _object_record_storage: object_record_storage,
+                _object_storage: object_storage,
             });
         }
         let rank = table_rank(chunk.typecode).ok_or_else(|| {
@@ -1299,16 +1349,17 @@ fn scan_with_record_limit<'a>(
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
-                let descriptor = match parse_object_record(
+                let mut record_storage = ctx.reserve_scoped(0, "Rhino scanned object record")?;
+                let (descriptor, record_storage) = match parse_object_record(
                     ctx,
-                    &mut object_storage,
+                    &mut record_storage,
                     data,
                     &record,
                     archive,
                     writer_version,
                     &mut warnings,
                 ) {
-                    Ok(descriptor) => descriptor,
+                    Ok(descriptor) => (descriptor, Some(record_storage)),
                     Err(FramingError::Resource(limit)) => {
                         return Err(CodecError::ResourceLimit(limit))
                     }
@@ -1319,9 +1370,23 @@ fn scan_with_record_limit<'a>(
                                 "bounded object record at {child_offset} is malformed: {error}"
                             ),
                         )?;
-                        degraded_object_record(ctx, &record, &error)?
+                        // The parser can return an admitted diagnostic string
+                        // inside `error`; keep its source reservation live
+                        // through both retained warning copies.
+                        let descriptor = degraded_object_record(ctx, &record, &error)?;
+                        drop(error);
+                        drop(record_storage);
+                        (descriptor, None)
                     }
                 };
+                if let Some(record_storage) = record_storage {
+                    ctx.push_scoped_vec(
+                        &mut object_storage,
+                        &mut object_record_storage,
+                        record_storage,
+                        "Rhino scanned object record guards",
+                    )?;
+                }
                 let typecode = descriptor.framed().map_or(0, |object| object.object_type);
                 count_object_typecode(ctx, &mut object_typecodes, typecode)?;
                 ctx.push_scoped_vec(
@@ -1373,6 +1438,11 @@ fn scan_with_record_limit<'a>(
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
             let parsed = parse_definitions(ctx, data, &records, archive, chunk.typecode)?;
             definitions = parsed.scan;
+            definition_storage = parsed._definition_storage;
+            definitions_storage = parsed._definitions_storage;
+            definition_guards_storage = parsed._definition_guards_storage;
+            definition_member_storage = parsed._member_storage;
+            definition_ambiguous_storage = parsed._ambiguous_storage;
             ctx.extend_vec(
                 &mut opaque_records,
                 parsed.opaque_records,
@@ -1389,6 +1459,9 @@ fn scan_with_record_limit<'a>(
                 chunk.typecode,
             )?;
             history = parsed.records;
+            history_storage = parsed._records_storage;
+            history_record_storage = parsed._record_storage;
+            history_record_guards_storage = parsed._record_guards_storage;
             ctx.extend_vec(
                 &mut opaque_records,
                 parsed.opaque_records,
@@ -1427,13 +1500,11 @@ fn scan_with_record_limit<'a>(
 #[cfg(test)]
 pub(crate) fn scan_owned(data: Vec<u8>) -> Result<Scan<'static>, CodecError> {
     let data = Box::leak(data.into_boxed_slice());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        data,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::desktop(),
-    )?;
-    scan(&ctx, data)
+    let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
+    let policy = Box::leak(Box::new(cadmpeg_core::decode::DecodePolicy::desktop()));
+    let (ctx, _) = DecodeContext::from_root_bytes(data, arena, policy)?;
+    let ctx = Box::leak(Box::new(ctx));
+    scan(ctx, data)
 }
 
 #[cfg(test)]
@@ -1442,14 +1513,12 @@ fn scan_with_test_record_limit(
     record_limit: usize,
 ) -> Result<Scan<'static>, CodecError> {
     let data = Box::leak(data.into_boxed_slice());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        data,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::desktop(),
-    )?;
+    let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
+    let policy = Box::leak(Box::new(cadmpeg_core::decode::DecodePolicy::desktop()));
+    let (ctx, _) = DecodeContext::from_root_bytes(data, arena, policy)?;
+    let ctx = Box::leak(Box::new(ctx));
     let header = parse_header(&ctx, data).or_else(|error| Err(framing_error(&ctx, error)?))?;
-    scan_with_record_limit(&ctx, data, record_limit, header)
+    scan_with_record_limit(ctx, data, record_limit, header)
 }
 
 fn insert_summary_attribute(
@@ -1590,19 +1659,28 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
         &mut notes,
         format_args!("archive version {}", scan.archive.value()),
     )?;
-    for warning in scan.warnings.messages(ctx)? {
-        push_container_note(ctx, &mut notes, format_args!("{warning}"))?;
-    }
-    for diagnostic in ctx.admit_iter(
+    ctx.fold(
+        &scan.warnings[..],
+        (),
+        |(), warning| {
+            push_container_note(ctx, &mut notes, format_args!("{}", warning.message))?;
+            Ok(())
+        },
+        "Rhino container warning traversal",
+    )?;
+    ctx.fold(
         scan.definitions.diagnostics(),
-        "Rhino summarize view traversal",
-    )? {
-        push_container_note(
-            ctx,
-            &mut notes,
-            format_args!("{}", diagnostic.diagnostic.message),
-        )?;
-    }
+        (),
+        |(), diagnostic| {
+            push_container_note(
+                ctx,
+                &mut notes,
+                format_args!("{}", diagnostic.diagnostic.message),
+            )?;
+            Ok(())
+        },
+        "Rhino summarize definition diagnostic traversal",
+    )?;
     let matched = dialect_match(scan);
     let mut losses = Vec::new();
     if let Some(loss) = crate::dialect::admission_loss(ctx, &matched)? {
@@ -1746,42 +1824,57 @@ pub(crate) fn container_only_result(
         &mut notes,
         format_args!("archive version {}", scan.archive.value()),
     )?;
-    for warning in scan.warnings.messages(ctx)? {
-        push_container_note(ctx, &mut notes, format_args!("{warning}"))?;
-    }
-    for diagnostic in ctx.admit_iter(
+    ctx.fold(
+        &scan.warnings[..],
+        (),
+        |(), warning| {
+            push_container_note(ctx, &mut notes, format_args!("{}", warning.message))?;
+            Ok(())
+        },
+        "Rhino container warning traversal",
+    )?;
+    ctx.fold(
         scan.definitions.diagnostics(),
-        "Rhino container only result view traversal",
-    )? {
-        push_container_note(
-            ctx,
-            &mut notes,
-            format_args!("{}", diagnostic.diagnostic.message),
-        )?;
-    }
+        (),
+        |(), diagnostic| {
+            push_container_note(
+                ctx,
+                &mut notes,
+                format_args!("{}", diagnostic.diagnostic.message),
+            )?;
+            Ok(())
+        },
+        "Rhino container-only definition note traversal",
+    )?;
     let mut losses = Vec::new();
-    for diagnostic in ctx.admit_iter(
+    ctx.fold(
         &(scan.warnings)[..],
-        "Rhino container only result traversal",
-    )? {
-        ctx.reserve_vec(&mut losses, 1, "Rhino container-only losses")?;
-        losses.push(
-            diagnostic
+        (),
+        |(), diagnostic| {
+            let loss = diagnostic
                 .code
                 .unwrap_or(crate::loss::RhinoLossCode::ContainerScanDiagnostic)
                 .note(ctx.format_retained(
                     format_args!("{}", diagnostic.message),
                     "Rhino container-only loss message",
-                )?),
-        );
-    }
-    for diagnostic in ctx.admit_iter(
+                )?);
+            ctx.reserve_vec(&mut losses, 1, "Rhino container-only losses")?;
+            losses.push(loss);
+            Ok(())
+        },
+        "Rhino container-only warning traversal",
+    )?;
+    ctx.fold(
         scan.definitions.diagnostics(),
-        "Rhino container only result view traversal",
-    )? {
-        ctx.reserve_vec(&mut losses, 1, "Rhino container-only losses")?;
-        losses.push(diagnostic.to_loss(ctx)?);
-    }
+        (),
+        |(), diagnostic| {
+            let loss = diagnostic.to_loss(ctx)?;
+            ctx.reserve_vec(&mut losses, 1, "Rhino container-only losses")?;
+            losses.push(loss);
+            Ok(())
+        },
+        "Rhino container-only definition loss traversal",
+    )?;
     let primary = dialect_match(scan);
     if let Some(loss) = crate::dialect::admission_loss(ctx, &primary)? {
         ctx.reserve_vec(&mut losses, 1, "Rhino container-only losses")?;

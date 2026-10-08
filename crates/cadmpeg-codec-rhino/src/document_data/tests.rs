@@ -146,7 +146,7 @@ macro_rules! materialized_metadata_test {
                     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
                         scan.data, &arena, &policy,
                     )?;
-                    install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+                    install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty()).map(drop)
                 },
             );
             assert_metadata_refusal(&refusal, $operation);
@@ -360,7 +360,7 @@ fn opaque_setting_records_refuse_collection_limit() {
             policy.limits.max_collection_items = cap;
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
-            install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+            install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty()).map(drop)
         },
     );
     assert_metadata_refusal(&refusal, "Rhino opaque setting records");
@@ -378,7 +378,7 @@ fn retained_setting_records_refuse_collection_limit() {
             policy.limits.max_collection_items = cap;
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
-            install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+            install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty()).map(drop)
         },
     );
     assert_metadata_refusal(&refusal, "Rhino retained setting records");

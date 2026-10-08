@@ -35,6 +35,7 @@ use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 mod c2;
 mod candidate_annotations;
 mod local_limits;
+mod source_prefix;
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
     NurbsCurve::from_lanes(
@@ -1067,7 +1068,7 @@ fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
     }
 }
 
-fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
+fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion<'static> {
     let outer = cap_boundary(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(4.0, 0.0, 0.0),
@@ -1089,7 +1090,7 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
         cap_normals: [cadmpeg_ir::units::UnitVector3::Z_AXIS; 2],
         cap_u_axes: [cadmpeg_ir::units::UnitVector3::X_AXIS; 2],
         caps,
-        meshes: Vec::new(),
+        meshes: crate::extrusion::ScopedMeshList::empty(),
         warnings: Diagnostics::new(),
     }
 }
@@ -1550,10 +1551,13 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         assert!(context
             .append_link(0, "rhino:curve#2")
             .expect("admitted link"));
-        assert_eq!(
-            context.unknown(0).expect("required invariant").links(),
-            vec!["rhino:curve#1".to_string(), "rhino:curve#2".to_string()]
-        );
+        let mut links = context
+            .unknown(0)
+            .expect("required invariant")
+            .links()
+            .to_vec();
+        links.sort();
+        assert_eq!(links, ["rhino:curve#1", "rhino:curve#2"]);
         let own_id = context
             .unknown(0)
             .expect("required invariant")
@@ -1570,8 +1574,14 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
                 ],
             )
             .expect("admitted links"));
+        let mut links = context
+            .unknown(0)
+            .expect("required invariant")
+            .links()
+            .to_vec();
+        links.sort();
         assert_eq!(
-            context.unknown(0).expect("required invariant").links(),
+            links,
             [
                 "rhino:curve#0",
                 "rhino:curve#1",
@@ -1609,6 +1619,93 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
 }
 
 #[test]
+fn seeded_link_flush_queue_deduplicates_rollback_rows() {
+    let scan = scan_with_objects(&[object_record(
+        ArchiveVersion::V5,
+        1,
+        POINT_CLASS,
+    )]);
+    with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
+        context
+            .session
+            .unknown_links_mut(0)
+            .expect("seeded source row")
+            .1
+            .extend(["rhino:curve#a".into(), "rhino:curve#z".into()]);
+        assert!(context
+            .append_link(0, "rhino:curve#0")
+            .expect("generated link is admitted"));
+        assert_eq!(context.pending_seeded_link_rows, [0]);
+
+        let journal =
+            super::InstanceJournal::new(context.expand.ctx()).expect("instance journal");
+        context.instance_journal = Some(journal);
+        assert!(context
+            .append_link(0, "rhino:curve#zz")
+            .expect("journaled link is admitted"));
+        context
+            .rollback_instance_rows()
+            .expect("journal rollback succeeds");
+        assert_eq!(context.pending_seeded_link_rows, [0]);
+        assert_eq!(
+            context
+                .unknown(0)
+                .expect("retained source row")
+                .links(),
+            ["rhino:curve#a", "rhino:curve#z", "rhino:curve#0"]
+        );
+
+        context
+            .flush_seeded_source_links()
+            .expect("seeded links return to canonical order");
+        assert_eq!(
+            context
+                .unknown(0)
+                .expect("retained source row")
+                .links(),
+            ["rhino:curve#0", "rhino:curve#a", "rhino:curve#z"]
+        );
+    });
+}
+
+#[test]
+fn seeded_malformed_links_keep_canonical_validation_order_after_append() {
+    let scan = scan_with_objects(&[object_record(
+        ArchiveVersion::V5,
+        1,
+        POINT_CLASS,
+    )]);
+    with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
+        context
+            .unknown_links_mut(0)
+            .expect("seeded source row")
+            .extend(["bad-z".into(), "bad-a".into()]);
+
+        assert!(context
+            .append_link(0, "rhino:test:curve#generated")
+            .expect("generated link is admitted"));
+        assert_eq!(
+            context.unknown(0).expect("retained source row").links(),
+            ["bad-a", "bad-z", "rhino:test:curve#generated"]
+        );
+
+        let expected = NativeUnknownRecord::try_from(
+            context.unknown(0).expect("retained source row"),
+        )
+        .expect_err("seeded malformed links remain invalid");
+        let actual = cadmpeg_ir::validate::admit::validate_native_unknowns(
+            context.expand.ctx(),
+            context.session.unknowns(),
+        )
+        .expect("resource admission succeeds")
+        .expect_err("seeded malformed links remain invalid");
+        assert_eq!(actual.to_string(), expected.to_string());
+    });
+}
+
+#[test]
 fn unknown_record_link_insertion_refuses_collection_limit() {
     let refusal = with_collection_limit(0, |ctx| {
         let mut record = UnknownRecord::unavailable(
@@ -1623,7 +1720,6 @@ fn unknown_record_link_insertion_refuses_collection_limit() {
             "rhino:object:unknown#0",
             record.links_mut(),
             "rhino:curve#1",
-            None,
         )
         .expect_err("one link exceeds the collection limit")
     });

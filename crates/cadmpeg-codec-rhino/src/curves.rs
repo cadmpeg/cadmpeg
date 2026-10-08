@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded Rhino point and simple-curve payload decoding.
 
-use crate::loss::Diagnostics;
+use crate::loss::{Diagnostics, ScratchDiagnostics};
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
@@ -467,7 +467,9 @@ pub(crate) fn decode_inner(
                 "curve-on-surface has no stored model-space carrier",
             ));
         };
-        curve.warnings_mut().prepend(construction.warnings);
+        curve
+            .warnings_mut()
+            .prepend_admitted(ctx, construction.warnings)?;
         return Ok(DecodedGeometry::Curve { curve });
     }
     if matches!(
@@ -605,7 +607,9 @@ pub(crate) fn decode_embedded_curve(
             "embedded surface child is not a curve",
         ));
     };
-    curve.warnings_mut().prepend(wrapper_warnings);
+    curve
+        .warnings_mut()
+        .prepend_admitted(ctx, wrapper_warnings)?;
     Ok(curve)
 }
 
@@ -660,7 +664,9 @@ pub(crate) fn decode_embedded_curve_2d(
         ));
     };
     scale_decoded_curve(ctx, &mut curve, scale, start)?;
-    curve.warnings_mut().prepend(wrapper_warnings);
+    curve
+        .warnings_mut()
+        .prepend_admitted(ctx, wrapper_warnings)?;
     Ok(curve)
 }
 
@@ -673,10 +679,14 @@ fn scale_decoded_curve(
     match curve {
         DecodedCurve::Compound { children, .. } => {
             let _depth = ctx.enter_nested("Rhino plane-space curve scaling nesting")?;
-            for (_, child) in ctx
-                .admit_iter(&mut children[..], "Rhino plane-space curve scaling visit")
-                .map_err(CodecError::from)?
-            {
+            let child_count = children.len();
+            let mut children = children.iter_mut();
+            for _ in 0..child_count {
+                let (_, child) = ctx
+                    .next_charged(&mut children, "Rhino plane-space curve scaling visit")?
+                    .ok_or_else(|| {
+                        CodecError::malformed("Rhino plane-space curve child source ended early")
+                    })?;
                 scale_decoded_curve(ctx, child, scale, offset)?;
             }
             return Ok(());
@@ -800,11 +810,14 @@ pub(crate) fn exact_nurbs(
             let mut segments = segment_storage.with_storage(|| {
                 ctx.collection_vec(children.len(), "Rhino exact NURBS segments")
             })?;
-            for (index, (start, child)) in ctx
-                .admit_iter(&children[..], "Rhino exact nurbs traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .enumerate()
-            {
+            let child_count = children.len();
+            let mut child_source = children.iter().enumerate();
+            for _ in 0..child_count {
+                let (index, (start, child)) = ctx
+                    .next_charged(&mut child_source, "Rhino exact nurbs traversal")?
+                    .ok_or_else(|| {
+                        CodecError::malformed("Rhino exact NURBS child source ended early")
+                    })?;
                 let end = children
                     .get(index + 1)
                     .map_or(*end_parameter, |(next, _)| *next);
@@ -816,7 +829,17 @@ pub(crate) fn exact_nurbs(
                     remap_nurbs_domain(ctx, exact_nurbs(ctx, child, offset)?, target, offset)
                 })?);
             }
-            join_nurbs_curves(ctx, segments, offset, None)
+            join_nurbs_curves(
+                ctx,
+                JoinSegments {
+                    values: segments,
+                    _scoped_inputs: None,
+                },
+                offset,
+                None,
+                None,
+                None,
+            )
         }
     }
 }
@@ -850,10 +873,12 @@ pub(crate) fn remap_nurbs_domain(
     let target = target.map(FiniteReal::get);
     let (degree, knots, poles, periodic) = curve.into_parts();
     let mut remapped = knots.into_values();
-    for knot in ctx
-        .admit_iter(&mut remapped[..], "Rhino remap nurbs domain traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let knot_count = remapped.len();
+    let mut knots = remapped.iter_mut();
+    for _ in 0..knot_count {
+        let knot = ctx
+            .next_charged(&mut knots, "Rhino remap nurbs domain traversal")?
+            .ok_or_else(|| error(offset, "curve knot source ended early"))?;
         let fraction = cadmpeg_ir::math::parameter_fraction(*knot, source[0], source[1])
             .map(cadmpeg_ir::scalar::FiniteReal::get)
             .ok_or_else(|| error(offset, "curve knot remap overflowed"))?;
@@ -878,9 +903,23 @@ pub(crate) fn remap_nurbs_domain(
 }
 
 /// Exact joined curve and recoverable join diagnostics.
+#[cfg(test)]
 pub(crate) struct NurbsJoin {
     pub(crate) curve: NurbsCurve,
     pub(crate) warnings: Diagnostics,
+}
+
+pub(crate) struct ScopedJoinInputs<'ctx> {
+    pub(crate) _segment_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    pub(crate) _child_result_storages: Vec<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+    pub(crate) _child_result_storages_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+struct JoinSegments<'ctx> {
+    // Source geometry must drop before its storage reservations. Keep both in
+    // one owner so every early return preserves that order.
+    values: Vec<NurbsCurve>,
+    _scoped_inputs: Option<ScopedJoinInputs<'ctx>>,
 }
 
 #[derive(Clone, Copy)]
@@ -908,10 +947,11 @@ fn elevate_bezier<'ctx>(
         let mut elevated = next_storage
             .with_storage(|| ctx.collection_vec(count, "Rhino polycurve Bezier elevation"))?;
         elevated.push(values[0]);
-        for index in ctx
-            .admit_iter(1..=degree, "Rhino Bezier elevation pole traversal")
-            .map_err(CodecError::from)?
-        {
+        let mut indices = 1..=degree;
+        for _ in 0..degree {
+            let index = ctx
+                .next_charged(&mut indices, "Rhino Bezier elevation pole traversal")?
+                .ok_or_else(|| CodecError::malformed("Rhino Bezier pole source ended early"))?;
             elevated.push(values[index].blend(
                 values[index - 1],
                 cadmpeg_core::convert::f64_from_index(index).ok_or_else(|| {
@@ -973,10 +1013,11 @@ fn clamp_endpoint<'ctx>(
     let knot_end = (k + degree - multiplicity).min(knots.len() - 1);
     let mut local_knots = local_storage
         .with_storage(|| ctx.copy_slice(&knots[first..=knot_end], "Rhino endpoint local knots"))?;
-    for step in ctx
-        .admit_iter(0..count, "Rhino endpoint clamping steps")
-        .map_err(CodecError::from)?
-    {
+    let mut steps = 0..count;
+    for _ in 0..count {
+        let step = ctx
+            .next_charged(&mut steps, "Rhino endpoint clamping steps")?
+            .ok_or_else(|| CodecError::malformed("Rhino endpoint clamping source ended early"))?;
         let span = degree + step;
         let tail = degree - multiplicity;
         let duplicate = local_points[tail];
@@ -988,11 +1029,11 @@ fn clamp_endpoint<'ctx>(
                 "Rhino polycurve knot insertion points",
             )
         })?;
-        for index in ctx
-            .admit_iter(step + 1..=tail, "Rhino knot insertion blends")
-            .map_err(CodecError::from)?
-            .rev()
-        {
+        let mut indices = (step + 1..=tail).rev();
+        for _ in 0..tail.saturating_sub(step) {
+            let index = ctx
+                .next_charged(&mut indices, "Rhino knot insertion blends")?
+                .ok_or_else(|| CodecError::malformed("Rhino knot blend source ended early"))?;
             let denominator = local_knots[index + degree] - local_knots[index];
             if denominator <= 0.0 || !denominator.is_finite() {
                 return Err(error(offset, "polycurve endpoint clamping failed"));
@@ -1101,8 +1142,13 @@ fn elevate_to_degree(
             .fold(0.0, f64::max);
         let exponent = cadmpeg_ir::math::power_of_two_bound(maximum_weight)
             .ok_or_else(|| error(offset, "polycurve weight scale is invalid"))?;
-        for index in 0..pole_count {
-            ctx.charge_work(1, "Rhino curves elevate_to_degree records")?;
+        let mut indices = 0..pole_count;
+        for _ in 0..pole_count {
+            let index = ctx
+                .next_charged(&mut indices, "Rhino curves elevate_to_degree records")?
+                .ok_or_else(|| {
+                    CodecError::malformed("Rhino elevation weight source ended early")
+                })?;
             cadmpeg_ir::math::scale_power_of_two(source_weight_at(index), -exponent)
                 .filter(|weight| weight.get() != 0.0)
                 .ok_or_else(|| error(offset, "polycurve weight normalization lost its range"))?;
@@ -1124,10 +1170,11 @@ fn elevate_to_degree(
     let mut control_storage = ctx.reserve_scoped(0, "Rhino degree elevation source scratch")?;
     let mut points = control_storage
         .with_storage(|| ctx.collection_vec(pole_count, "Rhino polycurve homogeneous points"))?;
-    for index in ctx
-        .admit_iter(0..pole_count, "Rhino homogeneous pole traversal")
-        .map_err(CodecError::from)?
-    {
+    let mut pole_indices = 0..pole_count;
+    for _ in 0..pole_count {
+        let index = ctx
+            .next_charged(&mut pole_indices, "Rhino homogeneous pole traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino homogeneous pole source ended early"))?;
         let point = point_at(index);
         let weight = match exponent {
             Some(exponent) => {
@@ -1197,29 +1244,37 @@ fn elevate_to_degree(
             let remaining = degree - multiplicity;
             let numerator = end - knots[a];
             alphas.clear();
-            for index in ctx
-                .admit_iter(
-                    multiplicity + 1..=degree,
-                    "Rhino Bezier boundary coefficients",
-                )
-                .map_err(CodecError::from)?
-            {
+            let mut coefficient_indices = multiplicity + 1..=degree;
+            for _ in 0..degree - multiplicity {
+                let index = ctx
+                    .next_charged(
+                        &mut coefficient_indices,
+                        "Rhino Bezier boundary coefficients",
+                    )?
+                    .ok_or_else(|| {
+                        CodecError::malformed("Rhino Bezier coefficient source ended early")
+                    })?;
                 let denominator = knots[a + index] - knots[a];
                 if denominator <= 0.0 || !denominator.is_finite() {
                     return Err(error(offset, "polycurve knot insertion failed"));
                 }
                 alphas.push(numerator / denominator);
             }
-            for step in ctx
-                .admit_iter(1..=remaining, "Rhino Bezier boundary steps")
-                .map_err(CodecError::from)?
-            {
+            let mut steps = 1..=remaining;
+            for _ in 0..remaining {
+                let step = ctx
+                    .next_charged(&mut steps, "Rhino Bezier boundary steps")?
+                    .ok_or_else(|| {
+                        CodecError::malformed("Rhino Bezier boundary step source ended early")
+                    })?;
                 let first = multiplicity + step;
-                for index in ctx
-                    .admit_iter(first..=degree, "Rhino Bezier boundary blends")
-                    .map_err(CodecError::from)?
-                    .rev()
-                {
+                let mut blend_indices = (first..=degree).rev();
+                for _ in 0..degree - first + 1 {
+                    let index = ctx
+                        .next_charged(&mut blend_indices, "Rhino Bezier boundary blends")?
+                        .ok_or_else(|| {
+                            CodecError::malformed("Rhino Bezier blend source ended early")
+                        })?;
                     current[index] =
                         current[index - 1].blend(current[index], alphas[index - first]);
                 }
@@ -1294,10 +1349,11 @@ fn elevate_to_degree(
     };
     let mut control_points = scratch
         .with_storage(|| ctx.collection_vec(elevated.len(), "Rhino polycurve output points"))?;
-    for point in ctx
-        .admit_iter(elevated, "Rhino elevated pole traversal")
-        .map_err(CodecError::from)?
-    {
+    let mut elevated = elevated.into_iter();
+    for _ in 0..elevated.len() {
+        let point = ctx
+            .next_charged(&mut elevated, "Rhino elevated pole traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino elevated pole source ended early"))?;
         let Some(weight) = NonZeroReal::new(point.0[3]) else {
             return Err(error(
                 offset,
@@ -1331,27 +1387,61 @@ fn elevate_to_degree(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn join_nurbs_segments(
     ctx: &DecodeContext<'_>,
     segments: Vec<NurbsCurve>,
     offset: usize,
 ) -> Result<NurbsJoin, GeometryError> {
     let mut warnings = Diagnostics::new();
-    let curve = join_nurbs_curves(ctx, segments, offset, Some(&mut warnings))?;
+    let curve = join_nurbs_curves(
+        ctx,
+        JoinSegments {
+            values: segments,
+            _scoped_inputs: None,
+        },
+        offset,
+        Some(&mut warnings),
+        None,
+        None,
+    )?;
     Ok(NurbsJoin { curve, warnings })
+}
+
+pub(crate) fn join_nurbs_segments_scoped(
+    ctx: &DecodeContext<'_>,
+    segments: Vec<NurbsCurve>,
+    inputs: ScopedJoinInputs<'_>,
+    offset: usize,
+    result_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    warnings: &mut ScratchDiagnostics<'_>,
+) -> Result<NurbsCurve, GeometryError> {
+    join_nurbs_curves(
+        ctx,
+        JoinSegments {
+            values: segments,
+            _scoped_inputs: Some(inputs),
+        },
+        offset,
+        None,
+        Some(result_storage),
+        Some(warnings),
+    )
 }
 
 fn join_nurbs_curves(
     ctx: &DecodeContext<'_>,
-    mut segments: Vec<NurbsCurve>,
+    input: JoinSegments<'_>,
     offset: usize,
     mut warnings: Option<&mut Diagnostics>,
+    mut result_storage: Option<&mut cadmpeg_core::decode::ScopedReservation<'_>>,
+    mut scratch_warnings: Option<&mut ScratchDiagnostics<'_>>,
 ) -> Result<NurbsCurve, GeometryError> {
-    let Some(_) = segments.first() else {
+    let Some(_) = input.values.first() else {
         return Err(error(offset, "polycurve has no segments"));
     };
     let degree = ctx
-        .admit_iter(&segments[..], "Rhino joined maximum degree")
+        .admit_iter(&input.values[..], "Rhino joined maximum degree")
         .map_err(CodecError::from)?
         .map(NurbsCurve::degree)
         .max()
@@ -1360,30 +1450,43 @@ fn join_nurbs_curves(
     if target == 0 {
         return Err(error(offset, "polycurve segment degree must be positive"));
     }
-    if segments.len() == 1 {
-        return elevate_to_degree(ctx, &segments[0], target, offset);
+    if input.values.len() == 1 {
+        let segment = &input.values[0];
+        let result = if let Some(storage) = result_storage.as_deref_mut() {
+            storage.with_storage(|| elevate_to_degree(ctx, segment, target, offset))
+        } else {
+            elevate_to_degree(ctx, segment, target, offset)
+        };
+        drop(input);
+        return result;
     }
     let mut container_storage = ctx.reserve_scoped(0, "Rhino elevated segment container")?;
     let mut segment_storage = ctx.reserve_scoped(0, "Rhino elevated segment geometry")?;
-    let mut elevated_segments = container_storage
-        .with_storage(|| ctx.collection_vec(segments.len(), "Rhino elevated polycurve segments"))?;
-    for segment in ctx
-        .admit_iter(&segments[..], "Rhino join nurbs segments traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut elevated_segments = container_storage.with_storage(|| {
+        ctx.collection_vec(input.values.len(), "Rhino elevated polycurve segments")
+    })?;
+    let segment_count = input.values.len();
+    let mut segment_source = input.values.iter();
+    for _ in 0..segment_count {
+        let segment = ctx
+            .next_charged(&mut segment_source, "Rhino join nurbs segments traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino join segment source ended early"))?;
         elevated_segments.push(
             segment_storage.with_storage(|| elevate_to_degree(ctx, segment, target, offset))?,
         );
     }
-    segments = elevated_segments;
+    drop(input);
+    let segments = elevated_segments;
     let multiplicity = usize::try_from(degree)
         .ok()
         .and_then(|value| value.checked_add(1))
         .ok_or_else(|| error(offset, "curve degree overflow"))?;
-    for segment in ctx
-        .admit_iter(&segments[..], "Rhino join nurbs segments traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let segment_count = segments.len();
+    let mut segment_source = segments.iter();
+    for _ in 0..segment_count {
+        let segment = ctx
+            .next_charged(&mut segment_source, "Rhino join nurbs segments traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino join segment source ended early"))?;
         let start = segment.knots().get(multiplicity - 1).copied();
         let end = segment
             .knots()
@@ -1421,11 +1524,12 @@ fn join_nurbs_curves(
     let mut control_points: Vec<Point3> = Vec::new();
     let mut knots: Vec<f64> = Vec::new();
     let mut weights = rational.then(Vec::new);
-    for (index, segment) in ctx
-        .admit_iter(segments, "Rhino joined segment traversal")
-        .map_err(CodecError::from)?
-        .enumerate()
-    {
+    let segment_count = segments.len();
+    let mut segments = segments.into_iter().enumerate();
+    for _ in 0..segment_count {
+        let (index, segment) = ctx
+            .next_charged(&mut segments, "Rhino joined segment traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino joined segment source ended early"))?;
         let midpoint = if index > 0 {
             let Some(previous) = control_points.last().copied() else {
                 return Err(error(
@@ -1444,12 +1548,20 @@ fn join_nurbs_curves(
                 previous.z.midpoint(next.z),
             );
             let gap = previous.distance(next);
-            if let Some(warnings) = warnings.as_mut().filter(|_| gap > 0.0) {
-                warnings.push_coded_admitted(
-                    ctx,
-                    crate::loss::RhinoLossCode::PolycurveJoinGap,
-                    format_args!("polycurve join moved endpoints by half of gap {gap}"),
-                )?;
+            if gap > 0.0 {
+                if let Some(warnings) = scratch_warnings.as_deref_mut() {
+                    warnings.push_coded_admitted(
+                        ctx,
+                        crate::loss::RhinoLossCode::PolycurveJoinGap,
+                        format_args!("polycurve join moved endpoints by half of gap {gap}"),
+                    )?;
+                } else if let Some(warnings) = warnings.as_mut() {
+                    warnings.push_coded_admitted(
+                        ctx,
+                        crate::loss::RhinoLossCode::PolycurveJoinGap,
+                        format_args!("polycurve join moved endpoints by half of gap {gap}"),
+                    )?;
+                }
             }
             let Some(previous) = control_points.last_mut() else {
                 return Err(error(offset, "polycurve join has no previous endpoint"));
@@ -1483,13 +1595,12 @@ fn join_nurbs_curves(
         output_storage.with_storage(|| {
             ctx.reserve_vec(&mut control_points, count, "Rhino joined polycurve points")
         })?;
-        for point_index in ctx
-            .admit_iter(
-                skip..segment.pole_rows().count(),
-                "Rhino joined pole traversal",
-            )
-            .map_err(CodecError::from)?
-        {
+        let point_count = segment.pole_rows().count() - skip;
+        let mut point_indices = skip..segment.pole_rows().count();
+        for _ in 0..point_count {
+            let point_index = ctx
+                .next_charged(&mut point_indices, "Rhino joined pole traversal")?
+                .ok_or_else(|| CodecError::malformed("Rhino joined pole source ended early"))?;
             if let Some(target) = &mut weights {
                 let weight = match segment.pole_rows() {
                     cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => unit,
@@ -1521,22 +1632,37 @@ fn join_nurbs_curves(
         }
         let knot_skip = if index == 0 { 0 } else { multiplicity };
         let knot_added = segment.knots().len() - knot_skip;
-        ctx.reserve_vec(&mut knots, knot_added, "Rhino joined polycurve knots")?;
+        if let Some(storage) = result_storage.as_deref_mut() {
+            storage.with_storage(|| {
+                ctx.reserve_vec(&mut knots, knot_added, "Rhino joined polycurve knots")
+            })?;
+        } else {
+            ctx.reserve_vec(&mut knots, knot_added, "Rhino joined polycurve knots")?;
+        }
         knots.extend(
             ctx.admit_iter(&segment.knots()[knot_skip..], "Rhino joined knot traversal")
                 .map_err(CodecError::from)?
                 .copied()
-                .map(|knot| knot + dk),
+            .map(|knot| knot + dk),
         );
     }
-    NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)?.or_else(
-        |error| {
-            Err(GeometryError::malformed(
-                offset,
-                ctx.format_retained(format_args!("{error}"), "Rhino join_nurbs_segments text")?,
-            ))
-        },
-    )
+    drop(segments);
+    drop(segment_storage);
+    drop(container_storage);
+    let constructed = if let Some(storage) = result_storage.as_deref_mut() {
+        storage.with_storage(|| {
+            NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)
+        })?
+    } else {
+        NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)?
+    };
+    drop(output_storage);
+    constructed.or_else(|error| {
+        Err(GeometryError::malformed(
+            offset,
+            ctx.format_retained(format_args!("{error}"), "Rhino join_nurbs_segments text")?,
+        ))
+    })
 }
 
 pub(crate) fn decode_inner_2d(
@@ -1641,10 +1767,12 @@ pub(crate) fn read_polycurve_2d(
     let mut children = ctx
         .collection_vec(segment_count, "Rhino C2 polycurve children")
         .map_err(crate::curves::GeometryError::from)?;
-    for parameter in ctx
-        .admit_iter(parameters, "Rhino polycurve child traversal")
-        .map_err(CodecError::from)?
-    {
+    let parameter_count = parameters.len();
+    let mut parameters = parameters.into_iter();
+    for _ in 0..parameter_count {
+        let parameter = ctx
+            .next_charged(&mut parameters, "Rhino polycurve child traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino polycurve parameter source ended early"))?;
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
         let mut wrapper_warnings = Diagnostics::new();
@@ -1670,7 +1798,9 @@ pub(crate) fn read_polycurve_2d(
                 "C2 polycurve child is not a curve",
             ));
         };
-        curve.warnings_mut().prepend(wrapper_warnings);
+        curve
+            .warnings_mut()
+            .prepend_admitted(ctx, wrapper_warnings)?;
         children.push((parameter, curve));
     }
     Ok(DecodedCurve::Compound {
@@ -2056,10 +2186,12 @@ pub(crate) fn read_polycurve(
     let mut children = ctx
         .collection_vec(segment_count, "Rhino polycurve children")
         .map_err(crate::curves::GeometryError::from)?;
-    for parameter in ctx
-        .admit_iter(parameters, "Rhino polycurve child traversal")
-        .map_err(CodecError::from)?
-    {
+    let parameter_count = parameters.len();
+    let mut parameters = parameters.into_iter();
+    for _ in 0..parameter_count {
+        let parameter = ctx
+            .next_charged(&mut parameters, "Rhino polycurve child traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino polycurve parameter source ended early"))?;
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
         let mut wrapper_warnings = Diagnostics::new();
@@ -2092,7 +2224,9 @@ pub(crate) fn read_polycurve(
                 "polycurve child is not a curve",
             ));
         };
-        curve.warnings_mut().prepend(wrapper_warnings);
+        curve
+            .warnings_mut()
+            .prepend_admitted(ctx, wrapper_warnings)?;
         children.push((parameter, curve));
     }
     Ok(DecodedCurve::Compound {
@@ -2703,6 +2837,19 @@ mod tests {
         .expect("valid rational line")
     }
 
+    fn first_knot_overflow_curve() -> NurbsCurve {
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            2,
+            vec![-1.0e308, -1.0e308, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0); 6],
+            None,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid quadratic with exterior knots")
+    }
+
     fn exact_line_for_limits() -> DecodedCurve {
         DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(rational_line_for_limits())),
@@ -2813,9 +2960,31 @@ mod tests {
         let CodecError::ResourceLimit(limit) = error else {
             panic!("expected knot remapping resource refusal");
         };
-        // Remapping visits four existing knots before the IR validates the new values.
         assert_eq!(limit.used, 0);
-        assert_eq!(limit.additional, 4);
+        assert_eq!(limit.additional, 1);
+    }
+
+    #[test]
+    fn remapped_nurbs_knot_overflow_stops_after_the_first_admitted_knot() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty remapping root");
+        let error = super::remap_nurbs_domain(
+            &ctx,
+            first_knot_overflow_curve(),
+            [FiniteReal::ZERO, FiniteReal::new(1.0e308).unwrap()],
+            17,
+        )
+        .expect_err("first exterior knot overflows the target interpolation");
+        assert!(matches!(
+            error,
+            GeometryError::Malformed(ref message)
+                if message.to_string().contains("curve knot remap overflowed")
+        ));
+        assert!(ctx.resource_refusal().is_none());
+        ctx.finish_session().expect("one prefix visit was admitted");
     }
 
     fn assert_elevation_refusal(target: usize, operation: &'static str) {

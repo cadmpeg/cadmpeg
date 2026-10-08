@@ -89,9 +89,10 @@ fn group_memberships_without_a_unique_group_do_not_format_output_links() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
-        // Arm the removed allocation: this is an absence check, not a limit boundary.
+        // Group-link text is temporary staging while a copied link is produced
+        // only for a uniquely indexed group.
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "Rhino group member link",
             None,
         );

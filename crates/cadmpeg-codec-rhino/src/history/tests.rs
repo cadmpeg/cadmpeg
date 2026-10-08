@@ -58,6 +58,19 @@ fn with_collection_limit<R>(
     apply(&ctx)
 }
 
+fn with_materialized_limit<R>(
+    data: &[u8],
+    max_materialized_bytes: u64,
+    apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+) -> R {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = max_materialized_bytes;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("history fixture fits the root limit");
+    apply(&ctx)
+}
+
 #[test]
 fn history_value_array_refuses_collection_limit() {
     let mut payload = 2_i32.to_le_bytes().to_vec();
@@ -113,13 +126,62 @@ fn history_record_slot_refuses_collection_limit() {
             ArchiveVersion::V5,
             &mut Diagnostics::new(),
             0x1000_0026,
-        )
+        ).map(drop)
     })
     .expect_err("one admitted history record exceeds zero collection items");
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "Rhino history records"
+    ));
+}
+
+#[test]
+fn history_record_scan_visits_prefix_before_suffix_work_admission() {
+    const WORK_CAP: u64 = 1024;
+    let archive = ArchiveVersion::V5;
+    let mut integer_payload = 1_i32.to_le_bytes().to_vec();
+    integer_payload.extend(42_i32.to_le_bytes());
+    let first_value = value(2, &integer_payload);
+    let data = source_band_history_record_with_major(
+        archive,
+        1,
+        1,
+        0,
+        std::slice::from_ref(&first_value),
+    );
+    let chunk = crate::chunks::chunk_at(&data, 0, data.len(), archive, false)
+        .expect("first history record framing");
+    let mut records = vec![crate::container::Record::long(
+        chunk.typecode,
+        chunk.range(),
+        chunk.body(),
+    )];
+    let record_count = usize::try_from(WORK_CAP + 1).expect("test record count fits");
+    records.resize(
+        record_count,
+        crate::container::Record::short(HISTORY_RECORD, 0..0, 0),
+    );
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = WORK_CAP;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("history fixture fits the root limit");
+    let error = parse_records(
+        &ctx,
+        &data,
+        &records,
+        archive,
+        &mut Diagnostics::new(),
+        0x1000_0026,
+    )
+    .expect_err("first record reaches its collection refusal before the suffix");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino history record values"
     ));
 }
 
@@ -134,7 +196,7 @@ fn opaque_history_record_slot_refuses_collection_limit() {
             ArchiveVersion::V5,
             &mut Diagnostics::new(),
             0x1000_0026,
-        )
+        ).map(drop)
     })
     .expect_err("one diagnostic exceeds zero collection items");
     assert!(matches!(
@@ -150,7 +212,7 @@ fn opaque_history_record_slot_refuses_collection_limit() {
             ArchiveVersion::V5,
             &mut Diagnostics::new(),
             0x1000_0026,
-        )
+        ).map(drop)
     })
     .expect_err("the diagnostic and opaque record exceed one collection item");
     assert!(matches!(
@@ -158,6 +220,69 @@ fn opaque_history_record_slot_refuses_collection_limit() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "Rhino opaque history records"
     ));
+}
+
+#[test]
+fn rejected_history_record_releases_scoped_fields_before_the_next_record() {
+    let archive = ArchiveVersion::V5;
+    let text = "history fields";
+    let mut string_payload = 1_i32.to_le_bytes().to_vec();
+    string_payload.extend(utf16_bytes(text));
+    let string_value = value(8, &string_payload);
+    let rejected = source_band_history_record_with_major(
+        archive,
+        1,
+        1,
+        7,
+        std::slice::from_ref(&string_value),
+    );
+    let data = [rejected.as_slice(), rejected.as_slice()].concat();
+    let mut records = Vec::new();
+    let mut offset = 0;
+    for _ in 0..2 {
+        let chunk = crate::chunks::chunk_at(&data, offset, data.len(), archive, false)
+            .expect("history record framing");
+        records.push(crate::container::Record::long(
+            chunk.typecode,
+            chunk.range(),
+            chunk.body(),
+        ));
+        offset = chunk.next_offset();
+    }
+    let one_record_bytes = cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<HistoryValue>() + std::mem::size_of::<String>() + text.len(),
+    );
+
+    with_materialized_limit(&data, one_record_bytes - 1, |ctx| {
+        let error = parse_records(
+            ctx,
+            &data,
+            &records[..1],
+            archive,
+            &mut Diagnostics::new(),
+            0x1000_0026,
+        )
+        .expect_err("one history record exceeds its exact materialized storage allowance");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+        ));
+    });
+
+    with_materialized_limit(&data, one_record_bytes, |ctx| {
+        let scan = parse_records(
+            ctx,
+            &data,
+            &records,
+            archive,
+            &mut Diagnostics::new(),
+            0x1000_0026,
+        )
+        .expect("the second failed parse reuses the first record's released storage");
+        assert!(scan.records.is_empty());
+        assert_eq!(scan.opaque_records.len(), 2);
+    });
 }
 
 #[test]

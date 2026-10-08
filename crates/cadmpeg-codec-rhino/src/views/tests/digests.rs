@@ -31,7 +31,7 @@ fn view_child_fingerprints_admit_hashing_work_through_the_parser() {
             if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
             }
-            result
+            result.map(drop)
         },
     );
 }

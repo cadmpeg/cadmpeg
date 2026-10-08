@@ -28,12 +28,48 @@ fn instance_row_journal_captures_only_selected_rows_once() {
         let journal = transaction.instance_journal.as_ref().unwrap();
         assert_eq!(journal.rows.len(), 1);
         let row = &journal.rows[&9];
+        assert!(row.sorted_at_checkpoint);
         assert_eq!(
-            row.additions.iter().map(String::as_str).collect::<Vec<_>>(),
-            ["rhino:test:curve#another", "rhino:test:curve#later"]
+            row.additions,
+            std::collections::BTreeSet::from([
+                "rhino:test:curve#another".to_owned(),
+                "rhino:test:curve#later".to_owned(),
+            ])
         );
         assert_eq!(row.status, None);
         assert_eq!(transaction.unknown(9).unwrap().links().len(), 3);
+    });
+}
+
+#[test]
+fn commit_sorts_links_after_indexed_append_and_deduplication() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    with_expand(&scan, |expand| {
+        let mut transaction = DecodeContext::new(&scan, expand).unwrap();
+        transaction
+            .append_link(0, "rhino:test:curve#z")
+            .unwrap();
+        transaction
+            .append_links(
+                0,
+                &[
+                    "rhino:test:curve#a".to_string(),
+                    "rhino:test:curve#z".to_string(),
+                    "rhino:test:curve#m".to_string(),
+                ],
+            )
+            .unwrap();
+        let decoded = transaction.commit().unwrap();
+        let records = decoded.ir.native_unknowns("rhino").unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            records[0]
+                .links
+                .iter()
+                .map(|identity| identity.as_str())
+                .collect::<Vec<_>>(),
+            ["rhino:test:curve#a", "rhino:test:curve#m", "rhino:test:curve#z"]
+        );
     });
 }
 
