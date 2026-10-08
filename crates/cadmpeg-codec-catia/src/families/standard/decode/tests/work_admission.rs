@@ -113,3 +113,47 @@ fn bezier_heap_admits_sifting_and_releases_search_storage() {
         assert_eq!(parameters, vec![(0.5, 0.0), (0.5, 0.0)]);
     });
 }
+
+#[test]
+fn native_point_index_filters_all_coordinates_on_a_constant_x_plane() {
+    use crate::families::b5::graph::B5LogicalVertex;
+    use crate::families::standard::decode::unique_native_identity_points;
+    use cadmpeg_ir::ids::PointId;
+    use cadmpeg_ir::topology::Point;
+    let points = (0..1024_u32)
+        .map(|index| {
+            Point::new(
+                PointId::mint(format!("catia:test:point#{index}")).expect("identity"),
+                crate::test_support::test_b5::point([0.0, f64::from(index), 0.0]),
+                None,
+            )
+        })
+        .collect::<Vec<_>>();
+    let vertices = points
+        .iter()
+        .enumerate()
+        .map(|(index, point)| B5LogicalVertex {
+            object_id: u32::try_from(index).expect("bounded index"),
+            point: point.position(),
+        })
+        .collect::<Vec<_>>();
+    let error =
+        crate::test_support::with_work_refusal("catia_native_identity_point_match", |ctx| {
+            unique_native_identity_points(ctx, &vertices, points.len(), &BTreeMap::new(), &points)
+        })
+        .expect_err("probe first query");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal")
+    };
+    // Admit the measured construction prefix, then 500,000 units for all
+    // queries and output growth. A Cartesian query needs 1,048,576 visits.
+    crate::test_support::with_work_limit(limit.used + 500_000, |ctx| {
+        let matches =
+            unique_native_identity_points(ctx, &vertices, points.len(), &BTreeMap::new(), &points)
+                .expect("balanced spatial lookup");
+        assert_eq!(matches.len(), points.len());
+        for (index, vertex) in vertices.iter().enumerate() {
+            assert_eq!(matches.get(&vertex.object_id), Some(&index));
+        }
+    });
+}
