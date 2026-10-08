@@ -44,8 +44,7 @@ fn point(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Point3>, CodecError> {
     let mut storage = [0_u8; 64];
-    let Some(id) =
-        crate::ids::directory_lookup_key("iges:model:point#D", sequence, &mut storage, ctx)?
+    let Some(id) = crate::ids::directory_lookup_key("iges:model:point#D", sequence, &mut storage)
     else {
         return Ok(None);
     };

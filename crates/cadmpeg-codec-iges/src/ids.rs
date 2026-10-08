@@ -22,31 +22,24 @@ pub(crate) fn directory_lookup_key<'a>(
     prefix: &str,
     sequence: u32,
     storage: &'a mut [u8],
-    _ctx: &DecodeContext<'_>,
-) -> Result<Option<&'a str>, CodecError> {
+) -> Option<&'a str> {
     let mut digits = [0_u8; 10];
     let mut value = sequence;
     let mut start = digits.len();
     loop {
         start -= 1;
-        let Ok(digit) = u8::try_from(value % 10) else {
-            return Ok(None);
-        };
+        let digit = u8::try_from(value % 10).ok()?;
         digits[start] = b'0' + digit;
         value /= 10;
         if value == 0 {
             break;
         }
     }
-    let Some(length) = prefix.len().checked_add(digits.len() - start) else {
-        return Ok(None);
-    };
-    let Some(result) = storage.get_mut(..length) else {
-        return Ok(None);
-    };
+    let length = prefix.len().checked_add(digits.len() - start)?;
+    let result = storage.get_mut(..length)?;
     result[..prefix.len()].copy_from_slice(prefix.as_bytes());
     result[prefix.len()..].copy_from_slice(&digits[start..]);
-    Ok(std::str::from_utf8(result).ok())
+    std::str::from_utf8(result).ok()
 }
 
 /// A decoded number an identity key may be spelled with.
@@ -489,25 +482,18 @@ mod tests {
 
     #[test]
     fn directory_lookup_key_uses_stack_storage_for_full_u32_range() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let arena = DecodeArena::new();
-        let ctx = DecodeContext::new(&arena, &policy, false);
         let mut storage = [0_u8; 64];
         assert_eq!(
-            directory_lookup_key("iges:model:surface#D", 0, &mut storage, &ctx)
-                .expect("directory lookup succeeds"),
+            directory_lookup_key("iges:model:surface#D", 0, &mut storage),
             Some("iges:model:surface#D0")
         );
         assert_eq!(
-            directory_lookup_key("iges:model:edge#D", u32::MAX, &mut storage, &ctx)
-                .expect("directory lookup succeeds"),
+            directory_lookup_key("iges:model:edge#D", u32::MAX, &mut storage),
             Some("iges:model:edge#D4294967295")
         );
         let mut short = [0_u8; 3];
         assert_eq!(
-            directory_lookup_key("iges:model:edge#D", 1, &mut short, &ctx)
-                .expect("directory lookup succeeds"),
+            directory_lookup_key("iges:model:edge#D", 1, &mut short),
             None
         );
     }
