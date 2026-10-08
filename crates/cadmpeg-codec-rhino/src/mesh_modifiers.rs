@@ -380,10 +380,7 @@ fn optional_modifier<T>(
 ) -> Result<Option<T>, FramingError> {
     let mut storage = ctx.reserve_scoped(0, "Rhino optional modifier output")?;
     match storage.with_storage(parse) {
-        Ok(value) => {
-            storage.commit()?;
-            Ok(Some(value))
-        }
+        Ok(value) => Ok(Some(storage.commit_value(value)?)),
         Err(error @ FramingError::Resource(_)) => Err(error),
         Err(error) => {
             warnings.push_admitted(
