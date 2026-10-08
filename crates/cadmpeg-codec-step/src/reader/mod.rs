@@ -472,6 +472,7 @@ fn decode_exchange_mode(
     session.absorb(&mut product)?;
     session.absorb(&mut tessellation)?;
     session.absorb(&mut topology)?;
+    topology.value.release_claim_storage();
     session.absorb(&mut geometry)?;
     session.absorb(&mut pmi)?;
     session.absorb(&mut validation)?;

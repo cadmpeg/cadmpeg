@@ -31,7 +31,7 @@ fn topology_commit_error_text_refuses_retained_limit() {
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let error = cadmpeg_ir::draft::DraftError::IdentityCollision("step:data:body#1".into());
     assert!(matches!(
-        super::super::topology_commit_error("topology root", &error, &ctx),
+        super::super::topology_commit_error(format_args!("topology root"), &error, &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_topology_commit_error_text"
@@ -179,8 +179,11 @@ fn built_outcome_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let mut outcome = super::super::BuildOutcome::Built(Vec::new());
+    let mut outcome = super::super::BuildOutcome::new(&ctx).expect("empty outcome");
     let built = super::super::Built {
+        storage: ctx
+            .reserve_scoped(0, "test staged metadata")
+            .expect("empty metadata"),
         typed: std::collections::BTreeSet::new(),
         draft: cadmpeg_ir::draft::ModelDraft::new(),
         body_id: body_id(),
@@ -213,7 +216,7 @@ fn connected_wire_typed_claims_refuse_collection_limit() {
             3, 1, &exchange,
             super::super::WireSources { vdefs: &BTreeMap::new(), edefs: &BTreeMap::new(), point_positions: &carriers },
             false,
-            &mut Vec::new(), &ctx,
+            (&mut Vec::new(), &mut ctx.reserve_scoped(0, "test loss slots").expect("empty loss storage")), &ctx,
         ),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
@@ -239,7 +242,7 @@ fn shell_wire_typed_claims_refuse_collection_limit() {
             3, 1, &exchange,
             super::super::WireSources { vdefs: &BTreeMap::new(), edefs: &BTreeMap::new(), point_positions: &carriers },
             super::super::WireScope { scoped: false, root: false },
-            &mut Vec::new(), &ctx,
+            (&mut Vec::new(), &mut ctx.reserve_scoped(0, "test loss slots").expect("empty loss storage")), &ctx,
         ),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
@@ -259,7 +262,7 @@ fn subset_parent_loss_refuses_collection_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     assert!(matches!(
-        super::super::validate_subset_parent(1, exchange.records().get(&1).expect("subset"), "CONNECTED_EDGE_SUB_SET", &exchange, &mut Vec::new(), &ctx),
+        super::super::validate_subset_parent(1, exchange.records().get(&1).expect("subset"), "CONNECTED_EDGE_SUB_SET", &exchange, (&mut Vec::new(), &mut ctx.reserve_scoped(0, "test loss slots").expect("empty loss storage")), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_topology_losses"
@@ -279,7 +282,7 @@ fn curve_less_wire_edge_loss_refuses_collection_limit() {
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     let edge = super::super::EdgeDef::Bare { start: 1, end: 2 };
     assert!(matches!(
-        super::super::edge_curve_id_reported(1, &edge, &exchange, &mut Vec::new(), &ctx),
+        super::super::edge_curve_id_reported(1, &edge, &exchange, (&mut Vec::new(), &mut ctx.reserve_scoped(0, "test loss slots").expect("empty loss storage")), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_topology_losses"
@@ -370,16 +373,6 @@ fn edge_definitions_refuse_collection_limit() {
 }
 
 #[test]
-fn edge_definition_node_refuses_retained_limit() {
-    assert!(
-        matches!(cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "step_edge_definition_node", |cap| Err::<(), CodecError>(edge_definition_refusal(u64::MAX, cap, u64::MAX))),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_edge_definition_node")
-    );
-}
-
-#[test]
 fn edge_definition_recursion_refuses_depth_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DUMMY();#2=DUMMY();#3=SUBEDGE('',#1,#2,#4);#4=EDGE('',#1,#2);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
@@ -436,41 +429,108 @@ fn shell_definitions_refuse_collection_limit() {
 }
 
 #[test]
-fn shell_definition_typed_copy_refuses_collection_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+fn shell_definition_claims_refuse_collection_limit() {
     let definition = super::super::ShellDef {
         base: 1,
         forward: true,
-        typed: std::collections::BTreeSet::from([2]),
+        parent: Some(1),
     };
-    assert!(matches!(super::super::copy_shell_def(&definition, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_shell_definition_typed_copy"));
+    let shells = BTreeMap::from([
+        (2, definition),
+        (
+            1,
+            super::super::ShellDef {
+                base: 1,
+                forward: true,
+                parent: None,
+            },
+        ),
+    ]);
+    // One completed-ancestor cache node precedes the same stage claim node.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "step_shell_definition_claims",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+                .expect("empty root fits policy");
+            let mut seen_storage = ctx
+                .reserve_scoped(0, "test shell ancestor scratch")
+                .expect("empty ancestor storage");
+            let mut typed = std::collections::BTreeSet::new();
+            let result = super::super::shell_def_for(
+                2,
+                &shells,
+                &mut typed,
+                &mut std::collections::BTreeSet::new(),
+                &mut seen_storage,
+                &ctx,
+            );
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+                assert!(typed.is_empty());
+            }
+            result.map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == "step_shell_definition_claims")
+    );
+}
+
+fn shell_ancestor_work(count: u64) -> u64 {
+    let shells = (1..=count)
+        .map(|id| {
+            (
+                id,
+                super::super::ShellDef {
+                    base: 1,
+                    forward: true,
+                    parent: (id > 1).then_some(id - 1),
+                },
+            )
+        })
+        .collect();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut storage = ctx
+        .reserve_scoped(0, "test shell ancestor scratch")
+        .expect("empty ancestor storage");
+    let mut seen = std::collections::BTreeSet::new();
+    let mut claims = std::collections::BTreeSet::new();
+    for reference in (1..=count).rev() {
+        assert_eq!(
+            super::super::shell_def_for(
+                reference,
+                &shells,
+                &mut claims,
+                &mut seen,
+                &mut storage,
+                &ctx
+            )
+            .expect("shell claims"),
+            Some((1, true))
+        );
+    }
+    assert_eq!(claims, (2..=count).collect());
+    let CodecError::ResourceLimit(limit) = ctx
+        .charge_work(u64::MAX, "measure shell ancestor work")
+        .expect_err("work counter probe")
+    else {
+        panic!("work probe resource refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    limit.used
 }
 
 #[test]
-fn shell_definition_claims_refuse_collection_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let definition = super::super::ShellDef {
-        base: 1,
-        forward: true,
-        typed: std::collections::BTreeSet::from([2]),
-    };
-    let shells = BTreeMap::from([(1, definition)]);
+fn shell_ancestor_claims_reuse_completed_walks() {
+    let small = shell_ancestor_work(64);
+    let large = shell_ancestor_work(128);
     assert!(
-        matches!(super::super::shell_def_for(1, &shells, &mut std::collections::BTreeSet::new(), &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_shell_definition_claims")
+        large < 3 * small,
+        "shell ancestor work grew from {small} to {large}"
     );
 }
 
@@ -486,7 +546,7 @@ fn shell_definition_recursion_refuses_depth_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     assert!(
-        matches!(super::super::shell_def_cached(2, &exchange, &mut std::collections::BTreeSet::new(), &mut BTreeMap::new(), &ctx),
+        matches!(super::super::shell_def_cached(2, &exchange, &mut std::collections::BTreeSet::new(), &mut BTreeMap::new(), &mut ctx.reserve_scoped(0, "test shell cache").expect("empty cache storage"), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_shell_definition_recursion")
@@ -509,7 +569,7 @@ fn topology_root_refusal(collection_limit: u64, include_distinct: bool) -> Codec
         super::super::ShellDef {
             base: 1,
             forward: true,
-            typed: std::collections::BTreeSet::new(),
+            parent: None,
         },
     )]);
     let key = super::super::root_key(root, &exchange, &shells, &ctx)
@@ -569,12 +629,15 @@ fn geometric_set_refusal(collection_limit: u64, has_surface: bool) -> CodecError
             .surfaces
             .insert(4, crate::reader::index::SurfaceIndex(0));
     }
+    let mut loss_storage = ctx
+        .reserve_scoped(0, "test loss slots")
+        .expect("empty loss storage");
     super::super::build_geometric_set(
         1,
         exchange.records().get(&1).expect("representation"),
         &exchange,
         &carriers,
-        &mut Vec::new(),
+        (&mut Vec::new(), &mut loss_storage),
         &ctx,
     )
     .err()
@@ -605,15 +668,17 @@ fn geometric_set_faces_refuse_collection_limit() {
                 && refusal.operation == "step_geometric_set_faces"));
 }
 
-fn staged_topology_refusal(
+fn staged_topology_attempt(
     collection_limit: u64,
     retained_limit: u64,
     surface_count: usize,
-) -> super::super::StageError {
+    materialized_limit: u64,
+) -> Result<(), super::super::StageError> {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
     policy.limits.max_retained_bytes = retained_limit;
+    policy.limits.max_materialized_bytes = materialized_limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let body_id = body_id();
@@ -654,10 +719,20 @@ fn staged_topology_refusal(
                 visible: None,
             },
         },
+        ctx.reserve_scoped(0, "test staged metadata")
+            .expect("empty staged storage"),
         &ctx,
     )
-    .err()
-    .expect("staging exceeds limit")
+    .map(|_| ())
+}
+
+fn staged_topology_refusal(
+    collection_limit: u64,
+    retained_limit: u64,
+    surface_count: usize,
+) -> super::super::StageError {
+    staged_topology_attempt(collection_limit, retained_limit, surface_count, u64::MAX)
+        .expect_err("staging exceeds limit")
 }
 
 #[test]
@@ -669,11 +744,21 @@ fn staged_surface_ids_refuse_collection_limit() {
 }
 
 #[test]
-fn staged_surface_ids_refuse_retained_limit() {
-    assert!(matches!(staged_topology_refusal(u64::MAX, 0, 1),
-        super::super::StageError::Resource(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_staged_surface_ids"));
+fn staged_surface_ids_refuse_materialized_limit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "step_staged_surface_ids",
+        |cap| {
+            staged_topology_attempt(u64::MAX, u64::MAX, 1, cap).map_err(|error| match error {
+                super::super::StageError::Resource(error) => error,
+                super::super::StageError::Draft(error) => panic!("unexpected draft error: {error}"),
+            })
+        },
+    );
+    // The identity text and the index node are live scratch, not retained output.
+    assert!(
+        matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == "step_staged_surface_ids")
+    );
 }
 
 #[test]
@@ -717,17 +802,28 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
         super::super::ShellDef {
             base: 1,
             forward: true,
-            typed: std::collections::BTreeSet::new(),
+            parent: None,
         },
     )]);
     let region =
         cadmpeg_ir::ids::RegionId::mint("step:data:region#3").expect("valid region identity");
+    let mut loss_storage = ctx
+        .reserve_scoped(0, "test loss slots")
+        .expect("empty loss storage");
+    let ir = cadmpeg_ir::CadIr::empty();
+    let mut face_cache =
+        super::super::FaceAttributeCache::new(&ctx).expect("empty face attribute cache");
+    let mut state = super::super::BuildState {
+        face_cache: &mut face_cache,
+        failure: None,
+        selection_index: None,
+    };
     super::super::build_one(
         3,
         exchange.records().get(&3).expect("model"),
         super::super::BuildSources {
             exchange: &exchange,
-            ir: &cadmpeg_ir::CadIr::empty(),
+            ir: &ir,
             vdefs: &BTreeMap::new(),
             edefs: &BTreeMap::new(),
             odefs: &BTreeMap::new(),
@@ -746,8 +842,8 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
             edges: false,
             root: false,
         },
-        &mut Vec::new(),
-        &mut None,
+        (&mut Vec::new(), &mut loss_storage),
+        &mut state,
     )
     .err()
     .expect("builder exceeds limit")
@@ -785,7 +881,11 @@ fn brep_used_faces_refuse_collection_limit() {
                 && refusal.operation == "step_brep_used_faces"));
 }
 
-fn face_attribute_refusal(collection_limit: u64, depth_limit: u64, face_id: u64) -> CodecError {
+fn face_attribute_attempt(
+    collection_limit: u64,
+    depth_limit: u64,
+    face_id: u64,
+) -> Result<(), CodecError> {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=FACE('',(#2));#2=FACE_BOUND('',#3,.T.);#3=EDGE_LOOP('',());#4=ORIENTED_FACE('',*,#1,.T.);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
@@ -796,15 +896,36 @@ fn face_attribute_refusal(collection_limit: u64, depth_limit: u64, face_id: u64)
     policy.limits.max_recursion_depth = depth_limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    super::super::face_attributes(
+    let mut cache = super::super::FaceAttributeCache::new(&ctx)?;
+    let info = super::super::face_attributes(
         face_id,
         exchange.records().get(&face_id).expect("face record"),
         &exchange,
         &mut std::collections::BTreeSet::new(),
+        &mut cache,
         &ctx,
-    )
-    .err()
-    .expect("face attributes exceed limit")
+    )?;
+    if let super::super::FaceResolution::Resolved(info) = info {
+        super::super::claim_face_ancestors(
+            info.parent,
+            &cache.completed,
+            (
+                &mut std::collections::BTreeSet::new(),
+                &mut ctx.reserve_scoped(0, "test claims")?,
+            ),
+            (
+                &mut std::collections::BTreeSet::new(),
+                &mut ctx.reserve_scoped(0, "test ancestry")?,
+            ),
+            &ctx,
+        )?;
+    }
+    Ok(())
+}
+
+fn face_attribute_refusal(collection_limit: u64, depth_limit: u64, face_id: u64) -> CodecError {
+    face_attribute_attempt(collection_limit, depth_limit, face_id)
+        .expect_err("face attributes exceed limit")
 }
 
 #[test]
@@ -816,19 +937,14 @@ fn face_attribute_active_refuses_collection_limit() {
 }
 
 #[test]
-fn face_attribute_bounds_refuse_collection_limit() {
-    assert!(matches!(face_attribute_refusal(1, u64::MAX, 1),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_face_attribute_bounds"));
-}
-
-#[test]
 fn face_attribute_typed_refuses_collection_limit() {
-    assert!(matches!(face_attribute_refusal(3, u64::MAX, 4),
+    // Two active nodes, two completed-cache entries and one ancestry entry precede the typed claim; bounds are borrowed.
+    assert!(
+        matches!(cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "step_face_attribute_typed", |cap| face_attribute_attempt(cap, u64::MAX, 4)),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_face_attribute_typed"));
+                && refusal.operation == "step_face_attribute_typed")
+    );
 }
 
 #[test]
@@ -921,8 +1037,8 @@ fn implicit_face_loop_normals_refuse_collection_limit() {
 
 fn pcurve_seed_refusal(collection_limit: u64, break_only: bool) -> CodecError {
     let ir = cadmpeg_ir::CadIr::empty();
-    let index =
-        cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index_ctx = cadmpeg_test_support::service_decode_context();
+    let index = super::super::PcurveSelectionIndex::build(&ir, &index_ctx).unwrap();
     let surface_id =
         cadmpeg_ir::ids::SurfaceId::mint("test:audit:surface#1").expect("valid surface identity");
     let surface = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
@@ -980,29 +1096,209 @@ fn pcurve_selection_fractions_refuse_collection_limit() {
 }
 
 #[test]
-fn selected_pcurve_id_refuses_retained_limit() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;";
+fn rejected_pcurve_does_not_clone_the_output_identity() {
+    use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{CurveId, PcurveId, PointId, SurfaceId};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#4=LINE('',#5,#6);#5=DUMMY();#6=DUMMY();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
-            .expect("valid empty exchange");
+            .expect("valid line exchange");
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let candidate = PcurveId::mint("step:data:pcurve#1").expect("valid pcurve identity");
+    ir.model.pcurves.push(Pcurve {
+        id: candidate.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+                .expect("finite pcurve"),
+        ),
+        metadata: PcurveMetadata::default(),
+    });
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId::mint("step:data:surface#1").expect("valid surface identity"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("finite plane"),
+        )),
+        source_object: None,
+    });
+    ir.model.curves.push(Curve {
+        id: CurveId::mint("step:data:curve#4").expect("valid curve identity"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                .expect("finite line"),
+        )),
+        source_object: None,
+    });
+    for (id, position) in [
+        (7, Point3::new(0.0, 1.0, 0.0)),
+        (8, Point3::new(1.0, 1.0, 0.0)),
+    ] {
+        ir.model.points.push(cadmpeg_ir::topology::Point::new(
+            PointId::from(crate::ids::data(crate::ids::kind!("point"), id)),
+            cadmpeg_ir::features::FinitePoint3::new(position).expect("finite vertex point"),
+            None,
+        ));
+    }
+    let setup_ctx = cadmpeg_test_support::service_decode_context();
+    let index = super::super::PcurveSelectionIndex::build(&ir, &setup_ctx)
+        .expect("selection index fits setup policy");
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup_ctx)
+        .expect("point carriers fit setup policy");
+    let vdefs = BTreeMap::from([
+        (2, super::super::VertexDef { point: 7 }),
+        (3, super::super::VertexDef { point: 8 }),
+    ]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    let carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
-        .expect("empty carrier index fits policy");
-    let candidate =
-        cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#1").expect("valid pcurve identity");
-    assert!(matches!(super::super::select_associated_pcurve(
-        &cadmpeg_ir::CadIr::empty(), &exchange, 1,
-        &super::super::EdgeDef::Bare { start: 1, end: 2 },
-        super::super::PcurveAssociationSources {
-            vdefs: &BTreeMap::new(), point_positions: &carriers, candidates: &[candidate],
-        }, &ctx,
-    ), Err(super::super::PcurveSelectionFailure::Resource(CodecError::ResourceLimit(refusal)))
-        if refusal.dimension == ResourceDimension::RetainedBytes
-            && refusal.operation == "step_selected_pcurve_id"));
+    assert!(matches!(
+        super::super::select_associated_pcurve(
+            Some(&index),
+            &exchange,
+            1,
+            &super::super::EdgeDef::Curve {
+                start: 2,
+                end: 3,
+                curve: 4,
+                same: true
+            },
+            super::super::PcurveAssociationSources {
+                vdefs: &vdefs,
+                point_positions: &carriers,
+                candidates: std::slice::from_ref(&candidate),
+            },
+            &ctx,
+        ),
+        Err(super::super::PcurveSelectionFailure::Endpoint)
+    ));
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn selected_pcurve_output_id_refuses_retained_limit() {
+    use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{CurveId, PcurveId, PointId, SurfaceId};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#4=LINE('',#5,#6);#5=DUMMY();#6=DUMMY();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid line exchange");
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let candidate = PcurveId::mint("step:data:pcurve#1").expect("valid pcurve identity");
+    ir.model.pcurves.push(Pcurve {
+        id: candidate.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+                .expect("finite pcurve"),
+        ),
+        metadata: PcurveMetadata::default(),
+    });
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId::mint("step:data:surface#1").expect("valid surface identity"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("finite plane"),
+        )),
+        source_object: None,
+    });
+    ir.model.curves.push(Curve {
+        id: CurveId::mint("step:data:curve#4").expect("valid curve identity"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                .expect("finite line"),
+        )),
+        source_object: None,
+    });
+    for (id, position) in [
+        (7, Point3::new(0.0, 0.0, 0.0)),
+        (8, Point3::new(1.0, 0.0, 0.0)),
+    ] {
+        ir.model.points.push(cadmpeg_ir::topology::Point::new(
+            PointId::from(crate::ids::data(crate::ids::kind!("point"), id)),
+            cadmpeg_ir::features::FinitePoint3::new(position).expect("finite vertex point"),
+            None,
+        ));
+    }
+    let setup_ctx = cadmpeg_test_support::service_decode_context();
+    let index = super::super::PcurveSelectionIndex::build(&ir, &setup_ctx)
+        .expect("selection index fits setup policy");
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup_ctx)
+        .expect("point carriers fit setup policy");
+    let vdefs = BTreeMap::from([
+        (2, super::super::VertexDef { point: 7 }),
+        (3, super::super::VertexDef { point: 8 }),
+    ]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "step_selected_pcurve_id",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("source fits policy");
+            let result = super::super::select_associated_pcurve(
+                Some(&index),
+                &exchange,
+                1,
+                &super::super::EdgeDef::Curve {
+                    start: 2,
+                    end: 3,
+                    curve: 4,
+                    same: true,
+                },
+                super::super::PcurveAssociationSources {
+                    vdefs: &vdefs,
+                    point_positions: &carriers,
+                    candidates: std::slice::from_ref(&candidate),
+                },
+                &ctx,
+            );
+            if let Err(super::super::PcurveSelectionFailure::Resource(CodecError::ResourceLimit(
+                limit,
+            ))) = &result
+            {
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+            }
+            result
+                .map(|selected| {
+                    assert_eq!(selected.id, candidate);
+                    assert!(selected.parameter_range.is_none());
+                })
+                .map_err(|failure| match failure {
+                    super::super::PcurveSelectionFailure::Resource(error) => error,
+                    super::super::PcurveSelectionFailure::ResourceLimit(limit) => {
+                        CodecError::ResourceLimit(limit)
+                    }
+                    failure => panic!("valid pcurve selection failed: {failure:?}"),
+                })
+        },
+    );
+    // The admitted relation copies one 18-byte output identity after its witnesses pass.
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "step_selected_pcurve_id"));
 }
 
 #[test]
