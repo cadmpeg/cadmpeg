@@ -30,7 +30,7 @@ fn trim_endpoint_radius_preserves_missing_agreement_and_refusal() {
     ] {
         let points = points.into_iter().collect();
         assert_eq!(
-            super::trim_endpoint_radius(&segment, [0.0; 2], &points)
+            crate::decode::with_test_decode_ctx(|ctx| super::trim_endpoint_radius(ctx, &segment, [0.0; 2], &points)).expect("endpoint budget")
                 .map(|radius| radius.map(cadmpeg_ir::scalar::PositiveReal::get)),
             expected
         );
@@ -40,7 +40,7 @@ fn trim_endpoint_radius_preserves_missing_agreement_and_refusal() {
 #[test]
 fn resolved_trim_scalar_preserves_missing_duplicate_and_conflict_rules() {
     use super::{
-        resolved_trim_scalar, FeatureVariableRow, FeatureVariableTable, ScalarLane,
+        FeatureVariableRow, FeatureVariableTable, ScalarLane,
         VariableType,
     };
 
@@ -62,7 +62,7 @@ fn resolved_trim_scalar_preserves_missing_duplicate_and_conflict_rules() {
         rows,
         offset: 0,
     };
-    let resolve = |rows| resolved_trim_scalar(&table(rows), VariableType::Radius, 7);
+    let resolve = |rows| crate::decode::with_test_decode_ctx(|ctx| table(rows).reconciled_trim_geometry(ctx).map(|geometry| geometry.radius(7))).expect("radius budget");
     assert_eq!(resolve(Vec::new()), Ok(None));
     assert_eq!(resolve(vec![row(ScalarLane::Undefined)]), Ok(None));
     assert_eq!(resolve(vec![row(ScalarLane::DimensionDriven)]), Ok(None));
