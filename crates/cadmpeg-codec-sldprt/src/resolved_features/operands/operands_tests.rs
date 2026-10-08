@@ -1110,3 +1110,75 @@ fn operand_candidate_index_preserves_duplicates_and_refuses_before_lookup() {
         crate::test_support::work_refusal_at(operation, solve);
     }
 }
+
+#[test]
+fn direct_operand_skips_fallback_indexes() {
+    let markers = (7..11)
+        .map(|index| {
+            SketchInputEntity::new(
+                format!("line-{index}"),
+                "lane",
+                index,
+                u64::from(index),
+                SketchInputKind::LineOrCircle,
+            )
+            .with_test_identity(Some(index), None)
+        })
+        .collect::<Vec<_>>();
+    let entities = markers.iter().collect::<Vec<_>>();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut candidates =
+        super::OperandCandidates::new(&ctx, &entities, [FeatureInputOperandKind::E1]).unwrap();
+    let resolved = super::resolve_indexed_operand_marker(
+        &ctx,
+        &mut candidates,
+        &entities,
+        FeatureInputOperandKind::E1,
+        7,
+        |_| Ok(false),
+    )
+    .unwrap();
+    assert_eq!(resolved.map(SketchInputEntity::id), Some("line-7"));
+    assert!(candidates.first_by_id.is_none());
+    assert!(candidates.by_id.is_none());
+    assert!(candidates.compatible.iter().all(Option::is_none));
+}
+
+#[test]
+fn compatibility_families_match_acceptance_catalog() {
+    let representatives = [
+        FeatureInputOperandKind::D6,
+        FeatureInputOperandKind::E1,
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_80AC),
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100),
+    ];
+    let markers = [
+        SketchInputKind::Point,
+        SketchInputKind::ConstrainedPoint,
+        SketchInputKind::LineOrCircle,
+        SketchInputKind::Arc,
+        SketchInputKind::Relation(SketchRelationKind::Distance),
+        SketchInputKind::Relation(SketchRelationKind::Angle),
+        SketchInputKind::from_native_code(4),
+        SketchInputKind::from_handle_code(0),
+    ];
+    for tag in 0..=u16::MAX {
+        let kind = match tag {
+            0x80d6 => FeatureInputOperandKind::D6,
+            0x80e1 => FeatureInputOperandKind::E1,
+            tag => match NativeOperandTag::try_from(tag) {
+                Ok(tag) => FeatureInputOperandKind::Native(tag),
+                Err(_) => continue,
+            },
+        };
+        let representative = representatives[super::compatibility_family(kind)];
+        for marker in markers {
+            assert_eq!(
+                operand_accepts_marker(kind, marker),
+                operand_accepts_marker(representative, marker),
+                "tag {tag:04x}, marker {marker:?}"
+            );
+        }
+    }
+}

@@ -1644,15 +1644,7 @@ pub(crate) fn bind_scalar_operands(
         bind_detached_legacy_sketch_objects(ctx, histories, &represented_sketches, lane)?;
         // A dissected profile that directly follows an extrusion lends its
         // scalars to the extrusion.
-        let mut scalars_by_offset = lane_storage.with_storage(|| {
-            ctx.collect_vec(0..lane.scalars.len(), "sort SLDPRT scalar offsets")
-        })?;
-        ctx.stable_sort_by_key(
-            &mut scalars_by_offset,
-            |index| lane.scalars[*index].offset,
-            Ord::cmp,
-            "sort SLDPRT scalar offsets",
-        )?;
+        let mut scalars_by_offset = None;
         for pair in ctx
             .admit_iter(&starts, "scan SLDPRT dissected scalar owners")?
             .windows(const { crate::nonzero(2) })
@@ -1677,6 +1669,21 @@ pub(crate) fn bind_scalar_operands(
             if !is_dissected_profile_feature(ctx, child)? {
                 continue;
             }
+            let scalars_by_offset = match &mut scalars_by_offset {
+                Some(offsets) => offsets,
+                slot @ None => {
+                    let mut offsets = lane_storage.with_storage(|| {
+                        ctx.collect_vec(0..lane.scalars.len(), "sort SLDPRT scalar offsets")
+                    })?;
+                    ctx.stable_sort_by_key(
+                        &mut offsets,
+                        |index| lane.scalars[*index].offset,
+                        Ord::cmp,
+                        "sort SLDPRT scalar offsets",
+                    )?;
+                    slot.insert(offsets)
+                }
+            };
             let next = ctx.partition_point(
                 &starts,
                 |(offset, _)| Ok(offset <= child_start),
@@ -1684,13 +1691,13 @@ pub(crate) fn bind_scalar_operands(
             )?;
             let child_end = starts.get(next).map(|(offset, _)| *offset);
             let first = ctx.partition_point(
-                &scalars_by_offset,
+                scalars_by_offset,
                 |index| Ok(lane.scalars[*index].offset <= *child_start),
                 "scan SLDPRT dissected scalar owners",
             )?;
             let last = match child_end {
                 Some(end) => ctx.partition_point(
-                    &scalars_by_offset,
+                    scalars_by_offset,
                     |index| Ok(lane.scalars[*index].offset < end),
                     "scan SLDPRT dissected scalar owners",
                 )?,

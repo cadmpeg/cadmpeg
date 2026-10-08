@@ -36,20 +36,25 @@ use crate::resolved_features::parameters::enrich_history_parameters;
 
 #[test]
 fn spatial_hole_position_route_refuses_collection_growth() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_spatial_hole_position_sketches(
-        &ctx,
-        &mut [],
-        &[],
-        &[],
-        &[],
-        &[native_history()],
-        &[],
-    )
-    .expect_err("native feature lookup requires one collection item");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "index SLDPRT spatial position features",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            project_spatial_hole_position_sketches(
+                &ctx,
+                &mut [model_hole()],
+                &[],
+                &[],
+                &[],
+                &[native_history()],
+                &[],
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "index SLDPRT spatial position features"));
@@ -67,7 +72,7 @@ fn spatial_hole_position_route_refuses_lookup_work() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             project_spatial_hole_position_sketches(
                 &ctx,
-                &mut [],
+                &mut [model_hole()],
                 &[],
                 &[],
                 &[],
