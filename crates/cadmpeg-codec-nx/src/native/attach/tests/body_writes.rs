@@ -704,3 +704,50 @@ fn incomplete_body_image_outputs_copy_no_retained_identities() {
         );
     }
 }
+
+#[test]
+fn result_group_equality_refuses_at_production_member_comparison() {
+    let image = group_use(&["face-μ", "edge"]);
+    let group = direct_group_use(&["face-μ", "edge"]);
+    let members = [
+        group_member("face-μ", GroupNodeFamily::Face, Some(40)),
+        group_member("edge", GroupNodeFamily::Edge, Some(41)),
+    ];
+    crate::test_support::with_decode_context(|ctx| {
+        let result = operation_body_write_result_group_members(
+            ctx,
+            "write",
+            std::slice::from_ref(&image),
+            std::slice::from_ref(&group),
+            &members,
+        )
+        .unwrap();
+        assert_eq!(result.faces[0].as_str(), "nx:s4:face#40");
+        assert_eq!(result.edges[0].as_str(), "nx:s4:edge#41");
+        assert!(result.vertices.is_empty());
+    });
+    for operation in [
+        "NX result group member equality",
+        "NX result group member identity",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            |ctx| {
+                operation_body_write_result_group_members(
+                    ctx,
+                    "write",
+                    std::slice::from_ref(&image),
+                    std::slice::from_ref(&group),
+                    &members,
+                )
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == operation)
+        );
+    }
+}

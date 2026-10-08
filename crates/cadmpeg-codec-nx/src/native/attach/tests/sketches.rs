@@ -253,3 +253,62 @@ fn sketch_graph_refuses_work_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
+
+#[test]
+fn rejected_sketch_candidates_leave_retained_budget_unused() {
+    let label = crate::native::features::FeatureOperationLabel {
+        id: "nx:feature-history:operation-label#section-11".into(),
+        section_link: "section".into(),
+        ordinal: 11,
+        value: "SKETCH".into(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
+        stable_identity: None,
+        source_offset: 80,
+    };
+    let point = crate::native::features::FeatureSketchFixedPoint {
+        id: "nx:feature-history:sketch-fixed-point#section-11-0000000000".into(),
+        operation_label: label.id.clone(),
+        named_record: "named-record".into(),
+        name: "Point1".into(),
+        fixed_pair: "fixed-pair".into(),
+        values: [0.25, -0.5].map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap()),
+        source_offset: 91,
+    };
+    for fixed_points in [Vec::new(), vec![&point, &point]] {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_retained_bytes = 0,
+            |ctx| {
+                let mut ir = CadIr::empty();
+                let mut annotations = AnnotationBuilder::new();
+                let stream = StreamHandle::new(
+                    &cadmpeg_test_support::service_decode_context(),
+                    cadmpeg_ir::stream_name!("nx:container"),
+                    "fixture stream handle",
+                )
+                .unwrap();
+                assert!(super::super::attach_sketch_graph(
+                    ctx,
+                    &mut ir,
+                    &label,
+                    &super::super::SketchSources {
+                        point_uses: &[],
+                        point_groups: &[],
+                        points: &[],
+                        payload_scalars: &[],
+                        fixed_points: &fixed_points,
+                        coordinate_pairs: &[],
+                    },
+                    &mut annotations,
+                    &stream
+                )
+                .unwrap()
+                .is_none());
+                assert!(ir.model.sketches.is_empty());
+                assert!(ir.model.sketch_entities.is_empty());
+                ctx.charge_retained(0, "test rejected sketch retained storage")
+                    .unwrap();
+            },
+        );
+    }
+}
