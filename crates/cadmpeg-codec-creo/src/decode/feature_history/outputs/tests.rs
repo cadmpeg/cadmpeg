@@ -10,7 +10,14 @@ use super::{
 fn invalid_feature_reference_name_refuses_before_lossy_copy() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 3;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo decoded feature reference name"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    decoded_feature_reference_name(&ctx, b"A\xff").map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = decoded_feature_reference_name(&ctx, b"A\xff")
         .expect_err("replacement needs four retained bytes");
@@ -88,7 +95,14 @@ fn feature_output_history_refuses_before_visiting_node() {
     let scan = crate::test_support::empty_container_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo feature output visiting nodes"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    feature_output_bodies(&ctx, &scan, &CadIr::empty(), 40).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = feature_output_bodies(&ctx, &scan, &CadIr::empty(), 40)
         .expect_err("one history node exceeds the limit");
@@ -119,7 +133,14 @@ fn feature_output_history_refuses_before_recursive_step() {
 fn evaluated_sweep_candidate_refuses_before_scoped_text() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo evaluated sweep body candidate"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    evaluated_sweep_output_bodies(&ctx, &CadIr::empty(), 40).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = evaluated_sweep_output_bodies(&ctx, &CadIr::empty(), 40)
         .expect_err("one candidate needs scoped text");
@@ -134,7 +155,14 @@ fn evaluated_sweep_candidate_refuses_before_scoped_text() {
 fn evaluated_sweep_body_refuses_before_retained_id() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo evaluated sweep body IDs"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    evaluated_sweep_output_bodies(&ctx, &sweep_output_ir(), 40).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = evaluated_sweep_output_bodies(&ctx, &sweep_output_ir(), 40)
         .expect_err("one output needs a retained ID");
@@ -149,7 +177,14 @@ fn evaluated_sweep_body_refuses_before_retained_id() {
 fn evaluated_sweep_body_refuses_before_output_row() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo evaluated sweep output bodies"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    evaluated_sweep_output_bodies(&ctx, &sweep_output_ir(), 40).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = evaluated_sweep_output_bodies(&ctx, &sweep_output_ir(), 40)
         .expect_err("one output needs a Vec row");
@@ -164,7 +199,15 @@ fn evaluated_sweep_body_refuses_before_output_row() {
 fn selected_edge_refuses_before_btree_node() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo selected edge nodes"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let edge = EdgeId::mint("creo:test:edge#1").expect("identity grammar");
+    bodies_containing_edges(&ctx, &CadIr::empty(), &[edge]).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let edge = EdgeId::mint("creo:test:edge#1").expect("identity grammar");
     let error = bodies_containing_edges(&ctx, &CadIr::empty(), &[edge])
@@ -244,7 +287,15 @@ fn selected_shell_refuses_before_btree_node() {
     let (ir, edge) = selected_edge_ir();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo selected shell nodes"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_collection_items = cap;
+                let edge = edge.clone();
+let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    bodies_containing_edges(&ctx, &ir, &[edge]).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = bodies_containing_edges(&ctx, &ir, &[edge])
         .expect_err("selected edge and shell need separate nodes");
@@ -325,55 +376,27 @@ fn selected_wire_shell_membership_short_circuits_after_first_match() {
         .expect("wire shell fixture"),
     );
     let body = ir.model.bodies[0].id.clone();
-    let mut cap = 0_u64;
-    let mut named_refusals = 0;
-    let mut bounded_result = None;
-    for _ in 0..4096 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        match bodies_containing_edges(&ctx, &ir, std::slice::from_ref(&selected)) {
-            Ok(bodies) => {
-                assert_eq!(named_refusals, 1, "the matched wire edge stops the scan");
-                bounded_result = Some(bodies);
-                break;
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
-                assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
-                let need = resource
-                    .used
-                    .checked_add(resource.additional)
-                    .expect("work need");
-                assert!(need > cap);
+    let named_needs = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let bounded_result = crate::test_support::assert_work_boundaries(
+        &["creo selected shell wire edge lookup"],
+        |ctx| {
+            let result = bodies_containing_edges(ctx, &ir, std::slice::from_ref(&selected));
+            if let Some(resource) = ctx.resource_refusal() {
                 if resource.operation == "creo selected shell wire edge lookup" {
-                    let arena = DecodeArena::new();
-                    let mut policy = DecodePolicy::service();
-                    policy.limits.max_work_units =
-                        need.checked_sub(1).expect("one below work need");
-                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                        .expect("empty root is admitted");
-                    assert!(matches!(
-                        bodies_containing_edges(&ctx, &ir, std::slice::from_ref(&selected)),
-                        Err(cadmpeg_core::CodecError::ResourceLimit(ref below))
-                            if below.dimension == ResourceDimension::WorkUnits
-                                && below.operation == "creo selected shell wire edge lookup"
-                    ));
-                    named_refusals += 1;
+                    named_needs.borrow_mut().insert(resource.used.checked_add(resource.additional).expect("work need"));
                 }
-                cap = need;
             }
-            Err(error) => panic!("unexpected wire-shell route refusal: {error:?}"),
-        }
-    }
+            result
+        },
+    );
+    let named_refusals = named_needs.borrow().len();
+    assert_eq!(named_refusals, 1, "the matched wire edge stops the scan");
     assert_eq!(
         named_refusals, 1,
         "work route reaches one wire membership query"
     );
     assert_eq!(
-        bounded_result.expect("work route admits the unchanged service result"),
+        bounded_result,
         vec![body.clone()]
     );
     assert_eq!(
@@ -390,7 +413,15 @@ fn selected_body_refuses_before_output_row() {
     let (ir, edge) = selected_edge_ir();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo bodies containing selected edges"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_collection_items = cap;
+                let edge = edge.clone();
+let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    bodies_containing_edges(&ctx, &ir, &[edge]).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = bodies_containing_edges(&ctx, &ir, &[edge])
         .expect_err("body row exceeds the two node allowance");
@@ -405,7 +436,15 @@ fn selected_body_refuses_before_output_row() {
 fn copied_output_body_id_refuses_before_retained_bytes() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo feature output body IDs"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let body = BodyId::mint("creo:test:body#1").expect("identity grammar");
+    copy_body_id(&ctx, &body).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let body = BodyId::mint("creo:test:body#1").expect("identity grammar");
     let error = copy_body_id(&ctx, &body).expect_err("body ID needs retained bytes");
@@ -432,17 +471,32 @@ fn copied_unicode_output_body_id_charges_only_retained_copy_work() {
 
 #[test]
 fn generated_input_lookup_refuses_before_scoped_text() {
+    let ir = CadIr::empty();
     let scan = crate::test_support::empty_container_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo generated input feature lookup"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut history = super::FeatureOutputHistory::new(&ctx, &ir)?;
+    generated_input_output_bodies(
+        &ctx,
+        &scan,
+        &ir,
+        40,
+        &mut history,
+    ).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = generated_input_output_bodies(
         &ctx,
         &scan,
-        &CadIr::empty(),
+        &ir,
         40,
-        &mut super::FeatureOutputHistory::new(&ctx).expect("history storage"),
+        &mut super::FeatureOutputHistory::new(&ctx, &ir).expect("history storage"),
     )
     .expect_err("lookup needs scoped text");
     assert!(
@@ -490,7 +544,14 @@ fn generated_surface_body_refuses_before_feature_output_row() {
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo feature output bodies"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    feature_output_bodies(&ctx, &scan, &ir, 10).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = feature_output_bodies(&ctx, &scan, &ir, 10)
         .expect_err("visited node and body row need two collection items");
@@ -523,14 +584,28 @@ fn generated_edge_body_refuses_before_merge_row() {
     .expect("valid generated edge")];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo generated edge output bodies"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut history = super::FeatureOutputHistory::new(&ctx, &ir)?;
+    generated_edge_output_bodies(
+        &ctx,
+        &scan,
+        &ir,
+        &edges,
+        &mut history,
+    ).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = generated_edge_output_bodies(
         &ctx,
         &scan,
         &ir,
         &edges,
-        &mut super::FeatureOutputHistory::new(&ctx).expect("history storage"),
+        &mut super::FeatureOutputHistory::new(&ctx, &ir).expect("history storage"),
     )
     .expect_err("visited producer and its body use the two admitted rows");
     assert!(
@@ -588,14 +663,28 @@ fn generated_input_body_refuses_before_merge_row() {
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo generated input output bodies"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut history = super::FeatureOutputHistory::new(&ctx, &ir)?;
+    generated_input_output_bodies(
+        &ctx,
+        &scan,
+        &ir,
+        10,
+        &mut history,
+    ).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = generated_input_output_bodies(
         &ctx,
         &scan,
         &ir,
         10,
-        &mut super::FeatureOutputHistory::new(&ctx).expect("history storage"),
+        &mut super::FeatureOutputHistory::new(&ctx, &ir).expect("history storage"),
     )
     .expect_err("generated dependency, visited producer, and its body use three rows");
     assert!(
@@ -627,7 +716,15 @@ fn reconciled_output_refuses_before_update_row() {
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo reconciled output update rows"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_collection_items = cap;
+                let mut ir = ir.clone();
+let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    super::super::dependencies::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new()).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error =
         super::super::dependencies::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new())
@@ -671,23 +768,44 @@ fn section_feature_lookups_keep_unique_source_selection() {
             saved_section: None,
             offset: 4,
         });
-    assert_eq!(super::owned_section_feature_id(&scan, 17), Some(40));
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::owned_section_feature_id(ctx, &scan, 17)).expect("admitted section owner"), Some(40));
     assert_eq!(
-        super::section_definition_for_history_feature(&scan, 40).map(|value| value.offset),
+        crate::decode::with_test_decode_ctx(|ctx| super::section_definition_for_history_feature(ctx, &scan, 40)).expect("admitted section definition").map(|value| value.offset),
         Some(4)
     );
     scan.features
         .definitions
         .push(scan.features.definitions[0].clone());
-    assert_eq!(super::owned_section_feature_id(&scan, 17), None);
-    assert!(super::section_definition_for_history_feature(&scan, 40).is_none());
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::owned_section_feature_id(ctx, &scan, 17)).expect("admitted section owner"), None);
+    assert!(crate::decode::with_test_decode_ctx(|ctx| super::section_definition_for_history_feature(ctx, &scan, 40)).expect("admitted section definition").is_none());
 }
 
 #[test]
 fn feature_parameter_refuses_before_btree_node() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo feature parameter nodes"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut text_storage = ctx
+        .reserve_scoped(0, "creo feature parameter text")
+        .expect("parameter text lease");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature parameter nodes")
+        .expect("parameter node lease");
+    let mut parameters = BTreeMap::new();
+    insert_feature_parameter(
+        &ctx,
+        &mut text_storage,
+        &mut node_storage,
+        &mut parameters,
+        "choice.value",
+        "x",
+    ).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let mut text_storage = ctx
         .reserve_scoped(0, "creo feature parameter text")
@@ -716,8 +834,28 @@ fn feature_parameter_refuses_before_btree_node() {
 fn feature_parameter_staging_node_refuses_materialized_storage() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes =
-        cadmpeg_core::decode::u64_from_index("choice.value".len() + "x".len());
+    policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo feature parameter nodes"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut text_storage = ctx
+        .reserve_scoped(0, "creo feature parameter text")
+        .expect("parameter text lease");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature parameter nodes")
+        .expect("parameter node lease");
+    let mut parameters = BTreeMap::new();
+    insert_feature_parameter(
+        &ctx,
+        &mut text_storage,
+        &mut node_storage,
+        &mut parameters,
+        "choice.value",
+        "x",
+    ).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let mut text_storage = ctx
         .reserve_scoped(0, "creo feature parameter text")
@@ -747,7 +885,28 @@ fn feature_parameter_staging_node_refuses_materialized_storage() {
 fn feature_parameter_refuses_before_staging_value() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo feature parameter value"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut text_storage = ctx
+        .reserve_scoped(0, "creo feature parameter text")
+        .expect("parameter text lease");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature parameter nodes")
+        .expect("parameter node lease");
+    let mut parameters = BTreeMap::new();
+    insert_feature_parameter(
+        &ctx,
+        &mut text_storage,
+        &mut node_storage,
+        &mut parameters,
+        "choice.value",
+        "x",
+    ).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let mut text_storage = ctx
         .reserve_scoped(0, "creo feature parameter text")
@@ -776,7 +935,28 @@ fn feature_parameter_refuses_before_staging_value() {
 fn feature_parameter_refuses_before_scoped_key_candidate() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 1;
+    policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo feature parameter key candidate"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut text_storage = ctx
+        .reserve_scoped(0, "creo feature parameter text")
+        .expect("parameter text lease");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature parameter nodes")
+        .expect("parameter node lease");
+    let mut parameters = BTreeMap::new();
+    insert_feature_parameter(
+        &ctx,
+        &mut text_storage,
+        &mut node_storage,
+        &mut parameters,
+        "choice.value",
+        "x",
+    ).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let mut text_storage = ctx
         .reserve_scoped(0, "creo feature parameter text")
@@ -805,7 +985,31 @@ fn feature_parameter_refuses_before_scoped_key_candidate() {
 fn feature_parameter_native_text_transfer_refuses_retained_storage() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo feature parameter text"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut text_storage = ctx
+        .reserve_scoped(0, "creo feature parameter text")
+        .expect("parameter text lease");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature parameter nodes")
+        .expect("parameter node lease");
+    let mut parameters = BTreeMap::new();
+    insert_feature_parameter(
+        &ctx,
+        &mut text_storage,
+        &mut node_storage,
+        &mut parameters,
+        "choice.value",
+        "x",
+    )
+    .expect("staging text fits materialized storage");
+    text_storage
+        .commit().map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let mut text_storage = ctx
         .reserve_scoped(0, "creo feature parameter text")
@@ -937,7 +1141,25 @@ fn feature_parameter_named_entry_service_preserves_suffix_order() {
 fn feature_source_property_refuses_before_btree_node() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo feature source property nodes"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property node lease");
+    let mut properties = BTreeMap::new();
+    insert_feature_source_property(
+        &ctx,
+        &mut node_storage,
+        &mut properties,
+        "recipe",
+        "Extrude",
+    ).map(|_| ())
+            });
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut node_storage = ctx
@@ -964,7 +1186,25 @@ fn feature_source_property_refuses_before_btree_node() {
 fn feature_source_property_staging_node_refuses_materialized_storage() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo feature source property nodes"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property node lease");
+    let mut properties = BTreeMap::new();
+    insert_feature_source_property(
+        &ctx,
+        &mut node_storage,
+        &mut properties,
+        "recipe",
+        "Extrude",
+    ).map(|_| ())
+            });
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut node_storage = ctx
@@ -990,7 +1230,25 @@ fn feature_source_property_staging_node_refuses_materialized_storage() {
 fn feature_source_property_refuses_before_key_copy() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo feature source property key"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property node lease");
+    let mut properties = BTreeMap::new();
+    insert_feature_source_property(
+        &ctx,
+        &mut node_storage,
+        &mut properties,
+        "recipe",
+        "Extrude",
+    ).map(|_| ())
+            });
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut node_storage = ctx
@@ -1016,7 +1274,25 @@ fn feature_source_property_refuses_before_key_copy() {
 fn feature_source_property_refuses_before_value_copy() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 6;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo feature source property value"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property node lease");
+    let mut properties = BTreeMap::new();
+    insert_feature_source_property(
+        &ctx,
+        &mut node_storage,
+        &mut properties,
+        "recipe",
+        "Extrude",
+    ).map(|_| ())
+            });
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut node_storage = ctx
@@ -1064,8 +1340,30 @@ fn feature_source_property_keeps_key_order_and_replacement() {
 fn feature_source_property_named_output_node_remains_retained() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index("recipe".len() + "Extrude".len());
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("named entry map nodes"), |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy;
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property node lease");
+    let mut properties = BTreeMap::new();
+    insert_feature_source_property(
+        &ctx,
+        &mut node_storage,
+        &mut properties,
+        "recipe",
+        "Extrude",
+    )
+    ?;
+    cadmpeg_core::text::named_entries_for_decode(&ctx, "feature", properties).map(|_| ()).map_err(|error| match error {
+        cadmpeg_core::text::NamedEntryError::ResourceRefusal(resource) => cadmpeg_core::CodecError::ResourceLimit(resource),
+        error => panic!("unexpected named entry refusal: {error:?}"),
+    })
+            });
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut node_storage = ctx
@@ -1750,7 +2048,7 @@ fn generated_input_feature_scan_refuses_before_identity_comparison() {
                 &scan,
                 &ir,
                 40,
-                &mut super::FeatureOutputHistory::new(ctx)?,
+                &mut super::FeatureOutputHistory::new(ctx, &ir)?,
             )
         },
     );
@@ -1786,7 +2084,7 @@ fn evaluated_sweep_body_identity_validation_refuses_at_work_boundary() {
 #[test]
 fn feature_parameter_collision_boundary_keeps_first_unused_suffix() {
     let parameters = crate::test_support::assert_work_boundaries(
-        &["creo feature parameter collision candidate"],
+        &["creo feature parameter key lookup"],
         |ctx| {
             let mut text_storage = ctx.reserve_scoped(0, "creo feature parameter text")?;
             let mut node_storage = ctx.reserve_scoped(0, "creo feature parameter nodes")?;

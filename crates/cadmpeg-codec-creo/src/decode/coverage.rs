@@ -590,7 +590,7 @@ pub(super) fn surface_transfer_coverage(
         let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
             continue;
         };
-        let Some(kind) = surface_kind_for_geometry(&surface.geometry) else {
+        let Some(kind) = surface_kind_for_geometry(ctx, &surface.geometry)? else {
             continue;
         };
         let extra = extrusion_surfaces.contains(&surface.id).then_some(

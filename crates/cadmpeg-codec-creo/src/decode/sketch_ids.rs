@@ -441,7 +441,7 @@ pub(super) fn section_owner_feature_id(
     definition_id: u32,
     sketch: &SketchId,
 ) -> Result<Option<IrFeatureId>, CodecError> {
-    let text = if let Some(feature_id) = owned_section_feature_id(scan, definition_id) {
+    let text = if let Some(feature_id) = owned_section_feature_id(ctx, scan, definition_id)? {
         ctx.format_retained(
             format_args!("creo:model:feature#{feature_id}"),
             "creo section owner feature identity",
