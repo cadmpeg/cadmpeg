@@ -1411,6 +1411,7 @@ pub(crate) fn scan_curve_carriers(
         })? else {
             continue;
         };
+        drop(pole_storage);
         let nurbs = match nurbs {
             Ok(nurbs) => {
                 carrier_storage.commit()?;
@@ -1866,6 +1867,7 @@ pub(crate) fn scan_surface_carriers(
         })? else {
             continue;
         };
+        drop(pole_storage);
         let nurbs = match nurbs {
             Ok(nurbs) => {
                 carrier_storage.commit()?;
