@@ -2434,13 +2434,17 @@ fn boolean_properties(
     // Callers pass fixed property-slot lists.
     for slot in slots {
         if let Some(value) = boolean(ctx, source, *slot, index)? {
+            let key = cadmpeg_core::nonblank_literal!(ctx, "property_{slot}_boolean")?;
+            let value_text = if value { "true" } else { "false" };
+            let mut value = ctx.retained_string(
+                value_text.len(),
+                "retain Inventor feature property value",
+            )?;
+            value.push_str(value_text);
             ctx.insert_btree_map(
                 &mut properties,
-                cadmpeg_core::nonblank_literal!(ctx, "property_{slot}_boolean")?,
-                ctx.copy_retained_text(
-                    if value { "true" } else { "false" },
-                    "retain Inventor feature property value",
-                )?,
+                key,
+                value,
                 "project Inventor feature boolean property",
             )?;
         }

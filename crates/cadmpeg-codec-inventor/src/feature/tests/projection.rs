@@ -137,6 +137,54 @@ fn boolean_property_literal_slots_need_no_work_admission() {
 }
 
 #[test]
+fn boolean_property_values_admit_fixed_storage_without_copy_work() {
+    for slots in [&[20, 22][..], &[2, 3, 4, 5, 8][..], &[6, 9][..]] {
+        let slot = slots[0];
+        for (value, expected) in [(true, "true"), (false, "false")] {
+            let source = test_feature(0, slots.iter().copied().max().expect("literal slots") + 1,
+                &[(slot, 1)]);
+            let properties = [test_property(1, PmDcFeaturePropertyKind::Boolean {
+                name: String::new(), name_value: 0, value,
+            })];
+            let index = test_projection_index(&properties, &[], &[], &[], &[], &[], &[], &[]);
+            let key = format!("property_{slot}_boolean");
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = u64::MAX;
+            policy.limits.max_retained_bytes = u64::MAX;
+            policy.limits.max_materialized_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("fixed boolean value context");
+            let probe = RefusalProbe::arm(ResourceDimension::WorkUnits,
+                "retain Inventor feature property value", None);
+            let projected = super::boolean_properties(&ctx, &source, slots, &index)
+                .expect("fixed boolean value needs no copy work");
+            drop(probe);
+            assert_eq!(projected.len(), 1);
+            assert_eq!(projected.get(key.as_str()).expect("property key"), expected);
+            ctx.finish_session().expect("fixed value leaves a clean session");
+
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("fixed boolean storage refusal context");
+            let probe = RefusalProbe::arm(ResourceDimension::RetainedBytes,
+                "retain Inventor feature property value", None);
+            let Err(CodecError::ResourceLimit(limit)) =
+                super::boolean_properties(&ctx, &source, slots, &index) else {
+                panic!("fixed value must admit storage before its bounded copy");
+            };
+            drop(probe);
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.operation, "retain Inventor feature property value");
+            assert_eq!(limit.used, cadmpeg_core::decode::u64_from_index(key.len()));
+            assert_eq!(limit.additional, cadmpeg_core::decode::u64_from_index(expected.len()));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            assert!(matches!(ctx.finish_session(),
+                Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+    }
+}
+
+#[test]
 fn feature_result_fixed_record_uses_no_extra_collection_slot() {
     let source = test_feature(0, 1, &[(0, 1)]);
     let properties = [

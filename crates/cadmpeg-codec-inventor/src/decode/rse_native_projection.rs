@@ -101,10 +101,7 @@ pub(super) fn project(
                         token: ctx
                             .copy_retained_text(token, "retain Inventor segment metadata token")?,
                         version: meta.declared.version,
-                        kind: ctx.copy_retained_text(
-                            segment.kind.label(),
-                            "retain Inventor segment kind",
-                        )?,
+                        kind: segment.kind.retained_label(ctx)?,
                         display_name: ctx.copy_retained_text(
                             &meta.display_name,
                             "retain Inventor segment display name",
