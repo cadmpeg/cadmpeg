@@ -62,3 +62,73 @@ fn local_frame_selection_stops_after_second_complete_match() {
     assert_eq!(short_refusal, long_refusal);
     assert_eq!(crate::decode::with_test_decode_ctx(|ctx| run(ctx, &long)).expect("ambiguous frame"), None);
 }
+
+#[test]
+fn carrier_index_reuses_queries_and_skips_unused_envelopes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let outlines = [OutlinePlane {
+        surface_id: 7,
+        origin: [0.0, 0.0, 3.0],
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        offset: 1,
+    }];
+    let envelope = PlaneEnvelopeRecord {
+        surface_id: 7, body: Vec::new(),
+        envelope: PlaneEnvelope::Standard { bounds_2d: [[None; 2]; 2], corners_3d: [[None; 3]; 2] },
+        corner_coordinate_equal: [None; 3], scalar_tokens: Vec::new(), row_offset: 0, offset: 0,
+    };
+    let unused = vec![envelope; 64];
+    let run = |cap, envelopes: &[PlaneEnvelopeRecord], repeat: bool| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let rows = crate::surface::unique_rows::UniqueIdRows::from_rows(Vec::new());
+        let sources = PlacementSources {
+            datums: &[], surface_rows: &rows, model_planes: &[], outline_planes: &outlines,
+            plane_envelopes: envelopes, surface_parameters: &[], geometry_tables: &[], affected_ids: &[],
+        };
+        let mut lookup = super::super::PlacementLookup::new(&ctx, &sources)?;
+        let equation = lookup.generated_equation(7)?;
+        assert_eq!(equation, Some(([0.0, 0.0, 1.0], 3.0)));
+        if repeat {
+            assert_eq!(lookup.generated_equation(7)?, equation);
+        }
+        Ok::<_, cadmpeg_core::CodecError>(())
+    };
+    let cap = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None,
+        |cap| run(cap, &[], false));
+    assert_eq!(cap, crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None,
+        |cap| run(cap, &unused, true)));
+    run(cap, &unused, true).expect("unchanged work admits repeated indexed queries");
+}
+
+#[test]
+fn duplicate_outline_blocks_generated_envelope_fallback() {
+    let outline = OutlinePlane {
+        surface_id: 7, origin: [0.0, 0.0, 3.0],
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS, offset: 1,
+    };
+    let outlines = [outline.clone(), outline];
+    let envelopes = [PlaneEnvelopeRecord {
+        surface_id: 7, body: Vec::new(),
+        envelope: PlaneEnvelope::Standard { bounds_2d: [[None; 2]; 2], corners_3d: [[Some(2.0), None, None]; 2] },
+        corner_coordinate_equal: [Some(true), None, None], scalar_tokens: Vec::new(), row_offset: 0, offset: 0,
+    }];
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let rows = crate::surface::unique_rows::UniqueIdRows::from_rows(Vec::new());
+        let sources = PlacementSources {
+            datums: &[], surface_rows: &rows, model_planes: &[], outline_planes: &outlines,
+            plane_envelopes: &envelopes, surface_parameters: &[], geometry_tables: &[], affected_ids: &[],
+        };
+        let mut lookup = super::super::PlacementLookup::new(ctx, &sources)?;
+        assert_eq!(lookup.generated_equation(7)?, None);
+        let absent_outlines = PlacementSources { outline_planes: &[], ..sources };
+        let mut lookup = super::super::PlacementLookup::new(ctx, &absent_outlines)?;
+        assert_eq!(lookup.generated_equation(7)?, Some(([1.0, 0.0, 0.0], 2.0)));
+        Ok::<_, cadmpeg_core::CodecError>(())
+    }).expect("generated plane fallback");
+}

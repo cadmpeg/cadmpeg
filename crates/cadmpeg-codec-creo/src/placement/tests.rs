@@ -44,7 +44,7 @@ fn generated_cylinder_section_transform(
     tables: &[FeatureEntityTable],
 ) -> Option<FeatureSectionTransform> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        parse_generated_cylinder_section_transform(ctx, definition, sources, tables)
+        parse_generated_cylinder_section_transform(ctx, definition, tables, &mut super::PlacementLookup::new(ctx, sources)?)
     })
     .expect("test cylinder placement")
 }
@@ -55,7 +55,7 @@ fn generated_planar_section_transform(
     tables: &[FeatureEntityTable],
 ) -> Option<FeatureSectionTransform> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        parse_generated_planar_section_transform(ctx, definition, sources, tables)
+        parse_generated_planar_section_transform(ctx, definition, tables, &mut super::PlacementLookup::new(ctx, sources)?)
     })
     .expect("test planar placement")
 }
